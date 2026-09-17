@@ -1,15 +1,7 @@
 import { refreshMemory } from "./memory-actions";
 import type { BotAccount } from "./account";
 import type { MemoryDialogControl } from "./memory-actions";
-import {
-  Button,
-  ChoiceField,
-  FormField,
-  Input,
-  Label,
-  ModalFrame,
-  Switch,
-} from "a13n-ui";
+import { Button, ChoiceField, Label, ModalFrame, Switch } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { MemoryProviderEditor } from "../memory/editor";
@@ -39,7 +31,7 @@ export function MemorySettings({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
-      title={t("Bot memory settings")}
+      title={t("Bot memory storage and controls")}
       closeLabel={t("Close")}
       size="md"
       trigger={
@@ -90,7 +82,7 @@ function SettingsForm({
   const [saveMemory, setSaveMemory] = useState(
     account.memory?.save_on_request ?? true,
   );
-  const [timezone, setTimezone] = useState(
+  const [timezone] = useState(
     account.memory?.timezone ??
       Intl.DateTimeFormat().resolvedOptions().timeZone,
   );
@@ -171,10 +163,33 @@ function SettingsForm({
         <Switch checked={enabled} onCheckedChange={setEnabled} />
         {t("Enable memory")}
       </Label>
+      <div className={styles.groupMemoryCapabilities} data-disabled={!enabled}>
+        <Label>
+          <Switch
+            checked={useMemory}
+            onCheckedChange={setUseMemory}
+            disabled={!enabled}
+          />
+          {t("Refer to memory when answering")}
+        </Label>
+        <Label>
+          <Switch
+            checked={saveMemory}
+            onCheckedChange={setSaveMemory}
+            disabled={!enabled}
+          />
+          {t("Allow saving or deleting memory through chat")}
+        </Label>
+      </div>
+      <p>
+        {t(
+          "These permissions apply to all groups. Reading and writing are independent; each group must also enable the corresponding permission.",
+        )}
+      </p>
       {!enabled && (
         <p>
           {t(
-            "Enable memory to choose storage and configure conversation defaults.",
+            "Memory is off for all groups. Existing memories are not deleted.",
           )}
         </p>
       )}
@@ -262,28 +277,11 @@ function SettingsForm({
           </p>
         )}
       {enabled && providerId && !unavailable && (
-        <>
-          <Label>
-            <Switch checked={useMemory} onCheckedChange={setUseMemory} />
-            {t("Use memory during conversations")}
-          </Label>
-          <Label>
-            <Switch checked={saveMemory} onCheckedChange={setSaveMemory} />
-            {t("Allow explicit save and forget requests")}
-          </Label>
-          <FormField label={t("Time zone")}>
-            <Input
-              value={timezone}
-              onChange={(event) => setTimezone(event.target.value)}
-              required
-            />
-          </FormField>
-          <p>
-            {t(
-              "Groups inherit this Provider. Configure each group separately; sharing is off by default.",
-            )}
-          </p>
-        </>
+        <p>
+          {t(
+            "Groups inherit this Provider. Configure each group separately; sharing is off by default.",
+          )}
+        </p>
       )}
       <ErrorNotice error={save.error} />
       <FormActions
@@ -574,21 +572,6 @@ function GroupForm({
           "Only verified group conversations can open their memory to other groups. Direct conversations stay private.",
         )}
       </p>
-      <details className={styles.memoryAdvancedSettings}>
-        <summary>{t("Advanced settings")}</summary>
-        <FormField label={t("Time zone")}>
-          <Input
-            value={timezone}
-            onChange={(event) => setTimezone(event.target.value)}
-            required
-          />
-        </FormField>
-        <p>
-          {t(
-            "Determines the default date for new memories and date filtering. Uses the bot's time zone unless changed for this group.",
-          )}
-        </p>
-      </details>
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}

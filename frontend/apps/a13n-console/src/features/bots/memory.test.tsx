@@ -183,7 +183,9 @@ it("opens first-time memory settings directly from the Memory tab", async () => 
   setup({ ...account, memory: null });
   await userEvent.click(screen.getByRole("button", { name: "Set up memory" }));
   expect(
-    await screen.findByRole("dialog", { name: "Bot memory settings" }),
+    await screen.findByRole("dialog", {
+      name: "Bot memory storage and controls",
+    }),
   ).toBeTruthy();
   expect(
     screen

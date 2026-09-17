@@ -207,9 +207,9 @@ it("provides recovery links for incomplete setup without hiding independent memo
   expect(
     screen.getByRole("link", { name: "Resume setup" }).getAttribute("href"),
   ).toBe("/workspace/test/bots/connect?account=acct_test");
-  expect(screen.getByText("Use memory during conversations")).toBeTruthy();
+  expect(screen.getByText("Refer to memory when answering")).toBeTruthy();
   expect(
-    screen.getByText("Allow explicit save and forget requests"),
+    screen.getByText("Allow saving or deleting memory through chat"),
   ).toBeTruthy();
 });
 

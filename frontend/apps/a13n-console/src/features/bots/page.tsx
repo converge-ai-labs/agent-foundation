@@ -1,5 +1,5 @@
 import { botAccount } from "./account";
-import { Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
+import { DisclosureSection, Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -142,10 +142,10 @@ export function BotDetail() {
             {!github && can("bot_memory.read") && (
               <section className={styles.memorySettingRow}>
                 <div>
-                  <h2>{t("Memory storage and defaults")}</h2>
+                  <h2>{t("Bot memory storage and controls")}</h2>
                   <p>
                     {t(
-                      "Choose storage and default memory behavior for this bot. Group settings can be configured in Channels.",
+                      "Choose storage and control memory access for all groups connected to this bot. Configure individual groups in Memory.",
                     )}
                   </p>
                 </div>
@@ -165,7 +165,9 @@ export function BotDetail() {
                 onSuccess={() => void reload()}
               />
             )}
-            <AccountCredentials account={account} reload={reload} />
+            <DisclosureSection title={t("Credentials")}>
+              <AccountCredentials account={account} reload={reload} />
+            </DisclosureSection>
           </div>
         </TabsPanel>
       </Tabs>

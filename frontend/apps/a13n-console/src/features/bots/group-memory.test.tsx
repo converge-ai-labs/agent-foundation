@@ -53,7 +53,7 @@ const scope = {
   enabled: false,
   use_memory: true,
   save_on_request: false,
-  timezone: "UTC",
+  timezone: "America/New_York",
 };
 const response = (data: unknown) => ({
   data,
@@ -166,6 +166,7 @@ it("configures only this target and preserves existing toggles and the draft ver
   const writeToggle = screen.getByRole("switch", {
     name: "Allow saving or deleting memory through chat",
   });
+  expect(screen.queryByRole("textbox", { name: "Time zone" })).toBeNull();
   expect(readToggle.getAttribute("aria-disabled") === "true").toBe(true);
   expect(writeToggle.getAttribute("aria-disabled") === "true").toBe(true);
   await userEvent.click(
@@ -191,7 +192,7 @@ it("configures only this target and preserves existing toggles and the draft ver
     enabled: false,
     use_memory: true,
     save_on_request: false,
-    timezone: "UTC",
+    timezone: "America/New_York",
   });
   expect(
     state.http.GET.mock.calls.some(([path]) => path.endsWith("/targets")),

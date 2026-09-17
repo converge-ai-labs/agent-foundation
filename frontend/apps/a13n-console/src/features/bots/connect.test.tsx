@@ -122,44 +122,117 @@ it("does not fetch accounts or credentials for a viewer", () => {
   expect(state.http.GET).not.toHaveBeenCalled();
 });
 
-it("separates account reuse from creation without creating a duplicate", async () => {
-  state.http.GET.mockResolvedValue(
-    response({
-      items: [
-        { account: { ...account, provider_config: { team_id: "T_EXISTING" } } },
-      ],
-      next_cursor: null,
-    }),
+it("chooses a platform before accounts and filters reuse without creating duplicates", async () => {
+  const original = state.http.GET.getMockImplementation()!;
+  state.http.GET.mockImplementation(
+    async (
+      path: string,
+      options: { params?: { query?: { platform?: string } } },
+    ) => {
+      if (path.endsWith("/bots"))
+        return response({
+          items:
+            options.params?.query?.platform === "slack"
+              ? [
+                  {
+                    account: {
+                      ...account,
+                      provider_config: { team_id: "T_EXISTING" },
+                    },
+                  },
+                ]
+              : [
+                  {
+                    account: {
+                      ...account,
+                      id: "acct_feishu",
+                      name: "Feishu pilot",
+                      provider_key: "lark",
+                    },
+                  },
+                ],
+          next_cursor: null,
+        });
+      return original(path, options);
+    },
   );
   setup();
+  expect(
+    screen.getByRole("heading", { name: "Choose your platform" }),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("tab", { name: "Use an existing account" }),
+  ).toBeNull();
+  expect(state.http.GET).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  expect(
+    (await screen.findByRole("link", { name: /Pilot/ })).getAttribute("href"),
+  ).toBe("/workspace/test/bots/acct_test");
+  expect(state.http.GET).toHaveBeenCalledWith(
+    "/api/v1/workspaces/{workspace}/bots",
+    expect.objectContaining({
+      params: {
+        path: { workspace: "ws_test" },
+        query: { limit: 20, platform: "slack" },
+      },
+    }),
+  );
+  expect(screen.getByText("Slack · T_EXISTING")).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Create a new account" }),
+  );
+  await screen.findByLabelText("Bot token");
+  await userEvent.type(screen.getByLabelText("Bot token"), "unsaved-secret");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Change platform" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Feishu" }));
+  await screen.findByRole("link", { name: /Feishu pilot/ });
+  expect(screen.queryByRole("link", { name: /^Pilot/ })).toBeNull();
+  expect(screen.queryByLabelText("Bot token")).toBeNull();
   expect(
     screen
       .getByRole("tab", { name: "Use an existing account" })
       .getAttribute("aria-selected"),
   ).toBe("true");
-  expect(
-    (await screen.findByRole("link", { name: /Pilot/ })).getAttribute("href"),
-  ).toBe("/workspace/test/bots/acct_test");
-  expect(screen.getByText("Slack · T_EXISTING")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Slack" })).toBeNull();
   await userEvent.click(
     screen.getByRole("tab", { name: "Create a new account" }),
   );
-  expect(await screen.findByRole("button", { name: "Slack" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Feishu" })).toBeTruthy();
-  expect(screen.queryByRole("link", { name: /Pilot/ })).toBeNull();
-  await userEvent.keyboard("{ArrowLeft}{Enter}");
-  expect(await screen.findByRole("link", { name: /Pilot/ })).toBeTruthy();
+  await screen.findByLabelText("App Secret");
+  expect(screen.queryByLabelText("Bot token")).toBeNull();
+  expect(state.http.POST).not.toHaveBeenCalled();
+});
+
+it("opens creation for an empty platform and keeps the platform when cancelled", async () => {
+  setup();
+  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await screen.findByLabelText("Bot token");
+  expect(
+    screen
+      .getByRole("tab", { name: "Create a new account" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(screen.getByRole("button", { name: "Change platform" })).toBeTruthy();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Create a new account" }),
+  );
+  await screen.findByLabelText("Bot token");
+});
+
+it("shows account lookup failures instead of assuming no accounts exist", async () => {
+  state.http.GET.mockRejectedValue(new Error("Account lookup unavailable"));
+  setup();
+  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await screen.findByText("Account lookup unavailable");
+  expect(screen.queryByLabelText("Bot token")).toBeNull();
   expect(state.http.POST).not.toHaveBeenCalled();
 });
 
 it("saves a new pilot with reception off and clears credentials before verification", async () => {
   state.http.POST.mockResolvedValue(response(account));
   setup();
-  await userEvent.click(
-    screen.getByRole("tab", { name: "Create a new account" }),
-  );
-  await userEvent.click(await screen.findByRole("button", { name: "Slack" }));
+  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Pilot",
@@ -211,10 +284,7 @@ it("reconciles a lost save using the same command and rejects changed credential
     new TypeError("Network error"),
   ).mockResolvedValue(response(account));
   setup();
-  await userEvent.click(
-    screen.getByRole("tab", { name: "Create a new account" }),
-  );
-  await userEvent.click(await screen.findByRole("button", { name: "Slack" }));
+  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Pilot",
@@ -317,10 +387,7 @@ async function fillFeishuCredentials() {
 }
 async function startFeishu() {
   setup();
-  await userEvent.click(
-    screen.getByRole("tab", { name: "Create a new account" }),
-  );
-  await userEvent.click(await screen.findByRole("button", { name: "Feishu" }));
+  await userEvent.click(screen.getByRole("button", { name: "Feishu" }));
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Pilot",
@@ -504,12 +571,7 @@ it("connects a GitHub polling account without a public callback or claimed user 
       : response(github),
   );
   setup();
-  await userEvent.click(
-    screen.getByRole("tab", { name: "Create a new account" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("button", { name: /GitHub account · Polling/ }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "GitHub" }));
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "GitHub helper",
@@ -541,4 +603,123 @@ it("connects a GitHub polling account without a public callback or claimed user 
       }),
     }),
   );
+});
+
+const githubDefinitions = [
+  {
+    provider_key: "github",
+    config_version: "github_notifications_v1",
+    configuration_schema: schema({
+      user_id: { type: "integer", title: "User ID" },
+      api_origin: string("API origin"),
+      web_origin: string("Web origin"),
+    }),
+    credential_schema: schema({
+      personal_access_token: string("Personal access token"),
+    }),
+    reception_policy_schema: schema({}),
+    target_kinds: ["repository"],
+  },
+  {
+    provider_key: "github",
+    config_version: "github_app_http_v1",
+    configuration_schema: schema({
+      app_id: { type: "integer", title: "App ID" },
+    }),
+    credential_schema: schema({
+      app_private_key_pem: string("App private key"),
+      webhook_secret: string("Webhook secret"),
+    }),
+    reception_policy_schema: schema({}),
+    target_kinds: ["repository"],
+  },
+];
+it("reuses both GitHub account types under one filtered platform without creating an account", async () => {
+  state.http.GET.mockResolvedValue(
+    response({
+      items: [
+        {
+          account: {
+            ...account,
+            id: "acct_pat",
+            name: "Repository helper",
+            provider_key: "github",
+            provider_config_version: "github_notifications_v1",
+          },
+        },
+        {
+          account: {
+            ...account,
+            id: "acct_app",
+            name: "Review app",
+            provider_key: "github",
+            provider_config_version: "github_app_http_v1",
+          },
+        },
+      ],
+      next_cursor: null,
+    }),
+  );
+  setup();
+  expect(state.http.GET).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "GitHub" }));
+  expect(
+    (
+      await screen.findByRole("link", { name: /Repository helper/ })
+    ).getAttribute("href"),
+  ).toBe("/workspace/test/bots/acct_pat");
+  expect(
+    screen.getByRole("link", { name: /Review app/ }).getAttribute("href"),
+  ).toBe("/workspace/test/bots/acct_app");
+  expect(screen.getByText("GitHub account · Polling")).toBeTruthy();
+  expect(screen.getByText("GitHub App · Webhook")).toBeTruthy();
+  expect(state.http.GET).toHaveBeenCalledWith(
+    "/api/v1/workspaces/{workspace}/bots",
+    expect.objectContaining({
+      params: {
+        path: { workspace: "ws_test" },
+        query: { limit: 20, platform: "github" },
+      },
+    }),
+  );
+  expect(state.http.POST).not.toHaveBeenCalled();
+});
+it("clears credentials when switching GitHub connection type or leaving the platform", async () => {
+  const original = state.http.GET.getMockImplementation()!;
+  state.http.GET.mockImplementation(async (path: string, options: unknown) =>
+    path.endsWith("application-account-provider-types")
+      ? response({ items: githubDefinitions })
+      : original(path, options),
+  );
+  setup();
+  await userEvent.click(screen.getByRole("button", { name: "GitHub" }));
+  await userEvent.type(
+    await screen.findByLabelText("Personal access token"),
+    "fictional-pat",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: /GitHub App · Webhook/ }),
+  );
+  expect(await screen.findByLabelText("App private key")).toBeTruthy();
+  expect(screen.queryByLabelText("Personal access token")).toBeNull();
+  await userEvent.type(
+    screen.getByLabelText("Webhook secret"),
+    "fictional-secret",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: /GitHub account · Polling/ }),
+  );
+  expect(
+    (
+      (await screen.findByLabelText(
+        "Personal access token",
+      )) as HTMLInputElement
+    ).value,
+  ).toBe("");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Change platform" }),
+  );
+  expect(screen.queryByLabelText("Personal access token")).toBeNull();
+  expect(screen.getByRole("button", { name: "Slack" })).toBeTruthy();
+  expect(state.http.POST).not.toHaveBeenCalled();
 });

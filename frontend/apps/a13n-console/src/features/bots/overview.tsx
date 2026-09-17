@@ -236,14 +236,14 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
             <p>
               {t(
                 account.memory
-                  ? "Default memory behavior for this bot. Each group controls who can read its memory."
+                  ? "Bot-wide memory permissions. Each group can further restrict access and choose who can read its memory."
                   : "Memory is not configured. Your bot can still participate in conversations.",
               )}
             </p>
             {account.memory && (
               <dl className={styles.overviewFacts}>
                 <div>
-                  <dt>{t("Use memory during conversations")}</dt>
+                  <dt>{t("Refer to memory when answering")}</dt>
                   <dd>
                     <StateBadge
                       state={account.memory.use_memory ? "enabled" : "disabled"}
@@ -251,7 +251,7 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
                   </dd>
                 </div>
                 <div>
-                  <dt>{t("Allow explicit save and forget requests")}</dt>
+                  <dt>{t("Allow saving or deleting memory through chat")}</dt>
                   <dd>
                     <StateBadge
                       state={

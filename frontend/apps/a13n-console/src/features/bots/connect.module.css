@@ -61,13 +61,14 @@
 }
 .platforms {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
   max-width: 600px;
   margin: 16px 0;
 }
 .platforms button {
-  min-height: 44px;
+  min-height: 64px;
+  gap: 12px;
   justify-content: space-between;
   font-size: 14px;
 }
@@ -250,4 +251,57 @@
   border-radius: 8px;
   font-size: 13px;
   line-height: 1.75;
+}
+
+.platforms button > span:not(:first-child) {
+  flex: 1;
+  text-align: left;
+}
+.selectedPlatform {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  max-width: 600px;
+  padding-bottom: 20px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--a13n-border);
+}
+.selectedPlatform strong {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+
+.githubModes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.githubModes button {
+  height: auto;
+  min-height: 88px;
+  align-items: flex-start;
+  flex-direction: column;
+  white-space: normal;
+  text-align: left;
+  padding: 16px;
+  gap: 8px;
+}
+.githubModes button[aria-pressed="true"] {
+  border-color: var(--a13n-text);
+  background: var(--a13n-surface);
+}
+.githubModes button span {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--a13n-secondary);
+  line-height: 1.5;
+}
+@media (max-width: 600px) {
+  .githubModes {
+    grid-template-columns: 1fr;
+  }
 }

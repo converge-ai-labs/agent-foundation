@@ -1,14 +1,17 @@
 import {
+  BrandIcon,
   ChoiceField,
   DisclosureSection,
   FormField,
   Input,
   Label,
   Switch,
+  SettingsRow,
 } from "a13n-ui";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
+import layout from "./form.module.css";
 import { ApiError } from "../../service-client";
 
 import { useTranslation } from "react-i18next";
@@ -92,6 +95,10 @@ export function AccountForm({
     [batching, setBatching] = useState<Schema["InputBatchingPolicy"] | null>(
       initial?.input_batching ?? null,
     );
+  const editingBot = bot && !!basis;
+  const receiveId = useId();
+  const [connectionDetailsOpen, setConnectionDetailsOpen] = useState(false);
+  const [responseDetailsOpen, setResponseDetailsOpen] = useState(false);
   const setupCommand = useRef<string | null>(null);
   const discoveredInstallation = useRef<{
     fingerprint: string;
@@ -260,6 +267,10 @@ export function AccountForm({
         .then(data);
     },
     onError: (error) => {
+      if (editingBot) {
+        setConnectionDetailsOpen(true);
+        setResponseDetailsOpen(true);
+      }
       if (
         setupProvider &&
         error instanceof ApiError &&
@@ -280,10 +291,102 @@ export function AccountForm({
     },
   });
   if (definitions.isPending) return <Loading variant="form" rows={5} />;
+  const receptionFields = definition ? (
+    <>
+      {editingBot ? (
+        <SettingsRow
+          label={t("Receive events")}
+          description={t("Only configured conversations can trigger this bot.")}
+          controlId={receiveId}
+        >
+          <Switch
+            id={receiveId}
+            aria-describedby={`${receiveId}-description`}
+            checked={receive}
+            onCheckedChange={setReceive}
+          />
+        </SettingsRow>
+      ) : (
+        <Label className="flex items-center gap-2">
+          <Switch checked={receive} onCheckedChange={setReceive} />
+          {t("Receive events")}
+        </Label>
+      )}
+      <div className={editingBot ? layout.receptionFields : styles.stack}>
+        <ChoiceField
+          placeholder={t("Select agent")}
+          value={agentId || "none"}
+          className="min-w-0"
+          required={receive}
+          onValueChange={(value) => setAgentId(value === "none" ? "" : value)}
+          label={t("Default agent")}
+          options={[
+            { value: "none", label: t("No default agent") },
+            ...(options.agents.data?.map((item) => ({
+              value: item.id,
+              label: item.name,
+            })) ?? []),
+          ]}
+        />
+        <ChoiceField
+          placeholder={t("Select service account")}
+          value={serviceAccountId || "none"}
+          className="min-w-0"
+          required={receive}
+          onValueChange={(value) =>
+            setServiceAccountId(value === "none" ? "" : value)
+          }
+          label={t("Execution service account")}
+          options={[
+            { value: "none", label: t("No execution identity") },
+            ...(options.accounts.data
+              ?.filter((item) => item.status === "active")
+              .map((item) => ({ value: item.id, label: item.name })) ?? []),
+          ]}
+        />
+      </div>
+      {editingBot ? (
+        <DisclosureSection
+          title={t("Advanced response settings")}
+          open={responseDetailsOpen}
+          onOpenChange={setResponseDetailsOpen}
+        >
+          <BatchingFields value={batching} onChange={setBatching} />
+          <SchemaFields
+            key={`${provider}-policy`}
+            schema={definition.reception_policy_schema}
+            value={policy}
+            onChange={setPolicy}
+          />
+        </DisclosureSection>
+      ) : (
+        <>
+          {" "}
+          <BatchingFields value={batching} onChange={setBatching} />
+          <DisclosureSection title={<>{t("Provider reception policy")}</>}>
+            <SchemaFields
+              key={`${provider}-policy`}
+              schema={definition.reception_policy_schema}
+              value={policy}
+              onChange={setPolicy}
+            />
+          </DisclosureSection>
+        </>
+      )}
+    </>
+  ) : null;
+  const identityFields = definition ? (
+    <SchemaFields
+      key={provider}
+      schema={configurationSchema!}
+      value={configuration}
+      onChange={setConfiguration}
+    />
+  ) : null;
   return (
     <form
       autoComplete="off"
-      className={styles.form}
+      className={editingBot ? layout.botForm : styles.form}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -294,99 +397,142 @@ export function AccountForm({
           definitions.error ?? options.agents.error ?? options.accounts.error
         }
       />
-      <FormField className="min-w-0 w-full" label={t("Name")}>
-        <Input
-          required={true}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          maxLength={128}
-        />
-      </FormField>
-      <ChoiceField
-        placeholder={t("Select account provider")}
-        value={provider}
-        className="min-w-0"
-        readOnly={!!basis || !!setupProvider}
-        required
-        onValueChange={(value) => {
-          setProvider(value);
-          setConfiguration({});
-          setCredentials({});
-          setPolicy({});
-        }}
-        label={t("Provider")}
-        options={
-          definitions.data?.items
-            .filter(
-              (item) =>
-                !bot || ["slack", "lark", "github"].includes(item.provider_key),
-            )
-            .map((item) => ({
-              value: `${item.provider_key}@${item.config_version}`,
-              label:
-                (setupProvider === "lark" ? t("Feishu") : undefined) ??
-                accountProviderLabels[
-                  `${item.provider_key}@${item.config_version}`
-                ] ??
-                `${item.provider_key} · ${item.config_version}`,
-            })) ?? []
-        }
-      />
+      <AccountFormSection
+        enabled={editingBot}
+        title={t("Basic information")}
+        description={t("Name and platform for this bot.")}
+      >
+        <FormField className="min-w-0 w-full" label={t("Name")}>
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={128}
+          />
+        </FormField>
+        {editingBot ? (
+          <div className={layout.platform}>
+            <BrandIcon
+              alias={
+                definition?.provider_key === "lark"
+                  ? configuration.brand === "lark"
+                    ? "lark"
+                    : "feishu"
+                  : (definition?.provider_key ?? "")
+              }
+              size={24}
+            />
+            <span>
+              {definition?.provider_key === "lark" &&
+              configuration.brand !== "lark"
+                ? t("Feishu")
+                : (accountProviderLabels[provider] ?? provider)}
+            </span>
+            <span className={layout.platformLabel}>{t("Platform")}</span>
+          </div>
+        ) : (
+          <ChoiceField
+            placeholder={t("Select account provider")}
+            value={provider}
+            className="min-w-0"
+            readOnly={!!basis || !!setupProvider}
+            required
+            onValueChange={(value) => {
+              setProvider(value);
+              setConfiguration({});
+              setCredentials({});
+              setPolicy({});
+            }}
+            label={t("Provider")}
+            options={
+              definitions.data?.items
+                .filter(
+                  (item) =>
+                    !bot ||
+                    ["slack", "lark", "github"].includes(item.provider_key),
+                )
+                .map((item) => ({
+                  value: `${item.provider_key}@${item.config_version}`,
+                  label:
+                    (setupProvider === "lark" ? t("Feishu") : undefined) ??
+                    accountProviderLabels[
+                      `${item.provider_key}@${item.config_version}`
+                    ] ??
+                    `${item.provider_key} · ${item.config_version}`,
+                })) ?? []
+            }
+          />
+        )}
+      </AccountFormSection>
       {definition && (
         <>
-          {messaging && (
-            <>
-              <ChoiceField
-                label={t("Event connection")}
-                value={websocket ? "websocket" : "http"}
-                options={[
-                  { value: "http", label: t("HTTP callback") },
-                  {
-                    value: "websocket",
-                    label: t(
-                      definition.provider_key === "slack"
-                        ? "Socket Mode"
-                        : "Long connection (WebSocket)",
-                    ),
-                  },
-                ]}
-                onValueChange={(value) => {
-                  setConfiguration({
-                    ...configuration,
-                    event_transport: value,
-                  });
-                  setCredentials({});
-                }}
-              />
-              <p className={styles.muted}>
-                {t(
-                  websocket
-                    ? "The service connects to the platform. No public callback URL is needed."
-                    : "The platform sends events to your public HTTPS callback URL.",
+          <AccountFormSection
+            enabled={editingBot}
+            title={t("Platform connection")}
+            description={t("Choose how messages reach this bot.")}
+          >
+            {messaging && (
+              <>
+                <ChoiceField
+                  label={t("Event connection")}
+                  description={t(
+                    websocket
+                      ? "The service connects to the platform. No public callback URL is needed."
+                      : "The platform sends events to your public HTTPS callback URL.",
+                  )}
+                  value={websocket ? "websocket" : "http"}
+                  options={[
+                    { value: "http", label: t("HTTP callback") },
+                    {
+                      value: "websocket",
+                      label: t(
+                        definition.provider_key === "slack"
+                          ? "Socket Mode"
+                          : "Long connection (WebSocket)",
+                      ),
+                    },
+                  ]}
+                  onValueChange={(value) => {
+                    setConfiguration({
+                      ...configuration,
+                      event_transport: value,
+                    });
+                    setCredentials({});
+                  }}
+                />
+
+                {websocket && definition.provider_key === "slack" && (
+                  <p className={styles.muted}>
+                    {t(
+                      "Use an app-level token with connections:write and enable Socket Mode in Slack. Installations of the same app must use the same app-level token.",
+                    )}
+                  </p>
                 )}
-              </p>
-              {websocket && definition.provider_key === "slack" && (
-                <p className={styles.muted}>
-                  {t(
-                    "Use an app-level token with connections:write and enable Socket Mode in Slack. Installations of the same app must use the same app-level token.",
-                  )}
-                </p>
-              )}
-              {basis && (
-                <p className={styles.muted}>
-                  {t(
-                    "Before switching, update the account credentials for the new connection method. Keep both methods' credentials during the switch.",
-                  )}
-                </p>
-              )}
-            </>
-          )}
-          <SchemaFields
-            key={provider}
-            schema={configurationSchema!}
-            value={configuration}
-            onChange={setConfiguration}
-          />
+                {basis && (
+                  <p
+                    className={
+                      editingBot ? layout.connectionNote : styles.muted
+                    }
+                  >
+                    {t(
+                      "Before switching, update the account credentials for the new connection method. Keep both methods' credentials during the switch.",
+                    )}
+                  </p>
+                )}
+              </>
+            )}
+            {editingBot ? (
+              <DisclosureSection
+                title={t("Platform account details")}
+                open={connectionDetailsOpen}
+                onOpenChange={setConnectionDetailsOpen}
+              >
+                {identityFields}
+              </DisclosureSection>
+            ) : (
+              identityFields
+            )}
+          </AccountFormSection>
           {!basis && (
             <>
               <DisclosureSection title={t("Credentials")} defaultOpen>
@@ -400,57 +546,22 @@ export function AccountForm({
               </DisclosureSection>
             </>
           )}
-          {!setupProvider && (
-            <DisclosureSection title={t("Reception")} defaultOpen={receive}>
-              <Label className="flex items-center gap-2">
-                <Switch checked={receive} onCheckedChange={setReceive} />
-                {t("Receive events")}
-              </Label>
-              <ChoiceField
-                placeholder={t("Select agent")}
-                value={agentId || "none"}
-                className="min-w-0"
-                required={receive}
-                onValueChange={(value) =>
-                  setAgentId(value === "none" ? "" : value)
-                }
-                label={t("Default agent")}
-                options={[
-                  { value: "none", label: t("No default agent") },
-                  ...(options.agents.data?.map((item) => ({
-                    value: item.id,
-                    label: item.name,
-                  })) ?? []),
-                ]}
-              />
-              <ChoiceField
-                placeholder={t("Select service account")}
-                value={serviceAccountId || "none"}
-                className="min-w-0"
-                required={receive}
-                onValueChange={(value) =>
-                  setServiceAccountId(value === "none" ? "" : value)
-                }
-                label={t("Execution service account")}
-                options={[
-                  { value: "none", label: t("No execution identity") },
-                  ...(options.accounts.data
-                    ?.filter((item) => item.status === "active")
-                    .map((item) => ({ value: item.id, label: item.name })) ??
-                    []),
-                ]}
-              />
-              <BatchingFields value={batching} onChange={setBatching} />
-              <DisclosureSection title={<>{t("Provider reception policy")}</>}>
-                <SchemaFields
-                  key={`${provider}-policy`}
-                  schema={definition.reception_policy_schema}
-                  value={policy}
-                  onChange={setPolicy}
-                />
+          {!setupProvider &&
+            (editingBot ? (
+              <AccountFormSection
+                enabled
+                title={t("Message responses")}
+                description={t(
+                  "Choose who responds and which identity runs the agent.",
+                )}
+              >
+                {receptionFields}
+              </AccountFormSection>
+            ) : (
+              <DisclosureSection title={t("Reception")} defaultOpen={receive}>
+                {receptionFields}
               </DisclosureSection>
-            </DisclosureSection>
-          )}
+            ))}
         </>
       )}
       <ErrorNotice
@@ -471,6 +582,30 @@ export function AccountForm({
     </form>
   );
 }
+function AccountFormSection({
+  enabled,
+  title,
+  description,
+  children,
+}: {
+  enabled: boolean;
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  const id = useId();
+  if (!enabled) return children;
+  return (
+    <section className={layout.section} aria-labelledby={id}>
+      <div className={layout.sectionHeading}>
+        <h2 id={id}>{title}</h2>
+        <p>{description}</p>
+      </div>
+      <div className={layout.sectionFields}>{children}</div>
+    </section>
+  );
+}
+
 export function BatchingFields({
   value,
   onChange,

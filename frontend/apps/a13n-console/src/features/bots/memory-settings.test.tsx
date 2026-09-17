@@ -165,6 +165,15 @@ it("lets an administrator disable memory when capability discovery fails", async
   ).toBeNull();
   await userEvent.keyboard("{Escape}");
   await userEvent.click(screen.getByRole("switch", { name: "Enable memory" }));
+  for (const name of [
+    "Refer to memory when answering",
+    "Allow saving or deleting memory through chat",
+  ]) {
+    expect(
+      screen.getByRole("switch", { name }).getAttribute("aria-disabled") ===
+        "true",
+    ).toBe(true);
+  }
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(state.http.PUT).toHaveBeenCalledOnce());
   expect(state.http.PUT.mock.calls[0][1].body.memory).toBeNull();

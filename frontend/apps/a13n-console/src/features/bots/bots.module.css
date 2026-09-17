@@ -39,7 +39,7 @@
   line-height: 1.7;
 }
 .settings {
-  max-width: 760px;
+  max-width: 1040px;
   margin-top: 24px;
   display: grid;
   gap: 32px;
@@ -796,27 +796,6 @@
   margin-top: 8px;
   color: var(--a13n-secondary);
   font-size: 12px;
-  line-height: 1.5;
-}
-
-.memoryAdvancedSettings {
-  border-top: 1px solid var(--a13n-border);
-  padding-top: 16px;
-}
-
-.memoryAdvancedSettings summary {
-  cursor: pointer;
-  font-weight: 500;
-}
-
-.memoryAdvancedSettings[open] summary {
-  margin-bottom: 16px;
-}
-
-.memoryAdvancedSettings p {
-  margin-top: 8px;
-  color: var(--a13n-secondary);
-  font-size: 13px;
   line-height: 1.5;
 }
 
