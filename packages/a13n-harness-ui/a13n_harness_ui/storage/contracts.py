@@ -108,6 +108,20 @@ class ThreadCompletion(StoredContract):
     completed_at: datetime
 
 
+class RetainedActivity(StoredContract):
+    kind: Literal["assistant", "reasoning", "tool"]
+    text: str = Field(max_length=2048)
+    occurred_at: datetime | None = None
+
+
+class ThreadReadModel(StoredContract):
+    """Rebuildable query data, valid only for the exact selected continuation."""
+
+    version: Literal[1] = 1
+    deferred_requests: DeferredToolRequests | None = None
+    latest_activity: RetainedActivity | None = None
+
+
 class Thread(StoredContract):
     thread_id: str = Field(min_length=1, max_length=80)
     parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
@@ -123,6 +137,7 @@ class Thread(StoredContract):
     initial_state: ObjectRef
     continuation: ObjectRef | None = None
     completion: ThreadCompletion | None = None
+    read_model: ThreadReadModel | None = None
 
     @field_validator("created_at", "updated_at")
     @classmethod

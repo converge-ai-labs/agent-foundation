@@ -242,3 +242,36 @@ async def test_startup_automatically_upgrades_populated_previous_revision_and_is
             await repository.append(thread_id="thread-existing", records=(_model(0),))
             assert (await repository.snapshot(thread_id="thread-existing")).combined.model_requests == 1
     migrator.verify_current()
+
+
+async def test_usage_cache_reads_only_new_committed_suffix_and_survives_other_writers(tmp_path, monkeypatch):
+    from a13n_harness_ui.storage.usage import _Aggregation
+
+    settings = StorageSettings(data_root=tmp_path)
+    async with open_database(tmp_path / "metadata.sqlite3", settings) as database:
+        async with transaction(database.sessions) as session:
+            session.add(_thread("thread-root"))
+        reader = ThreadUsageRepository(database.sessions)
+        writer = ThreadUsageRepository(database.sessions)
+        decoded = []
+        add = _Aggregation.add
+
+        def observed(self, sequence, descendant, payload, timestamp):
+            decoded.append(sequence)
+            add(self, sequence, descendant, payload, timestamp)
+
+        monkeypatch.setattr(_Aggregation, "add", observed)
+        await writer.append(thread_id="thread-root", records=(_model(0),))
+        first = await reader.snapshot(thread_id="thread-root")
+        assert len(decoded) == 1
+        assert await reader.snapshot(thread_id="thread-root") == first
+        assert len(decoded) == 1
+        await writer.append(thread_id="thread-root", records=(_model(1),))
+        assert (await reader.snapshot(thread_id="thread-root")).combined.model_requests == 2
+        assert len(decoded) == 2
+        # Group changes rebuild rather than subtracting capped currency buckets.
+        await writer.append(thread_id="thread-root", records=(_model(0, run="run-new"),))
+        cached = await reader.snapshot(thread_id="thread-root")
+        assert cached.combined.model_requests == 3
+        assert len(decoded) == 5
+        assert cached == await ThreadUsageRepository(database.sessions).snapshot(thread_id="thread-root")

@@ -1,23 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { consumeSse, summaryFrame } from "./events";
+import { summaryFrame } from "./events";
 import { ApiError, createTransport, result } from "./client";
+import { mockWebSocket, FakeWebSocket } from "../../tests/fake-websocket";
 
 afterEach(() => vi.unstubAllGlobals());
-it("decodes split UTF-8, CRLF, comments and multiple data lines", async () => {
-  const bytes = new TextEncoder().encode(
-    ': heartbeat\r\ndata: {"message":\r\ndata: "中文"}\r\n\r\ndata: {"second":true}\n\n',
-  );
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const byte of bytes) controller.enqueue(new Uint8Array([byte]));
-      controller.close();
-    },
-  });
-  const frames: unknown[] = [];
-  await consumeSse(new Response(stream), (frame) => frames.push(frame));
-  expect(frames).toEqual([{ message: "中文" }, { second: true }]);
-});
 it("rejects malformed summary envelopes instead of inventing cursors", () => {
   expect(() =>
     summaryFrame({ kind: "invalidation", resume_cursor: 3 }),
@@ -112,33 +99,29 @@ it("closes pending writes on rejected access and ignores their late success", as
 it("rejoins summary streams with cursors, discards reset cursors and cancels retries", async () => {
   vi.useFakeTimers();
   try {
-    const requests: string[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (request: Request) => {
-        requests.push(request.url);
-        return new Response(
-          requests.length === 1
-            ? 'data: {"kind":"open","resume_cursor":"epoch:7"}\n\n'
-            : 'data: {"kind":"reset","reason":"epoch_changed"}\n\n',
-        );
-      }),
-    );
+    const socket = mockWebSocket();
     const transport = createTransport("example-key", vi.fn());
     const invalidate = vi.fn();
     const states = vi.fn();
     const { watchSummary } = await import("./events");
     const close = watchSummary(transport, invalidate, states);
-    await vi.advanceTimersByTimeAsync(0);
+    socket().open();
+    socket().frame({ kind: "open", resume_cursor: "epoch:7", resumed: false });
     expect(invalidate).toHaveBeenCalledOnce();
     expect(states).toHaveBeenCalledWith("Live");
+    socket().close();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(requests[1]).toContain("after=epoch%3A7");
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(requests[2]).not.toContain("after=");
+    socket().open();
+    expect(socket().sent.at(-1)?.after).toBe("epoch:7");
+    socket().frame({ kind: "open", resume_cursor: "epoch:7", resumed: true });
+    expect(invalidate).toHaveBeenCalledOnce();
+    socket().frame({ kind: "reset", reason: "epoch_changed" });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(socket().sent.at(-1)?.after).toBeNull();
+    expect(FakeWebSocket.instances).toHaveLength(2);
     close();
     await vi.advanceTimersByTimeAsync(30000);
-    expect(requests).toHaveLength(3);
+    expect(FakeWebSocket.instances).toHaveLength(2);
     transport.close();
   } finally {
     vi.useRealTimers();
@@ -168,16 +151,15 @@ it("retains root identity and bounded notices rather than reducing every event t
       summaryFrame({ ...envelope, event: { ...event, notice } }),
     ).toThrow("Invalid root operation notice");
   }
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => new Response(`data: ${JSON.stringify(envelope)}\n\n`)),
-  );
+  const socket = mockWebSocket();
   const { watchSummary } = await import("./events");
   const received = vi.fn();
   const transport = createTransport("test", () => {});
   const stop = watchSummary(transport, received, () => {});
   try {
-    await vi.waitFor(() => expect(received).toHaveBeenCalledWith(event));
+    socket().open();
+    socket().frame(envelope);
+    expect(received).toHaveBeenCalledWith(event);
   } finally {
     stop();
     transport.close();
@@ -197,34 +179,30 @@ it("manual retry retains the summary cursor and receives missed notices without 
       brief: "Finished while disconnected.",
     },
   };
-  const requests: string[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (request: Request) => {
-      requests.push(request.url);
-      const frame =
-        requests.length === 1
-          ? { kind: "open", resume_cursor: "epoch:7" }
-          : { kind: "invalidation", resume_cursor: "epoch:8", event: notice };
-      return new Response(`data: ${JSON.stringify(frame)}\n\n`);
-    }),
-  );
+  const socket = mockWebSocket();
   const { watchSummary } = await import("./events");
   const transport = createTransport("", vi.fn());
   const receive = vi.fn();
   const close = watchSummary(transport, receive, vi.fn());
   try {
-    await vi.advanceTimersByTimeAsync(0);
+    socket().open();
+    socket().frame({ kind: "open", resume_cursor: "epoch:7", resumed: false });
+    socket().close();
     close.retry();
     close.retry();
-    await vi.advanceTimersByTimeAsync(0);
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toContain("after=epoch%3A7");
+    socket().open();
+    expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(socket().sent.at(-1)?.after).toBe("epoch:7");
+    socket().frame({
+      kind: "invalidation",
+      resume_cursor: "epoch:8",
+      event: notice,
+    });
     expect(receive).toHaveBeenCalledWith(notice);
     close();
     close.retry();
     await vi.advanceTimersByTimeAsync(30000);
-    expect(requests).toHaveLength(2);
+    expect(FakeWebSocket.instances).toHaveLength(2);
   } finally {
     close();
     transport.close();

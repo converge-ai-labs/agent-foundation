@@ -24,6 +24,7 @@ from .contracts import (
     Thread,
     ThreadCompletion,
     ThreadConfiguration,
+    ThreadReadModel,
 )
 from .database import DatabaseSessions, short_session, transaction
 from .models import (
@@ -406,6 +407,56 @@ class ThreadRepository:
             record.thread_id: reference for record in records if (reference := _continuation_ref(record)) is not None
         }
 
+    async def read_models(self, thread_ids: tuple[str, ...]) -> dict[str, ThreadReadModel]:
+        if not thread_ids:
+            return {}
+        async with short_session(self._sessions) as session:
+            records = (await session.scalars(select(ThreadRecord).where(ThreadRecord.thread_id.in_(thread_ids)))).all()
+            return {record.thread_id: value for record in records if (value := _read_model(record)) is not None}
+
+    async def missing_read_models(self, *, after: str = "", limit: int = 16) -> tuple[tuple[str, ObjectRef], ...]:
+        """Keyset batch for maintenance, including heads advanced by older writers."""
+        async with short_session(self._sessions) as session:
+            records = await session.scalars(
+                select(ThreadRecord)
+                .where(
+                    ThreadRecord.thread_id > after,
+                    ThreadRecord.continuation_digest.is_not(None),
+                    or_(
+                        ThreadRecord.read_model_json.is_(None),
+                        ThreadRecord.read_model_digest.is_distinct_from(ThreadRecord.continuation_digest),
+                        ThreadRecord.read_model_schema_version.is_distinct_from(
+                            ThreadRecord.continuation_schema_version
+                        ),
+                    ),
+                )
+                .order_by(ThreadRecord.thread_id)
+                .limit(limit)
+            )
+            return tuple(
+                (record.thread_id, ref) for record in records if (ref := _continuation_ref(record)) is not None
+            )
+
+    async def repair_read_model(self, thread_id: str, reference: ObjectRef, value: ThreadReadModel) -> bool:
+        """Select derived data only if the head still matches; never change recency."""
+        serialized = value.model_dump_json()
+        async with transaction(self._sessions) as session:
+            result = await session.execute(
+                update(ThreadRecord)
+                .where(
+                    ThreadRecord.thread_id == thread_id,
+                    ThreadRecord.continuation_digest == reference.logical_digest,
+                    ThreadRecord.continuation_schema_version == reference.object_schema_version,
+                )
+                .values(
+                    read_model_digest=reference.logical_digest,
+                    read_model_schema_version=reference.object_schema_version,
+                    read_model_json=serialized,
+                )
+                .returning(ThreadRecord.thread_id)
+            )
+            return result.scalar_one_or_none() is not None
+
     async def project_recency(self, *, include_archived: bool = False) -> dict[str, datetime]:
         async with short_session(self._sessions) as session:
             rows = await session.execute(
@@ -430,11 +481,13 @@ class ThreadRepository:
         expected: ObjectRef | None,
         replacement: ObjectRef,
         completed_run_id: str | None = None,
+        read_model: ThreadReadModel,
         excerpt: ConversationExcerpt | None = None,
         activity_changed: bool = True,
         updated_at: datetime | None = None,
     ) -> Thread:
         _require_kind(replacement, ObjectKind.continuation)
+        serialized = read_model.model_dump_json()
         now = _utc(updated_at)
         async with transaction(self._sessions) as session:
             record = await session.get(ThreadRecord, thread_id)
@@ -450,6 +503,9 @@ class ThreadRepository:
                 )
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
+            record.read_model_digest = replacement.logical_digest
+            record.read_model_schema_version = replacement.object_schema_version
+            record.read_model_json = serialized
             if completed_run_id is not None:
                 if record.parent_thread_id is not None:
                     raise ValueError("Only root Threads have completion markers")
@@ -863,6 +919,7 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
             completed_at=record.completed_at,
         )
     return Thread(
+        read_model=_read_model(record),
         completion=completion,
         thread_id=record.thread_id,
         parent_thread_id=record.parent_thread_id,
@@ -889,6 +946,16 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
         ),
         continuation=_continuation_ref(record),
     )
+
+
+def _read_model(record: ThreadRecord) -> ThreadReadModel | None:
+    if (
+        record.read_model_json is None
+        or record.read_model_digest != record.continuation_digest
+        or record.read_model_schema_version != record.continuation_schema_version
+    ):
+        return None
+    return ThreadReadModel.model_validate_json(record.read_model_json)
 
 
 def _continuation_ref(record: ThreadRecord) -> ObjectRef | None:

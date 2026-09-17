@@ -1,7 +1,6 @@
-import { ApiError, type Schema, type Transport } from "../transport/client";
+import type { Schema, Transport } from "../transport/client";
 import type { ThreadRefresh } from "./refresh";
 import { ProcessObservations } from "./process-observations";
-import { consumeSse } from "../transport/events";
 import {
   sourceText,
   type AppliedEdit,
@@ -876,71 +875,56 @@ export function watchThread(
   invalidate: (reason: ThreadRefresh) => void,
   snapshotReceived?: (snapshot: Schema<"ThreadFocusSnapshot">) => void,
 ) {
-  const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let failures = 0;
   let snapshotRetryAvailable = true;
-  async function connect() {
-    let runChanged = false;
-    let retrySnapshot = false;
-    let replacement: FocusDisplay | undefined;
-    connection("Connecting");
-    try {
-      const params = display.cursor
-        ? `?after=${encodeURIComponent(display.cursor)}`
-        : "";
-      const response = await transport.fetch(
-        `/api/threads/${encodeURIComponent(threadId)}/events${params}`,
-        { signal: abort.signal, headers: { Accept: "text/event-stream" } },
+  let replacement: FocusDisplay | undefined;
+  let restarting = false;
+  const subscription = transport.realtime.subscribe({
+    stream: "focus",
+    root: threadId,
+    cursor: () => display.cursor,
+    state(value) {
+      if (value === "Reconnecting") {
+        display.processes.end();
+        replacement = undefined;
+        changed();
+      }
+      connection(
+        value === "Live" && !display.ready ? "Loading current output" : value,
       );
-      await consumeSse(response, (value) => {
-        if (abort.signal.aborted) return;
-        let frame: FocusFrame;
-        try {
-          frame = focusFrame(value);
-          if (frame.kind === "reset") {
-            // A checkpoint may move while the first prefix is being captured.
-            // Retry that race once immediately; persistent resets still back off.
-            retrySnapshot =
-              frame.reason === "live_snapshot_changed" &&
-              snapshotRetryAvailable;
-            snapshotRetryAvailable = false;
-            // Retain the last complete presentation while acquiring a new prefix.
-            // It is not a replay cursor or proof that execution is still active.
-            display.cursor = undefined;
-            display.processes.end();
-            replacement = undefined;
+    },
+    receive(value) {
+      if (restarting) return;
+      let immediate = false;
+      try {
+        const frame = focusFrame(value);
+        if (frame.kind === "reset") {
+          immediate =
+            frame.reason === "live_snapshot_changed" && snapshotRetryAvailable;
+          snapshotRetryAvailable = false;
+          throw new Error(frame.reason);
+        }
+        if (frame.kind === "snapshot") {
+          display.cursor = undefined;
+          replacement = new FocusDisplay();
+          snapshotReceived?.(frame.snapshot);
+        }
+        (replacement ?? display).accept(frame);
+        if (replacement) {
+          if (!replacement.ready) {
             connection("Loading current output");
             return;
           }
-          if (frame.kind === "snapshot") {
-            // A partial replacement cannot be resumed from the old presentation.
-            display.cursor = undefined;
-            replacement = new FocusDisplay();
-            snapshotReceived?.(frame.snapshot);
-          }
-          const target = replacement ?? display;
-          target.accept(frame);
-          if (replacement) {
-            if (!replacement.ready) {
-              connection("Loading current output");
-              return;
-            }
-            const retained =
-              display.retainedPresentation ??
-              (display.runId && display.blocks.size
-                ? Object.assign(new FocusDisplay(), display)
-                : undefined);
-            Object.assign(display, replacement);
-            display.retainedPresentation = retained;
-            replacement = undefined;
-            invalidate("reconcile");
-          }
-        } catch (error) {
-          // Invalid or incompatible presentation data needs a fresh prefix, not
-          // an endless resume from the last cursor before the offending frame.
-          display.cursor = undefined;
-          throw error;
+          const retained =
+            display.retainedPresentation ??
+            (display.runId && display.blocks.size
+              ? Object.assign(new FocusDisplay(), display)
+              : undefined);
+          Object.assign(display, replacement);
+          display.retainedPresentation = retained;
+          replacement = undefined;
+          invalidate("reconcile");
         }
         const reason = focusRefresh(frame);
         if (reason) invalidate(reason);
@@ -948,28 +932,31 @@ export function watchThread(
         snapshotRetryAvailable = true;
         connection(display.ready ? "Live" : "Loading current output");
         changed();
-      });
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) return;
-      runChanged = error instanceof RootRunChanged;
-      if (error instanceof SyntaxError) display.cursor = undefined;
-      if (!display.ready) display.reset();
-    }
-    display.processes.end();
-    if (!abort.signal.aborted) {
-      changed();
-      const retryImmediately = runChanged || retrySnapshot;
-      connection(retryImmediately ? "Loading current output" : "Reconnecting");
-      timer = setTimeout(
-        () => void connect(),
-        retryImmediately ? 0 : Math.min(1000 * 2 ** failures++, 15000),
-      );
-    }
-  }
-  void connect();
+      } catch (error) {
+        // Replace only this channel. Other roots and summary keep their cursors
+        // and normal Run transitions never reconnect the physical socket.
+        display.cursor = undefined;
+        display.processes.end();
+        replacement = undefined;
+        restarting = true;
+        if (!display.ready) display.reset();
+        changed();
+        connection("Loading current output");
+        timer = setTimeout(
+          () => {
+            restarting = false;
+            subscription.restart();
+          },
+          immediate || error instanceof RootRunChanged
+            ? 0
+            : Math.min(1000 * 2 ** failures++, 15000),
+        );
+      }
+    },
+  });
   return () => {
     display.processes.end();
-    abort.abort();
     clearTimeout(timer);
+    subscription();
   };
 }

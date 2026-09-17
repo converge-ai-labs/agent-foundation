@@ -2966,6 +2966,38 @@
         }
       }
     },
+    "/api/threads/activity/lookup": {
+      "post": {
+        "summary": "Lookup Thread Activity",
+        "operationId": "lookup_thread_activity_api_threads_activity_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadLookup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ThreadActivityView"
+                  },
+                  "type": "array",
+                  "title": "Response Lookup Thread Activity Api Threads Activity Lookup Post"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/activity": {
       "get": {
         "summary": "Thread Activity",
@@ -4289,137 +4321,6 @@
           }
         }
       }
-    },
-    "/api/threads/{thread_id}/events": {
-      "get": {
-        "summary": "Focused",
-        "operationId": "focused_api_threads__thread_id__events_get",
-        "parameters": [
-          {
-            "name": "thread_id",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Thread Id"
-            }
-          },
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 1024
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "After"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/FocusSnapshotFrame"
-                    },
-                    {
-                      "$ref": "#/components/schemas/FocusReplayFrame"
-                    },
-                    {
-                      "$ref": "#/components/schemas/FocusReadyFrame"
-                    },
-                    {
-                      "$ref": "#/components/schemas/FocusEventFrame"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ResetFrame"
-                    }
-                  ],
-                  "title": "Response Focused Api Threads  Thread Id  Events Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/events": {
-      "get": {
-        "summary": "Summary",
-        "operationId": "summary_api_events_get",
-        "parameters": [
-          {
-            "name": "after",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "maxLength": 1024
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "After"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/SummaryOpenFrame"
-                    },
-                    {
-                      "$ref": "#/components/schemas/SummaryEventFrame"
-                    },
-                    {
-                      "$ref": "#/components/schemas/ResetFrame"
-                    }
-                  ],
-                  "title": "Response Summary Api Events Get"
-                }
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
     }
   },
   "components": {
@@ -4545,29 +4446,29 @@
         ]
       },
       "AgentSourceView": {
+        "additionalProperties": false,
         "properties": {
           "kind": {
-            "type": "string",
             "enum": [
               "agent",
               "markdown"
             ],
-            "title": "Kind"
+            "title": "Kind",
+            "type": "string"
           },
           "id": {
-            "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Id"
+            "title": "Id",
+            "type": "string"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "kind",
           "id"
         ],
-        "title": "AgentSourceView"
+        "title": "AgentSourceView",
+        "type": "object"
       },
       "AgentSummary": {
         "properties": {
@@ -5406,54 +5307,54 @@
         "type": "object"
       },
       "ChildActivityView": {
+        "additionalProperties": false,
         "properties": {
           "sequence": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Sequence"
+            "minimum": 0,
+            "title": "Sequence",
+            "type": "integer"
           },
           "output_preview": {
-            "type": "string",
+            "default": "",
             "maxLength": 32768,
             "title": "Output Preview",
-            "default": ""
+            "type": "string"
           },
           "output_truncated": {
-            "type": "boolean",
+            "default": false,
             "title": "Output Truncated",
-            "default": false
+            "type": "boolean"
           },
           "active_tool_calls": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/ChildToolCallView"
             },
-            "type": "array",
             "maxItems": 20,
             "title": "Active Tool Calls",
-            "default": []
+            "type": "array"
           },
           "recent_tool_calls": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/ChildToolCallView"
             },
-            "type": "array",
             "maxItems": 20,
             "title": "Recent Tool Calls",
-            "default": []
+            "type": "array"
           },
           "dropped_tool_calls": {
-            "type": "integer",
-            "minimum": 0.0,
+            "default": 0,
+            "minimum": 0,
             "title": "Dropped Tool Calls",
-            "default": 0
+            "type": "integer"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "sequence"
         ],
-        "title": "ChildActivityView"
+        "title": "ChildActivityView",
+        "type": "object"
       },
       "ChildControlResult": {
         "properties": {
@@ -5508,97 +5409,98 @@
         "title": "ChildControlResult"
       },
       "ChildExecutionPage": {
+        "additionalProperties": false,
         "properties": {
           "executions": {
             "items": {
               "$ref": "#/components/schemas/ChildExecutionView"
             },
-            "type": "array",
-            "title": "Executions"
+            "title": "Executions",
+            "type": "array"
           },
           "total": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Total"
+            "minimum": 0,
+            "title": "Total",
+            "type": "integer"
           },
           "next_cursor": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 4096,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Next Cursor"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "executions",
           "total"
         ],
-        "title": "ChildExecutionPage"
+        "title": "ChildExecutionPage",
+        "type": "object"
       },
       "ChildExecutionView": {
+        "additionalProperties": false,
         "properties": {
           "execution_id": {
-            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Execution Id"
+            "title": "Execution Id",
+            "type": "string"
           },
           "root_thread_id": {
-            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Root Thread Id"
+            "title": "Root Thread Id",
+            "type": "string"
           },
           "parent_thread_id": {
-            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Parent Thread Id"
+            "title": "Parent Thread Id",
+            "type": "string"
           },
           "child_thread_id": {
-            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Child Thread Id"
+            "title": "Child Thread Id",
+            "type": "string"
           },
           "child_run_id": {
-            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Child Run Id"
+            "title": "Child Run Id",
+            "type": "string"
           },
           "segment_index": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Segment Index"
+            "minimum": 0,
+            "title": "Segment Index",
+            "type": "integer"
           },
           "composition_id": {
-            "type": "string",
             "pattern": "^[0-9a-f]{64}$",
-            "title": "Composition Id"
+            "title": "Composition Id",
+            "type": "string"
           },
           "subagent_name": {
-            "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Subagent Name"
+            "title": "Subagent Name",
+            "type": "string"
           },
           "child_definition_id": {
-            "type": "string",
             "maxLength": 256,
             "minLength": 1,
-            "title": "Child Definition Id"
+            "title": "Child Definition Id",
+            "type": "string"
           },
           "persisted_status": {
-            "type": "string",
             "enum": [
               "running",
               "succeeded",
@@ -5606,27 +5508,29 @@
               "cancelled",
               "lost"
             ],
-            "title": "Persisted Status"
+            "title": "Persisted Status",
+            "type": "string"
           },
           "local_status": {
-            "type": "string",
             "enum": [
               "active",
               "unavailable"
             ],
-            "title": "Local Status"
+            "title": "Local Status",
+            "type": "string"
           },
           "resumed_from": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 80,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Resumed From"
           },
           "failure": {
@@ -5637,53 +5541,53 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           },
           "resumable": {
-            "type": "boolean",
-            "title": "Resumable"
+            "title": "Resumable",
+            "type": "boolean"
           },
           "activity": {
             "$ref": "#/components/schemas/ChildActivityView"
           },
           "available_actions": {
+            "default": [],
             "items": {
-              "type": "string",
               "enum": [
                 "wait",
                 "steer",
                 "cancel"
-              ]
+              ],
+              "type": "string"
             },
-            "type": "array",
             "title": "Available Actions",
-            "default": []
+            "type": "array"
           },
           "created_at": {
-            "type": "string",
             "format": "date-time",
-            "title": "Created At"
+            "title": "Created At",
+            "type": "string"
           },
           "updated_at": {
-            "type": "string",
             "format": "date-time",
-            "title": "Updated At"
+            "title": "Updated At",
+            "type": "string"
           },
           "completed_at": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Completed At"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "execution_id",
           "root_thread_id",
@@ -5701,7 +5605,8 @@
           "created_at",
           "updated_at"
         ],
-        "title": "ChildExecutionView"
+        "title": "ChildExecutionView",
+        "type": "object"
       },
       "ChildOutputLocation": {
         "additionalProperties": false,
@@ -5787,21 +5692,21 @@
         "title": "ChildStatusCounts"
       },
       "ChildToolCallView": {
+        "additionalProperties": false,
         "properties": {
           "tool_call_id": {
-            "type": "string",
             "maxLength": 256,
             "minLength": 1,
-            "title": "Tool Call Id"
+            "title": "Tool Call Id",
+            "type": "string"
           },
           "tool_name": {
-            "type": "string",
             "maxLength": 256,
             "minLength": 1,
-            "title": "Tool Name"
+            "title": "Tool Name",
+            "type": "string"
           },
           "status": {
-            "type": "string",
             "enum": [
               "running",
               "success",
@@ -5809,7 +5714,8 @@
               "denied",
               "interrupted"
             ],
-            "title": "Status"
+            "title": "Status",
+            "type": "string"
           },
           "arguments": {
             "anyOf": [
@@ -5819,7 +5725,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           },
           "result": {
             "anyOf": [
@@ -5829,17 +5736,17 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "tool_call_id",
           "tool_name",
           "status"
         ],
-        "title": "ChildToolCallView"
+        "title": "ChildToolCallView",
+        "type": "object"
       },
       "CodexSubscriptionAuthentication": {
         "properties": {
@@ -6422,26 +6329,28 @@
         "title": "ContextUsageView"
       },
       "ContinuationSelectionView": {
+        "additionalProperties": false,
         "properties": {
           "status": {
-            "type": "string",
             "enum": [
               "selected",
               "not_available",
               "failed"
             ],
-            "title": "Status"
+            "title": "Status",
+            "type": "string"
           },
           "continuation_id": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Continuation Id"
           },
           "failure": {
@@ -6452,51 +6361,51 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "status"
         ],
-        "title": "ContinuationSelectionView"
+        "title": "ContinuationSelectionView",
+        "type": "object"
       },
       "ConversationExcerpt": {
+        "additionalProperties": false,
+        "description": "Small saved display values, independent of model-history compaction.",
         "properties": {
           "first_input": {
-            "type": "string",
+            "default": "",
             "maxLength": 512,
             "title": "First Input",
-            "default": ""
+            "type": "string"
           },
           "latest_input": {
-            "type": "string",
+            "default": "",
             "maxLength": 2048,
             "title": "Latest Input",
-            "default": ""
+            "type": "string"
           },
           "latest_reply": {
-            "type": "string",
+            "default": "",
             "maxLength": 2048,
             "title": "Latest Reply",
-            "default": ""
+            "type": "string"
           },
           "reply_kind": {
-            "type": "string",
+            "default": "none",
             "enum": [
               "none",
               "progress",
               "final"
             ],
             "title": "Reply Kind",
-            "default": "none"
+            "type": "string"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "title": "ConversationExcerpt",
-        "description": "Small saved display values, independent of model-history compaction."
+        "type": "object"
       },
       "ConversationPage": {
         "additionalProperties": false,
@@ -6591,26 +6500,27 @@
         }
       },
       "DeferredRequestView": {
+        "additionalProperties": false,
         "properties": {
           "request_id": {
-            "type": "string",
             "maxLength": 256,
             "minLength": 1,
-            "title": "Request Id"
+            "title": "Request Id",
+            "type": "string"
           },
           "kind": {
-            "type": "string",
             "enum": [
               "approval",
               "external"
             ],
-            "title": "Kind"
+            "title": "Kind",
+            "type": "string"
           },
           "tool_name": {
-            "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Tool Name"
+            "title": "Tool Name",
+            "type": "string"
           },
           "arguments": {
             "anyOf": [
@@ -6620,12 +6530,13 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           },
           "arguments_omitted": {
-            "type": "boolean",
+            "default": false,
             "title": "Arguments Omitted",
-            "default": false
+            "type": "boolean"
           },
           "metadata": {
             "anyOf": [
@@ -6639,22 +6550,22 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Metadata"
           },
           "metadata_omitted": {
-            "type": "boolean",
+            "default": false,
             "title": "Metadata Omitted",
-            "default": false
+            "type": "boolean"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "request_id",
           "kind",
           "tool_name"
         ],
-        "title": "DeferredRequestView"
+        "title": "DeferredRequestView",
+        "type": "object"
       },
       "DirectoryPage": {
         "properties": {
@@ -6697,39 +6608,39 @@
         "title": "DirectoryPage"
       },
       "EnvironmentOutcomeView": {
+        "additionalProperties": false,
         "properties": {
           "unchanged": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Unchanged"
+            "minimum": 0,
+            "title": "Unchanged",
+            "type": "integer"
           },
           "published": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Published"
+            "minimum": 0,
+            "title": "Published",
+            "type": "integer"
           },
           "failed": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Failed"
+            "minimum": 0,
+            "title": "Failed",
+            "type": "integer"
           },
           "cleanup_failures": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/FailureView"
             },
-            "type": "array",
             "title": "Cleanup Failures",
-            "default": []
+            "type": "array"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "unchanged",
           "published",
           "failed"
         ],
-        "title": "EnvironmentOutcomeView"
+        "title": "EnvironmentOutcomeView",
+        "type": "object"
       },
       "EnvironmentProfileSummary": {
         "properties": {
@@ -6909,18 +6820,19 @@
         "title": "ExternalRequestView"
       },
       "FailureView": {
+        "additionalProperties": false,
         "properties": {
           "code": {
-            "type": "string",
             "maxLength": 256,
             "minLength": 1,
-            "title": "Code"
+            "title": "Code",
+            "type": "string"
           },
           "message": {
-            "type": "string",
             "maxLength": 32768,
             "minLength": 1,
-            "title": "Message"
+            "title": "Message",
+            "type": "string"
           },
           "details": {
             "anyOf": [
@@ -6934,28 +6846,29 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Details"
           },
           "retry_hint": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 128
+                "maxLength": 128,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Retry Hint"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "code",
           "message"
         ],
-        "title": "FailureView"
+        "title": "FailureView",
+        "type": "object"
       },
       "FastControl": {
         "properties": {
@@ -7222,111 +7135,6 @@
           "presentation"
         ],
         "title": "FileText"
-      },
-      "FocusEventFrame": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "event",
-            "title": "Kind",
-            "default": "event"
-          },
-          "event": {
-            "$ref": "#/components/schemas/LiveEvent"
-          },
-          "resume_cursor": {
-            "type": "string",
-            "title": "Resume Cursor"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "event",
-          "resume_cursor"
-        ],
-        "title": "FocusEventFrame"
-      },
-      "FocusReadyFrame": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "ready",
-            "title": "Kind",
-            "default": "ready"
-          },
-          "resume_cursor": {
-            "type": "string",
-            "title": "Resume Cursor"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "resume_cursor"
-        ],
-        "title": "FocusReadyFrame"
-      },
-      "FocusReplayFrame": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "root_stream",
-            "title": "Kind",
-            "default": "root_stream"
-          },
-          "run_id": {
-            "type": "string",
-            "title": "Run Id"
-          },
-          "events": {
-            "items": {
-              "$ref": "#/components/schemas/RootStreamEvent"
-            },
-            "type": "array",
-            "maxItems": 16,
-            "minItems": 1,
-            "title": "Events"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "run_id",
-          "events"
-        ],
-        "title": "FocusReplayFrame"
-      },
-      "FocusSnapshotFrame": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "snapshot",
-            "title": "Kind",
-            "default": "snapshot"
-          },
-          "snapshot": {
-            "$ref": "#/components/schemas/ThreadFocusSnapshot"
-          },
-          "resume_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Resume Cursor"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "snapshot",
-          "resume_cursor"
-        ],
-        "title": "FocusSnapshotFrame"
       },
       "GitChange": {
         "properties": {
@@ -7881,112 +7689,6 @@
           "access"
         ],
         "title": "ListenerStatus"
-      },
-      "LiveEvent": {
-        "properties": {
-          "epoch": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Epoch"
-          },
-          "sequence": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Sequence"
-          },
-          "run_kind": {
-            "type": "string",
-            "enum": [
-              "root",
-              "child"
-            ],
-            "title": "Run Kind"
-          },
-          "root_thread_id": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Root Thread Id"
-          },
-          "parent_thread_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Parent Thread Id"
-          },
-          "thread_id": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Thread Id"
-          },
-          "run_id": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Run Id"
-          },
-          "execution_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execution Id"
-          },
-          "event_type": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Event Type"
-          },
-          "payload": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payload"
-          },
-          "payload_omitted": {
-            "type": "boolean",
-            "title": "Payload Omitted"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "epoch",
-          "sequence",
-          "run_kind",
-          "root_thread_id",
-          "thread_id",
-          "run_id",
-          "event_type",
-          "payload",
-          "payload_omitted"
-        ],
-        "title": "LiveEvent",
-        "description": "Detached bounded AG-UI event correlated to one complete root lineage."
       },
       "LoginStatus": {
         "properties": {
@@ -9306,26 +9008,6 @@
         ],
         "title": "RequiredAction"
       },
-      "ResetFrame": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "reset",
-            "title": "Kind",
-            "default": "reset"
-          },
-          "reason": {
-            "type": "string",
-            "title": "Reason"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "reason"
-        ],
-        "title": "ResetFrame"
-      },
       "ResourceId": {
         "type": "string",
         "maxLength": 128,
@@ -9464,15 +9146,16 @@
         "title": "ReviewView"
       },
       "RootActivityState": {
-        "type": "string",
         "enum": [
           "inactive",
           "preparing",
           "running"
         ],
-        "title": "RootActivityState"
+        "title": "RootActivityState",
+        "type": "string"
       },
       "RootActivityView": {
+        "additionalProperties": false,
         "properties": {
           "state": {
             "$ref": "#/components/schemas/RootActivityState"
@@ -9480,49 +9163,50 @@
           "receipt_id": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 128,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Receipt Id"
           },
           "run_id": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 80,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Run Id"
           },
           "available_actions": {
+            "default": [],
             "items": {
-              "type": "string",
               "enum": [
                 "wait",
                 "steer",
                 "cancel"
-              ]
+              ],
+              "type": "string"
             },
-            "type": "array",
             "title": "Available Actions",
-            "default": []
+            "type": "array"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "state"
         ],
-        "title": "RootActivityView"
+        "title": "RootActivityView",
+        "type": "object"
       },
       "RootControlResult": {
         "properties": {
@@ -9559,16 +9243,17 @@
         "title": "RootControlResult"
       },
       "RootExecutionView": {
+        "additionalProperties": false,
         "properties": {
           "status": {
-            "type": "string",
             "enum": [
               "completed",
               "failed",
               "cancelled",
               "suspended"
             ],
-            "title": "Status"
+            "title": "Status",
+            "type": "string"
           },
           "output": {
             "anyOf": [
@@ -9578,12 +9263,13 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           },
           "output_omitted": {
-            "type": "boolean",
+            "default": false,
             "title": "Output Omitted",
-            "default": false
+            "type": "boolean"
           },
           "failure": {
             "anyOf": [
@@ -9593,7 +9279,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           },
           "usage": {
             "anyOf": [
@@ -9607,51 +9294,17 @@
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Usage"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "status"
         ],
-        "title": "RootExecutionView"
-      },
-      "RootOperationNotice": {
-        "properties": {
-          "receipt_id": {
-            "type": "string",
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Receipt Id"
-          },
-          "status": {
-            "type": "string",
-            "enum": [
-              "completed",
-              "failed",
-              "suspended"
-            ],
-            "title": "Status"
-          },
-          "brief": {
-            "type": "string",
-            "maxLength": 320,
-            "minLength": 1,
-            "title": "Brief"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "receipt_id",
-          "status",
-          "brief"
-        ],
-        "title": "RootOperationNotice"
+        "title": "RootExecutionView",
+        "type": "object"
       },
       "RootOperationStatus": {
-        "type": "string",
         "enum": [
           "preparing",
           "running",
@@ -9660,9 +9313,11 @@
           "failed",
           "cancelled"
         ],
-        "title": "RootOperationStatus"
+        "title": "RootOperationStatus",
+        "type": "string"
       },
       "RootOperationView": {
+        "additionalProperties": false,
         "properties": {
           "receipt": {
             "$ref": "#/components/schemas/RootRunReceipt"
@@ -9673,38 +9328,41 @@
           "run_id": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 80,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Run Id"
           },
           "started_at": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Started At"
           },
           "completed_at": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Completed At"
           },
           "outcome": {
@@ -9715,7 +9373,8 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           },
           "failure": {
             "anyOf": [
@@ -9725,29 +9384,29 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           },
           "available_actions": {
+            "default": [],
             "items": {
-              "type": "string",
               "enum": [
                 "wait",
                 "steer",
                 "cancel"
-              ]
+              ],
+              "type": "string"
             },
-            "type": "array",
             "title": "Available Actions",
-            "default": []
+            "type": "array"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "receipt",
           "status"
         ],
-        "title": "RootOperationView"
+        "title": "RootOperationView",
+        "type": "object"
       },
       "RootOutputLocation": {
         "additionalProperties": false,
@@ -9777,6 +9436,7 @@
         "type": "object"
       },
       "RootRunOutcomeView": {
+        "additionalProperties": false,
         "properties": {
           "execution": {
             "$ref": "#/components/schemas/RootExecutionView"
@@ -9788,127 +9448,48 @@
             "$ref": "#/components/schemas/EnvironmentOutcomeView"
           },
           "composition_id": {
-            "type": "string",
             "pattern": "^[0-9a-f]{64}$",
-            "title": "Composition Id"
+            "title": "Composition Id",
+            "type": "string"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "execution",
           "continuation",
           "environment",
           "composition_id"
         ],
-        "title": "RootRunOutcomeView"
+        "title": "RootRunOutcomeView",
+        "type": "object"
       },
       "RootRunReceipt": {
+        "additionalProperties": false,
         "properties": {
           "receipt_id": {
-            "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Receipt Id"
+            "title": "Receipt Id",
+            "type": "string"
           },
           "thread_id": {
-            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Thread Id"
+            "title": "Thread Id",
+            "type": "string"
           },
           "submitted_at": {
-            "type": "string",
             "format": "date-time",
-            "title": "Submitted At"
+            "title": "Submitted At",
+            "type": "string"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "receipt_id",
           "thread_id",
           "submitted_at"
         ],
-        "title": "RootRunReceipt"
-      },
-      "RootStreamEvent": {
-        "properties": {
-          "index": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Index"
-          },
-          "event_type": {
-            "type": "string",
-            "title": "Event Type"
-          },
-          "payload": {
-            "anyOf": [
-              {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Payload"
-          },
-          "payload_omitted": {
-            "type": "boolean",
-            "title": "Payload Omitted"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "index",
-          "event_type",
-          "payload",
-          "payload_omitted"
-        ],
-        "title": "RootStreamEvent"
-      },
-      "RootStreamSummary": {
-        "properties": {
-          "thread_id": {
-            "type": "string",
-            "title": "Thread Id"
-          },
-          "run_id": {
-            "type": "string",
-            "title": "Run Id"
-          },
-          "base_continuation_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Base Continuation Id"
-          },
-          "event_count": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Event Count"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "thread_id",
-          "run_id",
-          "base_continuation_id",
-          "event_count"
-        ],
-        "title": "RootStreamSummary",
-        "description": "Finite observer prefix covered by a focused watch's cutover."
+        "title": "RootRunReceipt",
+        "type": "object"
       },
       "RunUsageView": {
         "properties": {
@@ -10715,298 +10296,147 @@
         ],
         "title": "StructuredQuestionRequestView"
       },
-      "SummaryCursor": {
-        "properties": {
-          "epoch": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Epoch"
-          },
-          "sequence": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Sequence"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "epoch",
-          "sequence"
-        ],
-        "title": "SummaryCursor"
-      },
-      "SummaryEventFrame": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "invalidation",
-            "title": "Kind",
-            "default": "invalidation"
-          },
-          "event": {
-            "$ref": "#/components/schemas/SummaryInvalidation"
-          },
-          "resume_cursor": {
-            "type": "string",
-            "title": "Resume Cursor"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "event",
-          "resume_cursor"
-        ],
-        "title": "SummaryEventFrame"
-      },
-      "SummaryInvalidation": {
-        "properties": {
-          "epoch": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Epoch"
-          },
-          "sequence": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Sequence"
-          },
-          "kind": {
-            "type": "string",
-            "enum": [
-              "configuration",
-              "catalog",
-              "project",
-              "thread",
-              "root_operation",
-              "child_execution",
-              "comment"
-            ],
-            "title": "Kind"
-          },
-          "root_thread_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Root Thread Id"
-          },
-          "thread_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thread Id"
-          },
-          "execution_id": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 80,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Execution Id"
-          },
-          "notice": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RootOperationNotice"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "epoch",
-          "sequence",
-          "kind"
-        ],
-        "title": "SummaryInvalidation"
-      },
-      "SummaryOpenFrame": {
-        "properties": {
-          "kind": {
-            "type": "string",
-            "const": "open",
-            "title": "Kind",
-            "default": "open"
-          },
-          "cursor": {
-            "$ref": "#/components/schemas/SummaryCursor"
-          },
-          "resume_cursor": {
-            "type": "string",
-            "title": "Resume Cursor"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "cursor",
-          "resume_cursor"
-        ],
-        "title": "SummaryOpenFrame"
-      },
       "TaskPage": {
+        "additionalProperties": false,
         "properties": {
           "continuation_id": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^(?:initial:)?[0-9a-f]{64}$"
+                "pattern": "^(?:initial:)?[0-9a-f]{64}$",
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Continuation Id"
           },
           "version": {
             "anyOf": [
               {
-                "type": "integer",
-                "minimum": 1.0
+                "minimum": 1,
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Version"
           },
           "tasks": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/TaskView"
             },
-            "type": "array",
             "maxItems": 256,
             "title": "Tasks",
-            "default": []
+            "type": "array"
           },
           "total": {
-            "type": "integer",
-            "minimum": 0.0,
+            "default": 0,
+            "minimum": 0,
             "title": "Total",
-            "default": 0
+            "type": "integer"
           },
           "omitted": {
-            "type": "integer",
-            "minimum": 0.0,
+            "default": 0,
+            "minimum": 0,
             "title": "Omitted",
-            "default": 0
+            "type": "integer"
           },
           "available": {
-            "type": "boolean",
+            "default": true,
             "title": "Available",
-            "default": true
+            "type": "boolean"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "TaskPage"
+        "title": "TaskPage",
+        "type": "object"
       },
       "TaskView": {
+        "additionalProperties": false,
         "properties": {
           "task_id": {
-            "type": "string",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Task Id"
+            "title": "Task Id",
+            "type": "string"
           },
           "version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Version"
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
           },
           "subject": {
-            "type": "string",
             "maxLength": 512,
             "minLength": 1,
-            "title": "Subject"
+            "title": "Subject",
+            "type": "string"
           },
           "active_form": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 512
+                "maxLength": 512,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Active Form"
           },
           "status": {
-            "type": "string",
             "enum": [
               "pending",
               "in_progress",
               "completed"
             ],
-            "title": "Status"
+            "title": "Status",
+            "type": "string"
           },
           "owner": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 256
+                "maxLength": 256,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Owner"
           },
           "blocks": {
+            "default": [],
             "items": {
               "type": "string"
             },
-            "type": "array",
             "maxItems": 256,
             "title": "Blocks",
-            "default": []
+            "type": "array"
           },
           "blocked_by": {
+            "default": [],
             "items": {
               "type": "string"
             },
-            "type": "array",
             "maxItems": 256,
             "title": "Blocked By",
-            "default": []
+            "type": "array"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "task_id",
           "version",
           "subject",
           "status"
         ],
-        "title": "TaskView"
+        "title": "TaskView",
+        "type": "object"
       },
       "TerminalPage": {
         "additionalProperties": false,
@@ -11438,31 +10868,31 @@
         "description": "A Thread-scoped handle; paths are resolved by the App, never by clients."
       },
       "ThreadCompletion": {
+        "additionalProperties": false,
+        "description": "Latest successfully selected root result; independent of current operation state.",
         "properties": {
           "version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Version"
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
           },
           "run_id": {
-            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Run Id"
+            "title": "Run Id",
+            "type": "string"
           },
           "continuation_id": {
-            "type": "string",
             "pattern": "^[0-9a-f]{64}$",
-            "title": "Continuation Id"
+            "title": "Continuation Id",
+            "type": "string"
           },
           "completed_at": {
-            "type": "string",
             "format": "date-time",
-            "title": "Completed At"
+            "title": "Completed At",
+            "type": "string"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "version",
           "run_id",
@@ -11470,7 +10900,7 @@
           "completed_at"
         ],
         "title": "ThreadCompletion",
-        "description": "Latest successfully selected root result; independent of current operation state."
+        "type": "object"
       },
       "ThreadConfiguration": {
         "properties": {
@@ -11668,69 +11098,71 @@
         "title": "ThreadConfigurationResolution"
       },
       "ThreadConfigurationView": {
+        "additionalProperties": false,
         "properties": {
           "version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Version"
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
           },
           "project_id": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 128,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Project Id"
           },
           "agent_source": {
             "$ref": "#/components/schemas/AgentSourceView"
           },
           "environment_profile_id": {
-            "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Environment Profile Id"
+            "title": "Environment Profile Id",
+            "type": "string"
           },
           "harness_plugin_ids": {
+            "default": [],
             "items": {
               "type": "string"
             },
-            "type": "array",
             "title": "Harness Plugin Ids",
-            "default": []
+            "type": "array"
           },
           "environment_run_extension_ids": {
+            "default": [],
             "items": {
               "type": "string"
             },
-            "type": "array",
             "title": "Environment Run Extension Ids",
-            "default": []
+            "type": "array"
           },
           "mcp_server_ids": {
+            "default": [],
             "items": {
               "type": "string"
             },
-            "type": "array",
             "title": "Mcp Server Ids",
-            "default": []
+            "type": "array"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "version",
           "agent_source",
           "environment_profile_id"
         ],
-        "title": "ThreadConfigurationView"
+        "title": "ThreadConfigurationView",
+        "type": "object"
       },
       "ThreadDetail": {
+        "additionalProperties": false,
         "properties": {
           "thread": {
             "$ref": "#/components/schemas/ThreadSummary"
@@ -11738,26 +11170,27 @@
           "continuation_id": {
             "anyOf": [
               {
-                "type": "string",
-                "pattern": "^[0-9a-f]{64}$"
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Continuation Id"
           },
           "deferred_requests": {
+            "default": [],
             "items": {
               "$ref": "#/components/schemas/DeferredRequestView"
             },
-            "type": "array",
             "title": "Deferred Requests",
-            "default": []
+            "type": "array"
           },
           "available_actions": {
+            "default": [],
             "items": {
-              "type": "string",
               "enum": [
                 "run",
                 "respond",
@@ -11765,80 +11198,18 @@
                 "steer",
                 "cancel",
                 "archive"
-              ]
+              ],
+              "type": "string"
             },
-            "type": "array",
             "title": "Available Actions",
-            "default": []
+            "type": "array"
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "thread"
         ],
-        "title": "ThreadDetail"
-      },
-      "ThreadFocusSnapshot": {
-        "properties": {
-          "epoch": {
-            "type": "string",
-            "maxLength": 80,
-            "minLength": 1,
-            "title": "Epoch"
-          },
-          "cutover_sequence": {
-            "type": "integer",
-            "minimum": 0.0,
-            "title": "Cutover Sequence"
-          },
-          "thread": {
-            "$ref": "#/components/schemas/ThreadDetail"
-          },
-          "root_operation": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RootOperationView"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "children": {
-            "$ref": "#/components/schemas/ChildExecutionPage"
-          },
-          "tasks": {
-            "$ref": "#/components/schemas/TaskPage"
-          },
-          "recent_events": {
-            "items": {
-              "$ref": "#/components/schemas/LiveEvent"
-            },
-            "type": "array",
-            "title": "Recent Events",
-            "default": []
-          },
-          "root_stream": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RootStreamSummary"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "epoch",
-          "cutover_sequence",
-          "thread",
-          "children"
-        ],
-        "title": "ThreadFocusSnapshot"
+        "title": "ThreadDetail",
+        "type": "object"
       },
       "ThreadPage": {
         "properties": {
@@ -11934,51 +11305,54 @@
         "title": "ThreadSelectorCatalog"
       },
       "ThreadSummary": {
+        "additionalProperties": false,
         "properties": {
           "thread_id": {
-            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Thread Id"
+            "title": "Thread Id",
+            "type": "string"
           },
           "parent_thread_id": {
             "anyOf": [
               {
-                "type": "string",
                 "maxLength": 80,
-                "minLength": 1
+                "minLength": 1,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Parent Thread Id"
           },
           "created_at": {
-            "type": "string",
             "format": "date-time",
-            "title": "Created At"
+            "title": "Created At",
+            "type": "string"
           },
           "updated_at": {
-            "type": "string",
             "format": "date-time",
-            "title": "Updated At"
+            "title": "Updated At",
+            "type": "string"
           },
           "metadata_version": {
-            "type": "integer",
-            "minimum": 1.0,
-            "title": "Metadata Version"
+            "minimum": 1,
+            "title": "Metadata Version",
+            "type": "integer"
           },
           "title": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 512
+                "maxLength": 512,
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Title"
           },
           "excerpt": {
@@ -11987,41 +11361,43 @@
           "activity_at": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Activity At"
           },
           "touched_at": {
             "anyOf": [
               {
-                "type": "string",
-                "format": "date-time"
+                "format": "date-time",
+                "type": "string"
               },
               {
                 "type": "null"
               }
             ],
+            "default": null,
             "title": "Touched At"
           },
           "archived": {
-            "type": "boolean",
-            "title": "Archived"
+            "title": "Archived",
+            "type": "boolean"
           },
           "configuration": {
             "$ref": "#/components/schemas/ThreadConfigurationView"
           },
           "continuation_state": {
-            "type": "string",
             "enum": [
               "initial",
               "selected"
             ],
-            "title": "Continuation State"
+            "title": "Continuation State",
+            "type": "string"
           },
           "root_activity": {
             "$ref": "#/components/schemas/RootActivityView"
@@ -12034,11 +11410,10 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "default": null
           }
         },
-        "additionalProperties": false,
-        "type": "object",
         "required": [
           "thread_id",
           "created_at",
@@ -12049,7 +11424,8 @@
           "continuation_state",
           "root_activity"
         ],
-        "title": "ThreadSummary"
+        "title": "ThreadSummary",
+        "type": "object"
       },
       "ThreadUsageView": {
         "properties": {
@@ -12729,6 +12105,722 @@
           }
         },
         "title": "InteractiveAuthentication",
+        "type": "object"
+      },
+      "RealtimeCommand": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": 1,
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "subscribe",
+              "unsubscribe",
+              "pong"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "channel": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Channel",
+            "type": "string"
+          },
+          "stream": {
+            "default": "summary",
+            "enum": [
+              "summary",
+              "focus"
+            ],
+            "title": "Stream",
+            "type": "string"
+          },
+          "root_thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Root Thread Id"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "maxLength": 1024,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "After"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "RealtimeCommand",
+        "type": "object"
+      },
+      "FocusEventFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "event",
+            "default": "event",
+            "title": "Kind",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/components/schemas/LiveEvent"
+          },
+          "resume_cursor": {
+            "title": "Resume Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "resume_cursor"
+        ],
+        "title": "FocusEventFrame",
+        "type": "object"
+      },
+      "FocusReadyFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "ready",
+            "default": "ready",
+            "title": "Kind",
+            "type": "string"
+          },
+          "resume_cursor": {
+            "title": "Resume Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resume_cursor"
+        ],
+        "title": "FocusReadyFrame",
+        "type": "object"
+      },
+      "FocusReplayFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "root_stream",
+            "default": "root_stream",
+            "title": "Kind",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "events": {
+            "items": {
+              "$ref": "#/components/schemas/RootStreamEvent"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Events",
+            "type": "array"
+          }
+        },
+        "required": [
+          "run_id",
+          "events"
+        ],
+        "title": "FocusReplayFrame",
+        "type": "object"
+      },
+      "FocusSnapshotFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "snapshot",
+            "default": "snapshot",
+            "title": "Kind",
+            "type": "string"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/ThreadFocusSnapshot"
+          },
+          "resume_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resume Cursor"
+          }
+        },
+        "required": [
+          "snapshot",
+          "resume_cursor"
+        ],
+        "title": "FocusSnapshotFrame",
+        "type": "object"
+      },
+      "LiveEvent": {
+        "additionalProperties": false,
+        "description": "Detached bounded AG-UI event correlated to one complete root lineage.",
+        "properties": {
+          "epoch": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Epoch",
+            "type": "string"
+          },
+          "sequence": {
+            "minimum": 1,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "run_kind": {
+            "enum": [
+              "root",
+              "child"
+            ],
+            "title": "Run Kind",
+            "type": "string"
+          },
+          "root_thread_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Root Thread Id",
+            "type": "string"
+          },
+          "parent_thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Parent Thread Id"
+          },
+          "thread_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "run_id": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Run Id",
+            "type": "string"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Execution Id"
+          },
+          "event_type": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Event Type",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "payload_omitted": {
+            "title": "Payload Omitted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "epoch",
+          "sequence",
+          "run_kind",
+          "root_thread_id",
+          "thread_id",
+          "run_id",
+          "event_type",
+          "payload",
+          "payload_omitted"
+        ],
+        "title": "LiveEvent",
+        "type": "object"
+      },
+      "ResetFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "reset",
+            "default": "reset",
+            "title": "Kind",
+            "type": "string"
+          },
+          "reason": {
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": [
+          "reason"
+        ],
+        "title": "ResetFrame",
+        "type": "object"
+      },
+      "RootOperationNotice": {
+        "additionalProperties": false,
+        "properties": {
+          "receipt_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Receipt Id",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "completed",
+              "failed",
+              "suspended"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "brief": {
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Brief",
+            "type": "string"
+          }
+        },
+        "required": [
+          "receipt_id",
+          "status",
+          "brief"
+        ],
+        "title": "RootOperationNotice",
+        "type": "object"
+      },
+      "RootStreamEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "minimum": 0,
+            "title": "Index",
+            "type": "integer"
+          },
+          "event_type": {
+            "title": "Event Type",
+            "type": "string"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payload"
+          },
+          "payload_omitted": {
+            "title": "Payload Omitted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "index",
+          "event_type",
+          "payload",
+          "payload_omitted"
+        ],
+        "title": "RootStreamEvent",
+        "type": "object"
+      },
+      "RootStreamSummary": {
+        "additionalProperties": false,
+        "description": "Finite observer prefix covered by a focused watch's cutover.",
+        "properties": {
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "base_continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Continuation Id"
+          },
+          "event_count": {
+            "minimum": 0,
+            "title": "Event Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "thread_id",
+          "run_id",
+          "base_continuation_id",
+          "event_count"
+        ],
+        "title": "RootStreamSummary",
+        "type": "object"
+      },
+      "SummaryCursor": {
+        "additionalProperties": false,
+        "properties": {
+          "epoch": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Epoch",
+            "type": "string"
+          },
+          "sequence": {
+            "minimum": 0,
+            "title": "Sequence",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "epoch",
+          "sequence"
+        ],
+        "title": "SummaryCursor",
+        "type": "object"
+      },
+      "SummaryEventFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "invalidation",
+            "default": "invalidation",
+            "title": "Kind",
+            "type": "string"
+          },
+          "event": {
+            "$ref": "#/components/schemas/SummaryInvalidation"
+          },
+          "resume_cursor": {
+            "title": "Resume Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "event",
+          "resume_cursor"
+        ],
+        "title": "SummaryEventFrame",
+        "type": "object"
+      },
+      "SummaryInvalidation": {
+        "additionalProperties": false,
+        "properties": {
+          "epoch": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Epoch",
+            "type": "string"
+          },
+          "sequence": {
+            "minimum": 1,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "kind": {
+            "enum": [
+              "configuration",
+              "catalog",
+              "project",
+              "thread",
+              "root_operation",
+              "child_execution",
+              "comment"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "root_thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Root Thread Id"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Thread Id"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "maxLength": 80,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Execution Id"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootOperationNotice"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "epoch",
+          "sequence",
+          "kind"
+        ],
+        "title": "SummaryInvalidation",
+        "type": "object"
+      },
+      "SummaryOpenFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "resumed": {
+            "default": false,
+            "title": "Resumed",
+            "type": "boolean"
+          },
+          "kind": {
+            "const": "open",
+            "default": "open",
+            "title": "Kind",
+            "type": "string"
+          },
+          "cursor": {
+            "$ref": "#/components/schemas/SummaryCursor"
+          },
+          "resume_cursor": {
+            "title": "Resume Cursor",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cursor",
+          "resume_cursor"
+        ],
+        "title": "SummaryOpenFrame",
+        "type": "object"
+      },
+      "ThreadFocusSnapshot": {
+        "additionalProperties": false,
+        "properties": {
+          "epoch": {
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Epoch",
+            "type": "string"
+          },
+          "cutover_sequence": {
+            "minimum": 0,
+            "title": "Cutover Sequence",
+            "type": "integer"
+          },
+          "thread": {
+            "$ref": "#/components/schemas/ThreadDetail"
+          },
+          "root_operation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootOperationView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "children": {
+            "$ref": "#/components/schemas/ChildExecutionPage"
+          },
+          "tasks": {
+            "$ref": "#/components/schemas/TaskPage"
+          },
+          "recent_events": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/LiveEvent"
+            },
+            "title": "Recent Events",
+            "type": "array"
+          },
+          "root_stream": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootStreamSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "epoch",
+          "cutover_sequence",
+          "thread",
+          "children"
+        ],
+        "title": "ThreadFocusSnapshot",
+        "type": "object"
+      },
+      "RealtimeFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": 1,
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "channel": {
+            "title": "Channel",
+            "type": "string"
+          },
+          "frame": {
+            "discriminator": {
+              "mapping": {
+                "event": "#/components/schemas/FocusEventFrame",
+                "invalidation": "#/components/schemas/SummaryEventFrame",
+                "open": "#/components/schemas/SummaryOpenFrame",
+                "ready": "#/components/schemas/FocusReadyFrame",
+                "reset": "#/components/schemas/ResetFrame",
+                "root_stream": "#/components/schemas/FocusReplayFrame",
+                "snapshot": "#/components/schemas/FocusSnapshotFrame"
+              },
+              "propertyName": "kind"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/FocusSnapshotFrame"
+              },
+              {
+                "$ref": "#/components/schemas/FocusReplayFrame"
+              },
+              {
+                "$ref": "#/components/schemas/FocusReadyFrame"
+              },
+              {
+                "$ref": "#/components/schemas/FocusEventFrame"
+              },
+              {
+                "$ref": "#/components/schemas/SummaryOpenFrame"
+              },
+              {
+                "$ref": "#/components/schemas/SummaryEventFrame"
+              },
+              {
+                "$ref": "#/components/schemas/ResetFrame"
+              }
+            ],
+            "title": "Frame"
+          }
+        },
+        "required": [
+          "channel",
+          "frame"
+        ],
+        "title": "RealtimeFrame",
+        "type": "object"
+      },
+      "RealtimePing": {
+        "additionalProperties": false,
+        "properties": {
+          "version": {
+            "const": 1,
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
+          },
+          "kind": {
+            "const": "ping",
+            "default": "ping",
+            "title": "Kind",
+            "type": "string"
+          }
+        },
+        "title": "RealtimePing",
         "type": "object"
       },
       "TerminalCommand": {
@@ -14485,6 +14577,18 @@
   "x-interactive": {
     "authentication": {
       "$ref": "#/components/schemas/InteractiveAuthentication"
+    },
+    "realtime": {
+      "path": "/api/realtime/connect",
+      "input": {
+        "$ref": "#/components/schemas/RealtimeCommand"
+      },
+      "output": {
+        "$ref": "#/components/schemas/RealtimeFrame"
+      },
+      "heartbeat": {
+        "$ref": "#/components/schemas/RealtimePing"
+      }
     },
     "presence": {
       "path": "/api/presence/connect",

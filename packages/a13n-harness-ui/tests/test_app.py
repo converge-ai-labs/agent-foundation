@@ -1768,12 +1768,13 @@ async def test_conflicting_checkpoint_cannot_overwrite_excerpts(tmp_path: Path, 
         second = await app.submit_thread(thread_id=thread.thread_id, prompt="Second question")
         await app.wait_root_operation(second.receipt_id)
         current = await app._store.threads.get(thread.thread_id)
-        assert current is not None and current.continuation is not None
+        assert current is not None and current.continuation is not None and current.read_model is not None
         with pytest.raises(StoreConflictError):
             await app._store.threads.select_continuation(
                 thread_id=thread.thread_id,
                 expected=previous.continuation,
                 replacement=current.continuation,
+                read_model=current.read_model,
                 excerpt=ConversationExcerpt(first_input="Incorrect", latest_input="Stale write"),
             )
         retained = await app._store.threads.get(thread.thread_id)

@@ -10,6 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { parse } from "yaml";
 import { BrowserApp } from "./app";
+import { Realtime } from "./transport/realtime";
 import * as push from "./shell/push";
 import { IDBFactory } from "fake-indexeddb";
 import { onlineManager } from "@tanstack/react-query";
@@ -72,17 +73,30 @@ function fixture(request: Request): Response | Promise<Response> {
     return json({ generation_digest: "g", sources: [source] });
   if (path === "/api/configuration/sources/agents/assistant.yaml")
     return json(source);
-  if (path === "/api/events")
-    return new Promise((_resolve, reject) =>
-      request.signal.addEventListener(
-        "abort",
-        () => reject(new DOMException("Aborted", "AbortError")),
-        { once: true },
-      ),
-    );
   return json([]);
 }
 beforeEach(() => {
+  vi.spyOn(Realtime.prototype, "subscribe").mockImplementation(
+    (subscription) => {
+      let active = true;
+      const emit = () =>
+        queueMicrotask(() => {
+          if (active)
+            subscription.receive({
+              kind: "open",
+              resume_cursor: "epoch:1",
+              resumed: false,
+            });
+        });
+      emit();
+      const close = () => {
+        active = false;
+      };
+      close.restart = emit;
+      close.retry = emit;
+      return close;
+    },
+  );
   vi.stubGlobal("indexedDB", new IDBFactory());
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
@@ -436,21 +450,18 @@ it("keeps a dirty draft when summary invalidation discovers an external publicat
     "/settings/source?path=agents%2Fassistant.yaml",
   );
   let accepted = source;
-  let summary!: ReadableStreamDefaultController<Uint8Array>;
+  let summary!: (frame: unknown) => void;
+  vi.mocked(Realtime.prototype.subscribe).mockImplementation((subscription) => {
+    summary = subscription.receive;
+    const close = () => {};
+    close.restart = () => {};
+    close.retry = () => {};
+    return close;
+  });
   vi.stubGlobal(
     "fetch",
     vi.fn((request: Request) => {
       const path = decodeURIComponent(new URL(request.url).pathname);
-      if (path === "/api/events")
-        return Promise.resolve(
-          new Response(
-            new ReadableStream<Uint8Array>({
-              start(controller) {
-                summary = controller;
-              },
-            }),
-          ),
-        );
       if (path === "/api/configuration/sources/agents/assistant.yaml")
         return Promise.resolve(json(accepted));
       return Promise.resolve(fixture(request));
@@ -465,11 +476,11 @@ it("keeps a dirty draft when summary invalidation discovers an external publicat
     source_digest: "new-generation",
     content: source.content.replace("Assistant", "Other author"),
   };
-  summary.enqueue(
-    new TextEncoder().encode(
-      'data: {"kind":"invalidation","resume_cursor":"epoch:2","event":{"kind":"configuration"}}\n\n',
-    ),
-  );
+  summary({
+    kind: "invalidation",
+    resume_cursor: "epoch:2",
+    event: { kind: "configuration" },
+  });
   await screen.findByText(/This configuration changed elsewhere/);
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
     "Retained local name",
@@ -1068,28 +1079,32 @@ it("keeps destructive configuration actions secondary and requires named confirm
 it("shows one connection notice for server loss and reconciles on retry without replaying writes", async () => {
   let unavailable = true;
   let summaryRequests = 0;
+  vi.mocked(Realtime.prototype.subscribe).mockImplementation((subscription) => {
+    let active = true;
+    const emit = () => {
+      summaryRequests++;
+      queueMicrotask(() => {
+        if (!active) return;
+        if (unavailable) subscription.state("Reconnecting");
+        else
+          subscription.receive({
+            kind: "open",
+            resume_cursor: "restored",
+            resumed: false,
+          });
+      });
+    };
+    emit();
+    const close = () => {
+      active = false;
+    };
+    close.restart = emit;
+    close.retry = emit;
+    return close;
+  });
   const fetcher = vi.fn(async (request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/api/status") return json(status);
-    if (path === "/api/events") {
-      summaryRequests++;
-      if (unavailable) throw new TypeError("Failed to fetch");
-      return new Response(
-        new ReadableStream({
-          start(controller) {
-            controller.enqueue(
-              new TextEncoder().encode(
-                'data: {"kind":"open","resume_cursor":"restored"}\n\n',
-              ),
-            );
-            request.signal.addEventListener("abort", () => controller.close(), {
-              once: true,
-            });
-          },
-        }),
-        { headers: { "Content-Type": "text/event-stream" } },
-      );
-    }
     if (unavailable) throw new TypeError("Failed to fetch");
     return fixture(request);
   });

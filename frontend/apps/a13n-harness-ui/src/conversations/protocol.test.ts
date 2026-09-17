@@ -30,7 +30,7 @@ async function until(predicate: () => boolean) {
   });
 }
 
-it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focused SSE", async () => {
+it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focused realtime", async () => {
   const created = await result(
     transport.client.POST("/api/threads", {
       body: { title: "Protocol conversation" },
@@ -230,7 +230,7 @@ it("an uncertain admission retains input and cannot silently retry", async () =>
   }
 }, 15000);
 
-it("delivers actual final output over the global SSE after the Host settles the exact root receipt", async () => {
+it("delivers actual final output over the summary channel after the Host settles the exact root receipt", async () => {
   const { watchSummary } = await import("../transport/events");
   const events: import("../transport/client").Schema<"SummaryInvalidation">[] =
     [];
@@ -646,3 +646,135 @@ it("continues a failed operation as a new turn without consuming the shared draf
     vi.stubGlobal("window", { location: { origin: app.origin } });
   }
 }, 40000);
+
+it("multiplexes real summary and focus replay with independent reset and authenticated resume", async () => {
+  const created = await result(
+    transport.client.POST("/api/threads", {
+      body: { title: "Multiplexed root" },
+    }),
+  );
+  const frames: import("../transport/client").Schema<"RealtimeFrame">[] = [];
+  const socket = new WebSocket(
+    app.origin.replace("http:", "ws:") + "/api/realtime/connect",
+  );
+  const send = (value: unknown) => socket.send(JSON.stringify(value));
+  socket.onmessage = ({ data }) => {
+    const frame = JSON.parse(String(data));
+    if (frame.kind === "ping") send({ version: 1, kind: "pong" });
+    else frames.push(frame);
+  };
+  await new Promise<void>((resolve) => {
+    socket.onopen = () => resolve();
+  });
+  try {
+    send({ api_key: "test-only-key" });
+    send({
+      version: 1,
+      kind: "subscribe",
+      channel: "summary",
+      stream: "summary",
+    });
+    send({
+      version: 1,
+      kind: "subscribe",
+      channel: "root",
+      stream: "focus",
+      root_thread_id: created.thread_id,
+    });
+    await until(
+      () =>
+        frames.some(
+          (item) => item.channel === "summary" && item.frame.kind === "open",
+        ) &&
+        frames.some(
+          (item) => item.channel === "root" && item.frame.kind === "snapshot",
+        ),
+    );
+    const initial = frames.find(
+      (item) => item.channel === "root" && item.frame.kind === "snapshot",
+    )!.frame;
+    if (initial.kind !== "snapshot") throw new Error("Missing snapshot");
+    send({ version: 1, kind: "unsubscribe", channel: "root" });
+    send({
+      version: 1,
+      kind: "subscribe",
+      channel: "resumed",
+      stream: "focus",
+      root_thread_id: created.thread_id,
+      after: initial.resume_cursor,
+    });
+    const opened = frames.find(
+      (item) => item.channel === "summary" && item.frame.kind === "open",
+    )!.frame;
+    if (opened.kind !== "open") throw new Error("Missing summary open");
+    send({ version: 1, kind: "unsubscribe", channel: "summary" });
+    send({
+      version: 1,
+      kind: "subscribe",
+      channel: "summary-resumed",
+      stream: "summary",
+      after: opened.resume_cursor,
+    });
+    send({
+      version: 1,
+      kind: "subscribe",
+      channel: "invalid",
+      stream: "summary",
+      after: "invalid",
+    });
+    await until(() =>
+      frames.some(
+        (item) => item.channel === "invalid" && item.frame.kind === "reset",
+      ),
+    );
+    expect(
+      frames.find((item) => item.channel === "summary-resumed")?.frame,
+    ).toMatchObject({ kind: "open", resumed: true });
+    const receipt = await result(
+      transport.client.POST("/api/threads/{thread_id}/submit", {
+        params: { path: { thread_id: created.thread_id } },
+        body: { prompt: "Generate a response" },
+      }),
+    );
+    await until(
+      () =>
+        frames.some(
+          (item) => item.channel === "resumed" && item.frame.kind === "event",
+        ) &&
+        frames.some(
+          (item) =>
+            item.channel === "summary-resumed" &&
+            item.frame.kind === "invalidation" &&
+            item.frame.event.notice?.receipt_id === receipt.receipt_id,
+        ),
+    );
+    expect(
+      frames
+        .filter((item) => item.channel === "resumed")
+        .every((item) => item.frame.kind === "event"),
+    ).toBe(true);
+    const rows = await result(
+      transport.client.POST("/api/threads/activity/lookup", {
+        body: { thread_ids: [created.thread_id, created.thread_id, "missing"] },
+      }),
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].thread.completion?.version).toBeGreaterThan(0);
+  } finally {
+    socket.close();
+  }
+});
+
+it("rejects realtime access before exposing even heartbeat or application frames", async () => {
+  const socket = new WebSocket(
+    app.origin.replace("http:", "ws:") + "/api/realtime/connect",
+  );
+  const messages: unknown[] = [];
+  socket.onmessage = (event) => messages.push(event.data);
+  const closed = new Promise<number>((resolve) => {
+    socket.onclose = (event) => resolve(event.code);
+  });
+  socket.onopen = () => socket.send(JSON.stringify({ api_key: "incorrect" }));
+  expect(await closed).toBe(4401);
+  expect(messages).toEqual([]);
+});

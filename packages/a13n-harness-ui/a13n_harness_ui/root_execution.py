@@ -69,6 +69,7 @@ from a13n_harness_ui.storage import (
     Thread,
     ThreadConfigurationMutation,
 )
+from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
 from a13n_harness_ui.thread_files import ThreadFiles
@@ -509,27 +510,27 @@ class RootRunExecutor:
             return RootContinuationSelection(status="not_available")
         published_ref: ObjectRef | None = None
         try:
-            published_ref = (
-                await self._store.objects.publish_model(
-                    object_kind=ObjectKind.continuation,
-                    value=StoredContinuation(
-                        harness_release=harness_version,
-                        run_composition=composition,
-                        harness_state=with_display_history(
-                            state, display.capture(state.message_history, completed=completed_run_id is not None)
-                        )
-                        if display is not None
-                        else state,
-                        excerpt=excerpt,
-                        deferred_requests=deferred,
-                        created_at=datetime.now(UTC),
-                    ),
+            continuation = StoredContinuation(
+                harness_release=harness_version,
+                run_composition=composition,
+                harness_state=with_display_history(
+                    state, display.capture(state.message_history, completed=completed_run_id is not None)
                 )
+                if display is not None
+                else state,
+                excerpt=excerpt,
+                deferred_requests=deferred,
+                created_at=datetime.now(UTC),
+            )
+            read_model = project_continuation(continuation)
+            published_ref = (
+                await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=continuation)
             ).ref
             await self._store.threads.select_continuation(
                 thread_id=thread.thread_id,
                 expected=thread.continuation,
                 replacement=published_ref,
+                read_model=read_model,
                 completed_run_id=completed_run_id,
                 excerpt=excerpt,
                 activity_changed=activity_changed,

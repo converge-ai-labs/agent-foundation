@@ -15,7 +15,6 @@ from a13n_harness.capabilities import AskUserQuestionRequest
 from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, WorkingState
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, ThinkingPart, ToolCallPart, ToolReturnPart
 from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
@@ -166,7 +165,7 @@ class TerminalProjectionService:
             unavailable = tuple(sorted(set(recency) - source.projects.keys()))
         active_ids = await self._root_runs.active_thread_ids() if include_active else ()
         active_threads = []
-        if include_active and active_ids:
+        if include_active and active_ids and cursor is None:
             active_cursor = None
             while True:
                 active_page = await self._threads.list_threads(
@@ -199,22 +198,53 @@ class TerminalProjectionService:
             cursor=cursor,
             limit=limit,
         )
-        threads = (*active_threads, *page.threads)
+        active_total = len(active_threads)
+        if include_active and active_ids and cursor is not None:
+            # Preserve the scoped total on later pages without projecting active rows.
+            # The repository returns only bounded metadata alongside its filtered count.
+            _, active_total = await self._store.threads.list(
+                query=query,
+                project_id=project_id,
+                projectless=project_scope == "projectless",
+                project_ids=unavailable,
+                include_archived=include_archived,
+                archived_only=archived_only,
+                thread_ids=active_ids,
+                limit=1,
+            )
+        rows = await self._activity_rows((*active_threads, *page.threads), source)
+        return ThreadActivityPage(
+            project_id=project_id,
+            active_rows=rows[: len(active_threads)],
+            rows=rows[len(active_threads) :],
+            total=page.total + active_total,
+            next_cursor=page.next_cursor,
+        )
+
+    async def lookup_thread_activity(self, thread_ids: tuple[str, ...]) -> tuple[ThreadActivityView, ...]:
+        source = await self._required_configuration()
+        page = await self._threads.lookup_threads(thread_ids)
+        return await self._activity_rows(page.threads, source)
+
+    async def _activity_rows(
+        self, threads: tuple[ThreadSummary, ...], source: LoadedHarnessUiConfiguration
+    ) -> tuple[ThreadActivityView, ...]:
         thread_ids = tuple(item.thread_id for item in threads)
         latest = await self._root_runs.latest_many(thread_ids)
         counts, running = await self._store.child_executions.status_counts_for_roots(thread_ids)
         active_child_ids = await self._children.active_execution_ids()
-        references = await self._store.threads.continuation_references(thread_ids)
+        read_models = await self._store.threads.read_models(thread_ids)
         pending: dict[str, PendingDecisionSummary] = {}
         retained_activity: dict[str, ActivitySummary] = {}
-        for thread_id, reference in references.items():
-            continuation = await self._store.objects.read_model(reference, StoredContinuation)
-            summary = _pending_summary(continuation.deferred_requests)
+        for thread_id, read_model in read_models.items():
+            summary = _pending_summary(read_model.deferred_requests)
             if summary is not None:
                 pending[thread_id] = summary
-            activity = _retained_activity(continuation)
+            activity = read_model.latest_activity
             if activity is not None:
-                retained_activity[thread_id] = activity
+                retained_activity[thread_id] = ActivitySummary(
+                    kind=activity.kind, text=activity.text, occurred_at=activity.occurred_at
+                )
 
         rows: list[ThreadActivityView] = []
         for thread in threads:
@@ -276,13 +306,7 @@ class TerminalProjectionService:
                     available_actions=tuple(dict.fromkeys(actions)),
                 )
             )
-        return ThreadActivityPage(
-            project_id=project_id,
-            active_rows=tuple(rows[: len(active_threads)]),
-            rows=tuple(rows[len(active_threads) :]),
-            total=page.total + len(active_threads),
-            next_cursor=page.next_cursor,
-        )
+        return tuple(rows)
 
     async def note_page(
         self,
@@ -859,39 +883,6 @@ def _latest_activity(
     if children.active:
         return ActivitySummary(kind="child", text=f"{children.active} child execution(s) active")
     return retained
-
-
-def _retained_activity(continuation: StoredContinuation) -> ActivitySummary | None:
-    for message in reversed(continuation.harness_state.message_history):
-        if isinstance(message, ModelResponse):
-            for part in reversed(message.parts):
-                if isinstance(part, TextPart) and part.content.strip():
-                    return ActivitySummary(
-                        kind="assistant",
-                        text=part.content.strip()[:2048],
-                        occurred_at=message.timestamp,
-                    )
-                if isinstance(part, ThinkingPart) and part.content.strip():
-                    return ActivitySummary(
-                        kind="reasoning",
-                        text=part.content.strip()[:2048],
-                        occurred_at=message.timestamp,
-                    )
-                if isinstance(part, ToolCallPart):
-                    return ActivitySummary(
-                        kind="tool",
-                        text=part.tool_name,
-                        occurred_at=message.timestamp,
-                    )
-        elif isinstance(message, ModelRequest):
-            for part in reversed(message.parts):
-                if isinstance(part, ToolReturnPart):
-                    return ActivitySummary(
-                        kind="tool",
-                        text=part.tool_name,
-                        occurred_at=message.timestamp,
-                    )
-    return None
 
 
 def _scan_project_paths(

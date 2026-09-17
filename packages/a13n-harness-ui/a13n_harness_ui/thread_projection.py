@@ -5,15 +5,19 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
 from a13n_harness.model_context import user_prompt_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
+from anyio import Lock, to_thread
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
+    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     NativeToolCallPart,
@@ -100,6 +104,15 @@ class _InputCursor(SurfaceModel):
     position: int = Field(ge=0)
 
 
+@dataclass(frozen=True)
+class _HistorySnapshot:
+    history: tuple[ModelMessage, ...]
+    continuation_id: str
+    completed: tuple[int, ...]
+    turns: tuple[TranscriptTurn, ...]
+    encoded_bytes: int
+
+
 class ThreadProjectionService:
     """Read durable authority and return detached values for all App surfaces."""
 
@@ -115,6 +128,8 @@ class ThreadProjectionService:
         self._configurations = configurations
         self._root_activity = root_activity
         self._root_activities = root_activities
+        self._histories: OrderedDict[tuple[str, str], _HistorySnapshot] = OrderedDict()
+        self._history_lock = Lock()
 
     def set_root_activity_lookup(
         self,
@@ -234,12 +249,13 @@ class ThreadProjectionService:
         requests: tuple[DeferredRequestView, ...] = ()
         if thread.continuation is not None:
             continuation_id = thread.continuation.logical_digest
-            continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
-            requests = _deferred_requests(continuation.deferred_requests)
+            if thread.read_model is not None:
+                requests = _deferred_requests(thread.read_model.deferred_requests)
         actions: list[Literal["run", "respond", "wait", "steer", "cancel", "archive"]] = []
         if summary.root_activity.state is RootActivityState.inactive:
             if not thread.archived:
-                actions.append("respond" if requests else "run")
+                if thread.continuation is None or thread.read_model is not None:
+                    actions.append("respond" if requests else "run")
                 actions.append("archive")
         else:
             actions.extend(summary.root_activity.available_actions)
@@ -268,7 +284,7 @@ class ThreadProjectionService:
                 "The selected Thread continuation changed before transcript projection.",
                 code="thread_history_continuation_changed",
             )
-        turns = _transcript_turns(history, completed)
+        turns = await self._turns(thread_id, history, continuation_id, completed)
         upper_bound = len(history)
         if turn_id is not None and cursor is None:
             selected_turn = next((turn for turn in turns if turn.turn_id == turn_id), None)
@@ -355,7 +371,7 @@ class ThreadProjectionService:
             if decoded.thread_id != thread_id or decoded.continuation_id != continuation_id:
                 raise ThreadError("Input cursor belongs to another history.", code="thread_history_cursor_mismatch")
             position = decoded.position
-        turns = _transcript_turns(history, completed)
+        turns = await self._turns(thread_id, history, continuation_id, completed)
         if position > len(turns):
             raise ThreadError("Input cursor is outside history.", code="thread_history_cursor_invalid")
         end = min(len(turns), position + limit)
@@ -475,6 +491,37 @@ class ThreadProjectionService:
         )
 
     async def _history(self, thread: Thread) -> tuple[tuple[ModelMessage, ...], str, tuple[int, ...]]:
+        identity = (
+            thread.continuation.logical_digest
+            if thread.continuation
+            else f"initial:{thread.initial_state.logical_digest}"
+        )
+        key = (thread.thread_id, identity)
+        async with self._history_lock:
+            snapshot = self._histories.pop(key, None)
+            if snapshot is None:
+                history, continuation_id, completed = await self._load_history(thread)
+                turns = await to_thread.run_sync(_transcript_turns, history, completed)
+                size = await to_thread.run_sync(lambda: len(ModelMessagesTypeAdapter.dump_json(list(history))))
+                snapshot = _HistorySnapshot(history, continuation_id, completed, turns, size)
+            # Inspection-only values are private; execution always reads verified state.
+            self._histories[key] = snapshot
+            while self._histories and (
+                len(self._histories) > 4
+                or sum(item.encoded_bytes for item in self._histories.values()) > 16 * 1024 * 1024
+            ):
+                self._histories.popitem(last=False)
+            return snapshot.history, snapshot.continuation_id, snapshot.completed
+
+    async def _turns(
+        self, thread_id: str, history: tuple[ModelMessage, ...], continuation_id: str, completed: tuple[int, ...]
+    ) -> tuple[TranscriptTurn, ...]:
+        cached = self._histories.get((thread_id, continuation_id))
+        if cached is not None:
+            return cached.turns
+        return await to_thread.run_sync(_transcript_turns, history, completed)
+
+    async def _load_history(self, thread: Thread) -> tuple[tuple[ModelMessage, ...], str, tuple[int, ...]]:
         completed: tuple[int, ...] = ()
         if thread.continuation is None:
             stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
@@ -484,11 +531,8 @@ class ThreadProjectionService:
         else:
             stored_continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
             state = stored_continuation.harness_state
-            history = (
-                display.messages
-                if (display := stored_continuation.display_history) is not None
-                else state.message_history
-            )
+            display = await to_thread.run_sync(lambda: stored_continuation.display_history)
+            history = display.messages if display is not None else state.message_history
             if display is not None:
                 completed = display.completed_responses
             continuation_id = thread.continuation.logical_digest
@@ -692,7 +736,7 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
                 text=content
                 if isinstance(content, str) and (metadata.model_extra or {}).get("a13n.context") == "handoff"
                 else _bounded_text(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)),
-                metadata=metadata,
+                metadata=metadata.model_copy(deep=True),
             )
             for item in user_prompt_content(part)
             if (projected := project_input_content(item)) is not None

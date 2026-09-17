@@ -124,16 +124,27 @@ async def test_child_question_competing_response_history_and_restart(
             second = resumed.json()["receipt_id"]
             with fail_after(10):
                 await resumed_started.wait()
-            # Snapshot/replay delivery is observation only: closing this HTTP
-            # subscription must not cancel the root operation or start another one.
-            async with api.stream("GET", prefix + "/events") as observation:
-                assert observation.status_code == 200
+            # Closing an observation must not cancel or restart the root operation.
+            async with connect(ws + "/api/realtime/connect", proxy=None, origin=http) as observation:
+                await observation.send('{"api_key":"test-only-key"}')
+                await observation.send(
+                    json.dumps(
+                        {
+                            "version": 1,
+                            "kind": "subscribe",
+                            "channel": "focus",
+                            "stream": "focus",
+                            "root_thread_id": thread_id,
+                        }
+                    )
+                )
                 frames = []
                 with fail_after(5):
-                    async for line in observation.aiter_lines():
-                        if not line.startswith("data: "):
+                    async for message in observation:
+                        envelope = json.loads(message)
+                        if "frame" not in envelope:
                             continue
-                        frame = json.loads(line[6:])
+                        frame = envelope["frame"]
                         frames.append(frame)
                         if frame["kind"] == "ready" or (
                             frame["kind"] == "snapshot" and frame["resume_cursor"] is not None
@@ -257,18 +268,32 @@ async def test_child_streams_provisional_text_before_message_close_and_saved_com
         return FunctionModel(stream_function=stream)
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
-    async with listener(tmp_path, configuration_path=root) as (http, _ws):
+    async with listener(tmp_path, configuration_path=root) as (http, ws):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False, timeout=30) as api:
             thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
             prefix = f"/api/threads/{thread_id}"
 
             async def watch():
-                async with api.stream("GET", prefix + "/events") as response:
-                    subscribed.set()
-                    async for line in response.aiter_lines():
-                        if not line.startswith("data: "):
+                async with connect(ws + "/api/realtime/connect", proxy=None, origin=http) as response:
+                    await response.send('{"api_key":"test-only-key"}')
+                    await response.send(
+                        json.dumps(
+                            {
+                                "version": 1,
+                                "kind": "subscribe",
+                                "channel": "focus",
+                                "stream": "focus",
+                                "root_thread_id": thread_id,
+                            }
+                        )
+                    )
+                    async for message in response:
+                        envelope = json.loads(message)
+                        if "frame" not in envelope:
                             continue
-                        frame = json.loads(line[6:])
+                        frame = envelope["frame"]
+                        if frame["kind"] == "snapshot":
+                            subscribed.set()
                         if frame["kind"] != "event" or frame["event"]["run_kind"] != "child":
                             continue
                         event = frame["event"]

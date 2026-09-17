@@ -86,10 +86,10 @@ Attachments use the existing Thread-scoped input identity and limits. Draft/cont
 | -------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------ |
 | Current page and editor presence | Authenticated interactive updates and current membership snapshots | Current App participation only                   |
 | Shared composer                  | Authenticated bidirectional CRDT synchronization                   | In-memory draft document                         |
-| Thread execution and history     | Existing focused SSE plus detached history queries                 | Existing Run observations and saved continuation |
+| Thread execution and history     | Focused realtime channels plus detached history queries            | Existing Run observations and saved continuation |
 | Published comments               | Ordinary App write/read operations and post-commit refetch hints   | Persisted comment records                        |
 
-A Thread SSE update or reset does not reset the composer, clear published comments, or change the participant's page. A draft update does not append an assistant message or alter saved history. The frontend keeps these state owners independent of component rerendering. There is no global ordering or transaction across SSE, interactive delivery, and HTTP acknowledgements; submission and comment publication use their own explicit completion boundaries.
+A Thread observation update or reset does not reset the composer, clear published comments, or change the participant's page. A draft update does not append an assistant message or alter saved history. The frontend keeps these state owners independent of component rerendering. There is no global ordering or transaction across realtime observation, interactive delivery, and HTTP acknowledgements; submission and comment publication use their own explicit completion boundaries.
 
 After a page reload, the browser reestablishes presence, reloads saved history, and rejoins an available draft independently. Comment reads remain disabled in the current browser. A draft incarnation change is not a comment reset. A presence snapshot is not proof that all Thread events or comments have been received.
 
@@ -127,4 +127,4 @@ Uncertainty is not proof of rollback. A provider or tool operation might have ta
 08. Shared control decisions use existing exact-receipt and exact-continuation authority.
 09. Page presence works without a draft and never changes another participant's navigation.
 10. Background tabs are not presented as confirmed foreground attention; duplicate names are not merged into verified users.
-11. Thread SSE resets and draft synchronization cannot overwrite one another's state or erase published comments.
+11. Thread observation resets and draft synchronization cannot overwrite one another's state or erase published comments.

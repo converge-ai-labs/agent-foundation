@@ -1,4 +1,5 @@
 import createClient from "openapi-fetch";
+import { Realtime } from "./realtime";
 import type { components, paths } from "../api.generated";
 
 export type Schema<K extends keyof components["schemas"]> =
@@ -53,6 +54,13 @@ export function createTransport(key: string, onUnauthorized: () => void) {
   // One lifetime covers queries, writes and response bodies, including open SSE streams.
   // Closing observation does not roll back a write the server may already have accepted.
   const lifetime = new AbortController();
+  const realtime = new Realtime(key, () => {
+    lifetime.abort();
+    onUnauthorized();
+  });
+  lifetime.signal.addEventListener("abort", () => realtime.close(), {
+    once: true,
+  });
   const authenticatedFetch: typeof fetch = async (input, init) => {
     lifetime.signal.throwIfAborted();
     const request = new Request(
@@ -91,6 +99,7 @@ export function createTransport(key: string, onUnauthorized: () => void) {
       fetch: authenticatedFetch,
     }),
     fetch: authenticatedFetch,
+    realtime,
     key,
     close() {
       lifetime.abort();

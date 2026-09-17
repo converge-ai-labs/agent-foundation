@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
+import { Realtime } from "../transport/realtime";
 import { ComposerDrafts } from "./composer";
 import { ThreadDraft, encode, values } from "./draft";
 import {
@@ -35,6 +36,7 @@ let readPaused: Promise<void> | undefined;
 let readFailure = false;
 let historyPaused: Promise<void> | undefined;
 let focusPaused: Promise<void> | undefined;
+let focusUnavailable = false;
 let focused: Schema<"ThreadFocusSnapshot"> | undefined;
 const threadDetail: Schema<"ThreadDetail"> = {
   thread: {
@@ -74,6 +76,38 @@ beforeEach(() => {
   historyPaused = undefined;
   focusPaused = undefined;
   focused = undefined;
+  focusUnavailable = false;
+  vi.spyOn(Realtime.prototype, "subscribe").mockImplementation(
+    (subscription) => {
+      let active = true;
+      subscription.state("Connecting");
+      const emit = () =>
+        void Promise.resolve(focusPaused).then(() => {
+          if (!active) return;
+          if (focusUnavailable) {
+            subscription.state("Reconnecting");
+            return;
+          }
+          subscription.receive({
+            kind: "snapshot",
+            resume_cursor: "cursor-one",
+            snapshot: focused ?? {
+              epoch: "epoch-one",
+              cutover_sequence: 0,
+              thread: threadDetail,
+              children: { executions: [], total: 0 },
+            },
+          });
+        });
+      emit();
+      const close = () => {
+        active = false;
+      };
+      close.restart = emit;
+      close.retry = emit;
+      return close;
+    },
+  );
   drafts = new Map();
   localStorage.clear();
   creations = new NewDraftStore();
@@ -199,32 +233,6 @@ beforeEach(() => {
               500,
             );
           return json(detail);
-        }
-        if (pathname === `/api/threads/${id}/events`) {
-          await focusPaused;
-          const snapshot = focused ?? {
-            epoch: "epoch-one",
-            cutover_sequence: 0,
-            thread: threadDetail,
-            children: { executions: [], total: 0 },
-          };
-          return new Response(
-            new ReadableStream({
-              start(controller) {
-                controller.enqueue(
-                  new TextEncoder().encode(
-                    `data: ${JSON.stringify({ kind: "snapshot", snapshot, resume_cursor: "cursor-one" })}\n\n`,
-                  ),
-                );
-                request.signal.addEventListener(
-                  "abort",
-                  () => controller.close(),
-                  { once: true },
-                );
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          );
         }
         if (pathname.endsWith("/tasks")) return json({ tasks: [] });
         if (pathname.endsWith("/children"))
@@ -612,7 +620,13 @@ it("reveals the new conversation together after detail, history and editor initi
   const view = mount();
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await waitFor(() => expect(reads).toContain(`/api/threads/${id}/events`));
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(Realtime.prototype.subscribe)
+        .mock.calls.some(([channel]) => channel.root === id),
+    ).toBe(true),
+  );
   const editor = view.container.querySelector('[role="textbox"]')!;
   const input = screen.getByText("Build this");
   expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
@@ -1138,12 +1152,7 @@ it("waits for focused replay on an existing conversation and retains the page fo
 });
 
 it("shows saved content with a reconnect notice when the initial live connection fails", async () => {
-  const original = vi.mocked(fetch).getMockImplementation()!;
-  vi.mocked(fetch).mockImplementation(async (request) =>
-    new URL((request as Request).url).pathname.endsWith("/events")
-      ? new Response("Unavailable", { status: 503 })
-      : original(request),
-  );
+  focusUnavailable = true;
   mount(`/threads/${id}`);
   await screen.findByRole("textbox", { name: "Shared prompt" });
   expect(await screen.findByText(/Reconnecting live updates/)).toBeTruthy();
