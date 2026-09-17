@@ -5307,54 +5307,54 @@
         "type": "object"
       },
       "ChildActivityView": {
-        "additionalProperties": false,
         "properties": {
           "sequence": {
-            "minimum": 0,
-            "title": "Sequence",
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sequence"
           },
           "output_preview": {
-            "default": "",
+            "type": "string",
             "maxLength": 32768,
             "title": "Output Preview",
-            "type": "string"
+            "default": ""
           },
           "output_truncated": {
-            "default": false,
+            "type": "boolean",
             "title": "Output Truncated",
-            "type": "boolean"
+            "default": false
           },
           "active_tool_calls": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/ChildToolCallView"
             },
+            "type": "array",
             "maxItems": 20,
             "title": "Active Tool Calls",
-            "type": "array"
+            "default": []
           },
           "recent_tool_calls": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/ChildToolCallView"
             },
+            "type": "array",
             "maxItems": 20,
             "title": "Recent Tool Calls",
-            "type": "array"
+            "default": []
           },
           "dropped_tool_calls": {
-            "default": 0,
-            "minimum": 0,
+            "type": "integer",
+            "minimum": 0.0,
             "title": "Dropped Tool Calls",
-            "type": "integer"
+            "default": 0
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "sequence"
         ],
-        "title": "ChildActivityView",
-        "type": "object"
+        "title": "ChildActivityView"
       },
       "ChildControlResult": {
         "properties": {
@@ -5409,98 +5409,97 @@
         "title": "ChildControlResult"
       },
       "ChildExecutionPage": {
-        "additionalProperties": false,
         "properties": {
           "executions": {
             "items": {
               "$ref": "#/components/schemas/ChildExecutionView"
             },
-            "title": "Executions",
-            "type": "array"
+            "type": "array",
+            "title": "Executions"
           },
           "total": {
-            "minimum": 0,
-            "title": "Total",
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total"
           },
           "next_cursor": {
             "anyOf": [
               {
+                "type": "string",
                 "maxLength": 4096,
-                "minLength": 1,
-                "type": "string"
+                "minLength": 1
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Next Cursor"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "executions",
           "total"
         ],
-        "title": "ChildExecutionPage",
-        "type": "object"
+        "title": "ChildExecutionPage"
       },
       "ChildExecutionView": {
-        "additionalProperties": false,
         "properties": {
           "execution_id": {
+            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Execution Id",
-            "type": "string"
+            "title": "Execution Id"
           },
           "root_thread_id": {
+            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Root Thread Id",
-            "type": "string"
+            "title": "Root Thread Id"
           },
           "parent_thread_id": {
+            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Parent Thread Id",
-            "type": "string"
+            "title": "Parent Thread Id"
           },
           "child_thread_id": {
+            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Child Thread Id",
-            "type": "string"
+            "title": "Child Thread Id"
           },
           "child_run_id": {
+            "type": "string",
             "maxLength": 80,
             "minLength": 1,
-            "title": "Child Run Id",
-            "type": "string"
+            "title": "Child Run Id"
           },
           "segment_index": {
-            "minimum": 0,
-            "title": "Segment Index",
-            "type": "integer"
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Segment Index"
           },
           "composition_id": {
+            "type": "string",
             "pattern": "^[0-9a-f]{64}$",
-            "title": "Composition Id",
-            "type": "string"
+            "title": "Composition Id"
           },
           "subagent_name": {
+            "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Subagent Name",
-            "type": "string"
+            "title": "Subagent Name"
           },
           "child_definition_id": {
+            "type": "string",
             "maxLength": 256,
             "minLength": 1,
-            "title": "Child Definition Id",
-            "type": "string"
+            "title": "Child Definition Id"
           },
           "persisted_status": {
+            "type": "string",
             "enum": [
               "running",
               "succeeded",
@@ -5508,29 +5507,27 @@
               "cancelled",
               "lost"
             ],
-            "title": "Persisted Status",
-            "type": "string"
+            "title": "Persisted Status"
           },
           "local_status": {
+            "type": "string",
             "enum": [
               "active",
               "unavailable"
             ],
-            "title": "Local Status",
-            "type": "string"
+            "title": "Local Status"
           },
           "resumed_from": {
             "anyOf": [
               {
+                "type": "string",
                 "maxLength": 80,
-                "minLength": 1,
-                "type": "string"
+                "minLength": 1
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Resumed From"
           },
           "failure": {
@@ -5541,53 +5538,60 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "resumable": {
-            "title": "Resumable",
-            "type": "boolean"
+            "type": "boolean",
+            "title": "Resumable"
           },
           "activity": {
-            "$ref": "#/components/schemas/ChildActivityView"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChildActivityView"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "available_actions": {
-            "default": [],
             "items": {
+              "type": "string",
               "enum": [
                 "wait",
                 "steer",
                 "cancel"
-              ],
-              "type": "string"
+              ]
             },
+            "type": "array",
             "title": "Available Actions",
-            "type": "array"
+            "default": []
           },
           "created_at": {
+            "type": "string",
             "format": "date-time",
-            "title": "Created At",
-            "type": "string"
+            "title": "Created At"
           },
           "updated_at": {
+            "type": "string",
             "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
+            "title": "Updated At"
           },
           "completed_at": {
             "anyOf": [
               {
-                "format": "date-time",
-                "type": "string"
+                "type": "string",
+                "format": "date-time"
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Completed At"
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "execution_id",
           "root_thread_id",
@@ -5601,12 +5605,10 @@
           "persisted_status",
           "local_status",
           "resumable",
-          "activity",
           "created_at",
           "updated_at"
         ],
-        "title": "ChildExecutionView",
-        "type": "object"
+        "title": "ChildExecutionView"
       },
       "ChildOutputLocation": {
         "additionalProperties": false,
@@ -5692,21 +5694,21 @@
         "title": "ChildStatusCounts"
       },
       "ChildToolCallView": {
-        "additionalProperties": false,
         "properties": {
           "tool_call_id": {
+            "type": "string",
             "maxLength": 256,
             "minLength": 1,
-            "title": "Tool Call Id",
-            "type": "string"
+            "title": "Tool Call Id"
           },
           "tool_name": {
+            "type": "string",
             "maxLength": 256,
             "minLength": 1,
-            "title": "Tool Name",
-            "type": "string"
+            "title": "Tool Name"
           },
           "status": {
+            "type": "string",
             "enum": [
               "running",
               "success",
@@ -5714,8 +5716,7 @@
               "denied",
               "interrupted"
             ],
-            "title": "Status",
-            "type": "string"
+            "title": "Status"
           },
           "arguments": {
             "anyOf": [
@@ -5725,8 +5726,7 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           },
           "result": {
             "anyOf": [
@@ -5736,17 +5736,17 @@
               {
                 "type": "null"
               }
-            ],
-            "default": null
+            ]
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "tool_call_id",
           "tool_name",
           "status"
         ],
-        "title": "ChildToolCallView",
-        "type": "object"
+        "title": "ChildToolCallView"
       },
       "CodexSubscriptionAuthentication": {
         "properties": {
@@ -10297,146 +10297,142 @@
         "title": "StructuredQuestionRequestView"
       },
       "TaskPage": {
-        "additionalProperties": false,
         "properties": {
           "continuation_id": {
             "anyOf": [
               {
-                "pattern": "^(?:initial:)?[0-9a-f]{64}$",
-                "type": "string"
+                "type": "string",
+                "pattern": "^(?:initial:)?[0-9a-f]{64}$"
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Continuation Id"
           },
           "version": {
             "anyOf": [
               {
-                "minimum": 1,
-                "type": "integer"
+                "type": "integer",
+                "minimum": 1.0
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Version"
           },
           "tasks": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/TaskView"
             },
+            "type": "array",
             "maxItems": 256,
             "title": "Tasks",
-            "type": "array"
+            "default": []
           },
           "total": {
-            "default": 0,
-            "minimum": 0,
+            "type": "integer",
+            "minimum": 0.0,
             "title": "Total",
-            "type": "integer"
+            "default": 0
           },
           "omitted": {
-            "default": 0,
-            "minimum": 0,
+            "type": "integer",
+            "minimum": 0.0,
             "title": "Omitted",
-            "type": "integer"
+            "default": 0
           },
           "available": {
-            "default": true,
+            "type": "boolean",
             "title": "Available",
-            "type": "boolean"
+            "default": true
           }
         },
-        "title": "TaskPage",
-        "type": "object"
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskPage"
       },
       "TaskView": {
-        "additionalProperties": false,
         "properties": {
           "task_id": {
+            "type": "string",
             "maxLength": 64,
             "minLength": 1,
-            "title": "Task Id",
-            "type": "string"
+            "title": "Task Id"
           },
           "version": {
-            "minimum": 1,
-            "title": "Version",
-            "type": "integer"
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
           },
           "subject": {
+            "type": "string",
             "maxLength": 512,
             "minLength": 1,
-            "title": "Subject",
-            "type": "string"
+            "title": "Subject"
           },
           "active_form": {
             "anyOf": [
               {
-                "maxLength": 512,
-                "type": "string"
+                "type": "string",
+                "maxLength": 512
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Active Form"
           },
           "status": {
+            "type": "string",
             "enum": [
               "pending",
               "in_progress",
               "completed"
             ],
-            "title": "Status",
-            "type": "string"
+            "title": "Status"
           },
           "owner": {
             "anyOf": [
               {
-                "maxLength": 256,
-                "type": "string"
+                "type": "string",
+                "maxLength": 256
               },
               {
                 "type": "null"
               }
             ],
-            "default": null,
             "title": "Owner"
           },
           "blocks": {
-            "default": [],
             "items": {
               "type": "string"
             },
+            "type": "array",
             "maxItems": 256,
             "title": "Blocks",
-            "type": "array"
+            "default": []
           },
           "blocked_by": {
-            "default": [],
             "items": {
               "type": "string"
             },
+            "type": "array",
             "maxItems": 256,
             "title": "Blocked By",
-            "type": "array"
+            "default": []
           }
         },
+        "additionalProperties": false,
+        "type": "object",
         "required": [
           "task_id",
           "version",
           "subject",
           "status"
         ],
-        "title": "TaskView",
-        "type": "object"
+        "title": "TaskView"
       },
       "TerminalPage": {
         "additionalProperties": false,
@@ -12734,12 +12730,6 @@
             ],
             "default": null
           },
-          "children": {
-            "$ref": "#/components/schemas/ChildExecutionPage"
-          },
-          "tasks": {
-            "$ref": "#/components/schemas/TaskPage"
-          },
           "recent_events": {
             "default": [],
             "items": {
@@ -12763,8 +12753,7 @@
         "required": [
           "epoch",
           "cutover_sequence",
-          "thread",
-          "children"
+          "thread"
         ],
         "title": "ThreadFocusSnapshot",
         "type": "object"

@@ -86,6 +86,7 @@ async def authorize_interaction(
     session_id: str,
     agent_id: str | None,
     action: WorkspaceAction,
+    reuse_request_authentication: bool = False,
 ) -> AuthorizedWorkspace:
     conversation = await session.get(SessionRecord, session_id)
     if conversation is None or conversation.workspace_id != workspace_id:
@@ -103,8 +104,21 @@ async def authorize_interaction(
         )
         return AuthorizedWorkspace(conversation.organization_id, workspace_id, actor)
     if agent_id is None:
-        return await authorize_workspace(session, actor=actor, workspace_id=workspace_id, action=action)
-    return await authorize_agent(session, actor=actor, workspace_id=workspace_id, agent_id=agent_id, action=action)
+        return await authorize_workspace(
+            session,
+            actor=actor,
+            workspace_id=workspace_id,
+            action=action,
+            reuse_request_authentication=reuse_request_authentication,
+        )
+    return await authorize_agent(
+        session,
+        actor=actor,
+        workspace_id=workspace_id,
+        agent_id=agent_id,
+        action=action,
+        reuse_request_authentication=reuse_request_authentication,
+    )
 
 
 async def authorize_retained_execution(session: AsyncSession, *, source: Run, workspace_id: str) -> None:

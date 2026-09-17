@@ -338,3 +338,60 @@ async def test_child_streams_provisional_text_before_message_close_and_saved_com
                 saved = await api.get(prefix + f"/children/{child['execution_id']}/saved-output")
                 assert "Retained final text." in saved.text
                 assert sum(event["event_type"] == "RUN_FINISHED" for event in child_events) == 1
+
+
+async def test_realtime_observes_all_active_roots_with_bounded_idle_capacity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    release = Event()
+
+    async def stream(messages, info):
+        yield "Running"
+        await release.wait()
+        yield " done"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with listener(tmp_path, configuration_path=_write_configuration(tmp_path)) as (http, ws):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False, timeout=30) as api:
+            roots = [(await api.post("/api/threads", json={})).json()["thread_id"] for _ in range(32)]
+            receipts = []
+            for root in roots[:20]:
+                response = await api.post(f"/api/threads/{root}/submit", json={"prompt": "Hold"})
+                assert response.status_code == 200, response.text
+                receipts.append(response.json()["receipt_id"])
+            try:
+                async with connect(ws + "/api/realtime/connect", proxy=None, origin=http) as socket:
+                    await socket.send('{"api_key":"test-only-key"}')
+
+                    async def subscribe(channel, root=None, after=None):
+                        await socket.send(
+                            json.dumps(
+                                {
+                                    "kind": "subscribe",
+                                    "channel": channel,
+                                    "stream": "summary" if root is None else "focus",
+                                    "root_thread_id": root,
+                                    "after": after,
+                                }
+                            )
+                        )
+                        return await frame_until(socket, lambda value: value.get("channel") == channel)
+
+                    assert (await subscribe("summary"))["frame"]["kind"] == "open"
+                    for index, root in enumerate(roots[:31]):
+                        frame = (await subscribe(f"root-{index}", root))["frame"]
+                        assert frame["kind"] == "snapshot", frame
+                    # Twenty admitted roots do not spend the idle allowance.
+                    rejected = (await subscribe("overflow", roots[31]))["frame"]
+                    assert rejected == {"kind": "reset", "reason": "channel_limit"}
+                    duplicate = (await subscribe("duplicate", roots[0]))["frame"]
+                    assert duplicate["reason"] == "channel_limit"
+                    await socket.send(json.dumps({"kind": "unsubscribe", "channel": "root-30"}))
+                    assert (await subscribe("replacement", roots[31]))["frame"]["kind"] == "snapshot"
+            finally:
+                release.set()
+            for receipt in receipts:
+                assert (await settled(api, receipt))["status"] == "completed"

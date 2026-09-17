@@ -59,6 +59,34 @@ def _run_references() -> tuple[ForeignKeyConstraint, ...]:
 class ThreadInboxRecord(Base):
     __tablename__ = "thread_inbox"
     __table_args__ = (
+        CheckConstraint(
+            "(idempotency_actor_type IS NULL AND idempotency_actor_id IS NULL "
+            "AND idempotency_key_digest IS NULL AND idempotency_request_digest IS NULL "
+            "AND idempotency_expires_at IS NULL) OR "
+            "(kind = 'steer' AND idempotency_actor_type IS NOT NULL "
+            "AND idempotency_actor_type IN ('user', 'service_account') "
+            "AND idempotency_actor_id IS NOT NULL AND idempotency_key_digest IS NOT NULL "
+            "AND length(idempotency_key_digest) = 64 AND idempotency_request_digest IS NOT NULL "
+            "AND length(idempotency_request_digest) = 64 AND idempotency_expires_at IS NOT NULL "
+            "AND idempotency_expires_at > created_at)",
+            name="steer_idempotency_valid",
+        ),
+        Index(
+            "uq_thread_inbox_steer_idempotency",
+            "organization_id",
+            "accepted_against_run_id",
+            "idempotency_actor_type",
+            "idempotency_actor_id",
+            "idempotency_key_digest",
+            unique=True,
+            postgresql_where=text("kind = 'steer' AND idempotency_key_digest IS NOT NULL"),
+        ),
+        Index(
+            "ix_thread_inbox_idempotency_expiry",
+            "idempotency_expires_at",
+            "id",
+            postgresql_where=text("idempotency_expires_at IS NOT NULL"),
+        ),
         ForeignKeyConstraint(
             ("organization_id", "thread_id"),
             ("threads.organization_id", "threads.id"),
@@ -152,6 +180,11 @@ class ThreadInboxRecord(Base):
     kind: Mapped[str] = mapped_column(String(32), nullable=False)
     delivery_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False)
     accepted_against_run_id: Mapped[str | None] = mapped_column(String(72))
+    idempotency_actor_type: Mapped[str | None] = mapped_column(String(32))
+    idempotency_actor_id: Mapped[str | None] = mapped_column(String(72))
+    idempotency_key_digest: Mapped[str | None] = mapped_column(String(64))
+    idempotency_request_digest: Mapped[str | None] = mapped_column(String(64))
+    idempotency_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     target_run_id: Mapped[str | None] = mapped_column(String(72))
     source_waiting_run_id: Mapped[str | None] = mapped_column(String(72))
     origin_run_id: Mapped[str | None] = mapped_column(String(72))

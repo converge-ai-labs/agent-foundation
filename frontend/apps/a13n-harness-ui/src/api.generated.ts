@@ -1751,10 +1751,7 @@ export interface components {
             executions: components["schemas"]["ChildExecutionView"][];
             /** Total */
             total: number;
-            /**
-             * Next Cursor
-             * @default null
-             */
+            /** Next Cursor */
             next_cursor?: string | null;
         };
         /** ChildExecutionView */
@@ -1787,16 +1784,12 @@ export interface components {
              * @enum {string}
              */
             local_status: "active" | "unavailable";
-            /**
-             * Resumed From
-             * @default null
-             */
+            /** Resumed From */
             resumed_from?: string | null;
-            /** @default null */
             failure?: components["schemas"]["FailureView"] | null;
             /** Resumable */
             resumable: boolean;
-            activity: components["schemas"]["ChildActivityView"];
+            activity?: components["schemas"]["ChildActivityView"] | null;
             /**
              * Available Actions
              * @default []
@@ -1812,10 +1805,7 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-            /**
-             * Completed At
-             * @default null
-             */
+            /** Completed At */
             completed_at?: string | null;
         };
         /** ChildOutputLocation */
@@ -1879,9 +1869,7 @@ export interface components {
              * @enum {string}
              */
             status: "running" | "success" | "failed" | "denied" | "interrupted";
-            /** @default null */
             arguments?: components["schemas"]["JsonValue"] | null;
-            /** @default null */
             result?: components["schemas"]["JsonValue"] | null;
         };
         /** CodexSubscriptionAuthentication */
@@ -3607,15 +3595,9 @@ export interface components {
         };
         /** TaskPage */
         TaskPage: {
-            /**
-             * Continuation Id
-             * @default null
-             */
+            /** Continuation Id */
             continuation_id?: string | null;
-            /**
-             * Version
-             * @default null
-             */
+            /** Version */
             version?: number | null;
             /**
              * Tasks
@@ -3646,20 +3628,14 @@ export interface components {
             version: number;
             /** Subject */
             subject: string;
-            /**
-             * Active Form
-             * @default null
-             */
+            /** Active Form */
             active_form?: string | null;
             /**
              * Status
              * @enum {string}
              */
             status: "pending" | "in_progress" | "completed";
-            /**
-             * Owner
-             * @default null
-             */
+            /** Owner */
             owner?: string | null;
             /**
              * Blocks
@@ -4476,8 +4452,6 @@ export interface components {
             thread: components["schemas"]["ThreadDetail"];
             /** @default null */
             root_operation?: components["schemas"]["RootOperationView"] | null;
-            children: components["schemas"]["ChildExecutionPage"];
-            tasks?: components["schemas"]["TaskPage"];
             /**
              * Recent Events
              * @default []

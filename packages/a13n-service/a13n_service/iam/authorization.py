@@ -372,6 +372,7 @@ async def authorize_workspace(
     workspace_id: str,
     action: WorkspaceAction,
     snapshot: PrincipalPermissions | None = None,
+    reuse_request_authentication: bool = False,
 ) -> AuthorizedWorkspace:
     """Authorize one operation from current Principal, credential boundary, and grants."""
 
@@ -380,7 +381,9 @@ async def authorize_workspace(
         if action not in snapshot.workspace_actions:
             raise AuthorizationError("permission_denied", concealed=True)
         return authorized
-    context = await _load_workspace_authorization(session, actor=actor, workspace_id=workspace_id)
+    context = await _load_workspace_authorization(
+        session, actor=actor, workspace_id=workspace_id, reuse_request_authentication=reuse_request_authentication
+    )
     if action not in _workspace_permissions(context.bindings):
         raise AuthorizationError("permission_denied", concealed=True)
     return context.authorized
@@ -430,6 +433,7 @@ async def authorize_agent(
     agent_id: str,
     action: WorkspaceAction,
     snapshot: PrincipalPermissions | None = None,
+    reuse_request_authentication: bool = False,
 ) -> AuthorizedWorkspace:
     """Authorize one stable Agent through Workspace or direct Agent roles."""
 
@@ -444,6 +448,7 @@ async def authorize_agent(
         actor=actor,
         workspace_id=workspace_id,
         agent_id=agent_id,
+        reuse_request_authentication=reuse_request_authentication,
     )
     if action not in _agent_permissions(context.bindings, agent_id=agent_id):
         raise AuthorizationError("permission_denied", concealed=True)
@@ -559,8 +564,11 @@ async def _load_workspace_authorization(
     workspace_id: str,
     agent_id: str | None = None,
     include_agent_bindings: bool = False,
+    reuse_request_authentication: bool = False,
 ) -> _WorkspaceAuthorizationContext:
-    await require_current_credential(session, actor)
+    identity_verified = reuse_request_authentication and actor.request_authenticated
+    if not identity_verified:
+        await require_current_credential(session, actor)
     if actor.boundary_workspace_id is not None and actor.boundary_workspace_id != workspace_id:
         raise AuthorizationError("credential_boundary_mismatch", concealed=True)
 
@@ -570,6 +578,7 @@ async def _load_workspace_authorization(
         workspace_id=workspace_id,
         agent_id=agent_id,
         include_agent_bindings=include_agent_bindings,
+        identity_verified=identity_verified,
     )
     if (
         actor.boundary_organization_id is not None
@@ -593,6 +602,7 @@ async def _load_principal_authorization(
     workspace_id: str,
     agent_id: str | None = None,
     include_agent_bindings: bool = False,
+    identity_verified: bool = False,
 ) -> _PrincipalAuthorizationContext:
 
     workspace = await session.scalar(
@@ -601,10 +611,11 @@ async def _load_principal_authorization(
     if workspace is None:
         raise AuthorizationError("workspace_not_found", concealed=True)
 
-    if principal.principal_type is PrincipalType.user:
-        await _require_active_user(session, principal.principal_id)
-    else:
-        await _require_active_service_account(session, principal.principal_id, workspace)
+    if not identity_verified:
+        if principal.principal_type is PrincipalType.user:
+            await _require_active_user(session, principal.principal_id)
+        else:
+            await _require_active_service_account(session, principal.principal_id, workspace)
 
     bindings = tuple(
         (

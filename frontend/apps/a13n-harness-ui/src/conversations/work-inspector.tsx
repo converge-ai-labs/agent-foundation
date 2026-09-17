@@ -34,6 +34,30 @@ const rank = { in_progress: 0, pending: 1, completed: 2 };
 export function orderedTasks(tasks: Task[]) {
   return tasks.slice().sort((a, b) => rank[a.status] - rank[b.status]);
 }
+function taskProjection(
+  saved?: Schema<"TaskPage">,
+  observed?: Schema<"TaskPage">,
+) {
+  if (!observed || (saved?.version ?? -1) > (observed.version ?? -1))
+    return saved;
+  // Focus carries deltas, not an initial task directory. Preserve unchanged
+  // saved tasks without letting an older HTTP response replace live updates.
+  const tasks = new Map(
+    (saved?.tasks ?? []).map((task) => [task.task_id, task]),
+  );
+  for (const task of observed.tasks ?? []) {
+    if (task.version >= (tasks.get(task.task_id)?.version ?? -1))
+      tasks.set(task.task_id, task);
+  }
+  return {
+    ...saved,
+    ...observed,
+    tasks: [...tasks.values()].slice(-100),
+    omitted:
+      Math.max(saved?.omitted ?? 0, observed.omitted ?? 0) +
+      Math.max(0, tasks.size - 100),
+  };
+}
 function TaskIcon({ status }: { status: Task["status"] }) {
   const Icon =
     status === "completed"
@@ -167,6 +191,8 @@ export function WorkInspector({
   >(null);
   const saved = useQuery({
     queryKey: ["thread", threadId, "tasks", continuation],
+    enabled: tab === "tasks",
+    staleTime: Infinity,
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}/tasks", {
@@ -181,12 +207,14 @@ export function WorkInspector({
         }),
       ),
   });
-  const children = useChildExecutions(threadId);
+  const children = useChildExecutions(threadId, tab === "children");
   const current = display.tasks;
-  const page =
+  const page = taskProjection(
+    saved.data,
     current && (live || display.baseContinuation === continuation)
       ? current
-      : saved.data;
+      : undefined,
+  );
   const tasks = orderedTasks(page?.tasks ?? []);
   const active = tasks.find((task) => task.status === "in_progress");
   const complete = tasks.filter((task) => task.status === "completed").length;

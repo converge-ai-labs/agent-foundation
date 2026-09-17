@@ -1083,7 +1083,9 @@ async def test_steer_is_atomic_replayable_and_does_not_advance_thread(
         )
     assert thread is not None and thread.version == 1 and thread.queue_version == 0
     assert len(entries) == 1
-    assert len(evidence) == 1
+    assert len(evidence) == 0
+    assert entries[0].idempotency_actor_id == USER_ID
+    assert entries[0].idempotency_key_digest is not None
 
 
 async def test_steer_idempotency_rejects_changed_input(

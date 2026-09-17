@@ -348,14 +348,18 @@ async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() 
             observer=observer,
         )
 
-    await start("thread-active", "run-active")
+    for index in range(20):
+        await start(f"thread-active-{index}", f"run-active-{index}")
     for index in range(257):
         thread_id = f"thread-{index}"
         await start(thread_id, f"run-{index}")
         await hub.finish_root(thread_id=thread_id, run_id=f"run-{index}", saved_continuation_id=None)
     assert len(hub._terminal_streams) == 256
     assert "thread-0" not in hub._root_streams
-    assert "thread-active" in hub._root_streams
+    for index in range(20):
+        assert f"thread-active-{index}" in hub._root_streams
+        assert f"thread-active-{index}" in hub._root_rings
+    assert len(hub._root_rings) == 36
     await start("thread-256", "run-replacement")
     await hub.finish_root(thread_id="thread-256", run_id="run-256", saved_continuation_id="old-save")
     async with hub.subscribe(root_thread_id="thread-256") as subscription:

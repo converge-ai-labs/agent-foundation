@@ -76,6 +76,8 @@ Collection checks both outgoing work and incoming references. It preserves evide
 
 ### Evidence and Lifecycle Retention
 
+The sweep also clears expired public-steer idempotency metadata in bounded inbox batches using row locks with `SKIP LOCKED`. It never acquires Thread locks or removes accepted input; [Steer Idempotency Storage](19-agent-control-active-execution.md#steer-idempotency-storage) owns the replay window and lazy replacement rules.
+
 The HTTP evidence sweep covers the shared command evidence independently of protocol bindings, execution identities, and security audit. Expired evidence never proves that an earlier external operation did not happen.
 
 Outbox retention evaluates each source and destination under its own delivery-audit, duplicate-suppression, redrive, and progress requirements. Pending or claimed work is not deleted by a terminal-history sweep. Releasing an Outbox dependency does not automatically delete its source or destination; their remaining dependencies are evaluated separately.

@@ -76,7 +76,7 @@ it("opens bounded task and saved-note inspection without editing the prompt", as
     harness(GET),
   );
   await screen.findByText("Checking output");
-  expect(GET.mock.calls.some(([path]) => path.endsWith("/notes"))).toBe(false);
+  expect(GET).not.toHaveBeenCalled();
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Inspect tasks" }));
   const summary = screen
@@ -306,9 +306,11 @@ it("keeps completed output directly inspectable and tools collapsed without raw 
   expect(screen.queryByText("Latest activity snapshot")).toBeNull();
   expect(screen.queryByText("Saved child output and comments")).toBeNull();
   expect(screen.getByText("Latest saved result")).toBeTruthy();
-  expect(GET.mock.calls.every(([path]) => path.endsWith("/saved-output"))).toBe(
-    true,
-  );
+  expect(
+    GET.mock.calls.every(
+      ([path]) => path.endsWith("/saved-output") || path.endsWith("/children"),
+    ),
+  ).toBe(true);
   expect(
     screen
       .getByRole("button", { name: /Explored/ })

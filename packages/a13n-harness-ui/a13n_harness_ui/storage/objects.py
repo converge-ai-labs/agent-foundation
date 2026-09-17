@@ -181,7 +181,7 @@ class ImmutableObjectStore:
     ) -> ObjectEnvelope:
         """Validate and publish one typed immutable payload."""
 
-        payload = value.model_dump(mode="json")
+        payload = await to_thread.run_sync(partial(value.model_dump, mode="json"))
         return await self.publish(
             object_kind=object_kind,
             object_schema_version=object_schema_version,

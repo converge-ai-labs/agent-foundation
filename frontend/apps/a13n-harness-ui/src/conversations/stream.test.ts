@@ -656,7 +656,9 @@ it("merges same-version task batches, rejects stale projections and never mixes 
   const display = new FocusDisplay();
   const prefix = snapshot(0);
   if (prefix.kind !== "snapshot") throw new Error("Expected snapshot");
-  prefix.snapshot.tasks = {
+  display.accept(prefix);
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  display.tasks = {
     version: 3,
     available: true,
     tasks: [
@@ -668,8 +670,6 @@ it("merges same-version task batches, rejects stale projections and never mixes 
       },
     ],
   };
-  display.accept(prefix);
-  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
   let sequence = 101;
   function emit(
     id: string,

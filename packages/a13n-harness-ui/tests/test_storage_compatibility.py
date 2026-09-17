@@ -33,6 +33,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20260917_768a6a993a59_add_indexed_thread_inspection_.py").unlink()
     (newer / "versions/20260917_acd7efeb9fd8_add_continuation_read_models.py").unlink()
     (newer / "versions/20260917_9aeed42d15b3_add_browser_push_subscriptions.py").unlink()
     (newer / "versions/20260916_57b54299e47e_add_durable_thread_completion_markers.py").unlink()
@@ -63,8 +64,14 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_schema_version VARCHAR(64)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN read_model_json TEXT"))
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
-            # Keep unrelated push tables on both sides of this comment-only fixture.
-            for name in ("web_push_key", "web_push_subscription"):
+            # Keep unrelated query/push tables on both sides of this comment-only fixture.
+            for name in (
+                "web_push_key",
+                "web_push_subscription",
+                "thread_inspection",
+                "transcript_entry",
+                "transcript_turn",
+            ):
                 harness_ui_metadata().tables[name].create(connection)
     finally:
         engine.dispose()

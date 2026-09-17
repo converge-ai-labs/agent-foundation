@@ -6,6 +6,7 @@ import base64
 import json
 import math
 import re
+from collections import OrderedDict
 from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -257,6 +258,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         self._lock = Lock()
         self._parents: dict[tuple[str, str, str], ParentRunScope] = {}
         self._active: dict[str, _ActiveSegment] = {}
+        self._execution_identities: OrderedDict[tuple[str, ObjectRef], tuple[str, str]] = OrderedDict()
         self._changed = Event()
         self._task_group_context: Any | None = None
         self._task_group: TaskGroup | None = None
@@ -574,7 +576,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 )
             head = await self._require_execution_for_parent(parent_thread_id, execution_id)
             return ChildExecutionPage(
-                executions=(await self._execution_projection(head),),
+                executions=(await self._execution_projection(head, include_activity=True),),
                 total=1,
             )
         after: tuple[datetime, str] | None = None
@@ -592,7 +594,11 @@ class HarnessUiSubagentOperator(SubagentOperator):
             limit=limit + 1,
         )
         visible = heads[:limit]
-        projections = tuple([await self._execution_projection(head) for head in visible])
+        parent = await self._store.threads.get(parent_thread_id)
+        if parent is None:
+            raise RunCoordinationError("Parent Thread does not exist.", code="thread_missing")
+        root_thread_id = await self._root_thread_id(parent)
+        projections = tuple([await self._execution_projection(head, root_thread_id=root_thread_id) for head in visible])
         next_cursor = None
         if len(heads) > limit:
             last = visible[-1]
@@ -1502,6 +1508,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
         return current.thread_id
 
     async def _execution_identity(self, head: ChildExecutionHead) -> tuple[str, str]:
+        key = (head.child_thread_id, head.run_composition)
+        if (identity := self._execution_identities.get(key)) is not None:
+            self._execution_identities.move_to_end(key)
+            return identity
         first = await self._store.child_executions.first_for_child(head.child_thread_id)
         if first is None or first.parent_thread_id != head.parent_thread_id:
             raise RunCoordinationError(
@@ -1512,46 +1522,58 @@ class HarnessUiSubagentOperator(SubagentOperator):
             first.run_composition,
             ResolvedRunComposition,
         )
-        current = await self._store.objects.read_model(
-            head.run_composition,
-            ResolvedRunComposition,
+        current = (
+            initial
+            if head.run_composition == first.run_composition
+            else await self._store.objects.read_model(
+                head.run_composition,
+                ResolvedRunComposition,
+            )
         )
         if initial.thread_id != head.child_thread_id or current.thread_id != head.child_thread_id:
             raise RunCoordinationError(
                 "The child composition belongs to another Thread.",
                 code="subagent_execution_unavailable",
             )
-        return initial.root.roster_name, _definition_id(current.root)
+        identity = (initial.root.roster_name, _definition_id(current.root))
+        self._execution_identities[key] = identity
+        if len(self._execution_identities) > 256:
+            self._execution_identities.popitem(last=False)
+        return identity
 
     async def _execution_projection(
         self,
         head: ChildExecutionHead,
+        *,
+        root_thread_id: str | None = None,
+        include_activity: bool = False,
     ) -> ChildExecutionView:
-        view = await self._execution_view(head)
-        assert view.thread_id is not None
-        assert view.child_run_id is not None
-        assert view.segment_index is not None
-        activity = view.activity or SubagentActivitySnapshot(sequence=0)
-        child = await self._require_child_thread(head)
+        subagent_name, child_definition_id = await self._execution_identity(head)
+        activity = None
+        if include_activity:
+            view = await self._execution_view(head)
+            activity = _surface_activity(view.activity or SubagentActivitySnapshot(sequence=0))
+        if root_thread_id is None:
+            root_thread_id = await self._root_thread_id(await self._require_child_thread(head))
         async with self._lock:
             active = self._active.get(head.execution_id)
         locally_active = head.status == "running" and active is not None
         return ChildExecutionView(
             execution_id=head.execution_id,
-            root_thread_id=await self._root_thread_id(child),
+            root_thread_id=root_thread_id,
             parent_thread_id=head.parent_thread_id,
-            child_thread_id=view.thread_id,
-            child_run_id=view.child_run_id,
-            segment_index=view.segment_index,
+            child_thread_id=head.child_thread_id,
+            child_run_id=head.child_run_id,
+            segment_index=head.segment_index,
             composition_id=head.run_composition.logical_digest,
-            subagent_name=view.subagent_name,
-            child_definition_id=view.child_definition_id,
+            subagent_name=subagent_name,
+            child_definition_id=child_definition_id,
             persisted_status=head.status,
             local_status="active" if locally_active else "unavailable",
             resumed_from=head.resumed_from,
             failure=None if head.failure is None else _surface_failure(head.failure),
             resumable=head.resumable,
-            activity=_surface_activity(activity),
+            activity=activity,
             available_actions=("wait", "steer", "cancel") if locally_active else (),
             created_at=head.created_at,
             updated_at=head.updated_at,
@@ -1560,13 +1582,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
 
     async def _execution_view(self, head: ChildExecutionHead) -> SubagentExecutionView:
         subagent_name, child_definition_id = await self._execution_identity(head)
-        display = CompactChildDisplay()
-        if head.selected_checkpoint is not None:
-            display = (await self._read_checkpoint(head)).display
         async with self._lock:
             active = self._active.get(head.execution_id)
-            if active is not None:
-                display = active.display
+            display = active.display if active is not None else None
+        if display is None:
+            display = (
+                (await self._read_checkpoint(head)).display
+                if head.selected_checkpoint is not None
+                else CompactChildDisplay()
+            )
         return SubagentExecutionView(
             execution_id=head.execution_id,
             subagent_name=subagent_name,

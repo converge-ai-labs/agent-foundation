@@ -188,15 +188,28 @@ it("settles a background completion into saved history after closing its stream"
   ).toBe(true);
 });
 
-it("prioritizes the visible Thread within a bounded subscription budget", async () => {
-  active = ["one", "two", "three", "four"];
-  mount();
-  await waitFor(() => expect(watches.size).toBe(3));
-  expect(watches.has("four")).toBe(false);
-  fireEvent.click(screen.getByRole("link", { name: "four" }));
-  await waitFor(() => expect(watches.has("four")).toBe(true));
-  expect(watches.size).toBe(3);
-  expect(maxConnections).toBe(3);
+it("pins every running root while bounding history warming, even with an idle selection", async () => {
+  active = Array.from({ length: 20 }, (_, index) => `active-${index}`);
+  mount("idle", ["idle", ...active]);
+  await waitFor(() => expect(watches.size).toBe(21));
+  await waitFor(() =>
+    expect(reads.filter((path) => path.endsWith("/transcript"))).toHaveLength(
+      8,
+    ),
+  );
+  for (const id of active) expect(watches.has(id)).toBe(true);
+  const background = watches.get("active-19")!;
+  act(() => output("active-19", "Observed before opening history"));
+  fireEvent.click(screen.getByRole("link", { name: "active-19" }));
+  expect(screen.getByLabelText("Live").textContent).toBe(
+    "Observed before opening history",
+  );
+  await waitFor(() =>
+    expect(screen.getByLabelText("History").textContent).toBe("C0-active-19"),
+  );
+  expect(background.close).not.toHaveBeenCalled();
+  expect(watches.size).toBe(20);
+  expect(maxConnections).toBe(21);
 });
 
 it("bounds retained observations and releases evicted query observers", async () => {

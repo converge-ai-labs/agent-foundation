@@ -88,9 +88,9 @@ async def test_selection_conflict_does_not_publish_completion_and_history_uses_i
     async with open_harness_ui_app(settings, configuration_path=configuration) as app:
         thread = await app.create_thread()
         ref = ObjectRef(object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="a" * 64)
-        original = app._projections._history
+        original = app._projections._inspection_header
 
-        async def history(snapshot):
+        async def inspection_header(snapshot):
             result = await original(snapshot)
             # A new completion is published after history chose the initial snapshot.
             await app._store.threads.select_continuation(
@@ -102,7 +102,7 @@ async def test_selection_conflict_does_not_publish_completion_and_history_uses_i
             )
             return result
 
-        monkeypatch.setattr(app._projections, "_history", history)
+        monkeypatch.setattr(app._projections, "_inspection_header", inspection_header)
         saved = await app.get_thread_transcript(thread_id=thread.thread_id)
         assert saved.completion_version == 0
         assert saved.continuation_id.startswith("initial:")

@@ -10,32 +10,50 @@
   z-index: 2;
   display: flex;
   flex-direction: column;
-  padding-block: 8px;
+  padding-block: 6px;
+  overscroll-behavior: contain;
 }
 .tick {
-  flex: 0 0 22px;
+  flex: 0 0 16px;
+  padding: 0 4px;
   width: 32px;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   border: 0;
   border-radius: 4px;
   background: transparent;
   cursor: pointer;
 }
 .tick span {
-  width: 12px;
+  width: max(var(--tick-width, 8px), var(--current-width, 8px));
   height: 2px;
+  flex-shrink: 0;
   border-radius: 2px;
   background: var(--a13n-secondary);
-  opacity: 0.4;
+  opacity: var(--tick-opacity, 0.4);
   transition:
-    width 120ms ease,
-    opacity 120ms ease;
+    width 100ms ease-out,
+    opacity 100ms ease-out;
 }
-.tick:hover span,
+.tick[data-proximity="3"] {
+  --tick-width: 10px;
+  --tick-opacity: 0.5;
+}
+.tick[data-proximity="2"] {
+  --tick-width: 14px;
+  --tick-opacity: 0.6;
+}
+.tick[data-proximity="1"] {
+  --tick-width: 20px;
+  --tick-opacity: 0.75;
+}
+.tick[data-proximity="0"] {
+  --tick-width: 26px;
+  --tick-opacity: 0.9;
+}
 .tick[aria-current] span {
-  width: 23px;
+  --current-width: 18px;
   opacity: 1;
   background: var(--a13n-text);
 }
@@ -44,10 +62,12 @@
   outline-offset: -2px;
 }
 .preview {
-  width: min(320px, calc(100vw - 64px));
-  padding: 10px 12px;
+  width: min(360px, calc(100vw - 64px));
+  padding: 8px;
   line-height: 1.5;
   text-align: start;
+  text-wrap: pretty;
+  transition-duration: 80ms;
 }
 .preview small {
   color: var(--a13n-secondary);
@@ -55,16 +75,34 @@
 .preview p {
   margin: 4px 0 0;
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
 }
 .output {
-  margin-top: 12px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--a13n-border);
+}
+.output p {
+  -webkit-line-clamp: 4;
+}
+.emptyOutput {
+  color: var(--a13n-secondary);
 }
 .mobile {
   display: none;
+}
+.mobileTrigger {
+  color: var(--a13n-secondary);
+  background: var(--a13n-canvas);
+  border-color: var(--a13n-border);
+}
+.mobileTrigger:hover,
+.mobileTrigger[data-popup-open] {
+  color: var(--a13n-text);
+  background: color-mix(in srgb, var(--a13n-text) 6%, var(--a13n-canvas));
 }
 .menu {
   width: min(340px, calc(100vw - 32px));
@@ -119,7 +157,8 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .tick span {
+  .tick span,
+  .preview {
     transition: none;
   }
 }

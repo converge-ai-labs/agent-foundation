@@ -12,7 +12,6 @@ from typing import Literal
 
 import yaml
 from a13n_harness.capabilities import AskUserQuestionRequest
-from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, WorkingState
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.tools import DeferredToolRequests
@@ -25,7 +24,7 @@ from a13n_harness_ui.errors import AppStateError, ThreadError
 from a13n_harness_ui.model_fast import describe_fast
 from a13n_harness_ui.model_thinking import describe_thinking
 from a13n_harness_ui.root_run import RootRunCoordinator
-from a13n_harness_ui.storage import LocalStore, StoredContinuation
+from a13n_harness_ui.storage import LocalStore
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import (
     ActivitySummary,
@@ -42,7 +41,6 @@ from a13n_harness_ui.surfaces import (
     ModelSummary,
     NewThreadDefaults,
     NotePage,
-    NoteView,
     PendingDecisionSummary,
     ProjectPathCompletion,
     ProjectPathCompletionPage,
@@ -58,7 +56,6 @@ from a13n_harness_ui.surfaces import (
     SkillReference,
     StructuredQuestionRequestView,
     TaskPage,
-    TaskView,
     ThreadActivityPage,
     ThreadActivityView,
     ThreadSelectorCatalog,
@@ -323,26 +320,7 @@ class TerminalProjectionService:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
         if thread.continuation is None:
             return NotePage()
-        continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
-        entry = continuation.harness_state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
-        if entry is None:
-            return NotePage(continuation_id=continuation_id)
-        try:
-            state = WorkingState.model_validate(entry.data)
-        except ValidationError as exc:
-            raise ThreadError("Working State is not readable.", code="thread_note_state_invalid") from exc
-        notes = state.notes
-        visible = []
-        size = 0
-        for key, value in sorted(notes.items()):
-            cost = len(key.encode("utf-8")) + len(value.encode("utf-8"))
-            if len(visible) >= 256 or size + cost > 256 * 1024:
-                break
-            visible.append(NoteView(key=key, value=value))
-            size += cost
-        return NotePage(
-            continuation_id=continuation_id, notes=tuple(visible), total=len(notes), omitted=len(notes) - len(visible)
-        )
+        return (await self._threads.inspection(thread)).notes
 
     async def task_page(
         self,
@@ -361,37 +339,8 @@ class TerminalProjectionService:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
         if thread.continuation is None:
             return TaskPage(continuation_id=None)
-        continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
-        entry = continuation.harness_state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
-        if entry is None:
-            return TaskPage(continuation_id=continuation_id)
-        try:
-            state = WorkingState.model_validate(entry.data)
-        except ValidationError as exc:
-            raise ThreadError("Working State is not readable.", code="thread_task_state_invalid") from exc
-        if state.task_mode != "embedded" or state.tasks is None:
-            return TaskPage(continuation_id=continuation_id, available=False)
-        tasks = sorted(state.tasks.tasks.values(), key=lambda item: int(item.id.removeprefix("task-")))
-        visible = tasks[:limit]
-        return TaskPage(
-            continuation_id=continuation_id,
-            version=state.tasks.version,
-            tasks=tuple(
-                TaskView(
-                    task_id=item.id,
-                    version=item.version,
-                    subject=item.subject,
-                    active_form=item.active_form,
-                    status=item.status,
-                    owner=item.owner,
-                    blocks=item.blocks,
-                    blocked_by=item.blocked_by,
-                )
-                for item in visible
-            ),
-            total=len(tasks),
-            omitted=len(tasks) - len(visible),
-        )
+        page = (await self._threads.inspection(thread)).tasks
+        return page.model_copy(update={"tasks": page.tasks[:limit], "omitted": max(0, page.total - limit)})
 
     async def decisions(
         self,
@@ -407,8 +356,9 @@ class TerminalProjectionService:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
         if thread.continuation is None or continuation_id is None:
             return None
-        continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
-        requests = continuation.deferred_requests
+        if thread.read_model is None:
+            raise ThreadError("Decision query data is not available yet.", code="thread_read_model_unavailable")
+        requests = thread.read_model.deferred_requests
         if requests is None or (not requests.calls and not requests.approvals):
             return None
         projected = []
@@ -804,6 +754,7 @@ class TerminalProjectionService:
                 unavailable_reason="The selected child execution is unavailable.",
             )
         execution = page.executions[0]
+        assert execution.activity is not None
         lifecycle: Literal["pending", "running", "closed", "unavailable"] = (
             "running" if execution.persisted_status == "running" else "closed"
         )

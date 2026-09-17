@@ -111,6 +111,7 @@ class DatabaseAuthenticator:
             boundary_workspace_id=key.boundary_id,
             request_id=getattr(request.state, "request_id", None),
             credential_source="service",
+            request_authenticated=True,
         )
 
     async def _session(self, session: AsyncSession, token: str, request: HTTPConnection) -> AuthenticatedActor:
@@ -135,6 +136,7 @@ class DatabaseAuthenticator:
             boundary_organization_id=organization.id if workspace is None else None,
             request_id=getattr(request.state, "request_id", None),
             credential_source="service",
+            request_authenticated=True,
         )
 
 

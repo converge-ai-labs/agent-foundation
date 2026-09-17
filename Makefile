@@ -155,7 +155,7 @@ harness-dev: harness-env ## Run SDK observation scenarios; initialize .env if mi
 harness-ui-smoke: harness-ui-env ## Exercise HarnessUiApp with a scripted model; initialize .env if missing
 	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.smoke
 
-.PHONY: dev-down dev-status
+.PHONY: dev-down dev-status dev-env-list
 .PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-local live-test-check live-test-auth-control live-test-round-two live-test-management
 LIVE_TEST_RUN = uv run --locked $(if $(wildcard .env),--env-file .env,)
 
@@ -251,6 +251,9 @@ mem0-logs: ## Inspect this checkout's local Mem0 OSS startup and provider errors
 
 dev-status: ## Print this checkout's local instance and listeners as JSON without changing state
 	@python3 -m dev.service --config "$(SERVICE_CONFIG)" --mem0-config "$(MEM0_CONFIG)" status
+
+dev-env-list: ## List this repository's worktrees and local test environments
+	@python3 -m dev.service.envs list
 
 dev-down: ## Stop this checkout's PostgreSQL, Redis and Mem0, preserving data and shared Langfuse
 	@$(SERVICE_DEV) down

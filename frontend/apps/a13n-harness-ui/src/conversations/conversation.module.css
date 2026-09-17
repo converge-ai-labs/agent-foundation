@@ -333,6 +333,35 @@
 .assistantMessage {
   margin: 16px 0;
 }
+.messageActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  color: var(--a13n-secondary);
+}
+.userMessage .messageActions {
+  justify-content: flex-end;
+}
+.copyMessage {
+  color: inherit;
+}
+.userMessage:hover .copyMessage,
+.userMessage:focus-within .copyMessage,
+.assistantMessage:hover .copyMessage,
+.assistantMessage:focus-within .copyMessage {
+  color: var(--a13n-text);
+}
+.copyError {
+  color: var(--a13n-danger);
+  font-size: 12px;
+}
+@media (pointer: coarse) {
+  .copyMessage {
+    width: 44px;
+    height: 44px;
+  }
+}
 .userMessage header,
 .assistantMessage header {
   font-size: 12px;
@@ -1320,7 +1349,7 @@
   container-name: conversation-reader;
 }
 .readerFrame .reading {
-  padding-inline-start: 42px;
+  padding-inline-start: 36px;
 }
 .turn {
   margin-bottom: 28px;

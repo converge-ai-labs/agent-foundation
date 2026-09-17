@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "a13n-ui";
+import { CopyMessage } from "./copy-message";
 import type { Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
@@ -219,6 +220,34 @@ function composerIdentity(part: InputPart) {
     ? `${part.metadata.source_id}:${composer.index}`
     : undefined;
 }
+export function inputCopyText(parts: InputPart[]) {
+  const seen = new Set<string>();
+  let text = "";
+  let previousInline = false;
+  for (const part of parts) {
+    if (
+      part.metadata?.display === false ||
+      !["user", "media"].includes(part.kind)
+    )
+      continue;
+    const composer = composerIdentity(part);
+    const attachment = inputAttachment(part.metadata);
+    let value = part.kind === "user" ? (part.text ?? "") : "";
+    if (attachment) {
+      const identity = composer ?? attachment.attachment_id;
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      value = `[${attachment.name}]`;
+    }
+    if (!value) continue;
+    // Composer parts are slices of one authored document, not paragraphs.
+    if (text && !(previousInline && composer)) text += "\n\n";
+    text += value;
+    previousInline = !!composer;
+  }
+  return text;
+}
+
 export function InputContent({
   parts,
   threadId,
@@ -232,6 +261,7 @@ export function InputContent({
 }) {
   const visible = parts.filter((part) => part.metadata?.display !== false);
   const seen = new Set<string>();
+  const copyText = inputCopyText(parts);
   return (
     <div className={styles.userMessage}>
       <header>
@@ -274,6 +304,7 @@ export function InputContent({
           <div key={index}>{renderText(part.text || "")}</div>
         );
       })}
+      {copyText.trim() && <CopyMessage text={copyText} />}
     </div>
   );
 }
