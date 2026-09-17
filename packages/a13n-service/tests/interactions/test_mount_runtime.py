@@ -5,8 +5,8 @@ from datetime import timedelta
 
 import pytest
 from a13n_environment import EnvironmentError
-from a13n_harness import AgentIdentityRef, AgentInstanceContext
-from a13n_harness.environment.advanced import create_empty_environment_runtime
+from a13n_harness import AgentIdentityRef, AgentInstanceContext, EnvironmentMount
+from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord
 from a13n_service.environments.mount_observations import RunMountObservations
 from a13n_service.environments.mount_runtime import RunMountRuntime
@@ -22,7 +22,9 @@ pytestmark = pytest.mark.anyio
 
 
 @asynccontextmanager
-async def mounted_runtime(sessions, preparations, *, prepare=None, clock=lambda: 0, observations=None):
+async def mounted_runtime(
+    sessions, preparations, *, prepare=None, clock=lambda: 0, observations=None, has_primary=False
+):
     lifecycle, attempt, _, _ = preparations
     calls = []
 
@@ -33,10 +35,15 @@ async def mounted_runtime(sessions, preparations, *, prepare=None, clock=lambda:
         assert environment is not None
         return environment
 
-    runtime = create_empty_environment_runtime()
+    primary = await prepare_run_environment(lifecycle, attempt) if has_primary else None
+    runtime = create_environment_runtime(
+        mounts={"workspace": EnvironmentMount(primary)} if primary is not None else {},
+        default_mount="workspace" if primary is not None else None,
+    )
     store = observations or RunMountObservations(sessions, clock=lambda: NOW)
     controller = RunMountRuntime(
         runtime=runtime,
+        has_primary=has_primary,
         observations=store,
         current_attempt=lambda: attempt,
         prepare=prepare or candidate,
@@ -64,7 +71,7 @@ async def test_ready_in_pg_is_reconstructed_and_reconcile_never_installs(interac
         assert not bound.snapshot.mounts and not calls
         await controller.apply()
         assert [mount.name for mount in bound.snapshot.mounts] == ["first", "second"]
-        assert bound.snapshot.default_mount is None
+        assert bound.snapshot.default_mount == "first"
         await controller.apply()
         assert calls == ["first", "second"]
         # Both aliases point at the prepared target and share its durable files.
@@ -121,6 +128,7 @@ async def test_unavailable_mount_retries_with_backoff_and_preserves_other_mounts
         await controller.apply()
         second = bound.snapshot.mounts[0]
         assert second.name == "second"
+        assert bound.snapshot.default_mount is None
         for tick in [0, 1, 4]:
             now = tick
             await controller.apply()
@@ -136,6 +144,8 @@ async def test_unavailable_mount_retries_with_backoff_and_preserves_other_mounts
         await controller.apply()
         assert [mount.name for mount in bound.snapshot.mounts] == ["second", "first"]
         assert bound.snapshot.mounts[0] == second
+        assert bound.snapshot.default_mount == "first"
+        assert bound.resolve_path("probe.txt") == bound.resolve_path("/environment/first/probe.txt")
 
 
 async def test_dependency_failure_is_distinct_and_does_not_hot_loop(interaction_sessions, preparations):
@@ -203,3 +213,13 @@ async def test_acceptance_during_preparation_waits_for_next_boundary(interaction
         assert [mount.name for mount in bound.snapshot.mounts] == ["first", "second"]
         await controller.apply()
         assert [mount.name for mount in bound.snapshot.mounts] == ["first", "second", "later"]
+
+
+async def test_additional_mounts_preserve_the_primary_default(interaction_sessions, preparations):
+    async with mounted_runtime(interaction_sessions, preparations, has_primary=True) as (controller, bound, _):
+        primary_path = bound.resolve_path("probe.txt")
+        assert bound.snapshot.default_mount == "workspace"
+        await controller.apply()
+        assert [mount.name for mount in bound.snapshot.mounts] == ["workspace", "first", "second"]
+        assert bound.snapshot.default_mount == "workspace"
+        assert bound.resolve_path("probe.txt") == primary_path

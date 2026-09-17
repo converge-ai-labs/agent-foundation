@@ -101,6 +101,7 @@ async def test_live_mount_refreshes_facade_tools_and_context_at_next_root_reques
             yield {0: DeltaToolCall(name="attach", json_args="{}", tool_call_id="attach-client")}
         else:
             assert [mount.name for mount in facades[0].snapshot.mounts] == ["computer"]
+            assert facades[0].snapshot.default_mount == "computer"
             assert ("view" in names) is files_enabled
             assert ("write" in names) is files_enabled
             assert "/environment/computer" in str(messages)

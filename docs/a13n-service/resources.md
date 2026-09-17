@@ -54,6 +54,69 @@ Rebuilding a missing managed target preserves the logical Environment ID but cre
 
 Standard Harness deferred approvals bind resolved paths, not backing generations. Replacing a target does not itself invalidate those approvals. Hosts requiring exact-target restrictions enforce them through current invocation policy or an approval verifier; see [deferred resume](../a13n-harness/state-and-resume.md#structured-suspension).
 
+### Connect a client computer
+
+A deployment with `a13n.websocket-envd` enabled can use a user-operated envd that connects outward to Control over WSS. Control ingress and all Workers that can execute these Runs must support this provider and live mounts. The relay requires shared Redis; the in-memory backend is not supported. Registration, connection, and Run access are separate steps.
+
+1. Create a Workspace Environment Provider with `type: "a13n.websocket-envd"`, using the Provider catalog schema.
+
+2. Register an external Environment under that Provider. Supply its returned `provider_id`, empty `configuration`, and the native identity that the client will use:
+
+   ```json
+   {
+     "provider_id": "epv_0123456789abcdef",
+     "configuration": {},
+     "state": {
+       "provider_key": "a13n.websocket-envd",
+       "state_version": "1",
+       "state": {"daemon_environment_id": "my-computer"}
+     }
+   }
+   ```
+
+   POST to `/api/v1/workspaces/{workspace}/environments` with an `Idempotency-Key`. Retain the returned Environment ID across reconnects. Replace the example Provider ID with the actual resource ID; no Template is needed.
+
+3. POST to `/api/v1/environments/{environment_id}/connection-tickets` with a Service credential authorized to manage the Environment. The response contains `ticket`, `expires_at`, `websocket_url`, and `connection_id`. Write only the ticket value into a protected credential file; do not place it in the URL or shell arguments.
+
+4. Launch envd with its [standalone mount configuration](../a13n-envd/configuration.md), private runtime directory, and these bootstrap values:
+
+   ```bash
+   export A13N_ENVD_ENVIRONMENT_ID=my-computer
+   export A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime
+   export A13N_ENVD_TRANSPORT=reverse_websocket
+   export A13N_ENVD_REVERSE_WS_URL="$WEBSOCKET_URL"
+   export A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE=/absolute/path/to/protected-ticket
+   env -u A13N_ENVD_EXECUTABLE a13n-envd --config /absolute/path/to/envd.json
+   ```
+
+   `WEBSOCKET_URL` is the credential-free URL from the ticket response. Keep the broader Service credential in the controller; envd needs only the one-use ticket. Configure command [isolation](../a13n-envd/isolation.md) for the client host.
+
+5. Read `GET /api/v1/environments/{environment_id}/connection` until it reports `status: "online"` with the same `connection_id` as the ticket response. A successful WebSocket upgrade or another connection's online status is insufficient. `connecting` includes initialization and safe takeover of an older connection.
+
+6. Select the Environment in a [Run start request](agents-and-runs.md), using `"environment": {"environment_id": "<returned Environment ID>"}`, or add it to the current Run as described below.
+
+Every reconnect requires a fresh ticket from the authenticated controller. Disconnect leaves the Environment record intact and does not stop or delete the caller's computer. The connection endpoint is the live availability check; a stored Environment status of `running` can lag a lost connection. New Run and mount acceptance rejects an offline or connecting client Environment.
+
+### Add an Environment to a live Run
+
+POST to `/api/v1/runs/{run_id}/environment-mounts`, with a fresh `Idempotency-Key` and this body:
+
+```json
+{
+  "name": "computer",
+  "environment_id": "env_0123456789abcdef",
+  "access": "read_only"
+}
+```
+
+Replace the Environment ID with the registered resource. Access can be `read_only`, `read_write`, or `full`, within that Environment's ceiling. The caller needs Run-control and Environment-use authority; the Run's retained Principal must also be authorized. The target must belong to the same Workspace. Only the Thread's current accepted or running Run accepts additions. `workspace` is reserved for the fixed primary Environment.
+
+The `201` response confirms a durable association, initially `pending`. Worker installs it between complete root iterations before a later model request. Read `GET /api/v1/runs/{run_id}/environment-mounts` for the current Attempt's `pending`, `preparing`, `ready`, or `failed` observation. Follow `next_cursor` for pagination; the list preserves acceptance order. `ready` reports installation, not a promise that the client will remain online. A Run that finishes before another model request may never apply the mount.
+
+The Agent accesses this example at `/environment/computer`. Without a primary, the first accepted addition becomes the default when installed; a later addition does not take its place if it becomes ready sooner. With a primary, its default remains unchanged. Agent tool restrictions still apply, and acceptance does not enable a disabled file or shell toolset.
+
+Retrying the same request with its original idempotency key returns the original acceptance receipt. Use the list endpoint for fresh loading observations. Mount names, targets, and access are immutable after acceptance; this API does not unmount, replace, or switch defaults. A failed addition leaves other installed mounts usable. Temporary unavailability is retried with bounded backoff at later model boundaries.
+
 ### Host-local placement
 
 Direct Local and Docker require `deployment.mode = "single_host"`. All participating Workers must share the same configured filesystem and Docker backend; Service does not route Runs by hostname. Docker records its `docker_host` endpoint. Managed Direct Local templates use their root as a base and allocate `environments/<env_id>` underneath it. Share an Environment ID to share its files; another Environment gets its own directory.

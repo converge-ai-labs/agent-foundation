@@ -42,12 +42,14 @@ class RunMountRuntime:
         self,
         *,
         runtime: EnvironmentRuntime,
+        has_primary: bool,
         observations: RunMountObservations,
         current_attempt: Callable[[], AttemptContext],
         prepare: Callable[[AcceptedRunMount], Awaitable[Environment]],
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self._runtime = runtime
+        self._has_primary = has_primary
         self._observations = observations
         self._current_attempt = current_attempt
         self._prepare = prepare
@@ -67,6 +69,7 @@ class RunMountRuntime:
     async def apply(self) -> None:
         """Finish one captured acceptance batch before tools and context are assembled."""
         snapshot = await self.reconcile()
+        default_name = snapshot[0].name if snapshot and not self._has_primary else None
         for mount in snapshot:
             previous = self._applications.get(mount.name)
             if previous is not None and (previous.status == "ready" or self._clock() < previous.retry_at):
@@ -79,7 +82,7 @@ class RunMountRuntime:
                 logger.exception("Run mount preparing observation failed", extra={"mount_name": mount.name})
                 continue
             try:
-                await self._install(mount)
+                await self._install(mount, make_default=mount.name == default_name)
             except AttemptAuthorityError:
                 raise
             except Exception as error:
@@ -99,14 +102,20 @@ class RunMountRuntime:
             self._applications[mount.name] = application
             await self._publish(application)
 
-    async def _install(self, mount: AcceptedRunMount) -> None:
+    async def _install(self, mount: AcceptedRunMount, *, make_default: bool) -> None:
         environment = await self._prepare(mount)
         try:
             # Preparation owns all target I/O. Standard adapter entry only binds
             # the Harness mount ID, so no provider call separates this fence
             # from local publication at the serialized root boundary.
             await self._observations.validate(self._current_attempt(), mount)
-            await self._runtime.mount(mount.name, EnvironmentMount(environment, access=EnvironmentAccess(mount.access)))
+            await self._runtime.mount(
+                mount.name,
+                EnvironmentMount(
+                    environment, access=EnvironmentAccess(mount.access), mount_path=f"/environment/{mount.name}"
+                ),
+                make_default=make_default,
+            )
         except BaseException as error:
             try:
                 with fail_after(self._current_attempt().cleanup_timeout.total_seconds(), shield=True):

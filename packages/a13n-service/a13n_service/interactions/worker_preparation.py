@@ -253,6 +253,7 @@ class WorkerAttemptPreparer:
             await self._control.bind_environment_mounts(
                 RunMountRuntime(
                     runtime=mounted.runtime,
+                    has_primary=environment is not None,
                     observations=RunMountObservations(self._sessions, clock=self._environments.clock),
                     current_attempt=lambda: self._control.current_context,
                     prepare=prepare_mount,

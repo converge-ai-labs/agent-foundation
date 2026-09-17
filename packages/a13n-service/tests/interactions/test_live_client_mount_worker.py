@@ -78,6 +78,7 @@ async def test_live_client_mount_is_usable_by_the_next_model_request(
             yield {0: DeltaToolCall(name="attach", json_args="{}", tool_call_id="accept-client")}
         elif len(requests) == 2:
             assert [mount.name for mount in facades[0].snapshot.mounts] == ["computer"]
+            assert facades[0].snapshot.default_mount == "computer"
             assert "write" in names
             assert "/environment/computer" in str(messages)
             yield {
