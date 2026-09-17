@@ -6,13 +6,20 @@ from dataclasses import replace
 from time import monotonic
 
 import pytest
+from a13n_environment.models import EnvironmentError
 from a13n_service.environments.websocket.authority import (
     ConnectionIdentity,
     DispatchAuthority,
     LeaseDeadline,
     UseIdentity,
 )
-from a13n_service.environments.websocket.relay_protocol import RelayChunk, RelayRequest, RelayTerminal, TransferPosition
+from a13n_service.environments.websocket.relay_protocol import (
+    RelayChunk,
+    RelayFailure,
+    RelayRequest,
+    RelayTerminal,
+    TransferPosition,
+)
 from a13n_service.environments.websocket.relay_storage import RelayStoreError, WorkerResponseMailbox
 from a13n_service.environments.websocket.relay_waiters import RelayOperationError, RelayResponseDispatcher
 from a13n_service.ids import new_object_id
@@ -61,6 +68,33 @@ async def test_response_can_arrive_before_publication_returns(dispatcher):
         assert await pending.result() == result
         dispatcher.accept(result.model_copy(update={"result": "late duplicate"}))
         assert await pending.result() == result
+
+
+async def test_terminal_failure_retains_only_projected_provider_diagnostics(dispatcher):
+    message = request()
+    error = EnvironmentError(
+        "secret native endpoint and payload",
+        code="environment_request_invalid",
+        retry_hint="fix_input",
+        details={
+            "field": "pattern",
+            "reason": "invalid_regex",
+            "native_endpoint": "secret",
+            "dispatch_stage": "pre_dispatch",
+        },
+    )
+    with dispatcher.register(message, authority(), deadline()) as pending:
+        dispatcher.accept(
+            RelayTerminal(request_id=message.request_id, use=USE, error=RelayFailure.from_environment(error))
+        )
+        with pytest.raises(RelayOperationError) as raised:
+            await pending.result()
+        assert raised.value.details["field"] == "pattern"
+        assert raised.value.details["reason"] == "invalid_regex"
+        assert "native_endpoint" not in raised.value.details
+        assert raised.value.retry_hint == "fix_input"
+        assert raised.value.failure.certainty == "not_dispatched"
+        assert "secret" not in str(raised.value)
 
 
 async def test_foreign_use_and_out_of_order_responses_never_complete_another_waiter(dispatcher):

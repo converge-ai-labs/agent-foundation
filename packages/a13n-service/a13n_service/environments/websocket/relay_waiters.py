@@ -79,13 +79,15 @@ class PendingRelayRequest:
         self._possibly_published = True
 
     def fail(self, code: str, *, certainty: str | None = None) -> None:
-        if self._failure is None and self._terminal is None:
-            self._failure = RelayFailure.model_validate(
-                {
-                    "code": code,
-                    "certainty": certainty or ("unknown" if self._possibly_published else "not_dispatched"),
-                }
+        self._accept_failure(
+            RelayFailure.model_validate(
+                {"code": code, "certainty": certainty or ("unknown" if self._possibly_published else "not_dispatched")}
             )
+        )
+
+    def _accept_failure(self, failure: RelayFailure) -> None:
+        if self._failure is None and self._terminal is None:
+            self._failure = failure
             if self._failure.certainty == "not_dispatched":
                 self._possibly_published = False
             self._chunks.clear()
@@ -104,7 +106,7 @@ class PendingRelayRequest:
             self._accept_chunk(frame)
         elif frame.error is not None:
             self._remote_completed = True
-            self.fail(frame.error.code, certainty=frame.error.certainty)
+            self._accept_failure(frame.error)
         elif self._valid_terminal(frame):
             self._remote_completed = True
             self._terminal = frame
