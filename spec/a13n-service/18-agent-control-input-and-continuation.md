@@ -8,7 +8,7 @@ This contract owns those caller- or responder-driven acceptance forms, their pub
 
 ## Additional Environment Associations
 
-Environment selection in the invocation and continuation contracts below denotes the fixed primary Environment. A registered client WebSocket Environment is selected through the existing `environment: {environment_id: ...}` input just like another existing Environment; acceptance checks current online presence without Provider I/O and creates no additional-mount row. Its socket is established independently with Control. Offline or initializing client environments are rejected at acceptance; Worker preparation rechecks readiness to handle later disconnects. [WebSocket Environments and Live Run Mounts](29a-websocket-environments-and-live-mounts.md) separately permits authorized additions to the current accepted/running Run. Waiting seals that association set; Retry and state-preserving waiting successors copy it with the accepted access ceilings and reconstruct fresh adapters. This does not permit Environment changes through Feedback, change the primary binding, or automatically add these mounts to unrelated later Runs. Same-Run Attempt recovery reloads its own accepted associations.
+Environment selection below fixes the primary Environment. Client WebSocket Environments must be online at Run acceptance. [Live Run mounts](29a-websocket-environments-and-live-mounts.md) owns separately authorized additions and their continuation/recovery rules; additions do not change the primary selection.
 
 ## Boundaries
 

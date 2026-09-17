@@ -51,7 +51,7 @@ Embedded Hosts can construct the typed runtime directly. Hosts using `create_run
 
 The Host authenticates each accepted upgrade, negotiates `eip.v1`, and resolves the expected native daemon identity from trusted routing before handing the connection to the SDK. `WebSocketConnection` is the client's structural async interface for send, receive, close, closure observation and negotiated subprotocol. The `websockets` server connection implements it directly; other frameworks adapt their own accepted connection. Disconnects are normalized by that adapter and closure observation does not consume messages concurrently with EIP.
 
-One SDK instance represents one Host-selected backend/trust scope. It is process-local, explicitly owned and bounded; it is neither a durable registry nor a cross-worker relay. Hosts route the requesting Run to the connection-owning process or supply their own integration. Merely enabling a Provider key does not solve cross-process routing. The [Service WebSocket integration](../a13n-service/29a-websocket-environments-and-live-mounts.md) supplies a Control-owned Session and a Worker operation proxy over Redis Streams. This remains Service-owned wiring; the shared SDK acquires no Redis dependency, listener, durable association or relay protocol.
+One SDK instance represents one Host-selected backend/trust scope. It is process-local, explicitly owned and bounded; it is neither a durable registry nor a cross-worker relay. Hosts route the requesting Run to the connection-owning process or supply their own integration. Merely enabling a Provider key does not solve cross-process routing.
 
 ## Lifecycle
 
@@ -86,8 +86,6 @@ sequenceDiagram
 ```
 
 Attachment immediately initializes and verifies readiness, including while no Run needs the daemon. Waiting for a Run before initialization would violate the daemon's finite initialization deadline. No Environment construction or scope entry triggers this Host-directed attachment work.
-
-The [Service takeover policy](../a13n-service/29a-websocket-environments-and-live-mounts.md#active-connection-takeover) may hold an authenticated carrier outside this SDK while retiring an old dispatch owner. That wait stays within the daemon's finite initialization deadline. Only after safe handover and release of any local old attachment does Service call `attach()`, which retains immediate initialization and the duplicate-admission rule below. Pending takeover grants no SDK acquisition or operation authority.
 
 The Host awaits `attach()` for the connection lifetime. At most one connection per native identity is admitted. Duplicates and excess connections are rejected and closed without replacing an active lease. Acquisition waits only for a matching online connection, under a finite deadline; a concurrent lease fails busy rather than silently sharing or queueing Run authority. Cancelling a waiting acquisition does not consume a connection.
 

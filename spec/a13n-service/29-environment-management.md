@@ -4,7 +4,7 @@
 
 Service manages Organization- or Workspace-owned Environment Providers and versioned Environment Templates, plus Workspace-owned actual Environments. A template describes how to obtain an environment; an Environment records the logical working environment and its current backing target. Users normally start a Thread with a template selection rather than creating an Environment separately.
 
-A Thread remembers a mutable default Environment. Each accepted Run fixes its own optional primary Environment reference independently of Agent configuration. Explicit additional associations can join the current Run at model-request boundaries under [WebSocket Environments and Live Run Mounts](29a-websocket-environments-and-live-mounts.md); they do not rewrite the accepted primary reference. Normal Runs can switch environments; recovery of an accepted Run cannot change its logical Environment selection. A stopped target resumes; a confirmed-deleted managed target is rebuilt from its frozen template revision. Rebuilding changes the backing generation, not the Service Environment ID, and does not restore lost files or unknown command outcomes.
+A Thread remembers a mutable default Environment. Each accepted Run fixes its own optional primary Environment reference independently of Agent configuration. Normal Runs can switch environments; recovery of an accepted Run cannot change its logical Environment selection. A stopped target resumes; a confirmed-deleted managed target is rebuilt from its frozen template revision. Rebuilding changes the backing generation, not the Service Environment ID, and does not restore lost files or unknown command outcomes.
 
 The shared [Environment Provider contract](../a13n-environment/README.md) owns implementation selection, preparation, connections, operations, state codecs, stop, keepalive, and destruction. Service owns durable records, authorization, preparation timing, and retention. Harness consumes ready or transparently lazy operation objects and owns no target preparation policy.
 
@@ -34,7 +34,7 @@ Each Provider owns its encrypted credential bundle using the [resource-owned cre
 
 One shared, explicit catalog maps registered types to installed implementations. It combines the built-in Environment implementations with the Environment registrations from deployment-selected `a13n.providers` entry points; the same selected Provider package can independently register Model, Connector, or Web types through their distinct contracts. Type metadata exposes backend and credential schemas, plus `template_configuration_schemas` keyed by configuration version plus `supports_managed` and supported lifecycle actions. Templates reject Providers with `supports_managed=False`; these Providers are selected through external Environment registration. All configuration parsing is deterministic. Package installation alone grants no authority; `provider_plugins.enabled` selects trusted metadata names before startup and every role loads the same immutable catalog. Provider code changes through deployment, while configuration and state compatibility use their explicit schema versions. Environment resources contain no Python distribution lock or import target. There is no Provider package upload API, managed package revision, Service-specific attachment/retention interface, or secondary implementation catalog.
 
-HTTP Envd is a connect-only external Provider using the existing registration and worker runtime path. WebSocket Envd uses the Service-owned ticket, Control ingress and Redis Stream operation relay defined by [WebSocket Environments and Live Run Mounts](29a-websocket-environments-and-live-mounts.md). Its catalog key requires the corresponding ingress and Worker runtime wiring and is not selected by default. The [remote Provider contract](../a13n-environment/04-remote-envd.md) owns EIP Session acquisition and close semantics; Service adds no infrastructure lifecycle authority.
+HTTP and WebSocket Envd are connect-only external Providers under the [remote Provider contract](../a13n-environment/04-remote-envd.md). WebSocket Envd is opt-in and requires the [Service connection and relay integration](29a-websocket-environments-and-live-mounts.md); selecting its catalog key alone does not supply that runtime.
 
 ### Deployment-owned local Providers
 
@@ -83,9 +83,7 @@ The revision fixes preparation timing, retention and access ceiling together wit
 
 ## Live Additional Mounts
 
-[WebSocket Environments and Live Run Mounts](29a-websocket-environments-and-live-mounts.md) owns `run_environment_mounts`, the append-only accepted Run associations, connection tickets and presence, and current-Attempt application observations. An additional association references the existing `environments` table, not a second kind of target. Connection status is independent from target `status`, and Worker loading status belongs to the Run association. Control publishes the initialized WebSocket target's `running` observation before online admission, and publishes `unavailable` on connection loss; its bounded reconciliation repairs observations after socket-owner failure. These writes use the existing Environment publication authority and do not infer target shutdown or deletion. [Persisted target status and live connection authority](29a-websocket-environments-and-live-mounts.md#persisted-target-status-and-live-connection-authority) owns this synchronization; Run/mount admission still requires current Redis online presence. Neither socket placement nor tickets enter `EnvironmentState`.
-
-The preparation, authorization, active-use accounting and release rules in this document apply to every primary or additional Environment used by a Run. Coordination includes all actually acquired mounts, including terminalization, waiting, handoff and lifecycle-command active-use checks; querying only the singular primary field is insufficient.
+[WebSocket Environments and Live Run Mounts](29a-websocket-environments-and-live-mounts.md) owns additional associations, connection availability and application observations. The preparation, authorization, usage, retention and release rules here apply to every acquired primary or additional mount; accounting based only on `Run.environment_id` is insufficient.
 
 ## Actual Environment Records
 
@@ -315,7 +313,7 @@ The domain owns `environment_providers`, `environment_templates`, `environment_t
 01. A template revision is a recipe, not a running target.
 02. Each Environment has one immutable Workspace, Provider and managed recipe.
 03. Creating a Thread does not provision a target; template selection allocates its Environment automatically.
-04. Each Run freezes its primary Environment independently of Agent configuration and mutable Thread defaults; explicit additional mounts follow their separate versioned acceptance and model-boundary contract.
+04. Each Run freezes its primary Environment independently of Agent configuration and mutable Thread defaults.
 05. Preparation defaults to on_run; on_use performs no target I/O before actual use.
 06. Provider implementations own connections; Harness consumes operation objects.
 07. Confirmed target loss permits managed rebuild, while uncertainty never proves absence.

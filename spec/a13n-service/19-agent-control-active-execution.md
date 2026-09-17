@@ -144,9 +144,7 @@ After the relational commit, the control process best-effort appends one busines
 
 ## Environment Mount Reconciliation
 
-[WebSocket Environments and Live Run Mounts](29a-websocket-environments-and-live-mounts.md) reuses the Thread control Stream and existing Attempt watcher/boundary reconciliation for accepted additional environments. A signal requests a relational reread; it contains no Environment authority or operation payload. The watcher rereads accepted mount associations but never mutates Harness. At the model boundary, the Worker compares accepted association identities with its locally installed mounts and reconciles missing or unavailable entries. The mandatory root model-request boundary applies prepared candidates before tool/schema and context assembly. An initially empty Run can load its first mount without restarting.
-
-Run mount associations and application observations retain their own relational contract; they are not steer inbox entries and do not consume Thread input FIFO sequence numbers or synthesize user messages. Dropped signals are recovered by the mandatory boundary reread. Environment operation requests/results use separate bounded relay Streams, never this control Stream or its acknowledgement semantics.
+[Live mounts](29a-websocket-environments-and-live-mounts.md#worker-reconciliation-and-model-boundary) reuse the Thread reconcile signal. The watcher requests a relational reread; only the root model-request boundary applies mounts to Harness. Mount changes are not inbox entries and consume no input FIFO sequence. Operation payloads use separate relay Streams.
 
 ## Unified FIFO Delivery and State Commitment
 

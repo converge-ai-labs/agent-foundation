@@ -355,7 +355,7 @@ Object-reference columns form all-or-none groups. Bounded values are validated b
 
 `environment_id` is an optional same-Workspace foreign key to the actual Environment record; `environment_access` is present exactly when it is. Both are immutable after acceptance. `environment_use_started_at` is set once when execution acquires use, not at acceptance, and remains historical evidence after sealing. Retention considers use active only while the Run is running. There is no separate environment-binding table or duplicated target configuration. Indexes support finding active users across Threads for one Environment.
 
-These immutable fields describe the primary Environment. [Live Run mounts](29a-websocket-environments-and-live-mounts.md) own the separately accepted `run_environment_mounts` associations, acceptance order and per-association use/application observations. Current-Attempt application observations are fenced relational observations, not portable runtime objects or changes to `EffectiveAgentConfig`. All acquired associations participate in Environment usage and cleanup. Primary fields remain null when an initially environment-free Run later receives additions.
+These immutable fields describe the primary Environment. Additional associations and per-mount use/application observations are stored in `run_environment_mounts` under [Live Run mounts](29a-websocket-environments-and-live-mounts.md#live-run-mounts), outside `EffectiveAgentConfig` and checkpoint state. Primary fields remain null when an initially environment-free Run receives additions.
 
 ## Relational Constraints and Queries
 
