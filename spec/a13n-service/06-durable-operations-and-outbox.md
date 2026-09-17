@@ -45,13 +45,13 @@ Raw idempotency keys and secret request content are not stored in logs, events, 
 
 Workspace and Organization credential boundaries are distinct replay scopes. Organization-scoped operations have an explicit non-null boundary identity even though their resources have no Workspace; lookup, uniqueness, and concurrency serialization use the same boundary.
 
-All ordinary HTTP command families use the same evidence authority and deterministic digest of domain-normalized input. Omission and explicit null remain distinct where the owning contract gives them different meaning. Credential fingerprints include the protected input value, never its redacted display, and receipts contain no credential plaintext.
+All ordinary HTTP command families use the same replay semantics and deterministic digest of domain-normalized input. Most store evidence in `idempotency_evidence`; [public steer](19-agent-control-active-execution.md#steer-idempotency-storage) stores the same identity, digest, and expiry semantics on its authoritative inbox entry, using its Thread lock to serialize final admission. Omission and explicit null remain distinct where the owning contract gives them different meaning. Credential fingerprints include the protected input value, never its redacted display, and receipts contain no credential plaintext.
 
 The operation serializes concurrent uses of the same evidence scope. The same key and canonical request return the original result; the same key with different input returns a conflict. Replay resolves before a version or ETag comparison so a successful mutation can return its original result after advancing the resource state.
 
 Idempotency evidence commits in the same relational transaction as the accepted mutation and result reference. An operation does not hold an idempotency reservation or database transaction across external I/O. If acceptance requires an external effect, Service first commits durable intent and performs the effect outside the transaction under an owning idempotency or reconciliation contract.
 
-Eligibility ends exactly at expiry. A bounded control-plane retention sweep physically deletes expired HTTP evidence independently of protocol bindings, execution identities, and audit retention, under [Control Background Tasks](07-control-background-tasks.md#evidence-and-lifecycle-retention). Receipts preserve accepted response facts instead of reconstructing them from later mutable resource state.
+Eligibility ends exactly at expiry. A bounded control-plane retention sweep physically deletes expired shared HTTP evidence and clears expired steer replay metadata without deleting inbox entries, independently of protocol bindings, execution identities, and audit retention, under [Control Background Tasks](07-control-background-tasks.md#evidence-and-lifecycle-retention). Receipts preserve accepted response facts instead of reconstructing them from later mutable resource state.
 
 Expired or absent evidence does not prove that an earlier operation was never dispatched. Clients do not invent a new key merely because an acknowledgement was lost.
 

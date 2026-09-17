@@ -63,6 +63,9 @@ class AuthenticatedActor:
     # marks Service credentials so later stream authorization also rechecks revocation.
     credential_source: Literal["host", "service"] = "host"
 
+    # Set only by the HTTP authenticator; individual synchronous commands may reuse it.
+    request_authenticated: bool = False
+
     def __post_init__(self) -> None:
         if (self.boundary_workspace_id is None) == (self.boundary_organization_id is None):
             raise ValueError("exactly one credential boundary is required")

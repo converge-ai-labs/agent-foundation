@@ -11,6 +11,7 @@ from .control_records import thread_inbox_record
 from .domain import JsonObject
 from .inbox_persistence import ThreadInboxCapacityExceeded
 from .models import ThreadRecord
+from .steer_idempotency import SteerIdempotency
 
 
 async def allocate_steer(
@@ -26,6 +27,7 @@ async def allocate_steer(
     max_pending_count: int,
     max_pending_bytes: int,
     now: datetime,
+    idempotency: SteerIdempotency | None = None,
 ) -> ThreadInboxEntry:
     """Allocate one FIFO position and persist an accepted steer."""
 
@@ -55,7 +57,10 @@ async def allocate_steer(
         status=ThreadInboxStatus.pending,
         created_at=now,
     )
-    database.add(thread_inbox_record(entry))
+    row = thread_inbox_record(entry)
+    if idempotency is not None:
+        idempotency.bind(row, now)
+    database.add(row)
     thread.next_delivery_sequence += 1
     thread.pending_count += 1
     thread.pending_bytes += payload_size_bytes

@@ -42,6 +42,7 @@ from a13n_service.interactions.objects import RunObjectError, RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeService
 from a13n_service.storage import ObjectStoreError, short_session, transaction
+from a13n_service.storage.relational import is_unique_conflict
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .acceptance import RunAcceptanceService
@@ -52,6 +53,7 @@ from .command_evidence import (
 from .command_preparation import CommandInput
 from .control_domain import InterruptReceipt
 from .errors import InteractionCommandError, command_not_found, idempotency_conflict
+from .steer_idempotency import SteerIdempotency, find_steer, steer_receipt
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
 
@@ -178,67 +180,66 @@ class ActiveRunCommands:
         input: AgentInput,
         transaction_hook: Callable[[AsyncSession, SteerReceipt], Awaitable[None]] | None = None,
     ) -> SteerReceipt:
-        identity = command_identity(idempotency_key, input)
-        scope = request_scope(actor, workspace_id=actor.workspace_id, operation="run.steer", scope_id=run_id)
-        replay = await self._steer_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+        idempotency = SteerIdempotency(actor.principal, command_identity(idempotency_key, input))
+        replay = await self._steer_replay(actor=actor, run_id=run_id, idempotency=idempotency)
         if replay is not None:
             return replay
         source, _thread = await self._load_steer_source(actor=actor, run_id=run_id)
+
+        async def replay_prepared() -> SteerReceipt | None:
+            # Preserve this request's authorization when recovering a concurrent acceptance.
+            async with short_session(self._sessions) as database:
+                try:
+                    row = await find_steer(
+                        database,
+                        organization_id=source.organization_id,
+                        run_id=run_id,
+                        idempotency=idempotency,
+                        now=assume_utc(self._clock()),
+                    )
+                except IdempotencyConflict as error:
+                    raise idempotency_conflict() from error
+                return None if row is None else steer_receipt(row, session_id=source.session_id)
+
         try:
             state = await self._states.read_run(source)
-        except (ObjectStoreError, RunObjectError) as error:
+            accepted = await self._inputs.accept_effective(
+                actor=actor,
+                workspace_id=actor.workspace_id,
+                submitted=input,
+                effective=state.envelope.effective_agent_config,
+                environment_access=source.environment_access,
+                retained_secret_bindings=state.envelope.secret_bindings,
+            )
+        except (ObjectStoreError, RunObjectError, InteractionCommandError) as error:
+            # Another same-key request may have committed while this one prepared input.
+            replay = await replay_prepared()
+            if replay is not None:
+                return replay
+            if isinstance(error, InteractionCommandError):
+                raise
             raise InteractionCommandError(
                 "run_state_unavailable",
                 "The selected Run state is unavailable.",
                 category=ErrorCategory.conflict,
             ) from error
-        accepted = await self._inputs.accept_effective(
-            actor=actor,
-            workspace_id=actor.workspace_id,
-            submitted=input,
-            effective=state.envelope.effective_agent_config,
-            environment_access=source.environment_access,
-            retained_secret_bindings=state.envelope.secret_bindings,
-        )
-        now = assume_utc(self._clock())
-
-        async def record_evidence(database: AsyncSession, receipt: SteerReceipt) -> None:
-            await self._acceptance.validate_in_session(database, receipt.run_id)
-            try:
-                existing = await load_evidence(database, scope=scope, identity=identity, now=now)
-            except IdempotencyConflict as error:
-                raise idempotency_conflict() from error
-            if existing is None:
-                database.add(
-                    new_evidence(
-                        organization_id=source.organization_id,
-                        scope=scope,
-                        identity=identity,
-                        result_kind="run_steer",
-                        result_ref=receipt.steer_id,
-                        now=now,
-                    )
-                )
-
-            if transaction_hook is not None:
-                await transaction_hook(database, receipt)
-
         try:
             return await self._inbox.append_steer(
                 organization_id=source.organization_id,
                 run_id=source.id,
                 input=accepted,
-                transaction_hook=record_evidence,
+                idempotency=idempotency,
+                transaction_hook=transaction_hook,
             )
+        except IdempotencyConflict as error:
+            raise idempotency_conflict() from error
         except IntegrityError as error:
-            if is_evidence_unique_race(error):
-                replay = await self._steer_replay(actor=actor, run_id=run_id, scope=scope, identity=identity)
+            if is_unique_conflict(error, constraint="uq_thread_inbox_steer_idempotency"):
+                replay = await replay_prepared()
                 if replay is not None:
                     return replay
             raise InteractionCommandError(
-                "run_steer_conflict",
-                "Run steering lost a concurrent mutation.",
-                category=ErrorCategory.conflict,
+                "run_steer_conflict", "Run steering lost a concurrent mutation.", category=ErrorCategory.conflict
             ) from error
         except ThreadInboxConflict as error:
             raise InteractionCommandError(
@@ -265,11 +266,10 @@ class ActiveRunCommands:
         *,
         actor: AuthenticatedActor,
         run_id: str,
-        scope: EvidenceScope,
-        identity: IdempotencyIdentity,
+        idempotency: SteerIdempotency,
     ) -> SteerReceipt | None:
         now = assume_utc(self._clock())
-        async with transaction(self._sessions) as database:
+        async with short_session(self._sessions) as database:
             row = (
                 await database.execute(
                     select(RunRecord, SessionRecord)
@@ -297,39 +297,20 @@ class ActiveRunCommands:
                     session_id=run.session_id,
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_steer,
+                    reuse_request_authentication=True,
                 )
-                evidence = await load_evidence(database, scope=scope, identity=identity, now=now)
+                entry = await find_steer(
+                    database,
+                    organization_id=run.organization_id,
+                    run_id=run_id,
+                    idempotency=idempotency,
+                    now=now,
+                )
             except AuthorizationError as error:
                 raise command_not_found() from error
             except IdempotencyConflict as error:
                 raise idempotency_conflict() from error
-            if evidence is None:
-                return None
-            if evidence.result_kind != "run_steer":
-                raise InteractionCommandError(
-                    "idempotency_evidence_invalid",
-                    "The Run steer replay evidence is invalid.",
-                    category=ErrorCategory.unavailable,
-                )
-            await self._acceptance.validate_in_session(database, run_id)
-            steer_id = evidence.result_ref
-            organization_id = run.organization_id
-        try:
-            status = await self._inbox.get_steer(organization_id=organization_id, run_id=run_id, steer_id=steer_id)
-        except ThreadInboxConflict as error:
-            raise InteractionCommandError(
-                "idempotency_evidence_invalid",
-                "The Run steer replay evidence is invalid.",
-                category=ErrorCategory.unavailable,
-            ) from error
-        return SteerReceipt(
-            session_id=status.session_id,
-            thread_id=status.thread_id,
-            run_id=status.accepted_against_run_id,
-            steer_id=status.steer_id,
-            delivery_sequence=status.delivery_sequence,
-            accepted_at=status.created_at,
-        )
+            return None if entry is None else steer_receipt(entry, session_id=run.session_id)
 
     async def _load_steer_source(
         self,
@@ -379,20 +360,6 @@ class ActiveRunCommands:
                     )
                 except AuthorizationError as error:
                     raise command_not_found() from error
-            if not read_only and (
-                thread.current_run_id != source.id
-                or source.status
-                not in {
-                    RunStatus.accepted.value,
-                    RunStatus.running.value,
-                    RunStatus.waiting.value,
-                }
-            ):
-                raise InteractionCommandError(
-                    "run_not_steerable",
-                    "The selected Run cannot accept steer input.",
-                    category=ErrorCategory.conflict,
-                )
             return source.to_resource(), thread.to_resource()
 
     async def _interrupt_replay(

@@ -43,6 +43,7 @@ from .input import AcceptedAgentInput
 from .models import RunRecord, ThreadRecord
 from .objects import StoredRunState
 from .state import InboxReceipt
+from .steer_idempotency import SteerIdempotency, find_steer, steer_receipt
 
 logger = logging.getLogger("a13n_service.interactions.inbox")
 
@@ -82,16 +83,33 @@ class ThreadInboxStore:
         run_id: str,
         input: AcceptedAgentInput,
         entry_id: str | None = None,
+        idempotency: SteerIdempotency | None = None,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, SteerReceipt], Awaitable[None]] | None = None,
     ) -> SteerReceipt:
         """Append one already-authorized, canonical steer to the current Run."""
 
-        now = assume_utc(self._clock())
         steer_id = entry_id or new_thread_inbox_entry_id()
         payload = input.model_dump(mode="json", by_alias=True, exclude_none=True)
         async with transaction(self._sessions) as database:
-            thread, run = await _lock_current_run(database, organization_id=organization_id, run_id=run_id)
+            thread, run = await _lock_steer_target(database, organization_id=organization_id, run_id=run_id)
+            now = assume_utc(self._clock())
+            if idempotency is not None:
+                existing = await find_steer(
+                    database,
+                    organization_id=organization_id,
+                    run_id=run_id,
+                    idempotency=idempotency,
+                    now=now,
+                    locked=True,
+                )
+                if existing is not None:
+                    receipt = steer_receipt(existing, session_id=thread.session_id)
+                    if transaction_hook is not None:
+                        await transaction_hook(database, receipt)
+                    return receipt
+            if thread.current_run_id != run.id:
+                raise ThreadInboxConflict("steer target is not the current Run")
             if final_validator is not None:
                 await final_validator(database)
             target_run_id: str | None
@@ -111,6 +129,7 @@ class ThreadInboxStore:
                 target_run_id=target_run_id,
                 source_waiting_run_id=source_waiting_run_id,
                 entry_id=steer_id,
+                idempotency=idempotency,
                 payload=payload,
                 payload_size_bytes=len(input.canonical_bytes()),
                 max_pending_count=self._max_pending_count,
@@ -396,7 +415,7 @@ class ThreadControlSignal:
     thread_id: str
 
 
-async def _lock_current_run(
+async def _lock_steer_target(
     database: AsyncSession,
     *,
     organization_id: str,
@@ -415,7 +434,7 @@ async def _lock_current_run(
     run = await database.scalar(
         select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id).with_for_update()
     )
-    if thread is None or run is None or thread.current_run_id != run.id:
+    if thread is None or run is None:
         raise ThreadInboxConflict("steer target is not the current Run")
     return thread, run
 
