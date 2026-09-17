@@ -2311,6 +2311,41 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/runs/{run_id}/environment-mounts`
+
+List Mounts.
+
+| Parameter | Location | Required | Type / schema  | Constraints and default            |
+| --------- | -------- | -------- | -------------- | ---------------------------------- |
+| `run_id`  | path     | true     | string         | —                                  |
+| `limit`   | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`  | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Collection_RunEnvironmentMount_`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/runs/{run_id}/environment-mounts`
+
+Add Mount.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `run_id`          | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `AddEnvironmentMountRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: RunEnvironmentMount`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/workspaces/{workspace}/environment-providers`
 
 List Providers.

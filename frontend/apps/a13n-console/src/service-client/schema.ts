@@ -2268,6 +2268,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/runs/{run_id}/environment-mounts": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Mounts */
+    get: operations["get_runs_run_id_environment_mounts"];
+    put?: never;
+    /** Add Mount */
+    post: operations["post_runs_run_id_environment_mounts"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/runs/{run_id}/events": {
     parameters: {
       query?: never;
@@ -4318,6 +4336,14 @@ export interface components {
     ActorRef:
       | components["schemas"]["PrincipalRef"]
       | components["schemas"]["SystemActorRef"];
+    /** AddEnvironmentMountRequest */
+    AddEnvironmentMountRequest: {
+      access: components["schemas"]["EnvironmentAccess"];
+      /** Environment Id */
+      environment_id: string;
+      /** Name */
+      name: string;
+    };
     /** Agent */
     Agent: {
       /** Archived At */
@@ -5383,6 +5409,13 @@ export interface components {
     Collection_Environment_: {
       /** Items */
       items: components["schemas"]["Environment"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** Collection_RunEnvironmentMount_ */
+    Collection_RunEnvironmentMount_: {
+      /** Items */
+      items: components["schemas"]["RunEnvironmentMount"][];
       /** Next Cursor */
       next_cursor?: string | null;
     };
@@ -8255,6 +8288,11 @@ export interface components {
      * @description Model tests use the saved API and settings without a request selector.
      */
     ModelTestRequest: Record<string, never>;
+    /**
+     * MountApplicationStatus
+     * @enum {string}
+     */
+    MountApplicationStatus: "pending" | "preparing" | "ready" | "failed";
     /** NewEnvironmentSelection */
     NewEnvironmentSelection: {
       /** Labels */
@@ -9120,6 +9158,33 @@ export interface components {
       items: components["schemas"]["RunResource"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** RunEnvironmentMount */
+    RunEnvironmentMount: {
+      accepting_principal: components["schemas"]["PrincipalRef"];
+      access: components["schemas"]["EnvironmentAccess"];
+      /** @default pending */
+      application_status?: components["schemas"]["MountApplicationStatus"];
+      /** Applied Attempt Fence */
+      applied_attempt_fence?: number | null;
+      /** Applied Attempt Id */
+      applied_attempt_id?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Environment Id */
+      environment_id: string;
+      error?: components["schemas"]["SafeFailure"] | null;
+      /** Name */
+      name: string;
+      /** Observed At */
+      observed_at?: string | null;
+      /** Run Id */
+      run_id: string;
+      /** Use Started At */
+      use_started_at?: string | null;
     };
     /** RunLineage */
     RunLineage: {
@@ -19123,6 +19188,103 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RunAttemptCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_runs_run_id_environment_mounts: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Collection_RunEnvironmentMount_"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_runs_run_id_environment_mounts: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        run_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["AddEnvironmentMountRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunEnvironmentMount"];
         };
       };
       /** @description Invalid request. */

@@ -41,7 +41,10 @@ async def add_mount(
 
 @router.get("/runs/{run_id}/environment-mounts")
 async def list_mounts(
-    request: Request, actor: Actor, run_id: str, limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    request: Request,
+    actor: Actor,
+    run_id: str,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: str | None = None,
 ) -> Collection[RunEnvironmentMount]:
     return await _service(request).list(actor=actor, run_id=run_id, limit=limit, cursor=cursor)
