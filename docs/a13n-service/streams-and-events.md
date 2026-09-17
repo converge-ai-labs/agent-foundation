@@ -6,7 +6,7 @@ Service has separate channels for durable lifecycle facts, presentation output, 
 
 | Channel                                       | Use it for                                             | Recovery authority                                                    |
 | --------------------------------------------- | ------------------------------------------------------ | --------------------------------------------------------------------- |
-| Native Run SSE                                | Live and retained Run presentation events              | Run, Items, pending actions, and retained replay                      |
+| Native Run SSE                                | Raw Run presentation events within the Redis horizon   | Run, display snapshot Items, and pending actions                      |
 | Workspace / Run / RunAttempt lifecycle events | Durable execution transitions                          | Lifecycle pages and current resource versions                         |
 | Notification WebSocket                        | Low-latency hints that subscribed resources changed    | Durable events and resource reads                                     |
 | Trace queries                                 | Authorized diagnostic detail from a configured backend | Backend retention plus current Service access checks                  |
@@ -28,14 +28,14 @@ The Service authorizes attachment and periodically rechecks access. It bounds co
 
 ### Replay gaps
 
-The Service tries retained replay when live history is no longer available. If it cannot satisfy the cursor, attachment fails with `run_stream_replay_gap`; an already-open stream can emit `a13n.service.replay_gap` and close. The gap includes the requested cursor and available floor/high-watermark information where known.
+Native SSE reads raw Redis observations. When Redis no longer covers the cursor, attachment fails with `run_stream_replay_gap`; an already-open stream can emit `a13n.service.replay_gap` and close. The gap includes the requested cursor and available floor/high-watermark information where known. Display snapshots preserve merged messages across this gap; they do not recreate raw SSE events.
 
 Do not silently skip a gap and append fresh deltas to a stale screen:
 
 1. Stop applying deltas from that attachment.
-2. Read current Run state, retained Items, and pending actions.
+2. Read current Run state, display Items, and pending actions. Fetch all Item pages from one `snapshot_version`; restart pagination on `items_snapshot_changed`.
 3. Rebuild the view from authoritative representations, including incomplete or failed outcomes.
-4. Establish a new observation position appropriate to the rebuilt view. Preserve application-level deduplication when reapplying retained events.
+4. For a complete, non-finalized snapshot, attach with `Last-Event-ID` set to its `projection_cursor` and apply only later deltas. A finalized snapshot needs no live attachment; visibly retain `complete=false` as incomplete history.
 
 A complete replay is not a resumable Harness checkpoint, nor is partial text proof of completed side effects. The low-level [Stream Protocol](../a13n-stream-protocol/index.md) defines typed stream processing; Service owns storage, replay, current authorization, and HTTP attachment.
 

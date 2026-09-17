@@ -28,11 +28,9 @@ from .domain import (
     PublicationPending,
     RetainedReplayUnavailable,
     RunStreamEvent,
-    deterministic_run_stream_event_id,
 )
 from .events import lifecycle_stream_event
 from .redis import RedisRunStream
-from .replay import RunReplayStore, project_retained_items
 
 logger = logging.getLogger("a13n_service.run_stream.projector")
 _TERMINAL_RUN_EVENTS = frozenset({"run.waiting", "run.completed", "run.failed", "run.cancelled"})
@@ -43,10 +41,6 @@ _PROJECTION_FAILURE = SafeFailure(
 )
 
 
-class _ReplayPublicationFailed(RuntimeError):
-    """A complete Redis source remains available, but object publication failed."""
-
-
 class LifecycleRunStreamProjector:
     """Claim durable facts briefly, project outside SQL, then settle their leases."""
 
@@ -54,7 +48,6 @@ class LifecycleRunStreamProjector:
         self,
         sessions: async_sessionmaker[AsyncSession],
         stream: RedisRunStream,
-        replay: RunReplayStore,
         *,
         worker_id: str,
         lease_duration: timedelta = timedelta(seconds=30),
@@ -73,7 +66,6 @@ class LifecycleRunStreamProjector:
             raise ValueError("lifecycle projection polling policy is invalid")
         self._sessions = sessions
         self._stream = stream
-        self._replay = replay
         self._worker_id = worker_id
         self._lease_duration = lease_duration
         self._retry_after = retry_after
@@ -120,45 +112,21 @@ class LifecycleRunStreamProjector:
         if claim.event.event_type in _TERMINAL_RUN_EVENTS and claim.event.projection_attempts > self._max_attempts:
             # Publication retries are exhausted. The same durable claim now owns
             # only retirement, which must finish before this fact can be abandoned.
-            await self._settle_failure(claim, source_complete=False, failure=_PROJECTION_FAILURE)
+            await self._settle_failure(claim)
             return
         try:
             await self._project_event(claim.event)
-        except _ReplayPublicationFailed:
-            logger.exception(
-                "Run replay publication failed",
-                extra={"lifecycle_event_id": claim.event.id},
-            )
-            await self._settle_failure(
-                claim,
-                source_complete=True,
-                failure=SafeFailure(
-                    code="run_replay_publication_failed",
-                    message="Retained Run presentation publication is temporarily unavailable.",
-                    retry_hint="dependency_change",
-                ),
-            )
-            return
         except Exception:
             logger.exception("Run Stream lifecycle projection failed", extra={"lifecycle_event_id": claim.event.id})
-            await self._settle_failure(
-                claim,
-                source_complete=False,
-                failure=_PROJECTION_FAILURE,
-            )
+            await self._settle_failure(claim)
             return
         async with transaction(self._sessions) as database:
             await complete_lifecycle_projection(database, claim, projected_at=_utc(self._clock()))
+        await self._archive_terminal(claim.event)
 
-    async def _settle_failure(
-        self,
-        claim: LifecycleProjectionClaim,
-        *,
-        source_complete: bool,
-        failure: SafeFailure,
-    ) -> None:
+    async def _settle_failure(self, claim: LifecycleProjectionClaim) -> None:
         abandon = claim.event.projection_attempts >= self._max_attempts
-        if abandon and not source_complete:
+        if abandon:
             abandon = await self._prepare_abandonment(claim.event)
         async with transaction(self._sessions) as database:
             await fail_lifecycle_projection(
@@ -167,7 +135,7 @@ class LifecycleRunStreamProjector:
                 failed_at=_utc(self._clock()),
                 retry_after=self._retry_after,
                 abandon=abandon,
-                failure=failure,
+                failure=_PROJECTION_FAILURE,
             )
 
     async def _prepare_abandonment(self, event: LifecycleEvent) -> bool:
@@ -204,81 +172,20 @@ class LifecycleRunStreamProjector:
         if abandoned:
             await self._stream.retire(event.organization_id, event.run_id, closed_at=event.occurred_at)
             return
-        await self._interrupt_open_items(event)
         await self._stream.close(event.organization_id, event.run_id, closed_at=event.occurred_at)
+
+    async def _archive_terminal(self, event: LifecycleEvent) -> None:
+        # Settle lifecycle first: optional exact delivery cannot delay display
+        # finalization. A concurrent display trim may make this source unavailable.
+        if event.event_type not in _TERMINAL_RUN_EVENTS or self._terminal_projection is None:
+            return
         try:
             source = await self._stream.complete_source(event.organization_id, event.run_id)
+            await self._terminal_projection(event, source)
         except RetainedReplayUnavailable:
-            logger.info(
-                "Run Stream closed without retained replay",
-                extra={"run_id": event.run_id, "lifecycle_event_id": event.id},
-            )
-            return
-        try:
-            await self._replay.publish(event.organization_id, event.run_id, source)
-        except RetainedReplayUnavailable:
-            logger.info(
-                "Run Stream closed without retained replay",
-                extra={"run_id": event.run_id, "lifecycle_event_id": event.id},
-            )
-        except Exception as error:
-            raise _ReplayPublicationFailed("retained replay object publication failed") from error
-        if self._terminal_projection is not None:
-            try:
-                await self._terminal_projection(event, source)
-            except Exception as error:
-                raise _ReplayPublicationFailed("secondary retained projection publication failed") from error
-
-    async def _interrupt_open_items(self, event: LifecycleEvent) -> None:
-        if event.thread_id is None:  # pragma: no cover - guarded by the caller
-            raise ValueError("Run lifecycle projection requires Thread correlation")
-        try:
-            entries = await self._stream.untrimmed_entries(event.organization_id, event.run_id)
-        except RetainedReplayUnavailable:
-            logger.info(
-                "Run Stream closed without complete Item interruption projection",
-                extra={"run_id": event.run_id, "lifecycle_event_id": event.id},
-            )
-            return
-        last_entry_by_item = {entry.event.item_id: entry for entry in entries if entry.event.item_id is not None}
-        for item in project_retained_items(entries):
-            if item.state != "interrupted":
-                continue
-            source = last_entry_by_item[item.id].event
-            if source.event_type == "item.interrupted":
-                continue
-            payload = {
-                "item_kind": item.kind,
-                "item_state": "interrupted",
-                "first_stream_id": item.first_stream_id,
-                "last_content_stream_id": item.last_stream_id,
-                "interruption": {
-                    "code": "run_closed_before_item_completion",
-                    "message": "The Run closed before this presentation Item completed.",
-                },
-            }
-            if item.parent_item_id is not None:
-                payload["parent_item_id"] = item.parent_item_id
-            await self._append_lifecycle(
-                event.organization_id,
-                RunStreamEvent(
-                    event_id=deterministic_run_stream_event_id(
-                        "item",
-                        event.id,
-                        item.id,
-                        "interrupted",
-                    ),
-                    event_type="item.interrupted",
-                    run_id=event.run_id,
-                    thread_id=event.thread_id,
-                    run_attempt_id=source.run_attempt_id,
-                    harness_run_id=source.harness_run_id,
-                    lifecycle_event_id=event.id,
-                    item_id=item.id,
-                    occurred_at=event.occurred_at,
-                    payload=payload,
-                ),
-            )
+            logger.info("Run closed without exact Hosted archive", extra={"run_id": event.run_id})
+        except Exception:
+            logger.exception("Optional Hosted archive publication failed", extra={"run_id": event.run_id})
 
     async def _append_lifecycle(self, organization_id: str, event: RunStreamEvent) -> None:
         try:

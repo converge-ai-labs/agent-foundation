@@ -1,8 +1,9 @@
 """Workspace Provider, template, and actual Environment management routes."""
 
+import asyncio
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.etags import resource_etag
@@ -14,6 +15,7 @@ from a13n_service.labels import LabelFilterValues, LabelsBody, parse_label_filte
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
+    CancelDockerImageRequest,
     Collection,
     CreateEnvironmentRequest,
     CreateProviderRequest,
@@ -27,11 +29,13 @@ from .domain import (
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
     ReplaceCredentialRequest,
+    TestDockerImageRequest,
     UpdateEnvironmentRequest,
     UpdateProviderRequest,
     UpdateTemplateRequest,
 )
 from .errors import EnvironmentManagementError
+from .image_jobs import ImageTestResponse, ProviderConnectivity
 from .mount_router import router as mount_router
 from .service import EnvironmentService
 from .websocket.router import router as client_connection_router
@@ -90,6 +94,51 @@ async def replace_credential(
 ) -> EnvironmentProvider:
     return await _service(request).replace_credential(
         actor=actor, provider_id=provider_id, request=body, if_match=if_match
+    )
+
+
+@router.get("/environment-providers/{provider_id}/connectivity")
+async def provider_connectivity(request: Request, actor: Actor, provider_id: str) -> ProviderConnectivity:
+    return await _service(request).provider_connectivity(actor=actor, provider_id=provider_id)
+
+
+@router.post("/environment-providers/{provider_id}/test-image")
+async def test_image(
+    request: Request, actor: Actor, provider_id: str, body: TestDockerImageRequest
+) -> ImageTestResponse:
+    operation = asyncio.create_task(
+        _service(request).test_docker_image(
+            actor=actor,
+            provider_id=provider_id,
+            workspace_id=body.workspace_id,
+            request_id=body.request_id,
+            configuration=body.configuration,
+        )
+    )
+    try:
+        while not operation.done():
+            if await request.is_disconnected():
+                operation.cancel()
+                await asyncio.gather(operation, return_exceptions=True)
+                raise HTTPException(status_code=499, detail="Image test client disconnected")
+            await asyncio.sleep(0.2)
+        return await operation
+    finally:
+        if not operation.done():
+            operation.cancel()
+            await asyncio.gather(operation, return_exceptions=True)
+
+
+@router.post("/environment-providers/{provider_id}/test-image/{request_id}/cancel", status_code=204)
+async def cancel_image_test(
+    request: Request,
+    actor: Actor,
+    provider_id: str,
+    request_id: Annotated[str, Path(pattern=r"^envtest_[0-9a-f]{32}$")],
+    body: CancelDockerImageRequest,
+) -> None:
+    await _service(request).cancel_docker_image(
+        actor=actor, provider_id=provider_id, workspace_id=body.workspace_id, request_id=request_id
     )
 
 

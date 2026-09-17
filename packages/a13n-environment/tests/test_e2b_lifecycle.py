@@ -137,7 +137,7 @@ def environment(state=None, *, managed=True, configuration=None, identity="env-t
 
 
 async def test_inert_catalog_configuration_scope_and_close(api):
-    provider = build_environment_provider_catalog(builtin_keys=("a13n.e2b",)).require("a13n.e2b")
+    provider = build_environment_provider_catalog(builtin_keys=("e2b",)).require("e2b")
     config = provider.validate_configuration(schema_version="1", value={})
     env = environment(configuration=config)
     await env.enter(thread_id="t", run_id="r", agent_instance_id="a", mount_id="m")

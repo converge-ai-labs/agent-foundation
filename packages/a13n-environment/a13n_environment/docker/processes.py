@@ -58,7 +58,7 @@ class DockerProcesses:
             mount_id=self.commands.mount_id,
             observed_generation=generation,
             identity=ProcessIdentity(
-                provider_type="a13n.docker", environment_id=self.environment_id, generation=generation, process_id=token
+                provider_type="docker", environment_id=self.environment_id, generation=generation, process_id=token
             ),
             handle=OpaqueProcessHandle._from_payload(token),
         )

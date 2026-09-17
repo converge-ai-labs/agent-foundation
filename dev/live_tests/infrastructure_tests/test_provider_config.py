@@ -24,10 +24,10 @@ def test_missing_default_and_blank_example_preserve_defaults(tmp_path, monkeypat
 
 def test_override_and_independent_sections_keep_secrets_private(tmp_path, monkeypatch):
     path = tmp_path / "settings.toml"
-    path.write_text('[environment]\ntype="a13n.e2b"\napi_key="sample-secret"\n[model]\nprovider=""\napi_key=""\n')
+    path.write_text('[environment]\ntype="e2b"\napi_key="sample-secret"\n[model]\nprovider=""\napi_key=""\n')
     monkeypatch.setenv("LIVE_TEST_PROVIDERS_CONFIG", str(path))
     config = load_provider_settings()
-    assert config.environment.type == "a13n.e2b" and config.environment.template == "base"
+    assert config.environment.type == "e2b" and config.environment.template == "base"
     assert config.environment.api_key.get_secret_value() == "sample-secret"
     assert config.connector is None and config.model is None
     assert "sample-secret" not in repr(config) + config.model_dump_json()
@@ -256,7 +256,7 @@ async def test_cleanup_attempts_every_owned_environment_even_after_run_failure()
                 {"id": "env_second", "status": "unprepared", "provider_id": "ep_remote"},
             ]
         ),
-        request=AsyncMock(side_effect=[{"type": "a13n.e2b"}, {"type": "a13n.direct-local"}, {"type": "a13n.e2b"}]),
+        request=AsyncMock(side_effect=[{"type": "e2b"}, {"type": "direct-local"}, {"type": "e2b"}]),
     )
     journey = SimpleNamespace(
         live=live,

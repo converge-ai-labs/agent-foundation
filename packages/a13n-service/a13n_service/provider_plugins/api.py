@@ -77,6 +77,7 @@ class WebProviderRegistration:
     supports_search: bool = False
     supports_scrape: bool = False
     supports_restricted_scrape: bool = False
+    credential_required: bool = True
 
 
 ConnectorSetupValidator = Callable[[JsonObject, str, object], JsonObject]

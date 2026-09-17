@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from a13n_logging import get_logger
+from anyio import Lock, to_thread
 from pydantic import BaseModel
 
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
@@ -37,6 +38,8 @@ class CompositionAcceptanceService:
         self._store = store
         self._resolver = resolver
         self.capability_warnings: tuple[str, ...] = ()
+        self._cached: tuple[ObjectRef, LoadedHarnessUiConfiguration] | None = None
+        self._cache_lock = Lock()
 
     def validate(self, source: LoadedHarnessUiConfiguration) -> None:
         """Validate one complete candidate without publishing or selecting it."""
@@ -99,13 +102,23 @@ class CompositionAcceptanceService:
         reference = await self._store.configurations.current_reference()
         if reference is None:
             return None
-        return await self._store.objects.read_model(reference, LoadedHarnessUiConfiguration)
+        return await self._load_reference(reference)
 
     async def load(self, generation_digest: str) -> LoadedHarnessUiConfiguration:
         reference = await self._store.configurations.reference(generation_digest)
         if reference is None:
             raise ValueError("accepted configuration generation does not exist")
-        return await self._store.objects.read_model(reference, LoadedHarnessUiConfiguration)
+        return await self._load_reference(reference)
+
+    async def _load_reference(self, reference: ObjectRef) -> LoadedHarnessUiConfiguration:
+        # Recheck the selected SQLite head on every call; cache only verified immutable data.
+        async with self._cache_lock:
+            if self._cached is None or self._cached[0] != reference:
+                value = await self._store.objects.read_model(reference, LoadedHarnessUiConfiguration)
+                self._cached = (reference, value)
+            cached = self._cached[1]
+        # Frozen models still contain mutable mappings. Never lend the cached instance.
+        return await to_thread.run_sync(lambda: cached.model_copy(deep=True))
 
 
 class RunCompositionService:

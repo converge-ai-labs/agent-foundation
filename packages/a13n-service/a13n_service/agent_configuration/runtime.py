@@ -335,6 +335,8 @@ class ConfigurationCapability(AbstractModelContextCapability):
                     error, fallback="Run evidence is unavailable or unauthorized; do not infer a passing result."
                 )
             ) from error
+        if not items.complete or not items.finalized:
+            raise ModelRetry("Run display evidence is not yet complete and finalized; retry after persistence settles.")
         await self._authorize(ctx, "read_interaction_run")
         return {
             "run_id": run.id,

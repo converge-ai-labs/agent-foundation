@@ -7,7 +7,7 @@ import {
   FormField,
   Input,
 } from "a13n-ui";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
@@ -65,11 +65,17 @@ export function TemplateConfig({
       JSON.stringify(revision?.configuration ?? {}, null, 2),
   });
   const [configurationError, setConfigurationError] = useState<string>();
+  const activeImageTest = useRef<{
+    controller: AbortController;
+    requestId: string;
+    providerId: string;
+  } | null>(null);
   const configurationKey = `${providerId}:${version}`;
   const configuration = configurations[configurationKey] ?? "{}";
   function setConfiguration(value: string) {
     setConfigurations((current) => ({ ...current, [configurationKey]: value }));
     setConfigurationError(undefined);
+    cancelImageTest();
   }
   const [stop, setStop] = useState(
       revision?.retention.idle.stop_after?.toString() ?? "",
@@ -84,6 +90,56 @@ export function TemplateConfig({
   );
   const configurationSchema =
     definition?.template_configuration_schemas[version];
+  const imageTest = useMutation({
+    mutationFn: async () => {
+      const parsed = jsonObject(configuration);
+      if (configurationSchema) validateSettings(configurationSchema, parsed);
+      const controller = new AbortController();
+      const requestId = `envtest_${crypto.randomUUID().replaceAll("-", "")}`;
+      activeImageTest.current = { controller, requestId, providerId };
+      try {
+        return await client.http
+          .POST("/api/v1/environment-providers/{provider_id}/test-image", {
+            params: { path: { provider_id: providerId } },
+            body: {
+              request_id: requestId,
+              configuration: parsed,
+              workspace_id: scope.kind === "workspace" ? scope.id : null,
+            },
+            signal: controller.signal,
+          })
+          .then(data);
+      } finally {
+        if (activeImageTest.current?.controller === controller)
+          activeImageTest.current = null;
+      }
+    },
+  });
+  function cancelActiveImageTest() {
+    const active = activeImageTest.current;
+    if (!active) return;
+    activeImageTest.current = null;
+    active.controller.abort();
+    void client.http
+      .POST(
+        "/api/v1/environment-providers/{provider_id}/test-image/{request_id}/cancel",
+        {
+          params: {
+            path: {
+              provider_id: active.providerId,
+              request_id: active.requestId,
+            },
+          },
+          body: { workspace_id: scope.kind === "workspace" ? scope.id : null },
+        },
+      )
+      .catch(() => undefined);
+  }
+  function cancelImageTest() {
+    cancelActiveImageTest();
+    imageTest.reset();
+  }
+  useEffect(() => () => cancelActiveImageTest(), []);
   const save = useMutation({
     mutationFn: async () => {
       let parsedConfiguration;
@@ -190,6 +246,7 @@ export function TemplateConfig({
                 )?.configuration_versions;
                 setVersion(versions?.at(-1) ?? "1");
                 setConfigurationError(undefined);
+                cancelImageTest();
               }}
               label={t("Provider")}
               options={
@@ -231,7 +288,7 @@ export function TemplateConfig({
               ]}
             />
           </div>
-          {definition?.type === "a13n.direct-local" && (
+          {definition?.type === "direct-local" && (
             <p>
               {t(
                 "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.",
@@ -246,6 +303,17 @@ export function TemplateConfig({
               text={configuration}
               onChange={setConfiguration}
               error={configurationError}
+              variant={definition?.type === "docker" ? "docker" : "default"}
+              imageTest={
+                definition?.type === "docker" && !readOnly
+                  ? {
+                      run: () => imageTest.mutate(),
+                      pending: imageTest.isPending,
+                      result: imageTest.data,
+                      error: imageTest.error,
+                    }
+                  : undefined
+              }
             />
           )}
         </div>

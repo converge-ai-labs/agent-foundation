@@ -34,7 +34,7 @@ from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import ControlRuntime, SharedRuntime
 from a13n_service.process.submission import build_input_commands
 from a13n_service.provider_plugins import ProviderCatalogs
-from a13n_service.run_stream import RedisRunStream, RunReplayStore
+from a13n_service.run_stream import RedisRunStream, RunDisplayStore
 from a13n_service.settings import Settings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 from a13n_service.web.registry import WebProviderRegistry
@@ -98,12 +98,14 @@ async def build_control_runtime(
         max_events=settings.runs.stream_max_events,
         max_event_bytes=settings.runs.stream_max_event_bytes,
         closed_ttl_seconds=settings.runs.stream_closed_ttl_seconds,
+        max_pending_events=settings.runs.stream_max_pending_events,
+        max_pending_bytes=settings.runs.stream_max_pending_bytes,
+        backpressure_timeout_seconds=settings.runs.stream_backpressure_timeout_seconds,
     )
-    gateway_replay = RunReplayStore(
+    gateway_display = RunDisplayStore(
         shared.storage.objects,
-        max_events=settings.runs.replay_max_events,
-        max_items=settings.runs.replay_max_items,
-        max_bytes=settings.runs.replay_max_bytes,
+        max_items=settings.runs.display_max_items,
+        max_bytes=settings.runs.display_max_bytes,
     )
     a2a_endpoint_policy = EndpointPolicy.from_operator_allowlist(
         private_domains=settings.webhooks.private_endpoint_domains,
@@ -156,11 +158,10 @@ async def build_control_runtime(
             shared.storage.sessions,
             gateway_commands,
             gateway_stream,
-            gateway_replay,
             HostedAguiReplayStore(
                 shared.storage.objects,
-                max_events=settings.runs.replay_max_events + 2,
-                max_bytes=settings.runs.replay_max_bytes,
+                max_events=settings.runs.hosted_archive_max_events + 2,
+                max_bytes=settings.runs.hosted_archive_max_bytes,
             ),
             page_size=settings.gateway.stream_page_size,
             poll_interval_seconds=settings.gateway.stream_poll_interval_seconds,
@@ -171,7 +172,6 @@ async def build_control_runtime(
         native_streams=NativeRunStreamService(
             shared.storage.sessions,
             gateway_stream,
-            gateway_replay,
             page_size=settings.gateway.stream_page_size,
             poll_interval_seconds=settings.gateway.stream_poll_interval_seconds,
             heartbeat_interval_seconds=settings.gateway.stream_heartbeat_interval_seconds,
@@ -179,7 +179,7 @@ async def build_control_runtime(
             maximum_lifetime_seconds=settings.gateway.stream_maximum_lifetime_seconds,
         ),
         notifications=NotificationService(shared.storage.sessions),
-        queries=NativeInteractionQueries(shared.storage.sessions, gateway_replay),
+        queries=NativeInteractionQueries(shared.storage.sessions, gateway_display),
         labels=InteractionLabels(shared.storage.sessions),
         queued_submissions=QueuedSubmissionService(
             shared.storage.sessions,
@@ -209,7 +209,7 @@ async def build_control_runtime(
             else None
         ),
     )
-    subagents = build_subagent_maintenance(settings, shared, gateway_replay)
+    subagents = build_subagent_maintenance(settings, shared, gateway_display)
     if shared.memories is None:
         raise RuntimeError("Memory resources were not composed for Control")
     runtime = ControlRuntime(

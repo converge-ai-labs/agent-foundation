@@ -28,7 +28,8 @@ import {
 import { useAccountProviders, useReceptionOptions } from "./data";
 
 const accountProviderLabels: Record<string, string> = {
-  "github@github_app_http_v1": "GitHub",
+  "github@github_app_http_v1": "GitHub App · Webhook",
+  "github@github_notifications_v1": "GitHub account · Polling",
   "lark@lark_http_v1": "Lark",
   "slack@slack_http_v1": "Slack",
 };
@@ -43,7 +44,7 @@ export function AccountForm({
 }: {
   initial?: Schema["Account"];
   bot?: boolean;
-  setupProvider?: "slack" | "lark";
+  setupProvider?: "slack" | "lark" | "github" | "github_polling";
   onSuccess: (account: Schema["Account"]) => void;
   onCancel: () => void;
   reload?: () => Promise<void>;
@@ -61,14 +62,23 @@ export function AccountForm({
       initial
         ? `${initial.provider_key}@${initial.provider_config_version}`
         : setupProvider
-          ? `${setupProvider}@${setupProvider}_http_v1`
+          ? setupProvider === "github"
+            ? "github@github_app_http_v1"
+            : setupProvider === "github_polling"
+              ? "github@github_notifications_v1"
+              : `${setupProvider}@${setupProvider}_http_v1`
           : "",
     ),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       initial?.provider_config ??
         (setupProvider === "lark"
           ? { brand: "feishu", open_api_origin: "https://open.feishu.cn" }
-          : {}),
+          : setupProvider?.startsWith("github")
+            ? {
+                api_origin: "https://api.github.com",
+                web_origin: "https://github.com",
+              }
+            : {}),
     ),
     [credentials, setCredentials] = useState<Record<string, unknown>>({}),
     [policy, setPolicy] = useState<Record<string, unknown>>(
@@ -114,8 +124,24 @@ export function AccountForm({
             ).filter(([field]) => field === "app_id"),
           ),
         }
-      : definition &&
-        withoutField(definition.configuration_schema, "event_transport");
+      : definition && setupProvider === "github_polling"
+        ? {
+            ...definition.configuration_schema,
+            required: [],
+            properties: Object.fromEntries(
+              Object.entries(
+                (definition.configuration_schema.properties ?? {}) as Record<
+                  string,
+                  unknown
+                >,
+              ).filter(
+                ([field]) =>
+                  !["user_id", "api_origin", "web_origin"].includes(field),
+              ),
+            ),
+          }
+        : definition &&
+          withoutField(definition.configuration_schema, "event_transport");
   const save = useMutation({
     gcTime: 0,
     mutationFn: async () => {
@@ -165,6 +191,22 @@ export function AccountForm({
           app_id: installation.app_id,
           tenant_key: installation.organization_id,
           bot_open_id: installation.bot_id,
+        };
+      }
+      if (setupProvider === "github_polling" && !basis) {
+        validateSettings(definition.credential_schema, credentials);
+        const installation = await client.http
+          .POST("/api/v1/workspaces/{workspace}/bots/github/user", {
+            params: { path: { workspace: workspace.id } },
+            body: {
+              personal_access_token:
+                stringValues(credentials).personal_access_token,
+            },
+          })
+          .then(data);
+        accountConfiguration = {
+          ...configuration,
+          user_id: Number(installation.bot_id),
         };
       }
       if (Object.keys(policy).length)
@@ -276,7 +318,8 @@ export function AccountForm({
         options={
           definitions.data?.items
             .filter(
-              (item) => !bot || ["slack", "lark"].includes(item.provider_key),
+              (item) =>
+                !bot || ["slack", "lark", "github"].includes(item.provider_key),
             )
             .map((item) => ({
               value: `${item.provider_key}@${item.config_version}`,

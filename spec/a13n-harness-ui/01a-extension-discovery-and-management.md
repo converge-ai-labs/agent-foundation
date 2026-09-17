@@ -92,10 +92,10 @@ An Environment profile selects one installed Provider and one approved Host adap
 
 Harness UI owns two fixed profiles that require no YAML resource:
 
-| Stable profile ID     | Surface mode     | Provider            | Host adapter                   | Command authority                                                                                               |
-| --------------------- | ---------------- | ------------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `environment-native`  | **Full Control** | `a13n.direct-local` | `a13n.native-project-root`     | Direct Host-user execution with ambient Host filesystem and network access                                      |
-| `environment-sandbox` | **Sandbox**      | `a13n.local-envd`   | `a13n.local-envd-project-root` | EIP execution with required native filesystem/process isolation and denied networking; no Full Control fallback |
+| Stable profile ID     | Surface mode     | Provider          | Host adapter                   | Command authority                                                                                               |
+| --------------------- | ---------------- | ----------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
+| `environment-native`  | **Full Control** | `direct-local`    | `a13n.native-project-root`     | Direct Host-user execution with ambient Host filesystem and network access                                      |
+| `environment-sandbox` | **Sandbox**      | `a13n.local-envd` | `a13n.local-envd-project-root` | EIP execution with required native filesystem/process isolation and denied networking; no Full Control fallback |
 
 These IDs are release-owned and a configured resource cannot redefine them. `environment-native` remains the omission fallback for compatible existing configuration, while surfaces present it as **Full Control** rather than exposing “Native” as the user-facing safety label.
 
@@ -106,7 +106,7 @@ schema_version: "1"
 kind: environment_profile
 id: environment-docker
 name: Docker
-provider_key: a13n.docker
+provider_key: docker
 provider_schema_version: "1"
 provider_configuration: {}
 adapter_key: a13n.docker-project-roots

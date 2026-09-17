@@ -36,7 +36,7 @@ from a13n_service.interactions.objects import (
 )
 from a13n_service.interactions.ports.memory import ExecutionBindings
 from a13n_service.labels import merge_labels
-from a13n_service.run_stream import RetainedItem, RunReplayStore
+from a13n_service.run_stream import RetainedItem, RunDisplayStore
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -81,7 +81,7 @@ class AsyncSubagentSuccessorReconciler:
         self,
         sessions: async_sessionmaker[AsyncSession],
         states: RunStateStore,
-        replays: RunReplayStore,
+        displays: RunDisplayStore,
         *,
         lifecycle: LifecycleWriter,
         bindings: ExecutionBindings,
@@ -94,7 +94,7 @@ class AsyncSubagentSuccessorReconciler:
         self._sessions = sessions
         self._online = OnlineAdmission(sessions, coordination)
         self._states = states
-        self._replays = replays
+        self._displays = displays
         self._signals = signals
         self._lifecycle = lifecycle
         self._bindings = bindings
@@ -113,7 +113,7 @@ class AsyncSubagentSuccessorReconciler:
             await self._signal_if_bound(organization_id=organization_id, receipt=selected)
             return selected
         terminal_item = await load_async_subagent_terminal_item(
-            self._replays,
+            self._displays,
             organization_id=organization_id,
             child=selected.result_authority.child,
             expected_item_id=selected.result_authority.payload.terminal_result_item_id,

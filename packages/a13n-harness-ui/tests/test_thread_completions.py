@@ -6,6 +6,7 @@ from a13n_harness_ui.composition import AgentReconstructor
 from a13n_harness_ui.errors import StoreConflictError
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.storage import ObjectKind, ObjectRef
+from a13n_harness_ui.storage.contracts import ThreadReadModel
 from a13n_harness_ui.surfaces import RootOperationStatus, ThreadMetadataMutation, ThreadMetadataPatch
 from anyio import Event, fail_after, sleep_forever
 from pydantic_ai.exceptions import UnexpectedModelBehavior
@@ -93,7 +94,11 @@ async def test_selection_conflict_does_not_publish_completion_and_history_uses_i
             result = await original(snapshot)
             # A new completion is published after history chose the initial snapshot.
             await app._store.threads.select_continuation(
-                thread_id=thread.thread_id, expected=None, replacement=ref, completed_run_id="run-test"
+                thread_id=thread.thread_id,
+                expected=None,
+                replacement=ref,
+                read_model=ThreadReadModel(),
+                completed_run_id="run-test",
             )
             return result
 
@@ -105,10 +110,18 @@ async def test_selection_conflict_does_not_publish_completion_and_history_uses_i
         assert stored.completion.version == 1
         with pytest.raises(StoreConflictError):
             await app._store.threads.select_continuation(
-                thread_id=thread.thread_id, expected=None, replacement=ref, completed_run_id="run-other"
+                thread_id=thread.thread_id,
+                expected=None,
+                replacement=ref,
+                read_model=ThreadReadModel(),
+                completed_run_id="run-other",
             )
         # An idempotent repeat of the same successful Run does not produce a second result.
         repeated = await app._store.threads.select_continuation(
-            thread_id=thread.thread_id, expected=ref, replacement=ref, completed_run_id="run-test"
+            thread_id=thread.thread_id,
+            expected=ref,
+            replacement=ref,
+            read_model=ThreadReadModel(),
+            completed_run_id="run-test",
         )
         assert repeated.completion == stored.completion

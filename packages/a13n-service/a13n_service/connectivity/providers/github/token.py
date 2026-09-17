@@ -64,10 +64,10 @@ class GitHubInstallationTokenProvider:
         self._clock = clock
         self._lock = anyio.Lock()
         self._max_cached_repositories = max_cached_repositories
-        self._tokens: OrderedDict[int, _CachedToken] = OrderedDict()
+        self._tokens: OrderedDict[int | None, _CachedToken] = OrderedDict()
 
-    async def token(self, *, repository_id: int) -> str:
-        if repository_id <= 0:
+    async def token(self, *, repository_id: int | None = None) -> str:
+        if repository_id is not None and repository_id <= 0:
             raise GitHubApiError("invalid_binding")
         now = self._clock()
         cached = self._tokens.get(repository_id)
@@ -92,12 +92,12 @@ class GitHubInstallationTokenProvider:
                 self._tokens.popitem(last=False)
             return refreshed.value
 
-    async def _refresh(self, *, repository_id: int, now: datetime) -> _CachedToken:
+    async def _refresh(self, *, repository_id: int | None, now: datetime) -> _CachedToken:
         try:
             origin = await self._endpoint_validator.validate(self._api_origin, resolve_dns=True)
         except ValueError as error:
             raise GitHubApiError("endpoint_denied") from error
-        jwt = self._app_jwt(now)
+        jwt = self.app_token(now)
         try:
             async with self._http_client.stream(
                 "POST",
@@ -107,7 +107,10 @@ class GitHubInstallationTokenProvider:
                     "authorization": f"Bearer {jwt}",
                     "x-github-api-version": GITHUB_API_VERSION,
                 },
-                json={"repository_ids": [repository_id], "permissions": self._permissions},
+                json={
+                    **({"repository_ids": [repository_id]} if repository_id is not None else {}),
+                    "permissions": self._permissions,
+                },
                 follow_redirects=False,
             ) as response:
                 value = await read_github_response(response, max_bytes=_TOKEN_RESPONSE_MAX_BYTES)
@@ -133,7 +136,7 @@ class GitHubInstallationTokenProvider:
             expires_at=expires_at,
         )
 
-    def _app_jwt(self, now: datetime) -> str:
+    def app_token(self, now: datetime) -> str:
         if now.tzinfo is None:
             raise GitHubApiError("invalid_clock")
         header = _base64url_json({"alg": "RS256", "typ": "JWT"})

@@ -52,7 +52,7 @@ Success is acknowledged only after the SQLite commit. A failure before commit pu
 
 Reads return bounded detached records, ordered deterministically by creation time with comment identity as tie-breaker, through cursor-based pagination scoped to the root Thread, ordering direction, and any exact output-target filter. Ascending order remains the API default; the workbench requests newest-first so a just-published comment appears on the first page. Comment history is not restricted to the current selected continuation. No comments for a Thread means an empty collection, not missing or failed conversation history.
 
-After commit, the App emits a best-effort comment-scope invalidation through its existing summary delivery boundary. A missed hint or slow/disconnected subscriber cannot undo publication. Clients refetch comments after reconnect; an SSE replay cursor is not a comment-history cursor or a durable notification ledger. Independent Apps sharing a data root can read committed comments but do not thereby share live presence or in-process notifications.
+After commit, the App emits a best-effort comment-scope invalidation through its existing summary delivery boundary. A missed hint or slow/disconnected subscriber cannot undo publication. Clients refetch comments after a fresh subscription or reset; a realtime replay cursor is not a comment-history cursor or a durable notification ledger. Independent Apps sharing a data root can read committed comments but do not thereby share live presence or in-process notifications.
 
 ## Editing and Deletion
 
@@ -81,7 +81,7 @@ Existing input bounds, immutable capture, admission, capture-only clearing and r
 | Target, quote, family scope, or body is invalid          | Reject the complete comment without a partial stored record                                     |
 | Database commit fails                                    | Do not report publication or emit a successful-change hint                                      |
 | Publication response is lost                             | Reconcile the same comment identity; do not silently post a duplicate                           |
-| Presence or SSE connection is lost                       | Committed comments remain queryable; only live delivery/awareness is unavailable                |
+| Presence or realtime connection is lost                  | Committed comments remain queryable; only live delivery/awareness is unavailable                |
 | New Run, archive, compaction, or App restart             | Keep comments and original saved target references; do not reconstruct draft or execution state |
 | Original source cannot be read                           | Preserve the comment and report source unavailability; never retarget by text similarity        |
 

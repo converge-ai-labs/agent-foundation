@@ -279,7 +279,7 @@ High-level Environment arguments and an explicitly supplied advanced runtime are
 
 ## Direct Local boundary
 
-`a13n.direct-local` exposes an explicitly selected existing Host directory. It is an operation backend, not a sandbox claim:
+`direct-local` exposes an explicitly selected existing Host directory. It is an operation backend, not a sandbox claim:
 
 - the Host creates, selects, retains, backs up, shares, and removes the directory;
 - a fresh Direct Local Environment validates and uses it for one Run;

@@ -20,6 +20,12 @@ The status contract has `api_version: "1"`, package/build information, App statu
 
 Authentication and Host/Origin validation apply at the listener boundary. Use a header-capable HTTP/fetch client. Do not put access keys in API query strings or logs, or confuse model-provider credentials managed under `/api/auth/*` with the listener key. The deliberate dangerous-bypass mode is not a production authentication mechanism.
 
+## Conversation input navigation
+
+`GET /api/threads/{thread_id}/inputs` returns a continuation-bound, paginated directory of ordinary input turns, excluding steering and hidden system input. Each turn carries its stable input identity, bounded preview, input position, exclusive end position, and an optional recorded final-response position. `limit` is 1–100; follow `next_cursor` to read the directory without transferring tool output.
+
+`GET /api/threads/{thread_id}/transcript` accepts an optional `turn_id` for its initial page. `next_cursor` reads earlier messages and `newer_cursor` reads later messages. Both cursors and `expected_continuation_id` remain bound to the observed history. Refresh after a continuation mismatch; never combine positions from different heads. A page also includes the intersecting `turns` and any `boundary_entries` outside its ordinary page range needed to show the original input and final answer. Deduplicate entries by position. Missing intermediate entries are still paginated history, not evidence that a turn had no process output. A final position comes from successful saved execution, not from the last assistant text or a live text-end event.
+
 ## Native terminal
 
 On Linux/macOS, native computer sharing includes a real interactive terminal. Check `features.host_terminal`; Windows returns false and `host_terminal_unavailable`, not a noninteractive substitute. A missing shell is also unavailable. Disabling sharing returns `host_terminal_disabled`. Create with `POST /api/host/terminals` and JSON such as `{"cwd":"/work","rows":24,"columns":80}`. An optional `project_id` must identify an accepted Project. The returned `terminal_id` belongs to this App lifetime; it is not a Thread or Run ID. `cwd` records the initial native directory and never follows later browser navigation.
@@ -70,7 +76,7 @@ Set `foreground: false` when hidden or unfocused. Report changes immediately and
 
 `PresenceFrame` carries the directory and `same_page_participant_ids` relative to that connection. Matching uses the focused target, not scroll position, layout, or containing Thread. HTTP can supply `participant_id` to obtain the same grouping without changing membership. Snapshots are refreshed on membership changes and periodically (15 seconds) to recheck resource availability. Disconnect removes only presence; reconnect reports a fresh current location, not navigation history. App restart clears the directory. A client forgetting its access key closes its interactive connections.
 
-Page presence is independent of the draft's editor cursors, saved comments and execution SSE. Focusing Files does not clear or move a Thread draft. Opening a collaborator's location is an explicit personal navigation action; no follow mode or forced scroll is provided.
+Page presence is independent of the draft's editor cursors, saved comments and execution observation. Focusing Files does not clear or move a Thread draft. Opening a collaborator's location is an explicit personal navigation action; no follow mode or forced scroll is provided.
 
 ## Saved output comments
 
@@ -95,7 +101,7 @@ Allocate a fresh client identity once per intended comment: `comment-` followed 
 
 Acknowledgement follows SQLite commit. Repeating the same identity and canonical publication returns the original record and creation time, including after reconnect or restart. Different content under that identity returns `409 comment_identity_conflict`. A lost response is reconciled by GET or repeating the same identity, never by automatically allocating another. First publication rechecks source selection at commit and returns `409 comment_target_stale` when it changed. A previously commented block remains a valid retained target after later Runs. Posting comments neither admits a Run nor changes Thread metadata/configuration versions, continuation, decisions or model messages.
 
-`GET /api/threads/{root_thread_id}/comments` lists all comments, including those on older sources, with `limit` (1–100, default 20) and an opaque cursor. Ordering is ascending creation time then comment identity by default; `newest_first=true` reverses both for a newest-first discussion. Cursors are bound to the ordering direction. Optional `target` is the JSON-encoded exact target; a cursor is bound to its Thread and filter. GET `.../comments/{comment_id}` reads one publication. Empty history is an empty collection. Summary SSE emits best-effort `kind: comment` invalidations after commit; refetch after reconnect instead of treating an SSE cursor as a durable comment cursor.
+`GET /api/threads/{root_thread_id}/comments` lists all comments, including those on older sources, with `limit` (1–100, default 20) and an opaque cursor. Ordering is ascending creation time then comment identity by default; `newest_first=true` reverses both for a newest-first discussion. Cursors are bound to the ordering direction. Optional `target` is the JSON-encoded exact target; a cursor is bound to its Thread and filter. GET `.../comments/{comment_id}` reads one publication. Empty history is an empty collection. The realtime summary channel emits best-effort `kind: comment` invalidations after commit; reconcile after a fresh subscription or reset rather than treating its cursor as a durable comment cursor.
 
 POST the target to `/api/threads/{root_thread_id}/saved-output` for the original text. `offset` and `limit` select at most 65,536 Unicode code points; `total_characters` and `next_offset` disclose clipping. This read permits only a currently selected or comment-retained target in that Thread family, not arbitrary immutable objects. A broken source fails explicitly while its comment remains readable. Identical text in a newer continuation is not the same target: show the Thread comment list and original-output view unless exact inline identity is established. Reading original output does not select it for execution.
 
@@ -251,8 +257,7 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `GET /api/operations/{receipt_id}`                                  | Query exact process-local operation                                    |
 | `POST /api/operations/{receipt_id}/steer`                           | Add steering text                                                      |
 | `POST /api/operations/{receipt_id}/cancel`                          | Request cancellation                                                   |
-| `GET /api/threads/{thread_id}/events`                               | Focused SSE snapshot/events                                            |
-| `GET /api/events`                                                   | Summary SSE invalidations                                              |
+| `WS /api/realtime/connect`                                          | Multiplexed summary and focused observation channels                   |
 
 `GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. `features.page_presence` and `features.output_comments` report transient page awareness and durable saved-output comments, independently of native sharing. These backend features do not imply browser panels exist.
 
@@ -355,22 +360,25 @@ Attachment upload uses raw bytes with a `name` query parameter, not multipart fo
 
 Use the existing root operation GET for polling and exact-receipt steering/cancellation. These operations introduce no alternate execution coordinator or persistent work queue.
 
-## Consume SSE and recover gaps
+## Observe realtime channels and recover gaps
 
-```bash
-curl --no-buffer --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/events" \
-  -H "Authorization: Bearer $HUI_API_KEY"
+Connect to `/api/realtime/connect` over WebSocket and authenticate with the first JSON message `{"api_key":"<instance key>"}`. Keep credentials out of URLs. Subscribe with a unique channel ID:
+
+```json
+{"version":1,"kind":"subscribe","channel":"focused-root","stream":"focus","root_thread_id":"<thread ID>","after":null}
 ```
 
-SSE frames carry JSON in `data`. A focused stream without `after` begins with `kind: "snapshot"`. If `snapshot.root_stream` is present, the snapshot cursor is null and `kind: "root_stream"` batches follow, each containing at most 16 indexed events from that exact Run's existing Stream Protocol observer. Apply these once to the Run's provisional display, then store the `resume_cursor` from `kind: "ready"`. If interrupted before ready, discard the incomplete bootstrap and open a fresh watch. Without root replay the initial snapshot already carries a cursor. Following `kind: "event"` frames carry later live events and their cursors.
+For summary hints, use `stream: "summary"` and omit `root_thread_id`. At most twelve channels share one connection. Unsubscribe with `{"version":1,"kind":"unsubscribe","channel":"focused-root"}`. Answer a version-1 `ping` with `{"version":1,"kind":"pong"}`. Server observation envelopes carry `version: 1`, the channel ID, and the observation `frame`. There is no SSE fallback; clients use this protocol.
+
+Observation frames are JSON objects. A focused stream without `after` begins with `kind: "snapshot"`. If `snapshot.root_stream` is present, the snapshot cursor is null and `kind: "root_stream"` batches follow, each containing at most 16 indexed events from that exact Run's existing Stream Protocol observer. Apply these once to the Run's provisional display, then store the `resume_cursor` from `kind: "ready"`. If interrupted before ready, discard the incomplete bootstrap and open a fresh watch. Without root replay the initial snapshot already carries a cursor. Following `kind: "event"` frames carry later live events and their cursors.
 
 The root prefix includes only events published at the snapshot cutover, not later observations. Observer indexes are not the live hub's global sequence. Fetch saved transcript independently, bound to the selected continuation, and replace provisional output when that continuation advances. `recent_events` is only incomplete diagnostic context: do not append it again beside history or root replay. Child inspection uses the existing compact closed-activity projection; reconnect does not expose unfinished child activity.
 
-Store cursors only after applying their frames; reconnect using the opaque `after` query value, URL-encoded. A valid cursor assumes the client retained its display. A newly loaded page needs a fresh bootstrap instead. This is not the Service Run stream's `Last-Event-ID` contract.
+Store cursors only after applying their frames; reconnect using the opaque `after` field in a new subscription command. A valid cursor assumes the client retained its display. A newly loaded page needs a fresh bootstrap instead. This is not the Service Run stream's `Last-Event-ID` contract.
 
-The summary stream begins with `kind: "open"` and emits `kind: "invalidation"`; refetch affected summaries instead of interpreting invalidation as a full resource. A settled `root_operation` event may additionally include `notice: {receipt_id, status, brief}` with Host status `completed`, `failed`, or `suspended` and an actual plain-text preview of at most 320 characters. Notice delivery follows continuation selection and is best effort, not durable delivery. Deduplicate notices by event epoch and receipt ID. A fresh subscription or stream reset is not a reason to notify about historical completions. Focus and summary cursors are distinct and bound to scope/epoch. Sparse sequences are valid; do not demand contiguous global numbering.
+The summary channel begins with `kind: "open"` and emits `kind: "invalidation"`; reconcile affected resources instead of interpreting invalidation as a full resource. An open with `resumed: true` replays missed hints without requiring a full refresh; `resumed: false` requires initial reconciliation. Batch dirty Thread IDs through `POST /api/threads/activity/lookup` (up to 100 IDs) to update loaded navigation rows. Activity pagination returns the active collection on the first page only. A settled `root_operation` event may additionally include `notice: {receipt_id, status, brief}` with Host status `completed`, `failed`, or `suspended` and an actual plain-text preview of at most 320 characters. Notice delivery follows continuation selection and is best effort, not durable delivery. Deduplicate notices by event epoch and receipt ID. A fresh subscription or stream reset is not a reason to notify about historical completions. Focus and summary cursors are distinct and bound to scope/epoch. Sparse sequences are valid; do not demand contiguous global numbering.
 
-A `kind: "reset"` frame requires refetch and a fresh subscription. The live buffer is bounded and process-local. `watch_thread` provides subscribe-before-query cutover, not transactional durable replay. Disconnect stops observation, not execution. Browser `EventSource` cannot attach arbitrary authorization headers; use an appropriate authenticated fetch/SSE reader rather than moving the key to the URL.
+A `kind: "reset"` frame requires refetch and a fresh subscription. The live buffer is bounded and process-local. `watch_thread` provides subscribe-before-query cutover, not transactional durable replay. Disconnect stops observation, not execution. Each channel resumes independently; a root Run switch replaces only its focused channel, not the socket or unrelated observations.
 
 ## Errors and versions
 

@@ -121,18 +121,34 @@ class LiveClient:
         raise AssertionError("Collection exceeded 100 pages")
 
     async def retained_items(self, run_id: str) -> list[dict]:
-        """Wait for the immutable replay object, which is published after stream closure."""
+        """Wait for complete final coverage, then read that immutable Item collection."""
         path = f"/api/v1/runs/{run_id}/items"
 
         async def published():
             response = await self.http.get(path)
             if response.status_code == 409 and response.json().get("error", {}).get("code") == "items_unavailable":
-                return {"ready": False}
+                return {"finalized": False}
             assert response.status_code == 200, f"Items {run_id}: HTTP {response.status_code}"
-            return {"ready": True}
+            return response.json()
 
-        await self.wait(published, lambda value: value["ready"], f"retained Items publication: {run_id}")
-        return await self.collection(path)
+        page = await self.wait(published, lambda value: value["finalized"], f"retained Items finalization: {run_id}")
+        coverage = (page["snapshot_version"], page["projection_cursor"])
+        items, seen = [], set()
+        for _ in range(100):
+            assert page["finalized"] and page["complete"], (
+                f"Items {run_id}: incomplete final display: {page.get('incomplete_reason')}"
+            )
+            assert (page["snapshot_version"], page["projection_cursor"]) == coverage, (
+                f"Items {run_id}: finalized snapshot coverage changed during pagination"
+            )
+            items.extend(page["items"])
+            cursor = page["next_cursor"]
+            if cursor is None:
+                return items
+            assert cursor not in seen, "Collection cursor repeated"
+            seen.add(cursor)
+            page = await self.request("GET", path, params={"cursor": cursor})
+        raise AssertionError("Collection exceeded 100 pages")
 
     async def wait(self, fetch, predicate: Callable[[dict], bool], description: str) -> dict:
         deadline = monotonic() + self.timeout

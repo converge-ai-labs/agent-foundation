@@ -53,9 +53,15 @@ export function ConversationPicker({
   return (
     <div className={styles.picker}>
       <FormField
-        label={t("Pilot conversation ID")}
+        label={t(
+          account.provider_key === "github"
+            ? "Pilot repository ID"
+            : "Pilot conversation ID",
+        )}
         description={t(
-          "Use the exact channel or chat ID. Discovery only lists conversations visible to this app; a missing result does not mean the conversation does not exist.",
+          account.provider_key === "github"
+            ? "Choose an accessible repository or enter its numeric repository ID."
+            : "Use the exact channel or chat ID. Discovery only lists conversations visible to this app; a missing result does not mean the conversation does not exist.",
         )}
       >
         <Input
@@ -73,7 +79,11 @@ export function ConversationPicker({
         aria-expanded={open}
         onClick={() => setOpen(!open)}
       >
-        {t("Find conversations")}
+        {t(
+          account.provider_key === "github"
+            ? "Find repositories"
+            : "Find conversations",
+        )}
       </Button>
       {open && (
         <section aria-label={t("Available conversations")}>

@@ -15,6 +15,8 @@ from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
+from a13n_service.iam.models import RoleBindingRecord
+from a13n_service.interactions import active_commands
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.attempts import AttemptExecutionService, AttemptPreparationAccepted
 from a13n_service.interactions.command_values import (
@@ -35,10 +37,10 @@ from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.state import CompletedOutcomeCandidate, InboxReceipt
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import seed_hook_actor_access
@@ -858,7 +860,7 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
         run_id=source.run_id,
     )
 
-    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(interaction_object_store))
+    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunDisplayStore(interaction_object_store))
     waiting_resource = await queries.get_run(actor=_actor(), run_id=source.run_id)
     public_digest = waiting_resource.model_dump(mode="json")["sealed_state_digest_sha256"]
     assert public_digest == digest
@@ -1118,3 +1120,110 @@ async def test_steer_idempotency_rejects_changed_input(
         )
 
     assert captured.value.code == "idempotency_conflict"
+
+
+@pytest.mark.parametrize("revoke_at", ["before_request", "after_precheck", "during_preparation"])
+async def test_steer_authorization_is_fixed_at_precheck_but_not_reused_by_later_requests(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+    revoke_at: str,
+) -> None:
+    objects = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    accepted = await commands.runs.start(
+        actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="source", request=_request()
+    )
+
+    async def revoke_access() -> None:
+        async with transaction(lifecycle_interaction_sessions) as database:
+            await database.execute(
+                delete(RoleBindingRecord).where(
+                    RoleBindingRecord.principal_id == USER_ID,
+                    RoleBindingRecord.workspace_id == WORKSPACE_ID,
+                )
+            )
+
+    authorize = active_commands.authorize_interaction
+
+    async def authorize_then_revoke(*args, **kwargs):
+        result = await authorize(*args, **kwargs)
+        if revoke_at == "after_precheck":
+            await revoke_access()
+        return result
+
+    monkeypatch.setattr(active_commands, "authorize_interaction", authorize_then_revoke)
+    read_run = commands.active._states.read_run
+
+    async def read_then_revoke(run):
+        state = await read_run(run)
+        if revoke_at == "during_preparation":
+            await revoke_access()
+        return state
+
+    read_spy = AsyncMock(side_effect=read_then_revoke)
+    monkeypatch.setattr(commands.active._states, "read_run", read_spy)
+    if revoke_at == "before_request":
+        await revoke_access()
+        with pytest.raises(InteractionCommandError) as denied:
+            await commands.active.steer(
+                actor=_actor(), run_id=accepted.run_id, idempotency_key="steer", input=_request().input
+            )
+        assert application_error_status(denied.value) == 404
+        read_spy.assert_not_awaited()
+    else:
+        receipt = await commands.active.steer(
+            actor=_actor(), run_id=accepted.run_id, idempotency_key="steer", input=_request().input
+        )
+        read_spy.assert_awaited_once()
+        for key in ("steer", "new-steer"):
+            with pytest.raises(InteractionCommandError) as denied:
+                await commands.active.steer(
+                    actor=_actor(), run_id=accepted.run_id, idempotency_key=key, input=_request().input
+                )
+            assert application_error_status(denied.value) == 404
+        with pytest.raises(InteractionCommandError) as denied:
+            await commands.active.get_steer(actor=_actor(), run_id=accepted.run_id, steer_id=receipt.steer_id)
+        assert application_error_status(denied.value) == 404
+        read_spy.assert_awaited_once()
+
+    async with short_session(lifecycle_interaction_sessions) as database:
+        count = await database.scalar(select(func.count()).select_from(ThreadInboxRecord))
+        assert count == (0 if revoke_at == "before_request" else 1)
+
+
+async def test_steer_rechecks_target_after_state_read(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
+    tmp_path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    objects = await LocalObjectStore.create(tmp_path / "objects")
+    commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    accepted = await commands.runs.start(
+        actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="source", request=_request()
+    )
+    read_run = commands.active._states.read_run
+
+    async def read_then_complete(run):
+        state = await read_run(run)
+        await _complete_run(lifecycle_interaction_sessions, objects, run_id=accepted.run_id)
+        return state
+
+    monkeypatch.setattr(commands.active._states, "read_run", read_then_complete)
+    with pytest.raises(InteractionCommandError) as captured:
+        await commands.active.steer(
+            actor=_actor(), run_id=accepted.run_id, idempotency_key="steer", input=_request().input
+        )
+    assert captured.value.code == "run_steer_conflict"
+    async with short_session(lifecycle_interaction_sessions) as database:
+        assert await database.scalar(select(func.count()).select_from(ThreadInboxRecord)) == 0
+        assert (
+            await database.scalar(
+                select(func.count())
+                .select_from(IdempotencyEvidenceRecord)
+                .where(IdempotencyEvidenceRecord.operation == "run.steer")
+            )
+            == 0
+        )

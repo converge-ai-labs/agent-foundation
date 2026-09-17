@@ -92,71 +92,81 @@ it("shows permitted metadata with key-based agent links and no administrator act
   );
 });
 
-it("submits search to the server and resets pagination when filters change", async () => {
-  const user = userEvent.setup();
-  state.get.mockImplementation(
-    async (
-      path: string,
-      args: { params: { query: { search?: string; cursor?: string } } },
-    ) =>
-      response(
-        path.endsWith("/agents/{agent}")
-          ? { id: "agt_test", key: "support-agent", name: "Support agent" }
-          : {
-              items: [row],
-              next_cursor: args.params.query.cursor ? null : "page-two",
-            },
-      ),
-  );
-  setup();
-  await screen.findByText("Support bot");
-  await user.click(screen.getByRole("button", { name: "Next" }));
-  await waitFor(() =>
+it.each([
+  ["Feishu", "lark"],
+  ["GitHub", "github"],
+])(
+  "submits search to the server and resets pagination for %s",
+  async (label, platform) => {
+    const user = userEvent.setup();
+    state.get.mockImplementation(
+      async (
+        path: string,
+        args: { params: { query: { search?: string; cursor?: string } } },
+      ) =>
+        response(
+          path.endsWith("/agents/{agent}")
+            ? { id: "agt_test", key: "support-agent", name: "Support agent" }
+            : {
+                items: [row],
+                next_cursor: args.params.query.cursor ? null : "page-two",
+              },
+        ),
+    );
+    setup();
+    await screen.findByText("Support bot");
+    await user.click(screen.getByRole("button", { name: "Next" }));
+    await waitFor(() =>
+      expect(
+        state.get.mock.calls
+          .filter(([path]) => path.endsWith("/bots"))
+          .at(-1)?.[1].params.query.cursor,
+      ).toBe("page-two"),
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "Search bots" }),
+      "  Acme  ",
+    );
     expect(
-      state.get.mock.calls
-        .filter(([path]) => path.endsWith("/bots"))
-        .at(-1)?.[1].params.query.cursor,
-    ).toBe("page-two"),
-  );
-  await user.type(
-    screen.getByRole("textbox", { name: "Search bots" }),
-    "  Acme  ",
-  );
-  expect(
-    state.get.mock.calls.filter(([path]) => path.endsWith("/bots")),
-  ).toHaveLength(2);
-  await user.click(screen.getByRole("button", { name: "Search" }));
-  await waitFor(() =>
-    expect(
-      state.get.mock.calls
-        .filter(([path]) => path.endsWith("/bots"))
-        .at(-1)?.[1].params.query,
-    ).toMatchObject({
-      search: "Acme",
-      cursor: undefined,
-    }),
-  );
-  await user.click(screen.getByRole("combobox", { name: "Platform" }));
-  await user.click(screen.getByRole("option", { name: "Feishu" }));
-  await waitFor(() =>
-    expect(
-      state.get.mock.calls
-        .filter(([path]) => path.endsWith("/bots"))
-        .at(-1)?.[1].params.query,
-    ).toMatchObject({
-      platform: "lark",
-      search: "Acme",
-      cursor: undefined,
-    }),
-  );
-  await user.click(screen.getByRole("button", { name: "Clear filters" }));
-  await waitFor(() =>
-    expect(
-      (screen.getByRole("textbox", { name: "Search bots" }) as HTMLInputElement)
-        .value,
-    ).toBe(""),
-  );
-});
+      state.get.mock.calls.filter(([path]) => path.endsWith("/bots")),
+    ).toHaveLength(2);
+    await user.click(screen.getByRole("button", { name: "Search" }));
+    await waitFor(() =>
+      expect(
+        state.get.mock.calls
+          .filter(([path]) => path.endsWith("/bots"))
+          .at(-1)?.[1].params.query,
+      ).toMatchObject({
+        search: "Acme",
+        cursor: undefined,
+      }),
+    );
+    screen.getByRole("combobox", { name: "Platform" }).focus();
+    await user.keyboard("{ArrowDown}");
+    await user.click(await screen.findByRole("option", { name: label }));
+    await waitFor(() =>
+      expect(
+        state.get.mock.calls
+          .filter(([path]) => path.endsWith("/bots"))
+          .at(-1)?.[1].params.query,
+      ).toMatchObject({
+        platform,
+        search: "Acme",
+        cursor: undefined,
+      }),
+    );
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("textbox", {
+            name: "Search bots",
+          }) as HTMLInputElement
+        ).value,
+      ).toBe(""),
+    );
+  },
+);
 
 it("distinguishes filtered emptiness from initial setup and exposes the resume action only to administrators", async () => {
   state.manage = true;

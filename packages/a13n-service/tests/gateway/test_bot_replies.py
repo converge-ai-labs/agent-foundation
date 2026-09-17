@@ -387,3 +387,80 @@ async def test_feishu_receipts_use_the_same_observation_contract(reply_fixture, 
     if not lost_response:
         assert proof.receipt.message_id == "om_reply" and "receipt" not in result
     assert "private" not in proof.model_dump_json()
+
+
+@pytest.mark.parametrize("outcome", ["confirmed", "unknown"])
+async def test_github_comment_receipt_is_retained_before_hiding_it(reply_fixture, outcome):
+    from a13n_service.connectivity.providers.github.actions import GitHubCommentReceipt
+
+    from tests.connectivity.test_github_client import _AllowEndpoint
+
+    sessions, context, attempt, _observer = reply_fixture
+    context = context.model_copy(
+        update={
+            "provider_key": "github",
+            "provider_context_version": require_native_provider("github").context_version,
+            "provider_context": {
+                "repository_id": 42,
+                "repository_owner": "acme",
+                "repository_name": "repo",
+                "number": 7,
+                "target_kind": "issue",
+            },
+            "action_policy": {},
+            "allowed_actions": ("github.add_comment",),
+        }
+    )
+    async with transaction(sessions) as database:
+        account = await database.get(AccountRecord, ACCOUNT_ID)
+        account.provider_key = "github"
+        run = await database.get(RunRecord, RUN_ID)
+        run.native_tool_contexts_json = [context.model_dump(mode="json")]
+    observer = BotReplyObserver(
+        sessions,
+        attempt=attempt,
+        context=context,
+        workspace_id=WORKSPACE_ID,
+        account_version=1,
+        credential_generation=1,
+        clock=lambda: NOW,
+    )
+    posts = []
+
+    async def respond(request):
+        if request.url.path == "/user":
+            return httpx2.Response(200, json={"id": 99})
+        if request.url.path == "/repos/acme/repo":
+            return httpx2.Response(200, json={"id": 42})
+        rows = await _records(sessions)
+        assert len(rows) == 1 and rows[0].status == "dispatching"
+        posts.append(request)
+        if outcome == "unknown":
+            raise httpx2.ReadTimeout("external reply could have been created")
+        return httpx2.Response(
+            201,
+            json={
+                "id": 123,
+                "node_id": "IC_test",
+                "html_url": "https://github.com/acme/repo/issues/7#issuecomment-123",
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
+        action = require_native_provider("github").inbound_actions(
+            context.provider_context,
+            {},
+            {"user_id": 99, "api_origin": "https://api.github.com", "web_origin": "https://github.com"},
+            {"personal_access_token": "private-pat"},
+            http,
+            _AllowEndpoint(),
+        )["github.add_comment"]
+        result = await action.call_observed({"body": "private-comment"}, observer)
+        assert "receipt" not in result
+    evidence = (await _page(sessions)).items[0]
+    assert len(posts) == 1
+    assert evidence.status == ("succeeded" if outcome == "confirmed" else "outcome_unknown")
+    if outcome == "confirmed":
+        assert isinstance(evidence.receipt, GitHubCommentReceipt)
+        assert evidence.receipt.comment_id == 123
+    assert "private" not in evidence.model_dump_json()

@@ -49,13 +49,14 @@ def _upload(key_digest, now):
     )
 
 
-async def test_collect_only_unowned_namespaces(collection_sessions, object_store):
+@pytest.mark.parametrize("filename", ["state.json", "display_messages.json"])
+async def test_collect_only_unowned_namespaces(collection_sessions, object_store, filename):
     sessions = collection_sessions
     await seed_run_and_secret(sessions)
     clock = _Clock(utc_now())
     writer = PublicationObjectStore(object_store, sessions, clock=clock)
-    retained = f"organizations/{ORGANIZATION_ID}/runs/{RUN_ID}/state.json"
-    orphan = f"organizations/{ORGANIZATION_ID}/runs/run_orphan/state.json"
+    retained = f"organizations/{ORGANIZATION_ID}/runs/{RUN_ID}/{filename}"
+    orphan = f"organizations/{ORGANIZATION_ID}/runs/run_orphan/{filename}"
     unknown = f"organizations/{ORGANIZATION_ID}/unknown/data"
     for key in (retained, orphan, unknown):
         await writer.put(key, b"body", if_none_match=True)

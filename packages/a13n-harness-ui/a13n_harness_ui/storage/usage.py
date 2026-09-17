@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -10,6 +11,7 @@ from typing import Annotated
 from a13n_harness import HarnessRunResultEvent
 from a13n_harness.events import HarnessEvent, HarnessExtensionEvent, UsageReportPayload
 from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, UsageRecord
+from anyio import Lock
 from pydantic import Field, TypeAdapter
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -112,9 +114,71 @@ class _Totals:
         )
 
 
+@dataclass
+class _Aggregation:
+    """Bounded process cache of a committed usage prefix, not an accounting authority."""
+
+    recent_ids: tuple[str, ...]
+    cursor: int = 0
+    first: datetime | None = None
+    last: datetime | None = None
+    root: _Totals = field(default_factory=_Totals)
+    children: _Totals = field(default_factory=_Totals)
+    combined: _Totals = field(default_factory=_Totals)
+    other: _Totals = field(default_factory=_Totals)
+    other_runs: _Totals = field(default_factory=_Totals)
+    models: dict[str, _Totals] = field(default_factory=dict)
+    runs: dict[str, _Totals] = field(default_factory=dict)
+    run_agents: dict[str, tuple[str, bool]] = field(default_factory=dict)
+
+    def add(self, sequence: int, descendant: bool, payload: str, observed: datetime) -> None:
+        record = _RECORD.validate_json(payload)
+        self.first = observed if self.first is None else min(self.first, observed)
+        self.last = observed if self.last is None else max(self.last, observed)
+        self.combined.add(record)
+        if record.run_id in self.recent_ids:
+            self.runs.setdefault(record.run_id, _Totals()).add(record)
+            self.run_agents[record.run_id] = (record.agent_instance_id, descendant)
+        else:
+            self.other_runs.add(record)
+        (self.children if descendant else self.root).add(record)
+        if isinstance(record, ModelUsageRecord):
+            name = f"{record.provider_name or 'unknown'}/{record.model_name or 'unknown'}"
+            if name in self.models or len(self.models) < _GROUPS:
+                self.models.setdefault(name, _Totals()).add(record)
+            else:
+                self.other.add(record)
+        self.cursor = sequence
+
+    def view(self, thread_id: str) -> ThreadUsageView:
+        return ThreadUsageView(
+            thread_id=thread_id,
+            first_observed_at=self.first,
+            observed_through=self.last,
+            root=self.root.view(),
+            descendants=self.children.view(),
+            combined=self.combined.view(),
+            models=tuple((name, totals.view()) for name, totals in sorted(self.models.items())),
+            other_models=self.other.view(),
+            recent_runs=tuple(
+                RunUsageView(
+                    run_id=run_id,
+                    agent_instance_id=self.run_agents[run_id][0],
+                    descendant=self.run_agents[run_id][1],
+                    totals=self.runs[run_id].view(),
+                )
+                for run_id in self.recent_ids
+                if run_id in self.run_agents
+            ),
+            other_runs=self.other_runs.view(),
+        )
+
+
 class ThreadUsageRepository:
     def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
+        self._cache: OrderedDict[str, _Aggregation] = OrderedDict()
+        self._snapshot_lock = Lock()
 
     async def observe(self, *, thread_id: str, item: object) -> None:
         """Consume canonical events, not lossy UI summaries or inclusive RunUsage."""
@@ -185,7 +249,11 @@ class ThreadUsageRepository:
         return None if payload is None else ModelUsageRecord.model_validate_json(payload)
 
     async def snapshot(self, *, thread_id: str) -> ThreadUsageView:
-        """Read a finite high-water snapshot in detached batches with bounded aggregation memory."""
+        """Aggregate only a committed suffix while the bounded group membership is stable."""
+        async with self._snapshot_lock:
+            return await self._snapshot(thread_id=thread_id)
+
+    async def _snapshot(self, *, thread_id: str) -> ThreadUsageView:
         async with short_session(self._sessions) as session:
             root_id = await self._root_id(session, thread_id)
             if root_id != thread_id:
@@ -212,15 +280,13 @@ class ThreadUsageRepository:
                     )
                 ).all()
             )
-        runs = {run_id: _Totals() for run_id in recent_ids}
-        run_agents: dict[str, tuple[str, bool]] = {}
-        other_runs = _Totals()
-        root, children, combined, other = _Totals(), _Totals(), _Totals(), _Totals()
-        models: dict[str, _Totals] = {}
-        first: datetime | None = None
-        last: datetime | None = None
-        cursor = 0
-        while cursor < high_water:
+        aggregate = self._cache.pop(thread_id, None)
+        if aggregate is None or aggregate.cursor > high_water or set(aggregate.recent_ids) != set(recent_ids):
+            # A changed recent-Run window can change first-observed currency attribution
+            # in 'other'; rebuild instead of subtracting lossy capped groups.
+            aggregate = _Aggregation(recent_ids=recent_ids)
+        aggregate.recent_ids = recent_ids
+        while aggregate.cursor < high_water:
             async with short_session(self._sessions) as session:
                 rows = (
                     await session.execute(
@@ -232,7 +298,7 @@ class ThreadUsageRepository:
                         )
                         .where(
                             ThreadUsageRecord.root_thread_id == root_id,
-                            ThreadUsageRecord.sequence > cursor,
+                            ThreadUsageRecord.sequence > aggregate.cursor,
                             ThreadUsageRecord.sequence <= high_water,
                         )
                         .order_by(ThreadUsageRecord.sequence)
@@ -242,44 +308,11 @@ class ThreadUsageRepository:
             if not rows:
                 break
             for sequence, descendant, payload, observed in rows:
-                cursor = sequence
-                first = observed if first is None else min(first, observed)
-                last = observed if last is None else max(last, observed)
-                record = _RECORD.validate_json(payload)
-                combined.add(record)
-                if record.run_id in runs:
-                    runs[record.run_id].add(record)
-                    run_agents[record.run_id] = (record.agent_instance_id, descendant)
-                else:
-                    other_runs.add(record)
-                (children if descendant else root).add(record)
-                if isinstance(record, ModelUsageRecord):
-                    name = f"{record.provider_name or 'unknown'}/{record.model_name or 'unknown'}"
-                    if name in models or len(models) < _GROUPS:
-                        models.setdefault(name, _Totals()).add(record)
-                    else:
-                        other.add(record)
-        return ThreadUsageView(
-            thread_id=thread_id,
-            first_observed_at=first,
-            observed_through=last,
-            root=root.view(),
-            descendants=children.view(),
-            combined=combined.view(),
-            models=tuple((name, totals.view()) for name, totals in sorted(models.items())),
-            other_models=other.view(),
-            recent_runs=tuple(
-                RunUsageView(
-                    run_id=run_id,
-                    agent_instance_id=run_agents[run_id][0],
-                    descendant=run_agents[run_id][1],
-                    totals=runs[run_id].view(),
-                )
-                for run_id in recent_ids
-                if run_id in run_agents
-            ),
-            other_runs=other_runs.view(),
-        )
+                aggregate.add(sequence, descendant, payload, observed)
+        self._cache[thread_id] = aggregate
+        while len(self._cache) > 16:
+            self._cache.popitem(last=False)
+        return aggregate.view(thread_id)
 
     @staticmethod
     async def _root_id(session: AsyncSession, thread_id: str) -> str:

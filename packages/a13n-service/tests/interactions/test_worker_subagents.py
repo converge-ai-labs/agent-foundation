@@ -232,7 +232,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
     ) as (runtime, shared):
         loop = runtime.execution_loop
         assert loop is not None
-        maintenance = build_subagent_maintenance(settings, shared, runtime.run_replay)
+        maintenance = build_subagent_maintenance(settings, shared, runtime.run_display)
         with fail_after(20):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)

@@ -14,7 +14,7 @@ Document memory stores reusable knowledge, procedures, and events as addressable
 | Filesystem reads and mutations                                                      | Bound Environment `FileOperator`        |
 | Storage selection, tenant/subject authority, retention, durable workflow scheduling | Host                                    |
 
-The filesystem implementation is registered as `a13n.filesystem`. Mem0 and other native backends remain explicit alternatives; installation never changes a selected backend. Native record CRUD does not imply support for revisioned documents. Providers advertise document, revision, and change-record support separately and reject unsupported operations before mutation.
+The filesystem implementation is registered as `a13n.filesystem`. Mem0 and other native backends remain explicitly selectable entries, independently or alongside document entries; installation never changes a selected backend. Native record CRUD does not imply support for revisioned documents. Providers advertise document, revision, and change-record support separately and reject unsupported operations before mutation.
 
 ## Memory Types and Time
 
@@ -73,7 +73,7 @@ Topic directories and descriptive filenames are meaningful human navigation, not
 
 `_index.md` is the sole index name at both the root and child directories; there is no second `MEMORY.md` knowledge body. Indexes contain directory scope, concise child descriptions, links, and retrieval hints. Generated entries are derived from committed metadata, without an LLM call during browsing. Substantive facts live in documents. Optional authored directory descriptions are stored separately from generated entries and survive reindexing.
 
-The Host renders a permission-filtered, bounded root index as untrusted input context. Shared documents are composed into that projection without exposing other tenants' paths, titles, or existence. Physical index files are not authority and are not injected without access filtering. Whole entries and continuation fit the existing 32 KiB encoded-context budget. Large collections use subindexes and pagination, not silent truncation or an unbounded tree dump. Index-first document mode does not also inject native top-k bodies by default.
+The Host renders a permission-filtered, bounded root index as untrusted input context. Shared documents are composed into that projection without exposing other tenants' paths, titles, or existence. Physical index files are not authority and are not injected without access filtering. Whole entries and continuation fit the existing 32 KiB encoded-context budget. Large collections use subindexes and pagination, not silent truncation or an unbounded tree dump. An index-first document entry does not itself inject native top-k bodies; separately enabled record entries retain their own recall behavior within the aggregate context budget.
 
 Current documents, retained revisions, and commit/identity records, including retained change diffs, are authoritative corpus data. Search indexes, TOC caches, and generated navigation are rebuildable; deleting these derived files loses no committed memory. Deleting revisions or commit records is not reindexing. `.internal/` and pending candidates do not appear in ordinary model navigation. `inbox/` holds unaccepted or disputed candidates for authorized organization/review, not ordinary factual recall.
 
@@ -162,7 +162,7 @@ Content-bearing records, including explanations and removed lines, follow the co
 
 ## Retrieval and Model Tools
 
-The host-authorized `MemoryDocumentStore` exposes index, search, read, TOC, create, revise, history, and delete behavior. A backend advertises unsupported revision/history operations explicitly; ordinary native records are not fabricated into a document history. The same tools serve filesystem and other document adapters when their capabilities are available.
+The host-authorized `MemoryDocumentStore` exposes index, search, read, TOC, create, revise, history, and delete behavior. A backend advertises unsupported revision/history operations explicitly; ordinary native records are not fabricated into a document history. The same tools serve filesystem and other document adapters when their capabilities are available. The table lists base tool names; canonical entries apply the unique entry prefix under [multiple memory entries](09-context-and-memory.md#multiple-memory-entries). Unsupported operations are omitted from the model tool surface and rejected before mutation through direct calls.
 
 | Tool                                                             | Contract                                                                                               |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |

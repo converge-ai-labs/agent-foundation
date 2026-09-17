@@ -33,6 +33,8 @@ export class ResultTracker {
   private timer?: ReturnType<typeof setTimeout>;
   private refreshing?: Promise<void>;
   private dirty = false;
+  private fullRefresh = false;
+  private dirtyIds = new Set<string>();
   private acknowledgements = new Map<string, number>();
   private failedFollows = new Map<string, number>();
   private failedAcknowledgements = new Map<string, number>();
@@ -157,20 +159,27 @@ export class ResultTracker {
   invalidate = (threadId?: string) => {
     if (threadId && !this.snapshot.followed.has(threadId)) return;
     this.dirty = true;
+    if (threadId) this.dirtyIds.add(threadId);
+    else this.fullRefresh = true;
     if (!this.timer && !this.refreshing)
       this.timer = setTimeout(() => {
         this.timer = undefined;
-        void this.refresh();
+        void this.refresh(false);
       }, 75);
   };
-  refresh = (): Promise<void> => {
+  refresh = (full = true): Promise<void> => {
     this.dirty = true;
+    this.fullRefresh ||= full;
     if (this.refreshing) return this.refreshing;
     clearTimeout(this.timer);
     this.timer = undefined;
     this.refreshing = (async () => {
       while (this.dirty) {
         this.dirty = false;
+        const all = this.fullRefresh;
+        this.fullRefresh = false;
+        const dirtyIds = this.dirtyIds;
+        this.dirtyIds = new Set();
         try {
           for (const [id, baseline] of this.failedFollows) {
             const record = await this.store.update(id, baseline, true);
@@ -191,7 +200,9 @@ export class ResultTracker {
         } catch {
           this.storageFailed();
         }
-        const ids = [...this.snapshot.followed.keys()];
+        const ids = all
+          ? [...this.snapshot.followed.keys()]
+          : [...dirtyIds].filter((id) => this.snapshot.followed.has(id));
         try {
           for (let offset = 0; offset < ids.length; offset += 100) {
             const observedAt = Date.now();
@@ -210,6 +221,7 @@ export class ResultTracker {
           });
           // Retry on the next event/focus/reconnect, not a failure spin loop.
           this.dirty = false;
+          this.fullRefresh = true;
         }
       }
     })().finally(() => {

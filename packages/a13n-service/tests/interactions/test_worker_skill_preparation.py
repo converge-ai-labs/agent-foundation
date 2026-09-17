@@ -121,7 +121,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
     )
 
     # Keep real Worker wiring, replacing only the helper's placeholder dependencies.
-    catalog = build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
+    catalog = build_environment_provider_catalog(builtin_keys=("direct-local",))
     monkeypatch.setattr(worker_helpers, "EnvironmentProviderCatalog", lambda: catalog)
     monkeypatch.setattr(
         "a13n_service.process.worker.SkillRuntimePreparer",

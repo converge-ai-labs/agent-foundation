@@ -81,7 +81,7 @@ class BotReplyRecord(Base):
             ("run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"),
             ondelete="CASCADE",
         ),
-        CheckConstraint("provider_key IN ('slack', 'lark')", name="provider_valid"),
+        CheckConstraint("provider_key IN ('slack', 'lark', 'github')", name="provider_valid"),
         CheckConstraint("status IN ('dispatching', 'succeeded', 'rejected', 'outcome_unknown')", name="status_valid"),
         CheckConstraint("(status = 'dispatching') = (finished_at IS NULL)", name="completion_valid"),
         CheckConstraint("(status = 'succeeded') = (receipt_json IS NOT NULL)", name="receipt_valid"),

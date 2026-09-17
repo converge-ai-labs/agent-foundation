@@ -486,6 +486,20 @@
   gap: 8px;
   min-width: 0;
 }
+.composerSync {
+  display: flex;
+  align-items: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+.composerSync > span {
+  display: flex;
+}
+.composerSync svg {
+  width: 16px;
+  height: 16px;
+}
 .composerActions {
   display: flex;
   align-items: center;
@@ -620,8 +634,13 @@
   .composerBody {
     position: relative;
   }
+  .composerSync {
+    position: absolute;
+    left: 36px;
+    top: 13px;
+  }
   .composerEditor {
-    padding-inline: 38px 78px;
+    padding-inline: 58px 78px;
     min-width: 0;
   }
   .composer .attachButton {
@@ -639,17 +658,6 @@
     position: absolute;
     right: 39px;
     top: 5px;
-  }
-  .composer .secondaryStop {
-    position: absolute;
-    right: 39px;
-    top: 2px;
-  }
-  .composerBody[data-stop-secondary="true"] .mobileOptionsButton {
-    right: 77px;
-  }
-  .composerBody[data-stop-secondary="true"] .composerEditor {
-    padding-inline-end: 116px;
   }
   .composer .composerOptions {
     display: none;
@@ -1301,4 +1309,72 @@
   font-size: 12px;
   color: var(--a13n-secondary);
   margin-block: 12px;
+}
+
+.readerFrame {
+  position: relative;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  container-type: inline-size;
+  container-name: conversation-reader;
+}
+.readerFrame .reading {
+  padding-inline-start: 42px;
+}
+.turn {
+  margin-bottom: 28px;
+  outline: none;
+  scroll-margin-top: 16px;
+}
+.turn:focus-visible {
+  outline: 2px solid var(--a13n-border);
+  outline-offset: 6px;
+  border-radius: 8px;
+}
+.execution {
+  margin-block: 8px 18px;
+}
+.executionToggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  padding: 6px 8px;
+  margin-inline-start: -8px;
+  cursor: pointer;
+}
+.executionToggle:hover {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+.executionToggle:focus-visible {
+  outline: 2px solid var(--a13n-text);
+  outline-offset: 2px;
+}
+.executionToggle:disabled {
+  cursor: default;
+}
+.executionContent {
+  padding-block: 8px;
+}
+.executionContent[hidden] {
+  display: none;
+}
+.historyActions {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin-block: 24px;
+}
+@container conversation-reader (max-width: 600px) {
+  .readerFrame .reading {
+    padding-inline-start: 0;
+    padding-block-start: 36px;
+  }
 }

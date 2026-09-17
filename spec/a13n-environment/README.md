@@ -52,7 +52,7 @@ Read `01` and `02`. A third-party Provider registers one namespaced key, validat
 
 ## Specification Conventions
 
-- Provider keys use a namespaced lowercase form such as `a13n.docker`.
+- Provider keys use a namespaced lowercase form such as `docker`.
 - Configuration and state versions are explicit and independently owned.
 - Configuration and state contain canonical JSON only; live collaborators and credentials remain process-local.
 - Cancellation never proves that an external operation did not occur.

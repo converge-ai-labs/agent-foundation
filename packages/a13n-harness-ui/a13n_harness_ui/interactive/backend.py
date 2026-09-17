@@ -27,6 +27,7 @@ from a13n_harness_ui.environment_profiles import (
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
 from a13n_harness_ui.model_adapters import service_tier_setting
+from a13n_harness_ui.model_fast import FastControl, apply_fast, describe_fast, fast_state
 from a13n_harness_ui.model_thinking import ThinkingControl, apply_thinking, describe_thinking, summarize_thinking
 from a13n_harness_ui.storage import (
     AgentResourceSource,
@@ -73,6 +74,7 @@ class SessionBackend:
         self.agent_id = request.agent_id
         self.overrides = RunModelOverrides()
         self.thinking_control: ThinkingControl | None = None
+        self.fast_control: FastControl | None = None
         self._model_preference_project_id: str | None = None
         self.environment = request.environment_profile_id or (
             environment_profile_id_for_mode(request.environment_mode) if request.environment_mode else None
@@ -173,13 +175,21 @@ class SessionBackend:
             self.status.thinking = "default"
             self.thinking_control = None
             self.status.service_tier = None
+            self.status.fast = "default"
+            self.fast_control = None
             self.status.context_window = None
             return False
         self.status.model = model.route
+        self.fast_control = describe_fast(model.route, model.settings)
+        try:
+            fast_settings = apply_fast(model.route, model.settings, self.overrides.fast)
+        except HarnessUiError:
+            fast_settings = dict(model.settings)
+        self.status.fast = fast_state(model.route, fast_settings)
         tier = (
             self.overrides.service_tier
-            or model.settings.get(service_tier_setting(model.route))
-            or model.settings.get("service_tier")
+            or fast_settings.get(service_tier_setting(model.route))
+            or fast_settings.get("service_tier")
         )
         self.status.service_tier = tier if isinstance(tier, str) else None
         self.thinking_control = describe_thinking(model.route, model.settings)
@@ -288,20 +298,22 @@ class SessionBackend:
     async def fast(self, selected: str | None) -> str:
         if not await self.refresh():
             raise ValueError("Configure a model before selecting its service tier.")
-        action = selected or ("off" if self.status.service_tier == "priority" else "on")
-        tiers = {"on": "priority", "off": "default", "reset": None}
-        if action not in tiers:
+        action = selected or ("off" if self.status.fast == "on" else "on")
+        choices = {"on": True, "off": False, "reset": None}
+        if action not in choices:
             raise ValueError("Usage: /fast [on|off|reset]")
+        if action != "reset" and (self.fast_control is None or not self.fast_control.supported):
+            raise ValueError(self.fast_control.reason if self.fast_control else "Fast is unavailable.")
         self.overrides = RunModelOverrides.model_validate(
-            {**self.overrides.model_dump(), "service_tier": tiers[action]}
+            {**self.overrides.model_dump(), "service_tier": None, "fast": choices[action]}
         )
         await self.refresh()
-        message = f"Service tier · {self.status.service_tier_text} · " + (
+        message = f"Fast · {self.status.fast.capitalize()} · " + (
             "Model configuration restored." if action == "reset" else "session only; configuration unchanged."
         )
-        if self.status.service_tier == "priority":
+        if self.status.fast == "on":
             message += (
-                " Priority requested; may use more quota or cost more. Provider support and speed are not guaranteed."
+                " Fast requested; may use more quota or cost more. Provider support and speed are not guaranteed."
             )
         return message
 
@@ -397,6 +409,7 @@ class SessionBackend:
                 {
                     "thinking": usage.thinking if agent is not None and usage.model_id == agent.model else None,
                     "service_tier": self.overrides.service_tier,
+                    "fast": self.overrides.fast,
                 }
             )
         self._refresh_status(configuration, thread)

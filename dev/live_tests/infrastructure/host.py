@@ -127,7 +127,7 @@ def local_app(config: dict, role: str):
 
     # This isolated Host uses custom identities and explicitly opts into local
     # backends. Production OSS deployments publish these through local_providers.
-    builtin_keys = (*settings.environments.provider_builtins, "a13n.direct-local", "a13n.docker")
+    builtin_keys = (*settings.environments.provider_builtins, "direct-local", "docker")
     environment_catalog = build_environment_provider_catalog(builtin_keys=builtin_keys)
     reverse_envd = None
     if config.get("e2b_lifecycle") and role == "worker":

@@ -1,6 +1,5 @@
 from .configuration import (
     DEFAULT_DOCKER_IMAGE,
-    DockerImagePullPolicy,
     DockerMountConfiguration,
     DockerProviderConfiguration,
     DockerProviderStateData,
@@ -13,7 +12,6 @@ __all__ = [
     "DEFAULT_DOCKER_IMAGE",
     "DockerEnvironment",
     "DockerEnvironmentProvider",
-    "DockerImagePullPolicy",
     "DockerMountConfiguration",
     "DockerProviderConfiguration",
     "DockerProviderRuntime",

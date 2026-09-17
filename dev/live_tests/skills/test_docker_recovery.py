@@ -26,7 +26,7 @@ async def test_docker_loss_preserves_frozen_skill(skills: SkillJourney, preparat
     first = await skills.skill()
     key = first["skill"]["key"]
     agent = await skills.agent(skills=[{"skill_key": key}])
-    environment, _ = await skills.environment(preparation=preparation, provider_type="a13n.docker")
+    environment, _ = await skills.environment(preparation=preparation, provider_type="docker")
     case = await skills.case(steps=[proof(key)])
     pool = DockerTargets()
     pool.identities.add(environment["id"])

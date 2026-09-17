@@ -32,6 +32,7 @@ async def build_environment_service(
         catalog,
         shared.secret_protector,
         deployment_provider_types=LOCAL_PROVIDER_TYPES if oss_identity else frozenset(),
+        redis=shared.storage.redis,
     )
 
 

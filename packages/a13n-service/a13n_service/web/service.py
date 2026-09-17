@@ -72,7 +72,20 @@ class WebProviderService:
                 )
                 now = self.clock()
                 configuration = self._validate_configuration(request.type, request.configuration)
-                credentials = self._validate_credentials(request.type, request.credential)
+                registration = self.registry.require(request.type)
+                if registration.credential_required != (request.credential is not None) or (
+                    not registration.credential_required and "credential" in request.model_fields_set
+                ):
+                    raise WebProviderError(
+                        "web_provider_credential_invalid",
+                        "Web Provider credential does not match its type.",
+                        category=ErrorCategory.invalid_request,
+                    )
+                credentials = (
+                    self._validate_credentials(request.type, request.credential)
+                    if request.credential is not None
+                    else None
+                )
                 record = WebProviderRecord(
                     id=new_object_id("wprov"),
                     organization_id=scope.organization_id,
@@ -93,7 +106,8 @@ class WebProviderService:
                     created_at=now,
                     updated_at=now,
                 )
-                record.replace_credential(json.dumps(credentials), self.protector)
+                if credentials is not None:
+                    record.replace_credential(json.dumps(credentials), self.protector)
                 session.add(record)
                 self.audit(session, actor, record, "create", tuple(request.model_fields_set))
                 await session.flush()
@@ -145,6 +159,12 @@ class WebProviderService:
                         setattr(record, key, value)
                         changes.append(key)
                 if request.credential is not None:
+                    if not self.registry.require(record.type).credential_required:
+                        raise WebProviderError(
+                            "web_provider_credential_invalid",
+                            "Web Provider does not accept a credential.",
+                            category=ErrorCategory.invalid_request,
+                        )
                     credentials = self._validate_credentials(record.type, request.credential)
                     record.replace_credential(json.dumps(credentials), self.protector)
                     changes.append("credential")

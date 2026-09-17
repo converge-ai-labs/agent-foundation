@@ -22,7 +22,7 @@ from .setup_tests import record_test_acceptance
 class PreparedBotIngress:
     account_id: str
     external_conversation_id: str
-    binding: BotMemoryBinding
+    binding: BotMemoryBinding | None
     settings_version: int
 
     async def accept(
@@ -41,7 +41,7 @@ class PreparedBotIngress:
             or await select_binding(session, account, self.external_conversation_id, lock=True) != self.binding
         ):
             raise RunAcceptanceError("memory_binding_conflict", "Conversation configuration changed during acceptance")
-        if isinstance(receipt, RunAcceptanceReceipt):
+        if self.binding is not None and isinstance(receipt, RunAcceptanceReceipt):
             await bind(session, receipt.run_id, self.binding)
         await record_test_acceptance(
             session,
@@ -57,7 +57,7 @@ class BotIngress:
         self, session: AsyncSession, account: AccountRecord, external_conversation_id: str
     ) -> PreparedBotIngress:
         binding = await select_binding(session, account, external_conversation_id)
-        if binding is None:
+        if binding is None and account.provider_key != "github":
             raise RunAcceptanceError("memory_binding_unavailable", "Unsupported conversation installation")
         return PreparedBotIngress(
             account.id, external_conversation_id, binding, await settings_version(session, account.id)

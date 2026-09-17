@@ -34,9 +34,9 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture
 async def retained_environment(interaction_sessions, tmp_path, monkeypatch):
     service, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_run")
-    service.catalog = lifecycle.catalog = build_environment_provider_catalog(builtin_keys=("a13n.docker",))
+    service.catalog = lifecycle.catalog = build_environment_provider_catalog(builtin_keys=("docker",))
     provider = await service.create_provider(
-        actor=hook_actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.docker", name="Docker")
+        actor=hook_actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="docker", name="Docker")
     )
     template = await service.create_template(
         actor=hook_actor(),

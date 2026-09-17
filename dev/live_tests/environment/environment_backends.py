@@ -31,7 +31,6 @@ def provider_configuration(kind, root, settings=None):
     if kind == "docker":
         return {
             "image": os.environ.get("LIVE_TEST_DOCKER_IMAGE", "a13n-docker-environment:local"),
-            "pull_policy": "never",
         }
     if kind == "e2b":
         return {"template": settings.template, "timeout_seconds": 300}

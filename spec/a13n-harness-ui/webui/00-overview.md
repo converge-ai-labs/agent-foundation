@@ -43,7 +43,7 @@ Common configuration is approachable without editing YAML; advanced source editi
 
 Selected Project/Thread, scroll position, open files, and inspection panels remain personal view state. Participants report their currently focused semantic page and can see who shares it; this is awareness, not synchronized navigation. They do not move one another's focus merely by navigating. Shared changes, such as prompt edits, comment publication, configuration publication, or a terminal control transfer, are explicit application operations.
 
-Presence and prompt CRDT state remain in memory; committed comments use the existing local SQLite store. Execution SSE, interactive collaboration, and comment read/write operations have independent state owners and completion boundaries. Updating or reconnecting one does not reset the others.
+Presence and prompt CRDT state remain in memory; committed comments use the existing local SQLite store. Multiplexed execution observation, interactive collaboration, and comment read/write operations have independent state owners and completion boundaries. Updating or reconnecting one does not reset the others.
 
 ## Authentication in the Browser
 
@@ -53,7 +53,7 @@ Startup validates access behind a public, theme-consistent workbench shell witho
 
 Missing or rejected credentials return the browser to key entry without treating authentication failure as missing Projects or lost Threads. Reauthentication does not automatically repeat a mutation. Generated server-key rotation invalidates previously saved browser keys. Forgetting a browser key removes that browser's retained access and closes its authenticated connections; it does not revoke the shared key for other participants or cancel server execution.
 
-HTTP/SSE uses authorization headers rather than request-URL keys. Interactive connections authenticate before subscribing to shared content or performing operations. Static shell delivery does not expose the key or application data. Arbitrary file content is not executed as workbench-origin HTML, because same-origin scripts can access browser credentials.
+HTTP uses authorization headers rather than request-URL keys. Interactive connections authenticate before subscribing to shared content or performing operations. Static shell delivery does not expose the key or application data. Arbitrary file content is not executed as workbench-origin HTML, because same-origin scripts can access browser credentials.
 
 ## Environment Boundary
 

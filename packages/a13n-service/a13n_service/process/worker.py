@@ -25,6 +25,7 @@ from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.native_actions import NativeObservationFactory
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.capacity import CapacityLimits
+from a13n_service.environments.image_jobs import DockerConnectivityProbe, DockerImageTestWorker
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
@@ -42,7 +43,9 @@ from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
 from a13n_service.process.submission import build_input_commands
 from a13n_service.provider_plugins import ProviderCatalogs, load_provider_catalogs
 from a13n_service.provider_plugins.connectors import build_connector_provider_registry
-from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
+from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunDisplayStore
+from a13n_service.run_stream.display_candidates import DisplayCandidates
+from a13n_service.run_stream.display_consumer import DisplayConsumerPolicy, RunDisplayConsumer
 from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
 from a13n_service.web.registry import WebProviderRegistry
@@ -83,6 +86,11 @@ async def build_worker_runtime(
             max_active=settings.environments.max_active_per_workspace,
         ),
     )
+    image_test_worker = (
+        DockerImageTestWorker(shared.storage.sessions, shared.storage.redis)
+        if "docker" in environment_catalog
+        else None
+    )
     environment_maintenance = EnvironmentMaintenanceLoop(
         environments,
         interval_seconds=settings.environments.maintenance_interval_seconds,
@@ -95,17 +103,35 @@ async def build_worker_runtime(
         max_events=settings.runs.stream_max_events,
         max_event_bytes=settings.runs.stream_max_event_bytes,
         closed_ttl_seconds=settings.runs.stream_closed_ttl_seconds,
+        max_pending_events=settings.runs.stream_max_pending_events,
+        max_pending_bytes=settings.runs.stream_max_pending_bytes,
+        backpressure_timeout_seconds=settings.runs.stream_backpressure_timeout_seconds,
     )
-    run_replay = RunReplayStore(
+    run_display = RunDisplayStore(
         shared.storage.objects,
-        max_events=settings.runs.replay_max_events,
-        max_items=settings.runs.replay_max_items,
-        max_bytes=settings.runs.replay_max_bytes,
+        max_items=settings.runs.display_max_items,
+        max_bytes=settings.runs.display_max_bytes,
+    )
+    display_consumer = RunDisplayConsumer(
+        DisplayCandidates(shared.storage.sessions),
+        run_stream,
+        run_display,
+        policy=DisplayConsumerPolicy(
+            concurrency=settings.runs.display_concurrency,
+            candidate_batch_size=settings.runs.display_candidate_batch_size,
+            event_batch_size=settings.runs.display_event_batch_size,
+            flush_events=settings.runs.display_flush_events,
+            flush_bytes=settings.runs.display_flush_bytes,
+            flush_interval_seconds=settings.runs.display_flush_interval_seconds,
+            poll_interval_seconds=settings.runs.display_poll_interval_seconds,
+            operation_timeout_seconds=settings.runs.display_operation_timeout_seconds,
+            max_items=settings.runs.display_max_items,
+            max_snapshot_bytes=settings.runs.display_max_bytes,
+        ),
     )
     lifecycle_projector = LifecycleRunStreamProjector(
         shared.storage.sessions,
         run_stream,
-        run_replay,
         worker_id=new_object_id("lsp"),
         lease_duration=timedelta(seconds=settings.lifecycle.projection_lease_seconds),
         retry_after=timedelta(seconds=settings.lifecycle.projection_retry_seconds),
@@ -116,8 +142,8 @@ async def build_worker_runtime(
             shared.storage.sessions,
             HostedAguiReplayStore(
                 shared.storage.objects,
-                max_events=settings.runs.replay_max_events + 2,
-                max_bytes=settings.runs.replay_max_bytes,
+                max_events=settings.runs.hosted_archive_max_events + 2,
+                max_bytes=settings.runs.hosted_archive_max_bytes,
             ),
         ).project,
     )
@@ -178,7 +204,7 @@ async def build_worker_runtime(
             external_tools=external_tools,
             skills=skills,
             stream=run_stream,
-            replay=run_replay,
+            display=run_display,
             assets=assets,
             asset_publication=asset_publication,
             observability=observability,
@@ -204,7 +230,7 @@ async def build_worker_runtime(
         environment_maintenance=environment_maintenance,
         environments=environments,
         run_stream=run_stream,
-        run_replay=run_replay,
+        run_display=run_display,
         execution_loop=execution_loop,
         client_connections=client_connections,
     )
@@ -216,8 +242,26 @@ async def build_worker_runtime(
     execution_task = BackgroundTask(
         "RunAttempt execution", execution_loop.run, execution_loop.is_draining, shutdown_execution
     )
+    image_test_tasks: tuple[BackgroundTask, ...] = ()
+    if image_test_worker is not None:
+        docker_connectivity = DockerConnectivityProbe(shared.storage.sessions, shared.storage.redis)
+        image_test_tasks = (
+            BackgroundTask(
+                name="docker_connectivity_probe",
+                run=docker_connectivity.run,
+                return_is_expected=lambda: docker_connectivity.draining,
+                shutdown=docker_connectivity.shutdown,
+            ),
+            BackgroundTask(
+                name="docker_image_tests",
+                run=image_test_worker.run,
+                return_is_expected=lambda: image_test_worker.draining,
+                shutdown=image_test_worker.shutdown,
+            ),
+        )
     background_tasks = [
         execution_task,
+        *image_test_tasks,
         BackgroundTask(
             name="environment_maintenance",
             run=environment_maintenance.run,
@@ -227,6 +271,9 @@ async def build_worker_runtime(
             ),
         ),
         BackgroundTask("lifecycle Run Stream projector", lifecycle_projector.run),
+        BackgroundTask(
+            "Run display persistence", display_consumer.run, display_consumer.is_draining, display_consumer.shutdown
+        ),
     ]
     if client_connections is not None:
         background_tasks.append(

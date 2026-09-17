@@ -461,7 +461,7 @@
       "properties": {
         "provider_builtins": {
           "default": [
-            "a13n.e2b",
+            "e2b",
             "a13n.http-envd"
           ],
           "items": {
@@ -946,8 +946,8 @@
     },
     "LocalProviderType": {
       "enum": [
-        "a13n.direct-local",
-        "a13n.docker"
+        "direct-local",
+        "docker"
       ],
       "type": "string"
     },
@@ -1552,26 +1552,110 @@
           "title": "Stream Closed Ttl Seconds",
           "type": "integer"
         },
-        "replay_max_events": {
+        "hosted_archive_max_events": {
           "default": 4096,
           "maximum": 100000,
           "minimum": 1,
-          "title": "Replay Max Events",
+          "title": "Hosted Archive Max Events",
           "type": "integer"
         },
-        "replay_max_items": {
+        "display_max_items": {
           "default": 2048,
           "maximum": 100000,
           "minimum": 1,
-          "title": "Replay Max Items",
+          "title": "Display Max Items",
           "type": "integer"
         },
-        "replay_max_bytes": {
+        "display_max_bytes": {
           "default": 16777216,
           "maximum": 1073741824,
           "minimum": 1024,
-          "title": "Replay Max Bytes",
+          "title": "Display Max Bytes",
           "type": "integer"
+        },
+        "hosted_archive_max_bytes": {
+          "default": 16777216,
+          "maximum": 1073741824,
+          "minimum": 1024,
+          "title": "Hosted Archive Max Bytes",
+          "type": "integer"
+        },
+        "stream_max_pending_events": {
+          "default": 16384,
+          "maximum": 1000000,
+          "minimum": 1,
+          "title": "Stream Max Pending Events",
+          "type": "integer"
+        },
+        "stream_max_pending_bytes": {
+          "default": 33554432,
+          "maximum": 1073741824,
+          "minimum": 1024,
+          "title": "Stream Max Pending Bytes",
+          "type": "integer"
+        },
+        "stream_backpressure_timeout_seconds": {
+          "default": 5,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Stream Backpressure Timeout Seconds",
+          "type": "number"
+        },
+        "display_concurrency": {
+          "default": 4,
+          "maximum": 128,
+          "minimum": 1,
+          "title": "Display Concurrency",
+          "type": "integer"
+        },
+        "display_candidate_batch_size": {
+          "default": 32,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Display Candidate Batch Size",
+          "type": "integer"
+        },
+        "display_event_batch_size": {
+          "default": 64,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Display Event Batch Size",
+          "type": "integer"
+        },
+        "display_flush_events": {
+          "default": 256,
+          "maximum": 100000,
+          "minimum": 1,
+          "title": "Display Flush Events",
+          "type": "integer"
+        },
+        "display_flush_bytes": {
+          "default": 1048576,
+          "maximum": 67108864,
+          "minimum": 1024,
+          "title": "Display Flush Bytes",
+          "type": "integer"
+        },
+        "display_flush_interval_seconds": {
+          "default": 1,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Display Flush Interval Seconds",
+          "type": "number"
+        },
+        "display_poll_interval_seconds": {
+          "default": 0.25,
+          "exclusiveMinimum": 0,
+          "maximum": 60,
+          "title": "Display Poll Interval Seconds",
+          "type": "number"
+        },
+        "display_operation_timeout_seconds": {
+          "default": 10,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Display Operation Timeout Seconds",
+          "type": "number"
         }
       },
       "title": "RunsSettings",

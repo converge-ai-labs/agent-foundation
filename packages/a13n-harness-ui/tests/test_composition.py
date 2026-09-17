@@ -1430,3 +1430,35 @@ async def test_auxiliary_review_settings_cannot_override_managed_affinity(tmp_pa
     with pytest.raises(CompositionError) as error:
         resolver.resolve_run(source, _selection())
     assert error.value.code == "model_configuration_unsupported"
+
+
+@pytest.mark.parametrize("fast", [True, False, None])
+@pytest.mark.parametrize(
+    "route,key,on,off",
+    [
+        ("openai:gpt-5", "service_tier", "priority", "default"),
+        ("anthropic:claude-opus-4-8", "anthropic_speed", "fast", "standard"),
+    ],
+)
+async def test_fast_capture_preserves_resources_and_independent_children(tmp_path, fast, route, key, on, off):
+    from a13n_harness_ui.configuration_inspection import captured_configuration
+    from a13n_harness_ui.surfaces import RunModelOverrides
+
+    path = _write_source(tmp_path)
+    model = tmp_path / "models/primary.yaml"
+    model.write_text(
+        model.read_text()
+        .replace("route: openai:gpt-5", f"route: {route}")
+        .replace("settings: {temperature: 0}", f"settings: {{{key}: {on}}}")
+    )
+    source = await load_harness_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    original = resolver.resolve_run(source, _selection())
+    composition = resolver.resolve_run(source, _selection(), model_overrides=RunModelOverrides(fast=fast))
+    assert composition.root.model.settings[key] == (off if fast is False else on)
+    assert composition.root.children[0].definition.model == composition.root.model
+    assert composition.root.children[1].definition.model == original.root.children[1].definition.model
+    assert source.models["model-primary"].settings[key] == on
+    assert resolver.resolve_run(source, _selection()).root == original.root
+    view = captured_configuration("capture", composition)
+    assert view.agent.fast == ("off" if fast is False else "on")

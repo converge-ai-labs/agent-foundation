@@ -123,7 +123,7 @@ class SubagentsSettings(Section):
 
 
 class EnvironmentsSettings(Section):
-    provider_builtins: tuple[str, ...] = ("a13n.e2b", "a13n.http-envd")
+    provider_builtins: tuple[str, ...] = ("e2b", "a13n.http-envd")
     client_public_origin: str | None = None
     client_max_connections: int = Field(default=128, ge=1, le=1000)
     local_providers: dict[LocalProviderType, JsonObject] = Field(default_factory=dict)
@@ -245,9 +245,21 @@ class RunsSettings(Section):
     stream_max_events: int = Field(default=4096, ge=1, le=100_000)
     stream_max_event_bytes: int = Field(default=320 * 1024, ge=1024, le=16 * 1024 * 1024)
     stream_closed_ttl_seconds: int = Field(default=24 * 60 * 60, ge=60, le=365 * 24 * 60 * 60)
-    replay_max_events: int = Field(default=4096, ge=1, le=100_000)
-    replay_max_items: int = Field(default=2048, ge=1, le=100_000)
-    replay_max_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
+    hosted_archive_max_events: int = Field(default=4096, ge=1, le=100_000)
+    display_max_items: int = Field(default=2048, ge=1, le=100_000)
+    display_max_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
+    hosted_archive_max_bytes: int = Field(default=16 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
+    stream_max_pending_events: int = Field(default=16384, ge=1, le=1_000_000)
+    stream_max_pending_bytes: int = Field(default=32 * 1024 * 1024, ge=1024, le=1024 * 1024 * 1024)
+    stream_backpressure_timeout_seconds: float = Field(default=5, gt=0, le=300)
+    display_concurrency: int = Field(default=4, ge=1, le=128)
+    display_candidate_batch_size: int = Field(default=32, ge=1, le=1000)
+    display_event_batch_size: int = Field(default=64, ge=1, le=1000)
+    display_flush_events: int = Field(default=256, ge=1, le=100_000)
+    display_flush_bytes: int = Field(default=1024 * 1024, ge=1024, le=64 * 1024 * 1024)
+    display_flush_interval_seconds: float = Field(default=1, gt=0, le=60)
+    display_poll_interval_seconds: float = Field(default=0.25, gt=0, le=60)
+    display_operation_timeout_seconds: float = Field(default=10, gt=0, le=300)
 
 
 class GatewaySettings(Section):

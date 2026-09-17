@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Service exposes authorized memory through the built-in filesystem implementation or an explicitly selected managed Memory Provider. Filesystem memory defaults to the accepted Run's Environment, reuses only its file operations, and never falls back to a Worker-local directory. A configured persistent path or explicit Environment can retain the corpus independently of the task sandbox. Mem0 OSS and Platform remain explicit native adapters.
+Service exposes authorized memory through explicitly selected memory entries. An Agent can compose multiple native-record and document entries, including several entries of the same mode, with independent backends and authority. Filesystem memory defaults to the accepted Run's Environment, reuses only its file operations, and never falls back to a Worker-local directory. A configured persistent path or explicit Environment can retain the corpus independently of the task sandbox. Mem0 OSS and Platform remain explicit native adapters.
 
 [Document Memory](../a13n-harness/21-document-memory.md) owns document kinds, revisions, change records and diffs, extraction/organization, tools, filesystem layout, and commit semantics. [Harness memory](../a13n-harness/09-context-and-memory.md#memory-integration) owns native record contracts and Capability composition. Service owns Provider resources, trusted subjects, exact storage bindings, authorization, directory publication, change-query metadata, and sharing. Bodies, retained revisions, and content-bearing change details remain in the selected backend; Service keeps navigation and lifecycle metadata without a full-content mirror or search index.
 
@@ -20,38 +20,33 @@ Native backend integration composes public native operations. It requires no ups
 
 ## Filesystem Configuration and Storage Binding
 
-An enabled Agent memory object with no `provider_id` selects `a13n.filesystem` without creating a Memory Provider resource. Its optional `storage` object contains `environment_id` (null/omitted selects the accepted Run Environment) and `root` (default `/memory`, an absolute provider-local path). These are Agent configuration fields, not model tool arguments. An explicit `provider_id` instead owns storage selection; combining it with an Agent `storage` override is invalid. A managed filesystem Provider uses these same storage fields in its immutable configuration and an empty credential schema. A fixed Environment reference belongs to the consuming Workspace; an Organization-owned Provider cannot embed one Workspace's Environment for use in other Workspaces.
-
-These YAML fragments illustrate the serialized Agent memory selection:
+Each filesystem entry explicitly selects `a13n.filesystem`, inline or through a managed Provider. Its backend `configuration.storage` contains `environment_id` (null/omitted selects the accepted Run Environment) and `root` (default `/memory`, an absolute provider-local path). These are configuration fields, not model tool arguments. A managed filesystem Provider owns the same fields in its immutable configuration and has an empty credential schema. A fixed Environment reference belongs to the consuming Workspace; an Organization-owned Provider cannot embed one Workspace's Environment for use in other Workspaces.
 
 ```yaml
-# Default: current sandbox, provider-local /memory.
-memory: {}
-```
-
-```yaml
-# A persistent volume already mounted within the current sandbox.
 memory:
-  storage:
-    root: /mnt/persistent-memory
-  auto_organize: false
+  entries:
+    - name: project
+      mode: documents
+      description: Project requirements and reusable procedures.
+      backend:
+        type: a13n.filesystem
+        configuration:
+          storage:
+            environment_id: env_example
+            root: /mnt/persistent-memory
+      scope: thread
+      auto_organize: false
 ```
 
-```yaml
-# An explicitly authorized existing Environment; no new target is allocated.
-memory:
-  storage:
-    environment_id: env_example
-    root: /memory
-```
+Omitting `storage` inside an explicitly selected filesystem backend uses the current Environment and `/memory`. A persistent path must already be mounted by the deployment/provider; configuration alone does not establish durability.
 
 No Service deployment default names a Worker host path. The Environment provider/deployment owns NFS mounting, credentials, mount identity checks, target retention, and backups. All memory I/O goes through Environment file operations, including on another Worker. Arbitrary local filesystem paths, another user's sandbox, or a newly allocated replacement Environment are never implicit substitutes.
 
-Run acceptance fixes the selected Provider or built-in type, trusted subject, logical Environment selection, root, and behavior flags. Lazy preparation resolves the physical store identity before its first operation and durably associates that identity before admitting content. The storage binding identifies one corpus independently of Worker identity. Current Environment access and memory grants are both required; native memory permission alone cannot acquire arbitrary files. Default selection is allowed without Provider administration, while an explicit Provider requires `memory_provider.read` and an explicit Environment requires its ordinary use authority.
+Run acceptance fixes the selected Provider or built-in type, trusted subject, logical Environment selection, root, and behavior flags. Lazy preparation resolves the physical store identity before its first operation and durably associates that identity before admitting content. The storage binding identifies one corpus independently of Worker identity. Current Environment access and memory grants are both required; native memory permission alone cannot acquire arbitrary files. Inline filesystem selection is allowed without Provider administration, while an explicit Provider requires `memory_provider.read` and an explicit Environment requires its ordinary use authority.
 
 Retries and state-preserving continuations retain the binding. Inline children borrow the same entered file access with their authorized subjects. Async children use fresh adapters; sharing a parent's memory target requires a retained authorized binding, rather than interpreting the child's new execution sandbox as that target. A separately selected child memory configuration obtains its own binding. Bot children retain the Bot binding below and cannot select another corpus or audience.
 
-Directory identities and cursors include the storage binding. The same subject in two sandboxes has separate stores; a new Run using another sandbox does not union or migrate old data. Management can address an old binding explicitly without changing the current Run. A stored Environment ID alone is insufficient after target recreation: verified store identity distinguishes reconnection from data loss. An unavailable explicit path remains unavailable; missing configuration selects the current sandbox, whereas an explicit target failure does not silently create a temporary library. No available Environment means unavailable memory, never local fallback.
+Directory identities and cursors include the storage binding. The same subject in two sandboxes has separate stores; a new Run using another sandbox does not union or migrate old data. Management can address an old binding explicitly without changing the current Run. A stored Environment ID alone is insufficient after target recreation: verified store identity distinguishes reconnection from data loss. An unavailable explicit path remains unavailable; omitted filesystem storage fields select the current sandbox, whereas an explicit target failure does not silently create a temporary library. No available Environment means unavailable memory, never local fallback.
 
 A required persistent mount is verified before corpus initialization and writes. A retained corpus that loses its marker/content is not initialized as an empty library. A new corpus after confirmed loss requires explicit initialization and a new storage identity. Initialization, generation revalidation, external edits, and cross-Worker commit guarantees follow [Document Memory](../a13n-harness/21-document-memory.md#storage-binding-and-environment-lifetime).
 
@@ -69,7 +64,7 @@ Control exposes type definitions at `/api/v1/memory-provider-types` and `/{provi
 
 ## Subjects and Authority
 
-Every memory belongs to exactly one trusted scope. The provider-visible value is `a13n-` followed by SHA-256 of UTF-8 compact JSON `["a13n.memory.v2", organization_id, workspace_id, provider_id, scope, subject_id]`. IDs and scope kinds are immutable inputs. Models cannot select IDs, filters, credentials, or endpoints. For the implicit filesystem selection, the provider identity input is the fixed built-in key `a13n.filesystem`; the directory and corpus locator additionally bind the exact storage identity. Different Provider resources remain isolated even when they point to the same remote endpoint. Deliberate sharing selects the same Provider resource and still respects Organization, Workspace, and subject isolation. Provider identity is part of every namespace, management record locator, cursor binding, and any cache key.
+Every memory belongs to exactly one trusted scope. The provider-visible value is `a13n-` followed by SHA-256 of UTF-8 compact JSON `["a13n.memory.v2", organization_id, workspace_id, provider_id, scope, subject_id]`. IDs and scope kinds are immutable inputs. Models cannot select IDs, filters, credentials, or endpoints. For an inline filesystem selection, the provider identity input is the fixed built-in key `a13n.filesystem`; the directory and corpus locator additionally bind the exact storage identity. Different Provider resources remain isolated even when they point to the same remote endpoint. Deliberate sharing selects the same Provider resource and still respects Organization, Workspace, and subject isolation. Provider identity is part of every namespace, management record locator, cursor binding, and any cache key.
 
 | Scope    | Subject                                         | Mem0 field | Management authorization                                                                            |
 | -------- | ----------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------- |
@@ -83,24 +78,56 @@ Each Worker recall or tool call rechecks current Attempt authority, the retained
 
 ## Agent Selection
 
-`AgentConfig.memory` is absent/null by default. An object enables memory. Omission of `provider_id` selects the built-in filesystem document mode; an explicit Provider selects its declared mode and capabilities.
+`AgentConfig.memory` is absent/null by default. The enabled form is `{entries: [...]}` with one to sixteen entries. Each entry selects one mode and one backend; repeated modes are allowed. An empty memory object, an empty entry list, unknown fields, duplicate names, and unsupported mode/backend combinations fail validation. Entry order is deterministic presentation order, not priority, fallback, or write routing.
 
-| Field              | Default                                                | Meaning                                                                          |
-| ------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `provider_id`      | null                                                   | Explicit managed Provider, or built-in filesystem when absent/null               |
-| `storage`          | current Environment, `/memory`                         | Filesystem selection above; valid only without `provider_id`                     |
-| `scope`            | `thread` for filesystem; null for native record recall | Trusted thread/agent/user scope; null native selection searches available scopes |
-| `toolset`          | true                                                   | Expose the selected mode's supported authorized memory tools                     |
-| `auto_organize`    | false                                                  | Opt into post-commit extraction/organization for a document backend              |
-| `recall_required`  | false                                                  | Fail before model work when initial required memory is unavailable               |
-| `auto_recall`      | true in native record mode                             | One bounded native recall per logical Harness Run                                |
-| `recall_limit`     | 5 in native record mode                                | 1–100 native results                                                             |
-| `recall_threshold` | null                                                   | Optional native similarity threshold in [0, 1]                                   |
-| `recall_timeout`   | 2 seconds in native record mode                        | Positive native recall timeout, at most 300 seconds                              |
+| Entry field        | Contract                                                                                                                                     |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `name`             | Unique stable tool prefix matching `[a-z][a-z0-9_]{0,23}`; identifies the selection within this Agent, not a storage namespace or permission |
+| `mode`             | Required `records` or `documents`; never inferred from Provider type                                                                         |
+| `description`      | Required nonblank purpose/routing guidance, at most 2,000 characters; authored Agent instruction, without credentials                        |
+| `backend`          | Exactly one of `{type, configuration}` or `{provider_id}`                                                                                    |
+| `scope`            | Trusted thread/agent/user scope; defaults to thread for documents and available authorized scopes for records                                |
+| `toolset`          | Defaults true; exposes this entry's supported tools                                                                                          |
+| `recall_required`  | Defaults false; required initial recall/index unavailability fails before model work                                                         |
+| `auto_organize`    | Documents only, defaults false; opts into Host-owned post-commit organization                                                                |
+| `auto_recall`      | Records only, defaults true                                                                                                                  |
+| `recall_limit`     | Records only, defaults 5, range 1–100                                                                                                        |
+| `recall_threshold` | Records only, defaults null; otherwise a finite value in [0, 1]                                                                              |
+| `recall_timeout`   | Records only, defaults 2 seconds; positive and at most 300 seconds                                                                           |
 
-Document mode supplies a bounded authorized `_index.md` projection and the document tools; it does not enable native automatic body recall. Native-only recall fields are rejected when explicitly supplied to filesystem document mode rather than appearing to configure an unused feature. Document reading, explicit writing, and automatic organization each remain subject to current permissions; `auto_organize` does not grant write or source-retention authority.
+Inline `type` is a registered backend key; `configuration` is validated against that backend's schema and defaults to an empty object only when valid. A Provider reference obtains its type and configuration exclusively from that resource: sibling type/configuration fields and per-entry overrides are invalid. Backend configuration remains separate from mode behavior. Service inline selections accept no credentials and require a backend usable without a memory credential; credential-bearing backends use managed Providers. Inline selection does not bypass Environment or target authorization. Non-filesystem inline backends must provide a validated stable storage identity for namespace/cache binding; otherwise Service rejects inline use and requires a managed Provider. This identity is scoped by backend type and immutable target configuration, never by entry name. Existing managed Provider and filesystem namespace formulas remain unchanged. Entries selecting the same target and subject can address the same corpus; different names alone do not isolate data or grant access. Merely installing a backend never selects it. Records require the native record contract; documents require document support, with revisions and changes checked independently for the operations that use them.
 
-Each accepted root and child definition retains its own complete selection. Authoring and acceptance validate explicit Provider/Environment visibility; runtime dispatch rechecks eligibility without replacing the accepted binding. A Run override inherits on omission, disables on null, and replaces the complete object otherwise. Backend installation alone enables no memory. An unavailable explicit scope fails instead of falling back. Recall and index results are untrusted context, never instructions or restored authority.
+```yaml
+memory:
+  entries:
+    - name: preferences
+      mode: records
+      description: User preferences and personal facts; use for personalization.
+      backend:
+        provider_id: mp_mem0
+      scope: user
+      auto_recall: true
+    - name: project
+      mode: documents
+      description: Project requirements and procedures; use for project evidence.
+      backend:
+        type: a13n.filesystem
+        configuration:
+          storage:
+            root: /memory
+      scope: thread
+      auto_organize: false
+```
+
+The Harness [entry composition contract](../a13n-harness/09-context-and-memory.md#multiple-memory-entries) owns prefixed tools and peer instructions. Records and documents keep their own retrieval semantics, context contributions, writes, and completion evidence. Enabling one entry does not enable another's extraction, recall, synchronization, or automatic dual writes. Failure never reroutes to another entry. Optional entry failure is observable and permits independent entries to remain usable; required initial failure stops model work. Cancellation releases all acquired resources. Multiple writes have separate outcomes, without cross-backend atomicity. Forgetting in one entry does not delete similar content elsewhere.
+
+Run acceptance retains the complete ordered entry selection per root/child node. Each entry has its own trusted subject, backend selection, behavior flags, and exact storage binding. Lazy physical resolution is durably retained before content access. Dispatch rechecks current authority. Recovery, operation keys, references, and cursor/cache bindings identify the entry and exact target; entry names alone never authorize or locate content. A reference from another entry cannot be used to bypass that entry's guard. Renaming an entry does not migrate or re-namespace stored data. A Run override inherits on omission, disables on null, and replaces the complete memory object otherwise; it never merges entries by name. Accepted Runs and continuations retain their original selections and model tool surfaces. Current disablement can revoke access but cannot redirect it.
+
+Conformance covers two entries of the same backend type, mixed records/documents entries, tool collisions with non-memory tools, peer instruction composition without memory-content promotion, aggregate context limits, optional versus required backend failure, and retry after configuration replacement. It also verifies that changing a prefix preserves the corpus, a cross-entry reference cannot bypass authorization, and a successful write/delete in one store makes no claim about another store.
+
+### Resolved selection inspection
+
+Configuration UI and authorized inspection show each entry's name, mode, purpose, resolved backend type, inline/managed source, safe Provider/Environment reference, effective scope, supported operations, and storage availability/lifetime. Before lazy resolution they show unresolved target rather than claiming readiness. Lifetimes distinguish sandbox-bound, verified persistent storage, externally managed, and unknown. A configured persistent path is not evidence of a verified mount or retention policy. Resolved outputs reveal no credentials or private native namespace/path; filesystem configuration editors show only authorized authored paths. Storage replacement explicitly leaves old corpora on their original bindings and performs no union or migration.
 
 ## Document Management API
 
@@ -191,7 +218,9 @@ The distribution composes a bounded trusted set of behavior implementations. Dup
 
 ## Bot Memory Configuration
 
-Bot-owned `bot_account_settings` is keyed by Application Account ID and independently versioned. The common Account resource and mutations contain no Memory field. `GET /api/v1/application-accounts/{account_id}/bot/memory-settings` returns `{account_id, version, memory}`. An unconfigured account returns version 0 and null memory. `PUT` accepts `{expected_version, memory}`; a mismatch conflicts, a successful replacement increments the Bot settings version, and null explicitly disables memory. Settings writes require Workspace administrator Bot-memory authority, a live supported installation, and either the built-in filesystem selection or an eligible same-Workspace Provider with document support. An enabled memory object without `provider_id` selects the filesystem; optional `storage` and `auto_organize` follow the shared selection rules above. They do not change Account identity, credential generation, or Account version.
+Bot settings select one document entry using the entry/backend structure above; native records and multiple entries are not enabled by this Bot product contract. Ordinary Agent multi-entry configuration is never implicitly added to a Bot conversation binding.
+
+Bot-owned `bot_account_settings` is keyed by Application Account ID and independently versioned. The common Account resource and mutations contain no Memory field. `GET /api/v1/application-accounts/{account_id}/bot/memory-settings` returns `{account_id, version, memory}`. An unconfigured account returns version 0 and null memory. `PUT` accepts `{expected_version, memory}`; a mismatch conflicts, a successful replacement increments the Bot settings version, and null explicitly disables memory. Settings writes require Workspace administrator Bot-memory authority, a live supported installation, and either the built-in filesystem selection or an eligible same-Workspace Provider with document support. Bot settings use one named documents entry with explicit backend selection; scope and subject are fixed by the conversation binding, not an entry-authored thread/agent/user scope. They do not change Account identity, credential generation, or Account version.
 
 Bot summaries project `memory_settings` separately from `account`. Setup-test and reply correlation retain the Bot settings version alongside Account, credential, and target generations. Changes make earlier setup evidence stale. Current settings can revoke runtime access but never redirect an accepted binding to another Provider or expand a disabled binding.
 
@@ -201,7 +230,7 @@ Bot summaries project `memory_settings` separately from `account`. Setup-test an
 
 The directory covers documents admitted through the Bot memory lifecycle. It does not claim to enumerate arbitrary pre-existing native records. Directory pagination is bound to authorized scope and filters, has stable ordering and explicit continuation, and does not use native search top-k as complete enumeration. Ordinary native-backed management collections retain their existing bounded-list semantics. Browsing a directory page or generating an index reads navigation metadata without fetching every body or calling an LLM. Opening a document resolves its exact Provider locator after current authorization and retrieves its body on demand.
 
-Provider type responses expose the selected factory's `supports_documents`, `supports_revisions`, and `supports_changes` capabilities. The implicit filesystem choice exposes the same descriptors without requiring a Provider resource. Bot Provider selection, group configuration, and document operations require the relevant capability before dispatching Provider work. Change queries require `supports_changes`; lack of that capability does not fabricate history from native CRUD or prevent otherwise supported operations. Unsupported implementations fail explicitly without creating an unconfirmed operation. Ordinary non-document memory remains available on those Providers. Console disables unsupported Provider choices while allowing an existing Bot memory binding to be disabled. A declared capability does not replace operation-time authorization, exact readback, or dependency-error handling.
+Provider type responses expose the selected factory's `supports_documents`, `supports_revisions`, and `supports_changes` capabilities. The inline filesystem choice exposes the same descriptors without requiring a Provider resource. Bot Provider selection, group configuration, and document operations require the relevant capability before dispatching Provider work. Change queries require `supports_changes`; lack of that capability does not fabricate history from native CRUD or prevent otherwise supported operations. Unsupported implementations fail explicitly without creating an unconfirmed operation. Ordinary non-document memory remains available on those Providers. Console disables unsupported Provider choices while allowing an existing Bot memory binding to be disabled. A declared capability does not replace operation-time authorization, exact readback, or dependency-error handling.
 
 The Account memory-scope collection accepts an optional exact `target_id` filter. Service validates the live conversation target within that Account and resolves its external conversation identity before filtering scopes by the selected Provider or built-in type and exact storage binding. This bounded SQL lookup does not enumerate every group or contact the Provider. A configured target with no memory scope returns an empty collection; an absent or deleted target, a deleted Account, or insufficient memory management authority is not projected as a working empty store. Cursors bind this filter alongside the Account, Provider or built-in type, storage binding, and page limit. Group detail navigation uses this exact lookup and keeps document operations in the resulting scope regardless of unrelated scope parameters in the browser URL.
 
@@ -209,7 +238,7 @@ A document or new head becomes available in the directory only after backend com
 
 For a Bot invocation with memory reading enabled, Service supplies a bounded, permission-filtered `_index.md` index as actual model-visible context before task reasoning. It includes concise navigation entries for the current conversation and currently authorized shared content. It is not merely a Console view, nor an instruction to the model to guess which memory exists. Explicit document-read operations resolve stable references and reauthorize each read. Index pages keep whole entries within the Harness encoded-context budget, including their continuation cursor. A partial page continues immediately after its last displayed entry without dropping undisplayed entries. Large indexes expose bounded continuation/subindexes or supported search; ordinary automatic top-k body injection is not also enabled by default for the Bot.
 
-The index is derived navigation that changes after confirmed document and access changes. Committed revisions remain immutable; semantic/procedural heads advance only after verified revision publication, while events use append-only corrections. Logical Markdown paths require no physical file mount; Mem0 and file-based implementations expose the same index/document behavior through their supported adapters. Runtime root, child, and Retry access stays within the retained Account/Provider/conversation binding and current authority, independently of Console administrator privileges.
+The index is derived navigation that changes after confirmed document and access changes. Committed revisions remain immutable; semantic/procedural heads advance only after verified revision publication, while events use append-only corrections. Logical Markdown paths require no physical file mount. Only adapters declaring the applicable document capabilities expose index/document behavior; native Mem0 support alone does not imply those capabilities. Runtime root, child, and Retry access stays within the retained Account/Provider/conversation binding and current authority, independently of Console administrator privileges.
 
 ### Retained Conversation Execution Binding
 
@@ -247,7 +276,7 @@ There are no publication or sharing-policy management routes. Persisted legacy g
 
 ## Automatic Organization and Compatibility
 
-Service owns durable organization admission after the source work's checkpoint/result has committed. The work key binds the source completion, memory scope, storage identity, and organization policy; duplicate delivery resumes the same work. A short transaction records eligibility and cursor state, model/file work happens outside SQL, and a later transaction confirms outcomes. Current source retention, Bot audience, memory write authority, and target availability are checked again before effects. The workflow does not borrow Console administrator permissions or an expired RunAttempt fence; it uses a Host-owned work lease and retained principal under the post-commit policy.
+Service owns durable organization admission after the source work's checkpoint/result has committed. The work key binds the source completion, selected entry, memory scope, storage identity, and organization policy; duplicate delivery resumes the same work. A short transaction records eligibility and cursor state, model/file work happens outside SQL, and a later transaction confirms outcomes. Current source retention, Bot audience, memory write authority, and target availability are checked again before effects. The workflow does not borrow Console administrator permissions or an expired RunAttempt fence; it uses a Host-owned work lease and retained principal under the post-commit policy.
 
 Only confirmed or explicitly rejected/deferred candidates advance the extraction cursor. Uncertain writes remain reconcilable under their original operation keys. Deletion/revocation fences pending work and forbids stale retries from recreating deleted memory or widening an audience. Turning automatic organization off stops admission and prevents uncommitted work from publishing under an older enabled observation. Completion records identify source references and outcomes without duplicating transcripts. The Harness [organization contract](../a13n-harness/21-document-memory.md#extraction-and-organization) owns candidate semantics and bounded model work.
 

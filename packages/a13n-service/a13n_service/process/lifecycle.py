@@ -216,7 +216,9 @@ async def open_process_runtime(
                         InlineHookValidator(EndpointPolicy()),
                     )
                 input_acceptor = IngressInputAcceptor(
-                    storage.sessions, commands, contributions={"slack": BotIngress(), "lark": BotIngress()}
+                    storage.sessions,
+                    commands,
+                    contributions={"slack": BotIngress(), "lark": BotIngress(), "github": BotIngress()},
                 )
             connectivity, connectivity_background = await build_connectivity_runtime(
                 settings,

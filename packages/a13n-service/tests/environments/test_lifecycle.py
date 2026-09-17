@@ -31,7 +31,7 @@ class Target(Environment):
 
     @property
     def provider_key(self):
-        return "a13n.docker"
+        return "docker"
 
     @property
     def environment_id(self):
@@ -69,7 +69,7 @@ class Target(Environment):
 
 async def fixture_environment(service):
     provider = await service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.docker", name="Docker")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="docker", name="Docker")
     )
     template = await service.create_template(
         actor=actor(),
@@ -106,9 +106,9 @@ async def test_maintenance_stops_then_deletes_from_original_condition_time(
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since = "running", start
-        row.state = EnvironmentState(
-            provider_key="a13n.docker", state_version="1", state={"target": "same"}
-        ).model_dump(mode="json")
+        row.state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "same"}).model_dump(
+            mode="json"
+        )
         row.generation = 1
     await lifecycle.maintain(environment.id)
     async with short_session(environment_sessions) as session:
@@ -212,9 +212,9 @@ async def test_known_stop_failure_releases_operation_and_records_failed_command(
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status = "running"
-        row.state = EnvironmentState(
-            provider_key="a13n.docker", state_version="1", state={"target": "lost"}
-        ).model_dump(mode="json")
+        row.state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "lost"}).model_dump(
+            mode="json"
+        )
     command = await environment_service.request_command(
         actor=actor(),
         environment_id=environment.id,
@@ -225,7 +225,7 @@ async def test_known_stop_failure_releases_operation_and_records_failed_command(
         await lifecycle.maintain(environment.id)
     record = next(record for record in caplog.records if record.msg == "environment_lifecycle_failed")
     assert record.environment_id == environment.id and record.operation_id == command.id
-    assert record.action == "stop" and record.provider_type == "a13n.docker"
+    assert record.action == "stop" and record.provider_type == "docker"
     assert record.exception_chain[0]["type"] == "a13n_environment.errors.EnvironmentProviderError"
     assert record.exception_chain[0]["frames"] and record.exc_info is None
     async with short_session(environment_sessions) as session:
@@ -271,9 +271,9 @@ async def test_abandoned_preparation_is_observed_without_starting_target(
         row = await session.get(EnvironmentRecord, environment.id)
         row.status = "unavailable"
         if had_target:
-            row.state = EnvironmentState(
-                provider_key="a13n.docker", state_version="1", state={"target": "gone"}
-            ).model_dump(mode="json")
+            row.state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "gone"}).model_dump(
+                mode="json"
+            )
             row.target_identity = "a" * 64
             row.generation = 3
             row.expires_at = now
@@ -461,7 +461,7 @@ async def test_unknown_stop_retains_operation_receipt_until_reconciled(
         return UncertainTarget(operation.state, [])
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    state = EnvironmentState(provider_key="a13n.docker", state_version="1", state={"target": "same"})
+    state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "same"})
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.state = "running", state.model_dump(mode="json")
@@ -529,7 +529,7 @@ async def test_observed_expiry_schedules_renewal_without_repeated_provider_calls
         return ExpiringTarget(operation.state, [])
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    monkeypatch.setattr(provider_catalog.require("a13n.docker"), "requires_keepalive", True)
+    monkeypatch.setattr(provider_catalog.require("docker"), "requires_keepalive", True)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.next_maintenance_at = "running", now
@@ -573,7 +573,7 @@ async def test_competing_maintenance_does_not_shorten_pending_operation_deadline
         return SlowTarget(operation.state, [])
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    monkeypatch.setattr(provider_catalog.require("a13n.docker"), "requires_keepalive", True)
+    monkeypatch.setattr(provider_catalog.require("docker"), "requires_keepalive", True)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since, row.next_maintenance_at = "running", now, now

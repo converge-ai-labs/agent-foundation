@@ -126,6 +126,8 @@ Reuse successful results whose relevant source, dependency, configuration, and e
 
 Use `make format` for formatting alone; `make check` applies the same formatters before its fast checks, while `make check-all` does not apply them. Installed pre-commit hooks format supported changed files automatically. Review formatter edits and, if a commit hook rewrites a file, stage the intended result before committing again. Never bypass hooks.
 
+The Markdown hook runs `uv run --locked mdformat`, sharing the repository's Python environment and locked formatter plugins with direct Make checks. Keep `uv` on PATH; activating `.venv` or wrapping `git commit` in `uv run` is unnecessary. Formatter dependencies belong in `pyproject.toml` and `uv.lock`, not a separate hook environment. The shared `.mdformat.toml` exclusion requires Python 3.13 or newer.
+
 `a13n-service` integration tests use fixture-owned Testcontainers. Application `A13N_SERVICE_*` variables never select test infrastructure. Loopback SSE and fixture-owned S3 clients bypass ambient proxies.
 
 Testcontainers is pinned to 4.13.1 because 4.15.0 can read Ryuk port mappings before Docker publishes them; upgrades must verify mapped-port startup with Ryuk enabled. Unreturned SQL connections, unhandled thread exceptions, and unraisable exceptions fail the test gate.

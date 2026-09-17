@@ -202,19 +202,6 @@ class ActiveRunCommands:
         )
         now = assume_utc(self._clock())
 
-        async def validate_final(database: AsyncSession) -> None:
-            try:
-                await authorize_interaction(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    session_id=source.session_id,
-                    agent_id=source.agent_id,
-                    action=WorkspaceAction.run_steer,
-                )
-            except AuthorizationError as error:
-                raise command_not_found() from error
-
         async def record_evidence(database: AsyncSession, receipt: SteerReceipt) -> None:
             await self._acceptance.validate_in_session(database, receipt.run_id)
             try:
@@ -241,7 +228,6 @@ class ActiveRunCommands:
                 organization_id=source.organization_id,
                 run_id=source.id,
                 input=accepted,
-                final_validator=validate_final,
                 transaction_hook=record_evidence,
             )
         except IntegrityError as error:
@@ -379,17 +365,20 @@ class ActiveRunCommands:
             if row is None:
                 raise command_not_found()
             source, thread = row
-            try:
-                await authorize_interaction(
-                    database,
-                    actor=actor,
-                    workspace_id=actor.workspace_id,
-                    session_id=source.session_id,
-                    agent_id=source.agent_id,
-                    action=WorkspaceAction.run_read if read_only else WorkspaceAction.run_steer,
-                )
-            except AuthorizationError as error:
-                raise command_not_found() from error
+            # Steer writes were authorized by _steer_replay before input preparation.
+            # Receipt reads are independent requests and must authorize here.
+            if read_only:
+                try:
+                    await authorize_interaction(
+                        database,
+                        actor=actor,
+                        workspace_id=actor.workspace_id,
+                        session_id=source.session_id,
+                        agent_id=source.agent_id,
+                        action=WorkspaceAction.run_read,
+                    )
+                except AuthorizationError as error:
+                    raise command_not_found() from error
             if not read_only and (
                 thread.current_run_id != source.id
                 or source.status

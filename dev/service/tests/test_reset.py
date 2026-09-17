@@ -14,12 +14,16 @@ import pytest
 from a13n_service.app import create_app
 from a13n_service.configuration.sources import load_settings
 from a13n_service.storage import open_storage, short_session
+from pydantic import SecretStr
 from sqlalchemy import text
 
+from dev.service.dev_resource_sync import AppliedResources, sync_resources
+from dev.service.dev_resources import DevelopmentResources
 from dev.service.environment import LOCAL_CONFIG
 from dev.service.lifecycle import lifecycle_lock
 from dev.service.reset import reset
 from dev.service.seed import PASSWORD, seed
+from dev.service.seed_client import Client
 from dev.service.tests.support import environment_for
 
 
@@ -109,6 +113,84 @@ def test_reset_seeded_then_empty_clears_all_stores_and_invalidates_login(environ
                 assert login.status_code == 200
                 cookies = dict(client.cookies)
                 client.headers["X-A13N-Workspace-ID"] = manifest["workspace_id"]
+                client.headers["X-A13N-CSRF-Token"] = login.json()["csrf_token"]
+                resources = DevelopmentResources.model_validate(
+                    {
+                        "version": 1,
+                        "model_providers": [
+                            {
+                                "type": "openrouter",
+                                "name": "Test OpenRouter",
+                                "credential": {"api_key": "fictional-test-key"},
+                                "models": [
+                                    {
+                                        "key": "test-openrouter-glm",
+                                        "name": "Test GLM",
+                                        "upstream_model": "z-ai/glm-5.3-flash",
+                                    }
+                                ],
+                            }
+                        ],
+                        "web_providers": [
+                            {"type": "brave", "name": "Test Brave", "credential": {"api_key": "fictional-test-key"}}
+                        ],
+                        "environment_providers": [
+                            {
+                                "type": "e2b",
+                                "name": "Test E2B",
+                                "credential": {"api_key": "fictional-test-key"},
+                            }
+                        ],
+                        "environment_templates": [
+                            {"name": "Test E2B base", "provider": "Test E2B", "configuration": {"template": "base"}}
+                        ],
+                        "connector_providers": [
+                            {
+                                "type": "composio",
+                                "name": "Test Composio",
+                                "credentials": {"api_key": "fictional-test-key"},
+                            }
+                        ],
+                    }
+                )
+                base = f"/api/v1/workspaces/{manifest['workspace_id']}"
+                expected = {
+                    "model_providers": 1,
+                    "models": 1,
+                    "web_providers": 1,
+                    "environment_providers": 1,
+                    "environment_templates": 1,
+                    "connector_providers": 1,
+                }
+                applied = AppliedResources(environment.state / "test-applied.json")
+                assert await sync_resources(Client(client), base, resources, applied) == expected
+                connector_list = await client.get(base + "/connector-providers")
+                generation = next(
+                    item["credential_generation"]
+                    for item in connector_list.json()["items"]
+                    if item["name"] == "Test Composio"
+                )
+                assert await sync_resources(Client(client), base, resources, applied) == expected
+                connector_list = await client.get(base + "/connector-providers")
+                assert (
+                    next(
+                        item["credential_generation"]
+                        for item in connector_list.json()["items"]
+                        if item["name"] == "Test Composio"
+                    )
+                    == generation
+                )
+                resources.connector_providers[0].credentials["api_key"] = SecretStr("rotated-fictional-key")
+                assert await sync_resources(Client(client), base, resources, applied) == expected
+                connector_list = await client.get(base + "/connector-providers")
+                assert (
+                    next(
+                        item["credential_generation"]
+                        for item in connector_list.json()["items"]
+                        if item["name"] == "Test Composio"
+                    )
+                    == generation + 1
+                )
                 for asset in manifest["asset_checks"]:
                     content = await client.get(f"/api/v1/assets/{asset['id']}/content")
                     assert content.status_code == 200
@@ -121,7 +203,9 @@ def test_reset_seeded_then_empty_clears_all_stores_and_invalidates_login(environ
                         f"/api/v1/environment-template-revisions/{instance.json()['template_revision_id']}"
                     )
                     assert revision.status_code == 200
-                    assert revision.json()["configuration"]["root"]["path"] == workspace["root"]
+                    assert Path(revision.json()["configuration"]["root"]["path"]) / "environments" / workspace[
+                        "environment_id"
+                    ] == Path(workspace["root"])
                 async with short_session(app.state.runtime.shared.storage.sessions) as session:
                     for workspace in bulk_environments:
                         runs = (

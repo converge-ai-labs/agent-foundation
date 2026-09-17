@@ -31,6 +31,7 @@ def core_metadata() -> MetaData:
     from a13n_service.connectivity.connectors import models as connector_models
     from a13n_service.connectivity.ingress import admission_models as ingress_admission_models
     from a13n_service.connectivity.mcp import models as mcp_models
+    from a13n_service.connectivity.providers.github import polling_models
     from a13n_service.connectivity.transports import models as transport_models
     from a13n_service.durable_operations import models as durable_operations_models
     from a13n_service.environments import models as environment_models
@@ -69,6 +70,7 @@ def core_metadata() -> MetaData:
         lifecycle_models,
         mcp_models,
         transport_models,
+        polling_models,
         memory_models,
         memory_behaviors,
         model_models,

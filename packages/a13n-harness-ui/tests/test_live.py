@@ -364,3 +364,42 @@ async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() 
     assert "thread-256" not in hub._terminal_streams
     await hub.close()
     assert not hub._root_streams
+
+
+async def test_root_replay_is_not_evicted_by_another_roots_events() -> None:
+    hub = HarnessUiLiveHub(epoch="live-test", ring_size=2)
+
+    async def publish(root: str) -> None:
+        await hub.publish(
+            run_kind="root",
+            root_thread_id=root,
+            parent_thread_id=None,
+            thread_id=root,
+            run_id="run-one",
+            events=(_text_event(root),),
+        )
+
+    await publish("quiet")
+    async with hub.subscribe(root_thread_id="quiet") as subscription:
+        cursor = subscription.cursor
+    for _ in range(10):
+        await publish("noisy")
+    await publish("quiet")
+    async with hub.subscribe(root_thread_id="quiet", after=cursor) as resumed:
+        assert (await resumed.receive()).root_thread_id == "quiet"
+    # Sparse global sequence numbers do not imply that this root lost events.
+    async with hub.subscribe(root_thread_id="never-published", after=cursor):
+        pass
+    await publish("quiet")
+    await publish("quiet")
+    with pytest.raises(LivePresentationError, match="no longer retained"):
+        async with hub.subscribe(root_thread_id="quiet", after=cursor):
+            pass
+    # Root-ring cardinality is bounded too; evicted roots explicitly reset.
+    for index in range(17):
+        await publish(f"other-{index}")
+    assert len(hub._root_rings) == 16
+    with pytest.raises(LivePresentationError, match="no longer retained"):
+        async with hub.subscribe(root_thread_id="quiet", after=cursor):
+            pass
+    await hub.close()

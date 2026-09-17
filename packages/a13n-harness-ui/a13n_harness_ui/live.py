@@ -253,6 +253,13 @@ class HarnessUiLiveHub:
             raise ValueError("live hub bounds must be positive")
         self._epoch = epoch or f"live-{uuid4().hex}"
         self._ring: deque[LiveEvent] = deque(maxlen=ring_size)
+        # Independent lineage retention: noisy roots cannot evict quiet roots.
+        # The global ring remains for unscoped native observers. Both reference
+        # the same detached events; at most sixteen root rings are retained.
+        self._root_rings: OrderedDict[str, deque[LiveEvent]] = OrderedDict()
+        self._root_floors: dict[str, int] = {}
+        self._evicted_root_floor = 0
+        self._ring_size = ring_size
         self._subscriber_buffer_size = subscriber_buffer_size
         self._subscribers: set[_LiveSubscriber] = set()
         self._sequence = 0
@@ -307,7 +314,20 @@ class HarnessUiLiveHub:
                     payload=payload,
                     payload_omitted=omitted,
                 )
-                self._ring.append(event.model_copy(deep=True))
+                self._ring.append(event)
+                ring = self._root_rings.get(root_thread_id)
+                if ring is None:
+                    ring = deque(maxlen=self._ring_size)
+                    self._root_rings[root_thread_id] = ring
+                    self._root_floors[root_thread_id] = self._evicted_root_floor
+                if len(ring) == self._ring_size:
+                    self._root_floors[root_thread_id] = ring[0].sequence
+                ring.append(event)
+                self._root_rings.move_to_end(root_thread_id)
+                while len(self._root_rings) > 16:
+                    expired_root, expired_ring = self._root_rings.popitem(last=False)
+                    self._evicted_root_floor = max(self._evicted_root_floor, expired_ring[-1].sequence)
+                    self._root_floors.pop(expired_root, None)
                 if observer is not None:
                     current = self._root_streams.get(thread_id)
                     if current is None or current.run_id != run_id:
@@ -350,8 +370,7 @@ class HarnessUiLiveHub:
         async with self._lock:
             return tuple(
                 event.model_copy(deep=True)
-                for event in self._ring
-                if root_thread_id is None or event.root_thread_id == root_thread_id
+                for event in (self._ring if root_thread_id is None else self._root_rings.get(root_thread_id, ()))
             )
 
     @asynccontextmanager
@@ -366,13 +385,9 @@ class HarnessUiLiveHub:
         async with self._lock:
             if self._closed:
                 raise LivePresentationError("The detailed live hub is closed.", code="live_unavailable")
-            start_sequence = self._validate_cursor(after)
-            replay = [
-                event
-                for event in self._ring
-                if event.sequence > start_sequence
-                and (root_thread_id is None or event.root_thread_id == root_thread_id)
-            ]
+            start_sequence = self._validate_cursor(after, root_thread_id)
+            ring = self._ring if root_thread_id is None else self._root_rings.get(root_thread_id, ())
+            replay = [event for event in ring if event.sequence > start_sequence]
             capacity = max(len(replay), self._subscriber_buffer_size)
             send, receive = create_memory_object_stream[LiveEvent](capacity)
             subscriber = _LiveSubscriber(
@@ -398,14 +413,21 @@ class HarnessUiLiveHub:
                 async with self._lock:
                     self._discard_subscriber(subscriber)
 
-    def _validate_cursor(self, after: LiveCursor | None) -> int:
+    def _validate_cursor(self, after: LiveCursor | None, root_thread_id: str | None) -> int:
         if after is None:
             return self._sequence
         if after.epoch != self._epoch:
             raise LivePresentationError("The detailed live epoch changed.", code="live_epoch_changed")
         if after.sequence > self._sequence:
             raise LivePresentationError("The detailed live cursor is invalid.", code="live_cursor_invalid")
-        if self._ring and after.sequence < self._ring[0].sequence - 1:
+        floor = (
+            self._root_floors.get(root_thread_id, self._evicted_root_floor)
+            if root_thread_id is not None
+            else self._ring[0].sequence - 1
+            if self._ring
+            else self._sequence
+        )
+        if after.sequence < floor:
             raise LivePresentationError("The detailed live cursor is no longer retained.", code="live_cursor_expired")
         return after.sequence
 
@@ -423,6 +445,8 @@ class HarnessUiLiveHub:
             self._subscribers.clear()
             self._ring.clear()
             self._root_streams.clear()
+            self._root_rings.clear()
+            self._root_floors.clear()
             self._terminal_streams.clear()
             for subscriber in subscribers:
                 subscriber.send.close()

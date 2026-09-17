@@ -1,4 +1,4 @@
-"""Opt-in integration against a real Engine, including the Compose DinD socket."""
+"""Opt-in integration against a real Engine, including a selected host socket."""
 
 import asyncio
 import os
@@ -31,10 +31,9 @@ async def native_environment():
     engine = DockerSDKEngine(docker.from_env())
     config = DockerProviderConfiguration(
         image=os.environ.get("A13N_TEST_DOCKER_IMAGE", "a13n-docker-environment:local"),
-        pull_policy="never",
         init_script="echo initialized >> /workspace/init-count",
         disable_network=True,
-        memory_mib=256,
+        memory_gb=0.256,
         pids_limit=128,
     )
     env = DockerEnvironment(config, "env_" + uuid4().hex, None, DockerProviderRuntime(engine))
@@ -259,9 +258,7 @@ async def test_full_filesystem_preserves_destination_and_removes_staging(monkeyp
 
     monkeypatch.setattr(type(engine.client.containers), "create", limited_container)
     env = DockerEnvironment(
-        DockerProviderConfiguration(
-            image=os.environ.get("A13N_TEST_DOCKER_IMAGE", "a13n-docker-environment:local"), pull_policy="never"
-        ),
+        DockerProviderConfiguration(image=os.environ.get("A13N_TEST_DOCKER_IMAGE", "a13n-docker-environment:local")),
         "env_" + uuid4().hex,
         None,
         DockerProviderRuntime(engine),

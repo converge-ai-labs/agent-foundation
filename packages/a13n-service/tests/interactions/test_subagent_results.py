@@ -24,9 +24,11 @@ from a13n_service.interactions.state import CompletedOutcomeCandidate, InboxRece
 from a13n_service.run_stream import (
     LifecycleRunStreamProjector,
     RedisRunStream,
-    RunReplayStore,
+    RunDisplayStore,
 )
 from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
+from a13n_service.run_stream.display_candidates import DisplayCandidates
+from a13n_service.run_stream.display_consumer import RunDisplayConsumer
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     MAX_INLINE_ASYNC_RESULT_BYTES,
@@ -98,7 +100,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
     signals = RecordingSignals()
     publisher = AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         signals=signals,
         entry_id_factory=lambda: "inb_2222222222222222",
         clock=lambda: NOW + timedelta(seconds=4),
@@ -126,7 +128,7 @@ async def test_sealed_child_result_reconciles_idempotently_into_active_fifo(
 
     result_materializer = AsyncSubagentResultMaterializer(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
     )
     forged_payload = payload.model_copy(update={"result_payload": {"forged": True}})
     forged_entry = entry.model_copy(
@@ -193,7 +195,7 @@ async def test_parent_failure_suppresses_unconsumed_child_result_on_both_race_or
     signals = RecordingSignals()
     publisher = AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         signals=signals,
         entry_id_factory=lambda: "inb_3333333333333333",
         clock=lambda: NOW + timedelta(seconds=4),
@@ -243,7 +245,7 @@ async def test_result_capacity_failure_leaves_no_partial_publication(
     await _fail_child(interaction_sessions, child_run_id)
     publisher = AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         max_pending_count=1,
         entry_id_factory=lambda: "inb_7777777777777777",
         clock=lambda: NOW + timedelta(seconds=4),
@@ -290,7 +292,7 @@ async def test_inline_json_null_result_survives_inbox_and_materialization(
         outcome=CompletedOutcomeCandidate(output=None),
         time_offset_seconds=4,
     )
-    replays = RunReplayStore(interaction_object_store)
+    replays = RunDisplayStore(interaction_object_store)
 
     entry = await AsyncSubagentResultPublisher(interaction_sessions, replays).publish(
         organization_id=ORGANIZATION_ID,
@@ -313,7 +315,7 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
         interaction_sessions,
         interaction_object_store,
     )
-    replays, projector, output = await _complete_object_backed_child(
+    replays, projector, consumer, output = await _complete_object_backed_child(
         interaction_sessions,
         interaction_object_store,
         redis_client,
@@ -337,7 +339,12 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
         assert rows == ()
 
     await _project_all_lifecycle(projector)
-    snapshot = await replays.read(ORGANIZATION_ID, child_run_id)
+    await consumer.consume_once()
+    async with short_session(interaction_sessions) as database:
+        child = await database.get(RunRecord, child_run_id)
+        assert child is not None
+        child_thread_id = child.thread_id
+    snapshot = (await replays.read(ORGANIZATION_ID, child_run_id, expected_thread_id=child_thread_id)).snapshot
     entry = await publisher.publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     result = _RESULT_ADAPTER.validate_python(entry.payload)
     output_item = snapshot.items[-1]
@@ -359,7 +366,7 @@ async def test_object_backed_result_requires_and_uses_authorized_terminal_item(
             }
         }
     )
-    with pytest.raises(AsyncSubagentResultError, match="retained terminal event"):
+    with pytest.raises(AsyncSubagentResultError, match="retained terminal Item"):
         await materializer(forged_entry)
 
 
@@ -382,7 +389,7 @@ async def test_result_publication_reauthorizes_the_spawning_principal(
     with pytest.raises(AsyncSubagentResultError, match="publication is no longer authorized"):
         await AsyncSubagentResultPublisher(
             interaction_sessions,
-            RunReplayStore(interaction_object_store),
+            RunDisplayStore(interaction_object_store),
         ).publish(
             organization_id=ORGANIZATION_ID,
             child_run_id=child_run_id,
@@ -414,7 +421,7 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_9999999999999999",
         clock=lambda: NOW + timedelta(seconds=4),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -453,7 +460,7 @@ async def test_concurrent_result_publication_converges_on_postgresql(
     signals = RecordingSignals()
     publisher = AsyncSubagentResultPublisher(
         sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         signals=signals,
         entry_id_factory=lambda: next(ids),
         clock=lambda: NOW + timedelta(seconds=4),
@@ -537,7 +544,7 @@ async def _complete_object_backed_child(
     redis: Redis,
     states: RunStateStore,
     child_run_id: str,
-) -> tuple[RunReplayStore, LifecycleRunStreamProjector, str]:
+) -> tuple[RunDisplayStore, LifecycleRunStreamProjector, RunDisplayConsumer, str]:
     claim = await AttemptScheduler(
         sessions,
         clock=lambda: NOW + timedelta(seconds=3),
@@ -592,15 +599,14 @@ async def _complete_object_backed_child(
         outcome=CompletedOutcomeCandidate(output_object=output_object),
         time_offset_seconds=4,
     )
-    replays = RunReplayStore(objects)
+    replays = RunDisplayStore(objects)
     projector = LifecycleRunStreamProjector(
         sessions,
         stream,
-        replays,
         worker_id="subagent-result-test-projector",
         clock=lambda: NOW + timedelta(seconds=5),
     )
-    return replays, projector, output
+    return replays, projector, RunDisplayConsumer(DisplayCandidates(sessions), stream, replays), output
 
 
 async def _project_all_lifecycle(projector: LifecycleRunStreamProjector) -> None:
@@ -639,7 +645,7 @@ async def test_deferred_result_does_not_starve_the_next_scan_page(
     await _fail_child(interaction_sessions, next_child.run.id)
     publisher = AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         clock=lambda: NOW + timedelta(seconds=4),
     )
     original = publisher.publish
@@ -697,7 +703,7 @@ async def test_expired_result_is_not_materialized_after_cached_receipt_confirmat
     await _fail_child(sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         clock=lambda: now,
         entry_id_factory=lambda: "inb_2222222222222222",
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)

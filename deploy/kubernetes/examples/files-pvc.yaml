@@ -1,0 +1,13 @@
+# Use an installed EFS or Filestore CSI StorageClass that supports RWX.
+# Apply in the release namespace before installing the distributed profile.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: a13n-files
+spec:
+  accessModes: [ReadWriteMany]
+  storageClassName: REPLACE_RWX_STORAGE_CLASS
+  resources:
+    requests:
+      # Adjust to the provider's minimum size and expected workload.
+      storage: 1Ti

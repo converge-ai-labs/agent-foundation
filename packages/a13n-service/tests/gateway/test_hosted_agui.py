@@ -24,7 +24,6 @@ from a13n_service.interactions.objects import RunStateStore
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.run_stream import (
     RedisRunStream,
-    RunReplayStore,
     RunStreamEvent,
     RunStreamReplayGap,
     deterministic_run_stream_event_id,
@@ -75,7 +74,6 @@ async def _service(
             sessions,
             _commands(sessions, objects, _Preparation(), _frozen_resolver(protocol)),
             stream,
-            RunReplayStore(objects),
             HostedAguiReplayStore(objects, max_events=1024, max_bytes=16 * 1024 * 1024),
             page_size=100,
             poll_interval_seconds=0.001,

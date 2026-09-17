@@ -18,7 +18,7 @@ pytestmark = pytest.mark.anyio
 
 @pytest.fixture
 def provider_catalog():
-    return build_environment_provider_catalog(builtin_keys=("a13n.e2b",))
+    return build_environment_provider_catalog(builtin_keys=("e2b",))
 
 
 async def test_e2b_secret_survives_creation_and_rotation(environment_service, environment_sessions, protector):
@@ -26,7 +26,7 @@ async def test_e2b_secret_survives_creation_and_rotation(environment_service, en
     provider = await environment_service.create_provider(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="a13n.e2b", name="E2B credential test", credential={"api_key": key}),
+        request=CreateProviderRequest(type="e2b", name="E2B credential test", credential={"api_key": key}),
     )
     for generation in (1, 2):
         assert provider.credential_configured and key not in provider.model_dump_json()
@@ -53,7 +53,7 @@ async def test_provider_update_rolls_back_invalid_credentials(environment_servic
     original = await environment_service.create_provider(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="a13n.e2b", name="Original", credential={"api_key": "initial"}),
+        request=CreateProviderRequest(type="e2b", name="Original", credential={"api_key": "initial"}),
     )
     etag = resource_etag(original.id, original.updated_at)
     with pytest.raises(EnvironmentManagementError):

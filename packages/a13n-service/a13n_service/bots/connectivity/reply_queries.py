@@ -12,6 +12,7 @@ from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.cursors import CursorError, decode_cursor, encode_cursor
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.native_management import authorize, require_limit
+from a13n_service.connectivity.providers.github.actions import GitHubCommentReceipt
 from a13n_service.connectivity.providers.lark.actions import LarkReplyReceipt
 from a13n_service.connectivity.providers.slack.client import SlackReplyReceipt
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
@@ -29,11 +30,11 @@ class BotReplyObservation(BaseModel):
     run_id: str
     run_attempt_id: str
     target_id: str | None
-    provider_key: Literal["slack", "lark"]
+    provider_key: Literal["slack", "lark", "github"]
     account_version: int
     credential_generation: int
     status: Literal["dispatching", "succeeded", "rejected", "outcome_unknown"]
-    receipt: SlackReplyReceipt | LarkReplyReceipt | None
+    receipt: SlackReplyReceipt | LarkReplyReceipt | GitHubCommentReceipt | None
     error_code: str | None
     started_at: datetime
     finished_at: datetime | None
@@ -140,7 +141,13 @@ def reply_observation(
         and assume_utc(attempt.lease_expires_at) > now
     ):
         status = "outcome_unknown"
-    receipt_type = SlackReplyReceipt if record.provider_key == "slack" else LarkReplyReceipt
+    receipt_type = (
+        SlackReplyReceipt
+        if record.provider_key == "slack"
+        else GitHubCommentReceipt
+        if record.provider_key == "github"
+        else LarkReplyReceipt
+    )
     return BotReplyObservation.model_validate(
         {
             **{

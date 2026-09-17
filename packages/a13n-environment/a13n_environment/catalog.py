@@ -24,10 +24,10 @@ _MAX_PROVIDER_KEY_LENGTH = 128
 _KEY_PATTERN = re.compile(r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$")
 _BUILTIN_PROVIDER_KEYS = frozenset(
     {
-        "a13n.direct-local",
+        "direct-local",
         "a13n.local-envd",
-        "a13n.docker",
-        "a13n.e2b",
+        "docker",
+        "e2b",
         "a13n.http-envd",
         "a13n.websocket-envd",
     }
@@ -160,7 +160,7 @@ def build_environment_provider_catalog(
     """Build an immutable catalog without importing unselected entry points."""
 
     builtins = tuple(_validate_provider_key(value) for value in builtin_keys)
-    extensions = tuple(_validate_provider_key(value) for value in extension_keys)
+    extensions = tuple(_validate_extension_key(value) for value in extension_keys)
     _require_unique_keys(builtins)
     _require_unique_keys(extensions)
 
@@ -180,7 +180,7 @@ def build_environment_provider_catalog(
                 "Explicit Environment Providers must implement EnvironmentProvider.",
                 code="provider_catalog_target_invalid",
             )
-        key = _provider_key(provider)
+        key = _validate_extension_key(_provider_key(provider))
         if key in explicit_keys:
             raise _catalog_error(
                 "An explicit Environment Provider key was supplied more than once.",
@@ -261,7 +261,7 @@ def _entry_point_reference(
     selected_key: str | None = None,
 ) -> EnvironmentProviderReference:
     try:
-        provider_key = _validate_provider_key(entry_point.name)
+        provider_key = _validate_extension_key(entry_point.name)
         import_target = entry_point.value
         if not isinstance(import_target, str) or not import_target or import_target != import_target.strip():
             raise ValueError("invalid import target")
@@ -294,7 +294,7 @@ def _entry_point_reference(
 def _load_builtin_provider(
     provider_key: str,
 ) -> tuple[EnvironmentProviderRegistration, EnvironmentProvider]:
-    if provider_key == "a13n.direct-local":
+    if provider_key == "direct-local":
         from .direct_local.provider import DirectLocalEnvironmentProvider
 
         provider_type: type[EnvironmentProvider] = DirectLocalEnvironmentProvider
@@ -302,11 +302,11 @@ def _load_builtin_provider(
         from .local_envd.provider import LocalEnvdEnvironmentProvider
 
         provider_type = LocalEnvdEnvironmentProvider
-    elif provider_key == "a13n.docker":
+    elif provider_key == "docker":
         from .docker.factory import DockerEnvironmentProvider
 
         provider_type = DockerEnvironmentProvider
-    elif provider_key == "a13n.e2b":
+    elif provider_key == "e2b":
         from .e2b.factory import E2BEnvironmentProvider
 
         provider_type = E2BEnvironmentProvider
@@ -431,12 +431,27 @@ def _registration(
 
 
 def _validate_provider_key(value: object) -> str:
-    if not isinstance(value, str) or len(value) > _MAX_PROVIDER_KEY_LENGTH or _KEY_PATTERN.fullmatch(value) is None:
+    if (
+        not isinstance(value, str)
+        or len(value) > _MAX_PROVIDER_KEY_LENGTH
+        or (value not in _BUILTIN_PROVIDER_KEYS and _KEY_PATTERN.fullmatch(value) is None)
+    ):
         raise _catalog_error(
-            "Environment Provider keys must be bounded lowercase namespaced identifiers.",
+            "Environment Provider keys must be built-ins or bounded lowercase namespaced identifiers.",
             code="provider_catalog_key_invalid",
         )
     return value
+
+
+def _validate_extension_key(value: object) -> str:
+    key = _validate_provider_key(value)
+    if key in _BUILTIN_PROVIDER_KEYS or _KEY_PATTERN.fullmatch(key) is None:
+        raise _catalog_error(
+            "Third-party Environment Provider keys must be namespaced and distinct from built-ins.",
+            code="provider_catalog_key_invalid",
+            provider_key=key,
+        )
+    return key
 
 
 def _require_unique_keys(keys: Sequence[str]) -> None:

@@ -335,7 +335,7 @@ async def test_control_fault_installers_target_current_owners(monkeypatch, tmp_p
     assert QueuedRunCommands.prepare_queued_run.__wrapped__ is not None
 
 
-async def test_state_faults_do_not_intercept_replay_objects(monkeypatch, tmp_path):
+async def test_state_faults_do_not_intercept_display_objects(monkeypatch, tmp_path):
     from a13n_service.interactions.acceptance import RunAcceptanceService
     from a13n_service.interactions.attempts import AttemptExecutionService
     from a13n_service.interactions.objects import RUN_STATE_CONTENT_TYPE, RunStateStore
@@ -360,6 +360,6 @@ async def test_state_faults_do_not_intercept_replay_objects(monkeypatch, tmp_pat
 
     monkeypatch.setattr(S3ObjectStore, "put", put)
     install({"workspace_root": str(tmp_path), "run_faults": {"queue_faults": False}}, "worker")
-    key = "organizations/org/runs/run/replay/version-1.json"
+    key = "organizations/org/runs/run/display_messages.json"
     result = await S3ObjectStore.put(None, key, b"{}", content_type=RUN_STATE_CONTENT_TYPE, metadata={"run-id": "run"})
     assert result == "stored" and calls == [key]

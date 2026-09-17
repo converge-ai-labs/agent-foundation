@@ -112,7 +112,7 @@ class E2BProcesses:
             mount_id=self.commands.mount_id,
             observed_generation=self.commands.generation,
             identity=ProcessIdentity(
-                provider_type="a13n.e2b",
+                provider_type="e2b",
                 environment_id=self.environment_id,
                 generation=self.commands.generation,
                 process_id=token,

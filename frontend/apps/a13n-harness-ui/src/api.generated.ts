@@ -984,6 +984,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/activity/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lookup Thread Activity */
+        post: operations["lookup_thread_activity_api_threads_activity_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/activity": {
         parameters: {
             query?: never;
@@ -1155,6 +1172,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transcript Inputs */
+        get: operations["transcript_inputs_api_threads__thread_id__inputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/touch": {
         parameters: {
             query?: never;
@@ -1302,40 +1336,6 @@ export interface paths {
         put?: never;
         /** Cancel */
         post: operations["cancel_api_operations__receipt_id__cancel_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/threads/{thread_id}/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Focused */
-        get: operations["focused_api_threads__thread_id__events_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Summary */
-        get: operations["summary_api_events_get"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1572,6 +1572,8 @@ export interface components {
             model_id: string;
             /** Thinking Summary */
             thinking_summary?: string | null;
+            /** @default default */
+            fast?: components["schemas"]["FastState"];
         };
         /** CapturedConfiguration */
         CapturedConfiguration: {
@@ -1749,7 +1751,10 @@ export interface components {
             executions: components["schemas"]["ChildExecutionView"][];
             /** Total */
             total: number;
-            /** Next Cursor */
+            /**
+             * Next Cursor
+             * @default null
+             */
             next_cursor?: string | null;
         };
         /** ChildExecutionView */
@@ -1782,8 +1787,12 @@ export interface components {
              * @enum {string}
              */
             local_status: "active" | "unavailable";
-            /** Resumed From */
+            /**
+             * Resumed From
+             * @default null
+             */
             resumed_from?: string | null;
+            /** @default null */
             failure?: components["schemas"]["FailureView"] | null;
             /** Resumable */
             resumable: boolean;
@@ -1803,7 +1812,10 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
-            /** Completed At */
+            /**
+             * Completed At
+             * @default null
+             */
             completed_at?: string | null;
         };
         /** ChildOutputLocation */
@@ -1867,7 +1879,9 @@ export interface components {
              * @enum {string}
              */
             status: "running" | "success" | "failed" | "denied" | "interrupted";
+            /** @default null */
             arguments?: components["schemas"]["JsonValue"] | null;
+            /** @default null */
             result?: components["schemas"]["JsonValue"] | null;
         };
         /** CodexSubscriptionAuthentication */
@@ -2082,8 +2096,12 @@ export interface components {
              * @enum {string}
              */
             status: "selected" | "not_available" | "failed";
-            /** Continuation Id */
+            /**
+             * Continuation Id
+             * @default null
+             */
             continuation_id?: string | null;
+            /** @default null */
             failure?: components["schemas"]["FailureView"] | null;
         };
         /**
@@ -2146,13 +2164,17 @@ export interface components {
             kind: "approval" | "external";
             /** Tool Name */
             tool_name: string;
+            /** @default null */
             arguments?: components["schemas"]["JsonValue"] | null;
             /**
              * Arguments Omitted
              * @default false
              */
             arguments_omitted?: boolean;
-            /** Metadata */
+            /**
+             * Metadata
+             * @default null
+             */
             metadata?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
@@ -2268,13 +2290,29 @@ export interface components {
             code: string;
             /** Message */
             message: string;
-            /** Details */
+            /**
+             * Details
+             * @default null
+             */
             details?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
-            /** Retry Hint */
+            /**
+             * Retry Hint
+             * @default null
+             */
             retry_hint?: string | null;
         };
+        /** FastControl */
+        FastControl: {
+            /** Supported */
+            supported: boolean;
+            state: components["schemas"]["FastState"];
+            /** Reason */
+            reason?: string | null;
+        };
+        /** @enum {string} */
+        FastState: "on" | "off" | "default";
         /** FileCapture */
         FileCapture: {
             attachment: components["schemas"]["ThreadAttachment"];
@@ -2349,54 +2387,6 @@ export interface components {
             presentation: "text" | "binary" | "too_large";
             /** Text */
             text?: string | null;
-        };
-        /** FocusEventFrame */
-        FocusEventFrame: {
-            /**
-             * Kind
-             * @default event
-             * @constant
-             */
-            kind?: "event";
-            event: components["schemas"]["LiveEvent"];
-            /** Resume Cursor */
-            resume_cursor: string;
-        };
-        /** FocusReadyFrame */
-        FocusReadyFrame: {
-            /**
-             * Kind
-             * @default ready
-             * @constant
-             */
-            kind?: "ready";
-            /** Resume Cursor */
-            resume_cursor: string;
-        };
-        /** FocusReplayFrame */
-        FocusReplayFrame: {
-            /**
-             * Kind
-             * @default root_stream
-             * @constant
-             */
-            kind?: "root_stream";
-            /** Run Id */
-            run_id: string;
-            /** Events */
-            events: components["schemas"]["RootStreamEvent"][];
-        };
-        /** FocusSnapshotFrame */
-        FocusSnapshotFrame: {
-            /**
-             * Kind
-             * @default snapshot
-             * @constant
-             */
-            kind?: "snapshot";
-            snapshot: components["schemas"]["ThreadFocusSnapshot"];
-            /** Resume Cursor */
-            resume_cursor: string | null;
         };
         /** GitChange */
         GitChange: {
@@ -2610,39 +2600,6 @@ export interface components {
              */
             access: "api_key" | "dangerous_bypass";
         };
-        /**
-         * LiveEvent
-         * @description Detached bounded AG-UI event correlated to one complete root lineage.
-         */
-        LiveEvent: {
-            /** Epoch */
-            epoch: string;
-            /** Sequence */
-            sequence: number;
-            /**
-             * Run Kind
-             * @enum {string}
-             */
-            run_kind: "root" | "child";
-            /** Root Thread Id */
-            root_thread_id: string;
-            /** Parent Thread Id */
-            parent_thread_id?: string | null;
-            /** Thread Id */
-            thread_id: string;
-            /** Run Id */
-            run_id: string;
-            /** Execution Id */
-            execution_id?: string | null;
-            /** Event Type */
-            event_type: string;
-            /** Payload */
-            payload: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-            /** Payload Omitted */
-            payload_omitted: boolean;
-        };
         /** LoginStatus */
         LoginStatus: {
             /** Session Id */
@@ -2843,6 +2800,7 @@ export interface components {
             /** Route */
             route: string;
             thinking?: components["schemas"]["ThinkingControl"] | null;
+            fast?: components["schemas"]["FastControl"] | null;
         };
         /** ModelToolChoice */
         ModelToolChoice: {
@@ -3119,17 +3077,6 @@ export interface components {
          * @enum {string}
          */
         RequiredAction: "none" | "login" | "refresh" | "reauthenticate" | "switch_to_file";
-        /** ResetFrame */
-        ResetFrame: {
-            /**
-             * Kind
-             * @default reset
-             * @constant
-             */
-            kind?: "reset";
-            /** Reason */
-            reason: string;
-        };
         ResourceId: string;
         /** ResourcePage */
         ResourcePage: {
@@ -3186,9 +3133,15 @@ export interface components {
         /** RootActivityView */
         RootActivityView: {
             state: components["schemas"]["RootActivityState"];
-            /** Receipt Id */
+            /**
+             * Receipt Id
+             * @default null
+             */
             receipt_id?: string | null;
-            /** Run Id */
+            /**
+             * Run Id
+             * @default null
+             */
             run_id?: string | null;
             /**
              * Available Actions
@@ -3212,29 +3165,22 @@ export interface components {
              * @enum {string}
              */
             status: "completed" | "failed" | "cancelled" | "suspended";
+            /** @default null */
             output?: components["schemas"]["JsonValue"] | null;
             /**
              * Output Omitted
              * @default false
              */
             output_omitted?: boolean;
+            /** @default null */
             failure?: components["schemas"]["FailureView"] | null;
-            /** Usage */
+            /**
+             * Usage
+             * @default null
+             */
             usage?: {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
-        };
-        /** RootOperationNotice */
-        RootOperationNotice: {
-            /** Receipt Id */
-            receipt_id: string;
-            /**
-             * Status
-             * @enum {string}
-             */
-            status: "completed" | "failed" | "suspended";
-            /** Brief */
-            brief: string;
         };
         /**
          * RootOperationStatus
@@ -3245,13 +3191,24 @@ export interface components {
         RootOperationView: {
             receipt: components["schemas"]["RootRunReceipt"];
             status: components["schemas"]["RootOperationStatus"];
-            /** Run Id */
+            /**
+             * Run Id
+             * @default null
+             */
             run_id?: string | null;
-            /** Started At */
+            /**
+             * Started At
+             * @default null
+             */
             started_at?: string | null;
-            /** Completed At */
+            /**
+             * Completed At
+             * @default null
+             */
             completed_at?: string | null;
+            /** @default null */
             outcome?: components["schemas"]["RootRunOutcomeView"] | null;
+            /** @default null */
             failure?: components["schemas"]["FailureView"] | null;
             /**
              * Available Actions
@@ -3290,33 +3247,6 @@ export interface components {
              * Format: date-time
              */
             submitted_at: string;
-        };
-        /** RootStreamEvent */
-        RootStreamEvent: {
-            /** Index */
-            index: number;
-            /** Event Type */
-            event_type: string;
-            /** Payload */
-            payload: {
-                [key: string]: components["schemas"]["JsonValue"];
-            } | null;
-            /** Payload Omitted */
-            payload_omitted: boolean;
-        };
-        /**
-         * RootStreamSummary
-         * @description Finite observer prefix covered by a focused watch's cutover.
-         */
-        RootStreamSummary: {
-            /** Thread Id */
-            thread_id: string;
-            /** Run Id */
-            run_id: string;
-            /** Base Continuation Id */
-            base_continuation_id: string | null;
-            /** Event Count */
-            event_count: number;
         };
         /** RunUsageView */
         RunUsageView: {
@@ -3675,61 +3605,17 @@ export interface components {
              */
             metadata_omitted?: boolean;
         };
-        /** SummaryCursor */
-        SummaryCursor: {
-            /** Epoch */
-            epoch: string;
-            /** Sequence */
-            sequence: number;
-        };
-        /** SummaryEventFrame */
-        SummaryEventFrame: {
-            /**
-             * Kind
-             * @default invalidation
-             * @constant
-             */
-            kind?: "invalidation";
-            event: components["schemas"]["SummaryInvalidation"];
-            /** Resume Cursor */
-            resume_cursor: string;
-        };
-        /** SummaryInvalidation */
-        SummaryInvalidation: {
-            /** Epoch */
-            epoch: string;
-            /** Sequence */
-            sequence: number;
-            /**
-             * Kind
-             * @enum {string}
-             */
-            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "comment";
-            /** Root Thread Id */
-            root_thread_id?: string | null;
-            /** Thread Id */
-            thread_id?: string | null;
-            /** Execution Id */
-            execution_id?: string | null;
-            notice?: components["schemas"]["RootOperationNotice"] | null;
-        };
-        /** SummaryOpenFrame */
-        SummaryOpenFrame: {
-            /**
-             * Kind
-             * @default open
-             * @constant
-             */
-            kind?: "open";
-            cursor: components["schemas"]["SummaryCursor"];
-            /** Resume Cursor */
-            resume_cursor: string;
-        };
         /** TaskPage */
         TaskPage: {
-            /** Continuation Id */
+            /**
+             * Continuation Id
+             * @default null
+             */
             continuation_id?: string | null;
-            /** Version */
+            /**
+             * Version
+             * @default null
+             */
             version?: number | null;
             /**
              * Tasks
@@ -3760,14 +3646,20 @@ export interface components {
             version: number;
             /** Subject */
             subject: string;
-            /** Active Form */
+            /**
+             * Active Form
+             * @default null
+             */
             active_form?: string | null;
             /**
              * Status
              * @enum {string}
              */
             status: "pending" | "in_progress" | "completed";
-            /** Owner */
+            /**
+             * Owner
+             * @default null
+             */
             owner?: string | null;
             /**
              * Blocks
@@ -3983,7 +3875,10 @@ export interface components {
         ThreadConfigurationView: {
             /** Version */
             version: number;
-            /** Project Id */
+            /**
+             * Project Id
+             * @default null
+             */
             project_id?: string | null;
             agent_source: components["schemas"]["AgentSourceView"];
             /** Environment Profile Id */
@@ -4007,7 +3902,10 @@ export interface components {
         /** ThreadDetail */
         ThreadDetail: {
             thread: components["schemas"]["ThreadSummary"];
-            /** Continuation Id */
+            /**
+             * Continuation Id
+             * @default null
+             */
             continuation_id?: string | null;
             /**
              * Deferred Requests
@@ -4019,23 +3917,6 @@ export interface components {
              * @default []
              */
             available_actions?: ("run" | "respond" | "wait" | "steer" | "cancel" | "archive")[];
-        };
-        /** ThreadFocusSnapshot */
-        ThreadFocusSnapshot: {
-            /** Epoch */
-            epoch: string;
-            /** Cutover Sequence */
-            cutover_sequence: number;
-            thread: components["schemas"]["ThreadDetail"];
-            root_operation?: components["schemas"]["RootOperationView"] | null;
-            children: components["schemas"]["ChildExecutionPage"];
-            tasks?: components["schemas"]["TaskPage"];
-            /**
-             * Recent Events
-             * @default []
-             */
-            recent_events?: components["schemas"]["LiveEvent"][];
-            root_stream?: components["schemas"]["RootStreamSummary"] | null;
         };
         /** ThreadPage */
         ThreadPage: {
@@ -4068,7 +3949,10 @@ export interface components {
         ThreadSummary: {
             /** Thread Id */
             thread_id: string;
-            /** Parent Thread Id */
+            /**
+             * Parent Thread Id
+             * @default null
+             */
             parent_thread_id?: string | null;
             /**
              * Created At
@@ -4082,12 +3966,21 @@ export interface components {
             updated_at: string;
             /** Metadata Version */
             metadata_version: number;
-            /** Title */
+            /**
+             * Title
+             * @default null
+             */
             title?: string | null;
             excerpt?: components["schemas"]["ConversationExcerpt"];
-            /** Activity At */
+            /**
+             * Activity At
+             * @default null
+             */
             activity_at?: string | null;
-            /** Touched At */
+            /**
+             * Touched At
+             * @default null
+             */
             touched_at?: string | null;
             /** Archived */
             archived: boolean;
@@ -4098,6 +3991,7 @@ export interface components {
              */
             continuation_state: "initial" | "selected";
             root_activity: components["schemas"]["RootActivityView"];
+            /** @default null */
             completion?: components["schemas"]["ThreadCompletion"] | null;
         };
         /** ThreadUsageView */
@@ -4182,6 +4076,15 @@ export interface components {
             /** Parts */
             parts: components["schemas"]["TranscriptPart"][];
         };
+        /** TranscriptInputPage */
+        TranscriptInputPage: {
+            /** Continuation Id */
+            continuation_id: string;
+            /** Turns */
+            turns: components["schemas"]["TranscriptTurn"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
         /** TranscriptPage */
         TranscriptPage: {
             /**
@@ -4197,6 +4100,18 @@ export interface components {
             total: number;
             /** Next Cursor */
             next_cursor?: string | null;
+            /** Newer Cursor */
+            newer_cursor?: string | null;
+            /**
+             * Turns
+             * @default []
+             */
+            turns?: components["schemas"]["TranscriptTurn"][];
+            /**
+             * Boundary Entries
+             * @default []
+             */
+            boundary_entries?: components["schemas"]["TranscriptEntry"][];
         };
         /** TranscriptPart */
         TranscriptPart: {
@@ -4229,6 +4144,38 @@ export interface components {
              * @default false
              */
             value_omitted?: boolean;
+        };
+        /**
+         * TranscriptTurn
+         * @description One ordinary input and its execution, including steering and resumes.
+         */
+        TranscriptTurn: {
+            /** Turn Id */
+            turn_id: string;
+            /** Input Position */
+            input_position: number;
+            /** End Position */
+            end_position: number;
+            /** Final Position */
+            final_position?: number | null;
+            /** Output Position */
+            output_position?: number | null;
+            /** Output Preview */
+            output_preview?: string | null;
+            /** Preview */
+            preview: string;
+            /** Timestamp */
+            timestamp?: string | null;
+            /**
+             * Tool Count
+             * @default 0
+             */
+            tool_count?: number;
+            /**
+             * Steering Count
+             * @default 0
+             */
+            steering_count?: number;
         };
         /** UsageTotals */
         UsageTotals: {
@@ -4289,6 +4236,283 @@ export interface components {
              * @default
              */
             api_key?: string;
+        };
+        /** RealtimeCommand */
+        RealtimeCommand: {
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version?: 1;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "subscribe" | "unsubscribe" | "pong";
+            /**
+             * Channel
+             * @default
+             */
+            channel?: string;
+            /**
+             * Stream
+             * @default summary
+             * @enum {string}
+             */
+            stream?: "summary" | "focus";
+            /**
+             * Root Thread Id
+             * @default null
+             */
+            root_thread_id?: string | null;
+            /**
+             * After
+             * @default null
+             */
+            after?: string | null;
+        };
+        /** FocusEventFrame */
+        FocusEventFrame: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "event";
+            event: components["schemas"]["LiveEvent"];
+            /** Resume Cursor */
+            resume_cursor: string;
+        };
+        /** FocusReadyFrame */
+        FocusReadyFrame: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "ready";
+            /** Resume Cursor */
+            resume_cursor: string;
+        };
+        /** FocusReplayFrame */
+        FocusReplayFrame: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "root_stream";
+            /** Run Id */
+            run_id: string;
+            /** Events */
+            events: components["schemas"]["RootStreamEvent"][];
+        };
+        /** FocusSnapshotFrame */
+        FocusSnapshotFrame: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "snapshot";
+            snapshot: components["schemas"]["ThreadFocusSnapshot"];
+            /** Resume Cursor */
+            resume_cursor: string | null;
+        };
+        /**
+         * LiveEvent
+         * @description Detached bounded AG-UI event correlated to one complete root lineage.
+         */
+        LiveEvent: {
+            /** Epoch */
+            epoch: string;
+            /** Sequence */
+            sequence: number;
+            /**
+             * Run Kind
+             * @enum {string}
+             */
+            run_kind: "root" | "child";
+            /** Root Thread Id */
+            root_thread_id: string;
+            /**
+             * Parent Thread Id
+             * @default null
+             */
+            parent_thread_id?: string | null;
+            /** Thread Id */
+            thread_id: string;
+            /** Run Id */
+            run_id: string;
+            /**
+             * Execution Id
+             * @default null
+             */
+            execution_id?: string | null;
+            /** Event Type */
+            event_type: string;
+            /** Payload */
+            payload: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Payload Omitted */
+            payload_omitted: boolean;
+        };
+        /** ResetFrame */
+        ResetFrame: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "reset";
+            /** Reason */
+            reason: string;
+        };
+        /** RootOperationNotice */
+        RootOperationNotice: {
+            /** Receipt Id */
+            receipt_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "failed" | "suspended";
+            /** Brief */
+            brief: string;
+        };
+        /** RootStreamEvent */
+        RootStreamEvent: {
+            /** Index */
+            index: number;
+            /** Event Type */
+            event_type: string;
+            /** Payload */
+            payload: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Payload Omitted */
+            payload_omitted: boolean;
+        };
+        /**
+         * RootStreamSummary
+         * @description Finite observer prefix covered by a focused watch's cutover.
+         */
+        RootStreamSummary: {
+            /** Thread Id */
+            thread_id: string;
+            /** Run Id */
+            run_id: string;
+            /** Base Continuation Id */
+            base_continuation_id: string | null;
+            /** Event Count */
+            event_count: number;
+        };
+        /** SummaryCursor */
+        SummaryCursor: {
+            /** Epoch */
+            epoch: string;
+            /** Sequence */
+            sequence: number;
+        };
+        /** SummaryEventFrame */
+        SummaryEventFrame: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "invalidation";
+            event: components["schemas"]["SummaryInvalidation"];
+            /** Resume Cursor */
+            resume_cursor: string;
+        };
+        /** SummaryInvalidation */
+        SummaryInvalidation: {
+            /** Epoch */
+            epoch: string;
+            /** Sequence */
+            sequence: number;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "comment";
+            /**
+             * Root Thread Id
+             * @default null
+             */
+            root_thread_id?: string | null;
+            /**
+             * Thread Id
+             * @default null
+             */
+            thread_id?: string | null;
+            /**
+             * Execution Id
+             * @default null
+             */
+            execution_id?: string | null;
+            /** @default null */
+            notice?: components["schemas"]["RootOperationNotice"] | null;
+        };
+        /** SummaryOpenFrame */
+        SummaryOpenFrame: {
+            /**
+             * Resumed
+             * @default false
+             */
+            resumed?: boolean;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "open";
+            cursor: components["schemas"]["SummaryCursor"];
+            /** Resume Cursor */
+            resume_cursor: string;
+        };
+        /** ThreadFocusSnapshot */
+        ThreadFocusSnapshot: {
+            /** Epoch */
+            epoch: string;
+            /** Cutover Sequence */
+            cutover_sequence: number;
+            thread: components["schemas"]["ThreadDetail"];
+            /** @default null */
+            root_operation?: components["schemas"]["RootOperationView"] | null;
+            children: components["schemas"]["ChildExecutionPage"];
+            tasks?: components["schemas"]["TaskPage"];
+            /**
+             * Recent Events
+             * @default []
+             */
+            recent_events?: components["schemas"]["LiveEvent"][];
+            /** @default null */
+            root_stream?: components["schemas"]["RootStreamSummary"] | null;
+        };
+        /** RealtimeFrame */
+        RealtimeFrame: {
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version?: 1;
+            /** Channel */
+            channel: string;
+            /** Frame */
+            frame: components["schemas"]["FocusSnapshotFrame"] | components["schemas"]["FocusReplayFrame"] | components["schemas"]["FocusReadyFrame"] | components["schemas"]["FocusEventFrame"] | components["schemas"]["SummaryOpenFrame"] | components["schemas"]["SummaryEventFrame"] | components["schemas"]["ResetFrame"];
+        };
+        /** RealtimePing */
+        RealtimePing: {
+            /**
+             * Version
+             * @default 1
+             * @constant
+             */
+            version?: 1;
+            /**
+             * Kind
+             * @default ping
+             * @constant
+             */
+            kind?: "ping";
         };
         /** TerminalCommand */
         TerminalCommand: {
@@ -4858,6 +5082,8 @@ export interface components {
             /** Model Id */
             model_id?: string | null;
             thinking?: components["schemas"]["ThinkingSelection"] | null;
+            /** Fast */
+            fast?: boolean | null;
         };
         /** RootSteerRequest */
         RootSteerRequest: {
@@ -6990,6 +7216,30 @@ export interface operations {
             };
         };
     };
+    lookup_thread_activity_api_threads_activity_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadLookup"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadActivityView"][];
+                };
+            };
+        };
+    };
     thread_activity_api_threads_activity_get: {
         parameters: {
             query?: {
@@ -7330,6 +7580,7 @@ export interface operations {
                 expected_continuation_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
+                turn_id?: string | null;
             };
             header?: never;
             path: {
@@ -7346,6 +7597,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TranscriptPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transcript_inputs_api_threads__thread_id__inputs_get: {
+        parameters: {
+            query?: {
+                expected_continuation_id?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscriptInputPage"];
                 };
             };
             /** @description Validation Error */
@@ -7645,70 +7931,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RootControlResult"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    focused_api_threads__thread_id__events_get: {
-        parameters: {
-            query?: {
-                after?: string | null;
-            };
-            header?: never;
-            path: {
-                thread_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FocusSnapshotFrame"] | components["schemas"]["FocusReplayFrame"] | components["schemas"]["FocusReadyFrame"] | components["schemas"]["FocusEventFrame"] | components["schemas"]["ResetFrame"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    summary_api_events_get: {
-        parameters: {
-            query?: {
-                after?: string | null;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SummaryOpenFrame"] | components["schemas"]["SummaryEventFrame"] | components["schemas"]["ResetFrame"];
                 };
             };
             /** @description Validation Error */

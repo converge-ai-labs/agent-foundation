@@ -16,7 +16,7 @@ from a13n_environment import (
 
 available = discover_environment_provider_references()
 catalog = build_environment_provider_catalog(
-    builtin_keys=("a13n.direct-local", "a13n.docker"),
+    builtin_keys=("direct-local", "docker"),
     extension_keys=("acme.sandbox",),
     explicit_providers=(development_provider,),
 )
@@ -56,10 +56,10 @@ There are two operation routes: **Native** uses the host OS or vendor APIs direc
 
 | Route  | Provider              | Use it for                               | Operation and ownership boundary                            |
 | ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
-| Native | `a13n.direct-local`   | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
-| Native | `a13n.e2b`            | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Native | `direct-local`        | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `e2b`                 | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
 | Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
-| Native | `a13n.docker`         | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
+| Native | `docker`              | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
 | Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
@@ -108,7 +108,7 @@ The native Provider overrides the image entrypoint, enables Docker init support 
 
 `close()` disconnects local observations without stopping the container or its background processes. A fresh managed adapter reuses the saved container; confirmed absence creates a replacement with an empty private workspace. Transport failures do not prove absence. Docker file paths are native container paths, while Harness adds its aggregate mount prefix; relative tool paths start in `/workspace`.
 
-Use `make image-docker-environment docker-provider-live-test` for a real Engine test, or follow the [Docker lifecycle example](examples.md#docker). The [single-host Compose deployment](../a13n-service/configuration.md) uses a separate DinD Engine and a shared Unix socket.
+Use `make image-docker-environment docker-provider-live-test` for a real Engine test, or follow the [Docker lifecycle example](examples.md#docker). The [single-host Compose deployment](../a13n-service/configuration.md) uses the host Docker Engine through its Unix socket.
 
 ## E2B runtime
 

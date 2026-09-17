@@ -14,6 +14,7 @@ import {
   placementLabels,
 } from "../application-accounts/messaging-fields";
 import { ConversationPicker } from "./conversation-picker";
+import { GitHubPolicyFields } from "./github-policy";
 import { BotChecks } from "./checks";
 import styles from "./connect.module.css";
 
@@ -32,6 +33,13 @@ export function BotPilot({
   reload: () => Promise<void>;
 }) {
   const [account] = useState(initial);
+  const github = account.provider_key === "github";
+  const targetKind: "repository" | "conversation" = github
+    ? "repository"
+    : "conversation";
+  const [githubPolicy, setGithubPolicy] = useState<
+    Schema["GitHubReceptionPolicy"]
+  >({ allowed_senders: ["*"], event_actions: [] });
   const client = useClient(),
     cache = useQueryClient(),
     { workspace, basePath } = useWorkspace(),
@@ -76,7 +84,7 @@ export function BotPilot({
   });
   const existingSelection = targets.data?.find(
     (item) =>
-      item.target_kind === "conversation" &&
+      item.target_kind === targetKind &&
       item.external_target_id === conversationId.trim(),
   );
   const enabled =
@@ -92,7 +100,7 @@ export function BotPilot({
     enabled.length === 1 &&
     candidate?.id === target?.id &&
     candidate?.version === target?.version &&
-    target?.target_kind === "conversation" &&
+    target?.target_kind === targetKind &&
     !target.agent_id &&
     !target.config_override &&
     !target.provider_policy;
@@ -114,7 +122,9 @@ export function BotPilot({
             conversation_id: target.external_target_id,
             agent_id: agentId,
             execution_service_account_id: executionId,
-            policy: { interaction_mode: interaction, reply_mode: reply },
+            policy: github
+              ? githubPolicy
+              : { interaction_mode: interaction, reply_mode: reply },
           },
         })
         .then(data);
@@ -127,8 +137,8 @@ export function BotPilot({
   });
   const create = useMutation({
     mutationFn: () => {
-      const body = {
-        target_kind: "conversation" as const,
+      const body: Schema["TargetConfig"] = {
+        target_kind: targetKind,
         external_target_id: conversationId.trim(),
         receive_enabled: true,
       };
@@ -172,10 +182,16 @@ export function BotPilot({
     );
   return (
     <section>
-      <h2>{t("Choose a pilot conversation")}</h2>
+      <h2>
+        {t(
+          github ? "Choose a pilot repository" : "Choose a pilot conversation",
+        )}
+      </h2>
       <p>
         {t(
-          "Invite the bot to one pilot channel or group. Reception stays off until you explicitly verify and enable it below.",
+          github
+            ? "Select one repository accessible to this GitHub identity. Reception stays off until you verify and enable it."
+            : "Invite the bot to one pilot channel or group. Reception stays off until you explicitly verify and enable it below.",
         )}
       </p>
       <ErrorNotice error={targets.error} retry={() => void targets.refetch()} />
@@ -294,46 +310,58 @@ export function BotPilot({
                 "The execution service account determines what incoming messages may do. It does not use your browser login or the sender's permissions.",
               )}
             </p>
-            <ChoiceField
-              label={t("When to respond")}
-              value={interaction}
-              onValueChange={(value) =>
-                setInteraction(value as typeof interaction)
-              }
-              disabled={activate.isPending}
-              options={[
-                { value: "mention", label: t("Only when mentioned") },
-                {
-                  value: "discussion",
-                  label: t("Continue an activated discussion"),
-                },
-                { value: "chat", label: t("All supported human messages") },
-              ]}
-            />
-            <p>
-              {t(
-                "Discussion and whole-chat modes need the corresponding message subscriptions and history permissions on the provider.",
-              )}
-            </p>
-            <ChoiceField
-              label={t("Reply placement")}
-              value={reply}
-              onValueChange={(value) => setReply(value as typeof reply)}
-              disabled={activate.isPending}
-              options={[
-                { value: "auto", label: t(placementLabels.auto) },
-                { value: "thread", label: t("Thread or topic") },
-                { value: "main", label: t("Main conversation") },
-              ]}
-            />
-            {reply !== "thread" && (
-              <p>
-                {t(
-                  reply === "main"
-                    ? "Replies in the main conversation may be visible beyond the original discussion."
-                    : automaticPlacementHint,
+            {github ? (
+              <GitHubPolicyFields
+                value={githubPolicy}
+                onChange={setGithubPolicy}
+                polling={
+                  account.provider_config_version === "github_notifications_v1"
+                }
+              />
+            ) : (
+              <>
+                <ChoiceField
+                  label={t("When to respond")}
+                  value={interaction}
+                  onValueChange={(value) =>
+                    setInteraction(value as typeof interaction)
+                  }
+                  disabled={activate.isPending}
+                  options={[
+                    { value: "mention", label: t("Only when mentioned") },
+                    {
+                      value: "discussion",
+                      label: t("Continue an activated discussion"),
+                    },
+                    { value: "chat", label: t("All supported human messages") },
+                  ]}
+                />
+                <p>
+                  {t(
+                    "Discussion and whole-chat modes need the corresponding message subscriptions and history permissions on the provider.",
+                  )}
+                </p>
+                <ChoiceField
+                  label={t("Reply placement")}
+                  value={reply}
+                  onValueChange={(value) => setReply(value as typeof reply)}
+                  disabled={activate.isPending}
+                  options={[
+                    { value: "auto", label: t(placementLabels.auto) },
+                    { value: "thread", label: t("Thread or topic") },
+                    { value: "main", label: t("Main conversation") },
+                  ]}
+                />
+                {reply !== "thread" && (
+                  <p>
+                    {t(
+                      reply === "main"
+                        ? "Replies in the main conversation may be visible beyond the original discussion."
+                        : automaticPlacementHint,
+                    )}
+                  </p>
                 )}
-              </p>
+              </>
             )}
             <p>
               {t(

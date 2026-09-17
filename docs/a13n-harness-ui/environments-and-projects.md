@@ -94,7 +94,7 @@ schema_version: "1"
 kind: environment_profile
 id: environment-team
 name: Team native environment
-provider_key: a13n.direct-local
+provider_key: direct-local
 provider_schema_version: "1"
 provider_configuration: {}
 adapter_key: a13n.native-project-root

@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
 import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
+import { Realtime } from "../transport/realtime";
 import { ComposerDrafts } from "./composer";
 import { ThreadDraft, encode, values } from "./draft";
 import {
@@ -29,12 +30,13 @@ const id = `thread_${"a".repeat(32)}`;
 const path = newConversationPath("project-one");
 let writes: Request[];
 let reads: string[];
-let failure: "create" | "submit" | "reject" | null;
+let failure: "create" | "submit" | "reject" | "submit-reject" | null;
 let paused: Promise<void> | undefined;
 let readPaused: Promise<void> | undefined;
 let readFailure = false;
 let historyPaused: Promise<void> | undefined;
 let focusPaused: Promise<void> | undefined;
+let focusUnavailable = false;
 let focused: Schema<"ThreadFocusSnapshot"> | undefined;
 const threadDetail: Schema<"ThreadDetail"> = {
   thread: {
@@ -74,6 +76,38 @@ beforeEach(() => {
   historyPaused = undefined;
   focusPaused = undefined;
   focused = undefined;
+  focusUnavailable = false;
+  vi.spyOn(Realtime.prototype, "subscribe").mockImplementation(
+    (subscription) => {
+      let active = true;
+      subscription.state("Connecting");
+      const emit = () =>
+        void Promise.resolve(focusPaused).then(() => {
+          if (!active) return;
+          if (focusUnavailable) {
+            subscription.state("Reconnecting");
+            return;
+          }
+          subscription.receive({
+            kind: "snapshot",
+            resume_cursor: "cursor-one",
+            snapshot: focused ?? {
+              epoch: "epoch-one",
+              cutover_sequence: 0,
+              thread: threadDetail,
+              children: { executions: [], total: 0 },
+            },
+          });
+        });
+      emit();
+      const close = () => {
+        active = false;
+      };
+      close.restart = emit;
+      close.retry = emit;
+      return close;
+    },
+  );
   drafts = new Map();
   localStorage.clear();
   creations = new NewDraftStore();
@@ -200,32 +234,6 @@ beforeEach(() => {
             );
           return json(detail);
         }
-        if (pathname === `/api/threads/${id}/events`) {
-          await focusPaused;
-          const snapshot = focused ?? {
-            epoch: "epoch-one",
-            cutover_sequence: 0,
-            thread: threadDetail,
-            children: { executions: [], total: 0 },
-          };
-          return new Response(
-            new ReadableStream({
-              start(controller) {
-                controller.enqueue(
-                  new TextEncoder().encode(
-                    `data: ${JSON.stringify({ kind: "snapshot", snapshot, resume_cursor: "cursor-one" })}\n\n`,
-                  ),
-                );
-                request.signal.addEventListener(
-                  "abort",
-                  () => controller.close(),
-                  { once: true },
-                );
-              },
-            }),
-            { headers: { "Content-Type": "text/event-stream" } },
-          );
-        }
         if (pathname.endsWith("/tasks")) return json({ tasks: [] });
         if (pathname.endsWith("/children"))
           return json({ executions: [], total: 0 });
@@ -278,6 +286,8 @@ beforeEach(() => {
           media_type: "text/plain",
         });
       if (pathname.endsWith("/submit")) {
+        if (failure === "submit-reject")
+          return json({ error: { message: "Conversation busy" } }, 409);
         if (failure === "submit")
           throw new TypeError("Submission acknowledgement lost");
         return json({ thread_id: id, receipt_id: "receipt-one" });
@@ -398,6 +408,10 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
   fireEvent.click(send);
   fireEvent.click(send);
   await waitFor(() => expect(writes).toHaveLength(1));
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  expect(view.container.querySelector("[data-message-id]")).toBeNull();
+  expect(values(drafts.get(id)!.doc).prompt).toContain("Build this");
+  expect(screen.getByRole("button", { name: "Submitting" })).toBeTruthy();
   await act(async () => resume());
   await waitFor(() =>
     expect(screen.getByLabelText("Location").textContent).toBe(
@@ -459,19 +473,52 @@ it("reconciles uncertain creation by exact read and opens the existing thread wi
   expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
 });
 
-it("retains an uncertain submission without replaying it", async () => {
+it("retains an uncertain submission on the New page without a speculative bubble or replay", async () => {
   failure = "submit";
-  mount();
+  const view = mount();
   await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(drafts.get(id)!.submission.kind).toBe("unknown"));
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  expect(view.container.querySelector("[data-message-id]")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "I reviewed the outcome" }),
+  ).toBeNull();
+  expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
+  expect(writes).toHaveLength(2);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review submission in conversation" }),
+  );
+  await screen.findByRole("button", { name: "Refresh operation and history" });
+  expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
+  expect(reads).toContain(`/api/threads/${id}/transcript`);
+  expect(drafts.get(id)!.submission.kind).toBe("unknown");
+  expect(writes).toHaveLength(2);
+});
+
+it("keeps rejected first input on the New page and retries without recreating the Thread", async () => {
+  failure = "submit-reject";
+  const view = mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Conversation busy");
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  expect(view.container.querySelector("[data-message-id]")).toBeNull();
+  expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
+  expect(writes).toHaveLength(2);
+  failure = null;
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Location").textContent).toBe(
       `/threads/${id}`,
     ),
   );
-  expect(drafts.get(id)!.submission.kind).toBe("unknown");
-  expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
-  expect(writes).toHaveLength(2);
+  expect(writes.map((request) => new URL(request.url).pathname)).toEqual([
+    "/api/threads",
+    `/api/threads/${id}/submit`,
+    `/api/threads/${id}/submit`,
+  ]);
+  expect(values(drafts.get(id)!.doc).prompt).toBe("");
 });
 
 it("does not send after navigating away during creation and preserves the draft for return", async () => {
@@ -573,7 +620,13 @@ it("reveals the new conversation together after detail, history and editor initi
   const view = mount();
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await waitFor(() => expect(reads).toContain(`/api/threads/${id}/events`));
+  await waitFor(() =>
+    expect(
+      vi
+        .mocked(Realtime.prototype.subscribe)
+        .mock.calls.some(([channel]) => channel.root === id),
+    ).toBe(true),
+  );
   const editor = view.container.querySelector('[role="textbox"]')!;
   const input = screen.getByText("Build this");
   expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
@@ -742,11 +795,8 @@ it("keeps an uncertain submission blocked after reload rather than replaying inp
   mount();
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await waitFor(() =>
-    expect(screen.getByLabelText("Location").textContent).toBe(
-      `/threads/${id}`,
-    ),
-  );
+  await waitFor(() => expect(drafts.get(id)!.submission.kind).toBe("unknown"));
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
   reload();
   await screen.findByText(
     /The previous input may already have been accepted\. Open the conversation/,
@@ -1102,12 +1152,7 @@ it("waits for focused replay on an existing conversation and retains the page fo
 });
 
 it("shows saved content with a reconnect notice when the initial live connection fails", async () => {
-  const original = vi.mocked(fetch).getMockImplementation()!;
-  vi.mocked(fetch).mockImplementation(async (request) =>
-    new URL((request as Request).url).pathname.endsWith("/events")
-      ? new Response("Unavailable", { status: 503 })
-      : original(request),
-  );
+  focusUnavailable = true;
   mount(`/threads/${id}`);
   await screen.findByRole("textbox", { name: "Shared prompt" });
   expect(await screen.findByText(/Reconnecting live updates/)).toBeTruthy();
@@ -1175,3 +1220,141 @@ it.each([false, true])(
     expect(historyRequests).toHaveLength(1);
   },
 );
+
+it("loads missing turn details only on request instead of draining folded history", async () => {
+  const requests: string[] = [];
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    requests.push(url.search);
+    return json({
+      continuation_id: "initial:one",
+      entries: [
+        {
+          position: 100,
+          message_kind: "response",
+          parts: [{ kind: "assistant", text: "Short final" }],
+        },
+      ],
+      boundary_entries: [
+        {
+          position: 0,
+          message_kind: "request",
+          parts: [{ kind: "user", text: "Long task" }],
+        },
+      ],
+      turns: [
+        {
+          turn_id: "long",
+          input_position: 0,
+          end_position: 101,
+          final_position: 100,
+          preview: "Long task",
+          tool_count: 50,
+          steering_count: 0,
+        },
+      ],
+      next_cursor: url.searchParams.has("cursor") ? null : "older",
+    });
+  });
+  const view = mount(`/threads/${id}`);
+  const reader = view.container.querySelector(
+    '[class*="reading"]',
+  )! as HTMLElement;
+  Object.defineProperties(reader, {
+    clientHeight: { get: () => 600 },
+    scrollHeight: { get: () => 300 },
+    scrollTop: { get: () => 0, set: () => {} },
+  });
+  const toggle = await screen.findByRole("button", {
+    name: /Execution details/,
+  });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.scroll(reader);
+  await act(async () => {});
+  expect(requests).toHaveLength(1);
+  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "Load earlier steps" }));
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(requests[1]).toContain("cursor=older");
+});
+
+it("returns to the latest window when New output is clicked from a historical input", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    const turn = (old: boolean) => ({
+      turn_id: old ? "old" : "latest",
+      input_position: old ? 0 : 10,
+      end_position: old ? 2 : 12,
+      final_position: old ? 1 : 11,
+      preview: old ? "Earlier task" : "Latest task",
+      tool_count: 0,
+      steering_count: 0,
+    });
+    if (url.pathname.endsWith("/inputs"))
+      return json({
+        continuation_id: "initial:one",
+        turns: [turn(true), turn(false)],
+      });
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    const old = url.searchParams.get("turn_id") === "old";
+    return json({
+      continuation_id: "initial:one",
+      entries: [
+        {
+          position: old ? 0 : 10,
+          message_kind: "request",
+          parts: [{ kind: "user", text: old ? "Earlier task" : "Latest task" }],
+        },
+        {
+          position: old ? 1 : 11,
+          message_kind: "response",
+          parts: [
+            {
+              kind: "assistant",
+              text: old ? "Earlier answer" : "Latest answer",
+            },
+          ],
+        },
+      ],
+      turns: [turn(old)],
+      newer_cursor: old ? "later" : null,
+    });
+  });
+  mount(`/threads/${id}`);
+  await screen.findByText("Latest answer");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Input 1: Earlier task" }),
+  );
+  await screen.findByText("Earlier answer");
+  expect(screen.queryByText("Latest answer")).toBeNull();
+  // A refreshed checkpoint adds output while this historical window is open.
+  await act(async () => {
+    queries.setQueriesData<{ pages: Schema<"TranscriptPage">[] }>(
+      { queryKey: ["thread", id, "history", null, "old"] },
+      (current) =>
+        current && {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            entries: [
+              ...page.entries,
+              {
+                position: 2,
+                message_kind: "response",
+                parts: [
+                  { kind: "assistant", text: "Additional checkpoint output" },
+                ],
+              },
+            ],
+          })),
+        },
+    );
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "New output" }));
+  await screen.findByText("Latest answer");
+  expect(screen.queryByText("Earlier answer")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Back to latest" })).toBeNull();
+});

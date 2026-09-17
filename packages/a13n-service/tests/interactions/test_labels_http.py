@@ -12,7 +12,7 @@ from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.gateway.router import router
 from a13n_service.iam.models import RoleBindingRecord, SecurityAuditRecord
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from fastapi import FastAPI, Request
@@ -42,7 +42,7 @@ async def label_client(interaction_sessions, process_runtime_factory, tmp_path):
         request_authenticator=authenticate,
         sessions=sessions,
         gateway=SimpleNamespace(
-            labels=InteractionLabels(sessions), queries=NativeInteractionQueries(sessions, RunReplayStore(objects))
+            labels=InteractionLabels(sessions), queries=NativeInteractionQueries(sessions, RunDisplayStore(objects))
         ),
     )
     async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://test") as client:

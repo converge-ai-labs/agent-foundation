@@ -55,7 +55,7 @@ async def test_successful_effect_survives_interrupted_publication(
     environment = await fixture_environment(environment_service)
     lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
     events = []
-    state = EnvironmentState(provider_key="a13n.docker", state_version="1", state={"target": "same"})
+    state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "same"})
 
     async def construct(operation):
         return Target(operation.state, events)
@@ -225,7 +225,7 @@ async def test_insufficient_renewal_keeps_observed_expiry_after_publication_retr
         return ShortRenewal(operation.state, events)
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    monkeypatch.setattr(provider_catalog.require("a13n.docker"), "requires_keepalive", True)
+    monkeypatch.setattr(provider_catalog.require("docker"), "requires_keepalive", True)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since = "running", NOW
@@ -260,12 +260,12 @@ async def test_conflicting_target_is_not_adopted_and_preserves_cancellation(
         request=CreateManagedEnvironmentRequest(template_id=template_id),
         idempotency_key="second",
     )
-    provider = provider_catalog.require("a13n.docker")
+    provider = provider_catalog.require("docker")
     monkeypatch.setattr(provider, "target_identity", lambda **kwargs: "same-target")
     identity = target_identity(provider, {}, "same-target")
     lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
     events = []
-    state = EnvironmentState(provider_key="a13n.docker", state_version="1", state={"target": "same-target"})
+    state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "same-target"})
 
     class ObservedTarget(Target):
         async def reconcile(self):

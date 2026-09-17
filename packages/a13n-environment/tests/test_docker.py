@@ -1,6 +1,10 @@
 """Native Docker lifecycle contracts without an Envd dependency."""
 
-from unittest.mock import AsyncMock, Mock
+import asyncio
+import math
+import os
+import threading
+from unittest.mock import AsyncMock, Mock, call
 
 import pytest
 from a13n_environment import (
@@ -11,9 +15,12 @@ from a13n_environment import (
     EnvironmentError,
     EnvironmentProviderError,
 )
+from a13n_environment.docker import image_test as image_test_module
 from a13n_environment.docker.commands import DockerCommands
 from a13n_environment.docker.configuration import DockerMountConfiguration
-from docker.errors import NotFound
+from a13n_environment.docker.processes import DockerProcesses
+from a13n_environment.docker.provider import resolve_image
+from docker.errors import ImageNotFound, NotFound
 from requests.exceptions import ConnectionError
 
 pytestmark = pytest.mark.anyio
@@ -25,8 +32,10 @@ def native(monkeypatch):
     engine.client.containers.get.side_effect = NotFound("missing")
     container = Mock(id="a" * 64, status="created")
     engine.client.containers.create.return_value = container
+    engine.client.images.get.return_value.id = "sha256:" + "f" * 64
+    engine.client.images.pull.return_value.id = "sha256:" + "e" * 64
     monkeypatch.setattr(DockerCommands, "execute", AsyncMock(return_value=b""))
-    config = DockerProviderConfiguration(image="python:3.13-slim", pull_policy="never")
+    config = DockerProviderConfiguration(image="python:3.13-slim", memory_gb=0.25)
     env = DockerEnvironment(config, "env_test", None, DockerProviderRuntime(engine))
     container.labels = env.labels
     return env, engine, container
@@ -40,6 +49,10 @@ async def test_create_native_container_records_state_and_overrides_entrypoint(na
         assert options["init"] is True and options["working_dir"] == "/workspace"
         assert options["entrypoint"] == ["python3", "-I", "-c"]
         assert options["network_mode"] == "bridge"
+        assert options["mem_limit"] == 250_000_000
+        engine.client.images.get.assert_called_once_with("python:3.13-slim")
+        assert engine.client.containers.create.call_args.args[0] == "sha256:" + "f" * 64
+        engine.client.images.pull.assert_not_called()
         assert "ports" not in options and "volumes" not in options
         assert env.dump_state().state["container_id"] == container.id
         assert env.descriptor.backing_identity == container.id
@@ -47,6 +60,139 @@ async def test_create_native_container_records_state_and_overrides_entrypoint(na
         await env.close()
     container.remove.assert_not_called()
     container.stop.assert_not_called()
+
+
+async def test_missing_image_pulls_once(native):
+    env, engine, _ = native
+    engine.client.images.get.side_effect = ImageNotFound("absent")
+    await env.prepare()
+    engine.client.images.pull.assert_called_once_with(env.config.image)
+    assert engine.client.containers.create.call_args.args[0] == "sha256:" + "e" * 64
+    await env.close()
+
+
+async def test_image_test_pins_reported_identity_when_tag_changes(native, monkeypatch):
+    env, engine, _ = native
+    image_a = Mock(id="sha256:" + "a" * 64)
+    image_b = Mock(id="sha256:" + "b" * 64)
+    images = {env.config.image: image_a, image_a.id: image_a}
+    engine.client.images.get.side_effect = lambda ref: images[ref]
+    engine.client.ping.return_value = True
+
+    def retag_after_resolve(client, ref):
+        resolved = resolve_image(client, ref)
+        images[ref] = image_b
+        return resolved
+
+    async def exercise(_engine, configuration, image_id):
+        pinned = DockerEnvironment(
+            configuration.model_copy(update={"image": image_id}), "env_pinned", None, env.runtime
+        )
+        await asyncio.to_thread(pinned._create)
+        return ("pinned",)
+
+    monkeypatch.setattr(image_test_module, "resolve_image", retag_after_resolve)
+    monkeypatch.setattr(image_test_module, "_exercise_image", exercise)
+    result = await image_test_module.test_docker_image(engine, env.config)
+    assert result.image_id == image_a.id
+    assert engine.client.containers.create.call_args.args[0] == image_a.id
+    assert engine.client.images.get.call_args_list == [call(env.config.image), call(image_a.id)]
+    engine.client.images.pull.assert_not_called()
+
+
+def test_decimal_memory_preserves_docker_minimum_and_64_bit_limit():
+    with pytest.raises(ValueError):
+        DockerProviderConfiguration(memory_gb=0.006291455)
+    assert DockerProviderConfiguration(memory_gb=0.006291456).memory_gb == 0.006291456
+    maximum_gb = (2**63 - 1) / 1_000_000_000
+    below_maximum = math.nextafter(maximum_gb, 0)
+    assert int(DockerProviderConfiguration(memory_gb=below_maximum).memory_gb * 1_000_000_000) <= 2**63 - 1
+    for value in (maximum_gb, math.nextafter(maximum_gb, math.inf), 1e308):
+        with pytest.raises(ValueError):
+            DockerProviderConfiguration(memory_gb=value)
+
+
+async def test_decimal_memory_minimum_reaches_docker_as_bytes(native):
+    env, engine, _ = native
+    env = DockerEnvironment(
+        DockerProviderConfiguration(image=env.config.image, memory_gb=0.006291456),
+        env.environment_id,
+        None,
+        env.runtime,
+    )
+    await env.prepare()
+    assert engine.client.containers.create.call_args.kwargs["mem_limit"] == 6_291_456
+    await env.close()
+
+
+async def test_preparation_diagnostic_preserves_non_permission_error(native):
+    env, engine, container = native
+    env.target = Mock(container_id="container-id")
+    container.status = "running"
+    container.exec_run.return_value.exit_code = 0
+    engine.client.containers.get.side_effect = None
+    engine.client.containers.get.return_value = container
+    message = await image_test_module._preparation_failure(
+        engine, env, env.config, RuntimeError("architecture mismatch")
+    )
+    assert "architecture mismatch" in message
+    assert "not writable" not in message
+
+
+async def test_image_test_rejects_process_that_exits_before_kill(monkeypatch):
+    image = os.environ.get("A13N_TEST_DOCKER_IMAGE")
+    if not image:
+        pytest.skip("Set A13N_TEST_DOCKER_IMAGE for real process-control coverage")
+    engine = DockerSDKEngine.connect("unix:///var/run/docker.sock")
+    original_start = DockerProcesses.start
+
+    async def exit_early(self, request):
+        from a13n_environment.commands import ArgvCommand
+
+        if isinstance(request.command, ArgvCommand) and "time.sleep" in request.command.arguments[-1]:
+            request = request.model_copy(
+                update={
+                    "command": ArgvCommand(
+                        executable=request.command.executable,
+                        arguments=("-I", "-c", "raise SystemExit(127)"),
+                    )
+                }
+            )
+            result = await original_start(self, request)
+            await self.wait(result.process.handle, condition="initial_terminal", timeout_seconds=5)
+            return result
+        return await original_start(self, request)
+
+    monkeypatch.setattr(DockerProcesses, "start", exit_early)
+    try:
+        with pytest.raises(image_test_module.DockerImageTestFailure, match="exited before control check"):
+            await image_test_module.test_docker_image(engine, DockerProviderConfiguration(image=image))
+    finally:
+        await engine.close()
+
+
+async def test_cancelled_creation_waits_for_inflight_docker_call(native, monkeypatch):
+    env, engine, _ = native
+    created = threading.Event()
+    release = threading.Event()
+    original = env._create
+
+    def delayed_create():
+        container = original()
+        created.set()
+        release.wait(5)
+        return container
+
+    monkeypatch.setattr(env, "_create", delayed_create)
+    task = asyncio.create_task(env.prepare())
+    assert await asyncio.to_thread(created.wait, 5)
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    engine.client.containers.create.assert_called_once()
 
 
 async def test_start_failure_preserves_allocated_identity(native):
@@ -157,6 +303,8 @@ def test_mounts_cannot_replace_private_storage(target):
 def test_configuration_excludes_old_envd_and_named_volume_options():
     for values in (
         {"root_mount_id": "root"},
+        {"pull_policy": "never"},
+        {"memory_mib": 256},
         {"bootstrap": {}},
         {"mounts": [{"source": {"kind": "volume", "name": "x"}, "target": "/data"}]},
     ):

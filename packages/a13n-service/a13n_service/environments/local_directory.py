@@ -83,7 +83,7 @@ class ManagedLocalDirectory:
 def managed_local_directory(
     provider_type: str, environment_id: str, configuration: EnvironmentConfiguration | TemplateConfiguration
 ) -> ManagedLocalDirectory | None:
-    if provider_type != "a13n.direct-local" or not isinstance(configuration, TemplateConfiguration):
+    if provider_type != "direct-local" or not isinstance(configuration, TemplateConfiguration):
         return None
     if re.fullmatch(r"env_[A-Za-z0-9]+", environment_id) is None:
         raise ValueError("Managed local directory requires a canonical Environment ID")

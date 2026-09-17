@@ -260,3 +260,20 @@ it("requires foreground, rendered dimensions, and the actual transcript bottom",
   expect(savedResultVisible(element)).toBe(false);
   element.remove();
 });
+
+it("looks up only dirty followed IDs instead of the complete interest set", async () => {
+  const item = tracker();
+  for (const id of ["one", "two", "three"]) {
+    threads.set(id, thread(id));
+    await item.follow(thread(id));
+  }
+  await item.refresh();
+  lookups = [];
+  threads.set("two", thread("two", 1));
+  item.invalidate("two");
+  item.invalidate("two");
+  item.invalidate("not-followed");
+  await item.refresh(false);
+  expect(lookups).toEqual([["two"]]);
+  expect(item.isUnread("two")).toBe(true);
+});

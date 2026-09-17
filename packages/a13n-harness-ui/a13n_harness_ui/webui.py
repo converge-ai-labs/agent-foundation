@@ -17,10 +17,11 @@ from urllib.parse import quote, urlsplit
 
 import click
 import uvicorn
-from anyio import Event, create_task_group, fail_after, move_on_after, sleep
+from anyio import CancelScope, Event, Lock, create_task_group, fail_after, move_on_after, sleep
+from anyio.abc import TaskStatus
 from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -122,6 +123,7 @@ from a13n_harness_ui.surfaces import (
     SurfaceModel,
     TaskPage,
     ThreadActivityPage,
+    ThreadActivityView,
     ThreadConfigurationMutationInput,
     ThreadConfigurationResolution,
     ThreadDetail,
@@ -131,6 +133,7 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSelectorCatalog,
     ThreadSummary,
+    TranscriptInputPage,
     TranscriptPage,
 )
 from a13n_harness_ui.thread_files import (
@@ -140,7 +143,7 @@ from a13n_harness_ui.thread_files import (
     ComposerInput,
     ThreadAttachment,
 )
-from a13n_harness_ui.webui_lifecycle import ErrorResponse, EventStreamResponse, RequestLog, WebUIServer
+from a13n_harness_ui.webui_lifecycle import ErrorResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
 _MAX_BODY = 1024 * 1024
@@ -217,6 +220,7 @@ class SteerRequest(SurfaceModel):
 class SubmitRequest(PromptRequest):
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     thinking: ThinkingSelection | None = None
+    fast: bool | None = None
 
 
 class RootSteerRequest(PromptRequest):
@@ -265,6 +269,7 @@ class ResetFrame(SurfaceModel):
 
 
 class SummaryOpenFrame(SurfaceModel):
+    resumed: bool = False
     kind: Literal["open"] = "open"
     cursor: SummaryCursor
     resume_cursor: str
@@ -274,6 +279,42 @@ class SummaryEventFrame(SurfaceModel):
     kind: Literal["invalidation"] = "invalidation"
     event: SummaryInvalidation
     resume_cursor: str
+
+
+class RealtimeCommand(SurfaceModel):
+    version: Literal[1] = 1
+    kind: Literal["subscribe", "unsubscribe", "pong"]
+    channel: str = Field(default="", max_length=80)
+    stream: Literal["summary", "focus"] = "summary"
+    root_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
+    after: str | None = Field(default=None, max_length=1024)
+
+    @model_validator(mode="after")
+    def _scope(self) -> RealtimeCommand:
+        if self.kind != "pong" and not self.channel:
+            raise ValueError("A channel identity is required")
+        if self.kind == "subscribe" and (self.stream == "focus") != (self.root_thread_id is not None):
+            raise ValueError("Only focus subscriptions require a root identity")
+        return self
+
+
+class RealtimeFrame(SurfaceModel):
+    version: Literal[1] = 1
+    channel: str
+    frame: (
+        FocusSnapshotFrame
+        | FocusReplayFrame
+        | FocusReadyFrame
+        | FocusEventFrame
+        | SummaryOpenFrame
+        | SummaryEventFrame
+        | ResetFrame
+    ) = Field(discriminator="kind")
+
+
+class RealtimePing(SurfaceModel):
+    version: Literal[1] = 1
+    kind: Literal["ping"] = "ping"
 
 
 class StreamCursor(SurfaceModel):
@@ -394,10 +435,6 @@ def _body(model: type[BaseModel]) -> dict[str, Any]:
             },
         }
     }
-
-
-def _frame(model: BaseModel) -> str:
-    return f"data: {model.model_dump_json()}\n\n"
 
 
 def create_webui(
@@ -1142,6 +1179,13 @@ def create_webui(
         query = await _document(request, ThreadLookup)
         return await app().lookup_threads(thread_ids=query.thread_ids)
 
+    @server.post(
+        "/api/threads/activity/lookup", response_model=tuple[ThreadActivityView, ...], openapi_extra=_body(ThreadLookup)
+    )
+    async def lookup_thread_activity(request: Request) -> tuple[ThreadActivityView, ...]:
+        query = await _document(request, ThreadLookup)
+        return await app().lookup_thread_activity(thread_ids=query.thread_ids)
+
     @server.get("/api/threads/activity", response_model=ThreadActivityPage)
     async def thread_activity(
         project_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -1248,9 +1292,28 @@ def create_webui(
         expected_continuation_id: str | None = None,
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        turn_id: str | None = None,
     ) -> TranscriptPage:
         return await app().get_thread_transcript(
-            thread_id=thread_id, expected_continuation_id=expected_continuation_id, cursor=cursor, limit=limit
+            thread_id=thread_id,
+            expected_continuation_id=expected_continuation_id,
+            cursor=cursor,
+            limit=limit,
+            turn_id=turn_id,
+        )
+
+    @server.get("/api/threads/{thread_id}/inputs", response_model=TranscriptInputPage)
+    async def transcript_inputs(
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+        cursor: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    ) -> TranscriptInputPage:
+        return await app().get_thread_inputs(
+            thread_id=thread_id,
+            expected_continuation_id=expected_continuation_id,
+            cursor=cursor,
+            limit=limit,
         )
 
     @server.post("/api/threads/{thread_id}/touch", response_model=ThreadSummary)
@@ -1326,7 +1389,9 @@ def create_webui(
                 thread_id=thread_id,
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
-                model_overrides=RunModelOverrides(model_id=document.model_id, thinking=document.thinking),
+                model_overrides=RunModelOverrides(
+                    model_id=document.model_id, thinking=document.thinking, fast=document.fast
+                ),
                 skill_references=document.skill_references,
                 input_surface="webui",
             )
@@ -1364,94 +1429,131 @@ def create_webui(
     async def cancel(receipt_id: str) -> RootControlResult:
         return await app().cancel_root_operation(receipt_id)
 
-    @server.get(
-        "/api/threads/{thread_id}/events",
-        response_model=FocusSnapshotFrame | FocusReplayFrame | FocusReadyFrame | FocusEventFrame | ResetFrame,
-    )
-    async def focused(thread_id: str, after: Annotated[str | None, Query(max_length=1024)] = None) -> StreamingResponse:
-        # Validate before response headers; the watch remains owned by the
-        # generator task so cancellation closes delivery, never the root Run.
-        await app().get_thread(thread_id)
-
-        async def events() -> AsyncGenerator[str]:
-            try:
-                if after is not None:
-                    parsed = _parse_cursor(after, "focus", thread_id)
-                    async with app().live_events(
-                        root_thread_id=thread_id, after=LiveCursor(epoch=parsed.epoch, sequence=parsed.sequence)
-                    ) as subscription:
-                        async for event in subscription:
-                            yield _frame(
-                                FocusEventFrame(
-                                    event=event, resume_cursor=_cursor("focus", thread_id, event.epoch, event.sequence)
-                                )
-                            )
-                else:
-                    async with app().watch_thread(root_thread_id=thread_id) as watch:
-                        yield _frame(
-                            FocusSnapshotFrame(
-                                snapshot=watch.snapshot,
-                                resume_cursor=(
-                                    _cursor("focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence)
-                                    if watch.root_stream is None
-                                    else None
-                                ),
-                            )
-                        )
-                        if watch.root_stream is not None:
-                            for batch in watch.root_stream.batches():
-                                yield _frame(FocusReplayFrame(run_id=watch.root_stream.summary.run_id, events=batch))
-                            yield _frame(
-                                FocusReadyFrame(
-                                    resume_cursor=_cursor(
-                                        "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
-                                    )
-                                )
-                            )
-                        async for event in watch.events:
-                            yield _frame(
-                                FocusEventFrame(
-                                    event=event, resume_cursor=_cursor("focus", thread_id, event.epoch, event.sequence)
-                                )
-                            )
-            except HarnessUiError as exc:
-                yield _frame(ResetFrame(reason=exc.code))
-
-        return EventStreamResponse(
-            events(),
-            stopping=stopping,
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
-        )
-
-    @server.get("/api/events", response_model=SummaryOpenFrame | SummaryEventFrame | ResetFrame)
-    async def summary(after: Annotated[str | None, Query(max_length=1024)] = None) -> StreamingResponse:
-        async def events() -> AsyncGenerator[str]:
-            try:
-                parsed = None if after is None else _parse_cursor(after, "summary", None)
-                cursor = None if parsed is None else SummaryCursor(epoch=parsed.epoch, sequence=parsed.sequence)
-                async with app().summary_events(after=cursor) as subscription:
-                    cutover = subscription.cursor
-                    yield _frame(
-                        SummaryOpenFrame(
-                            cursor=cutover, resume_cursor=_cursor("summary", None, cutover.epoch, cutover.sequence)
-                        )
-                    )
+    async def focus_frames(
+        thread_id: str, after: str | None
+    ) -> AsyncGenerator[FocusSnapshotFrame | FocusReplayFrame | FocusReadyFrame | FocusEventFrame | ResetFrame]:
+        try:
+            if after is not None:
+                parsed = _parse_cursor(after, "focus", thread_id)
+                async with app().live_events(
+                    root_thread_id=thread_id, after=LiveCursor(epoch=parsed.epoch, sequence=parsed.sequence)
+                ) as subscription:
                     async for event in subscription:
-                        yield _frame(
-                            SummaryEventFrame(
-                                event=event, resume_cursor=_cursor("summary", None, event.epoch, event.sequence)
+                        yield FocusEventFrame(
+                            event=event, resume_cursor=_cursor("focus", thread_id, event.epoch, event.sequence)
+                        )
+            else:
+                async with app().watch_thread(root_thread_id=thread_id) as watch:
+                    yield FocusSnapshotFrame(
+                        snapshot=watch.snapshot,
+                        resume_cursor=(
+                            _cursor("focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence)
+                            if watch.root_stream is None
+                            else None
+                        ),
+                    )
+                    if watch.root_stream is not None:
+                        for batch in watch.root_stream.batches():
+                            yield FocusReplayFrame(run_id=watch.root_stream.summary.run_id, events=batch)
+                        yield FocusReadyFrame(
+                            resume_cursor=_cursor(
+                                "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
                             )
                         )
-            except HarnessUiError as exc:
-                yield _frame(ResetFrame(reason=exc.code))
+                    async for event in watch.events:
+                        yield FocusEventFrame(
+                            event=event, resume_cursor=_cursor("focus", thread_id, event.epoch, event.sequence)
+                        )
+        except HarnessUiError as exc:
+            yield ResetFrame(reason=exc.code)
 
-        return EventStreamResponse(
-            events(),
-            stopping=stopping,
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
-        )
+    async def summary_frames(after: str | None) -> AsyncGenerator[SummaryOpenFrame | SummaryEventFrame | ResetFrame]:
+        try:
+            parsed = None if after is None else _parse_cursor(after, "summary", None)
+            cursor = None if parsed is None else SummaryCursor(epoch=parsed.epoch, sequence=parsed.sequence)
+            async with app().summary_events(after=cursor) as subscription:
+                cutover = subscription.cursor
+                yield SummaryOpenFrame(
+                    cursor=cutover,
+                    resume_cursor=_cursor("summary", None, cutover.epoch, cutover.sequence),
+                    resumed=after is not None,
+                )
+                async for event in subscription:
+                    yield SummaryEventFrame(
+                        event=event, resume_cursor=_cursor("summary", None, event.epoch, event.sequence)
+                    )
+        except HarnessUiError as exc:
+            yield ResetFrame(reason=exc.code)
+
+    @server.websocket("/api/realtime/connect")
+    async def realtime(socket: WebSocket) -> None:
+        if not await authenticate_interactive(socket, api_key):
+            return
+        channels: dict[str, CancelScope] = {}
+        sending = Lock()
+
+        async def send(frame: RealtimeFrame | RealtimePing) -> None:
+            # A stalled connection cannot retain channel tasks indefinitely.
+            with fail_after(10):
+                async with sending:
+                    await socket.send_text(frame.model_dump_json())
+
+        try:
+            async with create_task_group() as group:
+
+                async def observe(command: RealtimeCommand, *, task_status: TaskStatus[None]) -> None:
+                    with CancelScope() as scope:
+                        channels[command.channel] = scope
+                        task_status.started()
+                        frames = (
+                            focus_frames(command.root_thread_id, command.after)
+                            if command.root_thread_id is not None
+                            else summary_frames(command.after)
+                        )
+                        try:
+                            async for frame in frames:
+                                await send(RealtimeFrame(channel=command.channel, frame=frame))
+                        finally:
+                            await frames.aclose()
+                            if channels.get(command.channel) is scope:
+                                channels.pop(command.channel, None)
+
+                async def heartbeat() -> None:
+                    while not stopping.is_set():
+                        await send(RealtimePing())
+                        with move_on_after(20):
+                            await stopping.wait()
+                    await socket.close(code=1001)
+                    group.cancel_scope.cancel()
+
+                group.start_soon(heartbeat)
+                try:
+                    while True:
+                        with fail_after(60):
+                            raw = await receive_text(socket, limit=4096)
+                        command = RealtimeCommand.model_validate_json(raw)
+                        if command.kind == "pong":
+                            continue
+                        previous = channels.pop(command.channel, None)
+                        if previous is not None:
+                            previous.cancel()
+                        if command.kind == "subscribe":
+                            if len(channels) >= 12:
+                                await send(
+                                    RealtimeFrame(channel=command.channel, frame=ResetFrame(reason="channel_limit"))
+                                )
+                                continue
+                            await group.start(observe, command)
+                except (ValidationError, ValueError):
+                    await socket.close(code=4400, reason="Invalid realtime command")
+                except TimeoutError:
+                    await socket.close(code=4408, reason="Realtime heartbeat timed out")
+                except WebSocketDisconnect:
+                    pass
+                finally:
+                    group.cancel_scope.cancel()
+        except* (WebSocketDisconnect, TimeoutError):
+            pass
 
     @server.get("/api/openapi.json", include_in_schema=False)
     async def schema() -> JSONResponse:
@@ -1517,6 +1619,9 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
     components = document.setdefault("components", {}).setdefault("schemas", {})
     for model in (
         InteractiveAuthentication,
+        RealtimeCommand,
+        RealtimeFrame,
+        RealtimePing,
         TerminalCommand,
         TerminalFrame,
         DraftCommand,
@@ -1532,6 +1637,12 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
         components[model.__name__] = schema
     document["x-interactive"] = {
         "authentication": {"$ref": "#/components/schemas/InteractiveAuthentication"},
+        "realtime": {
+            "path": "/api/realtime/connect",
+            "input": {"$ref": "#/components/schemas/RealtimeCommand"},
+            "output": {"$ref": "#/components/schemas/RealtimeFrame"},
+            "heartbeat": {"$ref": "#/components/schemas/RealtimePing"},
+        },
         "presence": {
             "path": "/api/presence/connect",
             "input": {"$ref": "#/components/schemas/PresenceReport"},

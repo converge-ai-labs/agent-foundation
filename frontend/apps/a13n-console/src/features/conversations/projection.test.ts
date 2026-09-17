@@ -40,14 +40,7 @@ describe("Run presentation checkpoints", () => {
         parent_item_id: null,
         first_stream_id: "100-0",
         last_stream_id: "100-1",
-        content: {
-          events: [
-            {
-              event_type: "agui.text_message_content",
-              payload: { delta: "Hello" },
-            },
-          ],
-        },
+        content: { text: "Hello" },
       },
     ]);
     items = applyRunEvent(
@@ -114,4 +107,32 @@ describe("Run presentation checkpoints", () => {
     });
     expect(items.get("itm_message")?.result).toBeUndefined();
   });
+});
+
+it("does not interrupt an Item already read beyond a replayed recovery event", () => {
+  const items = mergeRetainedItems(new Map(), [
+    {
+      id: "new",
+      kind: "text_message",
+      state: "in_progress",
+      parent_item_id: null,
+      first_stream_id: "6-0",
+      last_stream_id: "8-0",
+      content: { text: "after recovery" },
+    },
+  ]);
+  const recovered = applyRunEvent(items, {
+    cursor: "5-0",
+    event: {
+      schema_version: "1",
+      event_id: "event_recovery",
+      event_type: "run.recovery",
+      run_id: "run",
+      thread_id: "thread",
+      item_id: null,
+      occurred_at: "2026-09-17T00:00:00Z",
+      payload: {},
+    },
+  });
+  expect(recovered.get("new")?.state).toBe("in_progress");
 });

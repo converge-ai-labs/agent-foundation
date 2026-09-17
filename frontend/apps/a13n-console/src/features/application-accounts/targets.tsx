@@ -90,7 +90,13 @@ export function AccountTargets({
             items={query.data.items}
             columns={[
               {
-                label: t(bot ? "Conversation" : "Target"),
+                label: t(
+                  account.provider_key === "github"
+                    ? "Repository"
+                    : bot
+                      ? "Conversation"
+                      : "Target",
+                ),
                 tone: "primary",
                 render: (item) => (
                   <>
@@ -117,7 +123,7 @@ export function AccountTargets({
                 label: t("Agent"),
                 render: (item) => item.agent_id ?? t("Account default"),
               },
-              ...(bot
+              ...(bot && account.provider_key !== "github"
                 ? [
                     {
                       label: t("Response policy"),
@@ -228,21 +234,33 @@ export function TargetEditor({
           variant={target ? "outline" : "default"}
           type="button"
         >
-          {t(target ? "Edit" : bot ? "Add conversation" : "Add target")}
+          {t(
+            target
+              ? "Edit"
+              : account.provider_key === "github"
+                ? "Add repository"
+                : bot
+                  ? "Add conversation"
+                  : "Add target",
+          )}
         </Button>
       }
       size={"md"}
       title={t(
-        bot
-          ? "Conversation settings"
-          : target
-            ? "Edit target override"
-            : "Add target override",
+        account.provider_key === "github"
+          ? "Repository settings"
+          : bot
+            ? "Conversation settings"
+            : target
+              ? "Edit target override"
+              : "Add target override",
       )}
       description={t(
-        bot
-          ? "Configure this conversation. Agent and capability overrides are optional."
-          : "Override the account defaults for one external target, such as a conversation or repository.",
+        account.provider_key === "github"
+          ? "Configure this repository. Agent and capability overrides are optional."
+          : bot
+            ? "Configure this conversation. Agent and capability overrides are optional."
+            : "Override the account defaults for one external target, such as a conversation or repository.",
       )}
       closeLabel={t("Close")}
       open={open}
@@ -449,7 +467,7 @@ function TargetForm({
         <Switch checked={receive} onCheckedChange={setReceive} />
         {t(bot ? "Receive messages" : "Receive events")}
       </Label>
-      {bot ? (
+      {bot && account.provider_key !== "github" ? (
         <>
           <MessagingFields
             value={policy}
@@ -463,7 +481,7 @@ function TargetForm({
       ) : (
         <BatchingFields value={batching} onChange={setBatching} />
       )}
-      {definition && !bot && (
+      {definition && (!bot || account.provider_key === "github") && (
         <DisclosureSection title={<>{t("Provider reception policy")}</>}>
           <SchemaFields
             schema={definition.reception_policy_schema}

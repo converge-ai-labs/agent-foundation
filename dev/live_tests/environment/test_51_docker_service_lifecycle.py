@@ -73,7 +73,7 @@ class ServiceContainers(ServiceEnvironments):
 
     async def allocate(self, *, stop_after=None, delete_after=None, preparation="on_run"):
         template, _, _ = await self.journey.environment_template(
-            provider_type="a13n.docker",
+            provider_type="docker",
             preparation=preparation,
             retention={"idle": {"stop_after": stop_after, "delete_after": delete_after}},
         )

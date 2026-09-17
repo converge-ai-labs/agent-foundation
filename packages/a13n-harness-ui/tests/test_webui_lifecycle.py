@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -20,38 +19,12 @@ import psutil
 import pytest
 import uvicorn
 from a13n_harness_ui.webui import run
-from a13n_harness_ui.webui_lifecycle import EventStreamResponse, RequestLog, WebUIServer
+from a13n_harness_ui.webui_lifecycle import RequestLog, WebUIServer
 from anyio import Event, sleep
 from starlette.routing import Route
 from websockets.sync.client import connect
 
 from .test_app import _write_configuration
-
-
-@pytest.mark.anyio
-async def test_stopping_stream_sends_final_body_and_releases_generator() -> None:
-    stopping, entered, closed = Event(), Event(), Event()
-    messages = []
-
-    async def events():
-        try:
-            entered.set()
-            yield "data: ready\n\n"
-            await sleep(60)
-        finally:
-            closed.set()
-
-    async def send(message):
-        messages.append(message)
-
-    response = EventStreamResponse(events(), stopping=stopping, media_type="text/event-stream", headers={})
-    task = asyncio.create_task(response.stream_response(send))
-    await entered.wait()
-    stopping.set()
-    await asyncio.wait_for(task, 1)
-    assert closed.is_set()
-    assert messages[-1] == {"type": "http.response.body", "body": b"", "more_body": False}
-    assert len([message for message in messages if message["type"] == "http.response.start"]) == 1
 
 
 @pytest.mark.anyio
@@ -208,11 +181,22 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
             assert submitted.status_code == 200, submitted.text
             terminal = api.post("/api/host/terminals", json={"cwd": str(tmp_path)}).json()
             assert "terminal_id" in terminal, terminal
-            for path in ("/api/events", f"/api/threads/{thread}/events"):
-                response = clients.enter_context(api.stream("GET", path))
-                assert response.status_code == 200
-                lines = response.iter_lines()
-                assert next(lines)
+            realtime = clients.enter_context(connect(f"ws://127.0.0.1:{port}/api/realtime/connect", proxy=None))
+            realtime.send(json.dumps({"api_key": "lifecycle-test-key"}))
+            for stream in ("summary", "focus"):
+                realtime.send(
+                    json.dumps(
+                        {
+                            "version": 1,
+                            "kind": "subscribe",
+                            "channel": stream,
+                            "stream": stream,
+                            "root_thread_id": thread if stream == "focus" else None,
+                        }
+                    )
+                )
+                while json.loads(realtime.recv(timeout=5)).get("channel") != stream:
+                    pass
             ws = clients.enter_context(
                 connect(f"ws://127.0.0.1:{port}/api/host/terminals/{terminal['terminal_id']}/connect", proxy=None)
             )
@@ -258,7 +242,6 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
             "WebUI stopped",
         ):
             assert message in output
-        assert "GET /api/events" in output
         assert "POST /api/threads/{thread_id}/submit" in output
         assert "timeout graceful shutdown exceeded" not in output
         assert "Traceback" not in output

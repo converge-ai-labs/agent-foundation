@@ -12,13 +12,16 @@ elseif metadata_type ~= 'hash' or
     error('RUN_STREAM_IDENTITY', 0)
 end
 
--- Record one deadline before setting either TTL. Lost acknowledgements and
--- partially applied expiration must never extend retention on every retry.
-local deadline = redis.call('HGET', metadata, 'retention_deadline') or
-    tostring(tonumber(redis.call('TIME')[1]) + request.closed_ttl_seconds)
+-- Closing an incomplete source fences writers but preserves its suffix until
+-- the consumer durably records explicit incomplete finalization.
 redis.call('HSET', metadata, 'organization_id', request.organization_id, 'run_id', request.run_id,
-    'closed_at', request.closed_at, 'incomplete', '1', 'attempt_id', '', 'retention_deadline', deadline)
+    'closed_at', request.closed_at, 'incomplete', '1', 'attempt_id', '')
 redis.call('HDEL', metadata, 'pending')
-redis.call('EXPIREAT', stream, deadline)
-redis.call('EXPIREAT', metadata, deadline)
+if request.operation == 'release_retired' then
+    local deadline = redis.call('HGET', metadata, 'retention_deadline') or
+        tostring(tonumber(redis.call('TIME')[1]) + request.closed_ttl_seconds)
+    redis.call('HSET', metadata, 'retention_deadline', deadline)
+    redis.call('EXPIREAT', stream, deadline)
+    redis.call('EXPIREAT', metadata, deadline)
+end
 return {'ok'}

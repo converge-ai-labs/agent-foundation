@@ -1,4 +1,4 @@
-# A dedicated Docker Engine; no access to the host's Docker socket.
+# Single-host Service shares the host Docker Engine and its authority.
 services:
   postgres:
     image: postgres:17-alpine
@@ -23,35 +23,11 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
-  docker:
-    image: docker:28.1.1-dind
-    privileged: true
-    environment:
-      DOCKER_TLS_CERTDIR: ""
-      DOCKER_HOST: unix:///run/a13n-docker/docker.sock
-    entrypoint: ["/bin/sh", "-ec"]
-    command:
-      - |
-        getent group a13n >/dev/null || addgroup -g 10001 a13n
-        exec dockerd-entrypoint.sh dockerd --host=unix:///run/a13n-docker/docker.sock --group=a13n
-    volumes:
-      - docker-data:/var/lib/docker
-      - docker-socket:/run/a13n-docker
-      # Template bind sources must use this same absolute path. Set this to an
-      # approved existing host directory; add more explicit mounts as needed.
-      - type: bind
-        source: ${A13N_DOCKER_HOST_DATA:?Set A13N_DOCKER_HOST_DATA to an existing absolute host directory}
-        target: ${A13N_DOCKER_HOST_DATA}
-        bind:
-          create_host_path: false
-    healthcheck:
-      test: ["CMD", "docker", "info"]
-      interval: 2s
-      timeout: 5s
-      retries: 60
   service:
     image: ${A13N_SERVICE_IMAGE:-ghcr.io/converge-ai-labs/a13n-service:dev}
     user: "10001:10001"
+    group_add:
+      - "${A13N_DOCKER_SOCKET_GID:?Set A13N_DOCKER_SOCKET_GID to the host Docker socket group ID}"
     environment:
       A13N_SERVICE_SECRET_MASTER_KEY_BASE64: ${A13N_SERVICE_SECRET_MASTER_KEY_BASE64:?Generate and retain a deployment master key}
       A13N_SERVICE_SECRET_ENCRYPTION_KEY_ID: ${A13N_SERVICE_SECRET_ENCRYPTION_KEY_ID:-local-1}
@@ -64,18 +40,14 @@ services:
     volumes:
       - ./a13n-service-single-host.toml:/app/service.toml:ro
       - service-data:/app/var
-      - docker-socket:/run/a13n-docker
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      docker:
-        condition: service_healthy
     stop_grace_period: 30s
 volumes:
   postgres:
   redis:
-  docker-data:
-  docker-socket:
   service-data:

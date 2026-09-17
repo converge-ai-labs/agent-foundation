@@ -70,7 +70,7 @@ Send is a frontend action: it captures the current authored order and selected a
 
 Ordered submission accepts an optional `source_id` in the canonical `input_` plus 32 lowercase hexadecimal shape (also accepting the legacy `input-` spelling). It requires ordered parts and propagates unchanged into input presentation metadata. This is correlation only: not an idempotency key, receipt, authority, or permission to retry. Each Send or Steer allocates its own identity even when steering the same receipt repeatedly.
 
-The initiating tab immediately displays a private input preview before synchronization, creation, or upload finishes. This preview never enters the shared CRDT. Preparing, accepted, rejected, and unknown observations remain distinct. Exact source identity merges local, streamed, and saved input into one displayed message; equal text or filenames do not establish identity. Only authoritative saved input retires its private preview. Other participants observe ordinary accepted input, not this tab's pending preview.
+The initiating tab retains input in the composer with loading feedback while synchronization, Thread creation, uploads, and submission acknowledgement are pending. It does not add a transcript bubble or derive a conversation title from unconfirmed local input. A positive admission acknowledgement reveals the private input preview without waiting for model output; a server-observed input can appear independently if its HTTP acknowledgement is delayed or lost. Rejected and unknown submissions retain input and their distinct recovery messages in the composer, not speculative transcript bubbles. Exact source identity merges local, streamed, and saved input into one displayed message; equal text or filenames do not establish identity. Only authoritative saved input retires its private preview. The private preview never enters the shared CRDT.
 
 Successful submission does not discard edits outside the captured snapshot. A client can retain an exact CRDT replica for the captured input, delete its visible text and selections only after a positive submission acknowledgement, then merge that deletion update into its current replica. Clearing by current text offsets or replacing the live document with an empty value is not equivalent: it can erase uncaptured edits. The server owns no Send-version registry. A rejected submission retains editable content. Preparing the next prompt during a Run is editing, not acceptance into a durable execution queue. The UI distinguishes explicit steering of the current Run from an ordinary next prompt.
 
@@ -86,10 +86,10 @@ Attachments use the existing Thread-scoped input identity and limits. Draft/cont
 | -------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------ |
 | Current page and editor presence | Authenticated interactive updates and current membership snapshots | Current App participation only                   |
 | Shared composer                  | Authenticated bidirectional CRDT synchronization                   | In-memory draft document                         |
-| Thread execution and history     | Existing focused SSE plus detached history queries                 | Existing Run observations and saved continuation |
+| Thread execution and history     | Focused realtime channels plus detached history queries            | Existing Run observations and saved continuation |
 | Published comments               | Ordinary App write/read operations and post-commit refetch hints   | Persisted comment records                        |
 
-A Thread SSE update or reset does not reset the composer, clear published comments, or change the participant's page. A draft update does not append an assistant message or alter saved history. The frontend keeps these state owners independent of component rerendering. There is no global ordering or transaction across SSE, interactive delivery, and HTTP acknowledgements; submission and comment publication use their own explicit completion boundaries.
+A Thread observation update or reset does not reset the composer, clear published comments, or change the participant's page. A draft update does not append an assistant message or alter saved history. The frontend keeps these state owners independent of component rerendering. There is no global ordering or transaction across realtime observation, interactive delivery, and HTTP acknowledgements; submission and comment publication use their own explicit completion boundaries.
 
 After a page reload, the browser reestablishes presence, reloads saved history, and rejoins an available draft independently. Comment reads remain disabled in the current browser. A draft incarnation change is not a comment reset. A presence snapshot is not proof that all Thread events or comments have been received.
 
@@ -127,4 +127,4 @@ Uncertainty is not proof of rollback. A provider or tool operation might have ta
 08. Shared control decisions use existing exact-receipt and exact-continuation authority.
 09. Page presence works without a draft and never changes another participant's navigation.
 10. Background tabs are not presented as confirmed foreground attention; duplicate names are not merged into verified users.
-11. Thread SSE resets and draft synchronization cannot overwrite one another's state or erase published comments.
+11. Thread observation resets and draft synchronization cannot overwrite one another's state or erase published comments.

@@ -53,7 +53,7 @@ class ServiceSandboxes(ServiceEnvironments):
             journey.base + "/environment-providers",
             {
                 "name": "E2B lifecycle " + str(len(self.lab.client.runs)),
-                "type": "a13n.e2b",
+                "type": "e2b",
                 "configuration": {},
                 "credential": {"api_key": self.pool.settings.api_key.get_secret_value()},
             },
@@ -182,17 +182,7 @@ async def test_real_model_uses_named_e2b_environment(e2b_service):
     events = await journey.live.events(receipt["run_id"])
     assert_stream(events, receipt["run_id"])
 
-    # Closing the live stream precedes publication of the retained replay object.
-    async def retained_items():
-        response = await journey.live.http.get(f"/api/v1/runs/{receipt['run_id']}/items")
-        if response.status_code == 409:
-            assert response.json()["error"]["code"] == "items_unavailable"
-        else:
-            assert response.status_code == 200
-        return response
-
-    await eventually(retained_items, lambda response: response.status_code == 200, "retained E2B tool records")
-    items = await journey.live.collection(f"/api/v1/runs/{receipt['run_id']}/items")
+    items = await journey.live.retained_items(receipt["run_id"])
     calls = [item for item in items if item["kind"] == "tool_call" and item["state"] == "completed"]
     assert len(calls) >= 2
     target = await service.target(environment)

@@ -60,6 +60,32 @@ const localSchema = {
   },
 };
 
+const dockerSchema = {
+  type: "object",
+  additionalProperties: false,
+  "x-primary-fields": [
+    "image",
+    "environment",
+    "init_script",
+    "cpus",
+    "memory_gb",
+    "disable_network",
+    "mounts",
+  ],
+  properties: {
+    image: {
+      type: "string",
+      title: "Image",
+      default: "a13n-docker-environment:dev",
+    },
+    memory_gb: { type: "number", title: "Memory (GB)" },
+    mounts: { type: "array", title: "Mounts", items: { type: "object" } },
+    shell: { type: "string", title: "Shell", default: "/bin/sh" },
+  },
+};
+
+let unmountEditor: (() => void) | undefined;
+
 beforeEach(() => {
   vi.resetAllMocks();
   state.GET.mockImplementation(async (path: string) => ({
@@ -67,7 +93,7 @@ beforeEach(() => {
       items: path.endsWith("environment-provider-types")
         ? [
             {
-              type: "a13n.e2b",
+              type: "e2b",
               supports_managed: true,
               supports_stop: true,
               supports_destroy: true,
@@ -75,21 +101,35 @@ beforeEach(() => {
               template_configuration_schemas: { "1": e2bSchema },
             },
             {
-              type: "a13n.docker",
+              type: "direct-local",
               supports_managed: true,
               supports_stop: false,
               supports_destroy: false,
               configuration_versions: ["1"],
               template_configuration_schemas: { "1": localSchema },
             },
+            {
+              type: "docker",
+              supports_managed: true,
+              supports_stop: true,
+              supports_destroy: true,
+              configuration_versions: ["1"],
+              template_configuration_schemas: { "1": dockerSchema },
+            },
             { type: "a13n.http-envd", supports_managed: false },
           ]
         : [
-            { id: "envp_e2b", type: "a13n.e2b", name: "E2B", enabled: true },
+            { id: "envp_e2b", type: "e2b", name: "E2B", enabled: true },
             {
               id: "envp_local",
-              type: "a13n.docker",
+              type: "direct-local",
               name: "Local",
+              enabled: true,
+            },
+            {
+              id: "envp_docker",
+              type: "docker",
+              name: "Docker",
               enabled: true,
             },
             {
@@ -103,7 +143,7 @@ beforeEach(() => {
     },
   }));
   state.POST.mockResolvedValue({ data: { id: "envt_created" } });
-  render(
+  unmountEditor = render(
     <QueryClientProvider
       client={
         new QueryClient({
@@ -116,7 +156,7 @@ beforeEach(() => {
         close={state.close}
       />
     </QueryClientProvider>,
-  );
+  ).unmount;
 });
 
 async function selectProvider(
@@ -243,4 +283,88 @@ it("resets advanced JSON drafts and their validation state", async () => {
       }) as HTMLTextAreaElement
     ).value,
   ).toBe("{}");
+});
+
+it("tests the selected Docker image on the Worker without saving the template", async () => {
+  const user = userEvent.setup();
+  await selectProvider(user, "Docker");
+  const image = screen.getByRole("textbox", { name: "Image" });
+  await user.clear(image);
+  await user.type(image, "my-env:dev");
+  expect(screen.getByRole("button", { name: "Mounts" })).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Test image" }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/environment-providers/{provider_id}/test-image",
+      expect.objectContaining({
+        params: { path: { provider_id: "envp_docker" } },
+        body: expect.objectContaining({
+          workspace_id: "ws_test",
+          configuration: { image: "my-env:dev" },
+          request_id: expect.stringMatching(/^envtest_[0-9a-f]{32}$/),
+        }),
+      }),
+    ),
+  );
+  expect(state.close).not.toHaveBeenCalled();
+});
+
+it("aborts an image test when its draft changes and ignores a late result", async () => {
+  let finish: ((value: unknown) => void) | undefined;
+  state.POST.mockImplementation((path: string) =>
+    path.endsWith("/cancel")
+      ? Promise.resolve({ data: null })
+      : new Promise((resolve) => {
+          finish = resolve;
+        }),
+  );
+  const user = userEvent.setup();
+  await selectProvider(user, "Docker");
+  await user.click(screen.getByRole("button", { name: "Test image" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalled());
+  const signal = state.POST.mock.calls[0][1].signal as AbortSignal;
+  expect(signal.aborted).toBe(false);
+  await user.type(screen.getByRole("textbox", { name: "Image" }), "changed");
+  expect(signal.aborted).toBe(true);
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/environment-providers/{provider_id}/test-image/{request_id}/cancel",
+      expect.objectContaining({
+        params: {
+          path: {
+            provider_id: "envp_docker",
+            request_id: expect.stringMatching(/^envtest_[0-9a-f]{32}$/),
+          },
+        },
+      }),
+    ),
+  );
+  finish?.({ data: { image_id: "sha256:old", checks: ["files"] } });
+  await waitFor(() => expect(screen.queryByText(/sha256:old/)).toBeNull());
+});
+
+it("cancels the Worker request when the editor closes", async () => {
+  state.POST.mockImplementation((path: string) =>
+    path.endsWith("/cancel")
+      ? Promise.resolve({ data: null })
+      : new Promise(() => undefined),
+  );
+  const user = userEvent.setup();
+  await selectProvider(user, "Docker");
+  await user.click(screen.getByRole("button", { name: "Test image" }));
+  await waitFor(() => expect(state.POST).toHaveBeenCalled());
+  const signal = state.POST.mock.calls[0][1].signal as AbortSignal;
+  unmountEditor?.();
+  expect(signal.aborted).toBe(true);
+  expect(state.POST).toHaveBeenCalledWith(
+    "/api/v1/environment-providers/{provider_id}/test-image/{request_id}/cancel",
+    expect.objectContaining({
+      params: {
+        path: {
+          provider_id: "envp_docker",
+          request_id: expect.stringMatching(/^envtest_[0-9a-f]{32}$/),
+        },
+      },
+    }),
+  );
 });

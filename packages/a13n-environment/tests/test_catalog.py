@@ -154,12 +154,12 @@ def test_builtin_catalog_resolves_provider_without_scanning_entry_points(
         lambda: (_ for _ in ()).throw(AssertionError("built-ins must not scan metadata")),
     )
 
-    catalog = build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
+    catalog = build_environment_provider_catalog(builtin_keys=("direct-local",))
 
-    assert tuple(catalog) == ("a13n.direct-local",)
-    assert isinstance(catalog.require("a13n.direct-local"), DirectLocalEnvironmentProvider)
+    assert tuple(catalog) == ("direct-local",)
+    assert isinstance(catalog.require("direct-local"), DirectLocalEnvironmentProvider)
     registration = catalog.registrations[0]
-    assert registration.provider_key == "a13n.direct-local"
+    assert registration.provider_key == "direct-local"
     assert registration.builtin is True
     assert registration.import_target is None
     assert registration.distribution_name is None
@@ -221,14 +221,14 @@ def test_catalog_registration_order_is_builtin_extension_then_explicit(
     monkeypatch.setattr("a13n_environment.catalog._entry_points", lambda: (selected,))
 
     catalog = build_environment_provider_catalog(
-        builtin_keys=("a13n.direct-local",),
+        builtin_keys=("direct-local",),
         extension_keys=("test.other",),
         explicit_providers=(_Provider(),),
     )
 
-    assert tuple(catalog) == ("a13n.direct-local", "test.other", "test.provider")
+    assert tuple(catalog) == ("direct-local", "test.other", "test.provider")
     assert [registration.provider_key for registration in catalog.registrations] == [
-        "a13n.direct-local",
+        "direct-local",
         "test.other",
         "test.provider",
     ]
@@ -266,8 +266,8 @@ def test_catalog_rejects_invalid_local_selection_without_scanning_metadata(
     "kwargs",
     [
         {
-            "builtin_keys": ("a13n.direct-local",),
-            "extension_keys": ("a13n.direct-local",),
+            "builtin_keys": ("direct-local",),
+            "extension_keys": ("direct-local",),
         },
         {
             "extension_keys": ("test.provider",),
@@ -287,7 +287,11 @@ def test_catalog_preflights_source_collisions_before_metadata_scan(
     with pytest.raises(EnvironmentProviderError) as exc_info:
         build_environment_provider_catalog(**kwargs)
 
-    assert exc_info.value.code == "provider_catalog_duplicate"
+    assert exc_info.value.code == (
+        "provider_catalog_key_invalid"
+        if "direct-local" in kwargs.get("extension_keys", ())
+        else "provider_catalog_duplicate"
+    )
 
 
 def test_catalog_preflights_missing_entry_point_before_loading_any_target(
@@ -399,19 +403,19 @@ def test_catalog_require_validates_key_and_reports_missing_selection() -> None:
 def test_provider_names_are_owned_by_implementations():
     catalog = build_environment_provider_catalog(
         builtin_keys=(
-            "a13n.direct-local",
+            "direct-local",
             "a13n.local-envd",
-            "a13n.docker",
-            "a13n.e2b",
+            "docker",
+            "e2b",
             "a13n.http-envd",
             "a13n.websocket-envd",
         )
     )
     assert {key: provider.display_name for key, provider in catalog.items()} == {
-        "a13n.direct-local": "Direct Local",
+        "direct-local": "Direct Local",
         "a13n.local-envd": "Local Envd",
-        "a13n.docker": "Docker",
-        "a13n.e2b": "E2B",
+        "docker": "Docker",
+        "e2b": "E2B",
         "a13n.http-envd": "HTTP Envd",
         "a13n.websocket-envd": "WebSocket Envd",
     }

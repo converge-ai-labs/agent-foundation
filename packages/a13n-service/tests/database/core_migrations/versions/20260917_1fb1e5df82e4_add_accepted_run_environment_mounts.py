@@ -1,8 +1,8 @@
 """add accepted run environment mounts.
 
-Revision ID: 0c63937b0134
-Revises: c0355d7f89ba
-Create Date: 2026-09-17 09:11:35.161444+00:00
+Revision ID: 1fb1e5df82e4
+Revises: 4a9959a58c31
+Create Date: 2026-09-17 12:31:00.996159+00:00
 """
 
 from collections.abc import Sequence
@@ -10,8 +10,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0c63937b0134"
-down_revision: str | Sequence[str] | None = "c0355d7f89ba"
+revision: str = "1fb1e5df82e4"
+down_revision: str | Sequence[str] | None = "4a9959a58c31"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

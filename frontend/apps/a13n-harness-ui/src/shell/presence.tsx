@@ -4,6 +4,7 @@ import { useLocation } from "react-router";
 import { useSources, useTransport } from "../transport/context";
 import { watchSummary } from "../transport/events";
 import { refreshThread, scheduleRefresh } from "../conversations/refresh";
+import { refreshActivity } from "../conversations/activity-updates";
 import type { Schema } from "../transport/client";
 import { useNotifications } from "./notifications";
 import { useResults } from "../conversations/results";
@@ -120,6 +121,7 @@ export function useLiveWorkbench(
         ) {
           const id = event.root_thread_id ?? event.thread_id;
           if (id) {
+            refreshActivity(queries, transport, id);
             refreshThread(
               queries,
               id,

@@ -2,15 +2,15 @@
 
 ## Design Position
 
-Console provides a Bot-oriented experience for customer-owned Slack and Feishu applications. This contract owns onboarding, navigation, response configuration, and the entry to [Bot Memory](bot-memory.md). Application Account identity and credentials, messaging execution, IAM, and backend operations retain their existing owners.
+Console provides a Bot-oriented experience for customer-owned Slack, Feishu, and GitHub identities. This contract owns onboarding, navigation, response configuration, and the entry to [Bot Memory](bot-memory.md). Application Account identity and credentials, messaging execution, IAM, and backend operations retain their existing owners.
 
 The journeys below define product behavior; they do not introduce HTTP routes or declare new backend capabilities available. Controls that depend on an unavailable Service operation remain unavailable with an explanation. A prototype never substitutes for server-side validation.
 
 ## 1. Product Outcome
 
-A Workspace administrator connects a customer-owned Slack or Feishu application, selects an existing Agent, and lets that Agent participate in external conversations. Operators can then manage where it responds, inspect its conversations, and access the associated memory management surface without dealing with credentials during everyday work.
+A Workspace administrator connects a customer-owned Slack, Feishu, or GitHub identity, selects an existing Agent, and lets that Agent participate in external conversations. Operators can then manage where it responds, inspect its conversations, and access the associated memory management surface without dealing with credentials during everyday work.
 
-The first release supports Slack and Feishu customer-owned applications. It requires no official a13n marketplace application, hosted installation broker, or external Connector service. Existing Lark support remains intact, but a separately localized Lark onboarding journey is outside this release.
+Bots supports Slack and Feishu customer-owned applications, GitHub Apps, and ordinary GitHub accounts using notification polling. It requires no official a13n marketplace application, hosted installation broker, or external Connector service. Existing Lark support remains intact, but a separately localized Lark onboarding journey is outside this release.
 
 Bots is placed under Integrations alongside Application accounts and Connections. The product label is **Bots** in English and **机器人** in Simplified Chinese.
 
@@ -29,11 +29,11 @@ Bots is placed under Integrations alongside Application accounts and Connections
 
 ### Bot identity
 
-A Bot is a managed view of one Slack or Feishu Application Account, not a second independently mutable identity. Bot URLs reference the Account ID. There is no second credential store, duplicate Agent assignment, independent Bot enabled flag, or required `bot_id` in this product boundary.
+A Bot is a managed view of one supported Application Account, not a second independently mutable identity. Bot URLs reference the Account ID. There is no second credential store, duplicate Agent assignment, independent Bot enabled flag, or required `bot_id` in this product boundary.
 
 A single Account has one default Agent; an exact target can select another Agent through the existing advanced target configuration. One Agent can serve several Bots. One Bot does not span multiple platforms or external installations in this product boundary.
 
-Bots lists supported messaging Accounts, including existing Accounts with reception disabled. Creating an Account from the Bot wizard makes the same Account visible in Application accounts. Updates from either surface agree after refresh and use the same version preconditions. GitHub Accounts remain in Application accounts and do not become chat Bots.
+Bots lists supported messaging Accounts, including existing Accounts with reception disabled. Creating an Account from the Bot wizard makes the same Account visible in Application accounts. Updates from either surface agree after refresh and use the same version preconditions. GitHub Accounts also appear in Bots, using repository targets and Issue/PR conversations.
 
 Slack Workspace and Feishu enterprise are external identity labels, not new a13n Workspaces. A channel/chat name is display metadata, never a routing or authorization key.
 
@@ -91,11 +91,11 @@ Row activation opens detail. An incomplete setup shows a resume action. Empty st
 
 The wizard has five stages: **Platform and account → Connect → Verify → Agent and reception → Test**.
 
-1. Choose between equally prominent Use an existing account and Create a new account options. The existing-account option shows selectable Accounts; the new-account option shows a compact Slack or Feishu platform selection. An Account already represented in Bots opens its existing page rather than creating a duplicate.
+1. Choose between equally prominent Use an existing account and Create a new account options. The existing-account option shows selectable Accounts; the new-account option shows a compact Slack, Feishu, and GitHub connection selection. An Account already represented in Bots opens its existing page rather than creating a duplicate.
 2. Follow the provider-specific instructions below. Required credentials use write-only fields. Provider identity is resolved or verified by trusted API responses and authenticated events where possible; manual identifiers are an advanced fallback, not trusted proof of identity.
-3. Save the Account with reception disabled. For HTTP display its exact event endpoint; for long connections display platform instructions and poll the current event connection status. Track provider identity verification independently from saving credentials and transport connectivity. Challenge validation works before production reception is enabled.
+3. Save the Account with reception disabled. For HTTP display its exact event endpoint; for long connections display platform instructions and poll the current event connection status. Notification polling profiles explain outbound-only reception and display scan health. Track provider identity verification independently from saving credentials and transport connectivity. Challenge validation works before production reception is enabled.
 4. Select an existing same-Workspace Agent and an eligible execution Service Account. Explain that the latter controls the permissions under which incoming messages execute. No browser login or external sender supplies Service authority. New Agent creation is a linked flow that preserves the non-secret wizard draft.
-5. Configure one pilot channel/chat, explicitly activate reception, and ask the user to send the displayed test message. The UI explains that this invokes an Agent and may consume model usage. Prepare a uniquely marked test without sending a message, then observe authenticated event receipt, Run/Steer acceptance, and an actual provider-confirmed reply containing that marker separately. Refresh reads observations only; a lost preparation acknowledgement retries the same command, and expired or stale tests require a newly prepared message. Ending or closing the wizard does not cancel accepted work.
+5. Configure one pilot channel/chat or GitHub repository, explicitly activate reception, and ask the user to send the displayed test message. The UI explains that this invokes an Agent and may consume model usage. Prepare a uniquely marked test without sending a message, then observe authenticated event receipt, Run/Steer acceptance, and an actual provider-confirmed reply containing that marker separately. Refresh reads observations only; a lost preparation acknowledgement retries the same command, and expired or stale tests require a newly prepared message. Ending or closing the wizard does not cancel accepted work.
 
 New Bot setup uses explicitly configured targets only as its initial reception scope. The pilot target is therefore the only admitted target until the operator enables others. An explicit **All accessible conversations** setting can retain current Account-default routing behavior. Service must enforce this admission control before the Console can offer it; missing-target fallback alone cannot enforce it. Existing Accounts retain their current behavior until explicitly changed.
 
@@ -114,6 +114,14 @@ Guide the deployer through creating an enterprise custom application, enabling B
 The wizard offers HTTP events and WebSocket long connections. HTTP shows the request URL and asks for App ID, App Secret, Verification Token, and an optional Encrypt Key. Long connections ask only for App ID and App Secret, explain the corresponding Feishu event subscription setting, and show live transport status. It does not ask the operator for Tenant Key or Bot Open Id. Before creating the Account, Service queries the official Feishu APIs with the supplied App credentials and derives both identifiers. Failed discovery creates no Account. The saved Account still contains the complete immutable identity, and the Verify stage displays the verified application and enterprise for confirmation. It explains that searching for the Bot and adding it through group settings can fail when the application has not been published or the operator is outside its availability range.
 
 Existing Accounts retain HTTP until explicitly changed. Changing transport preserves Bot and memory identity; the operator updates transport credentials before switching. A connected transport does not replace the end-to-end setup test. No Feishu store application credentials or app-ticket lifecycle are implied by accepting custom-app credentials.
+
+### GitHub onboarding
+
+GitHub offers two explicit connection choices: **GitHub account · Polling** and **GitHub App · Webhook**. Polling explains that a dedicated ordinary account and classic PAT are required, with no public callback. The GitHub.com wizard derives the user identity from credentials before saving; it exposes polling interval and initial lookback without asking for a manually claimed user ID. It explains that repository access and GitHub notification subscriptions are both required. App setup guides installation, Issues/Pull Requests read/write permissions, supported event subscriptions, private key, webhook secret, and a publicly reachable event URL.
+
+Both paths verify identity, select an accessible pilot repository, choose an Agent and execution Service Account, and explicitly enable reception. The sender control accepts exact usernames or `*`; polling explains that unknown senders are ignored with a named list and that notification updates can coalesce. The App wizard offers all supported events or new comments; advanced Account/target policy supports exact event selections. GitHub replies are ordinary Issue/PR comments. The test asks the user to post its marker in a pilot repository Issue/PR, using an allowed sender; polling additionally requires notification delivery, for example through a real mention of the connected account.
+
+GitHub Bot details use **Repositories** in place of Channels/Groups and retain authorized conversation and reply observations. Polling connection details show the latest scan time/error without presenting a webhook field. GitHub has no Bot Memory tab, settings, or repository sharing controls in this profile.
 
 ### 4.5 Bot detail
 

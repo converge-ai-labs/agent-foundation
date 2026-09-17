@@ -28,9 +28,9 @@ _ENTRY_NAME = re.compile(r"^[a-z][a-z0-9_-]{0,63}$")
 _PROVIDER_TYPE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _ENVIRONMENT_BUILTINS = frozenset(
     {
-        "a13n.direct-local",
-        "a13n.docker",
-        "a13n.e2b",
+        "direct-local",
+        "docker",
+        "e2b",
         "a13n.http-envd",
         "a13n.websocket-envd",
     }

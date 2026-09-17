@@ -516,7 +516,15 @@
             "type": "integer"
           },
           "policy": {
-            "$ref": "#/components/schemas/MessagingPolicy"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessagingPolicy"
+              },
+              {
+                "$ref": "#/components/schemas/GitHubReceptionPolicy"
+              }
+            ],
+            "title": "Policy"
           },
           "target_id": {
             "maxLength": 128,
@@ -2958,7 +2966,8 @@
           "provider_key": {
             "enum": [
               "slack",
-              "lark"
+              "lark",
+              "github"
             ],
             "title": "Provider Key",
             "type": "string"
@@ -2970,6 +2979,9 @@
               },
               {
                 "$ref": "#/components/schemas/LarkReplyReceipt"
+              },
+              {
+                "$ref": "#/components/schemas/GitHubCommentReceipt"
               },
               {
                 "type": "null"
@@ -3049,8 +3061,15 @@
             "type": "string"
           },
           "event_path": {
-            "title": "Event Path",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Path"
           },
           "event_url": {
             "anyOf": [
@@ -3062,6 +3081,38 @@
               }
             ],
             "title": "Event Url"
+          },
+          "poll_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poll Checked At"
+          },
+          "poll_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poll Error Code"
+          },
+          "reception_mode": {
+            "default": "webhook",
+            "enum": [
+              "webhook",
+              "polling"
+            ],
+            "title": "Reception Mode",
+            "type": "string"
           }
         },
         "required": [
@@ -3436,6 +3487,29 @@
           "next_cursor"
         ],
         "title": "BotThreadCollection",
+        "type": "object"
+      },
+      "CancelDockerImageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "workspace_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": [
+          "workspace_id"
+        ],
+        "title": "CancelDockerImageRequest",
         "type": "object"
       },
       "CatalogModel": {
@@ -7469,9 +7543,16 @@
             "type": "object"
           },
           "credential": {
-            "additionalProperties": true,
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credential",
-            "type": "object",
             "writeOnly": true
           },
           "enabled": {
@@ -7493,8 +7574,7 @@
         },
         "required": [
           "type",
-          "name",
-          "credential"
+          "name"
         ],
         "title": "CreateWebProviderRequest",
         "type": "object"
@@ -7723,6 +7803,24 @@
           "app_secret"
         ],
         "title": "DiscoverFeishuInstallationRequest",
+        "type": "object"
+      },
+      "DiscoverGitHubUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "personal_access_token": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Personal Access Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "personal_access_token"
+        ],
+        "title": "DiscoverGitHubUserRequest",
         "type": "object"
       },
       "Document": {
@@ -8546,7 +8644,7 @@
           "provider_key": {
             "maxLength": 128,
             "minLength": 3,
-            "pattern": "^[a-z0-9]+(?:[._-][a-z0-9]+)+$",
+            "pattern": "^(?:docker|e2b|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$",
             "title": "Provider Key",
             "type": "string"
           },
@@ -9056,6 +9154,73 @@
         "title": "FunctionCall",
         "type": "object"
       },
+      "GitHubCommentReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "comment_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Comment Id",
+            "type": "integer"
+          },
+          "html_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Html Url",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment_id",
+          "node_id",
+          "html_url",
+          "request_id"
+        ],
+        "title": "GitHubCommentReceipt",
+        "type": "object"
+      },
+      "GitHubReceptionPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_senders": {
+            "default": [
+              "*"
+            ],
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(\\*|[A-Za-z0-9][A-Za-z0-9-]{0,38}(\\[bot\\])?)$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Allowed Senders",
+            "type": "array"
+          },
+          "event_actions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Event Actions",
+            "type": "array"
+          }
+        },
+        "title": "GitHubReceptionPolicy",
+        "type": "object"
+      },
       "GitHubRevisionSource": {
         "additionalProperties": false,
         "properties": {
@@ -9528,6 +9693,69 @@
           "source"
         ],
         "title": "ImageInputContent",
+        "type": "object"
+      },
+      "ImageTestResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "checks": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Checks",
+            "type": "array"
+          },
+          "configuration_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Hash"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "image_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Id"
+          },
+          "image_source": {
+            "anyOf": [
+              {
+                "enum": [
+                  "local",
+                  "pulled"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Image Source"
+          }
+        },
+        "title": "ImageTestResponse",
         "type": "object"
       },
       "InlineHookSubscriptionInput": {
@@ -10049,6 +10277,25 @@
       "ItemCollection": {
         "additionalProperties": false,
         "properties": {
+          "complete": {
+            "title": "Complete",
+            "type": "boolean"
+          },
+          "finalized": {
+            "title": "Finalized",
+            "type": "boolean"
+          },
+          "incomplete_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Incomplete Reason"
+          },
           "items": {
             "items": {
               "$ref": "#/components/schemas/ItemResource"
@@ -10066,11 +10313,31 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "projection_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Projection Cursor"
+          },
+          "snapshot_version": {
+            "title": "Snapshot Version",
+            "type": "integer"
           }
         },
         "required": [
           "items",
-          "next_cursor"
+          "next_cursor",
+          "snapshot_version",
+          "projection_cursor",
+          "complete",
+          "incomplete_reason",
+          "finalized"
         ],
         "title": "ItemCollection",
         "type": "object"
@@ -13471,6 +13738,36 @@
           }
         },
         "title": "ProtocolLimits",
+        "type": "object"
+      },
+      "ProviderConnectivity": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "status": {
+            "enum": [
+              "connected",
+              "unavailable",
+              "unknown"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ],
+        "title": "ProviderConnectivity",
         "type": "object"
       },
       "QueuedSubmission": {
@@ -17758,6 +18055,43 @@
           "external_target_id"
         ],
         "title": "TargetConfig",
+        "type": "object"
+      },
+      "TestDockerImageRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Configuration",
+            "type": "object"
+          },
+          "request_id": {
+            "pattern": "^envtest_[0-9a-f]{32}$",
+            "title": "Request Id",
+            "type": "string"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": [
+          "request_id",
+          "workspace_id",
+          "configuration"
+        ],
+        "title": "TestDockerImageRequest",
         "type": "object"
       },
       "TextContent": {
@@ -30195,6 +30529,92 @@
         ]
       }
     },
+    "/api/v1/environment-providers/{provider_id}/connectivity": {
+      "get": {
+        "operationId": "get_environment_providers_provider_id_connectivity",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProviderConnectivity"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Provider Connectivity",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
     "/api/v1/environment-providers/{provider_id}/credential": {
       "put": {
         "operationId": "put_environment_providers_provider_id_credential",
@@ -30296,6 +30716,201 @@
           }
         ],
         "summary": "Replace Credential",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/environment-providers/{provider_id}/test-image": {
+      "post": {
+        "operationId": "post_environment_providers_provider_id_test_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TestDockerImageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageTestResponse"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Test Image",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/environment-providers/{provider_id}/test-image/{request_id}/cancel": {
+      "post": {
+        "operationId": "post_environment_providers_provider_id_test_image_request_id_cancel",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "request_id",
+            "required": true,
+            "schema": {
+              "pattern": "^envtest_[0-9a-f]{32}$",
+              "title": "Request Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CancelDockerImageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Cancel Image Test",
         "tags": [
           "environments"
         ]
@@ -39268,6 +39883,20 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "in": "query",
+            "name": "order",
+            "required": false,
+            "schema": {
+              "default": "asc",
+              "enum": [
+                "asc",
+                "desc"
+              ],
+              "title": "Order",
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -46758,7 +47387,8 @@
                 {
                   "enum": [
                     "slack",
-                    "lark"
+                    "lark",
+                    "github"
                   ],
                   "type": "string"
                 },
@@ -46973,6 +47603,102 @@
           }
         ],
         "summary": "Discover Feishu Installation",
+        "tags": [
+          "bots"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/bots/github/user": {
+      "post": {
+        "operationId": "post_workspaces_workspace_bots_github_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverGitHubUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationInfo"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Discover Github User",
         "tags": [
           "bots"
         ]

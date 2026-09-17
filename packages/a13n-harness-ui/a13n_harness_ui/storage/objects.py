@@ -196,7 +196,10 @@ class ImmutableObjectStore:
     ) -> _ObjectModelT:
         """Read an exact object and validate its typed payload contract."""
 
-        envelope = await self.read(reference)
+        return await to_thread.run_sync(self._read_model, reference, model_type)
+
+    def _read_model(self, reference: ObjectRef, model_type: type[_ObjectModelT]) -> _ObjectModelT:
+        envelope = self._read_ref(reference)
         try:
             serialized = json.dumps(
                 envelope.payload,

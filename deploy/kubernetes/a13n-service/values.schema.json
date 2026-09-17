@@ -1,0 +1,182 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "profile",
+    "replicaCount",
+    "existingSecret",
+    "image"
+  ],
+  "properties": {
+    "profile": {
+      "enum": [
+        "local",
+        "distributed"
+      ]
+    },
+    "replicaCount": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "existingSecret": {
+      "type": "string",
+      "minLength": 1
+    },
+    "publicOrigin": {
+      "type": "string",
+      "minLength": 1
+    },
+    "environmentName": {
+      "type": "string",
+      "minLength": 1
+    },
+    "extraConfig": {
+      "type": "string"
+    },
+    "image": {
+      "type": "object",
+      "required": [
+        "repository",
+        "tag",
+        "pullPolicy"
+      ],
+      "properties": {
+        "repository": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tag": {
+          "type": "string",
+          "minLength": 1
+        },
+        "pullPolicy": {
+          "enum": [
+            "Always",
+            "IfNotPresent",
+            "Never"
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "roles": {
+      "type": "object",
+      "required": [
+        "control",
+        "worker",
+        "connectivity"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "control": {
+          "type": "object",
+          "required": [
+            "replicaCount"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "replicaCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "resources": {
+              "type": "object"
+            }
+          }
+        },
+        "worker": {
+          "type": "object",
+          "required": [
+            "replicaCount"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "replicaCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "resources": {
+              "type": "object"
+            }
+          }
+        },
+        "connectivity": {
+          "type": "object",
+          "required": [
+            "replicaCount"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "replicaCount": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "resources": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    "console": {
+      "type": "object",
+      "required": [
+        "enabled",
+        "replicaCount",
+        "image",
+        "service"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "replicaCount": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "image": {
+          "type": "object",
+          "required": [
+            "repository",
+            "tag",
+            "pullPolicy"
+          ],
+          "properties": {
+            "repository": {
+              "type": "string",
+              "minLength": 1
+            },
+            "tag": {
+              "type": "string",
+              "minLength": 1
+            },
+            "pullPolicy": {
+              "enum": [
+                "Always",
+                "IfNotPresent",
+                "Never"
+              ]
+            }
+          },
+          "additionalProperties": false
+        },
+        "service": {
+          "type": "object",
+          "properties": {
+            "type": {
+              "enum": [
+                "ClusterIP",
+                "NodePort"
+              ]
+            },
+            "nodePort": {
+              "type": "integer",
+              "minimum": 30000,
+              "maximum": 32767
+            }
+          }
+        }
+      }
+    }
+  }
+}

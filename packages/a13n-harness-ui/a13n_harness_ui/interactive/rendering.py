@@ -56,6 +56,7 @@ class Status:
     model: str = "not configured"
     thinking: str = "default"
     service_tier: str | None = None
+    fast: str = "default"
     environment: str = "not selected"
     directory: Path | None = None
     context_window: int | None = None
@@ -159,11 +160,11 @@ class Status:
                 else str(total)
             )
         state = self.state.capitalize()
-        if compact and self.service_tier == "priority":
+        if compact and self.fast == "on":
             state += " Fast"
         fields = [
             state,
-            *(("Fast",) if not compact and self.service_tier == "priority" else ()),
+            *(("Fast",) if not compact and self.fast == "on" else ()),
             f"{'tok' if compact else 'tokens'} {token_count}",
             f"ctx {context}",
             f"cache {self.cache_rate_text}",

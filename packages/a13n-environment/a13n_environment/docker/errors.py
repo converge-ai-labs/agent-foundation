@@ -22,5 +22,5 @@ def engine_errors(*, mutation: bool = False) -> Iterator[None]:
             category=Category.UNKNOWN_OUTCOME if mutation else Category.UNAVAILABLE,
             certainty=Certainty.UNKNOWN if mutation else Certainty.NOT_DISPATCHED,
             recovery_hint=Recovery.RECONCILE if mutation else Recovery.REFRESH_RUNTIME,
-            context=EnvironmentProviderErrorContext(provider_key="a13n.docker"),
+            context=EnvironmentProviderErrorContext(provider_key="docker"),
         ) from None

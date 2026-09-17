@@ -6,15 +6,18 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
-from anyio import to_thread
+from a13n_logging import get_logger
+from anyio import sleep, to_thread
 from pydantic import JsonValue
 
 from a13n_harness_ui import __version__
 
 from .comments import OutputCommentRepository
+from .contracts import StoredContinuation
 from .database import Database, open_database
 from .layout import StorageLayout
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
+from .read_models import project_continuation
 from .repositories import (
     ChildExecutionRepository,
     ConfigurationRepository,
@@ -43,6 +46,7 @@ class LocalStore:
         self.layout = layout
         self.database = database
         self.objects = objects
+        self._object_count = 0
         self.configurations = ConfigurationRepository(database.sessions)
         self.project_models = ProjectModelPreferenceRepository(database.sessions)
         self.threads = ThreadRepository(database.sessions)
@@ -74,8 +78,34 @@ class LocalStore:
 
         return await self.objects.read(reference)
 
+    async def repair_read_models(self) -> tuple[str, ...]:
+        """Bounded, resumable maintenance; no object reads on query paths."""
+        repaired: list[str] = []
+        after = ""
+        while batch := await self.threads.missing_read_models(after=after):
+            for thread_id, reference in batch:
+                try:
+                    value = await self.objects.read_model(reference, StoredContinuation)
+                    projection = await to_thread.run_sync(project_continuation, value)
+                    if await self.threads.repair_read_model(thread_id, reference, projection):
+                        repaired.append(thread_id)
+                except Exception as exc:
+                    # Decoder diagnostics are already sanitized. Never include
+                    # chained validation errors or persisted payloads in logs.
+                    get_logger("a13n_harness_ui.storage").warning(
+                        "Could not rebuild Thread read model",
+                        extra={"thread_id": thread_id, "error_type": type(exc).__name__},
+                    )
+                after = thread_id
+                await sleep(0)
+        return tuple(repaired)
+
+    async def refresh_object_count(self) -> None:
+        self._object_count = len(await self.objects.references())
+
     async def object_count(self) -> int:
-        return len(await self.objects.references())
+        """Return the maintenance sample without enumerating files on status requests."""
+        return self._object_count
 
 
 @asynccontextmanager

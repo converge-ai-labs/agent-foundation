@@ -12,11 +12,13 @@ from a13n_service.run_stream import (
     LifecycleRunStreamProjector,
     RedisRunStream,
     RetainedReplayUnavailable,
-    RunReplayStore,
+    RunDisplayStore,
     RunStreamEvent,
     deterministic_run_stream_event_id,
 )
 from a13n_service.run_stream.activation import PublicationActivator
+from a13n_service.run_stream.display_candidates import DisplayCandidate, DisplayCandidates
+from a13n_service.run_stream.display_consumer import RunDisplayConsumer
 from a13n_service.run_stream.domain import PublicationRejected, PublicationUnavailable
 from a13n_service.run_stream.events import lifecycle_stream_event
 from a13n_service.run_stream.redis import _RETIREMENT_SCRIPT, _keys
@@ -113,7 +115,6 @@ async def test_lifecycle_projector_recovers_activation_after_worker_disappears(
     projector = LifecycleRunStreamProjector(
         sessions,
         stream,
-        RunReplayStore(interaction_object_store),
         worker_id="repair-worker",
         clock=lambda: now,
     )
@@ -161,7 +162,6 @@ async def test_terminal_projection_retires_unavailable_history_without_reactivat
     projector = LifecycleRunStreamProjector(
         sessions,
         stream,
-        RunReplayStore(interaction_object_store),
         worker_id="retirement-worker",
         max_attempts=1,
         clock=lambda: now,
@@ -181,6 +181,12 @@ async def test_terminal_projection_retires_unavailable_history_without_reactivat
         assert terminal.projection_state == "abandoned"
     assert await redis_client.xrange(events) == retained_rows
     for key in (events, metadata):
+        assert await redis_client.ttl(key) in {-1, -2}
+    stored = await RunDisplayConsumer(
+        DisplayCandidates(sessions), stream, RunDisplayStore(interaction_object_store)
+    ).consume_run(DisplayCandidate(ORGANIZATION_ID, run.id, run.thread_id))
+    assert stored is not None and stored.snapshot.finalized and not stored.snapshot.complete
+    for key in (events, metadata):
         ttl = await redis_client.ttl(key)
         assert ttl == -2 or 0 < ttl <= 60
     assert await redis_client.hget(metadata, "pending") is None
@@ -190,7 +196,7 @@ async def test_terminal_projection_retires_unavailable_history_without_reactivat
         await stream.complete_source(ORGANIZATION_ID, run.id)
 
 
-@pytest.mark.parametrize("failure", ["partial_expiration", "lost_ack"])
+@pytest.mark.parametrize("failure", ["partial_close", "lost_ack"])
 async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhausted(
     interaction_sessions, interaction_object_store, redis_client, failure
 ):
@@ -209,18 +215,17 @@ async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhau
     projector = LifecycleRunStreamProjector(
         sessions,
         stream,
-        RunReplayStore(interaction_object_store),
         worker_id="retirement-worker",
         retry_after=timedelta(0),
         max_attempts=1,
         clock=lambda: now,
     )
     healthy = stream._retirement_script
-    if failure == "partial_expiration":
-        marker = "redis.call('EXPIREAT', metadata, deadline)"
+    if failure == "partial_close":
+        marker = "redis.call('HDEL', metadata, 'pending')"
         assert _RETIREMENT_SCRIPT.count(marker) == 1
         faulty = redis_client.register_script(
-            _RETIREMENT_SCRIPT.replace(marker, "error('expiration failed')\n" + marker)
+            _RETIREMENT_SCRIPT.replace(marker, "error('retirement failed')\n" + marker)
         )
     else:
         faulty = healthy
@@ -235,10 +240,9 @@ async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhau
     stream._retirement_script = interrupt_retirement
     for _ in range(10):
         assert await projector.project_once() == 1
-        if await redis_client.hget(metadata, "retention_deadline"):
+        if await redis_client.hget(metadata, "closed_at"):
             break
-    deadline = await redis_client.hget(metadata, "retention_deadline")
-    assert deadline is not None
+    assert await redis_client.hget(metadata, "retention_deadline") is None
     async with short_session(sessions) as database:
         terminal = await database.scalar(
             select(LifecycleEventRecord).where(
@@ -250,10 +254,19 @@ async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhau
     async def no_more_publication(**kwargs):
         pytest.fail("Retirement retries must not reenter exhausted publication")
 
+    publication_script = stream._script
     stream._script = no_more_publication
     assert await projector.project_once() == 1
     assert await projector.project_once() == 0
-    assert await redis_client.hget(metadata, "retention_deadline") == deadline
+    stream._script = publication_script
+    assert await redis_client.ttl(events) == -1
+    assert await redis_client.ttl(metadata) == -1
+    stored = await RunDisplayConsumer(
+        DisplayCandidates(sessions), stream, RunDisplayStore(interaction_object_store)
+    ).consume_run(DisplayCandidate(ORGANIZATION_ID, run.id, run.thread_id))
+    assert stored is not None and stored.snapshot.finalized and not stored.snapshot.complete
+    deadline = await redis_client.hget(metadata, "retention_deadline")
+    assert deadline is not None
     assert await redis_client.expiretime(events) == int(deadline)
     assert await redis_client.expiretime(metadata) == int(deadline)
     async with short_session(sessions) as database:

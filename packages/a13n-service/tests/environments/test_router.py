@@ -20,15 +20,15 @@ from fastapi import Request
 from .conftest import ORG_ID, USER_ID, WORKSPACE_ID
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
-PROVIDER_KEY = "a13n.direct-local"
+PROVIDER_KEY = "direct-local"
 
 
 async def authenticate(request: Request) -> AuthenticatedActor:
     return AuthenticatedActor(
-        principal=PrincipalRef(principal_type="user", principal_id=USER_ID),
+        principal=PrincipalRef(principal_type="user", principal_id=request.headers.get("x-test-user", USER_ID)),
         auth_method="session",
         credential_id="ses_envrouter12345678",
-        boundary_workspace_id=WORKSPACE_ID,
+        boundary_workspace_id=request.headers.get("x-test-workspace", WORKSPACE_ID),
         request_id=request.state.request_id,
     )
 
@@ -123,7 +123,7 @@ async def environment_api_client(
         config,
         components=Components(
             request_authenticator=authenticate,
-            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=(PROVIDER_KEY,)),
+            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=(PROVIDER_KEY, "docker")),
         ),
     )
     async with app.router.lifespan_context(app):

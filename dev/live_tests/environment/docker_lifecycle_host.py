@@ -41,6 +41,6 @@ class LifecycleBarrierProvider(DockerEnvironmentProvider):
 def environment_catalog(config, builtin_keys):
     root = Path(config["workspace_root"]).parent / "docker-fault"
     return build_environment_provider_catalog(
-        builtin_keys=tuple(key for key in builtin_keys if key != "a13n.docker"),
+        builtin_keys=tuple(key for key in builtin_keys if key != "docker"),
         explicit_providers=(LifecycleBarrierProvider(root),),
     )

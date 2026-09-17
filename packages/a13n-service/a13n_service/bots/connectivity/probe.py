@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx2
 from pydantic import ValidationError
 
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.connectivity.inspection import ConversationInfo, ConversationPage, InstallationInfo
+from a13n_service.connectivity.providers.github.inspection import GitHubInspection
 from a13n_service.connectivity.providers.lark.adapter import LarkAccountConfig, LarkAccountCredentials
 from a13n_service.connectivity.providers.lark.client import LarkNativeClient
 from a13n_service.connectivity.providers.lark.token import LarkTenantTokenProvider
@@ -29,6 +32,7 @@ class InstallationProbe:
         credentials: CredentialSnapshot,
         protector: SecretProtector,
     ) -> None:
+        self._github: GitHubInspection | None = None
         self._slack: tuple[SlackNativeClient, SlackAccountConfig, SlackAccountCredentials] | None = None
         self._lark: tuple[LarkNativeClient, LarkAccountConfig] | None = None
         try:
@@ -52,12 +56,18 @@ class InstallationProbe:
                     LarkNativeClient(http_client, endpoint_validator, tokens, open_api_origin=parsed.open_api_origin),
                     parsed,
                 )
+            elif provider_key == "github":
+                self._github = GitHubInspection(
+                    http_client, endpoint_validator, config, json.loads(credentials.decrypt(protector))
+                )
             else:
                 raise ConnectivityHttpError("bot_provider_unsupported")
         except (ValidationError, SecretProtectionError) as error:
             raise ConnectivityHttpError("credential_unavailable") from error
 
     async def installation(self) -> InstallationInfo:
+        if self._github is not None:
+            return await self._github.installation()
         if self._slack is not None:
             client, config, credentials = self._slack
             result = await client.inspect_installation(bot_token=credentials.bot_token.get_secret_value())
@@ -81,6 +91,8 @@ class InstallationProbe:
         return result
 
     async def conversation(self, conversation_id: str) -> ConversationInfo:
+        if self._github is not None:
+            return await self._github.conversation(conversation_id)
         if self._slack is not None:
             client, _config, credentials = self._slack
             return await client.inspect_conversation(
@@ -90,6 +102,8 @@ class InstallationProbe:
         return await self._lark[0].inspect_conversation(conversation_id)
 
     async def conversations(self, *, limit: int, cursor: str | None) -> ConversationPage:
+        if self._github is not None:
+            return await self._github.conversations(limit=limit, cursor=cursor)
         if self._slack is not None:
             client, _config, credentials = self._slack
             return await client.list_conversations(

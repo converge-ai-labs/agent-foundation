@@ -121,6 +121,38 @@ it("creates a saved provider independently and clears its credential on close wi
   expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
 });
 
+it("creates a credential-free DuckDuckGo provider without an API key", async () => {
+  const keylessDefinition = {
+    ...definition,
+    type: "duckduckgo",
+    display_name: "DuckDuckGo",
+    credential_required: false,
+    credential_schema: { type: "object", properties: {} },
+  };
+  http.GET.mockImplementation(async (path: string) =>
+    response(
+      path.endsWith("web-provider-types")
+        ? { items: [definition, keylessDefinition] }
+        : { items: [], next_cursor: null },
+    ),
+  );
+  const user = userEvent.setup();
+  setup(<WebProviderEditor scope={scope} />);
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Provider type" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "DuckDuckGo" }));
+  expect(screen.queryByLabelText("API Key")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
+  expect(http.POST.mock.calls[0][1].body).toMatchObject({
+    type: "duckduckgo",
+    name: "DuckDuckGo",
+  });
+  expect(http.POST.mock.calls[0][1].body).not.toHaveProperty("credential");
+});
+
 it("keeps the existing credential write-only and sends If-Match for edits", async () => {
   const user = userEvent.setup();
   setup(<WebProviderEditor scope={scope} providerId={provider.id} />);

@@ -19,6 +19,8 @@ from ..github.actions import (
 from ..github.adapter import GitHubAccountConfig
 from ..github.client import GitHubNativeClient
 from ..github.token import GitHubInstallationTokenProvider
+from .polling_config import GitHubPollingConfig
+from .rest import GitHubPersonalTokenProvider, GitHubREST
 
 
 def inbound_actions(
@@ -29,7 +31,7 @@ def inbound_actions(
     http: httpx2.AsyncClient,
     endpoints: EndpointPolicy,
 ) -> dict[str, NativeAction]:
-    config = GitHubAccountConfig.model_validate(configuration)
+    config = (GitHubPollingConfig if "user_id" in configuration else GitHubAccountConfig).model_validate(configuration)
     binding = GitHubActionBinding.model_validate(
         {
             "repository_id": context.get("repository_id"),
@@ -39,15 +41,22 @@ def inbound_actions(
             "target_kind": context.get("target_kind"),
         }
     )
-    tokens = GitHubInstallationTokenProvider(
-        http,
-        endpoints,
-        api_origin=config.api_origin,
-        app_id=config.app_id,
-        installation_id=config.installation_id,
-        private_key_pem=credential(credentials, "app_private_key_pem"),
-        permissions={"issues": "write", "pull_requests": "write"},
-    )
+    if isinstance(config, GitHubPollingConfig):
+        tokens = GitHubPersonalTokenProvider(
+            GitHubREST(http, endpoints, config.api_origin),
+            credential(credentials, "personal_access_token"),
+            config.user_id,
+        )
+    else:
+        tokens = GitHubInstallationTokenProvider(
+            http,
+            endpoints,
+            api_origin=config.api_origin,
+            app_id=config.app_id,
+            installation_id=config.installation_id,
+            private_key_pem=credential(credentials, "app_private_key_pem"),
+            permissions={"issues": "write", "pull_requests": "write"},
+        )
     client = GitHubNativeClient(http, endpoints, tokens, api_origin=config.api_origin, web_origin=config.web_origin)
 
     async def add_comment(arguments):

@@ -1,43 +1,9 @@
-import { ApiError, type Schema, type Transport } from "./client";
+import type { Schema, Transport } from "./client";
 
 type SummaryFrame =
   | (Schema<"SummaryOpenFrame"> & { kind: "open" })
   | (Schema<"SummaryEventFrame"> & { kind: "invalidation" })
   | (Schema<"ResetFrame"> & { kind: "reset" });
-
-// A fetch stream keeps the credential in the header, never an EventSource URL.
-export async function consumeSse(
-  response: Response,
-  receive: (data: unknown) => void,
-) {
-  if (!response.body) throw new Error("Streaming response is unavailable.");
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let data: string[] = [];
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) break;
-      buffer += decoder.decode(next.value, { stream: true });
-      if (buffer.length > 1024 * 1024)
-        throw new Error("Stream frame is too large.");
-      let end: number;
-      while ((end = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, end).replace(/\r$/, "");
-        buffer = buffer.slice(end + 1);
-        if (!line) {
-          if (data.length) receive(JSON.parse(data.join("\n")));
-          data = [];
-        } else if (line.startsWith("data:"))
-          data.push(line.slice(5).replace(/^ /, ""));
-      }
-    }
-  } finally {
-    await reader.cancel().catch(() => {});
-    reader.releaseLock();
-  }
-}
 
 export function summaryFrame(value: unknown): SummaryFrame {
   if (typeof value !== "object" || value === null || !("kind" in value))
@@ -97,54 +63,40 @@ export function watchSummary(
   invalidate: (event?: Schema<"SummaryEventFrame">["event"]) => void,
   state: (state: string) => void,
 ) {
-  const controller = new AbortController();
-  let timer: ReturnType<typeof setTimeout> | undefined;
   let cursor: string | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   let failures = 0;
-  async function connect() {
-    timer = undefined;
-    state(failures ? "Reconnecting" : "Connecting");
-    try {
-      const response = await transport.fetch(
-        `/api/events${cursor ? `?after=${encodeURIComponent(cursor)}` : ""}`,
-        { signal: controller.signal, headers: { Accept: "text/event-stream" } },
-      );
-      await consumeSse(response, (data) => {
+  const subscription = transport.realtime.subscribe({
+    stream: "summary",
+    cursor: () => cursor,
+    state,
+    receive(data) {
+      try {
         const frame = summaryFrame(data);
-        if (frame.kind === "reset") {
-          cursor = undefined;
-          invalidate();
-          return;
-        }
+        if (frame.kind === "reset") throw new Error(frame.reason);
         cursor = frame.resume_cursor;
         failures = 0;
         state("Live");
-        // Only open/reset require full reconciliation. Keep event identity for
-        // targeted refreshes and terminal notices across all conversation views.
-        if (frame.kind === "open") invalidate();
-        else invalidate(frame.event);
-      });
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) return;
-    }
-    if (!controller.signal.aborted) {
-      state("Reconnecting");
-      timer = setTimeout(
-        () => void connect(),
-        Math.min(1000 * 2 ** failures++, 15000),
-      );
-    }
-  }
+        // A valid resume replays missed hints, not every HTTP observation.
+        if (frame.kind === "open") {
+          if (!frame.resumed) invalidate();
+        } else invalidate(frame.event);
+      } catch {
+        cursor = undefined;
+        invalidate();
+        state("Reconnecting");
+        clearTimeout(timer);
+        timer = setTimeout(
+          () => subscription.restart(),
+          Math.min(1000 * 2 ** failures++, 15000),
+        );
+      }
+    },
+  });
   const close = () => {
-    controller.abort();
     clearTimeout(timer);
+    subscription();
   };
-  // Skip only a pending backoff, retaining the cursor and any in-flight request.
-  close.retry = () => {
-    if (timer === undefined || controller.signal.aborted) return;
-    clearTimeout(timer);
-    void connect();
-  };
-  void connect();
+  close.retry = subscription.retry;
   return close;
 }

@@ -19,19 +19,19 @@ from .conftest import WORKSPACE_ID, actor
 
 def test_local_types_require_explicit_oss_deployment_configuration():
     assert not LOCAL_PROVIDER_TYPES.intersection(build_environment_catalog(Settings(), Components()))
-    configured = Settings(environments={"local_providers": {"a13n.docker": {}}})
+    configured = Settings(environments={"local_providers": {"docker": {}}})
     catalog = build_environment_catalog(configured, Components())
-    assert "a13n.docker" in catalog and "a13n.direct-local" not in catalog
+    assert "docker" in catalog and "direct-local" not in catalog
     with pytest.raises(ValueError, match="local_providers"):
-        Settings(environments={"provider_builtins": ["a13n.docker"]})
+        Settings(environments={"provider_builtins": ["docker"]})
     with pytest.raises(ValueError, match="OSS identity"):
         build_environment_catalog(configured, Components(request_authenticator=actor))
 
 
 @pytest.mark.anyio
 async def test_startup_publishes_one_read_only_organization_provider(environment_sessions, protector):
-    catalog = build_environment_provider_catalog(builtin_keys=("a13n.docker",))
-    configuration = {"a13n.docker": {"docker_host": "unix:///run/docker.sock"}}
+    catalog = build_environment_provider_catalog(builtin_keys=("docker",))
+    configuration = {"docker": {"docker_host": "unix:///run/docker.sock"}}
     async with create_task_group() as tasks:
         for _ in range(2):
             tasks.start_soon(synchronize_local_providers, environment_sessions, catalog, configuration)
@@ -44,27 +44,27 @@ async def test_startup_publishes_one_read_only_organization_provider(environment
     assert provider.workspace_id is None
     assert provider.configuration_source == "deployment"
     assert provider.name == "Docker" and provider.enabled
-    assert provider.configuration == configuration["a13n.docker"]
+    assert provider.configuration == configuration["docker"]
     definitions = await service.provider_types(actor())
     assert definitions.items[0].deployment_managed
     with pytest.raises(EnvironmentManagementError, match="configured by the deployment"):
         await service.create_provider(
-            actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.docker", name="Other")
+            actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="docker", name="Other")
         )
 
 
 @pytest.mark.anyio
 async def test_reconfiguration_preserves_old_identity_and_disables_removed_backend(environment_sessions, protector):
-    catalog = build_environment_provider_catalog(builtin_keys=("a13n.docker",))
+    catalog = build_environment_provider_catalog(builtin_keys=("docker",))
     service = EnvironmentService(environment_sessions, catalog, protector)
-    first = {"a13n.docker": {"docker_host": "unix:///first/docker.sock"}}
+    first = {"docker": {"docker_host": "unix:///first/docker.sock"}}
     await synchronize_local_providers(environment_sessions, catalog, first)
     original = (await service.list_providers(actor=actor(), workspace_id=WORKSPACE_ID)).items[0]
     await synchronize_local_providers(environment_sessions, catalog, first)
     assert (await service.get_provider(actor=actor(), resource_id=original.id)) == original
 
     await synchronize_local_providers(
-        environment_sessions, catalog, {"a13n.docker": {"docker_host": "unix:///second/docker.sock"}}
+        environment_sessions, catalog, {"docker": {"docker_host": "unix:///second/docker.sock"}}
     )
     providers = (await service.list_providers(actor=actor(), workspace_id=WORKSPACE_ID)).items
     assert len(providers) == 2
@@ -93,8 +93,8 @@ async def test_deployment_provider_cannot_be_edited_even_by_organization_admin(e
         await session.execute(
             update(RoleBindingRecord).where(RoleBindingRecord.resource_type == "organization").values(role_key="admin")
         )
-    catalog = build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
-    await synchronize_local_providers(environment_sessions, catalog, {"a13n.direct-local": {}})
+    catalog = build_environment_provider_catalog(builtin_keys=("direct-local",))
+    await synchronize_local_providers(environment_sessions, catalog, {"direct-local": {}})
     service = EnvironmentService(environment_sessions, catalog, protector)
     provider = (await service.list_providers(actor=actor(), workspace_id=WORKSPACE_ID)).items[0]
     admin = replace(actor(), boundary_workspace_id=None, boundary_organization_id=ORG_ID)
@@ -110,9 +110,9 @@ async def test_deployment_provider_cannot_be_edited_even_by_organization_admin(e
 
 def test_distributed_deployment_rejects_local_providers():
     with pytest.raises(ValueError, match="single_host"):
-        Settings(deployment={"mode": "distributed"}, environments={"local_providers": {"a13n.docker": {}}})
+        Settings(deployment={"mode": "distributed"}, environments={"local_providers": {"docker": {}}})
     catalog = build_environment_catalog(Settings(deployment={"mode": "distributed"}), Components())
-    assert "a13n.e2b" in catalog
+    assert "e2b" in catalog
 
 
 def test_service_rejects_local_envd():

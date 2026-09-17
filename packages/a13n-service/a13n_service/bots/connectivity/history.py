@@ -61,7 +61,7 @@ async def list_bot_threads(
             boundary = decode_cursor(cursor, scope=scope, id_prefix="bind") if cursor else None
         except CursorError as error:
             raise NativeError("invalid_cursor", str(error), category=ErrorCategory.invalid_request) from error
-        if account.provider_key not in {"slack", "lark"}:
+        if account.provider_key not in {"slack", "lark", "github"}:
             raise NativeError("resource_not_found", "Bot not found.", category=ErrorCategory.not_found)
         # Account navigation never grants transcript authority. Intersect the same
         # Agent-scoped permissions used by the canonical Session/Thread/Run views.

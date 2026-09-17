@@ -155,6 +155,58 @@ def _boundary(operation: str, failures: list[BaseException | None]):
     return dispatch, runtime, lambda: (acquisitions, authorizations)
 
 
+async def test_credential_free_provider_dispatches_without_ciphertext() -> None:
+    protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")
+    snapshot = WebProviderSnapshot(
+        provider_id=PROVIDER_ID,
+        provider_type="keyless_web",
+        configuration={},
+        credential=CredentialSnapshot(
+            resource_id=PROVIDER_ID,
+            owner_type="web_provider",
+            owner_id=PROVIDER_ID,
+            organization_id="org_1234567890abcdef",
+            workspace_id="ws_1234567890abcdef",
+            generation=0,
+            ciphertext=None,
+            nonce=None,
+            encryption_key_id=None,
+        ),
+    )
+    runtime = _Runtime([None])
+    registry = WebProviderRegistry(
+        (
+            WebProviderRegistration(
+                type="keyless_web",
+                display_name="Keyless Web",
+                configuration_model=_Configuration,
+                credential_model=_Configuration,
+                credential_required=False,
+                setup_url="https://example.com/setup",
+                factory=lambda: runtime,
+                supports_search=True,
+            ),
+        )
+    )
+
+    async def acquire() -> WebProviderSnapshot:
+        return snapshot
+
+    async def reauthorize() -> None:
+        pass
+
+    authorized = AuthorizedSearch(
+        selection=SearchSelection(provider_id=PROVIDER_ID),
+        acquire=acquire,
+        reauthorize=reauthorize,
+        protector=protector,
+        registry=registry,
+    )
+    result = await authorized.search(WebSearchRequest(query="query", limit=1))
+    assert result.results == ()
+    assert runtime.calls == ["search"] and runtime.closed == 1
+
+
 @pytest.mark.parametrize("operation", ["search", "scrape"])
 @pytest.mark.parametrize(
     "failure",

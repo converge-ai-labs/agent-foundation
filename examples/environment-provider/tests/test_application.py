@@ -24,9 +24,9 @@ def test_direct_local_example_runs_offline_and_preserves_host_workspace(tmp_path
 
     result = asyncio.run(run_direct_local(workspace))
 
-    assert result.provider_key == "a13n.direct-local"
+    assert result.provider_key == "direct-local"
     assert result.environment_id == "direct-local-example"
-    assert result.text == "hello from a13n.direct-local\n"
+    assert result.text == "hello from direct-local\n"
     assert result.workspace == workspace.resolve()
     assert result.workspace_preserved
     assert result.state is None

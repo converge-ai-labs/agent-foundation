@@ -16,6 +16,7 @@ import {
   Stop,
   X,
   DotsThree,
+  CircleNotch,
 } from "@phosphor-icons/react";
 import type { EditorView } from "@codemirror/view";
 import {
@@ -152,6 +153,7 @@ export async function submitDraft(
   )
     return;
   const thinking = draft.thinking;
+  const fast = draft.fast;
   // Own the shared submission state before any asynchronous preparation so
   // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
   draft.submission = { kind: "pending", action };
@@ -196,6 +198,7 @@ export async function submitDraft(
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
             ...(thinking != null ? { thinking } : {}),
+            ...(fast != null ? { fast } : {}),
           },
         }),
       );
@@ -259,7 +262,7 @@ export async function submitDraft(
     captured?.doc.destroy();
     draft.notify();
   }
-  return true;
+  return draft.submission.kind === "accepted";
 }
 
 export function submitContinuation(
@@ -292,6 +295,7 @@ export function Composer({
   prepareThread,
   onPreparing,
   onSubmitted,
+  onReviewOutcome,
   controls,
   leadingControls,
   modelId,
@@ -317,7 +321,8 @@ export function Composer({
   prepareThread?: () => Promise<void>;
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
-  controls?: ReactNode;
+  onReviewOutcome?: () => void;
+  controls?: (expanded: boolean) => ReactNode;
   leadingControls?: ReactNode;
   modelId?: string;
 }) {
@@ -387,6 +392,8 @@ export function Composer({
     });
   const [syncDelayed, setSyncDelayed] = useState(false);
   const synchronized = draft.synchronized;
+  const showSyncStatus =
+    !local && !synchronized && !draft.replacement && syncDelayed;
   useEffect(() => {
     setSyncDelayed(false);
     if (synchronized || local) return;
@@ -453,8 +460,8 @@ export function Composer({
   const { stopping, canStop } = cancellation;
   const stop = () => {
     if (!canStop) return;
-    // Stop remains available while Steer is synchronizing. Abort unsubmitted
-    // preparation, without pretending to undo any request already admitted.
+    // A shared draft can become empty during preparation. Abort unsubmitted
+    // preparation without pretending to undo any request already admitted.
     preparation.current?.abort(
       new Error("Submission preparation stopped. Your input is retained."),
     );
@@ -735,11 +742,9 @@ export function Composer({
           Comment added to your message. Review it below, then send when ready.
         </p>
       )}
-      {!local && !synchronized && !draft.replacement && syncDelayed && (
+      {showSyncStatus && draft.status !== "Connected" && (
         <p role="status" className={styles.composerConnection}>
-          {draft.status === "Connected"
-            ? "Syncing edits…"
-            : `${draft.status} · your edits are still in this tab`}
+          {draft.status} · your edits are still in this tab
         </p>
       )}
       {draft.replacement && (
@@ -764,10 +769,7 @@ export function Composer({
           />
         </div>
       )}
-      <div
-        className={styles.composerBody}
-        data-stop-secondary={busy && hasInput}
-      >
+      <div className={styles.composerBody}>
         <div inert={preparing} className={styles.composerEditor}>
           <ComposerEditor
             autoFocus={autoFocus}
@@ -906,21 +908,28 @@ export function Composer({
               )}
             {unknown && (
               <>
-                <Button variant="outline" onClick={reconcile}>
-                  Refresh operation and history
+                <Button
+                  variant="outline"
+                  onClick={onReviewOutcome ?? reconcile}
+                >
+                  {onReviewOutcome
+                    ? "Review submission in conversation"
+                    : "Refresh operation and history"}
                 </Button>
-                <ConfirmAction
-                  trigger={
-                    <Button variant="ghost">I reviewed the outcome</Button>
-                  }
-                  title="Enable a new submission?"
-                  description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
-                  confirmLabel="Enable submission"
-                  onConfirm={() => {
-                    draft.submission = { kind: "idle" };
-                    draft.notify();
-                  }}
-                />
+                {!onReviewOutcome && (
+                  <ConfirmAction
+                    trigger={
+                      <Button variant="ghost">I reviewed the outcome</Button>
+                    }
+                    title="Enable a new submission?"
+                    description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
+                    confirmLabel="Enable submission"
+                    onConfirm={() => {
+                      draft.submission = { kind: "idle" };
+                      draft.notify();
+                    }}
+                  />
+                )}
               </>
             )}
           </div>
@@ -951,6 +960,20 @@ export function Composer({
             <div className={styles.composerOptions} data-open={mobileOptions}>
               {leadingControls}
             </div>
+            <span className={styles.composerSync}>
+              {showSyncStatus && draft.status === "Connected" && (
+                <span
+                  role="status"
+                  aria-label="Syncing edits…"
+                  title="Syncing edits…"
+                >
+                  <CircleNotch
+                    className={styles.threadRunning}
+                    aria-hidden="true"
+                  />
+                </span>
+              )}
+            </span>
           </div>
           <div>
             <Button
@@ -963,26 +986,7 @@ export function Composer({
             >
               <DotsThree />
             </Button>
-            <div className={styles.composerOptions} data-open={mobileOptions}>
-              {controls}
-            </div>
-            {busy && hasInput && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={styles.secondaryStop}
-                aria-label={stopLabel}
-                title={
-                  cancellation.request?.message ??
-                  "Stop this operation without discarding your draft"
-                }
-                disabled={!canStop}
-                loading={stopping}
-                onClick={() => void stop()}
-              >
-                <Stop weight="fill" />
-              </Button>
-            )}
+            {controls?.(mobileOptions)}
             <Button
               ref={sendButton}
               size="icon"

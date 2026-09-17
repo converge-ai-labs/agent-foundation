@@ -91,6 +91,13 @@ const curatedBrands: Record<string, Brand> = {
   },
   brave: { icon: `${lobeIconsCdn}brave-color.svg` },
   exa: { icon: `${lobeIconsCdn}exa-color.svg` },
+  duckduckgo: { icon: "https://cdn.simpleicons.org/duckduckgo" },
+  parallel: { icon: "https://parallel.ai/favicon.ico" },
+  tavily: { icon: `${lobeIconsCdn}tavily-color.svg` },
+  firecrawl: { icon: `${lobeIconsCdn}firecrawl-color.svg` },
+  jina: { icon: `${lobeIconsCdn}jina.svg` },
+  perplexity: { icon: `${lobeIconsCdn}perplexity-color.svg` },
+  serpapi: { icon: "https://serpapi.com/favicon.ico" },
   openai: { icon: `${lobeIconsCdn}openai.svg`, invertInDark: true },
   anthropic: { icon: `${lobeIconsCdn}anthropic.svg`, invertInDark: true },
   google_gemini: { icon: `${lobeIconsCdn}gemini-color.svg` },
@@ -103,10 +110,10 @@ const curatedBrands: Record<string, Brand> = {
   deepseek: { icon: `${lobeIconsCdn}deepseek-color.svg` },
   moonshot: { icon: `${lobeIconsCdn}kimi-color.svg` },
   zhipu: { icon: `${lobeIconsCdn}zhipu-color.svg` },
-  "a13n.docker": {
+  docker: {
     icon: "https://cdn.jsdelivr.net/gh/devicons/devicon@v2.17.0/icons/docker/docker-original.svg",
   },
-  "a13n.e2b": { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
+  e2b: { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
 };
 
 export const brands = mergeBrandCatalogs(lobeBrands, curatedBrands);

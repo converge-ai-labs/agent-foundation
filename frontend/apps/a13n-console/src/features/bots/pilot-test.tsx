@@ -50,7 +50,10 @@ export function PilotTest({
   });
   const enabled =
     targets.data?.filter(
-      (item) => item.receive_enabled && item.target_kind === "conversation",
+      (item) =>
+        item.receive_enabled &&
+        item.target_kind ===
+          (account.provider_key === "github" ? "repository" : "conversation"),
     ) ?? [];
   const target = enabled.length === 1 ? enabled[0] : undefined;
   const create = useMutation({
@@ -72,7 +75,20 @@ export function PilotTest({
   const test = observation.data?.latest;
   return (
     <section>
-      <h2>{t("Test in your pilot conversation")}</h2>
+      <h2>
+        {t(
+          account.provider_key === "github"
+            ? "Test in your pilot repository"
+            : "Test in your pilot conversation",
+        )}
+      </h2>
+      {account.provider_key === "github" && (
+        <p>
+          {t(
+            "Post the test text as an Issue or PR comment in the pilot repository. For polling, mention the connected GitHub account and allow at least one polling interval. Use an allowed sender account.",
+          )}
+        </p>
+      )}
       <p>
         {t(
           "Prepare a test message, then send it yourself in the pilot conversation. Sending it invokes your agent and may consume model usage.",

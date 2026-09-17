@@ -13,6 +13,7 @@ from a13n_service.connectivity.connectors.providers.composio.runtime import Comp
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from a13n_service.models.provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
 from a13n_service.web.adapters import BoundWebProviderRuntime
+from a13n_service.web.providers import SCRAPE, SEARCH
 
 from .api import ConnectorProviderRegistration, ProviderPluginRegistry, WebProviderRegistration
 
@@ -52,19 +53,27 @@ def register(registry: ProviderPluginRegistry) -> None:
             ),
         )
     )
-    for provider_type, display_name, setup_url, search, scrape in (
-        ("brave", "Brave Search", "https://api-dashboard.search.brave.com/", True, False),
-        ("exa", "Exa", "https://dashboard.exa.ai/api-keys", True, True),
+    for provider_type, display_name, setup_url, key_required in (
+        ("brave", "Brave Search", "https://api-dashboard.search.brave.com/", True),
+        ("exa", "Exa", "https://dashboard.exa.ai/api-keys", True),
+        ("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/", False),
+        ("parallel", "Parallel", "https://platform.parallel.ai/", True),
+        ("tavily", "Tavily", "https://app.tavily.com/", True),
+        ("firecrawl", "Firecrawl", "https://www.firecrawl.dev/app", True),
+        ("jina", "Jina", "https://jina.ai/reader/", True),
+        ("perplexity", "Perplexity", "https://www.perplexity.ai/settings/api", True),
+        ("serpapi", "SerpApi", "https://serpapi.com/manage-api-key", True),
     ):
         registry.web.register(
             WebProviderRegistration(
                 type=provider_type,
                 display_name=display_name,
                 configuration_model=EmptyConfiguration,
-                credential_model=ApiKeyCredential,
+                credential_model=ApiKeyCredential if key_required else EmptyConfiguration,
+                credential_required=key_required,
                 setup_url=setup_url,
                 factory=lambda provider_type=provider_type: BoundWebProviderRuntime(provider_type),
-                supports_search=search,
-                supports_scrape=scrape,
+                supports_search=provider_type in SEARCH,
+                supports_scrape=provider_type in SCRAPE,
             )
         )

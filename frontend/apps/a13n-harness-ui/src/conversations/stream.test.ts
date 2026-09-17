@@ -1,5 +1,15 @@
-import { expect, it, vi } from "vitest";
-import type { Schema, Transport } from "../transport/client";
+import { afterEach, expect, it, vi } from "vitest";
+import { createTransport, type Schema } from "../transport/client";
+import { mockWebSocket, FakeWebSocket } from "../../tests/fake-websocket";
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+function connectedTransport() {
+  vi.stubGlobal("window", { location: { origin: "http://localhost" } });
+  const socket = mockWebSocket();
+  return { socket, transport: createTransport("", vi.fn()) };
+}
 import {
   FocusDisplay,
   focusFrame,
@@ -211,41 +221,9 @@ it("reboots through a root Run and checkpoint race while retaining its authorita
   second.snapshot.thread.continuation_id = "C1";
   second.snapshot.root_stream!.base_continuation_id = "C1";
   second.snapshot.root_stream!.run_id = "run-two";
-  const response = (frames: unknown[]) =>
-    new Response(
-      frames.map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join(""),
-    );
-  const fetch = vi
-    .fn()
-    .mockResolvedValueOnce(
-      response([first, { kind: "ready", resume_cursor: "C0-ready" }, next]),
-    );
-  fetch.mockResolvedValueOnce(
-    response([{ kind: "reset", reason: "live_snapshot_changed" }]),
-  );
-  fetch.mockResolvedValueOnce(
-    response([
-      second,
-      {
-        kind: "root_stream",
-        run_id: "run-two",
-        events: [
-          {
-            index: 0,
-            event_type: "TEXT_MESSAGE_CONTENT",
-            payload: {
-              message_id: "unsaved",
-              delta: "Retained failed output",
-            },
-            payload_omitted: false,
-          },
-        ],
-      },
-      { kind: "ready", resume_cursor: "C1-ready" },
-    ]),
-  );
+  const { socket, transport } = connectedTransport();
   const close = watchThread(
-    { fetch } as unknown as Transport,
+    transport,
     "thread-one",
     display,
     vi.fn(),
@@ -253,11 +231,31 @@ it("reboots through a root Run and checkpoint race while retaining its authorita
     vi.fn(),
   );
   try {
-    await vi.advanceTimersByTimeAsync(10);
-    expect(fetch).toHaveBeenCalledTimes(3);
-    expect(fetch.mock.calls.map((call) => call[0])).toEqual(
-      Array(3).fill("/api/threads/thread-one/events"),
-    );
+    socket().open();
+    socket().frame(first);
+    socket().frame({ kind: "ready", resume_cursor: "C0-ready" });
+    socket().frame(next);
+    await vi.advanceTimersByTimeAsync(1);
+    socket().frame({ kind: "reset", reason: "live_snapshot_changed" });
+    await vi.advanceTimersByTimeAsync(1);
+    socket().frame(second);
+    socket().frame({
+      kind: "root_stream",
+      run_id: "run-two",
+      events: [
+        {
+          index: 0,
+          event_type: "TEXT_MESSAGE_CONTENT",
+          payload: { message_id: "unsaved", delta: "Retained failed output" },
+          payload_omitted: false,
+        },
+      ],
+    });
+    socket().frame({ kind: "ready", resume_cursor: "C1-ready" });
+    expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(
+      socket().sent.filter((item) => item.kind === "subscribe"),
+    ).toHaveLength(3);
     expect(display.runId).toBe("run-two");
     expect(display.baseContinuation).toBe("C1");
     expect(display.snapshot!.thread.thread.root_activity.state).toBe(
@@ -896,18 +894,12 @@ it("publishes a replacement snapshot only after its complete replay, retaining t
   display.accept(snapshot(0));
   display.accept(focusFrame({ kind: "ready", resume_cursor: "original" }));
   display.accept(event(110, "Original complete output"));
-  let controller!: ReadableStreamDefaultController<Uint8Array>;
-  const stream = new ReadableStream<Uint8Array>({
-    start(value) {
-      controller = value;
-    },
-  });
+  vi.useFakeTimers();
+  const { socket, transport } = connectedTransport();
   const changed = vi.fn();
   const invalidate = vi.fn();
   const close = watchThread(
-    {
-      fetch: vi.fn().mockResolvedValue(new Response(stream)),
-    } as unknown as Transport,
+    transport,
     "thread-one",
     display,
     changed,
@@ -915,13 +907,13 @@ it("publishes a replacement snapshot only after its complete replay, retaining t
     invalidate,
   );
   const frame = async (value: unknown) => {
-    controller.enqueue(
-      new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`),
-    );
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    socket().frame(value);
   };
   try {
+    socket().open();
     await frame({ kind: "reset", reason: "expired" });
+    await vi.advanceTimersByTimeAsync(1000);
+    changed.mockClear();
     await frame(snapshot(2));
     expect([...display.blocks.values()][0].text).toBe(
       "Original complete output",
@@ -964,7 +956,7 @@ it("publishes a replacement snapshot only after its complete replay, retaining t
     expect(invalidate).toHaveBeenCalledWith("reconcile");
   } finally {
     close();
-    controller.close();
+    transport.close();
   }
 });
 
@@ -1005,10 +997,10 @@ it("does not resume an interrupted replacement using the old cursor", async () =
   display.accept(snapshot(0));
   display.accept(focusFrame({ kind: "ready", resume_cursor: "old" }));
   display.accept(event(110, "Retained"));
-  const body = `data: ${JSON.stringify(snapshot(2))}\n\n`;
-  const fetch = vi.fn().mockResolvedValue(new Response(body));
+  vi.useFakeTimers();
+  const { socket, transport } = connectedTransport();
   const close = watchThread(
-    { fetch } as unknown as Transport,
+    transport,
     "thread-one",
     display,
     vi.fn(),
@@ -1016,12 +1008,14 @@ it("does not resume an interrupted replacement using the old cursor", async () =
     vi.fn(),
   );
   try {
-    await vi.waitFor(() => expect(display.cursor).toBeUndefined());
+    socket().open();
+    socket().frame(snapshot(2));
+    expect(display.cursor).toBeUndefined();
     expect([...display.blocks.values()][0].text).toBe("Retained");
-    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2), {
-      timeout: 2000,
-    });
-    expect(fetch.mock.calls[1][0]).toBe("/api/threads/thread-one/events");
+    socket().close();
+    await vi.advanceTimersByTimeAsync(1000);
+    socket().open();
+    expect(socket().sent.at(-1)?.after).toBeNull();
   } finally {
     close();
   }
@@ -1045,14 +1039,10 @@ it.each([false, true])(
       replacement,
       ...(nextRun ? [{ kind: "ready", resume_cursor: "new-ready" }] : []),
     ];
-    const body = frames
-      .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
-      .join("");
+    const { socket, transport } = connectedTransport();
     const invalidate = vi.fn();
     const close = watchThread(
-      {
-        fetch: vi.fn().mockResolvedValue(new Response(body)),
-      } as unknown as Transport,
+      transport,
       "thread-one",
       display,
       vi.fn(),
@@ -1060,9 +1050,9 @@ it.each([false, true])(
       invalidate,
     );
     try {
-      await vi.waitFor(() =>
-        expect(invalidate).toHaveBeenCalledWith("reconcile"),
-      );
+      socket().open();
+      frames.forEach((frame) => socket().frame(frame));
+      expect(invalidate).toHaveBeenCalledWith("reconcile");
       expect(display.cursor).toBe(nextRun ? "new-ready" : "cursor-one");
       expect(display.runId).toBe(nextRun ? "run-two" : undefined);
       // Deferred and failed history reads still select the last successful page.
@@ -1200,17 +1190,10 @@ it("backs off repeated snapshot races after one immediate retry while retaining 
     kind: "assistant",
     text: "Keep this output",
   });
-  const fetch = vi
-    .fn()
-    .mockImplementation(
-      async () =>
-        new Response(
-          `data: ${JSON.stringify({ kind: "reset", reason: "live_snapshot_changed" })}\n\n`,
-        ),
-    );
+  const { socket, transport } = connectedTransport();
   const connection = vi.fn();
   const close = watchThread(
-    { fetch } as unknown as Transport,
+    transport,
     "thread-one",
     display,
     vi.fn(),
@@ -1218,16 +1201,24 @@ it("backs off repeated snapshot races after one immediate retry while retaining 
     vi.fn(),
   );
   try {
-    await vi.advanceTimersByTimeAsync(10);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(connection).toHaveBeenLastCalledWith("Reconnecting");
+    socket().open();
+    const reset = () =>
+      socket().frame({ kind: "reset", reason: "live_snapshot_changed" });
+    const count = () =>
+      socket().sent.filter((item) => item.kind === "subscribe").length;
+    reset();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(count()).toBe(2);
+    reset();
     expect(display.blocks.get("kept")?.text).toBe("Keep this output");
     await vi.advanceTimersByTimeAsync(1000);
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(count()).toBe(3);
+    reset();
     await vi.advanceTimersByTimeAsync(1000);
-    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(count()).toBe(3);
     await vi.advanceTimersByTimeAsync(1000);
-    expect(fetch).toHaveBeenCalledTimes(4);
+    expect(count()).toBe(4);
+    expect(FakeWebSocket.instances).toHaveLength(1);
   } finally {
     close();
     vi.useRealTimers();

@@ -8,6 +8,7 @@ from a13n_harness_ui.errors import StoreIntegrityError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import ObjectKind, ObjectRef, open_local_store
+from a13n_harness_ui.storage.contracts import ThreadReadModel
 from anyio import Event, fail_after
 from pydantic_ai.models.function import FunctionModel
 
@@ -36,6 +37,7 @@ async def test_touch_is_monotonic_and_independent_from_checkpoints_metadata_and_
             replacement=ObjectRef(
                 object_kind=ObjectKind.continuation, object_schema_version="1", logical_digest="2" * 64
             ),
+            read_model=ThreadReadModel(),
             updated_at=start + timedelta(seconds=10),
         )
         await store.threads.update_metadata(
@@ -98,7 +100,8 @@ async def test_http_shows_six_active_roots_plus_five_recent_without_progress_reo
             assert first["total"] == 13
             assert first["next_cursor"]
             tail = (await api.get("/api/threads/activity", params={**params, "cursor": first["next_cursor"]})).json()
-            assert len(tail["active_rows"]) == 6
+            assert tail["active_rows"] == []
+            assert tail["total"] == first["total"]
             assert [r["thread"]["thread_id"] for r in tail["rows"]] == idle[::-1][5:]
             assert tail["next_cursor"] is None
             # A cursor for the separated view cannot be consumed by the ordinary list.

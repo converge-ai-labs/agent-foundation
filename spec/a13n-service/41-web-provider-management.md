@@ -37,14 +37,19 @@ class WebProviderDefinition:
 
 The operation list describes only capabilities implemented by this integration. `supports_restricted_scrape` is true only when an adapter can enforce requested-content restrictions throughout a remote scrape. It is not inferred from an input or returned URL check.
 
-| Type    | search | scrape | Restricted scrape | Fixed API               |
-| ------- | ------ | ------ | ----------------- | ----------------------- |
-| `brave` | Yes    | No     | No                | Brave Web Search        |
-| `exa`   | Yes    | Yes    | No                | Exa Search and Contents |
+| Type         | Search | Scrape | Credential | Fixed API                      |
+| ------------ | ------ | ------ | ---------- | ------------------------------ |
+| `brave`      | Yes    | No     | API key    | Brave Web Search               |
+| `exa`        | Yes    | Yes    | API key    | Exa Search and Contents        |
+| `duckduckgo` | Yes    | No     | None       | DuckDuckGo HTML search         |
+| `parallel`   | Yes    | Yes    | API key    | Parallel Search and Extract    |
+| `tavily`     | Yes    | Yes    | API key    | Tavily Search and Extract      |
+| `firecrawl`  | Yes    | Yes    | API key    | Firecrawl Search and Scrape    |
+| `jina`       | Yes    | Yes    | API key    | Jina Search and Reader         |
+| `perplexity` | Yes    | No     | API key    | Perplexity Search              |
+| `serpapi`    | Yes    | No     | API key    | SerpApi Google organic results |
 
-Both initial types require a write-only `{ "api_key": string }` credential object and accept an empty configuration object. Requests use fixed official HTTPS endpoints and reject caller-supplied endpoints, headers, proxies, crawl controls, or credential references. Exa Contents receives exactly the requested URL; the adapter does not enable subpage crawling. Its `text.maxCharacters` request bound is one character above the effective output budget so local truncation remains observable, while the adapter independently enforces the UTF-8 output limit and a finite JSON wire limit sized for worst-case escaping plus bounded envelope overhead. Search produces result records rather than answers or a second Model call. Scrape produces provider-processed text and does not promise raw HTML. Selected external types supply their own bounded typed configuration and credential object schemas and their own explicit operation flags.
-
-Catalog schemas are self-contained and bounded, with no executable transformations or remote references. Setup links are implementation-owned HTTPS URLs, not request destinations. The complete catalog rejects duplicate types, malformed schemas, unsupported operation declarations, and invalid setup links at startup. Runtime factories create fresh operation-scoped adapters and close them on success, failure, or cancellation. No account, default selection, fallback account, or runtime package is created automatically.
+All built-ins accept an empty configuration object. Keyed types require a write-only `{ "api_key": string }` credential object; DuckDuckGo accepts no credential. DuckDuckGo's Instant Answer JSON API does not provide general web search results, so its adapter parses HTML search results. Jina search requires a key; this integration uses the same saved key for Reader. Requests use fixed official HTTPS endpoints and reject caller-supplied endpoints, headers, proxies, crawl controls, or credential references. All built-in remote scrapers reject restricted scrape because their upstream fetches cannot enforce those domains throughout. Exa Contents receives exactly the requested URL without subpage crawling. Its `text.maxCharacters` request bound is one character above the effective output budget so local truncation remains observable. Every adapter independently enforces the UTF-8 output limit and a finite wire limit. Search produces result records rather than answers or a second Model call. Scrape produces provider-processed text and does not promise raw HTML. Selected external types supply their own bounded typed configuration and credential object schemas and explicit operation flags.
 
 ## Web Provider Resource
 
@@ -66,7 +71,7 @@ class WebProvider:
 
 `WebProviderId` uses the `wprov` prefix. Identity, ownership, and type are immutable. Organization Providers are visible in eligible Workspaces; Workspace Providers are local. Sibling-Workspace and cross-Organization references are concealed. Names are normalized and unique within the owning scope.
 
-Create accepts type, name, configuration, enabled state, and a separate write-only credential object validated by the selected implementation. Reads expose only `credential_configured`. PATCH can replace name, configuration, enabled state, or credential under a strong ETag. Omission retains a credential; the initial types reject null or blank API keys. Disablement retains encrypted material and references. Credential rotation advances the resource without rewriting Agent Revisions.
+Create accepts type, name, configuration, enabled state, and a separate write-only credential object when required by the selected implementation. Reads expose only `credential_configured`. PATCH can replace name, configuration, enabled state, or credential under a strong ETag. Omission retains a credential; keyed types reject null or blank API keys; credential-free types reject supplied credentials. Disablement retains encrypted material and references. Credential rotation advances the resource without rewriting Agent Revisions.
 
 All operations use short database sessions and the shared resource-owned protection primitive. Credentials never enter logs, model context, Agent configuration, Run payloads, portable Harness state, or ordinary responses. Scope cleanup destroys encrypted material while retained audit and execution identities keep their historical meaning.
 
@@ -92,7 +97,7 @@ class DownloadToolConfiguration(DomainRestrictions):
 
 The Web Toolset owns `search`, `scrape`, `fetch`, and `download` Tool selections. Its group and children default disabled. Search and scrape choose accounts independently. They may explicitly reference the same account or different accounts, but never share mutable authenticated bindings. Fetch and download have no Provider ID, backend name, credential, or Provider authorization dependency.
 
-Authoring validates visible ownership, enabled state, credential presence, and operation compatibility for each selected Provider. Brave is rejected for scrape. Restricted Exa scrape is rejected with `web_scrape_domain_restrictions_unsupported`. Built-in-only selections require no Provider account. No validation request is sent to a vendor.
+Authoring validates visible ownership, enabled state, credential presence for keyed types, and operation compatibility for each selected Provider. Search-only types are rejected for scrape. Restricted built-in remote scrape is rejected with `web_scrape_domain_restrictions_unsupported`. Built-in-only selections require no Provider account. No validation request is sent to a vendor.
 
 Run overrides replace the complete `web` Toolset entry when supplied; omission inherits and `enabled=false` disables it while retaining child settings. Accepted Runs freeze normalized values and stable Provider IDs, not credentials or Provider configuration. Recovery and Retry retain the accepted values; current account eligibility is rechecked at execution.
 
@@ -108,7 +113,7 @@ Every operation owns independent `allow_domains` and `deny_domains` lists. These
 
 Search always filters returned result URLs locally, preserves provider order, and may return fewer or zero results. Equivalent native filters may be sent upstream only as an optimization; they do not control a vendor's internal crawl or index.
 
-Scrape checks its input URL before Provider dispatch. Restricted remote scrape is available only when its adapter explicitly guarantees enforcement throughout the operation. Exa does not, so restricted Exa selection fails before dispatch; Service does not probe with built-in HTTP, inspect only the final URL, or fall back to fetch.
+Scrape checks its input URL before Provider dispatch. Restricted remote scrape is available only when its adapter explicitly guarantees enforcement throughout the operation. No built-in remote scraper does, so restricted selection fails before dispatch; Service does not probe with built-in HTTP, inspect only the final URL, or fall back to fetch.
 
 Built-in fetch and download check their own input and every redirect before DNS or network I/O. They retain endpoint validation, public-address enforcement, address pinning, original Host/TLS identity, bounded redirects, and per-hop authorization. One operation's rules never apply to a sibling. These controls do not regulate shell, plugin, Connector, client-tool, or arbitrary MCP egress.
 
@@ -156,7 +161,7 @@ The API uses standard pagination, strong ETags, idempotency behavior, safe error
 2. Search and scrape select compatible accounts independently; fetch and download are built-in and credential-free.
 3. Search, scrape, and fetch work without an Environment; only download needs Environment file access at its call.
 4. Domain restrictions have one normalized allow/deny contract, local search filtering, and deny precedence.
-5. Restricted Exa scrape and Brave scrape fail before Provider dispatch, with no fallback.
+5. Restricted built-in remote scrape and scrape on a search-only type fail before Provider dispatch, with no fallback.
 6. Every credential acquisition and disclosure applies current authority without holding database state across external I/O.
 7. Revision, Run, child, retry, continuation, and recovery paths retain each node's accepted selection and create fresh live bindings.
 8. APIs and Native SDKs preserve typed Web selection, omission/null/replacement, ETags, redaction, and safe failures.

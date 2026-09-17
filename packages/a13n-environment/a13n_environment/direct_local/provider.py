@@ -35,7 +35,7 @@ from .configuration import DirectLocalProviderConfiguration
 from .files import LocalFileOperator
 from .processes import LocalPortOperator, LocalProcessManager, LocalShell
 
-_PROVIDER_KEY = "a13n.direct-local"
+_PROVIDER_KEY = "direct-local"
 
 
 @dataclass(frozen=True, slots=True)

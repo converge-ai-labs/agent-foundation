@@ -198,11 +198,18 @@ export function useHistory(
   threadId: string,
   continuation: string | null | undefined,
   enabled: boolean,
+  turnId?: string,
 ) {
   const { client } = useTransport();
   const queries = useQueryClient();
   const query = useInfiniteQuery({
-    queryKey: ["thread", threadId, "history", continuation],
+    queryKey: [
+      "thread",
+      threadId,
+      "history",
+      continuation,
+      ...(turnId ? [turnId] : []),
+    ],
     enabled,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
@@ -213,6 +220,7 @@ export function useHistory(
             query: {
               expected_continuation_id: continuation ?? undefined,
               cursor: pageParam,
+              turn_id: turnId,
               limit: 30,
             },
           },
@@ -220,6 +228,7 @@ export function useHistory(
         }),
       ),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
+    getPreviousPageParam: (first) => first.newer_cursor ?? undefined,
   });
   // Keep the last successful history, with its real continuation identity, while
   // a replacement loads or fails. Query placeholder data disappears on errors.

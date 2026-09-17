@@ -6,6 +6,8 @@ on:
     paths:
       - ".github/**"
       - "Makefile"
+      - ".pre-commit-config.yaml"
+      - ".mdformat.toml"
       - "pyproject.toml"
       - "uv.lock"
       - "scripts/check-release-version.py"
@@ -32,6 +34,8 @@ on:
     paths:
       - ".github/**"
       - "Makefile"
+      - ".pre-commit-config.yaml"
+      - ".mdformat.toml"
       - "pyproject.toml"
       - "uv.lock"
       - "scripts/check-release-version.py"

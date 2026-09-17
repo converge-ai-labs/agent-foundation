@@ -228,6 +228,7 @@ from a13n_harness_ui.surfaces import (
     SkillReference,
     TaskPage,
     ThreadActivityPage,
+    ThreadActivityView,
     ThreadConfigurationMutationInput,
     ThreadConfigurationResolution,
     ThreadDeferredResponse,
@@ -237,6 +238,7 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSelectorCatalog,
     ThreadSummary,
+    TranscriptInputPage,
     TranscriptPage,
 )
 from a13n_harness_ui.terminal_projection import TerminalProjectionService
@@ -1200,6 +1202,10 @@ class HarnessUiApp:
         async with self._operation():
             return await self._output_comments.child_outputs(parent_thread_id, execution_id, cursor=cursor, limit=limit)
 
+    async def lookup_thread_activity(self, *, thread_ids: tuple[str, ...]) -> tuple[ThreadActivityView, ...]:
+        async with self._operation():
+            return await self._terminal_projections.lookup_thread_activity(thread_ids)
+
     async def lookup_threads(self, *, thread_ids: tuple[str, ...]) -> ThreadPage:
         async with self._operation():
             return await self._projections.lookup_threads(thread_ids)
@@ -1211,9 +1217,27 @@ class HarnessUiApp:
         expected_continuation_id: str | None = None,
         cursor: str | None = None,
         limit: int = 50,
+        turn_id: str | None = None,
     ) -> TranscriptPage:
         async with self._operation():
             return await self._projections.transcript(
+                thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
+                cursor=cursor,
+                limit=limit,
+                turn_id=turn_id,
+            )
+
+    async def get_thread_inputs(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> TranscriptInputPage:
+        async with self._operation():
+            return await self._projections.transcript_inputs(
                 thread_id=thread_id,
                 expected_continuation_id=expected_continuation_id,
                 cursor=cursor,
@@ -1523,6 +1547,18 @@ class HarnessUiApp:
     async def prune_thread_files(self) -> tuple[str, ...]:
         async with self._operation():
             return await self._thread_files.prune()
+
+    async def _maintain_read_models(self) -> None:
+        while True:
+            try:
+                repaired = await self._store.repair_read_models()
+                for thread_id in repaired:
+                    await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+                await self._store.refresh_object_count()
+            except Exception as exc:
+                # Query maintenance is repairable, not an App-lifetime task.
+                get_logger(__name__).warning("Read model maintenance failed", extra={"error_type": type(exc).__name__})
+            await sleep(30)
 
     async def _prune_thread_files_periodically(self) -> None:
         while True:
@@ -2517,6 +2553,7 @@ async def open_harness_ui_app(
                 async with create_task_group() as background:
                     app._logins = LoginSessions(background, app._account)
                     background.start_soon(app._prune_thread_files_periodically)
+                    background.start_soon(app._maintain_read_models)
                     if web_push is not None:
                         background.start_soon(web_push.run)
                     if configuration_path is not None:

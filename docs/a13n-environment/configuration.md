@@ -36,15 +36,17 @@ Runtime selection owns daemon binary/bootstrap and process construction. Desired
 
 ## Docker
 
-`DockerProviderConfiguration` uses an Envd-free image and native Docker exec. The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:latest`; select a deployment-owned digest for exact image identity. `pull_policy` is `if_missing`, `always`, or `never`.
+`DockerProviderConfiguration` uses an Envd-free image and native Docker exec. The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`; select an immutable digest when exact image identity matters. Docker uses a local image when present and pulls only when absent. Rebuilding or pulling a tag does not recreate an existing Environment container.
 
 The private container filesystem supplies `/workspace`. Optional host mounts have an existing absolute `source`, container `target`, and `read_only` flag (default true). They cannot replace `/workspace` or private command metadata. Named volumes are not a template option; external host data is preserved on destruction.
 
-`cpus` measures CPU cores; `memory_mib` measures MiB; `pids_limit` bounds processes. `environment` sets ordinary variables. `init_script` runs only on a new container, and failed initialization is not implicitly replayed. Do not store secrets in these template fields. `disable_network` is off by default and selects Docker's `none` network when enabled.
+`cpus` measures CPU cores; `memory_gb` measures decimal GB (1 GB = 1,000,000,000 bytes) with a 6 MiB minimum (0.006291456 GB); `pids_limit` bounds processes. `environment` sets ordinary variables. `init_script` runs only on a new container, and failed initialization is not implicitly replayed. Do not store secrets in these template fields. `disable_network` is off by default and selects Docker's `none` network when enabled.
 
-Advanced options include user, shell, Python executable, stop grace (ten seconds), request timeout (60 seconds), file values (16 MiB), output previews (64 KiB), captured bytes per stream (16 MiB), aggregate observation/retention budgets (64 MiB each), and concurrent process observations (128). Custom images need Linux, Python 3.11+, the configured shell, writable `/workspace` and `/tmp`, and Git for git-ignore queries.
+Advanced options include user, shell, Python executable, stop grace (ten seconds), per-helper request timeout (60 seconds; includes init scripts, not Agent Runs or ordinary shell duration), file values (16 MiB), output previews (64 KiB), captured bytes per stream (16 MiB), aggregate observation/retention budgets (64 MiB each), and concurrent process observations (128). Custom images need Linux, Python 3.10+, the configured shell, writable `/workspace` and `/tmp/a13n`; Git is required only for git-ignore queries.
 
-`DockerBackendConfiguration.docker_host` selects the Engine socket. Worker restarts must reach that same Engine. Service permits Docker only in `deployment.mode = "single_host"`; its shipped Compose uses a dedicated DinD Engine, without mounting the host socket.
+`DockerBackendConfiguration.docker_host` selects the Engine socket. Worker restarts must reach that same Engine. Service permits Docker only in `deployment.mode = "single_host"`; the shipped Compose mounts the host socket and grants its non-root Service process access.
+
+Use **Test image** beside the template image field before saving when checking a custom image. The test runs on the selected Worker Engine and returns the exact image ID used by the temporary container plus file, command/output, and process-control checks. It omits the init script and external mounts; leaving the editor or changing the draft sends an explicit cancellation request. The Provider details show Engine connectivity separately from whether the Provider is enabled. Normal Environment creation still checks requirements even if no manual test ran.
 
 ## E2B
 

@@ -325,7 +325,83 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   query.clear();
 });
 
-it("keeps Stop available beside authored Steer, preserves input, and never cancels from a submission shortcut", async () => {
+it.each([false, true])(
+  "shows delayed shared edits as an inline icon and retains disconnect warnings (local: %s)",
+  async (local) => {
+    vi.useFakeTimers();
+    const draft = new ThreadDraft();
+    vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+    const acknowledge = () =>
+      draft.receive({
+        draft_id: "draft-one",
+        participant_id: "p-one",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+      });
+    acknowledge();
+    const query = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={query}>
+        <TransportContext
+          value={{ client: { GET: vi.fn() } } as unknown as Transport}
+        >
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <Composer
+              local={local}
+              threadId="thread-one"
+              activity={{ state: "inactive" }}
+              canRun
+              leadingControls={<span>Full Control</span>}
+              profile={{ display_name: "Alice", color: "#2563eb" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    try {
+      const options = screen.getByText("Full Control").parentElement!;
+      const slot = options.nextElementSibling;
+      act(() => draft.doc.getText("text").insert(0, "Pending edit"));
+      await act(() => vi.advanceTimersByTimeAsync(699));
+      expect(screen.queryByRole("status")).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      if (local) {
+        expect(screen.queryByRole("status")).toBeNull();
+      } else {
+        const status = screen.getByRole("status", { name: "Syncing edits…" });
+        expect(slot?.contains(status)).toBe(true);
+        expect(status.textContent).toBe("");
+        expect(status.title).toBe("Syncing edits…");
+        expect(status.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      }
+      act(acknowledge);
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(options.nextElementSibling).toBe(slot);
+      act(() => {
+        draft.status = "Disconnected";
+        draft.notify();
+      });
+      await act(() => vi.advanceTimersByTimeAsync(700));
+      if (local) expect(screen.queryByRole("status")).toBeNull();
+      else
+        expect(
+          screen
+            .getByText("Disconnected · your edits are still in this tab")
+            .getAttribute("role"),
+        ).toBe("status");
+    } finally {
+      view.unmount();
+      query.clear();
+      vi.useRealTimers();
+    }
+  },
+);
+
+it("switches one action between Stop and Steer without cancelling from a submission shortcut", async () => {
   const draft = new ThreadDraft();
   vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
   draft.receive({
@@ -374,8 +450,23 @@ it("keeps Stop available beside authored Steer, preserves input, and never cance
   fireEvent.keyDown(editor, { key: "Enter", ctrlKey: true });
   expect(post).not.toHaveBeenCalled();
   act(() => draft.doc.getText("text").insert(0, "Change direction"));
-  expect(screen.getByRole("button", { name: "Steer" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  expect(screen.getAllByRole("button", { name: "Steer" })).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  act(() =>
+    draft.doc.getText("text").delete(0, draft.doc.getText("text").length),
+  );
+  let attachmentKey!: string;
+  act(() => {
+    attachmentKey = draft.addAttachment("pending");
+  });
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  expect(
+    (screen.getByRole("button", { name: "Steer" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  act(() => draft.removeAttachment(attachmentKey));
+  act(() => draft.doc.getText("text").insert(0, " \n "));
+  expect(screen.queryByRole("button", { name: "Steer" })).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith("/api/operations/{receipt_id}/cancel", {
@@ -386,11 +477,12 @@ it("keeps Stop available beside authored Steer, preserves input, and never cance
   await waitFor(() =>
     expect(screen.getByRole("status").textContent).toContain("Stopping"),
   );
-  expect(values(draft.doc).prompt).toBe("Change direction");
   expect(
     (screen.getByRole("button", { name: "Stopping" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
+  act(() => draft.doc.getText("text").insert(0, "Next instruction"));
+  expect(screen.queryByRole("button", { name: "Stopping" })).toBeNull();
   expect(
     (screen.getByRole("button", { name: "Steer" }) as HTMLButtonElement)
       .disabled,
@@ -509,6 +601,7 @@ it.each(["send", "steer"] as const)(
   async (action) => {
     const draft = new ThreadDraft();
     draft.thinking = false;
+    draft.fast = false;
     draft.doc.getText("text").insert(0, "Use $review $review $unknown");
     draft.status = "Connected";
     draft.receive({
@@ -548,6 +641,7 @@ it.each(["send", "steer"] as const)(
       undefined,
       async () => {
         draft.thinking = "high";
+        draft.fast = true;
         draft.doc
           .getText("text")
           .insert(draft.doc.getText("text").length, " later");
@@ -567,6 +661,8 @@ it.each(["send", "steer"] as const)(
     if (action === "send")
       expect(POST.mock.calls[0][1].body.thinking).toBe(false);
     else expect(POST.mock.calls[0][1].body).not.toHaveProperty("thinking");
+    if (action === "send") expect(POST.mock.calls[0][1].body.fast).toBe(false);
+    else expect(POST.mock.calls[0][1].body).not.toHaveProperty("fast");
     expect(values(draft.doc).prompt).toBe(" later");
   },
 );
@@ -753,7 +849,9 @@ it.each(["restore", "other-field", "rejected"])(
     const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
     act(() => textbox.focus());
     fireEvent.keyDown(textbox, { key: "Enter" });
-    await screen.findByText("Sending…");
+    await screen.findByRole("button", { name: "Submitting" });
+    expect(screen.getByLabelText("Message stream").textContent).toBe("");
+    expect(values(draft.doc).prompt).toBe("Follow up");
     // jsdom does not implement inert's native blur, so simulate it explicitly.
     act(() => textbox.blur());
     const other = screen.getByRole("textbox", { name: "Other field" });
@@ -776,8 +874,13 @@ it.each(["restore", "other-field", "rejected"])(
       outcome === "rejected" ? "Follow up" : "",
     );
     expect(screen.queryByText("Sending…")).toBeNull();
-    if (outcome === "rejected")
-      expect(screen.getByText("Not sent · input retained")).toBeTruthy();
+    if (outcome === "rejected") {
+      expect(screen.getByText("Conversation busy")).toBeTruthy();
+      expect(screen.getByLabelText("Message stream").textContent).toBe("");
+    } else
+      expect(screen.getByLabelText("Message stream").textContent).toContain(
+        "Follow up",
+      );
     cleanup();
     query.clear();
   },
@@ -830,7 +933,7 @@ it("explains unavailable send conditions without consuming the authored draft", 
   query.clear();
 });
 
-it("stops while steering waits for synchronization without submitting or clearing that draft", async () => {
+it("keeps a single pending action while steering waits for synchronization", async () => {
   const draft = new ThreadDraft();
   vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
   draft.receive({
@@ -877,15 +980,25 @@ it("stops while steering waits for synchronization without submitting or clearin
   fireEvent.click(screen.getByRole("button", { name: "Steer" }));
   expect(draft.submission.kind).toBe("pending");
   expect(post).not.toHaveBeenCalled();
-  const stop = screen.getByRole("button", {
-    name: "Stop",
-  }) as HTMLButtonElement;
-  expect(stop.disabled).toBe(false);
-  fireEvent.click(stop);
-  await waitFor(() => expect(draft.submission.kind).toBe("rejected"));
+  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
+  expect(
+    (screen.getByRole("button", { name: "Submitting" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  act(() =>
+    draft.receive({
+      draft_id: "draft",
+      participant_id: "person",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    }),
+  );
+  await waitFor(() => expect(draft.submission.kind).toBe("accepted"));
   expect(post).toHaveBeenCalledTimes(1);
-  expect(post.mock.calls[0][0]).toBe("/api/operations/{receipt_id}/cancel");
-  expect(values(draft.doc).prompt).toBe("Keep this unsynchronized guidance");
+  expect(post.mock.calls[0][0]).toBe("/api/operations/{receipt_id}/steer");
+  expect(screen.getAllByRole("button", { name: "Stop" })).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Steer" })).toBeNull();
+  expect(values(draft.doc).prompt).toBe("");
   view.unmount();
   query.clear();
 });

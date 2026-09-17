@@ -34,6 +34,7 @@ from pydantic_ai.messages import (
 from pydantic_ai.models import ModelRequestContext
 
 _STATE_KEY = "a13n.harness-ui.display-history"
+_COMPLETED_KEY = "a13n.harness-ui.completed"
 
 
 class DisplayHistory(BaseModel):
@@ -55,9 +56,18 @@ class DisplayHistory(BaseModel):
     def messages(self) -> tuple[ModelMessage, ...]:
         return decode_messages(cast(bytes, self.messages_json))
 
+    @property
+    def completed_responses(self) -> tuple[int, ...]:
+        return tuple(
+            position
+            for position, message in enumerate(self.messages)
+            if isinstance(message, ModelResponse) and (message.metadata or {}).get(_COMPLETED_KEY) is True
+        )
+
     @model_validator(mode="after")
     def _valid_positions(self) -> Self:
-        message_count = len(self.messages)
+        messages = self.messages
+        message_count = len(messages)
         if any(
             position is not None and not 0 <= position < message_count
             for position in (*self.model_positions, self.pending_response_position)
@@ -129,6 +139,7 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
             raise ValueError("Display history does not match the selected model history")
         self._pending_response_position = saved.pending_response_position if saved is not None else None
         self._boundary = deepcopy(_context_boundary(model_history))
+        self._completed_responses = set(saved.completed_responses if saved is not None else ())
         self._active_run_id: str | None = None
         self._first_request = False
         self._operations: set[str] = {
@@ -196,7 +207,7 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
             else ModelResponse(parts=[TextPart(event.summary)], metadata={**metadata, "keep": "compact"})
         )
 
-    def capture(self, history: Sequence[ModelMessage]) -> DisplayHistory:
+    def capture(self, history: Sequence[ModelMessage], *, completed: bool = False) -> DisplayHistory:
         boundary = _context_boundary(history)
         if boundary != self._boundary:
             # Before-hooks have already captured the original messages. The new
@@ -243,6 +254,21 @@ class DisplayHistoryCollector(AbstractCapability[AgentContext]):
                         self._messages.append(deepcopy(message))
                 elif (position := self._positions[index]) is not None:
                     self._messages[position] = deepcopy(message)
+        if (
+            completed
+            and history
+            and isinstance(history[-1], ModelResponse)
+            and history[-1].state == "complete"
+            and (history[-1].metadata or {}).get("keep") != "compact"
+        ):
+            position = self._positions[-1]
+            if position is not None and any(isinstance(part, TextPart) for part in history[-1].parts):
+                self._completed_responses.add(position)
+        # Mark only inspection copies. Native model context and the version-1
+        # display envelope stay unchanged, including for older App readers.
+        for position in self._completed_responses:
+            message = self._messages[position]
+            message.metadata = {**(message.metadata or {}), _COMPLETED_KEY: True}
         return DisplayHistory(
             messages=tuple(self._messages),
             model_positions=tuple(self._positions),

@@ -8,12 +8,12 @@ LABEL org.opencontainers.image.title="a13n-docker-environment" \
       org.opencontainers.image.revision="${BUILD_REVISION}" \
       org.opencontainers.image.licenses="Apache-2.0"
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends bash git ca-certificates \
+    && apt-get install -y --no-install-recommends bash git nodejs npm ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd --gid 10001 sandbox \
     && useradd --uid 10001 --gid sandbox --create-home sandbox \
-    && mkdir /workspace \
-    && chown sandbox:sandbox /workspace
+    && mkdir -p /workspace /tmp/a13n \
+    && chown sandbox:sandbox /workspace /tmp/a13n
 USER sandbox
 WORKDIR /workspace
 # The Provider supplies init and replaces ENTRYPOINT/CMD for every container.

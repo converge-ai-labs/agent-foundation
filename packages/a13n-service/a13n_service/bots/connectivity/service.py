@@ -19,6 +19,10 @@ from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.connectivity.inspection import ConversationPage, InstallationInfo
 from a13n_service.connectivity.native_management import authorize, require_limit, require_version
+from a13n_service.connectivity.providers.github.inspection import discover_user
+from a13n_service.connectivity.providers.github.polling_config import POLLING_VERSION
+from a13n_service.connectivity.providers.github.polling_models import GitHubPollRecord
+from a13n_service.connectivity.providers.github.rest import GitHubREST
 from a13n_service.connectivity.providers.lark.client import LarkNativeClient
 from a13n_service.connectivity.providers.lark.token import LarkTenantTokenProvider
 from a13n_service.credentials import CredentialSnapshot
@@ -35,6 +39,7 @@ from .domain import (
     BotCheckRequest,
     BotSetup,
     DiscoverFeishuInstallationRequest,
+    DiscoverGitHubUserRequest,
 )
 from .history import BotThreadCollection, list_bot_threads
 from .models import BotCheckRecord
@@ -105,6 +110,27 @@ class BotService:
         async with transaction(self._sessions) as session:
             await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
         return installation
+
+    async def discover_github_user(
+        self, *, actor: AuthenticatedActor, workspace_id: str, request: DiscoverGitHubUserRequest
+    ) -> InstallationInfo:
+        async with transaction(self._sessions) as session:
+            await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
+        try:
+            with anyio.fail_after(self._timeout_seconds):
+                result = await discover_user(
+                    GitHubREST(self._http_client, self._endpoint_validator, "https://api.github.com"),
+                    request.personal_access_token.get_secret_value(),
+                )
+        except (ConnectivityHttpError, TimeoutError) as error:
+            raise NativeError(
+                error.code if isinstance(error, ConnectivityHttpError) else "provider_unavailable",
+                "Could not verify the GitHub account. Supply a classic PAT with notification access.",
+                category=ErrorCategory.unavailable,
+            ) from error
+        async with transaction(self._sessions) as session:
+            await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
+        return result
 
     async def summary(self, *, actor: AuthenticatedActor, account_id: str) -> BotSummary:
         return await get_bot_summary(self._sessions, actor=actor, account_id=account_id)
@@ -228,7 +254,7 @@ class BotService:
                     receive_enabled=True,
                     default_agent_id=request.agent_id,
                     execution_service_account_id=request.execution_service_account_id,
-                    provider_policy=request.policy.model_dump(mode="json"),
+                    provider_policy=request.policy.model_dump(mode="json", exclude_unset=True),
                 ),
             )
 
@@ -236,11 +262,21 @@ class BotService:
         async with transaction(self._sessions) as session:
             account = await require_account(session, account_id)
             await authorize(session, actor, account.workspace_id, WorkspaceAction.application_account_manage)
-            if account.provider_key not in {"slack", "lark"}:
+            if account.provider_key not in {"slack", "lark", "github"}:
                 raise NativeError(
                     "bot_provider_unsupported",
-                    "Bot setup supports Slack and Feishu applications.",
+                    "Bot setup supports Slack, Feishu, and GitHub accounts.",
                     category=ErrorCategory.invalid_request,
+                )
+            if account.provider_config_version == POLLING_VERSION:
+                poll = await session.get(GitHubPollRecord, account_id)
+                return BotSetup(
+                    account_id=account_id,
+                    reception_mode="polling",
+                    event_path=None,
+                    event_url=None,
+                    poll_checked_at=poll.checked_at if poll else None,
+                    poll_error_code=poll.error_code if poll else None,
                 )
         path = f"/connectivity/v1/accounts/{account_id}/events"
         # Only deployment configuration supplies the origin, never browser/forwarded headers.
@@ -347,10 +383,10 @@ class BotService:
             await authorize(session, actor, account.workspace_id, WorkspaceAction.application_account_manage)
             if expected_version is not None:
                 require_version(account.version, expected_version)
-            if account.provider_key not in {"slack", "lark"}:
+            if account.provider_key not in {"slack", "lark", "github"}:
                 raise NativeError(
                     "bot_provider_unsupported",
-                    "Bot checks support Slack and Feishu applications.",
+                    "Bot checks support Slack, Feishu, and GitHub accounts.",
                     category=ErrorCategory.invalid_request,
                 )
             target = await _target_version(session, account_id, conversation_id)
@@ -394,7 +430,7 @@ async def _target_version(
         await session.execute(
             select(AccountTargetRecord.id, AccountTargetRecord.version).where(
                 AccountTargetRecord.account_id == account_id,
-                AccountTargetRecord.target_kind == "conversation",
+                AccountTargetRecord.target_kind.in_(("conversation", "repository")),
                 AccountTargetRecord.external_target_id == conversation_id,
             )
         )

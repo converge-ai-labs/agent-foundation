@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import re
 import socket
-from collections.abc import AsyncGenerator, Mapping
 from time import monotonic
 from types import FrameType
 
 import uvicorn
 from a13n_logging import get_logger
-from anyio import CancelScope, Event, create_task_group, sleep
-from starlette.responses import JSONResponse, StreamingResponse
+from anyio import Event, create_task_group, sleep
+from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -59,37 +58,6 @@ class WebUIServer(uvicorn.Server):
                 group.cancel_scope.cancel()
         if not self.force_exit:
             logger.info("WebUI stopped.")
-
-
-class EventStreamResponse(StreamingResponse):
-    """End SSE bodies normally when this listener stops, not after drain timeout."""
-
-    def __init__(
-        self, content: AsyncGenerator[str], *, stopping: Event, media_type: str, headers: Mapping[str, str]
-    ) -> None:
-        super().__init__(content, media_type=media_type, headers=headers)
-        self._events = content
-        self._stopping = stopping
-
-    async def stream_response(self, send: Send) -> None:
-        await send({"type": "http.response.start", "status": self.status_code, "headers": self.raw_headers})
-        async with create_task_group() as group:
-
-            async def wait_for_shutdown() -> None:
-                await self._stopping.wait()
-                group.cancel_scope.cancel()
-
-            group.start_soon(wait_for_shutdown)
-            try:
-                async for chunk in self.body_iterator:
-                    if not isinstance(chunk, (bytes, memoryview)):
-                        chunk = chunk.encode(self.charset)
-                    await send({"type": "http.response.body", "body": chunk, "more_body": True})
-            finally:
-                with CancelScope(shield=True):
-                    await self._events.aclose()
-                group.cancel_scope.cancel()
-        await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
 # Only fixed explanations are safe here: application messages may contain

@@ -1273,6 +1273,23 @@ export interface paths {
     patch: operations["patch_environment_providers_provider_id"];
     trace?: never;
   };
+  "/api/v1/environment-providers/{provider_id}/connectivity": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Provider Connectivity */
+    get: operations["get_environment_providers_provider_id_connectivity"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environment-providers/{provider_id}/credential": {
     parameters: {
       query?: never;
@@ -1284,6 +1301,40 @@ export interface paths {
     /** Replace Credential */
     put: operations["put_environment_providers_provider_id_credential"];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environment-providers/{provider_id}/test-image": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Image */
+    post: operations["post_environment_providers_provider_id_test_image"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environment-providers/{provider_id}/test-image/{request_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Image Test */
+    post: operations["post_environment_providers_provider_id_test_image_request_id_cancel"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3278,6 +3329,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/bots/github/user": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discover Github User */
+    post: operations["post_workspaces_workspace_bots_github_user"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/configuration-assistant/readiness": {
     parameters: {
       query?: never;
@@ -4305,7 +4373,10 @@ export interface components {
       execution_service_account_id: string;
       /** Expected Version */
       expected_version: number;
-      policy: components["schemas"]["MessagingPolicy"];
+      /** Policy */
+      policy:
+        | components["schemas"]["MessagingPolicy"]
+        | components["schemas"]["GitHubReceptionPolicy"];
       /** Target Id */
       target_id: string;
       /** Target Version */
@@ -5097,11 +5168,12 @@ export interface components {
        * Provider Key
        * @enum {string}
        */
-      provider_key: "slack" | "lark";
+      provider_key: "slack" | "lark" | "github";
       /** Receipt */
       receipt:
         | components["schemas"]["SlackReplyReceipt"]
         | components["schemas"]["LarkReplyReceipt"]
+        | components["schemas"]["GitHubCommentReceipt"]
         | null;
       /** Run Attempt Id */
       run_attempt_id: string;
@@ -5127,9 +5199,19 @@ export interface components {
       /** Account Id */
       account_id: string;
       /** Event Path */
-      event_path: string;
+      event_path: string | null;
       /** Event Url */
       event_url: string | null;
+      /** Poll Checked At */
+      poll_checked_at?: string | null;
+      /** Poll Error Code */
+      poll_error_code?: string | null;
+      /**
+       * Reception Mode
+       * @default webhook
+       * @enum {string}
+       */
+      reception_mode?: "webhook" | "polling";
     };
     /** BotSummary */
     BotSummary: {
@@ -5243,6 +5325,11 @@ export interface components {
       items: components["schemas"]["BotThread"][];
       /** Next Cursor */
       next_cursor: string | null;
+    };
+    /** CancelDockerImageRequest */
+    CancelDockerImageRequest: {
+      /** Workspace Id */
+      workspace_id: string | null;
     };
     /** CatalogModel */
     CatalogModel: {
@@ -6540,9 +6627,9 @@ export interface components {
         [key: string]: unknown;
       };
       /** Credential */
-      credential: {
+      credential?: {
         [key: string]: unknown;
-      };
+      } | null;
       /**
        * Enabled
        * @default true
@@ -6638,6 +6725,14 @@ export interface components {
        * Format: password
        */
       app_secret: string;
+    };
+    /** DiscoverGitHubUserRequest */
+    DiscoverGitHubUserRequest: {
+      /**
+       * Personal Access Token
+       * Format: password
+       */
+      personal_access_token: string;
     };
     /** Document */
     Document: {
@@ -7138,6 +7233,32 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** GitHubCommentReceipt */
+    GitHubCommentReceipt: {
+      /** Comment Id */
+      comment_id: number;
+      /** Html Url */
+      html_url: string;
+      /** Node Id */
+      node_id: string;
+      /** Request Id */
+      request_id: string;
+    };
+    /** GitHubReceptionPolicy */
+    GitHubReceptionPolicy: {
+      /**
+       * Allowed Senders
+       * @default [
+       *       "*"
+       *     ]
+       */
+      allowed_senders?: string[];
+      /**
+       * Event Actions
+       * @default []
+       */
+      event_actions?: string[];
+    };
     /** GitHubRevisionSource */
     GitHubRevisionSource: {
       /** Credential Secret Id */
@@ -7302,6 +7423,22 @@ export interface components {
       type: "image";
     } & {
       [key: string]: unknown;
+    };
+    /** ImageTestResponse */
+    ImageTestResponse: {
+      /**
+       * Checks
+       * @default []
+       */
+      checks?: string[];
+      /** Configuration Hash */
+      configuration_hash?: string | null;
+      /** Error */
+      error?: string | null;
+      /** Image Id */
+      image_id?: string | null;
+      /** Image Source */
+      image_source?: ("local" | "pulled") | null;
     };
     /** InlineHookSubscriptionInput */
     InlineHookSubscriptionInput: {
@@ -7497,10 +7634,20 @@ export interface components {
     };
     /** ItemCollection */
     ItemCollection: {
+      /** Complete */
+      complete: boolean;
+      /** Finalized */
+      finalized: boolean;
+      /** Incomplete Reason */
+      incomplete_reason: string | null;
       /** Items */
       items: components["schemas"]["ItemResource"][];
       /** Next Cursor */
       next_cursor: string | null;
+      /** Projection Cursor */
+      projection_cursor: string | null;
+      /** Snapshot Version */
+      snapshot_version: number;
     };
     /** ItemResource */
     ItemResource: {
@@ -8659,6 +8806,16 @@ export interface components {
        * @default 16777216
        */
       max_output_bytes?: number;
+    };
+    /** ProviderConnectivity */
+    ProviderConnectivity: {
+      /** Error */
+      error?: string | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "connected" | "unavailable" | "unknown";
     };
     /** QueuedSubmission */
     QueuedSubmission: {
@@ -10021,6 +10178,17 @@ export interface components {
        * @enum {string}
        */
       target_kind: "conversation" | "repository";
+    };
+    /** TestDockerImageRequest */
+    TestDockerImageRequest: {
+      /** Configuration */
+      configuration: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Request Id */
+      request_id: string;
+      /** Workspace Id */
+      workspace_id: string | null;
     };
     /** TextContent */
     TextContent: {
@@ -15346,6 +15514,50 @@ export interface operations {
       };
     };
   };
+  get_environment_providers_provider_id_connectivity: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderConnectivity"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   put_environment_providers_provider_id_credential: {
     parameters: {
       query?: never;
@@ -15372,6 +15584,101 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["EnvironmentProvider"];
         };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_environment_providers_provider_id_test_image: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TestDockerImageRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ImageTestResponse"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_environment_providers_provider_id_test_image_request_id_cancel: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CancelDockerImageRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Invalid request. */
       400: {
@@ -19512,6 +19819,7 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        order?: "asc" | "desc";
       };
       header?: never;
       path: {
@@ -22966,7 +23274,7 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
-        platform?: ("slack" | "lark") | null;
+        platform?: ("slack" | "lark" | "github") | null;
         condition?:
           | (
               | "disabled"
@@ -23031,6 +23339,54 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": components["schemas"]["DiscoverFeishuInstallationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InstallationInfo"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_bots_github_user: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DiscoverGitHubUserRequest"];
       };
     };
     responses: {

@@ -56,12 +56,8 @@ export function refreshThread(
   };
   scheduleRefresh(client, (query) => {
     const [kind, id, section] = query.queryKey;
-    if (kind === "threads")
-      return (
-        reason === "lifecycle" ||
-        reason === "checkpoint" ||
-        reason === "reconcile"
-      );
+    // Collection changes are coalesced into scoped activity lookups by summary.
+    if (kind === "threads") return false;
     if (kind === "child-saved-output")
       return reason === "children" || reason === "reconcile";
     return (

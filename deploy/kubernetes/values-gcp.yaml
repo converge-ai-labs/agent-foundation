@@ -1,0 +1,49 @@
+# Replace every REPLACE_* value; this uses an S3-compatible endpoint, NOT GCS.
+profile: distributed
+roles:
+  control:
+    replicaCount: 2
+  worker:
+    replicaCount: 2
+  connectivity:
+    replicaCount: 2
+environmentName: gcp
+image:
+  repository: us-central1-docker.pkg.dev/REPLACE_PROJECT/REPLACE_REPOSITORY/a13n-service
+  tag: REPLACE_IMMUTABLE_TAG
+publicOrigin: https://agents.example.com
+objects:
+  bucket: REPLACE_S3_COMPATIBLE_BUCKET
+  region: us-east-1
+  endpointUrl: https://REPLACE_S3_ENDPOINT.example.com
+  forcePathStyle: true
+persistence:
+  existingClaim: a13n-files
+serviceAnnotations:
+  cloud.google.com/neg: '{"ingress":true}'
+  cloud.google.com/backend-config: '{"default":"a13n-backend"}'
+ingress:
+  enabled: false # Enable after configuring a TLS Secret and GKE Ingress.
+  annotations:
+    kubernetes.io/ingress.class: gce
+    kubernetes.io/ingress.allow-http: "false"
+  tls:
+    - hosts: [agents.example.com]
+      secretName: a13n-ingress-tls
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+console:
+  replicaCount: 2
+  image:
+    repository: us-central1-docker.pkg.dev/REPLACE_PROJECT/REPLACE_REPOSITORY/a13n-console
+    tag: REPLACE_IMMUTABLE_TAG
+  service:
+    annotations:
+      cloud.google.com/neg: '{"ingress":true}'
+      cloud.google.com/backend-config: '{"default":"a13n-console-backend"}'
