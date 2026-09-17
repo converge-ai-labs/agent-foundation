@@ -283,22 +283,33 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     ):
         loop = runtime.execution_loop
         assert loop is not None
-        with fail_after(20 if handoff else 15):
-            async with create_task_group() as tasks:
-                tasks.start_soon(loop.run)
-                while True:
-                    async with short_session(interaction_sessions) as session:
-                        row = await session.get(RunRecord, run.id)
-                        assert row is not None
-                        if row.status in {"completed", "failed"}:
-                            assert row.status == "completed", row.failure_json
-                            assert row.output_json == (
-                                {"answer": 42} if recover_candidate and not late_input else "worker completed"
-                            )
-                            break
-                    await sleep(0.02)
-                await loop.drain()
-                await loop.wait_stopped()
+        # Same-build handoff deliberately waits one lease before reclaiming.
+        # Budget each execution phase separately from that mandatory delay.
+        completion_budget = 15 * (2 if handoff else 1) + (settings.worker.lease_seconds if handoff else 0)
+        last_progress = None
+        try:
+            with fail_after(completion_budget):
+                async with create_task_group() as tasks:
+                    tasks.start_soon(loop.run)
+                    while True:
+                        async with short_session(interaction_sessions) as session:
+                            row = await session.get(RunRecord, run.id)
+                            assert row is not None
+                            last_progress = (row.status, row.current_run_attempt_id)
+                            if row.status in {"completed", "failed"}:
+                                assert row.status == "completed", row.failure_json
+                                assert row.output_json == (
+                                    {"answer": 42} if recover_candidate and not late_input else "worker completed"
+                                )
+                                break
+                        await sleep(0.02)
+                    await loop.drain()
+                    await loop.wait_stopped()
+        except TimeoutError:
+            pytest.fail(
+                f"Run did not complete within {completion_budget}s: status/attempt={last_progress}, "
+                f"handoff_requested={handed_off}, late_input_injected={injected}, model_requests={len(requests)}"
+            )
         async with short_session(interaction_sessions) as session:
             attempt = await session.scalar(
                 select(RunAttemptRecord)

@@ -18,13 +18,59 @@ import httpx
 import psutil
 import pytest
 import uvicorn
-from a13n_harness_ui.webui import run
+from a13n_harness_ui.webui import create_webui, run
 from a13n_harness_ui.webui_lifecycle import RequestLog, WebUIServer
-from anyio import Event, sleep
+from anyio import Event, fail_after, sleep, sleep_forever
 from starlette.routing import Route
+from starlette.websockets import WebSocket
 from websockets.sync.client import connect
 
 from .test_app import _write_configuration
+
+
+@pytest.mark.anyio
+async def test_realtime_shutdown_serializes_close_with_pending_channel_send() -> None:
+    stopping, close_started, channel_started = Event(), Event(), Event()
+    stopping.set()
+    messages = []
+    received = 0
+
+    @asynccontextmanager
+    async def unopened_app():
+        raise AssertionError("This transport race does not open an App")
+        yield
+
+    async def receive():
+        nonlocal received
+        received += 1
+        if received == 1:
+            return {"type": "websocket.connect"}
+        if received == 2:
+            return {"type": "websocket.receive", "text": "{}"}
+        if received == 3:
+            await close_started.wait()
+            return {
+                "type": "websocket.receive",
+                "text": json.dumps({"version": 1, "kind": "subscribe", "channel": "summary", "stream": "summary"}),
+            }
+        channel_started.set()
+        await sleep_forever()
+
+    async def send(message):
+        messages.append(message)
+        if message["type"] == "websocket.close":
+            # Starlette has entered DISCONNECTED, but the ASGI close is still
+            # pending. Force an observer to send in precisely this interval.
+            close_started.set()
+            await channel_started.wait()
+            await sleep(0)
+
+    server = create_webui(unopened_app, api_key=None, stopping=stopping)
+    endpoint = next(route.endpoint for route in server.routes if route.path == "/api/realtime/connect")
+    with fail_after(2):
+        await endpoint(WebSocket({"type": "websocket"}, receive, send))
+    assert [message["type"] for message in messages] == ["websocket.accept", "websocket.close"]
+    assert messages[-1]["code"] == 1001
 
 
 @pytest.mark.anyio

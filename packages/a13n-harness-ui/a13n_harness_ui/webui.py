@@ -1491,12 +1491,26 @@ def create_webui(
             return
         channels: dict[str, CancelScope] = {}
         sending = Lock()
+        closing = False
 
         async def send(frame: RealtimeFrame | RealtimePing) -> None:
             # A stalled connection cannot retain channel tasks indefinitely.
             with fail_after(10):
                 async with sending:
+                    if closing:
+                        raise WebSocketDisconnect(code=1001)
                     await socket.send_text(frame.model_dump_json())
+
+        async def close(*, code: int, reason: str = "") -> None:
+            nonlocal closing
+            with fail_after(10):
+                async with sending:
+                    if closing:
+                        return
+                    # The transport marks itself disconnected before its close
+                    # send completes; observers must share this lock and state.
+                    closing = True
+                    await socket.close(code=code, reason=reason)
 
         try:
             async with create_task_group() as group:
@@ -1523,7 +1537,7 @@ def create_webui(
                         await send(RealtimePing())
                         with move_on_after(20):
                             await stopping.wait()
-                    await socket.close(code=1001)
+                    await close(code=1001)
                     group.cancel_scope.cancel()
 
                 group.start_soon(heartbeat)
@@ -1545,9 +1559,9 @@ def create_webui(
                                 continue
                             await group.start(observe, command)
                 except (ValidationError, ValueError):
-                    await socket.close(code=4400, reason="Invalid realtime command")
+                    await close(code=4400, reason="Invalid realtime command")
                 except TimeoutError:
-                    await socket.close(code=4408, reason="Realtime heartbeat timed out")
+                    await close(code=4408, reason="Realtime heartbeat timed out")
                 except WebSocketDisconnect:
                     pass
                 finally:
