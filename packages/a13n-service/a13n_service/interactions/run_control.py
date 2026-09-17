@@ -579,11 +579,7 @@ class RunAttemptControl:
                         failure = result.failure
                         if failure is None:  # pragma: no cover - enforced by HarnessRunResult
                             raise RuntimeError("failed Harness result is missing its failure")
-                        async with self._authority_lock:
-                            self._require_open()
-                            receipt = await committer.commit_failure(self._context, failure)
-                            self._context.lease.invalidate()
-                            self._gate.phase = _CoordinatorPhase.terminal
+                        receipt = await self._commit_failure(committer, failure)
                         _require_terminal_disposition(
                             receipt,
                             AttemptDisposition.retrying,
@@ -658,12 +654,17 @@ class RunAttemptControl:
 
         async with self._gate.lock:
             await self._validate_authority()
-            async with self._authority_lock:
-                self._require_open()
-                receipt = await committer.commit_failure(self._context, failure)
-                self._context.lease.invalidate()
-                self._gate.phase = _CoordinatorPhase.terminal
-                return receipt
+            return await self._commit_failure(committer, failure)
+
+    async def _commit_failure(self, committer: AttemptCommitter, failure: SafeFailure) -> AttemptOutcome:
+        if self._mounts is not None:
+            await self._mounts.reconcile()
+        async with self._authority_lock:
+            self._require_open()
+            receipt = await committer.commit_failure(self._context, failure)
+            self._context.lease.invalidate()
+            self._gate.phase = _CoordinatorPhase.terminal
+            return receipt
 
     async def authority_lost(self) -> None:
         """Terminally fence local control after lease authority cannot be confirmed."""
