@@ -13,8 +13,8 @@ from a13n_service.temporal import assume_utc
 from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import NOW
+from .mount_helpers import accepted_mount
 from .test_attempt_execution import _accept_root, _authority, _worker
-from .test_mount_retention import _mount
 from .test_websocket_use_authorization import client_environment as client_environment
 
 pytestmark = pytest.mark.anyio
@@ -25,7 +25,7 @@ async def mounted_attempt(interaction_sessions, interaction_object_store, client
     _, _, environment = client_environment
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     async with transaction(interaction_sessions) as database:
-        database.add(_mount(run.id, environment.id))
+        database.add(accepted_mount(run.id, environment.id))
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
@@ -38,7 +38,9 @@ async def test_boundary_snapshot_does_not_absorb_later_additions(interaction_ses
     store = RunMountObservations(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))
     captured = await store.snapshot(attempt)
     async with transaction(interaction_sessions) as database:
-        database.add(_mount(attempt.run_id, environment.id, name="second", created_at=NOW + timedelta(microseconds=1)))
+        database.add(
+            accepted_mount(attempt.run_id, environment.id, name="second", created_at=NOW + timedelta(microseconds=1))
+        )
     assert [mount.name for mount in captured] == ["computer"]
     assert [mount.name for mount in await store.snapshot(attempt)] == ["computer", "second"]
     assert interaction_sessions.kw["bind"].sync_engine.pool.checkedout() == 0

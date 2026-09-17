@@ -26,7 +26,7 @@ from .service import ClientConnectionService
 from .transport import ClientWebSocket
 
 logger = get_logger(__name__)
-type UseAuthorizer = Callable[[UseIdentity], Awaitable[frozenset[EnvironmentAction]]]
+type UseAuthorizer = Callable[[UseIdentity, str | None], Awaitable[frozenset[EnvironmentAction]]]
 
 
 class ClientConnectionSession:
@@ -183,7 +183,7 @@ class ClientConnectionSession:
             self._changed.clear()
             await self._changed.wait()
         identity = self._current.value.use.identity
-        permissions = await self._authorize_use(identity)
+        await self._authorize_use(identity, None)
         observed = await self._service.coordination.observe(
             self._connection.organization_id, self._connection.environment_id
         )
@@ -206,8 +206,12 @@ class ClientConnectionSession:
                 "use_id": identity.use_id,
             },
         )
+
+        async def authorize_mount(name: str) -> frozenset[EnvironmentAction]:
+            return await self._authorize_use(identity, name)
+
         dispatch = EnvironmentRelayDispatch(
-            session, self._connection.environment_id, permissions, limits=self._store.limits
+            session, self._connection.environment_id, authorize_mount, limits=self._store.limits
         )
         await RelayControlConsumer(self._store, use, observed, dispatch).run()
 

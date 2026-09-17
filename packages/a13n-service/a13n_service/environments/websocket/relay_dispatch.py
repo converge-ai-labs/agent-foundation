@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 
 from a13n_envd_client import EIPSession
 from a13n_environment import (
@@ -22,6 +24,12 @@ from .relay_protocol import DEFAULT_RELAY_LIMITS, ReadinessRequest, RelayEnviron
 from .relay_transfers import FileTransferPlan
 
 
+@dataclass(frozen=True, slots=True)
+class _MountBinding:
+    name: str
+    session: EIPEnvironmentSession
+
+
 class EnvironmentRelayDispatch:
     """Keep mount-local opaque handles on Control without translating EIP twice.
 
@@ -35,7 +43,7 @@ class EnvironmentRelayDispatch:
         self,
         session: EIPSession,
         environment_id: str,
-        permissions: frozenset[EnvironmentAction],
+        authorize_mount: Callable[[str], Awaitable[frozenset[EnvironmentAction]]],
         *,
         limits: RelayLimits = DEFAULT_RELAY_LIMITS,
         max_mounts: int = 32,
@@ -44,21 +52,24 @@ class EnvironmentRelayDispatch:
             raise ValueError("Relay mount binding capacity must be bounded")
         self._session = session
         self._environment_id = environment_id
-        self._permissions = permissions
+        self._authorize_mount = authorize_mount
+        self._permissions: dict[str, frozenset[EnvironmentAction]] = {}
+        self._admission = asyncio.Lock()
         self._limits = limits
         self._max_mounts = max_mounts
-        self._mounts: dict[str, EIPEnvironmentSession] = {}
+        self._mounts: dict[str, _MountBinding] = {}
 
     def prepare(self, request: RelayRequest) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan:
-        binding = self._binding(request.mount_id)
-        permissions = binding.descriptor.permissions.operations & self._permissions
         if request.operation == "scope.describe":
             DomainModel.model_validate(request.payload)
 
             async def describe() -> JsonValue:
+                await self._admit_mount(request.mount_name)
+                binding, permissions = self._binding(request)
                 return self._snapshot(binding, permissions).model_dump(mode="json")
 
             return describe
+        binding, permissions = self._binding(request)
         if request.operation == "scope.ready":
             readiness = ReadinessRequest.model_validate(request.payload)
 
@@ -73,19 +84,38 @@ class EnvironmentRelayDispatch:
             return FileRelayDispatch(binding.operations.files, permissions).prepare(request)
         return CommandRelayDispatch(binding.operations, permissions).prepare(request)
 
-    def _binding(self, mount_id: str) -> EIPEnvironmentSession:
-        binding = self._mounts.get(mount_id)
-        if binding is None:
+    async def _admit_mount(self, name: str) -> None:
+        # Admission may read PG; operation preparation and raw EIP dispatch never do.
+        # Serialize first admission so concurrent descriptions cannot exceed capacity
+        # or publish policies from differently timed authorization observations.
+        async with self._admission:
+            if name in self._permissions:
+                return
+            if len(self._permissions) >= self._max_mounts:
+                raise EnvironmentError("Relay mount capacity is exhausted", code="environment_overloaded")
+            self._permissions[name] = await self._authorize_mount(name)
+
+    def _binding(self, request: RelayRequest) -> tuple[EIPEnvironmentSession, frozenset[EnvironmentAction]]:
+        permissions = self._permissions.get(request.mount_name)
+        if permissions is None:
+            raise EnvironmentError("The mount has not been admitted", code="environment_forbidden")
+        owned = self._mounts.get(request.mount_id)
+        if owned is None:
             if len(self._mounts) >= self._max_mounts:
                 raise EnvironmentError("Relay mount binding capacity is exhausted", code="environment_overloaded")
-            binding = EIPEnvironmentSession(
-                session=self._session,
-                provider_key=WEBSOCKET_PROVIDER_KEY,
-                environment_id=self._environment_id,
-                mount_id=mount_id,
+            owned = _MountBinding(
+                request.mount_name,
+                EIPEnvironmentSession(
+                    session=self._session,
+                    provider_key=WEBSOCKET_PROVIDER_KEY,
+                    environment_id=self._environment_id,
+                    mount_id=request.mount_id,
+                ),
             )
-            self._mounts[mount_id] = binding
-        return binding
+            self._mounts[request.mount_id] = owned
+        if owned.name != request.mount_name:
+            raise EnvironmentError("A mount binding cannot change its association", code="environment_forbidden")
+        return owned.session, owned.session.descriptor.permissions.operations & permissions
 
     def _snapshot(
         self, binding: EIPEnvironmentSession, permissions: frozenset[EnvironmentAction]

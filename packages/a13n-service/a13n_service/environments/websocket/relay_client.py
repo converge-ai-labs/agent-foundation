@@ -40,6 +40,7 @@ class RelayUseClient:
         *,
         check_authority: Callable[[], None],
         permissions: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
+        mount_name: str = "workspace",
     ) -> None:
         if (
             observation.value.use is None
@@ -59,6 +60,7 @@ class RelayUseClient:
         self._received_at = monotonic()
         self._closed = False
         self._mount_id = "mount-prepare"
+        self._mount_name = mount_name
         self._authority.check(identity)
 
     def bind_mount(self, mount_id: str) -> None:
@@ -141,6 +143,7 @@ class RelayUseClient:
             use=self.identity,
             operation=operation,
             mount_id=self._mount_id,
+            mount_name=self._mount_name,
             payload=payload,
             deadline_ms=self._server_ms + math.floor((deadline.monotonic_at - self._received_at) * 1000),
         )

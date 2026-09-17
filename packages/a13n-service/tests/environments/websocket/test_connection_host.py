@@ -11,9 +11,10 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-from a13n_environment import EnvironmentAction
+from a13n_environment import EnvironmentAction, EnvironmentError
 from a13n_environment.commands import ArgvCommand, CommandRequest
 from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness import EnvironmentAccess
 from a13n_service.environments.websocket.authority import UseIdentity
 from a13n_service.environments.websocket.connection_host import ClientConnectionHost
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
@@ -46,9 +47,13 @@ async def host_server(environment_service, target, relay_redis):
     )
     authorized = []
 
-    async def authorize(use):
-        authorized.append(use)
-        return frozenset(EnvironmentAction)
+    async def authorize(use, name):
+        authorized.append((use, name))
+        if name in {None, "workspace", "writer"}:
+            return frozenset(EnvironmentAction)
+        if name == "reader":
+            return EnvironmentAccess("read_only").permission_set().operations
+        raise EnvironmentError("No accepted mount", code="environment_forbidden")
 
     host = ClientConnectionHost(service, relay_redis, authorize)
     app = FastAPI()
@@ -154,6 +159,65 @@ async def online(service, target, connection_id):
             await asyncio.sleep(0.02)
 
 
+async def test_named_mounts_keep_independent_policies_on_one_real_eip_session(
+    envd_binary, host_server, target, relay_redis, tmp_path
+):
+    _, service, url, authorized = host_server
+    ticket = await service.issue_ticket(actor(), target.environment_id)
+    async with daemon(envd_binary, tmp_path / "aliases", url, ticket.ticket, target.daemon_environment_id) as (_, root):
+        observed = await online(service, target, ticket.connection_id)
+        identity = UseIdentity(
+            observed.value.connection, new_object_id("eu"), "run", "attempt", 1, new_object_id("wrk")
+        )
+        mailbox = WorkerResponseMailbox(relay_redis, identity.worker_instance_id)
+        await mailbox.prepare()
+        grant = await service.coordination.acquire_use(identity, attempt_expires_at_ms=observed.value.now_ms + 60_000)
+        responses = RelayResponseDispatcher(mailbox)
+
+        def mount(name):
+            client = RelayUseClient(
+                identity,
+                grant,
+                ConnectionRelayStore(relay_redis, identity.connection),
+                responses,
+                check_authority=lambda: None,
+                mount_name=name,
+            )
+            client.bind_mount(name)
+            return client
+
+        reader, writer, unknown = mount("reader"), mount("writer"), mount("unknown")
+        reading = asyncio.create_task(responses.run())
+        try:
+            with pytest.raises(RelayOperationError) as rejected:
+                await reader.call("file.stat", {"path": "/"})
+            assert rejected.value.code == "environment_forbidden"
+            snapshot = RelayEnvironmentSnapshot.model_validate(await reader.call("scope.describe"))
+            assert EnvironmentAction.FILE_WRITE_TEXT not in snapshot.descriptor.permissions.operations
+            with pytest.raises(RelayOperationError) as rejected:
+                await unknown.call("scope.describe")
+            assert rejected.value.code == "environment_forbidden"
+            await writer.call("scope.describe")
+            await writer.call("file.write_text", {"path": "/shared", "text": "allowed", "mode": "create"})
+            assert (await reader.call("file.read_text", {"path": "/shared"}))["text"] == "allowed"
+            with pytest.raises(RelayOperationError) as rejected:
+                await reader.call("file.write_text", {"path": "/shared", "text": "denied", "mode": "replace"})
+            assert rejected.value.code == "environment_forbidden"
+            # A caller cannot attach another accepted name to a published handle scope.
+            writer.bind_mount("reader")
+            with pytest.raises(RelayOperationError) as rejected:
+                await writer.call("file.write_text", {"path": "/shared", "text": "denied", "mode": "replace"})
+            assert rejected.value.code == "environment_forbidden"
+            assert (root / "shared").read_text() == "allowed"
+            await reader.call("scope.describe")
+            assert authorized == [(identity, None), (identity, "reader"), (identity, "unknown"), (identity, "writer")]
+            await reader.close()
+        finally:
+            await reader.invalidate()
+            responses.close()
+            await reading
+
+
 async def test_ready_connection_relay_uses_real_envd_and_releases_carrier(
     envd_binary,
     host_server,
@@ -221,7 +285,7 @@ async def test_ready_connection_relay_uses_real_envd_and_releases_carrier(
             client.bind_mount("mount-other")
             with pytest.raises(RelayOperationError):
                 await RelayProcessOperations(client).inspect(started.process.handle)
-            assert authorized == [identity]
+            assert authorized == [(identity, None), (identity, "workspace")]
             await client.close()
         finally:
             await client.invalidate()

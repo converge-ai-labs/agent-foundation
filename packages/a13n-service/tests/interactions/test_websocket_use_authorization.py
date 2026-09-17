@@ -23,7 +23,8 @@ from tests.environments.websocket.conftest import relay_redis as relay_redis
 from tests.hooks.support import hook_actor, seed_hook_actor_access
 from tests.lifecycle_support import test_lifecycle_writer
 
-from .conftest import ORGANIZATION_ID, WORKSPACE_ID
+from .conftest import NOW, ORGANIZATION_ID, WORKSPACE_ID
+from .mount_helpers import accepted_mount
 from .test_attempt_execution import _accept_root, _worker
 
 pytestmark = pytest.mark.anyio
@@ -134,3 +135,75 @@ async def test_disabled_provider_cannot_gain_use_from_old_online_presence(intera
         provider.enabled = False
     with pytest.raises(EnvironmentError):
         await ClientUseAuthorization(interaction_sessions)(identity)
+
+
+async def test_alias_authorization_does_not_broaden_primary_access(interaction_sessions, admitted_use):
+    identity = admitted_use.identity
+    authorize = ClientUseAuthorization(interaction_sessions)
+    primary = await authorize(identity, "workspace")
+    with pytest.raises(EnvironmentError):
+        await authorize(identity, "writer")
+    async with transaction(interaction_sessions) as session:
+        mount = accepted_mount(identity.run_id, identity.connection.environment_id, name="writer")
+        mount.access = "full"
+        session.add(mount)
+    writable = await authorize(identity, "writer")
+    assert EnvironmentAction.SHELL_EXEC in writable
+    assert EnvironmentAction.SHELL_EXEC not in primary
+    assert await authorize(identity, "workspace") == primary
+    with pytest.raises(EnvironmentError):
+        await authorize(identity, "unknown")
+
+
+async def test_additional_only_run_can_acquire_use_and_cannot_invent_a_primary(
+    interaction_sessions, interaction_object_store, client_environment
+):
+    _, _, environment = client_environment
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    async with transaction(interaction_sessions) as session:
+        session.add(accepted_mount(run.id, environment.id))
+    claim = await AttemptScheduler(interaction_sessions, clock=utc_now, lifecycle=test_lifecycle_writer()).claim(
+        run.id, _worker()
+    )
+    assert isinstance(claim, ClaimedAttempt)
+    identity = UseIdentity(
+        ConnectionIdentity(ORGANIZATION_ID, environment.id, "connection", "epoch", "control"),
+        "use",
+        run.id,
+        claim.attempt.id,
+        claim.attempt.attempt_number,
+        claim.attempt.worker_id,
+    )
+    authorize = ClientUseAuthorization(interaction_sessions)
+    assert await authorize(identity) == await authorize(identity, "computer")
+    with pytest.raises(EnvironmentError):
+        await authorize(identity, "workspace")
+    # A lease which was valid at original acceptance cannot authorize a later binding.
+    from a13n_service.interactions.models import RunAttemptRecord
+
+    async with transaction(interaction_sessions) as session:
+        (await session.get(RunAttemptRecord, claim.attempt.id)).lease_expires_at = NOW
+    with pytest.raises(EnvironmentError):
+        await authorize(identity, "computer")
+
+
+@pytest.mark.parametrize("failure", ["principal", "dependency"])
+async def test_mount_admission_errors_remain_bounded_environment_failures(
+    interaction_sessions, admitted_use, monkeypatch, failure
+):
+    from unittest.mock import AsyncMock
+
+    from a13n_service.environments.websocket import use_authorization
+    from a13n_service.iam import AuthorizationError
+    from sqlalchemy.exc import OperationalError
+
+    error = (
+        AuthorizationError("permission_denied", concealed=True)
+        if failure == "principal"
+        else OperationalError("SELECT", {}, OSError("disconnected"), connection_invalidated=True)
+    )
+    monkeypatch.setattr(use_authorization, "authorize_persisted_agent_principal_actions", AsyncMock(side_effect=error))
+    with pytest.raises(EnvironmentError) as caught:
+        await ClientUseAuthorization(interaction_sessions)(admitted_use.identity, "workspace")
+    assert caught.value.code == ("environment_forbidden" if failure == "principal" else "environment_unavailable")
+    assert interaction_sessions.kw["bind"].sync_engine.pool.checkedout() == 0
