@@ -26,6 +26,12 @@ it("ticks the exact current receipt and paints live context without waiting for 
   };
   const key = ["thread", "one", "operation", "current"];
   queries.setQueryData(key, operation);
+  const configurationKey = ["thread", "one", "configuration"];
+  queries.setQueryData(configurationKey, {
+    capture_source: "selected_continuation",
+    receipt_id: "old",
+    captured: { agent: { fast: "on" } },
+  });
   queries.setQueryData(["thread", "one", "context-usage"], {
     thread_id: "one",
     context_window: 1000,
@@ -63,12 +69,22 @@ it("ticks the exact current receipt and paints live context without waiting for 
   const view = render(content(250, true));
   expect(screen.getByText("25%")).toBeTruthy();
   expect(screen.getByText("0s")).toBeTruthy();
+  expect(screen.queryByText("On")).toBeNull();
+  act(() =>
+    queries.setQueryData(configurationKey, {
+      capture_source: "active_operation",
+      receipt_id: "current",
+      captured: { agent: { fast: "off" } },
+    }),
+  );
   await act(async () => {
     await vi.advanceTimersByTimeAsync(2000);
   });
   expect(screen.getByText("2s")).toBeTruthy();
+  expect(screen.getByText("Off")).toBeTruthy();
   view.rerender(content(400, true));
   expect(screen.getByText("40%")).toBeTruthy();
+  expect(screen.getByText("Off")).toBeTruthy();
   operation.status = "completed";
   operation.completed_at = "2026-01-01T00:00:02Z";
   act(() => {

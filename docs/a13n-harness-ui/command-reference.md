@@ -252,7 +252,7 @@ Type these in the terminal composer, not your shell. Tab completes supported syn
 | `/import`                               | —       | No         | Preview and optionally enable external subagents with parent inheritance. |
 | `/agent [agent-id]`                     | —       | No         | Switch agent, including its model, instructions, and tools.               |
 | `/model [model-id\|default]`            | —       | No         | Select and remember a model per Project; `default` clears the preference. |
-| `/fast [on\|off\|reset]`                | —       | No         | Toggle priority service for this session without saving configuration.    |
+| `/fast [on\|off\|reset]`                | —       | No         | Toggle supported Fast processing without saving configuration.            |
 | `/thinking [level]`                     | —       | No         | Show or change reasoning effort for subsequent turns.                     |
 | `/environment [mode]`                   | —       | No         | Show or select execution permissions for subsequent turns.                |
 | `/new`                                  | —       | No         | Start a fresh session; keep all saved history.                            |

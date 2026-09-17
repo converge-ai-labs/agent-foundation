@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
+from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_thinking import ThinkingControl, ThinkingSelection
 from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
@@ -34,6 +35,13 @@ class RunModelOverrides(SurfaceModel):
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     thinking: ThinkingSelection | None = None
     service_tier: Literal["auto", "default", "flex", "priority"] | None = None
+    fast: bool | None = None
+
+    @model_validator(mode="after")
+    def _exclusive_speed_override(self) -> Self:
+        if self.fast is not None and self.service_tier is not None:
+            raise ValueError("Select either fast or service_tier, not both.")
+        return self
 
 
 class ContextUsageView(SurfaceModel):
@@ -646,6 +654,7 @@ class ModelSummary(SurfaceModel):
     name: str = Field(min_length=1, max_length=256)
     route: str = Field(min_length=1)
     thinking: ThinkingControl | None = None
+    fast: FastControl | None = None
 
 
 class ThreadSelectorCatalog(SurfaceModel):

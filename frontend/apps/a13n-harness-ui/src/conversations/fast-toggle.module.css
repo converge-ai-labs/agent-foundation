@@ -1,0 +1,13 @@
+.control {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.toggle {
+  white-space: nowrap;
+}
+.toggle[data-active="true"] {
+  color: var(--a13n-accent);
+  background: var(--a13n-hover);
+}

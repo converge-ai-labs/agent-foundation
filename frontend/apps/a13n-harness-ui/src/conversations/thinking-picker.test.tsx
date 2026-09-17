@@ -93,6 +93,8 @@ it("resets thinking when a refreshed catalog changes the inherited Model", () =>
     agentId: "agent",
     thinking: "low" as const,
     onThinkingChange,
+    fast: true,
+    onFastChange: vi.fn(),
     disabled: false,
     onAgentChange: vi.fn(),
     onModelChange: vi.fn(),
@@ -109,6 +111,7 @@ it("resets thinking when a refreshed catalog changes the inherited Model", () =>
     />,
   );
   expect(onThinkingChange).toHaveBeenCalledWith(null);
+  expect(props.onFastChange).toHaveBeenCalledWith(null);
 });
 
 it("renders boolean controls without inventing effort levels", async () => {
