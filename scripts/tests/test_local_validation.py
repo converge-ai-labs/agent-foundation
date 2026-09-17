@@ -158,6 +158,28 @@ def test_service_contract_hook_skips_package_tests_but_keeps_contract_inputs(pat
     assert bool(selected) is regenerates
 
 
+def test_markdown_hook_uses_locked_workspace_formatter() -> None:
+    config = yaml.safe_load((REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text())
+    hooks = [(repo, hook) for repo in config["repos"] for hook in repo["hooks"] if hook["id"] == "mdformat"]
+    assert len(hooks) == 1
+    repo, hook = hooks[0]
+    assert repo["repo"] == "local"
+    assert hook["language"] == "system"
+    assert hook["entry"] == "uv run --locked mdformat"
+    assert hook["types"] == ["markdown"]
+    assert hook["args"] == ["--number"]
+    assert hook.get("pass_filenames", True) is True
+    assert "additional_dependencies" not in hook
+
+
+def test_automation_ci_covers_markdown_hook_configuration() -> None:
+    workflow = yaml.safe_load((REPOSITORY_ROOT / ".github/workflows/ci-automation.yml").read_text())
+    for event in ("pull_request", "push"):
+        patterns = workflow[True][event]["paths"]
+        for path in (".pre-commit-config.yaml", ".mdformat.toml"):
+            assert any(Path(path).full_match(pattern) for pattern in patterns), (event, path)
+
+
 @pytest.mark.parametrize("target", ["install", "format", "check", "check-all", "build", "clean"])
 def test_root_targets_do_not_require_sdk_checkouts(tmp_path: Path, target: str) -> None:
     shutil.copy2(REPOSITORY_ROOT / "Makefile", tmp_path / "Makefile")
