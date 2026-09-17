@@ -49,6 +49,8 @@ The [shared document model](../a13n-harness/21-document-memory.md#memory-types-a
 
 Knowledge and procedure detail can expose **Revise** to an authorized owner when revision support is available. The editor starts from an exact version, retains sources and applicability, previews the change, and submits its precondition. A conflict preserves the draft and requires a fresh comparison; it never silently overwrites newer content. History shows bounded revision metadata and opens a selected immutable version on demand.
 
+The full-document editor submits a `replace` change under the shared [revision input contract](../a13n-harness/21-document-memory.md#revision-input-operations). Agent/tool and API clients can also submit append, exact edit batches, or unified patches through the same writer; the Console need not expose separate raw-operation editors. A partially loaded section is never sent as a whole-body replacement. Invalid transformations preserve the draft and produce no partial save; an unchanged result is not presented as a new revision. Changes displays the actual committed diff regardless of the input operation.
+
 When change records are supported, **Changes** lists committed mutations with their time, actor, trigger, action, and before/after versions. Selecting one loads the exact saved body diff and structured metadata changes on demand, with added/removed lines and any attributed reason and authorized source links. A reason is distinct from the computed diff. A document filter narrows the same scope-level change collection; actor, action, trigger, Run, and time filters execute server-side. This is inspection after saving, not an approval queue or a prerequisite for normal writes.
 
 Revision history and change history remain distinct: full versions show content at a point in time, while changes explain an accepted transition, including path-only or metadata-only changes. Empty body diffs do not hide metadata changes. Unsupported history, removed detail, unavailable storage, integrity mismatch, and an empty authorized list have distinct presentations. Shared-content access does not expose the source's private change history.
@@ -188,6 +190,7 @@ Deleting a document removes it from all receiving views and removes all its vers
 19. Viewer/Runner/Builder and ordinary memory permissions cannot bypass administrator-only management. Model tools cannot change visibility or choose another write scope.
 20. Unconfirmed writes do not activate or repeat blindly. An attention notice supports reconciliation and deletion recovery without a permanent miscellaneous menu.
 21. Legacy publication copies and policies do not grant access or become installation-visible automatically; original documents remain retained.
+22. Full-document editing submits a typed replacement with its predecessor; partial reads cannot erase unseen content, failed transformations preserve drafts, and unchanged saves do not invent history.
 
 ## 11. Capability and Compatibility Requirements
 

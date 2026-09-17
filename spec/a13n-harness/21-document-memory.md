@@ -164,16 +164,16 @@ Content-bearing records, including explanations and removed lines, follow the co
 
 The host-authorized `MemoryDocumentStore` exposes index, search, read, TOC, create, revise, history, and delete behavior. A backend advertises unsupported revision/history operations explicitly; ordinary native records are not fabricated into a document history. The same tools serve filesystem and other document adapters when their capabilities are available. The table lists base tool names; canonical entries apply the unique entry prefix under [multiple memory entries](09-context-and-memory.md#multiple-memory-entries). Unsupported operations are omitted from the model tool surface and rejected before mutation through direct calls.
 
-| Tool                                                             | Contract                                                                                               |
-| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `memory_index(path, cursor)`                                     | Bounded root or subdirectory navigation; only logical scope-relative paths and authorized entries      |
-| `memory_search(query, filters, limit)`                           | Bounded document/section hits with ID, version, title, description, and locator; no whole-body preload |
-| `memory_toc(reference, version)`                                 | Markdown heading tree and section locators bound to one revision/digest                                |
-| `memory_read(reference, version, section, start, length)`        | Read an exact revision section or bounded range, with explicit continuation and source location        |
-| `memory_add(kind, title, description, text, sources, ...)`       | Create validated memory in the Host-fixed scope; identity and request key are not model arguments      |
-| `memory_revise(reference, expected_version, text, sources, ...)` | Create the next semantic/procedural revision; reject episodic rewrites                                 |
-| `memory_history(reference, cursor)`                              | Bounded authorized revision metadata; read a selected version separately                               |
-| `memory_forget(reference)`                                       | Confirmed authorized deletion with the Host's visibility and retention rules                           |
+| Tool                                                               | Contract                                                                                                          |
+| ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `memory_index(path, cursor)`                                       | Bounded root or subdirectory navigation; only logical scope-relative paths and authorized entries                 |
+| `memory_search(query, filters, limit)`                             | Bounded document/section hits with ID, version, title, description, and locator; no whole-body preload            |
+| `memory_toc(reference, version)`                                   | Markdown heading tree and section locators bound to one revision/digest                                           |
+| `memory_read(reference, version, section, start, length)`          | Read an exact revision section or bounded range, with explicit continuation and source location                   |
+| `memory_add(kind, title, description, text, sources, ...)`         | Create validated memory in the Host-fixed scope; identity and request key are not model arguments                 |
+| `memory_revise(reference, expected_version, change, sources, ...)` | Apply a replace, append, edit, or patch to create the next semantic/procedural revision; reject episodic rewrites |
+| `memory_history(reference, cursor)`                                | Bounded authorized revision metadata; read a selected version separately                                          |
+| `memory_forget(reference)`                                         | Confirmed authorized deletion with the Host's visibility and retention rules                                      |
 
 `memory_index` provides tree navigation without a second `memory_tree` tool. `memory_read` includes section reads without a separate `memory_read_section`. Validation, commit, and reindexing are backend operations, not model-visible shell or administrative tools. There is no separate model-facing frontmatter editor, generic `memory_write(plan)`, or requirement to call `memory_propose` before every explicit save. Pending candidates and corpus maintenance are managed by the organization workflow and Host interfaces.
 
@@ -185,6 +185,45 @@ Current revisions are the default for semantic/procedural search; historical que
 
 Search/TOC caches bind store identity, document ID/version/digest, and access context. Persistent caches use supported storage semantics; an implementation does not open a remote SQLite file on the Worker by treating an Environment path as a local path. Index representation is internal and never required as a model input.
 
+### Revision Input Operations
+
+`memory_revise` accepts one required `change` object discriminated by `type`. It operates on the Markdown body of one existing document in the selected entry. Each variant accepts only its own payload fields; mixed payloads, unknown types, and a competing top-level `text` are invalid. All four variants require `expected_version`, current write authority, and the same source validation and commit rules. Creation remains `memory_add`; revision never performs an implicit upsert. Episodic documents reject every revision variant, including append; corrections create a related event.
+
+| `change.type` | Payload                                    | Body transformation                                                                               |
+| ------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------- |
+| `replace`     | `text: string`                             | Replace the complete body with the supplied text                                                  |
+| `append`      | `text: string`                             | Concatenate the supplied text to the existing body exactly, without adding a newline or separator |
+| `edit`        | `edits: array` of 1–256 exact replacements | Apply replacements in order to the evolving candidate body, then publish one result               |
+| `patch`       | `patch: string`                            | Apply a single-document unified diff against the expected body                                    |
+
+Each `edit` item contains a non-empty `old_string`, a string `new_string`, and optional `replace_all` (default false). Matching includes whitespace and line endings, without regex or fuzzy matching. A missing match fails; multiple matches fail unless `replace_all` is true. An empty `new_string` removes the matched text. Each item is checked against the result of the preceding item. Any failed item rejects the entire batch without publishing earlier edits. Unlike the general file `edit` tool, an empty `old_string` cannot create a memory document.
+
+`patch` uses the Environment's shared unified-diff text semantics: hunk positions, context, and removed text must match the selected predecessor; no fuzzy relocation or automatic merge is performed. It contains at least one hunk and affects only the selected body. At most one optional file-header pair is accepted; headers cannot select or authorize a path. Multi-file patches, file creation/deletion/rename directives, and binary patches are rejected. Neither edits nor patches can change protected metadata, `_index.md`, or `.internal/` records through body text. Mutable document metadata and sources use the existing validated content fields; omitted mutable metadata is retained, and body replacement does not replace identity, ownership, kind, or provenance implicitly.
+
+For example, the following are separate `change` values, each submitted with the document reference, expected version, and authorized source references:
+
+```json
+{"type": "replace", "text": "# Runtime requirements\n\nUse Python 3.13.\n"}
+```
+
+```json
+{"type": "append", "text": "\n## Verification\nRun the smoke tests after deployment.\n"}
+```
+
+```json
+{"type": "edit", "edits": [{"old_string": "Use Python 3.12.", "new_string": "Use Python 3.13."}]}
+```
+
+```json
+{"type": "patch", "patch": "@@ -3,1 +3,1 @@\n-Use Python 3.12.\n+Use Python 3.13.\n"}
+```
+
+The writer reads the complete expected revision internally, applies the selected transformation, and validates the complete successor before publication. The model need not resend unchanged text for append, edit, or patch. Replacement text is always a complete body, never an implicitly merged section. Input size, edit count, computation, and resulting document size are bounded; transformation and validation failures leave the committed document unchanged. Uncertainty after possible publication follows the existing commit/recovery contract. A changed predecessor returns `memory_conflict` for every variant, including append. The writer never rebases onto a newer head silently.
+
+One successful mutation produces one complete immutable revision and its required change record. The stored audit diff is recomputed from the accepted predecessor and successor; an input patch or edit list is not substituted for that diff. Retries use the original operation key and payload, so an acknowledged or reconciled append cannot append twice. An unchanged body and unchanged metadata produce an unchanged result without another revision or change record, while retaining operation evidence for safe replay.
+
+These are structured memory operations, not shell commands or direct file-tool dispatch. The backend can reuse Environment text transformation and file-write primitives within its staged commit workflow. `write_text`, `patch_text`, append, and the ordinary file tools alone do not provide memory version checks, cross-Worker coordination, or change-record publication. Revision support includes all four input variants through this common writer; adapters without the complete contract do not advertise revision support.
+
 ## Compatibility and Verification
 
 New documents use the three-kind contract. Historical `daily`/`long_term` labels are not automatically interpreted as semantic types. An explicit import/classification operation retains original labels and provenance; unclassified legacy content is not silently discarded or given a new audience by classification. Existing references continue to identify their original data. The `MEMORY.md` presentation name is replaced by `_index.md`; any accepted legacy entry link resolves only to the same authorized derived index, never to an editable body.
@@ -194,6 +233,8 @@ Verification covers:
 - sandbox-default selection, no Environment, explicit persistent path, missing mount, target change, and cross-Worker reconnection;
 - file-only dispatch, root confinement, same-sandbox external edits, and no Worker-local fallback;
 - semantic/procedural revision conflicts, immutable episodes, exact historical reads, and deletion fencing;
+- replace/append/edit/patch inputs, exact whitespace and newline handling, ambiguous or absent edit matches, sequential batch failure without partial publication, and malformed or cross-file patches;
+- stale-version rejection for every input variant, idempotent append recovery, unchanged results, complete-body size limits, retained omitted metadata, and audit diffs computed from actual accepted versions;
 - duplicate requests, concurrent writers, crash boundaries, cancellation, uncertain publication, and successful writes with dirty indexes;
 - exact body and metadata diffs, one change per committed mutation despite retries, rejected writes without successful change records, and no visible version without its required record;
 - bounded change reads, denied source-history access through sharing, external-edit attribution, and erasure of diffs without removing another document's history;

@@ -135,23 +135,27 @@ The Workspace memory-scope collection at `/api/v1/workspaces/{workspace}/memory-
 
 Relative to one selected scope, document operations are:
 
-| Method and suffix                        | Behavior                                                                          |
-| ---------------------------------------- | --------------------------------------------------------------------------------- |
-| GET `/index`                             | Bounded authorized root/subdirectory `_index.md`, logical path and cursor         |
-| GET `/documents`                         | Document metadata with kind/date filters and scope-bound continuation             |
-| POST `/documents/search`                 | Query and allowed facets; bounded document/section references                     |
-| POST `/documents`                        | Create a three-kind document with explicit sources and a required idempotency key |
-| GET `/documents/{document_id}`           | Current or exact requested version, bounded section/range read                    |
-| GET `/documents/{document_id}/toc`       | Version-bound heading tree and section locators                                   |
-| GET `/documents/{document_id}/revisions` | Bounded supported revision history                                                |
-| GET `/changes`                           | Authorized committed-change metadata, with bounded pagination and filters         |
-| GET `/changes/{change_id}`               | Exact supported change detail, including bounded diff continuation                |
-| PUT `/documents/{document_id}`           | New semantic/procedural revision under `If-Match` and an idempotency key          |
-| DELETE `/documents/{document_id}`        | Confirmed deletion, visibility revocation, and required legacy-copy cleanup       |
+| Method and suffix                        | Behavior                                                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| GET `/index`                             | Bounded authorized root/subdirectory `_index.md`, logical path and cursor                               |
+| GET `/documents`                         | Document metadata with kind/date filters and scope-bound continuation                                   |
+| POST `/documents/search`                 | Query and allowed facets; bounded document/section references                                           |
+| POST `/documents`                        | Create a three-kind document with explicit sources and a required idempotency key                       |
+| GET `/documents/{document_id}`           | Current or exact requested version, bounded section/range read                                          |
+| GET `/documents/{document_id}/toc`       | Version-bound heading tree and section locators                                                         |
+| GET `/documents/{document_id}/revisions` | Bounded supported revision history                                                                      |
+| GET `/changes`                           | Authorized committed-change metadata, with bounded pagination and filters                               |
+| GET `/changes/{change_id}`               | Exact supported change detail, including bounded diff continuation                                      |
+| PUT `/documents/{document_id}`           | Apply a typed `change` to create a semantic/procedural revision under `If-Match` and an idempotency key |
+| DELETE `/documents/{document_id}`        | Confirmed deletion, visibility revocation, and required legacy-copy cleanup                             |
 
 For the Workspace surface, scope paths are `/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}`; Bot scope paths retain their Account prefix. Document references are stable logical IDs, never provider row IDs or filesystem paths. Mutable heads use the shared ETag convention, with exact revision reads returning their version and digest. The [document contract](../a13n-harness/21-document-memory.md) owns body/read budgets, kinds, revisions, and source semantics; native-record limits below do not cap document bodies. Unsupported revision operations are explicit and never overwrite a native record to emulate history. Creation reports committed document identity separately from indexing readiness.
 
 Control management acquires the stored Environment binding under current management and Environment authority outside SQL. It never uses a Control machine's local path as a shortcut. Execution and management coordinate writes to the same corpus through one commit boundary. If a target requires routing to an owning process, the Environment integration must supply it; absence is unavailable, not permission to load a local copy.
+
+Document revision requests carry the shared [revision input](../a13n-harness/21-document-memory.md#revision-input-operations) `change` object (`replace`, `append`, `edit`, or `patch`), source references, and any explicitly changed mutable metadata. The required `If-Match` identifies the same predecessor enforced by the tool's `expected_version`; there is no second independently supplied body version. A raw top-level replacement `text` is not a revision request. Creation retains the existing full-text `POST` contract. Native record `PUT` retains its separate `{text}` contract below.
+
+All four revision variants pass through the same authorized document writer and idempotent publication path. Service never forwards a patch or append directly to an Environment mutation to bypass version checks or audit. A missing document is not created by revision. Invalid edits/patches do not publish partial changes; stale predecessors conflict without implicit rebase. Responses distinguish a saved new version from an unchanged result and retain the operation's completion evidence. Backend support for revision includes all four transformations; unsupported adapters fail before mutation.
 
 ## Change Queries and Audit
 

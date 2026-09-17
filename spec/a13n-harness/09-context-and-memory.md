@@ -408,7 +408,8 @@ Memory entry: project (documents)
 Purpose: Project requirements and procedures; use for project evidence.
 Use project_memory_index or project_memory_search to find evidence, and
 project_memory_read to read it. Use project_memory_add to create a document;
-use project_memory_revise with the expected version when supported.
+use project_memory_revise with the expected version and a replace, append,
+edit, or patch change when supported.
 This entry's writes affect only the bound project document store.
 
 Choose entries by their stated purpose. Neither entry has priority over the
