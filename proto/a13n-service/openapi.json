@@ -7377,9 +7377,16 @@
             "type": "object"
           },
           "credential": {
-            "additionalProperties": true,
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credential",
-            "type": "object",
             "writeOnly": true
           },
           "enabled": {
@@ -7401,8 +7408,7 @@
         },
         "required": [
           "type",
-          "name",
-          "credential"
+          "name"
         ],
         "title": "CreateWebProviderRequest",
         "type": "object"

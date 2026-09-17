@@ -13,7 +13,7 @@ These files do not replace the owning semantics:
 
 - [Platform API Conventions](../../spec/api-conventions.md)
 - [Native Streaming and Notifications](../../spec/a13n-service/21-native-streaming-and-notifications.md)
-- [Service Contract Distribution and Client Boundaries](../../spec/a13n-service/37-service-sdks-and-clients.md)
+- [Service SDK Design and Contract Distribution](../../spec/a13n-service/37-service-sdks-and-clients.md)
 
 In particular, notification server delivery and reconnection behavior are defined by the streaming contract, not inferred from the notification client-frame schema. A non-HTTP semantic change must remain visible in downstream review even when `openapi.json` is unchanged.
 

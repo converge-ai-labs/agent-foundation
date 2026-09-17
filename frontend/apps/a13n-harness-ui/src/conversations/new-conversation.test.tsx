@@ -29,7 +29,7 @@ const id = `thread_${"a".repeat(32)}`;
 const path = newConversationPath("project-one");
 let writes: Request[];
 let reads: string[];
-let failure: "create" | "submit" | "reject" | null;
+let failure: "create" | "submit" | "reject" | "submit-reject" | null;
 let paused: Promise<void> | undefined;
 let readPaused: Promise<void> | undefined;
 let readFailure = false;
@@ -278,6 +278,8 @@ beforeEach(() => {
           media_type: "text/plain",
         });
       if (pathname.endsWith("/submit")) {
+        if (failure === "submit-reject")
+          return json({ error: { message: "Conversation busy" } }, 409);
         if (failure === "submit")
           throw new TypeError("Submission acknowledgement lost");
         return json({ thread_id: id, receipt_id: "receipt-one" });
@@ -398,6 +400,10 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
   fireEvent.click(send);
   fireEvent.click(send);
   await waitFor(() => expect(writes).toHaveLength(1));
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  expect(view.container.querySelector("[data-message-id]")).toBeNull();
+  expect(values(drafts.get(id)!.doc).prompt).toContain("Build this");
+  expect(screen.getByRole("button", { name: "Submitting" })).toBeTruthy();
   await act(async () => resume());
   await waitFor(() =>
     expect(screen.getByLabelText("Location").textContent).toBe(
@@ -459,19 +465,52 @@ it("reconciles uncertain creation by exact read and opens the existing thread wi
   expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
 });
 
-it("retains an uncertain submission without replaying it", async () => {
+it("retains an uncertain submission on the New page without a speculative bubble or replay", async () => {
   failure = "submit";
-  mount();
+  const view = mount();
   await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(drafts.get(id)!.submission.kind).toBe("unknown"));
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  expect(view.container.querySelector("[data-message-id]")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "I reviewed the outcome" }),
+  ).toBeNull();
+  expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
+  expect(writes).toHaveLength(2);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Review submission in conversation" }),
+  );
+  await screen.findByRole("button", { name: "Refresh operation and history" });
+  expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
+  expect(reads).toContain(`/api/threads/${id}/transcript`);
+  expect(drafts.get(id)!.submission.kind).toBe("unknown");
+  expect(writes).toHaveLength(2);
+});
+
+it("keeps rejected first input on the New page and retries without recreating the Thread", async () => {
+  failure = "submit-reject";
+  const view = mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Conversation busy");
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  expect(view.container.querySelector("[data-message-id]")).toBeNull();
+  expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
+  expect(writes).toHaveLength(2);
+  failure = null;
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() =>
     expect(screen.getByLabelText("Location").textContent).toBe(
       `/threads/${id}`,
     ),
   );
-  expect(drafts.get(id)!.submission.kind).toBe("unknown");
-  expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
-  expect(writes).toHaveLength(2);
+  expect(writes.map((request) => new URL(request.url).pathname)).toEqual([
+    "/api/threads",
+    `/api/threads/${id}/submit`,
+    `/api/threads/${id}/submit`,
+  ]);
+  expect(values(drafts.get(id)!.doc).prompt).toBe("");
 });
 
 it("does not send after navigating away during creation and preserves the draft for return", async () => {
@@ -742,11 +781,8 @@ it("keeps an uncertain submission blocked after reload rather than replaying inp
   mount();
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await waitFor(() =>
-    expect(screen.getByLabelText("Location").textContent).toBe(
-      `/threads/${id}`,
-    ),
-  );
+  await waitFor(() => expect(drafts.get(id)!.submission.kind).toBe("unknown"));
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
   reload();
   await screen.findByText(
     /The previous input may already have been accepted\. Open the conversation/,

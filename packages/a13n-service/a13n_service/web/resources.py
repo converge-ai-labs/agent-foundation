@@ -47,20 +47,20 @@ async def require_provider(
 def require_eligible(record: WebProviderRecord, registry: WebProviderRegistry) -> None:
     if not record.enabled:
         raise WebProviderError("web_provider_disabled", "Web Provider is disabled.", category=ErrorCategory.conflict)
-    if record.ciphertext is None:
-        raise WebProviderError(
-            "web_provider_credential_missing",
-            "Web Provider requires a credential.",
-            category=ErrorCategory.conflict,
-        )
     try:
-        registry.require(record.type)
+        registration = registry.require(record.type)
     except ValueError:
         raise WebProviderError(
             "web_provider_unavailable",
             "Web Provider implementation is unavailable.",
             category=ErrorCategory.unavailable,
         ) from None
+    if registration.credential_required and record.ciphertext is None:
+        raise WebProviderError(
+            "web_provider_credential_missing",
+            "Web Provider requires a credential.",
+            category=ErrorCategory.conflict,
+        )
 
 
 def require_operation(

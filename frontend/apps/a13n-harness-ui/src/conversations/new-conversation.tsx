@@ -14,7 +14,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Robot, Folder, Monitor, ShieldWarning } from "@phosphor-icons/react";
+import { Robot, Folder, Monitor } from "@phosphor-icons/react";
 import { SearchPicker } from "a13n-ui";
 import {
   useProjects,
@@ -33,7 +33,7 @@ import type { Profile } from "../shell/presence";
 import { Composer, ComposerDrafts, useDraft } from "./composer";
 import { NewDraftStore, type NewDraft } from "./new-draft";
 import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
-import { ThreadRunChoices } from "./thread-run-choices";
+import { EnvironmentMode, ThreadRunChoices } from "./thread-run-choices";
 import { refreshThreadLists } from "./queries";
 import { ConversationTranscript } from "./transcript";
 import { ConversationOpening, useInitialReady } from "./opening";
@@ -220,12 +220,6 @@ function NewConversation({
   const effectiveEnvironment = selectors.data?.environments.find(
     (item) => item.profile_id === effective?.environment_profile_id,
   );
-  const isolation =
-    effectiveEnvironment?.mode === "full-control"
-      ? "Full Control"
-      : effectiveEnvironment?.mode === "sandbox"
-        ? "Sandbox"
-        : "Custom environment";
   const choicesDisabled = preparing || draft.attempted;
   const [showAvailable, setShowAvailable] = useState(false);
   const projectAligned =
@@ -375,24 +369,10 @@ function NewConversation({
             prepareThread={() => create.mutateAsync()}
             onPreparing={setPreparing}
             onSubmitted={openConversation}
+            onReviewOutcome={openConversation}
             modelId={composerDraft.modelId}
             leadingControls={
-              effectiveEnvironment && (
-                <span
-                  className={styles.mode}
-                  data-full-control={
-                    effectiveEnvironment.mode === "full-control"
-                  }
-                  title={
-                    effectiveEnvironment.mode === "full-control"
-                      ? "Runs on the host with your account permissions."
-                      : effectiveEnvironment.description
-                  }
-                >
-                  <ShieldWarning aria-hidden="true" />
-                  {isolation}
-                </span>
-              )
+              <EnvironmentMode environment={effectiveEnvironment} />
             }
             controls={
               <ThreadRunChoices

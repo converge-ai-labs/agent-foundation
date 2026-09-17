@@ -17,7 +17,7 @@ import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
 import { ComposerStatus } from "./composer-status";
-import { ThreadRunChoices } from "./thread-run-choices";
+import { EnvironmentMode, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
@@ -790,6 +790,15 @@ function Conversation({
                   : undefined
             }
             modelId={draft.modelId}
+            leadingControls={
+              <EnvironmentMode
+                environment={selectors.data?.environments.find(
+                  (item) =>
+                    item.profile_id ===
+                    thread?.configuration.environment_profile_id,
+                )}
+              />
+            }
             controls={
               <ThreadRunChoices
                 catalog={selectors.data}

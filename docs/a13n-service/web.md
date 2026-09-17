@@ -2,8 +2,8 @@
 
 Web access has four independent Agent tools:
 
-- `search` returns title, URL, and snippet results through a selected Brave or Exa account.
-- `scrape` extracts readable text for one URL through a selected Exa account.
+- `search` returns title, URL, and snippet results through a selected Web Provider.
+- `scrape` extracts readable text for one URL through a selected scrape-capable Web Provider.
 - `fetch` directly reads a supported textual HTTP response without a Provider account.
 - `download` saves an HTTP response to Environment files without a Provider account.
 
@@ -11,11 +11,25 @@ Search, scrape, and fetch work without an Environment. Download requires a usabl
 
 ## Save a Provider
 
-Open **Resources → Providers → Web** and select the Workspace or Organization scope. Create a Brave or Exa Provider, enter its API key, and save. The key cannot be read back; entering another key on edit rotates it. Organization Providers are visible to eligible Workspaces, while Workspace Providers remain local.
+Open **Resources → Providers → Web** and select the Workspace or Organization scope. Choose a Provider type and save it. Enter an API key for keyed types; DuckDuckGo needs no credential. The key cannot be read back; entering another key on edit rotates it. Organization Providers are visible to eligible Workspaces, while Workspace Providers remain local.
 
 An explicit **Test provider** sends one search for `Agent Foundation` and can consume quota. Creating, testing, selecting, and disabling a Provider are separate operations. Inspect **References** before disabling an account.
 
-Brave supports search in this integration. Exa supports search and scrape. Restricted Exa scrape is intentionally unavailable because the adapter cannot guarantee domain enforcement throughout the remote operation.
+Built-in capabilities:
+
+| Provider   | Search | Scrape | Credential |
+| ---------- | ------ | ------ | ---------- |
+| Brave      | Yes    | No     | API key    |
+| Exa        | Yes    | Yes    | API key    |
+| DuckDuckGo | Yes    | No     | None       |
+| Parallel   | Yes    | Yes    | API key    |
+| Tavily     | Yes    | Yes    | API key    |
+| Firecrawl  | Yes    | Yes    | API key    |
+| Jina       | Yes    | Yes    | API key    |
+| Perplexity | Yes    | No     | API key    |
+| SerpApi    | Yes    | No     | API key    |
+
+DuckDuckGo uses HTML search results; its public Instant Answer JSON API does not return ordinary web search results. Jina search requires an API key, and this integration uses that key for Reader as well. Every built-in remote scraper rejects restricted scrape because it cannot guarantee domain enforcement throughout the upstream operation. Search-only Providers cannot be selected for scrape.
 
 ## Configure an Agent
 
@@ -81,7 +95,7 @@ Each child Agent uses its own accepted selection. Accepted Runs retain Provider 
 | Test                   | `POST .../{provider_id}/test` with `{}`                     |
 | References             | `GET .../{provider_id}/references`                          |
 
-Create with `type`, `name`, and write-only `credential`; enabled defaults to true. Brave and Exa use an empty configuration and an `api_key` credential. Installed external types define their own configuration and credential object schemas in the type catalog, including nested objects and explicit nulls. Responses include a strong `ETag`; send it as `If-Match` for updates. Omission preserves a credential; each Provider schema decides which fields are required.
+Create with `type` and `name`; enabled defaults to true. All built-ins use an empty configuration. Keyed types require a write-only `credential` with `api_key`; omit `credential` for DuckDuckGo. Installed external types define their own configuration and credential object schemas in the type catalog, including nested objects and explicit nulls. Responses include a strong `ETag`; send it as `If-Match` for updates. Omission preserves a credential; each Provider schema decides which fields are required.
 
 ## SDK example
 

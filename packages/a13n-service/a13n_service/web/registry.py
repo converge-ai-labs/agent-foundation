@@ -90,6 +90,7 @@ class WebProviderRegistry:
             display_name=registration.display_name,
             configuration_schema=registration.configuration_model.model_json_schema(),
             credential_schema=credential_schema,
+            credential_required=registration.credential_required,
             setup_url=registration.setup_url,
             operations=tuple(operations),
             supports_restricted_scrape=registration.supports_restricted_scrape,

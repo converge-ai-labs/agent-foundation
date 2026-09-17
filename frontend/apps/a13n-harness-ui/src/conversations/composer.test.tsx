@@ -325,6 +325,82 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   query.clear();
 });
 
+it.each([false, true])(
+  "shows delayed shared edits as an inline icon and retains disconnect warnings (local: %s)",
+  async (local) => {
+    vi.useFakeTimers();
+    const draft = new ThreadDraft();
+    vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+    const acknowledge = () =>
+      draft.receive({
+        draft_id: "draft-one",
+        participant_id: "p-one",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+      });
+    acknowledge();
+    const query = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const view = render(
+      <QueryClientProvider client={query}>
+        <TransportContext
+          value={{ client: { GET: vi.fn() } } as unknown as Transport}
+        >
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <Composer
+              local={local}
+              threadId="thread-one"
+              activity={{ state: "inactive" }}
+              canRun
+              leadingControls={<span>Full Control</span>}
+              profile={{ display_name: "Alice", color: "#2563eb" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    try {
+      const options = screen.getByText("Full Control").parentElement!;
+      const slot = options.nextElementSibling;
+      act(() => draft.doc.getText("text").insert(0, "Pending edit"));
+      await act(() => vi.advanceTimersByTimeAsync(699));
+      expect(screen.queryByRole("status")).toBeNull();
+      await act(() => vi.advanceTimersByTimeAsync(1));
+      if (local) {
+        expect(screen.queryByRole("status")).toBeNull();
+      } else {
+        const status = screen.getByRole("status", { name: "Syncing edits…" });
+        expect(slot?.contains(status)).toBe(true);
+        expect(status.textContent).toBe("");
+        expect(status.title).toBe("Syncing edits…");
+        expect(status.querySelector('svg[aria-hidden="true"]')).toBeTruthy();
+      }
+      act(acknowledge);
+      expect(screen.queryByRole("status")).toBeNull();
+      expect(options.nextElementSibling).toBe(slot);
+      act(() => {
+        draft.status = "Disconnected";
+        draft.notify();
+      });
+      await act(() => vi.advanceTimersByTimeAsync(700));
+      if (local) expect(screen.queryByRole("status")).toBeNull();
+      else
+        expect(
+          screen
+            .getByText("Disconnected · your edits are still in this tab")
+            .getAttribute("role"),
+        ).toBe("status");
+    } finally {
+      view.unmount();
+      query.clear();
+      vi.useRealTimers();
+    }
+  },
+);
+
 it("keeps Stop available beside authored Steer, preserves input, and never cancels from a submission shortcut", async () => {
   const draft = new ThreadDraft();
   vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
@@ -753,7 +829,9 @@ it.each(["restore", "other-field", "rejected"])(
     const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
     act(() => textbox.focus());
     fireEvent.keyDown(textbox, { key: "Enter" });
-    await screen.findByText("Sending…");
+    await screen.findByRole("button", { name: "Submitting" });
+    expect(screen.getByLabelText("Message stream").textContent).toBe("");
+    expect(values(draft.doc).prompt).toBe("Follow up");
     // jsdom does not implement inert's native blur, so simulate it explicitly.
     act(() => textbox.blur());
     const other = screen.getByRole("textbox", { name: "Other field" });
@@ -776,8 +854,13 @@ it.each(["restore", "other-field", "rejected"])(
       outcome === "rejected" ? "Follow up" : "",
     );
     expect(screen.queryByText("Sending…")).toBeNull();
-    if (outcome === "rejected")
-      expect(screen.getByText("Not sent · input retained")).toBeTruthy();
+    if (outcome === "rejected") {
+      expect(screen.getByText("Conversation busy")).toBeTruthy();
+      expect(screen.getByLabelText("Message stream").textContent).toBe("");
+    } else
+      expect(screen.getByLabelText("Message stream").textContent).toContain(
+        "Follow up",
+      );
     cleanup();
     query.clear();
   },

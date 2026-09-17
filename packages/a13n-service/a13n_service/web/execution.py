@@ -50,11 +50,12 @@ async def _dispatch[ResultT](
             if snapshot.provider_id != provider_id:
                 raise RuntimeError("Web Provider binding changed")
             try:
-                credential_value = json.loads(snapshot.credential.decrypt(protector))
-                credentials = registry.validate_credentials(snapshot.provider_type, credential_value)
-                configuration = registry.require(snapshot.provider_type).configuration_model.model_validate(
-                    snapshot.configuration
+                registration = registry.require(snapshot.provider_type)
+                credential_value = (
+                    json.loads(snapshot.credential.decrypt(protector)) if registration.credential_required else {}
                 )
+                credentials = registry.validate_credentials(snapshot.provider_type, credential_value)
+                configuration = registration.configuration_model.model_validate(snapshot.configuration)
             except (SecretProtectionError, ValueError, TypeError, json.JSONDecodeError) as error:
                 raise WebProviderError("web_provider_unavailable") from error
             failure: WebProviderError | None = None
