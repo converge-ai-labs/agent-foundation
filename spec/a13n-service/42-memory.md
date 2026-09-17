@@ -78,12 +78,12 @@ Each Worker recall or tool call rechecks current Attempt authority, the retained
 
 ## Agent Selection
 
-`AgentConfig.memory` is absent/null by default. The canonical enabled form is `{entries: [...]}` with one to sixteen entries. Each entry selects one mode and one backend; repeated modes are allowed. Empty entries, unknown fields, duplicate names, and unsupported mode/backend combinations fail validation. Entry order is deterministic presentation order, not priority, fallback, or write routing.
+`AgentConfig.memory` is absent/null by default. The enabled form is `{entries: [...]}` with one to sixteen entries. Each entry selects one mode and one backend; repeated modes are allowed. An empty memory object, an empty entry list, unknown fields, duplicate names, and unsupported mode/backend combinations fail validation. Entry order is deterministic presentation order, not priority, fallback, or write routing.
 
 | Entry field        | Contract                                                                                                                                     |
 | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
 | `name`             | Unique stable tool prefix matching `[a-z][a-z0-9_]{0,23}`; identifies the selection within this Agent, not a storage namespace or permission |
-| `mode`             | Required `records` or `documents`; never inferred from Provider type in canonical configuration                                              |
+| `mode`             | Required `records` or `documents`; never inferred from Provider type                                                                         |
 | `description`      | Required nonblank purpose/routing guidance, at most 2,000 characters; authored Agent instruction, without credentials                        |
 | `backend`          | Exactly one of `{type, configuration}` or `{provider_id}`                                                                                    |
 | `scope`            | Trusted thread/agent/user scope; defaults to thread for documents and available authorized scopes for records                                |
@@ -128,10 +128,6 @@ Conformance covers two entries of the same backend type, mixed records/documents
 ### Resolved selection inspection
 
 Configuration UI and authorized inspection show each entry's name, mode, purpose, resolved backend type, inline/managed source, safe Provider/Environment reference, effective scope, supported operations, and storage availability/lifetime. Before lazy resolution they show unresolved target rather than claiming readiness. Lifetimes distinguish sandbox-bound, verified persistent storage, externally managed, and unknown. A configured persistent path is not evidence of a verified mount or retention policy. Resolved outputs reveal no credentials or private native namespace/path; filesystem configuration editors show only authorized authored paths. Storage replacement explicitly leaves old corpora on their original bindings and performs no union or migration.
-
-### Existing selections
-
-Existing single-selection objects remain readable with their original filesystem/native behavior, namespaces, and unprefixed tool surface; `memory: {}` retains its previous filesystem meaning. They are not retroactively interpreted as an empty entry list. Canonical entry configurations always require explicit mode/backend selection and use prefixed tools even with one entry. Mixed legacy and entry fields are invalid. Editors emit canonical entries for new configuration and preserve the effective target and behavior when explicitly converting an old selection. Immutable Agent Revisions, accepted Runs, suspended tool calls, and existing data are not rewritten. Legacy Bot settings retain their existing document-selection behavior.
 
 ## Document Management API
 
@@ -222,9 +218,9 @@ The distribution composes a bounded trusted set of behavior implementations. Dup
 
 ## Bot Memory Configuration
 
-Bot settings select one document entry using the canonical entry/backend structure above; native records and multiple entries are not enabled by this Bot product contract. Ordinary Agent multi-entry configuration is never implicitly added to a Bot conversation binding. Legacy Bot objects remain readable as described above. The following no-`provider_id` default applies only to that legacy shape.
+Bot settings select one document entry using the entry/backend structure above; native records and multiple entries are not enabled by this Bot product contract. Ordinary Agent multi-entry configuration is never implicitly added to a Bot conversation binding.
 
-Bot-owned `bot_account_settings` is keyed by Application Account ID and independently versioned. The common Account resource and mutations contain no Memory field. `GET /api/v1/application-accounts/{account_id}/bot/memory-settings` returns `{account_id, version, memory}`. An unconfigured account returns version 0 and null memory. `PUT` accepts `{expected_version, memory}`; a mismatch conflicts, a successful replacement increments the Bot settings version, and null explicitly disables memory. Settings writes require Workspace administrator Bot-memory authority, a live supported installation, and either the built-in filesystem selection or an eligible same-Workspace Provider with document support. For legacy Bot objects only, an omitted `provider_id` selects filesystem storage. Canonical Bot settings use one named documents entry with explicit backend selection; scope and subject are fixed by the conversation binding, not an entry-authored thread/agent/user scope. They do not change Account identity, credential generation, or Account version.
+Bot-owned `bot_account_settings` is keyed by Application Account ID and independently versioned. The common Account resource and mutations contain no Memory field. `GET /api/v1/application-accounts/{account_id}/bot/memory-settings` returns `{account_id, version, memory}`. An unconfigured account returns version 0 and null memory. `PUT` accepts `{expected_version, memory}`; a mismatch conflicts, a successful replacement increments the Bot settings version, and null explicitly disables memory. Settings writes require Workspace administrator Bot-memory authority, a live supported installation, and either the built-in filesystem selection or an eligible same-Workspace Provider with document support. Bot settings use one named documents entry with explicit backend selection; scope and subject are fixed by the conversation binding, not an entry-authored thread/agent/user scope. They do not change Account identity, credential generation, or Account version.
 
 Bot summaries project `memory_settings` separately from `account`. Setup-test and reply correlation retain the Bot settings version alongside Account, credential, and target generations. Changes make earlier setup evidence stale. Current settings can revoke runtime access but never redirect an accepted binding to another Provider or expand a disabled binding.
 

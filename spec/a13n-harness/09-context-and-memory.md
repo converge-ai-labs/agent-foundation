@@ -383,41 +383,15 @@ The opt-in `MemoryDocumentBackend` extends the six-operation backend with `add_d
 
 `MemoryBackendPlugin` is an inert backend factory within `a13n-harness`, separate from `AbstractHarnessPlugin`. Each implementation defines a stable key, display name, independent Pydantic configuration and credential models with pure validation, and an asynchronous context-manager factory owning backend construction and cleanup. Its configuration contains no secrets. The inert `supports_documents` flag defaults to false; a factory sets it to true only when its backend implements the document creation/search contract. Independent `supports_revisions` support additionally requires the versioned operations in [Document Memory](21-document-memory.md); native metadata support alone is insufficient. Catalog inspection never opens a backend or probes an endpoint. The flag describes adapter support, not current endpoint health. A host-selected immutable `MemoryBackendCatalog` contains only explicitly selected built-ins, installed entry points from `a13n_harness.memory_backends`, and direct plugin objects. Duplicate keys fail without shadowing; unselected entry points are not imported. The built-in keys are `a13n.filesystem`, `a13n.mem0-oss`, and `a13n.mem0-platform`. The filesystem factory borrows Host-bound Environment file access; it never interprets its configured root as a Worker-local path or constructs a second Environment catalog. Embedded Hosts can inject a backend directly without a catalog or Service resource. Service and Harness share this protocol and adapter implementation, not a client instance across processes.
 
-The following is the legacy single-entry conceptual construction schema, not serialized state. Multi-entry construction supplies the prepared collection described below instead of these single-entry arguments.
+Construction requires a non-empty collection of explicitly selected, Host-prepared memory entries. Each entry borrows exactly one native backend or authorized document store according to its mode. The Capability has no implicit backend selection. For an explicitly selected filesystem entry, the Host binds Environment file access under [Document Memory](21-document-memory.md#storage-binding-and-environment-lifetime); an unavailable Environment produces unavailable memory, never a local fallback.
 
-```python
-class MemoryScope(StrEnum):
-    THREAD = "thread"
-    AGENT = "agent"
-    USER = "user"
-
-
-class MemoryCapability(AbstractModelContextCapability):
-    def __init__(
-        self,
-        *,
-        backend: MemoryBackend | None = None,
-        document_store: MemoryDocumentStore | None = None,
-        document_read: bool = True,
-        document_write: bool = True,
-        scope_ids: Mapping[MemoryScope, str] | None = None,
-        scope: MemoryScope | None = None,
-        toolset: bool = True,
-        auto_recall: bool = True,
-        recall_limit: int = 5,
-        recall_threshold: float | None = None,
-        recall_timeout: float = 2.0,
-        recall_required: bool = False,
-    ) -> None: ...
-```
-
-The legacy single-entry constructor accepts either an explicit backend or a document store, both borrowed. This constructor restriction is not a restriction on multi-entry composition. With neither supplied, an opted-in Capability binds the filesystem document store to the current default Environment under [Document Memory](21-document-memory.md#storage-binding-and-environment-lifetime). No available Environment means unavailable memory, not an implicit local backend. The Host owns its transport lifetime, credentials, endpoint, and authorization; no environment-variable fallback or Run-owned client exists. `open_mem0_oss` and `open_mem0_platform` are host-lifetime context managers. Platform construction defers eager synchronous validation to bounded asynchronous operations. The Capability never closes the backend, and no backend, credential, endpoint, or native response enters `HarnessState`.
+The Host owns its transport lifetime, credentials, endpoint, and authorization; no environment-variable fallback or Run-owned client exists. `open_mem0_oss` and `open_mem0_platform` are host-lifetime context managers. Platform construction defers eager synchronous validation to bounded asynchronous operations. The Capability never closes the backend, and no backend, credential, endpoint, or native response enters `HarnessState`.
 
 ### Multiple Memory Entries
 
 One `MemoryCapability` owns a bounded collection of independently authorized entries. Each entry has a unique name, records/documents mode, authored purpose description, mode settings, and one borrowed backend/store. The Host supplies prepared entries; Service serialization is owned by [Agent Selection](../a13n-service/42-memory.md#agent-selection). Multiple entries of the same mode are supported. A mode is a behavior contract, not a vendor: document kinds, filesystem paths, revisions, and change records are not mandatory native-record backend concepts. `supports_documents` establishes document creation/search only; revision and change support require their separate contracts. Unsupported tools are not advertised, and unsupported direct operations fail before mutation.
 
-Canonical entry tools are named `<name>_<base-tool-name>`: for example, `preferences_memory_search`, `preferences_memory_add`, `project_memory_search`, and `project_memory_read`. This rule applies with one or many entries so adding an entry does not rename existing tools. Names are validated before model exposure against all finalized tools, including non-memory tools; collisions fail preparation rather than shadowing. Tool calls route to exactly the named binding, without a model-supplied Provider, endpoint, or storage selector. References and typed custom-Capability operations retain the entry identity; ambiguous unqualified operations fail rather than selecting the first entry. Existing native `search/list/add/get/update/delete` calls remain valid on legacy single-entry owners.
+Canonical entry tools are named `<name>_<base-tool-name>`: for example, `preferences_memory_search`, `preferences_memory_add`, `project_memory_search`, and `project_memory_read`. This rule applies with one or many entries so adding an entry does not rename existing tools. Names are validated before model exposure against all finalized tools, including non-memory tools; collisions fail preparation rather than shadowing. Tool calls route to exactly the named binding, without a model-supplied Provider, endpoint, or storage selector. References and typed custom-Capability operations retain the entry identity; ambiguous unqualified operations fail rather than selecting the first entry. Typed native `search/list/add/get/update/delete` operations select an explicit records entry.
 
 Each entry contributes one bounded build-static instruction block at the same existing Capability instruction level. Blocks identify name, mode, authored purpose, supported tools, and actual operation semantics. Trusted adapter guidance describes capabilities and limitations; it does not promote itself above another entry. Entry order conveys no authority or default preference. Purpose text is Agent-authored configuration; backend-returned memory, metadata, indexes, and diagnostics never become system instructions. Dynamic availability and recalled data use bounded untrusted context projections. Instructions and tool names remain stable for the logical Run.
 
@@ -445,11 +419,11 @@ winner. A save to one entry does not save to the other.
 
 Each entry retains its own native recall or document navigation semantics. Context blocks carry distinct stable entry source IDs; their combined output obeys the existing model-context aggregate ceiling, not one aggregate allowance per entry. Hosts allocate bounded per-entry shares before retrieval so enabling multiple entries cannot multiply the overall context limit. Document continuation preserves undisplayed entries; native recall keeps its bounded result semantics. No cross-entry ranking, deduplication, automatic synchronization, dual writes, or fallback is implied. Required initial failures prevent model work; optional failures remain explicitly attributable while other entries continue. Cancellation closes partial preparation. Writes and recovery are independent and retain original entry/operation identity. A document delete does not erase another entry's native record.
 
-The native and document sections below describe behavior per entry. Legacy unprefixed tools and implicit filesystem construction apply only to the legacy single-entry surface; canonical entries require explicit selection. One document entry's lack of automatic native recall does not disable a separately selected records entry.
+The native and document sections below describe behavior per explicitly selected entry. All model-visible memory tools use the entry prefix. One document entry's lack of automatic native recall does not disable a separately selected records entry.
 
 ### Native Record Mode
 
-The following recall and six-operation behavior applies to an explicitly selected native record backend. Default filesystem document mode uses a single trusted subject (the current Thread unless the Host explicitly selects another) and follows the document-navigation contract below.
+The following recall and six-operation behavior applies to an explicitly selected native record backend. A filesystem document entry uses a single trusted subject (the current Thread unless the Host explicitly selects another) and follows the document-navigation contract below.
 
 The Capability resolves scope only from trusted current context:
 
@@ -479,9 +453,9 @@ Memory records remain provider-owned durable state. The Capability performs no a
 
 ### Document Navigation Mode
 
-[Document Memory](21-document-memory.md) owns the document store operations, model tools, root/subdirectory `_index.md` navigation, revisions, and file-backed defaults. The Host supplies an authorized store or binds the default filesystem store through the current Environment. This mode applies to ordinary Agents as well as Bots; it is not a second Capability type.
+[Document Memory](21-document-memory.md) owns the document store operations, model tools, root/subdirectory `_index.md` navigation, revisions, and file-backed defaults. The Host supplies an authorized store for each selected document entry, binding Environment files when that entry explicitly selects filesystem storage. This mode applies to ordinary Agents as well as Bots; it is not a second Capability type.
 
-The store fixes the audience and reauthorizes every operation, including source links and exact historical reads. An explicit store rejects competing `scope`/`scope_ids` configuration; default file binding resolves these only through trusted Host context. Raw native-record operations cannot address or overwrite managed documents through another path.
+The store fixes the audience and reauthorizes every operation, including source links and exact historical reads. Each store fixes its subject through trusted Host context; competing per-entry `scope`/`scope_ids` configuration is rejected. Raw native-record operations cannot address or overwrite managed documents through another path.
 
 With document reading enabled, each eligible input projection obtains a fresh bounded index under the same thirty-second operation deadline as document tools and the 32 KiB encoded-context ceiling, including escaping, continuation, and the untrusted-context envelope. Optional failure produces an explicit unavailable notice, never a fabricated empty index; `recall_required=True` fails before model work. It performs no ordinary automatic top-k body recall. The store supplies `_index.md` before task reasoning through the existing model-context coordinator; it does not rewrite instructions or historical overlays. `toolset=False` suppresses model tools while retaining configured index projection. A warning on loading or rendering failure records the Run/Thread identity, stage, exception type, elapsed time, and deadline without exception messages, memory content, credentials, or traceback. Cancellation propagates without being converted into an unavailable notice. Already delivered context is historical evidence, not permission to follow a stale reference.
 
