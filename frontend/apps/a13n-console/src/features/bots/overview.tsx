@@ -12,6 +12,7 @@ import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { StateBadge, Timestamp } from "../../shared/feedback";
 import { EventConnection } from "./event-connection";
+import { CallbackSetup } from "./connect";
 import { BotChecks } from "./checks";
 import { LatestBotTest } from "./test-observation";
 import { conditions, stages } from "./summary-labels";
@@ -27,6 +28,7 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
   const { t } = useTranslation(),
     { basePath, can } = useWorkspace(),
     account = botAccount(summary);
+  const github = account.provider_key === "github";
   const agent = useAgent(account.default_agent_id ?? undefined);
   const admin = can("application_account.manage"),
     policy = messagingPolicy(account.provider_policy);
@@ -176,9 +178,16 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
               <dt>{t("When to respond")}</dt>
               <dd>
                 <span className={styles.factValue}>
-                  {policy
-                    ? t(responseLabels[policy.interaction_mode])
-                    : t("Not configured")}
+                  {github
+                    ? t(
+                        account.provider_config_version ===
+                          "github_notifications_v1"
+                          ? "Notification updates"
+                          : "Selected GitHub events",
+                      )
+                    : policy
+                      ? t(responseLabels[policy.interaction_mode])
+                      : t("Not configured")}
                 </span>
               </dd>
             </div>
@@ -186,9 +195,11 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
               <dt>{t("Reply placement")}</dt>
               <dd>
                 <span className={styles.factValue}>
-                  {policy
-                    ? t(placementLabels[policy.reply_mode])
-                    : t("Not configured")}
+                  {github
+                    ? t("Issue or PR comment")
+                    : policy
+                      ? t(placementLabels[policy.reply_mode])
+                      : t("Not configured")}
                 </span>
                 {policy?.reply_mode === "auto" && (
                   <small className={styles.factHint}>
@@ -198,7 +209,13 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
               </dd>
             </div>
             <div>
-              <dt>{t("Configured conversations")}</dt>
+              <dt>
+                {t(
+                  github
+                    ? "Configured repositories"
+                    : "Configured conversations",
+                )}
+              </dt>
               <dd>
                 <Link className={styles.factLink} to={groups}>
                   {summary.configured_target_count}
@@ -208,63 +225,68 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
             </div>
           </dl>
         </section>
-        <section>
-          <header className={styles.overviewCardHeader}>
-            <h2>
-              <BrainIcon aria-hidden="true" />
-              {t("Group memory")}
-            </h2>
-          </header>
-          <p>
-            {t(
-              account.memory
-                ? "Default memory behavior for this bot. Each group controls who can read its memory."
-                : "Memory is not configured. Your bot can still participate in conversations.",
-            )}
-          </p>
-          {account.memory && (
-            <dl className={styles.overviewFacts}>
-              <div>
-                <dt>{t("Use memory during conversations")}</dt>
-                <dd>
-                  <StateBadge
-                    state={account.memory.use_memory ? "enabled" : "disabled"}
-                  />
-                </dd>
-              </div>
-              <div>
-                <dt>{t("Allow explicit save and forget requests")}</dt>
-                <dd>
-                  <StateBadge
-                    state={
-                      account.memory.save_on_request ? "enabled" : "disabled"
-                    }
-                  />
-                </dd>
-              </div>
-            </dl>
-          )}
-          <footer className={styles.overviewCardFooter}>
+        {!github && (
+          <section>
+            <header className={styles.overviewCardHeader}>
+              <h2>
+                <BrainIcon aria-hidden="true" />
+                {t("Group memory")}
+              </h2>
+            </header>
             <p>
-              {t("Memory management is available to workspace administrators.")}
+              {t(
+                account.memory
+                  ? "Default memory behavior for this bot. Each group controls who can read its memory."
+                  : "Memory is not configured. Your bot can still participate in conversations.",
+              )}
             </p>
-            {admin && (
-              <Button
-                variant="outline"
-                render={<Link to={`${basePath}/bots/${account.id}/memory`} />}
-              >
-                {t("Manage memory")}
-                <ArrowRightIcon aria-hidden="true" />
-              </Button>
+            {account.memory && (
+              <dl className={styles.overviewFacts}>
+                <div>
+                  <dt>{t("Use memory during conversations")}</dt>
+                  <dd>
+                    <StateBadge
+                      state={account.memory.use_memory ? "enabled" : "disabled"}
+                    />
+                  </dd>
+                </div>
+                <div>
+                  <dt>{t("Allow explicit save and forget requests")}</dt>
+                  <dd>
+                    <StateBadge
+                      state={
+                        account.memory.save_on_request ? "enabled" : "disabled"
+                      }
+                    />
+                  </dd>
+                </div>
+              </dl>
             )}
-          </footer>
-        </section>
+            <footer className={styles.overviewCardFooter}>
+              <p>
+                {t(
+                  "Memory management is available to workspace administrators.",
+                )}
+              </p>
+              {admin && (
+                <Button
+                  variant="outline"
+                  render={<Link to={`${basePath}/bots/${account.id}/memory`} />}
+                >
+                  {t("Manage memory")}
+                  <ArrowRightIcon aria-hidden="true" />
+                </Button>
+              )}
+            </footer>
+          </section>
+        )}
       </div>
       {account.provider_config.event_transport === "websocket" && (
         <div className={styles.eventConnection}>
           <EventConnection account={account} />
         </div>
       )}
+      {github && admin && <CallbackSetup account={account} />}
       <BotChecks account={account} showAccountLink />
       <div className={styles.overviewTest}>
         <LatestBotTest account={account} />

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -84,7 +85,7 @@ class IngressEventService:
         self._observations = observations
 
     async def receive(self, *, account_id: str, request: ProviderRequest) -> ProviderHttpResponse:
-        snapshot, adapter, credentials = await self._load_runtime(account_id)
+        snapshot, adapter, credentials = await self.load_runtime(account_id)
         if len(request.body) > min(self._request_max_bytes, adapter.max_request_bytes):
             return adapter.failure_response("request_too_large")
         try:
@@ -100,7 +101,7 @@ class IngressEventService:
         if decision.kind == "complete":
             return decision.response
         try:
-            receipt = await self._admit(
+            receipt = await self.admit_authenticated(
                 snapshot=snapshot,
                 adapter=adapter,
                 event=decision.event,
@@ -125,7 +126,7 @@ class IngressEventService:
             )
         adapter = require_adapter(self._adapters, snapshot.provider_key, snapshot.provider_config_version)
         if decision.kind == "event":
-            await self._admit(
+            await self.admit_authenticated(
                 snapshot=snapshot,
                 adapter=adapter,
                 event=decision.event,
@@ -139,10 +140,10 @@ class IngressEventService:
                 await require_claim(session, claim)
 
     async def load_socket_account(self, account_id: str) -> tuple[AccountSnapshot, JsonObject]:
-        snapshot, _, credentials = await self._load_runtime(account_id)
+        snapshot, _, credentials = await self.load_runtime(account_id)
         return snapshot, credentials
 
-    async def _load_runtime(self, account_id: str) -> tuple[AccountSnapshot, IngressAdapter, JsonObject]:
+    async def load_runtime(self, account_id: str) -> tuple[AccountSnapshot, IngressAdapter, JsonObject]:
         async with short_session(self._sessions) as session:
             account = await require_account(session, account_id)
             if account.status != "active":
@@ -168,7 +169,7 @@ class IngressEventService:
             ) from error
         return snapshot, adapter, credentials
 
-    async def _admit(
+    async def admit_authenticated(
         self,
         *,
         snapshot: AccountSnapshot,
@@ -176,6 +177,7 @@ class IngressEventService:
         event: InboundEvent,
         request_digest: str,
         claim: ConnectionClaim | None = None,
+        fence: Callable[[AsyncSession], Awaitable[None]] | None = None,
     ) -> AdmissionReceipt:
         now = self._clock()
         identity = hashlib.sha256(event.external_event_id.encode()).hexdigest()
@@ -198,6 +200,8 @@ class IngressEventService:
                 raise NativeError(
                     "account_changed", "Account changed during authentication.", category=ErrorCategory.unavailable
                 )
+            if fence is not None:
+                await fence(session)
             duplicate = await session.scalar(
                 select(IngressAdmissionRecord).where(
                     IngressAdmissionRecord.account_id == account.id,

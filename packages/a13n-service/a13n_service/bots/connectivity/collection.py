@@ -24,7 +24,7 @@ from a13n_service.temporal import assume_utc, utc_now
 from .domain import BotCheck
 from .models import BotCheckRecord, BotReplyRecord, BotTestRecord
 
-BotPlatform = Literal["slack", "lark"]
+BotPlatform = Literal["slack", "lark", "github"]
 BotSetupCondition = Literal["disabled", "needs_verification", "check_failed", "reception_off", "receiving"]
 BotTestStage = Literal["waiting", "expired", "stale", "received", "rejected", "accepted", "reply_confirmed"]
 
@@ -106,12 +106,22 @@ async def list_bots(
         installation["organization_id"].as_string(),
         case(
             (account.provider_key == "slack", account.provider_config_json["team_id"].as_string()),
+            (
+                account.provider_key == "github",
+                func.coalesce(
+                    account.provider_config_json["installation_account_id"].as_string(),
+                    account.provider_config_json["user_id"].as_string(),
+                ),
+            ),
             else_=account.provider_config_json["tenant_key"].as_string(),
         ),
     )
     target_count = (
         select(func.count())
-        .where(AccountTargetRecord.account_id == account.id, AccountTargetRecord.target_kind == "conversation")
+        .where(
+            AccountTargetRecord.account_id == account.id,
+            AccountTargetRecord.target_kind.in_(("conversation", "repository")),
+        )
         .correlate(account)
         .scalar_subquery()
     )
@@ -157,7 +167,7 @@ async def list_bots(
                 account.workspace_id == workspace_id,
                 account.organization_id == workspace.organization_id,
                 account.deleted_at.is_(None),
-                account.provider_key.in_(("slack", "lark")),
+                account.provider_key.in_(("slack", "lark", "github")),
             )
         )
         if account_id:

@@ -516,7 +516,15 @@
             "type": "integer"
           },
           "policy": {
-            "$ref": "#/components/schemas/MessagingPolicy"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MessagingPolicy"
+              },
+              {
+                "$ref": "#/components/schemas/GitHubReceptionPolicy"
+              }
+            ],
+            "title": "Policy"
           },
           "target_id": {
             "maxLength": 128,
@@ -2931,7 +2939,8 @@
           "provider_key": {
             "enum": [
               "slack",
-              "lark"
+              "lark",
+              "github"
             ],
             "title": "Provider Key",
             "type": "string"
@@ -2943,6 +2952,9 @@
               },
               {
                 "$ref": "#/components/schemas/LarkReplyReceipt"
+              },
+              {
+                "$ref": "#/components/schemas/GitHubCommentReceipt"
               },
               {
                 "type": "null"
@@ -3022,8 +3034,15 @@
             "type": "string"
           },
           "event_path": {
-            "title": "Event Path",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Path"
           },
           "event_url": {
             "anyOf": [
@@ -3035,6 +3054,38 @@
               }
             ],
             "title": "Event Url"
+          },
+          "poll_checked_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poll Checked At"
+          },
+          "poll_error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Poll Error Code"
+          },
+          "reception_mode": {
+            "default": "webhook",
+            "enum": [
+              "webhook",
+              "polling"
+            ],
+            "title": "Reception Mode",
+            "type": "string"
           }
         },
         "required": [
@@ -7582,6 +7633,24 @@
         "title": "DiscoverFeishuInstallationRequest",
         "type": "object"
       },
+      "DiscoverGitHubUserRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "personal_access_token": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Personal Access Token",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "personal_access_token"
+        ],
+        "title": "DiscoverGitHubUserRequest",
+        "type": "object"
+      },
       "Document": {
         "additionalProperties": false,
         "properties": {
@@ -8911,6 +8980,73 @@
           "arguments"
         ],
         "title": "FunctionCall",
+        "type": "object"
+      },
+      "GitHubCommentReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "comment_id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Comment Id",
+            "type": "integer"
+          },
+          "html_url": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Html Url",
+            "type": "string"
+          },
+          "node_id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Node Id",
+            "type": "string"
+          },
+          "request_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "comment_id",
+          "node_id",
+          "html_url",
+          "request_id"
+        ],
+        "title": "GitHubCommentReceipt",
+        "type": "object"
+      },
+      "GitHubReceptionPolicy": {
+        "additionalProperties": false,
+        "properties": {
+          "allowed_senders": {
+            "default": [
+              "*"
+            ],
+            "items": {
+              "maxLength": 64,
+              "minLength": 1,
+              "pattern": "^(\\*|[A-Za-z0-9][A-Za-z0-9-]{0,38}(\\[bot\\])?)$",
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Allowed Senders",
+            "type": "array"
+          },
+          "event_actions": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50,
+            "title": "Event Actions",
+            "type": "array"
+          }
+        },
+        "title": "GitHubReceptionPolicy",
         "type": "object"
       },
       "GitHubRevisionSource": {
@@ -46108,7 +46244,8 @@
                 {
                   "enum": [
                     "slack",
-                    "lark"
+                    "lark",
+                    "github"
                   ],
                   "type": "string"
                 },
@@ -46323,6 +46460,102 @@
           }
         ],
         "summary": "Discover Feishu Installation",
+        "tags": [
+          "bots"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/bots/github/user": {
+      "post": {
+        "operationId": "post_workspaces_workspace_bots_github_user",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverGitHubUserRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationInfo"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Discover Github User",
         "tags": [
           "bots"
         ]

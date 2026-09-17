@@ -34,6 +34,7 @@ from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.reconciler import MCPReconciler
 from a13n_service.connectivity.mcp.service import MCPConnectionService
+from a13n_service.connectivity.providers.github.polling import GitHubNotificationPoller
 from a13n_service.connectivity.runtime import (
     ConnectivityControlRuntime,
     ConnectivityDataRuntime,
@@ -105,7 +106,7 @@ async def build_connectivity_runtime(
         else (None, ())
     )
     data, data_components = (
-        _build_data_runtime(settings, input_acceptor, storage, ingress_adapters, secret_protector)
+        await _build_data_runtime(settings, input_acceptor, storage, ingress_adapters, secret_protector, stack)
         if data_plane
         else (None, ())
     )
@@ -284,12 +285,13 @@ def _build_mcp_control(
     )
 
 
-def _build_data_runtime(
+async def _build_data_runtime(
     settings: Settings,
     input_acceptor: InputAcceptor | None,
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
     secret_protector: SecretProtector,
+    stack: AsyncExitStack,
 ) -> tuple[ConnectivityDataRuntime, tuple[BackgroundTask, ...]]:
     ingress_events = IngressEventService(
         storage.sessions,
@@ -322,6 +324,18 @@ def _build_data_runtime(
         poll_interval_seconds=settings.connectivity.retention_poll_interval_seconds,
         batch_size=settings.connectivity.retention_batch_size,
     )
+    polling_http = await stack.enter_async_context(
+        httpx2.AsyncClient(
+            cookies=cookie_free_jar(), follow_redirects=False, timeout=connectivity_http_timeout(settings)
+        )
+    )
+    poller = GitHubNotificationPoller(
+        storage.sessions,
+        ingress_events,
+        polling_http,
+        settings.connectivity_endpoint_policy(),
+        instance_id=settings.service.instance_id or new_object_id("svc"),
+    )
     sockets = EventConnectionSupervisor(
         storage.sessions, ingress_events, owner=settings.service.instance_id or new_object_id("svc")
     )
@@ -330,6 +344,7 @@ def _build_data_runtime(
         BackgroundTask("event connection supervisor", sockets.run, return_is_expected=sockets.is_draining),
         BackgroundTask("ingress admission reconciler", admission.run),
         BackgroundTask("ingress retention reconciler", retention.run),
+        BackgroundTask("GitHub notification polling", poller.run),
     )
     return runtime, background_components
 

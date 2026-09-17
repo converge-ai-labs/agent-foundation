@@ -26,7 +26,9 @@ export function BotsPage() {
     { t } = useTranslation(),
     navigate = useNavigate();
   const page = useCursor();
-  const [platform, setPlatform] = useState<"slack" | "lark" | "">("");
+  const [platform, setPlatform] = useState<"slack" | "lark" | "github" | "">(
+    "",
+  );
   const [condition, setCondition] = useState<Condition | "">("");
   const [draft, setDraft] = useState(""),
     [search, setSearch] = useState("");
@@ -60,7 +62,7 @@ export function BotsPage() {
     <Page
       title={t("Bots")}
       description={t(
-        "Bring an agent into your Slack channels and Feishu chats.",
+        "Bring an agent into Slack, Feishu, and GitHub conversations.",
       )}
       actions={
         can("application_account.manage") && (
@@ -93,9 +95,15 @@ export function BotsPage() {
             { value: "", label: t("All platforms") },
             { value: "slack", label: "Slack" },
             { value: "lark", label: t("Feishu") },
+            { value: "github", label: "GitHub" },
           ]}
           onValueChange={(value) => {
-            if (value === "" || value === "slack" || value === "lark") {
+            if (
+              value === "" ||
+              value === "slack" ||
+              value === "lark" ||
+              value === "github"
+            ) {
               setPlatform(value);
               page.reset();
             }
@@ -159,9 +167,11 @@ export function BotsPage() {
                       <span className={styles.collectionIdentity}>
                         <strong>{account.name}</strong>
                         <small>
-                          {account.provider_key === "slack"
-                            ? "Slack"
-                            : t("Feishu")}
+                          {account.provider_key === "github"
+                            ? "GitHub"
+                            : account.provider_key === "slack"
+                              ? "Slack"
+                              : t("Feishu")}
                           {" · "}
                           {external_organization_name ??
                             external_organization_id ??
@@ -250,7 +260,7 @@ export function BotsPage() {
             description={t(
               filtered
                 ? "Change or clear the filters to find your bot."
-                : "Connect your Slack or Feishu app, select an agent, and choose the conversations it can join.",
+                : "Connect a Slack, Feishu, or GitHub identity, select an agent, and choose where it can respond.",
             )}
           />
         ))

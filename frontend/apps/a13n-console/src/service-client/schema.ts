@@ -3226,6 +3226,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/bots/github/user": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discover Github User */
+    post: operations["post_workspaces_workspace_bots_github_user"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/configuration-assistant/readiness": {
     parameters: {
       query?: never;
@@ -4253,7 +4270,10 @@ export interface components {
       execution_service_account_id: string;
       /** Expected Version */
       expected_version: number;
-      policy: components["schemas"]["MessagingPolicy"];
+      /** Policy */
+      policy:
+        | components["schemas"]["MessagingPolicy"]
+        | components["schemas"]["GitHubReceptionPolicy"];
       /** Target Id */
       target_id: string;
       /** Target Version */
@@ -5037,11 +5057,12 @@ export interface components {
        * Provider Key
        * @enum {string}
        */
-      provider_key: "slack" | "lark";
+      provider_key: "slack" | "lark" | "github";
       /** Receipt */
       receipt:
         | components["schemas"]["SlackReplyReceipt"]
         | components["schemas"]["LarkReplyReceipt"]
+        | components["schemas"]["GitHubCommentReceipt"]
         | null;
       /** Run Attempt Id */
       run_attempt_id: string;
@@ -5067,9 +5088,19 @@ export interface components {
       /** Account Id */
       account_id: string;
       /** Event Path */
-      event_path: string;
+      event_path: string | null;
       /** Event Url */
       event_url: string | null;
+      /** Poll Checked At */
+      poll_checked_at?: string | null;
+      /** Poll Error Code */
+      poll_error_code?: string | null;
+      /**
+       * Reception Mode
+       * @default webhook
+       * @enum {string}
+       */
+      reception_mode?: "webhook" | "polling";
     };
     /** BotSummary */
     BotSummary: {
@@ -6535,6 +6566,14 @@ export interface components {
        */
       app_secret: string;
     };
+    /** DiscoverGitHubUserRequest */
+    DiscoverGitHubUserRequest: {
+      /**
+       * Personal Access Token
+       * Format: password
+       */
+      personal_access_token: string;
+    };
     /** Document */
     Document: {
       /**
@@ -7033,6 +7072,32 @@ export interface components {
       name: string;
     } & {
       [key: string]: unknown;
+    };
+    /** GitHubCommentReceipt */
+    GitHubCommentReceipt: {
+      /** Comment Id */
+      comment_id: number;
+      /** Html Url */
+      html_url: string;
+      /** Node Id */
+      node_id: string;
+      /** Request Id */
+      request_id: string;
+    };
+    /** GitHubReceptionPolicy */
+    GitHubReceptionPolicy: {
+      /**
+       * Allowed Senders
+       * @default [
+       *       "*"
+       *     ]
+       */
+      allowed_senders?: string[];
+      /**
+       * Event Actions
+       * @default []
+       */
+      event_actions?: string[];
     };
     /** GitHubRevisionSource */
     GitHubRevisionSource: {
@@ -22645,7 +22710,7 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
-        platform?: ("slack" | "lark") | null;
+        platform?: ("slack" | "lark" | "github") | null;
         condition?:
           | (
               | "disabled"
@@ -22710,6 +22775,54 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": components["schemas"]["DiscoverFeishuInstallationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InstallationInfo"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_bots_github_user: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DiscoverGitHubUserRequest"];
       };
     };
     responses: {

@@ -70,12 +70,14 @@ export function BotDetail() {
     account = botAccount(summary);
   if (
     account.workspace_id !== workspace.id ||
-    !["slack", "lark"].includes(account.provider_key)
+    !["slack", "lark", "github"].includes(account.provider_key)
   )
     return (
       <Empty
         title={t("Bot not found")}
-        description={t("Choose a Slack or Feishu bot in this workspace.")}
+        description={t(
+          "Choose a Slack, Feishu, or GitHub bot in this workspace.",
+        )}
       />
     );
   if (
@@ -95,12 +97,19 @@ export function BotDetail() {
     )
   )
     return <Navigate replace to={tabPath(legacyTab)} />;
-  const groupLabel = account.provider_key === "slack" ? "Channels" : "Groups";
+  const github = account.provider_key === "github";
+  if (github && tab === "memory")
+    return <Navigate replace to={tabPath("overview")} />;
+  const groupLabel = github
+    ? "Repositories"
+    : account.provider_key === "slack"
+      ? "Channels"
+      : "Groups";
   return (
     <Page
       title={account.name}
       back={`${basePath}/bots`}
-      description={`${account.provider_key === "slack" ? "Slack" : t("Feishu")} · ${summary.external_organization_name ?? summary.external_organization_id ?? t("Organization not verified")}`}
+      description={`${github ? "GitHub" : account.provider_key === "slack" ? "Slack" : t("Feishu")} · ${summary.external_organization_name ?? summary.external_organization_id ?? t("Organization not verified")}`}
       actions={<StateBadge state={account.status} />}
     >
       <Tabs
@@ -111,7 +120,7 @@ export function BotDetail() {
           <TabsTab value="overview">{t("Overview")}</TabsTab>
           <TabsTab value="groups">{t(groupLabel)}</TabsTab>
           <TabsTab value="conversations">{t("Conversations")}</TabsTab>
-          <TabsTab value="memory">{t("Memory")}</TabsTab>
+          {!github && <TabsTab value="memory">{t("Memory")}</TabsTab>}
           <TabsTab value="settings">{t("Settings")}</TabsTab>
         </TabsList>
         <TabsPanel value="overview">
@@ -130,7 +139,7 @@ export function BotDetail() {
         </TabsPanel>
         <TabsPanel value="settings">
           <div className={styles.settings} key={generation}>
-            {can("bot_memory.read") && (
+            {!github && can("bot_memory.read") && (
               <section className={styles.memorySettingRow}>
                 <div>
                   <h2>{t("Memory storage and defaults")}</h2>

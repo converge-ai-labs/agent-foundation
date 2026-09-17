@@ -52,7 +52,7 @@ export function BotGroupDetail() {
     queryKey: ["account-targets", workspace.id, accountId, targetId],
     enabled:
       account.data?.workspace_id === workspace.id &&
-      ["slack", "lark"].includes(account.data.provider_key),
+      ["slack", "lark", "github"].includes(account.data.provider_key),
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/application-accounts/{account_id}/targets/{target_id}", {
@@ -69,12 +69,14 @@ export function BotGroupDetail() {
   if (
     !account.data ||
     account.data.workspace_id !== workspace.id ||
-    !["slack", "lark"].includes(account.data.provider_key)
+    !["slack", "lark", "github"].includes(account.data.provider_key)
   )
     return (
       <Empty
         title={t("Bot not found")}
-        description={t("Choose a Slack or Feishu bot in this workspace.")}
+        description={t(
+          "Choose a Slack, Feishu, or GitHub bot in this workspace.",
+        )}
       />
     );
   if (target.isPending) return <Loading variant="detail" page />;
@@ -86,7 +88,8 @@ export function BotGroupDetail() {
   if (
     !current ||
     current.account_id !== accountId ||
-    current.target_kind !== "conversation"
+    current.target_kind !==
+      (account.data.provider_key === "github" ? "repository" : "conversation")
   )
     return (
       <Empty
@@ -101,6 +104,14 @@ export function BotGroupDetail() {
         description={t("Choose a bot page from the navigation.")}
       />
     );
+  const github = account.data.provider_key === "github";
+  if (github && groupTab === "memory")
+    return (
+      <Empty
+        title={t("Memory unavailable")}
+        description={t("GitHub repository memory is not supported.")}
+      />
+    );
   const root = `${basePath}/bots/${accountId}/channels/${targetId}`;
   function path(tab: string) {
     return `${root}${tab === "configuration" ? "" : `/${tab}`}${tab === "memory" && search.size ? `?${search}` : ""}`;
@@ -113,7 +124,7 @@ export function BotGroupDetail() {
     <Page
       title={current.external_target_id}
       back={`${basePath}/bots/${accountId}/channels`}
-      description={`${account.data.provider_key === "slack" ? "Slack" : t("Feishu")} · ${typeof organization === "string" ? organization : t("External organization")}`}
+      description={`${github ? "GitHub" : account.data.provider_key === "slack" ? "Slack" : t("Feishu")} · ${typeof organization === "string" ? organization : t("External organization")}`}
     >
       <nav
         aria-label={t("Conversation location")}
@@ -133,7 +144,7 @@ export function BotGroupDetail() {
         >
           <TabsTab value="configuration">{t("Configuration")}</TabsTab>
           <TabsTab value="conversations">{t("Conversations")}</TabsTab>
-          <TabsTab value="memory">{t("Memory")}</TabsTab>
+          {!github && <TabsTab value="memory">{t("Memory")}</TabsTab>}
         </TabsList>
         <TabsPanel value="configuration">
           {groupTab === "configuration" && (
@@ -176,6 +187,7 @@ function GroupConfiguration({
 }) {
   const { t } = useTranslation(),
     { can } = useWorkspace();
+  const github = account.provider_key === "github";
   const policy = messagingPolicy(
       target.provider_policy ?? account.provider_policy,
     ),
@@ -216,9 +228,15 @@ function GroupConfiguration({
         <div>
           <dt>{t("When to respond")}</dt>
           <dd>
-            {policy
-              ? t(responseLabels[policy.interaction_mode])
-              : t("Platform default")}
+            {github
+              ? t(
+                  account.provider_config_version === "github_notifications_v1"
+                    ? "Notification updates"
+                    : "Selected GitHub events",
+                )
+              : policy
+                ? t(responseLabels[policy.interaction_mode])
+                : t("Platform default")}
             <small>
               {t(
                 target.provider_policy
@@ -231,10 +249,12 @@ function GroupConfiguration({
         <div>
           <dt>{t("Reply placement")}</dt>
           <dd>
-            {policy
-              ? t(placementLabels[policy.reply_mode])
-              : t("Platform default")}
-            {policy?.reply_mode === "auto" && (
+            {github
+              ? t("Issue or PR comment")
+              : policy
+                ? t(placementLabels[policy.reply_mode])
+                : t("Platform default")}
+            {!github && policy?.reply_mode === "auto" && (
               <small>{t(automaticPlacementHint)}</small>
             )}
           </dd>
@@ -245,12 +265,14 @@ function GroupConfiguration({
             {t(target.config_override ? "Configured" : "Account default")}
           </dd>
         </div>
-        <div>
-          <dt>{t("Memory policy")}</dt>
-          <dd>
-            <Link to={memoryPath}>{t("View conversation memory")}</Link>
-          </dd>
-        </div>
+        {!github && (
+          <div>
+            <dt>{t("Memory policy")}</dt>
+            <dd>
+              <Link to={memoryPath}>{t("View conversation memory")}</Link>
+            </dd>
+          </div>
+        )}
       </dl>
       {(!account.receive_enabled || account.status !== "active") && (
         <p role="status">

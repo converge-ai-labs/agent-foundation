@@ -268,3 +268,24 @@ it("keeps the overview readable when the default agent cannot be viewed", async 
     screen.getByRole("heading", { name: "Message responses" }),
   ).toBeTruthy();
 });
+
+it("shows GitHub repositories without offering unsupported memory settings", async () => {
+  const github = {
+    ...summary,
+    account: {
+      ...account,
+      provider_key: "github",
+      provider_config_version: "github_notifications_v1",
+      provider_config: { user_id: 99 },
+      provider_policy: {},
+    },
+  };
+  state.GET.mockImplementation(async (path: string) =>
+    response(path.endsWith("/summary") ? github : { latest: null }),
+  );
+  setup(github, true);
+  expect(await screen.findByRole("tab", { name: "Repositories" })).toBeTruthy();
+  expect(screen.queryByRole("tab", { name: "Memory" })).toBeNull();
+  expect(screen.queryByText("Group memory")).toBeNull();
+  expect(screen.getByText("Notification updates")).toBeTruthy();
+});

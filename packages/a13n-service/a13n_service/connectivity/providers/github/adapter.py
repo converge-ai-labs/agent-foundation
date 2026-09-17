@@ -12,9 +12,11 @@ from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
     InboundEvent,
+    ProviderCompleteDecision,
     ProviderEligibleEventRouting,
     ProviderEventRouting,
     ProviderHttpResponse,
+    ProviderIrrelevantEventRouting,
     ProviderRequest,
     ProviderRequestDecision,
     ProviderRequestError,
@@ -27,8 +29,9 @@ from ..common.origins import (
     require_provider_base_url,
     require_provider_origin,
 )
+from .polling_config import POLLING_VERSION, GitHubPollingConfig, GitHubPollingCredentials, GitHubReceptionPolicy
 from .token import load_github_private_key
-from .wire import GitHubIdentity, authenticate_and_normalize
+from .wire import GitHubIdentity, authenticate_and_normalize, event_actions
 
 _CONFIG_VERSION = "github_app_http_v1"
 _REQUEST_MAX_BYTES = 8 * 1024 * 1024
@@ -68,7 +71,7 @@ class GitHubAccountCredentials(_StrictModel):
 
 class GitHubIngressAdapter:
     provider_key = "github"
-    config_versions = frozenset({_CONFIG_VERSION})
+    config_versions = frozenset({_CONFIG_VERSION, POLLING_VERSION})
     max_request_bytes = _REQUEST_MAX_BYTES
     dedup_horizon_seconds = _DEDUP_HORIZON_SECONDS
 
@@ -77,7 +80,9 @@ class GitHubIngressAdapter:
 
     def validate_config(self, value: object, *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        config = GitHubAccountConfig.model_validate(value)
+        config = (GitHubPollingConfig if config_version == POLLING_VERSION else GitHubAccountConfig).model_validate(
+            value
+        )
         api_origin = require_provider_base_url(
             config.api_origin,
             official_base_urls=_OFFICIAL_API_BASES,
@@ -99,20 +104,30 @@ class GitHubIngressAdapter:
         return AccountProviderDefinition(
             provider_key=self.provider_key,
             config_version=config_version,
-            configuration_schema=GitHubAccountConfig.model_json_schema(),
-            credential_schema=GitHubAccountCredentials.model_json_schema(),
-            reception_policy_schema=_StrictModel.model_json_schema(),
+            configuration_schema=(
+                GitHubPollingConfig if config_version == POLLING_VERSION else GitHubAccountConfig
+            ).model_json_schema(),
+            credential_schema=(
+                GitHubPollingCredentials if config_version == POLLING_VERSION else GitHubAccountCredentials
+            ).model_json_schema(),
+            reception_policy_schema=GitHubReceptionPolicy.model_json_schema(),
             target_kinds=("repository",),
         )
 
     def validate_credentials(self, value: dict[str, str], *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        credentials = GitHubAccountCredentials.model_validate(value)
+        credentials = (
+            GitHubPollingCredentials if config_version == POLLING_VERSION else GitHubAccountCredentials
+        ).model_validate(value)
         return {key: secret.get_secret_value() for key, secret in credentials.model_dump(exclude_none=True).items()}
 
     def configuration_identity(self, value: JsonObject, *, config_version: str) -> object:
         _require_version(config_version)
-        config = GitHubAccountConfig.model_validate(value)
+        config = (GitHubPollingConfig if config_version == POLLING_VERSION else GitHubAccountConfig).model_validate(
+            value
+        )
+        if isinstance(config, GitHubPollingConfig):
+            return ("user", config.api_origin, config.web_origin, config.user_id)
         return (
             config.api_origin,
             config.web_origin,
@@ -124,9 +139,12 @@ class GitHubIngressAdapter:
 
     def validate_reception_policy(self, value: object, *, config_version: str) -> JsonObject:
         _require_version(config_version)
-        if value != {}:
-            raise ValueError("GitHub provider policy must be empty")
-        return {}
+        policy = GitHubReceptionPolicy.model_validate(value)
+        if any(item not in event_actions() for item in policy.event_actions):
+            raise ValueError("Unsupported GitHub event action")
+        if config_version == POLLING_VERSION and policy.event_actions:
+            raise ValueError("Notification polling does not expose individual event actions")
+        return _model_json(policy)
 
     def validate_target(self, kind: str, external_id: str) -> str:
         if (
@@ -154,6 +172,8 @@ class GitHubIngressAdapter:
         received_at: datetime,
     ) -> ProviderRequestDecision:
         del account_id
+        if "user_id" in account_config:
+            return ProviderCompleteDecision(response=ProviderHttpResponse(status_code=404))
         config = GitHubAccountConfig.model_validate(account_config)
         return authenticate_and_normalize(
             request,
@@ -176,7 +196,9 @@ class GitHubIngressAdapter:
     ) -> ReceptionDefaults:
         del event
         _require_version(config_version)
-        GitHubAccountConfig.model_validate(account_config)
+        (GitHubPollingConfig if config_version == POLLING_VERSION else GitHubAccountConfig).model_validate(
+            account_config
+        )
         return ReceptionDefaults(
             input_batching=InputBatchingPolicy(min_interval_ms=1, max_batch_events=10),
             provider_policy={},
@@ -191,9 +213,17 @@ class GitHubIngressAdapter:
         config_version: str,
     ) -> ProviderEventRouting:
         _require_version(config_version)
-        config = GitHubAccountConfig.model_validate(account_config)
-        if provider_policy:
-            raise ValueError("GitHub provider policy must be empty")
+        config = (GitHubPollingConfig if config_version == POLLING_VERSION else GitHubAccountConfig).model_validate(
+            account_config
+        )
+        policy = GitHubReceptionPolicy.model_validate(provider_policy)
+        sender = (event.actor or {}).get("login")
+        if "*" not in policy.allowed_senders and (
+            not isinstance(sender, str) or sender.casefold() not in {item.casefold() for item in policy.allowed_senders}
+        ):
+            return ProviderIrrelevantEventRouting(reason_code="sender_not_allowed")
+        if policy.event_actions and event.context.get("event_action") not in policy.event_actions:
+            return ProviderIrrelevantEventRouting(reason_code="event_not_selected")
         target_kind = event.context.get("target_kind")
         native_actions = _PR_NATIVE_ACTIONS if target_kind == "pull_request" else _NATIVE_ACTIONS
         return ProviderEligibleEventRouting(
@@ -201,7 +231,7 @@ class GitHubIngressAdapter:
             provider_context={
                 "api_origin": config.api_origin,
                 "web_origin": config.web_origin,
-                "installation_id": config.installation_id,
+                "installation_id": config.installation_id if isinstance(config, GitHubAccountConfig) else None,
                 "repository_id": event.context["repository_id"],
                 "repository_owner": event.context["repository_owner"],
                 "repository_name": event.context["repository_name"],
@@ -235,5 +265,5 @@ def _model_json(value: BaseModel) -> JsonObject:
 
 
 def _require_version(value: str) -> None:
-    if value != _CONFIG_VERSION:
+    if value not in {_CONFIG_VERSION, POLLING_VERSION}:
         raise ValueError("unsupported GitHub configuration version")

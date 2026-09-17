@@ -117,7 +117,9 @@ function ReplyList({ accountId, runId }: { accountId: string; runId: string }) {
                         <dd>
                           {"message_ts" in item.receipt
                             ? item.receipt.message_ts
-                            : item.receipt.message_id}
+                            : "comment_id" in item.receipt
+                              ? item.receipt.comment_id
+                              : item.receipt.message_id}
                         </dd>
                       </div>
                       <div>

@@ -130,13 +130,17 @@ async def create_bot_test(
             return replay.restore(BotTest)
         require_version(account.version, request.expected_version)
         target = await database.get(AccountTargetRecord, request.target_id)
-        if target is None or target.account_id != account.id or target.target_kind != "conversation":
+        if (
+            target is None
+            or target.account_id != account.id
+            or target.target_kind != ("repository" if account.provider_key == "github" else "conversation")
+        ):
             raise NativeError(
                 "target_not_found", "The pilot conversation was not found.", category=ErrorCategory.not_found
             )
         require_version(target.version, request.target_version)
         if (
-            account.provider_key not in {"slack", "lark"}
+            account.provider_key not in {"slack", "lark", "github"}
             or account.status != "active"
             or not account.receive_enabled
             or not target.receive_enabled
@@ -310,7 +314,7 @@ async def record_test_ignored(
     now: datetime,
 ) -> None:
     marker = test_marker(event.text)
-    if marker is None or target_kind != "conversation":
+    if marker is None or target_kind not in {"conversation", "repository"}:
         return
     target = await database.scalar(
         select(AccountTargetRecord).where(

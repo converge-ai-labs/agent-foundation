@@ -181,4 +181,4 @@ Known Connector provider refusals return a typed tool outcome with `kind="failed
 
 ### Bot Reply Evidence
 
-Slack and Feishu inbound reply invocations retain [Bot reply observations](01a-application-accounts.md#bot-reply-observations) before dispatch and before hiding a successful provider receipt from model-visible output. These observations preserve external outcome evidence independently of the enclosing Run's completion. They neither expand native target authority nor retry an uncertain external effect.
+Slack/Feishu inbound reply and GitHub comment invocations retain [Bot reply observations](01a-application-accounts.md#bot-reply-observations) before dispatch and before hiding a successful provider receipt from model-visible output. These observations preserve external outcome evidence independently of the enclosing Run's completion. They neither expand native target authority nor retry an uncertain external effect.

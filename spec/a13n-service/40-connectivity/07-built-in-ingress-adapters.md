@@ -4,7 +4,7 @@
 
 The first built-in HTTP adapters are Slack, Lark/Feishu, and GitHub App. Each owns one exact installation identity, wire authentication profile, event vocabulary, exact target identity, safe event projection, correlation references, acknowledgement behavior, and native action set. They reuse the common [Ingress and durable admission](01-ingress-and-routing.md) kernel without sharing a provider payload model.
 
-Slack and Lark/Feishu support HTTP callbacks and persistent WebSocket event reception. GitHub App uses HTTP webhooks. Repository webhooks authenticated by a shared secret plus PAT and GitHub Discussions are outside these profiles.
+Slack and Lark/Feishu support HTTP callbacks and persistent WebSocket event reception. GitHub App uses HTTP webhooks; GitHub ordinary accounts additionally support the notification polling profile below. Repository webhooks authenticated by a shared secret plus PAT and GitHub Discussions are outside these profiles.
 
 All adapters reject unknown configuration versions and request bodies beyond their limit before JSON parsing. They compare authentication values in constant time, suppress their verified bot identity, and never place raw bodies, message content, signatures, tokens, private keys, callback handles, or provider errors in logs, traces, metrics labels, audit details, or public errors.
 
@@ -142,6 +142,24 @@ Events authored by the verified bot account are ignored, as are unsupported edit
 | `github.list_pr_files`    | page and bounded `per_page` | current pull request                                | list pull-request files           |
 
 The model cannot provide an installation, owner, repository, issue, pull request, token, endpoint, or Account identifier. File patches have per-item and aggregate byte bounds and carry explicit truncation markers. A comment receipt includes only the provider comment database/node ID and safe public URL. Because this profile writes no correlation marker, a response lost after possible comment creation is `outcome_unknown` and is never retried automatically.
+
+## GitHub Account Notifications v1
+
+`provider_key = "github"` and `provider_config_version = "github_notifications_v1"` select an ordinary GitHub user identity. Account identity contains the API/Web origins and verified positive `user_id`, independently of the GitHub App installation profile. Origins obey the same deployment allowlist. Credentials contain one write-only `personal_access_token`; the Notifications API requires a classic PAT. App access tokens and fine-grained PATs cannot substitute for it. Token rotation preserves the verified user identity. Polling configuration contains `poll_interval_seconds` (60–3600, default 60) and `initial_lookback_seconds` (0–86400, default 0).
+
+This profile requires outbound HTTPS only. Its Account event HTTP endpoint rejects requests; external callers cannot impersonate a trusted poller. Connectivity-role processes own scanning. Each enabled Account has an independent durable cursor, next-poll time, observation, and expiring generation-fenced lease. A process crash permits another instance to resume after lease expiry. No database transaction spans GitHub I/O, and an expired or superseded scanner cannot admit input or advance the cursor. Each scan verifies that the PAT still represents the configured user. Account version or credential-generation changes invalidate that scan.
+
+The scanner requests `GET /notifications` with `all=true`, a timestamp cursor, and bounded pagination at 50 items per page. It honors `X-Poll-Interval`, conditional responses, and rate-limit retry delays. Initial reception starts at activation-time discovery minus the configured lookback. Subsequent scans overlap the retained cursor by 60 seconds. A complete scan advances the cursor using the first response's GitHub `Date`, bounded by scan start, with scan start as fallback. Failure retains the cursor and schedules another bounded attempt. A scan is capped at 100 pages and 90 seconds; exceeding either bound is an observable failure, never silent cursor advancement. Scanning does not change GitHub notification read/done state.
+
+Only Issue and PullRequest subjects are admitted. A repository ID is the exact AccountTarget. The repository ID, resource kind, and number select the same conversation across notification updates. Notification identity is the inbox thread ID plus its UTC `updated_at`. Deduplication fingerprints stable notification identity and subject location, excluding mutable unread state and separately fetched content. Eligible snapshots enter the canonical durable admission pipeline before cursor movement; previously admitted snapshots remain deduplicated within the advertised horizon after restart or partial-scan failure.
+
+Notifications are mutable, potentially coalesced wake-ups, not lossless GitHub events. The input includes the latest available source and instructs the Agent to read current Issue/PR details and comments before acting. Missing source comments fall back to the subject; deleted subjects are ignored. Every source URL is checked against the configured API origin/prefix before credentials are sent. Notification reasons are descriptive context and cannot prove that the current update mentions the Bot.
+
+Both GitHub profiles support an `allowed_senders` list of case-insensitive exact logins, defaulting to `*`. Webhooks use the authenticated payload sender. Notifications can attribute only unchanged original content within one minute of its notification; subject-body attribution additionally requires `mention` or `team_mention`. Other notifications have an unknown actor. Explicit sender lists reject unknown actors; wildcard reception accepts them. Identified self-authored input is ignored. These checks do not turn content-author attribution into an authoritative audit of every GitHub action.
+
+GitHub App policy additionally supports `event_actions`, a subset of the adapter's supported event/action pairs; empty means all supported pairs. Notification polling rejects nonempty event filters because it does not expose individual events. Neither policy grants execution authority beyond current Account, repository, Agent, and execution-principal authorization.
+
+Both profiles provide the same four native actions. PAT-backed actions verify the configured user and exact immutable repository identity before dispatch, retain credentials within Service, and do not inject `GH_TOKEN` into an Agent environment. App actions retain repository-restricted installation tokens. Unknown comment outcomes are not automatically retried. GitHub Discussions, inline review replies, creating reviews, and repository-writing tools are outside these native actions.
 
 ## Invariants
 

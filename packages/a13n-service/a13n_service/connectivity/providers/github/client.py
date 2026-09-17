@@ -29,6 +29,7 @@ from .actions import (
     GitHubTarget,
 )
 from .api import GitHubApiError, read_github_response
+from .rest import GitHubPersonalTokenProvider
 from .token import GITHUB_API_VERSION, GitHubInstallationTokenProvider
 
 _RESPONSE_MAX_BYTES = 2 * 1024 * 1024
@@ -41,7 +42,7 @@ class GitHubNativeClient:
         self,
         http_client: httpx2.AsyncClient,
         endpoint_validator: EndpointValidator,
-        token_provider: GitHubInstallationTokenProvider,
+        token_provider: GitHubInstallationTokenProvider | GitHubPersonalTokenProvider,
         *,
         api_origin: str,
         web_origin: str,
@@ -201,6 +202,10 @@ class GitHubNativeClient:
         except ValueError as error:
             raise GitHubApiError("endpoint_denied") from error
         token = await self._token_provider.token(repository_id=binding.repository_id)
+        if isinstance(self._token_provider, GitHubPersonalTokenProvider):
+            repository = await self._token_provider.rest.object(_repository_path(binding), token=token)
+            if repository.get("id") != binding.repository_id:
+                raise GitHubApiError("invalid_binding")
         return origin, token
 
     async def _send(

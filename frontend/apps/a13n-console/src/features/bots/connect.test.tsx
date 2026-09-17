@@ -460,3 +460,85 @@ it("shows live socket status without an HTTP callback instruction", async () => 
     ),
   ).toBeTruthy();
 });
+
+it("connects a GitHub polling account without a public callback or claimed user ID", async () => {
+  const github = {
+    ...account,
+    provider_key: "github",
+    provider_config_version: "github_notifications_v1",
+    provider_config: { user_id: 99 },
+  };
+  state.http.GET.mockImplementation(async (path: string) => {
+    if (path.endsWith("application-account-provider-types"))
+      return response({
+        items: [
+          {
+            provider_key: "github",
+            config_version: "github_notifications_v1",
+            configuration_schema: schema({
+              user_id: { type: "integer", title: "User ID" },
+              api_origin: string("API origin"),
+              web_origin: string("Web origin"),
+            }),
+            credential_schema: schema({
+              personal_access_token: string("Personal access token"),
+            }),
+            reception_policy_schema: schema({}),
+            target_kinds: ["repository"],
+          },
+        ],
+      });
+    if (path.endsWith("/{account_id}")) return response(github);
+    if (path.endsWith("/checks/latest")) return response({ latest: null });
+    if (path.endsWith("/bot/setup"))
+      return response({
+        reception_mode: "polling",
+        event_path: null,
+        event_url: null,
+      });
+    return response({ items: [], next_cursor: null });
+  });
+  state.http.POST.mockImplementation(async (path: string) =>
+    path.endsWith("/github/user")
+      ? response({ bot_id: "99", bot_name: "helper" })
+      : response(github),
+  );
+  setup();
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Create a new account" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("button", { name: /GitHub account · Polling/ }),
+  );
+  await userEvent.type(
+    await screen.findByRole("textbox", { name: "Name" }),
+    "GitHub helper",
+  );
+  expect(screen.queryByLabelText("User ID")).toBeNull();
+  expect(screen.queryByLabelText("API origin")).toBeNull();
+  await userEvent.type(
+    screen.getByLabelText("Personal access token"),
+    "fictional-pat",
+  );
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save and verify" }),
+  );
+  expect(await screen.findByText("Notification polling")).toBeTruthy();
+  expect(screen.queryByText("Configure HTTP events")).toBeNull();
+  expect(screen.queryByLabelText("Personal access token")).toBeNull();
+  expect(state.http.POST).toHaveBeenCalledWith(
+    "/api/v1/workspaces/{workspace}/application-accounts",
+    expect.objectContaining({
+      body: expect.objectContaining({
+        provider_config: {
+          api_origin: "https://api.github.com",
+          web_origin: "https://github.com",
+          user_id: 99,
+        },
+        provider_config_version: "github_notifications_v1",
+        reception_scope: "configured_targets",
+        receive_enabled: false,
+      }),
+    }),
+  );
+});

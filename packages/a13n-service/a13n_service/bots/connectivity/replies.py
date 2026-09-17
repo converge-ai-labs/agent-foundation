@@ -15,6 +15,7 @@ from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord
 from a13n_service.connectivity.native_context import InboundRunContext, NativeToolContext, parse_native_contexts
+from a13n_service.connectivity.providers.github.actions import GitHubAddCommentOutcomeUnknown, GitHubAddCommentSucceeded
 from a13n_service.connectivity.providers.lark.actions import LarkReplyOutcomeUnknown, LarkReplySucceeded
 from a13n_service.connectivity.providers.slack.client import SlackReplyOutcomeUnknown, SlackReplySucceeded
 from a13n_service.ids import new_object_id
@@ -62,8 +63,20 @@ class BotReplyObserver:
             )
             await self._finish(identity, "rejected" if code else "outcome_unknown", None, code)
             raise
-        success_type = SlackReplySucceeded if self._context.provider_key == "slack" else LarkReplySucceeded
-        unknown_type = SlackReplyOutcomeUnknown if self._context.provider_key == "slack" else LarkReplyOutcomeUnknown
+        success_type = (
+            SlackReplySucceeded
+            if self._context.provider_key == "slack"
+            else GitHubAddCommentSucceeded
+            if self._context.provider_key == "github"
+            else LarkReplySucceeded
+        )
+        unknown_type = (
+            SlackReplyOutcomeUnknown
+            if self._context.provider_key == "slack"
+            else GitHubAddCommentOutcomeUnknown
+            if self._context.provider_key == "github"
+            else LarkReplyOutcomeUnknown
+        )
         if isinstance(result, success_type):
             await self._finish(identity, "succeeded", result.receipt.model_dump(mode="json"), None)
         else:
@@ -87,7 +100,7 @@ class BotReplyObserver:
                 or account.organization_id != self._attempt.organization_id
                 or account.workspace_id != self._workspace_id
                 or account.provider_key != context.provider_key
-                or account.provider_key not in {"slack", "lark"}
+                or account.provider_key not in {"slack", "lark", "github"}
                 or account.status != "active"
                 or account.version != self._account_version
                 or account.credential_generation != self._generation
@@ -105,7 +118,7 @@ class BotReplyObserver:
                 raise ValueError("native_binding_unavailable")
             # Validated content is inspected transiently, never persisted in observations.
             values = arguments.model_dump(mode="json") if arguments is not None else {}
-            text = values.get("text")
+            text = values.get("body") if context.provider_key == "github" else values.get("text")
             content = values.get("content")
             if not isinstance(text, str) and isinstance(content, dict):
                 text = content.get("text")
@@ -189,7 +202,11 @@ class ReplyObservations:
         account_version: int,
         credential_generation: int,
     ) -> BotReplyObserver | None:
-        if not isinstance(context, InboundRunContext) or action not in {"slack.reply", "lark.reply"}:
+        if not isinstance(context, InboundRunContext) or action not in {
+            "slack.reply",
+            "lark.reply",
+            "github.add_comment",
+        }:
             return None
         return BotReplyObserver(
             self.sessions,

@@ -44,7 +44,9 @@ function ConnectFlow() {
     { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
   const accountId = search.get("account") ?? "";
-  const [platform, setPlatform] = useState<"slack" | "lark" | null>(null);
+  const [platform, setPlatform] = useState<
+    "slack" | "lark" | "github" | "github_polling" | null
+  >(null);
   const [accountMode, setAccountMode] = useState("existing");
   const [pilotGeneration, setPilotGeneration] = useState(0);
   const account = useQuery({
@@ -70,7 +72,7 @@ function ConnectFlow() {
     enabled:
       !!current &&
       current.workspace_id === workspace.id &&
-      ["slack", "lark"].includes(current.provider_key),
+      ["slack", "lark", "github"].includes(current.provider_key),
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/application-accounts/{account_id}/bot/checks/latest", {
@@ -108,7 +110,7 @@ function ConnectFlow() {
       title={t("Connect a bot")}
       back={`${basePath}/bots`}
       description={t(
-        "Connect an app you own. Each installation uses one application account.",
+        "Connect a platform identity you own, then choose an agent and reception scope.",
       )}
     >
       <div className={styles.layout}>
@@ -155,10 +157,24 @@ function ConnectFlow() {
                     >
                       {t("Feishu")} <CaretRightIcon aria-hidden="true" />
                     </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setPlatform("github_polling")}
+                    >
+                      {t("GitHub account · Polling")}{" "}
+                      <CaretRightIcon aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setPlatform("github")}
+                    >
+                      {t("GitHub App · Webhook")}{" "}
+                      <CaretRightIcon aria-hidden="true" />
+                    </Button>
                   </div>
                   <p>
                     {t(
-                      "Use one account for each Slack workspace or Feishu installation.",
+                      "Use one application account for each platform identity or installation.",
                     )}
                   </p>
                 </TabsPanel>
@@ -167,7 +183,37 @@ function ConnectFlow() {
           )}
           {!accountId && platform && (
             <>
-              <BotSetupInstructions platform={platform} />
+              {platform === "github" || platform === "github_polling" ? (
+                <section>
+                  <h2>
+                    {t(
+                      platform === "github_polling"
+                        ? "Connect a GitHub account"
+                        : "Connect a GitHub App",
+                    )}
+                  </h2>
+                  <p>
+                    {t(
+                      platform === "github_polling"
+                        ? "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed."
+                        : "Create and install a GitHub App with Issues and Pull requests read/write permissions. Subscribe to Issues, Issue comments, Pull requests, Pull request reviews, and Pull request review comments. A public webhook address is required.",
+                    )}
+                  </p>
+                  <a
+                    href={
+                      platform === "github_polling"
+                        ? "https://github.com/settings/tokens"
+                        : "https://github.com/settings/apps"
+                    }
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    {t("Open GitHub settings")}
+                  </a>
+                </section>
+              ) : (
+                <BotSetupInstructions platform={platform} />
+              )}
               <p>
                 {t(
                   "The account is saved with reception disabled. Only explicitly configured conversations will be admitted when you enable it.",
@@ -175,9 +221,11 @@ function ConnectFlow() {
               </p>
               <p>
                 {t(
-                  platform === "lark"
-                    ? "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving."
-                    : "Enter the installation identifiers from your app settings. They are verified in the next step; entering an ID does not prove access.",
+                  platform === "github_polling"
+                    ? "The token identifies your account automatically. Grant the bot access to the repositories it should handle, and mention or subscribe it to receive notifications."
+                    : platform === "lark"
+                      ? "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving."
+                      : "Enter the installation identifiers from your app settings. They are verified in the next step; entering an ID does not prove access.",
                 )}
               </p>
               <AccountForm
@@ -200,17 +248,23 @@ function ConnectFlow() {
           )}
           {current &&
           (current.workspace_id !== workspace.id ||
-            !["slack", "lark"].includes(current.provider_key)) ? (
+            !["slack", "lark", "github"].includes(current.provider_key)) ? (
             <Empty
               title={t("Bot not found")}
-              description={t("Choose a Slack or Feishu bot in this workspace.")}
+              description={t(
+                "Choose a Slack, Feishu, or GitHub bot in this workspace.",
+              )}
             />
           ) : (
             current && (
               <>
                 <p className={styles.account}>
                   {current.name} ·{" "}
-                  {current.provider_key === "slack" ? "Slack" : t("Feishu")}
+                  {current.provider_key === "github"
+                    ? "GitHub"
+                    : current.provider_key === "slack"
+                      ? "Slack"
+                      : t("Feishu")}
                 </p>
                 {step === 2 && (
                   <>
@@ -306,7 +360,11 @@ function ExistingAccounts() {
                   <span>
                     <strong>{item.name}</strong>
                     <small>
-                      {item.provider_key === "slack" ? "Slack" : t("Feishu")}
+                      {item.provider_key === "github"
+                        ? "GitHub"
+                        : item.provider_key === "slack"
+                          ? "Slack"
+                          : t("Feishu")}
                       {typeof organization === "string" &&
                         organization &&
                         ` · ${organization}`}
@@ -333,7 +391,7 @@ function ExistingAccounts() {
   );
 }
 
-function CallbackSetup({ account }: { account: Schema["Account"] }) {
+export function CallbackSetup({ account }: { account: Schema["Account"] }) {
   return account.provider_config.event_transport === "websocket" ? (
     <EventConnection account={account} />
   ) : (
@@ -354,6 +412,28 @@ function HttpCallbackSetup({ account }: { account: Schema["Account"] }) {
         })
         .then(data),
   });
+  if (account.provider_config_version === "github_notifications_v1")
+    return (
+      <section>
+        <h2>{t("Notification polling")}</h2>
+        <p>
+          {t(
+            "Only outbound GitHub access is required. Mention this account or subscribe it to an Issue or PR in a configured repository. Polling starts when reception is enabled.",
+          )}
+        </p>
+        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+        {query.data?.poll_checked_at && (
+          <p>
+            {t("Last checked")}: {query.data.poll_checked_at}
+          </p>
+        )}
+        {query.data?.poll_error_code && (
+          <p role="status">
+            {t("Polling failed")}: {query.data.poll_error_code}
+          </p>
+        )}
+      </section>
+    );
   return (
     <section>
       <h2>{t("Configure HTTP events")}</h2>
@@ -367,9 +447,9 @@ function HttpCallbackSetup({ account }: { account: Schema["Account"] }) {
             )}
           </p>
           <div className={styles.endpoint}>
-            <code>{query.data.event_url ?? query.data.event_path}</code>
+            <code>{query.data.event_url ?? query.data.event_path ?? ""}</code>
             <CopyButton
-              value={query.data.event_url ?? query.data.event_path}
+              value={query.data.event_url ?? query.data.event_path ?? ""}
               copyLabel={t("Copy event endpoint")}
             />
           </div>

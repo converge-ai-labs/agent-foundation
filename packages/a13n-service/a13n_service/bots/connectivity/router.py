@@ -21,6 +21,7 @@ from .domain import (
     BotCheckRequest,
     BotSetup,
     DiscoverFeishuInstallationRequest,
+    DiscoverGitHubUserRequest,
 )
 from .history import BotThreadCollection
 from .reply_queries import BotReplyCollection
@@ -158,3 +159,10 @@ async def discover_feishu_installation(
     request: Request, actor: Actor, workspace_id: WorkspaceId, body: DiscoverFeishuInstallationRequest
 ) -> InstallationInfo:
     return await _service(request).discover_feishu_installation(actor=actor, workspace_id=workspace_id, request=body)
+
+
+@collection_router.post("/workspaces/{workspace}/bots/github/user", response_model=InstallationInfo)
+async def discover_github_user(
+    request: Request, actor: Actor, workspace: WorkspaceId, body: DiscoverGitHubUserRequest
+) -> InstallationInfo:
+    return await _service(request).discover_github_user(actor=actor, workspace_id=workspace, request=body)
