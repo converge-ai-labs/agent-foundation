@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
+import anyio
 import pytest
 from a13n_service.run_stream import RedisRunStream
 from a13n_service.run_stream.display_candidates import DisplayCandidate, DisplayCandidates, DisplaySettlement
@@ -52,12 +53,19 @@ async def test_continuous_consumption_exceeds_raw_horizon_and_finalizes_after_se
     store = RunDisplayStore(object_store)
     candidates = _candidates()
     await activate_stream(stream, CANDIDATE.organization_id, CANDIDATE.run_id, CANDIDATE.thread_id)
+    policy = DisplayConsumerPolicy(flush_events=64)
     for batch in range(21):
         for index in range(batch * 200, (batch + 1) * 200):
-            await stream.append(CANDIDATE.organization_id, _delta(index), attempt_number=1)
-        # Every flush uses a fresh process-local consumer with no cached progress.
-        stored = await RunDisplayConsumer(candidates, stream, store).consume_run(CANDIDATE)
-        assert stored is not None
+            cursor = await stream.append(CANDIDATE.organization_id, _delta(index), attempt_number=1)
+        # A flush may stop at its event, byte, or time bound before reaching the tail.
+        # Every flush restores progress through a fresh process-local consumer.
+        with anyio.fail_after(30):
+            while True:
+                stored = await RunDisplayConsumer(candidates, stream, store, policy=policy).consume_run(CANDIDATE)
+                assert stored is not None
+                assert stored.snapshot.complete and not stored.snapshot.finalized
+                if stored.snapshot.cursor == cursor:
+                    break
         assert stored.snapshot.items[0].content["text"] == "x" * ((batch + 1) * 200)
         assert stored.snapshot.items[0].state == "in_progress"
         assert stored.snapshot.complete and not stored.snapshot.finalized
