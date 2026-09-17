@@ -458,8 +458,8 @@ export function Composer({
   const { stopping, canStop } = cancellation;
   const stop = () => {
     if (!canStop) return;
-    // Stop remains available while Steer is synchronizing. Abort unsubmitted
-    // preparation, without pretending to undo any request already admitted.
+    // A shared draft can become empty during preparation. Abort unsubmitted
+    // preparation without pretending to undo any request already admitted.
     preparation.current?.abort(
       new Error("Submission preparation stopped. Your input is retained."),
     );
@@ -767,10 +767,7 @@ export function Composer({
           />
         </div>
       )}
-      <div
-        className={styles.composerBody}
-        data-stop-secondary={busy && hasInput}
-      >
+      <div className={styles.composerBody}>
         <div inert={preparing} className={styles.composerEditor}>
           <ComposerEditor
             autoFocus={autoFocus}
@@ -990,23 +987,6 @@ export function Composer({
             <div className={styles.composerOptions} data-open={mobileOptions}>
               {controls}
             </div>
-            {busy && hasInput && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className={styles.secondaryStop}
-                aria-label={stopLabel}
-                title={
-                  cancellation.request?.message ??
-                  "Stop this operation without discarding your draft"
-                }
-                disabled={!canStop}
-                loading={stopping}
-                onClick={() => void stop()}
-              >
-                <Stop weight="fill" />
-              </Button>
-            )}
             <Button
               ref={sendButton}
               size="icon"

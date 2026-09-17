@@ -659,17 +659,6 @@
     right: 39px;
     top: 5px;
   }
-  .composer .secondaryStop {
-    position: absolute;
-    right: 39px;
-    top: 2px;
-  }
-  .composerBody[data-stop-secondary="true"] .mobileOptionsButton {
-    right: 77px;
-  }
-  .composerBody[data-stop-secondary="true"] .composerEditor {
-    padding-inline-end: 116px;
-  }
   .composer .composerOptions {
     display: none;
   }
