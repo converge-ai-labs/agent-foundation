@@ -1290,6 +1290,7 @@ def create_webui(
                 attachment_ids=document.attachment_ids,
                 model_overrides=RunModelOverrides(model_id=document.model_id, thinking=document.thinking),
                 skill_references=document.skill_references,
+                input_surface="webui",
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc

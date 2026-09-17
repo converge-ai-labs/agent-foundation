@@ -167,7 +167,7 @@ from a13n_harness_ui.page_presence import (
     WorkbenchPage,
 )
 from a13n_harness_ui.root_execution import RootRunExecutor
-from a13n_harness_ui.root_input import detach_input
+from a13n_harness_ui.root_input import append_surface_hint, detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.settings import HarnessUiSettings
 from a13n_harness_ui.setup import (
@@ -1593,6 +1593,7 @@ class HarnessUiApp:
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
+        input_surface: Literal["tui", "webui"] | None = None,
     ) -> RootRunReceipt:
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
@@ -1604,6 +1605,8 @@ class HarnessUiApp:
             )
             await self._threads.get(thread_id)
             prompt = await self._prepare_input(thread_id, prompt, attachment_ids)
+            if input_surface is not None:
+                prompt = append_surface_hint(prompt, input_surface)
             receipt = await self._root_runs.submit_prompt(
                 thread_id=thread_id,
                 prompt=prompt,

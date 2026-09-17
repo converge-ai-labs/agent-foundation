@@ -686,6 +686,7 @@ class SessionBackend:
                         prompt=prompt or "",
                         model_overrides=self.overrides,
                         skill_references=skill_references,
+                        input_surface="tui",
                     )
                     if response is None
                     else await self.app.respond_thread(
