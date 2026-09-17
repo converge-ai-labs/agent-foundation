@@ -32,11 +32,13 @@ from .domain import (
     UpdateTemplateRequest,
 )
 from .errors import EnvironmentManagementError
+from .mount_router import router as mount_router
 from .service import EnvironmentService
 from .websocket.router import router as client_connection_router
 
 router = APIRouter(prefix="/api/v1", tags=["environments"])
 router.include_router(client_connection_router)
+router.include_router(mount_router)
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 

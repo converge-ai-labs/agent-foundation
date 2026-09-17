@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.lifecycle import EnvironmentLifecycle
     from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
+    from a13n_service.environments.mounts import RunEnvironmentMountService
     from a13n_service.environments.service import EnvironmentService
     from a13n_service.environments.websocket.runtime import ClientConnectionRuntime
     from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
@@ -65,6 +66,7 @@ class ControlRuntime:
 
     trace_queries: TraceQueryService
     environments: EnvironmentService
+    environment_mounts: RunEnvironmentMountService
     skill_uploads: SkillUploadService
     skill_publication: SkillPublicationService
     skill_catalog: SkillCatalogService

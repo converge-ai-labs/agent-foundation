@@ -9,6 +9,9 @@ import httpx2
 from a13n_environment import EnvironmentProviderCatalog
 
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.environments.mounts import RunEnvironmentMountService
+from a13n_service.environments.websocket.admission import OnlineAdmission
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.gateway import GatewayRuntime
 from a13n_service.gateway.a2a import A2AService
 from a13n_service.gateway.a2a_import import A2APartImporter
@@ -20,6 +23,7 @@ from a13n_service.gateway.native_streaming import NativeRunStreamService
 from a13n_service.gateway.notifications import NotificationService
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.iam.runtime import build_identity_runtime, initialize_identity
+from a13n_service.interactions.inbox import RedisThreadControlSignals
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
 from a13n_service.memory.providers import MemoryProviderService
@@ -211,6 +215,11 @@ async def build_control_runtime(
     runtime = ControlRuntime(
         trace_queries=trace_queries,
         environments=environments,
+        environment_mounts=RunEnvironmentMountService(
+            shared.storage.sessions,
+            OnlineAdmission(shared.storage.sessions, ConnectionCoordination(shared.storage.redis)),
+            signals=RedisThreadControlSignals(shared.storage.redis),
+        ),
         skill_uploads=skills.uploads,
         skill_publication=skills.publication,
         skill_catalog=skills.catalog,

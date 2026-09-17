@@ -154,6 +154,7 @@ class ProcessRuntimeFactory:
         hook_subscriptions: object | None = None,
         lifecycle_events: object | None = None,
         gateway: object | None = None,
+        environment_mounts: object | None = None,
         ingress_events: IngressEventService | None = None,
     ) -> ProcessRuntime:
         placeholder = Mock()
@@ -161,6 +162,7 @@ class ProcessRuntimeFactory:
             ControlRuntime(
                 trace_queries=(trace_queries if trace_queries is not None else placeholder),
                 environments=placeholder,
+                environment_mounts=environment_mounts if environment_mounts is not None else placeholder,
                 skill_uploads=placeholder,
                 skill_publication=placeholder,
                 skill_catalog=placeholder,
@@ -175,7 +177,8 @@ class ProcessRuntimeFactory:
                 subagent_maintenance=placeholder,
             )
             if any(
-                value is not None for value in (agents, trace_queries, hook_subscriptions, lifecycle_events, gateway)
+                value is not None
+                for value in (agents, trace_queries, hook_subscriptions, lifecycle_events, gateway, environment_mounts)
             )
             else None
         )
