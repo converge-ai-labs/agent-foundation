@@ -423,9 +423,9 @@ Deployment bounds candidate count/wait, per-connection/Worker concurrency, pendi
 
 Connection consumers end with their socket; the shared Worker response reader survives individual operations until drain. Waiters, transfers, pending entries and deduplication evidence are reclaimed after their safety windows. Retired Streams expire or are collected even after owner loss. Cleanup cannot revive authority, replay effects or destroy caller-owned targets. Control drain fences leases, resolves known outcomes, closes sockets and publishes unavailable; crashes rely on lease expiry, waiter deadlines and observation reconciliation. Worker drain preserves durable associations through normal handoff.
 
-## Compatibility and Verification
+## Verification
 
-The EIP protocol, shared Provider state/close semantics and fixed primary selection remain unchanged. Existing Runs start with no additional association rows. This contract adds no mount counter to Run; concurrency uses unique association names, idempotency and lifecycle locks. Control ingress and compatible Worker relay/boundary support are required before exposing the Provider or accepting live mounts; mixed deployments reject unsupported acceptance. Durable schema changes follow the owning generated-migration workflow. Secrets, socket placement and runtime handles remain outside database payloads and portable state.
+Mount concurrency uses unique association names, idempotency and lifecycle locks, without a mount counter on Run. Durable schema changes follow the owning generated-migration workflow. Secrets, socket placement and runtime handles remain outside database payloads and portable state.
 
 Verification covers cross-Control management/socket ownership and separate Workers, plus these failure boundaries:
 
