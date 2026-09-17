@@ -34,7 +34,10 @@ export function InputNavigation({
 }) {
   const { client } = useTransport();
   const [active, setActive] = useState<string>();
+  const [hovered, setHovered] = useState<number>();
+  const [focused, setFocused] = useState<number>();
   const [open, setOpen] = useState(false);
+  const waveOrigin = hovered ?? focused;
   const query = useInfiniteQuery({
     queryKey: ["thread", threadId, "inputs", continuation],
     enabled: !!continuation,
@@ -122,16 +125,29 @@ export function InputNavigation({
   );
   return (
     <>
-      <nav className={styles.rail} aria-label="Input timeline">
+      <nav
+        className={styles.rail}
+        aria-label="Input timeline"
+        onMouseLeave={() => setHovered(undefined)}
+      >
         {items.map((item, index) => (
           <Tooltip key={item.turn_id}>
             <TooltipTrigger
               render={<button type="button" className={styles.tick} />}
               aria-label={`Input ${index + 1}: ${item.preview}`}
               aria-current={active === item.turn_id ? "location" : undefined}
+              data-proximity={
+                waveOrigin === undefined
+                  ? undefined
+                  : Math.abs(index - waveOrigin)
+              }
+              delay={80}
+              onMouseEnter={() => setHovered(index)}
+              onFocus={() => setFocused(index)}
+              onBlur={() => setFocused(undefined)}
               onClick={() => select(item.turn_id)}
             >
-              <span />
+              <span aria-hidden="true" />
             </TooltipTrigger>
             <TooltipPopup
               side="right"
@@ -140,12 +156,16 @@ export function InputNavigation({
             >
               <small>Input {index + 1}</small>
               <p>{item.preview}</p>
-              {item.output_preview && (
-                <div className={styles.output}>
-                  <small>Output</small>
-                  <p>{item.output_preview}</p>
-                </div>
-              )}
+              <div className={styles.output}>
+                <small>Output</small>
+                <p
+                  className={
+                    !item.output_preview ? styles.emptyOutput : undefined
+                  }
+                >
+                  {item.output_preview || "No saved output yet"}
+                </p>
+              </div>
             </TooltipPopup>
           </Tooltip>
         ))}
@@ -180,11 +200,9 @@ export function InputNavigation({
                   <small>{index + 1}</small>
                   <span className={styles.menuPreview}>
                     <span>{item.preview}</span>
-                    {item.output_preview && (
-                      <span className={styles.menuOutput}>
-                        Output: {item.output_preview}
-                      </span>
-                    )}
+                    <span className={styles.menuOutput}>
+                      Output: {item.output_preview || "No saved output yet"}
+                    </span>
                   </span>
                 </button>
               ))}

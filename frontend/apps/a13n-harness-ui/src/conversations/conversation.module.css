@@ -1320,7 +1320,7 @@
   container-name: conversation-reader;
 }
 .readerFrame .reading {
-  padding-inline-start: 42px;
+  padding-inline-start: 36px;
 }
 .turn {
   margin-bottom: 28px;

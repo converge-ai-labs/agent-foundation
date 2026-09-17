@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createRef } from "react";
 import { TransportContext } from "../transport/context";
@@ -104,6 +105,75 @@ it("loads the complete lightweight directory and excludes steer and duplicate lo
   await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
   expect(GET.mock.calls.every(([path]) => path.endsWith("/inputs"))).toBe(true);
   expect(GET.mock.calls[1][1].params.query.cursor).toBe("next");
+  view.unmount();
+  client.clear();
+});
+
+it("quickly previews each question and answer while the wave follows hover and keyboard focus", async () => {
+  const user = userEvent.setup();
+  const GET = vi.fn();
+  const client = new QueryClient();
+  const select = vi.fn();
+  const view = render(
+    <QueryClientProvider client={client}>
+      <TransportContext value={{ client: { GET } } as unknown as Transport}>
+        <InputNavigation
+          threadId="one"
+          reader={createRef()}
+          revision={1}
+          onSelect={select}
+          localInputs={Array.from({ length: 8 }, (_, index) => ({
+            id: `input-${index}`,
+            action: "send",
+            state: "accepted",
+            parts: previewInput(`input-${index}`, [`Question ${index + 1}`]),
+          }))}
+        />
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  const ticks = screen.getAllByRole("button", { name: /^Input \d+:/ });
+  expect(ticks).toHaveLength(8);
+  await user.hover(ticks[3]);
+  expect(ticks.map((tick) => tick.getAttribute("data-proximity"))).toEqual([
+    "3",
+    "2",
+    "1",
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+  ]);
+  // The old default tooltip delay is 600ms; navigation previews should be quick.
+  expect(
+    await screen.findByText("Question 4", {}, { timeout: 400 }),
+  ).toBeTruthy();
+  expect(screen.getByText("Output")).toBeTruthy();
+  expect(screen.getByText("No saved output yet")).toBeTruthy();
+  await user.hover(ticks[4]);
+  expect(ticks[4].getAttribute("data-proximity")).toBe("0");
+  expect(await screen.findByText("Question 5")).toBeTruthy();
+  await user.unhover(ticks[4]);
+  expect(ticks.every((tick) => !tick.hasAttribute("data-proximity"))).toBe(
+    true,
+  );
+  await waitFor(() => expect(screen.queryByText("Output")).toBeNull());
+
+  await user.tab();
+  expect(document.activeElement).toBe(ticks[0]);
+  expect(ticks[0].getAttribute("data-proximity")).toBe("0");
+  expect(await screen.findByText("Question 1")).toBeTruthy();
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByText("Output")).toBeNull());
+  await user.keyboard("{Enter}");
+  expect(select).toHaveBeenCalledWith("input-0");
+  expect(ticks[0].getAttribute("aria-current")).toBe("location");
+  await user.tab();
+  expect(document.activeElement).toBe(ticks[1]);
+  expect(ticks[1].getAttribute("data-proximity")).toBe("0");
+  // Hover and keyboard navigation never fetch execution history.
+  expect(GET).not.toHaveBeenCalled();
   view.unmount();
   client.clear();
 });
