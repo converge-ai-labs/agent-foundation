@@ -13,7 +13,7 @@ export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
 import type { DisplayBlock, FocusDisplay } from "./stream";
 import { InputContent, type InputPart } from "./input-content";
-import { inputSource, inputStatus, type LocalInput } from "./local-input";
+import { inputSource, type LocalInput } from "./local-input";
 import styles from "./conversation.module.css";
 
 function systemNotice(metadata?: Record<string, unknown> | null) {
@@ -358,12 +358,14 @@ export function ConversationTranscript({
       }),
   ];
   for (const [id, input] of local) {
-    if (!observed.has(id))
+    // Preparation and unconfirmed submissions belong in the composer, not the
+    // transcript. Server-observed input above remains authoritative even if its
+    // HTTP acknowledgement is delayed or lost.
+    if (input.state === "accepted" && !observed.has(id))
       rows.push({
         id,
         kind: "input",
         parts: input.parts,
-        status: inputStatus(input),
       });
   }
   return (

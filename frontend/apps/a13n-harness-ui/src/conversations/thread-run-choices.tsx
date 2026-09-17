@@ -1,8 +1,35 @@
 import { SearchPicker } from "a13n-ui";
+import { ShieldWarning } from "@phosphor-icons/react";
 import { useEffect, useRef } from "react";
 import type { Schema } from "../transport/client";
 import { ModelPicker } from "./model-picker";
 import styles from "./new-conversation.module.css";
+
+export function EnvironmentMode({
+  environment,
+}: {
+  environment?: Schema<"ThreadSelectorCatalog">["environments"][number];
+}) {
+  if (!environment) return null;
+  return (
+    <span
+      className={styles.mode}
+      data-full-control={environment.mode === "full-control"}
+      title={
+        environment.mode === "full-control"
+          ? "Runs on the host with your account permissions."
+          : environment.description
+      }
+    >
+      <ShieldWarning aria-hidden="true" />
+      {environment.mode === "full-control"
+        ? "Full Control"
+        : environment.mode === "sandbox"
+          ? "Sandbox"
+          : "Custom environment"}
+    </span>
+  );
+}
 
 export function ThreadRunChoices({
   catalog,

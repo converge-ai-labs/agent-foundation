@@ -486,6 +486,20 @@
   gap: 8px;
   min-width: 0;
 }
+.composerSync {
+  display: flex;
+  align-items: center;
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
+}
+.composerSync > span {
+  display: flex;
+}
+.composerSync svg {
+  width: 16px;
+  height: 16px;
+}
 .composerActions {
   display: flex;
   align-items: center;
@@ -620,8 +634,13 @@
   .composerBody {
     position: relative;
   }
+  .composerSync {
+    position: absolute;
+    left: 36px;
+    top: 13px;
+  }
   .composerEditor {
-    padding-inline: 38px 78px;
+    padding-inline: 58px 78px;
     min-width: 0;
   }
   .composer .attachButton {

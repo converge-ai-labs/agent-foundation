@@ -46,7 +46,7 @@ export function conversationTitle(
   localInputs: readonly LocalInput[] = [],
 ) {
   const first = localInputs.find(
-    (input) => input.action === "send" && input.state !== "rejected",
+    (input) => input.action === "send" && input.state === "accepted",
   );
   return (
     thread?.title ||
@@ -58,19 +58,4 @@ export function conversationTitle(
       .slice(0, 160) ||
     "Untitled conversation"
   );
-}
-
-export function inputStatus(input?: LocalInput) {
-  switch (input?.state) {
-    case "preparing":
-      return "Preparing message…";
-    case "pending":
-      return "Sending…";
-    case "rejected":
-      return "Not sent · input retained";
-    case "unknown":
-      return "Outcome unknown · review before sending again";
-    default:
-      return undefined;
-  }
 }

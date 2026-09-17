@@ -16,6 +16,7 @@ import {
   Stop,
   X,
   DotsThree,
+  CircleNotch,
 } from "@phosphor-icons/react";
 import type { EditorView } from "@codemirror/view";
 import {
@@ -259,7 +260,7 @@ export async function submitDraft(
     captured?.doc.destroy();
     draft.notify();
   }
-  return true;
+  return draft.submission.kind === "accepted";
 }
 
 export function submitContinuation(
@@ -292,6 +293,7 @@ export function Composer({
   prepareThread,
   onPreparing,
   onSubmitted,
+  onReviewOutcome,
   controls,
   leadingControls,
   modelId,
@@ -317,6 +319,7 @@ export function Composer({
   prepareThread?: () => Promise<void>;
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
+  onReviewOutcome?: () => void;
   controls?: ReactNode;
   leadingControls?: ReactNode;
   modelId?: string;
@@ -387,6 +390,8 @@ export function Composer({
     });
   const [syncDelayed, setSyncDelayed] = useState(false);
   const synchronized = draft.synchronized;
+  const showSyncStatus =
+    !local && !synchronized && !draft.replacement && syncDelayed;
   useEffect(() => {
     setSyncDelayed(false);
     if (synchronized || local) return;
@@ -735,11 +740,9 @@ export function Composer({
           Comment added to your message. Review it below, then send when ready.
         </p>
       )}
-      {!local && !synchronized && !draft.replacement && syncDelayed && (
+      {showSyncStatus && draft.status !== "Connected" && (
         <p role="status" className={styles.composerConnection}>
-          {draft.status === "Connected"
-            ? "Syncing edits…"
-            : `${draft.status} · your edits are still in this tab`}
+          {draft.status} · your edits are still in this tab
         </p>
       )}
       {draft.replacement && (
@@ -906,21 +909,28 @@ export function Composer({
               )}
             {unknown && (
               <>
-                <Button variant="outline" onClick={reconcile}>
-                  Refresh operation and history
+                <Button
+                  variant="outline"
+                  onClick={onReviewOutcome ?? reconcile}
+                >
+                  {onReviewOutcome
+                    ? "Review submission in conversation"
+                    : "Refresh operation and history"}
                 </Button>
-                <ConfirmAction
-                  trigger={
-                    <Button variant="ghost">I reviewed the outcome</Button>
-                  }
-                  title="Enable a new submission?"
-                  description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
-                  confirmLabel="Enable submission"
-                  onConfirm={() => {
-                    draft.submission = { kind: "idle" };
-                    draft.notify();
-                  }}
-                />
+                {!onReviewOutcome && (
+                  <ConfirmAction
+                    trigger={
+                      <Button variant="ghost">I reviewed the outcome</Button>
+                    }
+                    title="Enable a new submission?"
+                    description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
+                    confirmLabel="Enable submission"
+                    onConfirm={() => {
+                      draft.submission = { kind: "idle" };
+                      draft.notify();
+                    }}
+                  />
+                )}
               </>
             )}
           </div>
@@ -951,6 +961,20 @@ export function Composer({
             <div className={styles.composerOptions} data-open={mobileOptions}>
               {leadingControls}
             </div>
+            <span className={styles.composerSync}>
+              {showSyncStatus && draft.status === "Connected" && (
+                <span
+                  role="status"
+                  aria-label="Syncing edits…"
+                  title="Syncing edits…"
+                >
+                  <CircleNotch
+                    className={styles.threadRunning}
+                    aria-hidden="true"
+                  />
+                </span>
+              )}
+            </span>
           </div>
           <div>
             <Button
