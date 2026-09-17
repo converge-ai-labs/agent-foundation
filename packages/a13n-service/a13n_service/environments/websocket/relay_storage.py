@@ -289,10 +289,17 @@ class ConnectionRelayStore:
 class WorkerResponseMailbox:
     """A Worker incarnation's shared reader, independent of individual operations."""
 
-    def __init__(self, redis: Redis, worker_instance_id: str, *, limits: RelayLimits = DEFAULT_RELAY_LIMITS) -> None:
+    def __init__(
+        self,
+        redis: Redis,
+        worker_instance_id: str,
+        *,
+        limits: RelayLimits = DEFAULT_RELAY_LIMITS,
+        reader: Redis | None = None,
+    ) -> None:
         self.worker_instance_id = worker_instance_id
         self.key = response_key(worker_instance_id)
-        self._storage = _RelayScript(redis, limits)
+        self._storage = _RelayScript(redis, limits, reader)
 
     async def prepare(self) -> None:
         await self._storage.call((_UNUSED_KEY, _UNUSED_KEY, _UNUSED_KEY, self.key), operation="prepare_worker")

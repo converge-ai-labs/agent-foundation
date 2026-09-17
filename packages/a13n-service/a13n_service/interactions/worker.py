@@ -59,6 +59,7 @@ class WorkerExecutionLoop:
         *,
         build_id: str,
         queue_name: str,
+        worker_id: str | None = None,
         concurrency: int = 8,
         poll_seconds: float = 1,
         lease_seconds: float = 30,
@@ -78,7 +79,7 @@ class WorkerExecutionLoop:
         self._cleanup = timedelta(seconds=cleanup_seconds)
         self._drain_seconds = drain_seconds
         self._capacity = Semaphore(concurrency)
-        self._worker_id = new_object_id("wrk")
+        self._worker_id = new_object_id("wrk") if worker_id is None else worker_id
         self._draining = Event()
         self._handoffs_requested = Event()
         self._stopped = Event()

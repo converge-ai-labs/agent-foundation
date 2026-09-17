@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
     from a13n_service.environments.service import EnvironmentService
     from a13n_service.environments.websocket.runtime import ClientConnectionRuntime
+    from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
     from a13n_service.gateway import GatewayRuntime
     from a13n_service.hooks.management import HookSubscriptionService
     from a13n_service.iam import RequestAuthenticator
@@ -95,6 +96,7 @@ class WorkerRuntime:
     run_stream: RedisRunStream
     run_replay: RunReplayStore
     execution_loop: WorkerExecutionLoop | None = None
+    client_connections: WorkerClientConnections | None = None
 
 
 @dataclass(slots=True)
@@ -130,6 +132,8 @@ class ProcessRuntime:
             if self.worker.execution_loop is not None:
                 self.worker.execution_loop.begin_drain()
             self.worker.environment_maintenance.drain()
+            if self.worker.client_connections is not None:
+                self.worker.client_connections.stop_admission()
         if self.control is not None:
             self.control.subagent_maintenance.drain()
             if self.control.client_connections is not None:

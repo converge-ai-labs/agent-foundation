@@ -15,6 +15,7 @@ from a13n_environment import (
     EnvironmentOperations,
     EnvironmentState,
 )
+from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from a13n_harness.observation import record_span_metadata
 from a13n_logging import get_logger
 from anyio import fail_after
@@ -29,9 +30,13 @@ from .domain import TemplateConfiguration
 from .lifecycle import EnvironmentLifecycle, EnvironmentOperationBusy
 from .local_directory import instance_configuration
 from .models import EnvironmentProviderRecord, EnvironmentRecord
+from .websocket.environment import ClientRunEnvironment
+from .websocket.worker_resources import ClientUseResources
 
 if TYPE_CHECKING:
     from a13n_service.interactions.attempts import AttemptContext
+
+    from .websocket.worker_connections import WorkerClientConnections
 
 logger = get_logger(__name__)
 
@@ -245,13 +250,32 @@ async def validate_run_environment(
         )
 
 
-async def prepare_run_environment(lifecycle: EnvironmentLifecycle, attempt: AttemptContext) -> RunEnvironment | None:
+async def prepare_run_environment(
+    lifecycle: EnvironmentLifecycle,
+    attempt: AttemptContext,
+    *,
+    client_connections: WorkerClientConnections | None = None,
+) -> RunEnvironment | ClientRunEnvironment | None:
     selection = await validate_run_environment(lifecycle, attempt)
     if selection is None:
         return None
-    environment = RunEnvironment(
-        lifecycle, attempt, selection.environment_id, selection.provider_key, selection.descriptor, selection.access
-    )
+    if selection.provider_key == WEBSOCKET_PROVIDER_KEY:
+        if client_connections is None:
+            from a13n_environment import EnvironmentError
+
+            raise EnvironmentError("Client Environment support is unavailable", code="environment_worker_incompatible")
+        environment = ClientRunEnvironment(
+            ClientUseResources(lifecycle.sessions, lifecycle.capacity),
+            client_connections,
+            attempt,
+            selection.environment_id,
+            selection.descriptor,
+            selection.access,
+        )
+    else:
+        environment = RunEnvironment(
+            lifecycle, attempt, selection.environment_id, selection.provider_key, selection.descriptor, selection.access
+        )
     if selection.prepare_on_run:
         await environment.prepare()
     return environment

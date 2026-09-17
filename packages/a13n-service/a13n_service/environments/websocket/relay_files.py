@@ -10,7 +10,7 @@ from a13n_environment.models import EnvironmentAction, EnvironmentError
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from ..domain import DomainModel
-from .relay_protocol import RelayRequest
+from .relay_protocol import RelayRequest, operation_permissions
 from .relay_transfers import FileTransferPlan, ReadBytes, WriteBytes
 
 
@@ -110,11 +110,7 @@ class FileRelayDispatch:
         if "operation" in payload:
             raise ValueError("File relay payload cannot override its operation")
         request = FILE_REQUEST.validate_python({"operation": operation, **payload})
-        if isinstance(request, Copy):
-            required = {EnvironmentAction.FILE_COPY_SOURCE, EnvironmentAction.FILE_COPY_DESTINATION}
-        else:
-            required = {EnvironmentAction(f"environment.{request.operation}")}
-        if not required <= self._permissions:
+        if not operation_permissions(request.operation) <= self._permissions:
             raise EnvironmentError("File operation exceeds the admitted access policy", code="environment_forbidden")
 
         if isinstance(request, ReadBytes | WriteBytes):

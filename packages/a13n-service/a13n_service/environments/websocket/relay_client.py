@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 from time import monotonic
 from typing import Literal
 
+from a13n_environment import EnvironmentAction, EnvironmentError
 from anyio import move_on_after
 from pydantic import JsonValue
 
@@ -16,7 +17,15 @@ from a13n_service.ids import new_object_id
 
 from .authority import DispatchAuthority, DispatchDenied, LeaseDeadline, UseIdentity
 from .coordination import ConfirmedObservation
-from .relay_protocol import CONTROL_OPERATIONS, RelayFailure, RelayInput, RelayLimits, RelayRequest, canonical_message
+from .relay_protocol import (
+    CONTROL_OPERATIONS,
+    RelayFailure,
+    RelayInput,
+    RelayLimits,
+    RelayRequest,
+    canonical_message,
+    operation_permissions,
+)
 from .relay_storage import ConnectionRelayStore, RelayStoreError
 from .relay_waiters import PendingRelayRequest, RelayOperationError, RelayResponseDispatcher
 
@@ -30,6 +39,7 @@ class RelayUseClient:
         responses: RelayResponseDispatcher,
         *,
         check_authority: Callable[[], None],
+        permissions: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
     ) -> None:
         if (
             observation.value.use is None
@@ -44,6 +54,7 @@ class RelayUseClient:
         self._store = store
         self._responses = responses
         self._check_authority = check_authority
+        self._permissions = permissions
         self._server_ms = observation.value.now_ms
         self._received_at = monotonic()
         self._closed = False
@@ -56,6 +67,14 @@ class RelayUseClient:
     @property
     def limits(self) -> RelayLimits:
         return self._store.limits
+
+    @property
+    def available(self) -> bool:
+        try:
+            self._check()
+            return True
+        except DispatchDenied:
+            return False
 
     async def renew(self, observation: ConfirmedObservation) -> None:
         if (
@@ -73,9 +92,13 @@ class RelayUseClient:
         self._received_at = monotonic()
 
     async def invalidate(self) -> None:
+        self.fence()
+        await self._authority.fence()
+
+    def fence(self) -> None:
         self._closed = True
         self._responses.fence_use(self.identity)
-        await self._authority.fence()
+        self._authority.invalidate()
 
     def _check(self) -> None:
         if self._closed:
@@ -104,7 +127,14 @@ class RelayUseClient:
     ) -> AsyncIterator[PendingRelayRequest]:
         if not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 60:
             raise ValueError("Relay operation deadlines must be finite and at most 60 seconds")
-        self._check()
+        try:
+            self._check()
+        except DispatchDenied as error:
+            raise RelayOperationError(
+                RelayFailure(code="environment_unavailable", certainty="not_dispatched")
+            ) from error
+        if not operation_permissions(operation) <= self._permissions:
+            raise EnvironmentError("Operation exceeds accepted Environment access", code="environment_forbidden")
         deadline = LeaseDeadline(monotonic() + timeout_seconds)
         message = RelayRequest(
             request_id=new_object_id("erq"),

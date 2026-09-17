@@ -6,7 +6,13 @@ import json
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from a13n_environment.models import EnvironmentError
+from a13n_environment.models import (
+    EnvironmentAction,
+    EnvironmentAvailability,
+    EnvironmentDescriptor,
+    EnvironmentError,
+    EnvironmentOperationFamily,
+)
 from pydantic import Field, JsonValue, StringConstraints, TypeAdapter, model_validator
 
 from a13n_service.ids import ObjectId
@@ -60,6 +66,28 @@ class RelayLimits:
 
 DEFAULT_RELAY_LIMITS = RelayLimits()
 CONTROL_OPERATIONS = frozenset({"scope.close", "operation.cancel", "transfer.cancel"})
+
+
+class RelayEnvironmentSnapshot(DomainModel):
+    descriptor: EnvironmentDescriptor
+    availability: EnvironmentAvailability
+
+
+class ReadinessRequest(DomainModel):
+    operations: frozenset[EnvironmentOperationFamily] = Field(max_length=5)
+
+
+def operation_permissions(operation: str) -> frozenset[EnvironmentAction]:
+    if operation in CONTROL_OPERATIONS or operation in {"scope.describe", "scope.ready"}:
+        return frozenset()
+    if operation == "file.copy":
+        return frozenset({EnvironmentAction.FILE_COPY_SOURCE, EnvironmentAction.FILE_COPY_DESTINATION})
+    if operation == "process.rebind":
+        return frozenset({EnvironmentAction.PROCESS_INSPECT})
+    try:
+        return frozenset({EnvironmentAction(f"environment.{operation}")})
+    except ValueError:
+        raise EnvironmentError("Relay operation is unsupported", code="environment_unsupported") from None
 
 
 class RelayRequest(DomainModel):

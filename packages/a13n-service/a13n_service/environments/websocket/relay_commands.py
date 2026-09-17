@@ -12,7 +12,7 @@ from a13n_environment.retention import EnvironmentOutputPolicy
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, model_validator
 
 from ..domain import DomainModel
-from .relay_protocol import RelayRequest
+from .relay_protocol import RelayRequest, operation_permissions
 from .relay_values import (
     BinaryValue,
     CommandInput,
@@ -170,12 +170,7 @@ class CommandRelayDispatch:
         if "operation" in payload:
             raise ValueError("Command relay payload cannot override its operation")
         request = COMMAND_OPERATION.validate_python({"operation": operation, **payload}, extra="forbid")
-        action = (
-            EnvironmentAction.PROCESS_INSPECT
-            if isinstance(request, ProcessRebind)
-            else EnvironmentAction(f"environment.{operation}")
-        )
-        if action not in self._permissions:
+        if not operation_permissions(operation) <= self._permissions:
             raise EnvironmentError("Operation exceeds the admitted access policy", code="environment_forbidden")
         facets = {
             "shell": self._operations.shell,

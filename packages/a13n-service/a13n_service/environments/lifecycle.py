@@ -27,7 +27,6 @@ from a13n_service.credentials import CredentialSnapshot
 from a13n_service.iam.audit import SystemAuditActor, security_audit_record
 from a13n_service.iam.authorization import (
     WorkspaceAction,
-    authorize_persisted_agent_principal_actions,
     authorize_persisted_workspace_principal_action,
 )
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -50,6 +49,7 @@ from .models import (
 )
 from .policy import FAILURE_BACKOFF, RENEWAL_MARGIN
 from .retention import has_active_use, refresh_retention
+from .run_use import lock_run_environment_use, mark_run_environment_use
 from .scheduling import next_maintenance
 
 if TYPE_CHECKING:
@@ -132,41 +132,16 @@ class EnvironmentLifecycle:
         return timedelta(seconds=self.timeout_seconds + 10)
 
     async def acquire_preparation(self, environment_id: str, *, attempt: AttemptContext) -> LifecycleOperation:
-        from a13n_service.interactions.attempts import lock_attempt_authority
-
         now = assume_utc(self.clock())
         async with transaction(self.sessions) as session:
-            run, _, _ = await lock_attempt_authority(session, attempt, now)
-            if run.environment_id != environment_id:
-                raise ValueError("Environment is not the Run's accepted selection")
-            await self.capacity.lock_workspace(session, environment_id)
-            row = await session.get(EnvironmentRecord, environment_id, with_for_update=True)
-            if row is None:
-                raise ValueError("Environment is unavailable")
-            provider = await session.get(EnvironmentProviderRecord, row.provider_id)
-            if provider is None:
-                raise ValueError("Environment Provider is unavailable")
-            await authorize_persisted_agent_principal_actions(
-                session,
-                principal=run.to_resource().authority_principal,
-                organization_id=row.organization_id,
-                workspace_id=row.workspace_id,
-                agent_id=run.agent_id,
-                actions=frozenset({WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}),
-                snapshot=attempt.authorization.snapshot,
-            )
-            if not provider.enabled:
-                raise ValueError("Environment Provider is disabled")
+            run, row, provider = await lock_run_environment_use(session, environment_id, attempt, self.capacity, now)
             if row.operation_id is not None:
                 if row.operation_expires_at is not None and assume_utc(row.operation_expires_at) > now:
                     raise EnvironmentOperationBusy("Environment lifecycle operation is in progress")
                 if row.operation_action != "prepare":
                     raise EnvironmentOperationBusy("The preceding Environment operation must be reconciled first")
             await self.capacity.admit(session, row)
-            run.environment_use_started_at = run.environment_use_started_at or now
-            if row.retention_condition != "active":
-                row.retention_condition = "active"
-                row.condition_since = now
+            mark_run_environment_use(run, row, now)
             configuration = await load_configuration(session, row)
             return self._claim(row, provider, configuration, "prepare", now, attempt=attempt)
 

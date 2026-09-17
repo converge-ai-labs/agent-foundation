@@ -19,6 +19,7 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
+from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
 from a13n_service.interactions.attempts import AttemptContext, AttemptExecutionService, read_attempt_authority
@@ -78,6 +79,7 @@ class WorkerAttempts:
         queue_drain: QueueDrain | None = None,
         web_registry: WebProviderRegistry,
         configuration_drafts: ConfigurationDrafts | None = None,
+        client_connections: WorkerClientConnections | None = None,
     ) -> None:
         if shared.memory_behaviors is None:
             raise RuntimeError("Execution memory behavior composition is required")
@@ -85,6 +87,7 @@ class WorkerAttempts:
         self._shared = shared
         self._resources = execution
         self._environments = environments
+        self._client_connections = client_connections
         self._external_tools = external_tools
         self._skills = skills
         self._stream = stream
@@ -211,6 +214,7 @@ class WorkerAttempts:
                 async_results=async_results,
                 asset_publication=self._asset_publication,
                 environments=self._environments,
+                client_connections=self._client_connections,
                 external_tools=self._external_tools,
                 subagent_capability=subagent_capability,
                 secrets=self._secrets,

@@ -7,31 +7,19 @@ from collections.abc import Awaitable, Callable
 from a13n_envd_client import EIPSession
 from a13n_environment import (
     EnvironmentAction,
-    EnvironmentAvailability,
-    EnvironmentDescriptor,
     EnvironmentError,
-    EnvironmentOperationFamily,
     EnvironmentPermissionSet,
 )
 from a13n_environment.eip.binding import EIPEnvironmentSession
 from a13n_environment.models import ENVIRONMENT_ACTION_DISPATCH
 from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
-from pydantic import Field, JsonValue
+from pydantic import JsonValue
 
 from ..domain import DomainModel
 from .relay_commands import CommandRelayDispatch
 from .relay_files import FileRelayDispatch
-from .relay_protocol import DEFAULT_RELAY_LIMITS, RelayLimits, RelayRequest
+from .relay_protocol import DEFAULT_RELAY_LIMITS, ReadinessRequest, RelayEnvironmentSnapshot, RelayLimits, RelayRequest
 from .relay_transfers import FileTransferPlan
-
-
-class RelayEnvironmentSnapshot(DomainModel):
-    descriptor: EnvironmentDescriptor
-    availability: EnvironmentAvailability
-
-
-class ReadinessRequest(DomainModel):
-    operations: frozenset[EnvironmentOperationFamily] = Field(max_length=5)
 
 
 class EnvironmentRelayDispatch:

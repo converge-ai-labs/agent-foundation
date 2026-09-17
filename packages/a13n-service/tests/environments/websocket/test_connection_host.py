@@ -18,9 +18,9 @@ from a13n_service.environments.websocket.authority import UseIdentity
 from a13n_service.environments.websocket.connection_host import ClientConnectionHost
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.environments.websocket.relay_client import RelayUseClient
-from a13n_service.environments.websocket.relay_dispatch import RelayEnvironmentSnapshot
 from a13n_service.environments.websocket.relay_file_operations import RelayFileOperations
 from a13n_service.environments.websocket.relay_processes import RelayProcessOperations, RelayShellOperations
+from a13n_service.environments.websocket.relay_protocol import RelayEnvironmentSnapshot
 from a13n_service.environments.websocket.relay_storage import ConnectionRelayStore, WorkerResponseMailbox
 from a13n_service.environments.websocket.relay_waiters import RelayOperationError, RelayResponseDispatcher
 from a13n_service.environments.websocket.resources import ConnectionResources

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import base64
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 import pytest
 from a13n_environment import EnvironmentAction, EnvironmentState, build_environment_provider_catalog
@@ -11,6 +11,7 @@ from a13n_service.environments.models import EnvironmentProviderRecord
 from a13n_service.environments.service import EnvironmentService
 from a13n_service.environments.websocket.authority import ConnectionIdentity, UseIdentity
 from a13n_service.environments.websocket.use_authorization import ClientUseAuthorization
+from a13n_service.interactions.domain import Run
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
@@ -25,8 +26,17 @@ from .test_attempt_execution import _accept_root, _worker
 pytestmark = pytest.mark.anyio
 
 
+@dataclass(frozen=True)
+class AdmittedUse:
+    identity: UseIdentity
+    provider_id: str
+    service: EnvironmentService
+    run: Run
+    claim: ClaimedAttempt
+
+
 @pytest.fixture
-async def admitted_use(interaction_sessions, interaction_object_store):
+async def admitted_use(request, interaction_sessions, interaction_object_store):
     await seed_hook_actor_access(interaction_sessions)
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
     service = EnvironmentService(
@@ -50,7 +60,10 @@ async def admitted_use(interaction_sessions, interaction_object_store):
         ),
     )
     _, run, _ = await _accept_root(
-        interaction_sessions, interaction_object_store, environment_id=environment.id, environment_access="read_only"
+        interaction_sessions,
+        interaction_object_store,
+        environment_id=environment.id,
+        environment_access=getattr(request, "param", "read_only"),
     )
     claim = await AttemptScheduler(interaction_sessions, clock=utc_now, lifecycle=test_lifecycle_writer()).claim(
         run.id, _worker()
@@ -64,11 +77,11 @@ async def admitted_use(interaction_sessions, interaction_object_store):
         claim.attempt.attempt_number,
         claim.attempt.worker_id,
     )
-    return identity, provider.id
+    return AdmittedUse(identity, provider.id, service, run, claim)
 
 
 async def test_control_rechecks_persisted_attempt_and_accepted_access(interaction_sessions, admitted_use):
-    identity, _ = admitted_use
+    identity = admitted_use.identity
     permissions = await ClientUseAuthorization(interaction_sessions)(identity)
     assert EnvironmentAction.FILE_READ_BYTES in permissions
     assert EnvironmentAction.FILE_WRITE_BYTES not in permissions
@@ -86,14 +99,14 @@ async def test_control_rechecks_persisted_attempt_and_accepted_access(interactio
     ],
 )
 async def test_foreign_use_scope_is_rejected_before_eip_binding(interaction_sessions, admitted_use, change):
-    identity, _ = admitted_use
+    identity = admitted_use.identity
     with pytest.raises(EnvironmentError) as error:
         await ClientUseAuthorization(interaction_sessions)(replace(identity, **change))
     assert error.value.code == "environment_forbidden"
 
 
 async def test_disabled_provider_cannot_gain_use_from_old_online_presence(interaction_sessions, admitted_use):
-    identity, provider_id = admitted_use
+    identity, provider_id = admitted_use.identity, admitted_use.provider_id
     async with transaction(interaction_sessions) as session:
         provider = await session.get(EnvironmentProviderRecord, provider_id)
         provider.enabled = False

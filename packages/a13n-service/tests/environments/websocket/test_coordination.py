@@ -290,3 +290,27 @@ async def test_use_replay_keeps_deadline_and_bigint_fences_do_not_round(coordina
     assert first.value.use == replay.value.use
     with pytest.raises(CoordinationError):
         await coordination.renew_use(replace(use, attempt_fence=2**53 + 1), attempt_expires_at_ms=expiry)
+
+
+async def test_worker_release_requires_exact_use_and_never_acknowledges_socket(coordination):
+    connection = await online(coordination)
+    observed = await coordination.observe("org_test", "env_test")
+    use = UseIdentity(connection, "use", "run", "attempt", 3, "worker")
+    grant = await coordination.acquire_use(use, attempt_expires_at_ms=observed.value.now_ms + 5000)
+    with pytest.raises(CoordinationError):
+        await coordination.release_use(replace(use, worker_instance_id="foreign"))
+    assert (await coordination.observe("org_test", "env_test")).value.status == "online"
+    await coordination.release_use(use)
+    await coordination.release_use(use)
+    retired = (await coordination.observe("org_test", "env_test")).value
+    assert retired.status == "offline"
+    assert retired.retiring is not None
+    assert not retired.retiring.acknowledged
+    assert retired.retiring.until_ms >= grant.value.use.expires_at_ms
+    replacement = await candidate(coordination, "replacement")
+    await coordination.acknowledge(connection)
+    await coordination.promote(replacement)
+    await coordination.online(replacement)
+    with pytest.raises(CoordinationError):
+        await coordination.release_use(use)
+    assert (await coordination.observe("org_test", "env_test")).value.connection == replacement

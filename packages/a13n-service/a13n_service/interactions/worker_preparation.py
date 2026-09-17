@@ -37,6 +37,7 @@ from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
+from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
@@ -98,6 +99,7 @@ class WorkerAttemptPreparer:
         web: WebRuntime | None = None,
         memory: ExecutionMemoryRuntime | None = None,
         configuration_capability: Callable[[], ConfigurationCapability] | None = None,
+        client_connections: WorkerClientConnections | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
         self._secrets = secrets
@@ -107,6 +109,7 @@ class WorkerAttemptPreparer:
         self._configuration_capability = configuration_capability
         self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
+        self._client_connections = client_connections
         self._external_tools = external_tools
         self._sessions = sessions
         self._run = run
@@ -221,7 +224,9 @@ class WorkerAttemptPreparer:
                 )
                 yield invocation
                 return
-            environment = await prepare_run_environment(self._environments, context)
+            environment = await prepare_run_environment(
+                self._environments, context, client_connections=self._client_connections
+            )
             if environment is not None:
                 stack.push_async_callback(environment.close)
                 invocation = replace(

@@ -135,6 +135,13 @@ elseif operation == 'renew_use' then
     local expires = math.min(now + input.lease_ms, state.owner.expires_at_ms, input.attempt_expires_at_ms)
     if expires <= now then return fail('authority_lost') end
     state.use.expires_at_ms = expires
+elseif operation == 'release_use' then
+    if not state.owner or not same(state.owner.identity, input.connection) or
+       not state.use or not same_use(state.use.identity, input.use) then
+        return fail('authority_lost')
+    end
+    retire_owner()
+    state.error = 'environment_unavailable'
 elseif operation == 'retire' then
     if not state.owner or not same(state.owner.identity, input.connection) then return fail('authority_lost') end
     retire_owner()

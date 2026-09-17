@@ -146,7 +146,7 @@ async def test_cancellation_and_early_stream_exit_send_bounded_control_request(r
 
     serving = asyncio.create_task(server())
     if exit_early:
-        async with client.request("file.read_bytes_stream", {}, timeout_seconds=2, streaming="download"):
+        async with client.request("file.read_bytes", {}, timeout_seconds=2, streaming="download"):
             await started.wait()
     else:
         task = asyncio.create_task(client.call("file.stat", timeout_seconds=2))
@@ -164,8 +164,9 @@ async def test_scope_close_is_idempotent_and_fences_later_publication(relay):
     await client.close()
     assert (await serving).operation == "scope.close"
     await client.close()
-    with pytest.raises(DispatchDenied):
+    with pytest.raises(RelayOperationError) as rejected:
         await client.call("file.stat")
+    assert rejected.value.failure.code == "environment_unavailable"
 
 
 async def test_takeover_observation_cannot_reuse_retained_old_use(relay):
@@ -190,5 +191,6 @@ async def test_takeover_observation_cannot_reuse_retained_old_use(relay):
         RelayUseClient(USE, takeover, owner, responses, check_authority=lambda: None)
     with pytest.raises(DispatchDenied):
         await client.renew(takeover)
-    with pytest.raises(DispatchDenied):
+    with pytest.raises(RelayOperationError) as rejected:
         await client.call("file.stat")
+    assert rejected.value.failure.code == "environment_unavailable"

@@ -173,6 +173,10 @@ class ConnectionCoordination:
             "renew_use", identity.connection, use=_use_payload(identity), attempt_expires_at_ms=attempt_expires_at_ms
         )
 
+    async def release_use(self, identity: UseIdentity) -> None:
+        """Retire only this exact use; only Control can acknowledge socket detachment."""
+        await self._connection_call("release_use", identity.connection, use=_use_payload(identity))
+
     async def retire(
         self, connection: ConnectionIdentity, *, error: ConnectionFailure = "environment_unavailable"
     ) -> None:
