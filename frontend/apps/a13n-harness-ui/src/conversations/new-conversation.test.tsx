@@ -504,31 +504,26 @@ it("distinguishes inherited choices and sends an independent model without chang
   expect(screen.queryByRole("button", { name: "Composer help" })).toBeNull();
   await user.click(screen.getByRole("combobox", { name: "Agent" }));
   expect(
-    await screen.findByRole("option", { name: /Default · Writer/ }),
+    await screen.findByRole("option", { name: /Writer.*Default/ }),
   ).toBeTruthy();
   expect(
     screen.getByRole("option", { name: /Writer.*agent-one/ }),
   ).toBeTruthy();
   await user.click(screen.getByRole("option", { name: /Reviewer.*agent-two/ }));
   await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
-  fireEvent.keyDown(screen.getByRole("combobox", { name: "Model" }), {
-    key: "ArrowDown",
-  });
+  await user.click(screen.getByRole("button", { name: "Model and thinking" }));
+  await user.click(screen.getByRole("button", { name: "Change model" }));
   expect(
-    (await screen.findByRole("option", { name: /Agent default/ })).textContent,
+    (await screen.findByRole("button", { name: /Agent default/ })).textContent,
   ).toContain("Other model");
-  await user.click(
-    screen.getByRole("option", { name: /Primary model.*model-one/ }),
-  );
-  await user.click(screen.getByRole("combobox", { name: "Thinking" }));
-  await user.click(
-    await screen.findByRole("option", { name: /Quick thinking/ }),
-  );
+  await user.click(screen.getByRole("button", { name: "Primary model" }));
+  await user.click(screen.getByRole("button", { name: "Quick thinking" }));
+  await user.keyboard("[Escape]");
   await user.click(screen.getByRole("link", { name: "Settings" }));
   await user.click(screen.getByRole("link", { name: "Return to draft" }));
-  expect(screen.getByRole("combobox", { name: "Model" }).textContent).toContain(
-    "Primary model",
-  );
+  expect(
+    screen.getByRole("button", { name: "Model and thinking" }).textContent,
+  ).toContain("Primary model");
   await waitFor(() =>
     expect(
       (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
@@ -643,9 +638,9 @@ it("restores text and choices after a full reload and persists deleting the inpu
     screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
   ).toBe("Build this");
   expect(creations.current!.threadId).toBe(id);
-  expect(screen.getByRole("combobox", { name: "Model" }).textContent).toContain(
-    "Other model",
-  );
+  expect(
+    screen.getByRole("button", { name: "Model and thinking" }).textContent,
+  ).toContain("Other model");
   act(() => {
     const text = creations.current!.composer.doc.getText("text");
     text.delete(0, text.length);

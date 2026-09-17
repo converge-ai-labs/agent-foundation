@@ -33,22 +33,20 @@ it("renders backend labels and preserves false separately from default", async (
   const user = userEvent.setup();
   const onChange = vi.fn();
   const view = render(<ThinkingPicker model={model} onChange={onChange} />);
-  screen.getByRole("combobox", { name: "Thinking" }).focus();
-  await user.keyboard("[ArrowDown]");
-  await user.click(screen.getByRole("option", { name: /No thinking/ }));
+  await user.click(screen.getByRole("button", { name: "No thinking" }));
   expect(onChange).toHaveBeenLastCalledWith(false);
   view.unmount();
   render(<ThinkingPicker model={model} value={false} onChange={onChange} />);
   expect(
-    screen.getByRole("combobox", { name: "Thinking" }).textContent,
-  ).toContain("No thinking");
-  screen.getByRole("combobox", { name: "Thinking" }).focus();
-  await user.keyboard("[ArrowDown]");
-  const blocked = screen.getByRole("option", { name: /Deep/ });
-  expect(blocked.getAttribute("aria-disabled")).toBe("true");
+    screen
+      .getByRole("button", { name: "No thinking" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  const blocked = screen.getByRole("button", { name: "Deep" });
+  expect(blocked.hasAttribute("disabled")).toBe(true);
   await user.click(blocked);
   expect(onChange).toHaveBeenCalledTimes(1);
-  await user.click(screen.getByRole("option", { name: /Default · Budget/ }));
+  await user.click(screen.getByRole("button", { name: "Use default" }));
   expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
@@ -65,14 +63,12 @@ it("keeps unknown and stale selections explicit without inventing options", asyn
   };
   const onChange = vi.fn();
   render(<ThinkingPicker model={unknown} value="low" onChange={onChange} />);
-  expect(
-    screen.getByRole("combobox", { name: "Thinking" }).textContent,
-  ).toContain("Unavailable selection");
-  screen.getByRole("combobox", { name: "Thinking" }).focus();
-  await user.keyboard("[ArrowDown]");
-  expect(await screen.findByText("No reviewed controls")).toBeTruthy();
-  expect(await screen.findAllByRole("option")).toHaveLength(2);
+  expect(screen.getByText(/Unavailable selection/)).toBeTruthy();
+  expect(screen.getByText("No reviewed controls")).toBeTruthy();
+  expect(screen.getAllByRole("button")).toHaveLength(1);
   expect(onChange).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Use default" }));
+  expect(onChange).toHaveBeenLastCalledWith(null);
 });
 
 it("resets thinking when a refreshed catalog changes the inherited Model", () => {
@@ -113,4 +109,69 @@ it("resets thinking when a refreshed catalog changes the inherited Model", () =>
     />,
   );
   expect(onThinkingChange).toHaveBeenCalledWith(null);
+});
+
+it("renders boolean controls without inventing effort levels", async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  render(
+    <ThinkingPicker
+      model={{
+        ...model,
+        thinking: {
+          status: "supported",
+          default_summary: "Off",
+          options: [
+            {
+              value: null,
+              label: "Default",
+              description: "Follow model settings",
+            },
+            { value: false, label: "Off", description: "Disable thinking" },
+            { value: true, label: "On", description: "Enable thinking" },
+          ],
+        },
+      }}
+      onChange={onChange}
+    />,
+  );
+  screen.getByRole("button", { name: "Off" }).focus();
+  await user.keyboard("[ArrowRight][Space]");
+  expect(onChange).toHaveBeenLastCalledWith(true);
+  expect(screen.queryByRole("button", { name: "High" })).toBeNull();
+});
+
+it("shows larger option sets as a keyboard-navigable list with backend descriptions", async () => {
+  const user = userEvent.setup();
+  const onChange = vi.fn();
+  const efforts = ["minimal", "low", "medium", "high", "xhigh"] as const;
+  render(
+    <ThinkingPicker
+      model={{
+        ...model,
+        thinking: {
+          status: "supported",
+          default_summary: "Medium",
+          options: [
+            {
+              value: null,
+              label: "Default",
+              description: "Follow model settings",
+            },
+            ...efforts.map((value) => ({
+              value,
+              label: value,
+              description: `Details for ${value}`,
+            })),
+          ],
+        },
+      }}
+      value="low"
+      onChange={onChange}
+    />,
+  );
+  screen.getByRole("button", { name: "low" }).focus();
+  await user.keyboard("[ArrowDown][Space]");
+  expect(onChange).toHaveBeenLastCalledWith("medium");
+  expect(screen.getByText("Details for xhigh")).toBeTruthy();
 });

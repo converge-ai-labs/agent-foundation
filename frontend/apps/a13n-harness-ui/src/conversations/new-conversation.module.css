@@ -123,32 +123,24 @@
 .runChoices {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
   justify-content: flex-end;
-  gap: 6px 14px;
+  gap: 6px;
   min-width: 0;
+  max-width: 100%;
 }
 .runChoice {
   display: flex;
-  align-items: center;
-  gap: 4px;
   min-width: 0;
-  max-width: 240px;
-}
-.runChoice > span {
-  font-size: 11px;
-  color: var(--a13n-secondary);
-  flex-shrink: 0;
+  max-width: 180px;
 }
 .runChoice > button {
   width: auto;
   min-width: 0;
   max-width: 100%;
   height: 32px;
-  padding-inline: 6px;
+  padding-inline: 10px;
   font-size: 13px;
-  border-color: transparent;
-  background: transparent;
+  font-weight: 400;
   box-shadow: none;
 }
 .location > button:hover,
@@ -157,18 +149,12 @@
 }
 @media (max-width: 600px) {
   .runChoices {
-    flex: 1;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    width: 100%;
   }
   .runChoice {
-    display: grid;
-    gap: 0;
     max-width: 100%;
-  }
-  .runChoice > span {
-    padding-left: 6px;
   }
   .runChoice > button {
     width: 100%;
