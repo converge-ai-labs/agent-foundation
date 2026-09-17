@@ -112,7 +112,7 @@ beforeEach(() => {
   state.GET.mockImplementation(async (path: string) =>
     response(
       path.endsWith("/agents/{agent}")
-        ? { id: "agt_test", name: "Support agent" }
+        ? { id: "agt_test", key: "support-agent", name: "Support agent" }
         : path.endsWith("/summary")
           ? summary
           : { latest: path.endsWith("/tests/latest") ? test : null },
@@ -129,8 +129,10 @@ it("shows metadata to viewers without mounting private test requests or manageme
   expect(screen.queryByText("Latest setup test")).toBeNull();
   expect(screen.queryByText("Manage memory")).toBeNull();
   expect(
-    await screen.findByRole("link", { name: "Support agent" }),
-  ).toBeTruthy();
+    (await screen.findByRole("link", { name: "Support agent" })).getAttribute(
+      "href",
+    ),
+  ).toBe("/workspace/test/agents/support-agent");
   expect(screen.queryByText("agt_test")).toBeNull();
   expect(
     screen.getByRole("heading", { name: "Message responses" }),

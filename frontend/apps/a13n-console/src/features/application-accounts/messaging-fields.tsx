@@ -8,10 +8,13 @@ export const responseLabels = {
   chat: "All supported human messages",
 } as const;
 export const placementLabels = {
-  auto: "Automatic",
+  auto: "Let the agent decide",
   thread: "Thread or topic",
   main: "Main conversation",
 } as const;
+export const automaticPlacementHint =
+  "The agent chooses where to reply. If unspecified, group replies go in a thread or topic; direct messages are answered in the chat.";
+
 export function messagingPolicy(
   value: Record<string, unknown> | null | undefined,
 ): Schema["MessagingPolicy"] | null {
@@ -74,13 +77,15 @@ export function MessagingFields({
               "Discussion and whole-chat modes need the corresponding message subscriptions and history permissions on the provider.",
             )}
           </p>
-          <p>
-            {t(
-              policy.reply_mode === "main"
-                ? "Replies in the main conversation may be visible beyond the original discussion."
-                : "Automatic placement may start a thread. It does not guarantee a main-conversation reply.",
-            )}
-          </p>
+          {policy.reply_mode !== "thread" && (
+            <p>
+              {t(
+                policy.reply_mode === "main"
+                  ? "Replies in the main conversation may be visible beyond the original discussion."
+                  : automaticPlacementHint,
+              )}
+            </p>
+          )}
         </>
       ) : (
         <p>

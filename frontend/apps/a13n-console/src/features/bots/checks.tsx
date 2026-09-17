@@ -91,7 +91,9 @@ export function BotChecks({
     <section
       className={styles.checkSection}
       aria-label={t(
-        conversationId ? "Conversation access" : "Platform connection status",
+        conversationId
+          ? "Group connection check"
+          : "Platform connection status",
       )}
     >
       <div className={styles.memoryHeading}>
@@ -100,7 +102,7 @@ export function BotChecks({
             <PlugsConnectedIcon aria-hidden="true" />
             {t(
               conversationId
-                ? "Conversation access"
+                ? "Group connection check"
                 : "Platform connection status",
             )}
           </h2>

@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { StateBadge, Timestamp } from "../../shared/feedback";
+import { EventConnection } from "./event-connection";
 import { BotChecks } from "./checks";
 import { LatestBotTest } from "./test-observation";
 import { conditions, stages } from "./summary-labels";
@@ -18,6 +19,7 @@ import {
   messagingPolicy,
   responseLabels,
   placementLabels,
+  automaticPlacementHint,
 } from "../application-accounts/messaging-fields";
 import styles from "./bots.module.css";
 
@@ -160,7 +162,7 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
                 ) : agent.data && !agent.error ? (
                   <Link
                     className={styles.factLink}
-                    to={`${basePath}/agents/${account.default_agent_id}`}
+                    to={`${basePath}/agents/${agent.data.key}`}
                   >
                     {agent.data.name}
                     <ArrowRightIcon aria-hidden="true" />
@@ -188,6 +190,11 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
                     ? t(placementLabels[policy.reply_mode])
                     : t("Not configured")}
                 </span>
+                {policy?.reply_mode === "auto" && (
+                  <small className={styles.factHint}>
+                    {t(automaticPlacementHint)}
+                  </small>
+                )}
               </dd>
             </div>
             <div>
@@ -253,6 +260,11 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
           </footer>
         </section>
       </div>
+      {account.provider_config.event_transport === "websocket" && (
+        <div className={styles.eventConnection}>
+          <EventConnection account={account} />
+        </div>
+      )}
       <BotChecks account={account} showAccountLink />
       <div className={styles.overviewTest}>
         <LatestBotTest account={account} />

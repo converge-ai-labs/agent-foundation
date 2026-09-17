@@ -790,3 +790,52 @@
   font-size: 13px;
   line-height: 1.7;
 }
+
+.factHint {
+  display: block;
+  margin-top: 8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.memoryAdvancedSettings {
+  border-top: 1px solid var(--a13n-border);
+  padding-top: 16px;
+}
+
+.memoryAdvancedSettings summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+
+.memoryAdvancedSettings[open] summary {
+  margin-bottom: 16px;
+}
+
+.memoryAdvancedSettings p {
+  margin-top: 8px;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.groupMemoryCapabilities {
+  display: grid;
+  gap: 16px;
+  margin-left: 16px;
+  padding-left: 20px;
+  border-left: 2px solid var(--a13n-border);
+}
+
+.groupMemoryCapabilities[data-disabled="true"] {
+  color: var(--a13n-secondary);
+  opacity: 0.6;
+}
+
+.eventConnection {
+  border: 1px solid var(--a13n-border);
+  border-radius: 10px;
+  padding: 24px;
+  margin-bottom: 24px;
+}

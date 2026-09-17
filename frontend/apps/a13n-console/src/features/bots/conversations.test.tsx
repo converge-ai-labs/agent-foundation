@@ -45,6 +45,11 @@ const item = {
   run_status: "succeeded",
   updated_at: "2026-09-16T10:00:00Z",
 };
+const agent = {
+  id: "agt_one",
+  key: "support-assistant",
+  name: "Support assistant",
+};
 const response = (data: unknown) => ({
   data,
   response: new Response(null, { status: 200 }),
@@ -97,7 +102,9 @@ beforeEach(() => {
               configured_target_count: 1,
               test_stage: null,
             }
-          : account,
+          : path.endsWith("/agents/{agent}")
+            ? agent
+            : account,
     ),
   );
 });
@@ -109,6 +116,13 @@ it("links to canonical history and keeps Run status separate from delivery", asy
   expect(link.getAttribute("href")).toBe(
     "/workspace/test/sessions/sess_one/threads/thread_one/runs/run_one",
   );
+  const agentLink = await screen.findByRole("link", {
+    name: "Support assistant",
+  });
+  expect(agentLink.getAttribute("href")).toBe(
+    "/workspace/test/agents/support-assistant",
+  );
+  expect(screen.queryByText("agt_one")).toBeNull();
   expect(screen.getByText("Run status")).toBeTruthy();
   expect(
     screen.getByText(
@@ -128,21 +142,29 @@ it("links to canonical history and keeps Run status separate from delivery", asy
 
 it("uses the server cursor without loading every conversation", async () => {
   state.GET.mockImplementation(async (_path: string, options) =>
-    response({
-      items: [
-        {
-          ...item,
-          thread_id: options.params.query.cursor ? "thread_two" : "thread_one",
-        },
-      ],
-      next_cursor: options.params.query.cursor ? null : "opaque_next",
-    }),
+    response(
+      _path.endsWith("/agents/{agent}")
+        ? agent
+        : {
+            items: [
+              {
+                ...item,
+                thread_id: options.params.query.cursor
+                  ? "thread_two"
+                  : "thread_one",
+              },
+            ],
+            next_cursor: options.params.query.cursor ? null : "opaque_next",
+          },
+    ),
   );
   setup(<BotConversations accountId="acct_one" />);
   await screen.findByRole("link", { name: "thread_one" });
   await userEvent.click(screen.getByRole("button", { name: "Next" }));
   await screen.findByRole("link", { name: "thread_two" });
-  expect(state.GET).toHaveBeenCalledTimes(2);
+  expect(
+    state.GET.mock.calls.filter(([path]) => path.endsWith("/threads")),
+  ).toHaveLength(2);
 });
 
 it("does not misreport denied history as an empty conversation list", async () => {

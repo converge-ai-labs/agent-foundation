@@ -20,7 +20,7 @@ import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import shared from "../../shared/shared.module.css";
-import { BotChecks } from "./checks";
+import styles from "./bots.module.css";
 
 export function MemorySettings({
   account,
@@ -509,14 +509,24 @@ function GroupForm({
         <Switch checked={enabled} onCheckedChange={setEnabled} />
         {t("Enable group memory")}
       </Label>
-      <Label>
-        <Switch checked={read} onCheckedChange={setRead} />
-        {t("Use memory during conversations")}
-      </Label>
-      <Label>
-        <Switch checked={write} onCheckedChange={setWrite} />
-        {t("Allow explicit save and forget requests")}
-      </Label>
+      <div className={styles.groupMemoryCapabilities} data-disabled={!enabled}>
+        <Label>
+          <Switch
+            checked={read}
+            onCheckedChange={setRead}
+            disabled={!enabled}
+          />
+          {t("Refer to memory when answering")}
+        </Label>
+        <Label>
+          <Switch
+            checked={write}
+            onCheckedChange={setWrite}
+            disabled={!enabled}
+          />
+          {t("Allow saving or deleting memory through chat")}
+        </Label>
+      </div>
       <ChoiceField
         label={t("Who can read this group's memory?")}
         value={visibility}
@@ -527,11 +537,22 @@ function GroupForm({
           { value: "group", label: t("Only this group") },
           {
             value: "installation",
-            label: t("All connected groups"),
+            label: t(
+              account.provider_key === "slack"
+                ? "All connected channels in this Slack workspace"
+                : "All connected groups in this Feishu enterprise",
+            ),
             disabled: !scope || !["public", "private"].includes(scope.audience),
           },
         ]}
       />
+      {visibility === "installation" && (
+        <p>
+          {t(
+            "Limited to groups connected to this bot. Other groups can use this group's memory when answering.",
+          )}
+        </p>
+      )}
       <p>
         {t(
           visibility === "installation"
@@ -548,21 +569,26 @@ function GroupForm({
           )}
         </p>
       )}
-      <FormField label={t("Time zone")}>
-        <Input
-          value={timezone}
-          onChange={(event) => setTimezone(event.target.value)}
-          required
-        />
-      </FormField>
       <p>
         {t(
           "Only verified group conversations can open their memory to other groups. Direct conversations stay private.",
         )}
       </p>
-      {group && (
-        <BotChecks key={group} account={account} conversationId={group} />
-      )}
+      <details className={styles.memoryAdvancedSettings}>
+        <summary>{t("Advanced settings")}</summary>
+        <FormField label={t("Time zone")}>
+          <Input
+            value={timezone}
+            onChange={(event) => setTimezone(event.target.value)}
+            required
+          />
+        </FormField>
+        <p>
+          {t(
+            "Determines the default date for new memories and date filtering. Uses the bot's time zone unless changed for this group.",
+          )}
+        </p>
+      </details>
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}

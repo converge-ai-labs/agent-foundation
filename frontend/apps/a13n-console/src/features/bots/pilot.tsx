@@ -9,6 +9,10 @@ import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { useIdempotency } from "../../shared/idempotency";
 import { useReceptionOptions } from "../application-accounts/data";
+import {
+  automaticPlacementHint,
+  placementLabels,
+} from "../application-accounts/messaging-fields";
 import { ConversationPicker } from "./conversation-picker";
 import { BotChecks } from "./checks";
 import styles from "./connect.module.css";
@@ -317,18 +321,20 @@ export function BotPilot({
               onValueChange={(value) => setReply(value as typeof reply)}
               disabled={activate.isPending}
               options={[
-                { value: "auto", label: t("Automatic") },
+                { value: "auto", label: t(placementLabels.auto) },
                 { value: "thread", label: t("Thread or topic") },
                 { value: "main", label: t("Main conversation") },
               ]}
             />
-            <p>
-              {t(
-                reply === "main"
-                  ? "Replies in the main conversation may be visible beyond the original discussion."
-                  : "Automatic placement may start a thread. It does not guarantee a main-conversation reply.",
-              )}
-            </p>
+            {reply !== "thread" && (
+              <p>
+                {t(
+                  reply === "main"
+                    ? "Replies in the main conversation may be visible beyond the original discussion."
+                    : automaticPlacementHint,
+                )}
+              </p>
+            )}
             <p>
               {t(
                 "Enabling reception rechecks the app and pilot membership. Future matching messages can invoke the selected agent and consume model usage.",

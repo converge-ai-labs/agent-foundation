@@ -60,11 +60,17 @@ function setup() {
 beforeEach(() => {
   vi.resetAllMocks();
   state.manage = false;
-  state.get.mockResolvedValue(response({ items: [row], next_cursor: null }));
+  state.get.mockImplementation(async (path: string) =>
+    response(
+      path.endsWith("/agents/{agent}")
+        ? { id: "agt_test", key: "support-agent", name: "Support agent" }
+        : { items: [row], next_cursor: null },
+    ),
+  );
 });
 afterEach(cleanup);
 
-it("shows permitted metadata without per-row queries or administrator actions", async () => {
+it("shows permitted metadata with key-based agent links and no administrator actions", async () => {
   setup();
   await screen.findByText("Support bot");
   expect(screen.getByText("Slack · Acme")).toBeTruthy();
@@ -73,11 +79,14 @@ it("shows permitted metadata without per-row queries or administrator actions", 
     "/workspace/test/bots/acct_test/channels",
   );
   expect(
-    screen.getByRole("link", { name: "agt_test" }).getAttribute("href"),
-  ).toBe("/workspace/test/agents/agt_test");
+    (await screen.findByRole("link", { name: "Support agent" })).getAttribute(
+      "href",
+    ),
+  ).toBe("/workspace/test/agents/support-agent");
+  expect(screen.queryByText("agt_test")).toBeNull();
   expect(screen.queryByText("Resume setup")).toBeNull();
   expect(screen.queryByText("Connect a bot")).toBeNull();
-  expect(state.get).toHaveBeenCalledTimes(1);
+  expect(state.get).toHaveBeenCalledTimes(2);
   expect(state.get.mock.calls[0][0]).toBe(
     "/api/v1/workspaces/{workspace}/bots",
   );
@@ -87,28 +96,42 @@ it("submits search to the server and resets pagination when filters change", asy
   const user = userEvent.setup();
   state.get.mockImplementation(
     async (
-      _path: string,
+      path: string,
       args: { params: { query: { search?: string; cursor?: string } } },
     ) =>
-      response({
-        items: [row],
-        next_cursor: args.params.query.cursor ? null : "page-two",
-      }),
+      response(
+        path.endsWith("/agents/{agent}")
+          ? { id: "agt_test", key: "support-agent", name: "Support agent" }
+          : {
+              items: [row],
+              next_cursor: args.params.query.cursor ? null : "page-two",
+            },
+      ),
   );
   setup();
   await screen.findByText("Support bot");
   await user.click(screen.getByRole("button", { name: "Next" }));
   await waitFor(() =>
-    expect(state.get.mock.lastCall?.[1].params.query.cursor).toBe("page-two"),
+    expect(
+      state.get.mock.calls
+        .filter(([path]) => path.endsWith("/bots"))
+        .at(-1)?.[1].params.query.cursor,
+    ).toBe("page-two"),
   );
   await user.type(
     screen.getByRole("textbox", { name: "Search bots" }),
     "  Acme  ",
   );
-  expect(state.get).toHaveBeenCalledTimes(2);
+  expect(
+    state.get.mock.calls.filter(([path]) => path.endsWith("/bots")),
+  ).toHaveLength(2);
   await user.click(screen.getByRole("button", { name: "Search" }));
   await waitFor(() =>
-    expect(state.get.mock.lastCall?.[1].params.query).toMatchObject({
+    expect(
+      state.get.mock.calls
+        .filter(([path]) => path.endsWith("/bots"))
+        .at(-1)?.[1].params.query,
+    ).toMatchObject({
       search: "Acme",
       cursor: undefined,
     }),
@@ -116,7 +139,11 @@ it("submits search to the server and resets pagination when filters change", asy
   await user.click(screen.getByRole("combobox", { name: "Platform" }));
   await user.click(screen.getByRole("option", { name: "Feishu" }));
   await waitFor(() =>
-    expect(state.get.mock.lastCall?.[1].params.query).toMatchObject({
+    expect(
+      state.get.mock.calls
+        .filter(([path]) => path.endsWith("/bots"))
+        .at(-1)?.[1].params.query,
+    ).toMatchObject({
       platform: "lark",
       search: "Acme",
       cursor: undefined,
@@ -147,4 +174,16 @@ it("distinguishes filtered emptiness from initial setup and exposes the resume a
   await user.click(screen.getByRole("button", { name: "Search" }));
   await screen.findByText("No matching bots");
   expect(screen.queryByText("No bots connected")).toBeNull();
+});
+
+it("shows an unavailable label instead of the internal agent ID when lookup fails", async () => {
+  const original = state.get.getMockImplementation()!;
+  state.get.mockImplementation(async (path: string) => {
+    if (path.endsWith("/agents/{agent}")) throw new Error("Agent unavailable");
+    return original(path);
+  });
+  setup();
+  await screen.findByText("Agent unavailable");
+  expect(screen.queryByText("agt_test")).toBeNull();
+  expect(screen.queryByRole("link", { name: "Agent unavailable" })).toBeNull();
 });

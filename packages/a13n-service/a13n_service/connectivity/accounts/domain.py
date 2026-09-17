@@ -92,3 +92,11 @@ class ReplaceAccountCredentialsRequest(AccountCommandRequest):
     credentials: dict[str, SecretStr] = Field(
         min_length=1, max_length=16, repr=False, json_schema_extra={"writeOnly": True}
     )
+
+
+class EventConnectionStatus(StrictModel):
+    transport: Literal["http", "websocket"]
+    state: Literal["http", "disabled", "connecting", "connected", "reconnecting", "disconnected"]
+    observed_at: datetime | None = None
+    last_event_at: datetime | None = None
+    error_code: str | None = None

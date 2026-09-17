@@ -10,6 +10,7 @@ import { data, type Schema } from "../../shared/api";
 import { CopyButton } from "../../shared/copy";
 import { Empty, ErrorNotice, Loading, Page } from "../../shared/feedback";
 import { AccountForm } from "../application-accounts/form";
+import { EventConnection } from "./event-connection";
 import { BotPilot } from "./pilot";
 import { PilotTest } from "./pilot-test";
 import { BotChecks } from "./checks";
@@ -333,6 +334,14 @@ function ExistingAccounts() {
 }
 
 function CallbackSetup({ account }: { account: Schema["Account"] }) {
+  return account.provider_config.event_transport === "websocket" ? (
+    <EventConnection account={account} />
+  ) : (
+    <HttpCallbackSetup account={account} />
+  );
+}
+
+function HttpCallbackSetup({ account }: { account: Schema["Account"] }) {
   const client = useClient(),
     { t } = useTranslation();
   const query = useQuery({

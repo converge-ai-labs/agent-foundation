@@ -291,6 +291,7 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
     { name = "pillow" },
+    { name = "protobuf" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-ai" },
@@ -303,6 +304,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "starlette" },
     { name = "uvicorn" },
+    { name = "websockets" },
     { name = "zstandard" },
 ]
 
@@ -337,6 +339,7 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.39,<2" },
     { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
     { name = "pillow", specifier = ">=11.3,<13" },
+    { name = "protobuf", specifier = ">=6.32,<7" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.12,<3" },
     { name = "pydantic-ai", specifier = ">=2.41.0,<3" },
@@ -349,6 +352,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
     { name = "starlette", specifier = ">=0.52,<2" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
+    { name = "websockets", specifier = ">=15,<16" },
     { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]
 

@@ -355,6 +355,7 @@ it("discovers Feishu identity before saving without asking for installation IDs"
     expect.objectContaining({
       body: expect.objectContaining({
         provider_config: {
+          event_transport: "http",
           brand: "feishu",
           open_api_origin: "https://open.feishu.cn",
           app_id: "cli_test",
@@ -396,4 +397,66 @@ it("reuses discovered identity and the creation command after an uncertain Feish
   await screen.findByText("Configure HTTP events");
   expect(state.http.POST).toHaveBeenCalledTimes(3);
   expect(state.http.POST.mock.calls[2]).toEqual(state.http.POST.mock.calls[1]);
+});
+
+it("creates a Feishu long connection with app credentials only", async () => {
+  state.http.POST.mockImplementation(async (path: string) =>
+    response(
+      path.endsWith("/feishu/installation")
+        ? feishuIdentity
+        : {
+            ...account,
+            provider_key: "lark",
+            provider_config: { event_transport: "websocket" },
+          },
+    ),
+  );
+  await startFeishu();
+  await userEvent.click(
+    screen.getByRole("combobox", { name: "Event connection" }),
+  );
+  await userEvent.click(
+    screen.getByRole("option", { name: "Long connection (WebSocket)" }),
+  );
+  expect(screen.queryByLabelText("Verification Token")).toBeNull();
+  await userEvent.type(screen.getByLabelText("App Secret"), "socket-secret");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save and verify" }),
+  );
+  await waitFor(() =>
+    expect(state.http.POST).toHaveBeenCalledWith(
+      "/api/v1/workspaces/{workspace}/application-accounts",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          provider_config: expect.objectContaining({
+            event_transport: "websocket",
+            tenant_key: "tenant_verified",
+          }),
+          credentials: { app_secret: "socket-secret" },
+        }),
+      }),
+    ),
+  );
+});
+
+it("shows live socket status without an HTTP callback instruction", async () => {
+  const original = state.http.GET.getMockImplementation()!;
+  state.http.GET.mockImplementation(async (path: string, options: unknown) =>
+    path.endsWith("/{account_id}")
+      ? response({
+          ...account,
+          provider_config: { event_transport: "websocket" },
+        })
+      : path.endsWith("/event-connection")
+        ? response({ transport: "websocket", state: "connected" })
+        : original(path, options),
+  );
+  setup("/workspace/test/bots/connect?account=acct_test");
+  await screen.findByText("Connected");
+  expect(screen.queryByText("Configure HTTP events")).toBeNull();
+  expect(
+    screen.getByText(
+      "Connected confirms the event connection only. Use the setup test to verify message reception, agent execution, and replies.",
+    ),
+  ).toBeTruthy();
 });

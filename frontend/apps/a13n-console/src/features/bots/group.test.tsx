@@ -100,7 +100,13 @@ beforeEach(() => {
           }
         : path.endsWith("/{target_id}")
           ? target
-          : { items: [], next_cursor: null },
+          : path.endsWith("/agents/{agent}")
+            ? {
+                id: "agt_default",
+                key: "default-agent",
+                name: "Default assistant",
+              }
+            : { items: [], next_cursor: null },
     ),
   );
   state.http.PUT.mockResolvedValue(response({ ...target, version: 3 }));
@@ -111,6 +117,25 @@ it("keeps bot and external organization context while showing inherited configur
   setup();
   expect(await screen.findByRole("heading", { name: "C1" })).toBeTruthy();
   expect(screen.getByText("Slack · T1")).toBeTruthy();
+  expect(
+    screen.getByRole("region", { name: "Group connection check" }),
+  ).toBeTruthy();
+  await waitFor(() =>
+    expect(state.http.GET).toHaveBeenCalledWith(
+      "/api/v1/application-accounts/{account_id}/bot/checks/latest",
+      expect.objectContaining({
+        params: {
+          path: { account_id: account.id },
+          query: { conversation_id: "C1" },
+        },
+      }),
+    ),
+  );
+  expect(
+    (
+      await screen.findByRole("link", { name: "Default assistant" })
+    ).getAttribute("href"),
+  ).toBe("/workspace/test/agents/default-agent");
   expect(
     screen.getByRole("link", { name: "Support bot" }).getAttribute("href"),
   ).toBe("/workspace/test/bots/acct_test");

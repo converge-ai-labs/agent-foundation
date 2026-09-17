@@ -15,6 +15,7 @@ import {
   Page,
   StateBadge,
 } from "../../shared/feedback";
+import { AgentLink } from "../agents/link";
 import styles from "./bots.module.css";
 
 import { conditions, stages, type Condition } from "./summary-labels";
@@ -229,11 +230,7 @@ export function BotsPage() {
                   label: t("Default agent"),
                   render: ({ account }) =>
                     account.default_agent_id ? (
-                      <Link
-                        to={`${basePath}/agents/${account.default_agent_id}`}
-                      >
-                        {account.default_agent_id}
-                      </Link>
+                      <AgentLink agentId={account.default_agent_id} />
                     ) : (
                       t("Not configured")
                     ),

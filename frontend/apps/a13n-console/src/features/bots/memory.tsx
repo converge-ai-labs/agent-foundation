@@ -371,7 +371,9 @@ function ScopeDocuments({
             <small>
               {t(
                 scope?.visibility === "installation"
-                  ? "Visible to all connected groups"
+                  ? account.provider_key === "slack"
+                    ? "Visible to all connected channels in this Slack workspace"
+                    : "Visible to all connected groups in this Feishu enterprise"
                   : "Only this group",
               )}
             </small>

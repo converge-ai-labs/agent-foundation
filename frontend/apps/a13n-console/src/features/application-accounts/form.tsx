@@ -90,6 +90,16 @@ export function AccountForm({
   const definition = definitions.data?.items.find(
     (item) => `${item.provider_key}@${item.config_version}` === provider,
   );
+  const messaging =
+    definition && ["slack", "lark"].includes(definition.provider_key);
+  const websocket = configuration.event_transport === "websocket";
+  const credentialSchema =
+    definition &&
+    transportCredentials(
+      definition.credential_schema,
+      definition.provider_key,
+      websocket,
+    );
   const configurationSchema =
     definition && setupProvider === "lark"
       ? {
@@ -104,7 +114,8 @@ export function AccountForm({
             ).filter(([field]) => field === "app_id"),
           ),
         }
-      : definition?.configuration_schema;
+      : definition &&
+        withoutField(definition.configuration_schema, "event_transport");
   const save = useMutation({
     gcTime: 0,
     mutationFn: async () => {
@@ -113,11 +124,15 @@ export function AccountForm({
         configurationSchema!,
         setupProvider === "lark"
           ? { app_id: configuration.app_id }
-          : configuration,
+          : Object.fromEntries(
+              Object.entries(configuration).filter(
+                ([field]) => field !== "event_transport",
+              ),
+            ),
       );
       let accountConfiguration = configuration;
       if (setupProvider === "lark" && !basis) {
-        validateSettings(definition.credential_schema, credentials);
+        validateSettings(credentialSchema!, credentials);
         const appId = stringValues(configuration).app_id;
         const appSecret = stringValues(credentials).app_secret;
         const fingerprint = await setupFingerprint({
@@ -144,6 +159,7 @@ export function AccountForm({
         }
         const installation = discoveredInstallation.current.installation;
         accountConfiguration = {
+          event_transport: websocket ? "websocket" : "http",
           brand: "feishu",
           open_api_origin: "https://open.feishu.cn",
           app_id: installation.app_id,
@@ -176,7 +192,7 @@ export function AccountForm({
             body: { ...common, expected_version: basis.version },
           })
           .then(data);
-      validateSettings(definition.credential_schema, credentials);
+      validateSettings(credentialSchema!, credentials);
       const body = {
         ...common,
         provider_key: definition.provider_key,
@@ -275,6 +291,53 @@ export function AccountForm({
       />
       {definition && (
         <>
+          {messaging && (
+            <>
+              <ChoiceField
+                label={t("Event connection")}
+                value={websocket ? "websocket" : "http"}
+                options={[
+                  { value: "http", label: t("HTTP callback") },
+                  {
+                    value: "websocket",
+                    label: t(
+                      definition.provider_key === "slack"
+                        ? "Socket Mode"
+                        : "Long connection (WebSocket)",
+                    ),
+                  },
+                ]}
+                onValueChange={(value) => {
+                  setConfiguration({
+                    ...configuration,
+                    event_transport: value,
+                  });
+                  setCredentials({});
+                }}
+              />
+              <p className={styles.muted}>
+                {t(
+                  websocket
+                    ? "The service connects to the platform. No public callback URL is needed."
+                    : "The platform sends events to your public HTTPS callback URL.",
+                )}
+              </p>
+              {websocket && definition.provider_key === "slack" && (
+                <p className={styles.muted}>
+                  {t(
+                    "Use an app-level token with connections:write and enable Socket Mode in Slack. Installations of the same app must use the same app-level token.",
+                  )}
+                </p>
+              )}
+              {basis && (
+                <p className={styles.muted}>
+                  {t(
+                    "Before switching, update the account credentials for the new connection method. Keep both methods' credentials during the switch.",
+                  )}
+                </p>
+              )}
+            </>
+          )}
           <SchemaFields
             key={provider}
             schema={configurationSchema!}
@@ -286,7 +349,7 @@ export function AccountForm({
               <DisclosureSection title={t("Credentials")} defaultOpen>
                 <SchemaFields
                   key={`${provider}-credentials`}
-                  schema={definition.credential_schema}
+                  schema={credentialSchema!}
                   value={credentials}
                   onChange={setCredentials}
                   secret
@@ -446,4 +509,43 @@ async function setupFingerprint(value: unknown): Promise<string> {
   return Array.from(new Uint8Array(bytes))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function withoutField(
+  schema: Record<string, unknown>,
+  field: string,
+): Record<string, unknown> {
+  return {
+    ...schema,
+    properties: Object.fromEntries(
+      Object.entries(
+        (schema.properties ?? {}) as Record<string, unknown>,
+      ).filter(([key]) => key !== field),
+    ),
+    required: ((schema.required ?? []) as string[]).filter(
+      (key) => key !== field,
+    ),
+  };
+}
+
+function transportCredentials(
+  schema: Record<string, unknown>,
+  provider: string,
+  websocket: boolean,
+): Record<string, unknown> {
+  if (!["slack", "lark"].includes(provider)) return schema;
+  let result = schema;
+  for (const field of provider === "slack"
+    ? [websocket ? "signing_secret" : "app_token"]
+    : websocket
+      ? ["verification_token", "encrypt_key"]
+      : [])
+    result = withoutField(result, field);
+  const required =
+    provider === "slack"
+      ? ["bot_token", websocket ? "app_token" : "signing_secret"]
+      : websocket
+        ? ["app_secret"]
+        : ["app_secret", "verification_token"];
+  return { ...result, required };
 }

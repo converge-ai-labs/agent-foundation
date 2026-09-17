@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
 from pydantic import SecretStr
@@ -24,6 +25,9 @@ from a13n_service.connectivity.native_management import (
     require_limit,
     require_version,
 )
+from a13n_service.connectivity.transports.configuration import connection_key
+from a13n_service.connectivity.transports.configuration import validate_credentials as validate_transport_credentials
+from a13n_service.connectivity.transports.models import EventConnectionRecord
 from a13n_service.digests import digest_request
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -32,7 +36,7 @@ from a13n_service.iam.authorization import (
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import (
     Account,
@@ -40,6 +44,7 @@ from .domain import (
     AccountProviderDefinitionCollection,
     AccountStatus,
     CreateAccountRequest,
+    EventConnectionStatus,
     ReplaceAccountCredentialsRequest,
     UpdateAccountRequest,
 )
@@ -96,6 +101,7 @@ class AccountService:
                 adapter = require_adapter(self._adapters, request.provider_key, request.provider_config_version)
                 config = _validate_config(adapter, request.provider_config, request.provider_config_version)
                 credentials = _validate_credentials(adapter, request.credentials, request.provider_config_version)
+                validate_transport_credentials(request.provider_key, config, credentials)
                 request_fingerprint = fingerprint(request, credentials=credentials)
                 replay = await replay_command(
                     session,
@@ -232,6 +238,32 @@ class AccountService:
             await authorize(session, actor, record.workspace_id, WorkspaceAction.application_account_read)
             return record.to_resource()
 
+    async def event_connection(self, *, actor: AuthenticatedActor, account_id: str) -> EventConnectionStatus:
+        async with transaction(self._sessions) as session:
+            account = await require_account(session, account_id)
+            await authorize(session, actor, account.workspace_id, WorkspaceAction.application_account_read)
+            websocket = account.provider_config_json.get("event_transport") == "websocket"
+            transport = "websocket" if websocket else "http"
+            if account.status != "active":
+                return EventConnectionStatus(transport=transport, state="disabled")
+            if not websocket:
+                return EventConnectionStatus(transport="http", state="http")
+            record = await session.get(
+                EventConnectionRecord, connection_key(account.provider_key, account.provider_config_json)
+            )
+            if record is None or record.account_versions.get(account.id) != account.version:
+                return EventConnectionStatus(transport="websocket", state="connecting")
+            state = record.state if assume_utc(record.lease_expires_at) > self._clock() else "disconnected"
+            return EventConnectionStatus.model_validate(
+                {
+                    "transport": "websocket",
+                    "state": state,
+                    "observed_at": record.observed_at,
+                    "last_event_at": record.last_event_at,
+                    "error_code": record.error_code,
+                }
+            )
+
     async def update_account(
         self,
         *,
@@ -267,6 +299,10 @@ class AccountService:
                     "Application Account identity cannot be changed.",
                     category=ErrorCategory.conflict,
                 )
+        if request.provider_config is not None:
+            validate_transport_credentials(
+                record.provider_key, config, json.loads(record.credential_snapshot().decrypt(self._protector))
+            )
         if request.name is not None:
             record.name = request.name
             record.normalized_name = request.name.casefold()
@@ -342,6 +378,7 @@ class AccountService:
             require_version(record.version, request.expected_version)
             adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
             credentials = _validate_credentials(adapter, request.credentials, record.provider_config_version)
+            validate_transport_credentials(record.provider_key, record.provider_config_json, credentials)
             record.replace_credential(canonical_json(credentials), self._protector)
 
             record.version += 1

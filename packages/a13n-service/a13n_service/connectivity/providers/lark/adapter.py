@@ -13,6 +13,7 @@ from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
     InboundEvent,
+    ProviderCompleteDecision,
     ProviderEligibleEventRouting,
     ProviderEventRouting,
     ProviderHttpResponse,
@@ -45,6 +46,7 @@ class _StrictModel(BaseModel):
 
 
 class LarkAccountConfig(_StrictModel):
+    event_transport: Literal["http", "websocket"] = "http"
     brand: Literal["feishu", "lark"]
     open_api_origin: str = Field(min_length=1, max_length=2048)
     app_id: str = Field(min_length=1, max_length=256)
@@ -54,7 +56,7 @@ class LarkAccountConfig(_StrictModel):
 
 class LarkAccountCredentials(_StrictModel):
     app_secret: SecretStr = Field(min_length=1, max_length=4096)
-    verification_token: SecretStr = Field(min_length=1, max_length=4096)
+    verification_token: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
     encrypt_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
 
 
@@ -134,6 +136,8 @@ class LarkIngressAdapter:
     ) -> ProviderRequestDecision:
         del account_id
         config = LarkAccountConfig.model_validate(account_config)
+        if config.event_transport != "http":
+            return ProviderCompleteDecision(response=ProviderHttpResponse(status_code=404, body=b"", headers={}))
         return authenticate_and_normalize(
             request,
             identity=LarkIdentity(

@@ -121,6 +121,9 @@ class ProcessRuntime:
         """Reject new work before the HTTP server waits for connections to close."""
         first_request = not self.status.draining
         self.status.draining = True
+        if self.connectivity is not None and self.connectivity.data is not None:
+            if self.connectivity.data.event_connections is not None:
+                self.connectivity.data.event_connections.drain()
         if self.worker is not None:
             if self.worker.execution_loop is not None:
                 self.worker.execution_loop.begin_drain()

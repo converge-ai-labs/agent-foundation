@@ -1,0 +1,19 @@
+// Feishu long-connection wire layout, interoperable with the official SDK's
+// pbbp2.Frame. Field numbers are provider protocol, not a Service API.
+syntax = "proto2";
+package a13n.feishu;
+message Header {
+  required string key = 1;
+  required string value = 2;
+}
+message Frame {
+  required uint64 SeqID = 1;
+  required uint64 LogID = 2;
+  required int32 service = 3;
+  required int32 method = 4;
+  repeated Header headers = 5;
+  optional string payload_encoding = 6;
+  optional string payload_type = 7;
+  optional bytes payload = 8;
+  optional string LogIDNew = 9;
+}

@@ -15,6 +15,7 @@ from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.mcp.catalog import MCPServerCatalog
 from a13n_service.connectivity.mcp.oauth_service import MCPOAuthService
 from a13n_service.connectivity.mcp.service import MCPConnectionService
+from a13n_service.connectivity.transports.supervisor import EventConnectionSupervisor
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +40,7 @@ class ConnectivityDataRuntime:
     """Provider-ingress capabilities owned by Connectivity data-plane roles."""
 
     ingress_events: IngressEventService
+    event_connections: EventConnectionSupervisor | None = None
 
 
 @dataclass(frozen=True, slots=True)

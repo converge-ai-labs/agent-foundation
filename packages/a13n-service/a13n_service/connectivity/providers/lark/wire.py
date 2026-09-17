@@ -64,6 +64,13 @@ def authenticate_and_normalize(
         raise _request_error(400, "invalid_payload")
     if not _same(header.get("token"), verification_token):
         raise _request_error(401, "invalid_verification_token")
+    return normalize_payload(payload, identity=identity, received_at=received_at)
+
+
+def normalize_payload(payload: JsonObject, *, identity: LarkIdentity, received_at: datetime) -> ProviderRequestDecision:
+    header = _object(payload.get("header"))
+    if payload.get("schema") != "2.0" or header is None:
+        raise _request_error(400, "invalid_payload")
     if header.get("app_id") != identity.app_id or header.get("tenant_key") != identity.tenant_key:
         raise _request_error(404, "ingress_not_found")
     event_type = header.get("event_type")

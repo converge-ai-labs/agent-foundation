@@ -4,7 +4,7 @@
 
 The first built-in HTTP adapters are Slack, Lark/Feishu, and GitHub App. Each owns one exact installation identity, wire authentication profile, event vocabulary, exact target identity, safe event projection, correlation references, acknowledgement behavior, and native action set. They reuse the common [Ingress and durable admission](01-ingress-and-routing.md) kernel without sharing a provider payload model.
 
-Only HTTP webhook delivery is supported in this profile. Slack Socket Mode, Lark WebSocket delivery, repository webhooks authenticated by a shared secret plus PAT, and GitHub Discussions are separate future transport or provider contracts.
+Slack and Lark/Feishu support HTTP callbacks and persistent WebSocket event reception. GitHub App uses HTTP webhooks. Repository webhooks authenticated by a shared secret plus PAT and GitHub Discussions are outside these profiles.
 
 All adapters reject unknown configuration versions and request bodies beyond their limit before JSON parsing. They compare authentication values in constant time, suppress their verified bot identity, and never place raw bodies, message content, signatures, tokens, private keys, callback handles, or provider errors in logs, traces, metrics labels, audit details, or public errors.
 
@@ -12,9 +12,9 @@ All adapters reject unknown configuration versions and request bodies beyond the
 
 ### Identity and credentials
 
-`provider_key = "slack"` and `provider_config_version = "slack_http_v1"` select this profile. The immutable Account provider configuration contains `api_app_id`, exactly one installed `team_id`, optional `enterprise_id`, verified `bot_user_id`. This profile accepts HTTP event delivery. A changed App, installation, enterprise scope, or bot identity creates another Application Account.
+`provider_key = "slack"` and `provider_config_version = "slack_http_v1"` select this profile. The immutable Account provider configuration contains `api_app_id`, exactly one installed `team_id`, optional `enterprise_id`, verified `bot_user_id`. The mutable `event_transport` is `http` (default, including omitted legacy values) or `websocket`. A changed App, installation, enterprise scope, or bot identity creates another Application Account.
 
-The Slack Account owns write-only credential fields `signing_secret` and `bot_token`. The signing secret authenticates webhooks. The bot token is used only for the enabled native Slack operations against `https://slack.com`; it never authenticates inbound delivery.
+The Slack Account owns write-only credential fields `signing_secret`, `bot_token`, and optional `app_token`. HTTP requires the signing secret; Socket Mode requires an app-level token with `connections:write`. Both require the bot token. The signing secret authenticates webhooks. The bot token is used only for the enabled native Slack operations against `https://slack.com`; it never authenticates inbound delivery.
 
 ### Authentication and events
 
@@ -58,9 +58,9 @@ The model cannot provide a team, channel, thread, message, token, or Account ide
 
 ### Identity and credentials
 
-`provider_key = "lark"` and `provider_config_version = "lark_http_v1"` select both brands. Immutable Account configuration contains `brand` in `feishu` or `lark`, an official or exact operator-allowed `open_api_origin`, `app_id`, installed `tenant_key`, verified `bot_open_id`. This profile accepts HTTP event delivery. Brand and origin are explicit configuration rather than separate provider keys.
+`provider_key = "lark"` and `provider_config_version = "lark_http_v1"` select both brands. Immutable Account configuration contains `brand` in `feishu` or `lark`, an official or exact operator-allowed `open_api_origin`, `app_id`, installed `tenant_key`, verified `bot_open_id`. The mutable `event_transport` is `http` (default, including omitted legacy values) or `websocket`. Brand and origin are explicit configuration rather than separate provider keys.
 
-The Lark Account owns write-only credential fields `app_secret`, `encrypt_key`, and `verification_token`. `encrypt_key` can be absent only for an installation deliberately configured without encrypted event delivery. A short-lived tenant access token is derived from `app_id` and `app_secret`, refreshed before provider expiry through async single-flight, and retained only in Attempt-scoped process memory; it is not another durable credential.
+The Lark Account owns write-only credential fields `app_secret`, `encrypt_key`, and `verification_token`. HTTP requires `verification_token`; `encrypt_key` is optional for unencrypted HTTP delivery. Long connections require `app_secret` and do not use the HTTP verification token or encryption key. A short-lived tenant access token is derived from `app_id` and `app_secret`, refreshed before provider expiry through async single-flight, and retained only in Attempt-scoped process memory; it is not another durable credential.
 
 ### Authentication, decryption, and events
 
@@ -89,6 +89,22 @@ An irrelevant or duplicate delivery returns HTTP `200` with the bounded success 
 | `lark.read_messages` | bounded scope, time/order options, and opaque page token                    | current chat or discussion           | list messages for the bound container                      |
 
 The model cannot provide an App, tenant, chat, thread, message, token, or Account identifier. Write calls carry a stable provider UUID derived from the tool effect identity. Receipts expose only bounded message or member projections and provider message identity. A provider response lost after possible dispatch is reconciled only through that UUID or authoritative provider evidence; otherwise the result is `outcome_unknown`.
+
+## Persistent event connections
+
+Connectivity owns outbound WebSocket connections, discovery, credential refresh, heartbeat, reconnect, and shutdown. Only the `connectivity` and `all` process roles run them. Run, Worker, Agent configuration, and Memory carry no transport choice or socket lifecycle. The historical `slack_http_v1` and `lark_http_v1` profile identifiers remain valid for both transports; identity excludes `event_transport`.
+
+Slack calls `apps.connections.open` using the app-level token and verifies the connected App identity from the hello envelope. One connection is owned per Slack App, shared by its configured installations. Events route only to accounts matching the exact App and team; the normalizer also verifies installation facts. Configured accounts for that App must provide the same app-level token. Conflicting credentials prevent connection and produce a bounded diagnostic. Slack's upstream Socket Mode setting is app-wide: operators must coordinate the mode across every installation, including applications outside this Service.
+
+Feishu/Lark long connections support enterprise custom applications at the official Feishu and Lark API origins. Service discovers the endpoint with App ID and App Secret, speaks the provider's binary frame protocol, and routes events only to the configured App and tenant. Store-app ticket lifecycles and custom WebSocket origins are unsupported. Bounded frame reassembly expires incomplete groups after five seconds; at most 32 fragmented messages, 128 parts per message, and 1 MiB of pending payload are retained per connection.
+
+Discovery uses HTTPS without redirects. Returned socket URLs must use WSS on the provider's approved domains; redirects are rejected and destination addresses are checked by the Service endpoint policy. Tokens, temporary socket URLs, raw payloads, and provider exception bodies never appear in ordinary diagnostics.
+
+A durable app-scoped lease chooses one Service owner, with a monotonically increasing generation. Leases last 30 seconds and renew every eight seconds. Each event admission locks and validates the current lease within the same short transaction as the Account version, credential generation, capacity checks, deduplication and durable append. No database session spans network I/O or socket waits. Loss of ownership stops the connection; stale owners cannot admit events or renew a successor's lease. Configuration, rotation, disable and deletion are reconciled every five seconds and invalidate old admission snapshots immediately.
+
+The socket receiver acknowledges eligible input only after durable admission. Slack echoes the envelope ID; Feishu returns the success frame. Agent execution and reply delivery happen independently after acknowledgement. Ineligible or unconfigured events are acknowledged without executing an Agent. Storage failure, exhausted capacity, or lease loss produces no success acknowledgement. Retries reuse Account-scoped provider event identities. For Slack and Lark, equivalent normalized events ignore receipt time and deduplicate across HTTP/socket retries; reused identities with different normalized content fail closed. This also recognizes retained HTTP receipts written before socket support.
+
+Accounts selected for long connections establish the transport while reception is disabled, allowing setup before Agent activation. Administratively disabled or deleted accounts do not participate. Switching transport preserves Account IDs, targets, bindings, and memory. The lease migration adds an empty table without rewriting Accounts or backfilling existing data. Existing HTTP accounts remain compatible during rollout; enable WebSocket only after all control, connectivity, and worker replicas understand the extended provider schema. Before downgrading, return accounts to HTTP and stop connection owners. HTTP callbacks reject accounts currently configured for WebSocket delivery. Operators coordinate upstream switching; events lost by the platform during a switch are not recoverable by Service. Credential rotation and reconnection use bounded exponential backoff with jitter, capped at approximately one minute. Credential conflicts and failures remain observable and are retried; a configuration change causes reconciliation without waiting for that backoff.
 
 ## GitHub App HTTP v1
 

@@ -52,7 +52,7 @@ An Account owns encrypted credential material under the shared [credential prote
 
 The versioned `reception_scope` selects `all_accessible` (legacy default) or `configured_targets`. In configured-target mode, an event without an exact enabled target is acknowledged as irrelevant before durable input admission. Disabled targets never fall through. New Bot wizard Accounts explicitly use configured-target mode; existing Accounts and clients omitting the field retain all-accessible behavior. Changing this setting affects new admission, not already acknowledged batches.
 
-Account creation starts no Agent. Reception is embedded Account configuration, with no separate Ingress identity or Agent allowlist. Supported transport settings and credentials use the provider-owned Account schema.
+Account creation starts no Agent. Selecting a persistent event transport starts an authenticated connection even while reception is disabled; transport ownership and acknowledgements follow the [built-in adapter contract](07-built-in-ingress-adapters.md#persistent-event-connections). Reception is embedded Account configuration, with no separate Ingress identity or Agent allowlist. Supported transport settings and credentials use the provider-owned Account schema.
 
 Account defaults select input execution authority and the default Agent. Exact targets select an optional Agent and narrow override. Changing defaults preserves `(account_id, external_ref.kind, external_ref.id)` Thread correlation. Each ordinary Run uses current configuration; an active or selected waiting Run receives only Steer.
 
@@ -162,3 +162,7 @@ Checks run outside database transactions with a bounded total deadline. Before s
 ## Application-owned Memory Settings
 
 Bot Memory settings use the [Bot-owned versioned settings API](../42-memory.md#bot-memory-configuration). They are not Account fields or generic Account mutation inputs. Bot summary carries the separate `memory_settings` projection. Bot-only listing uses the Bot collection, not a `bots_only` parameter on common Account listing. Setup-test staleness and reply correlation include the independent memory-settings version.
+
+## Event Connection Observation
+
+`GET /api/v1/application-accounts/{account_id}/event-connection` requires Account read permission. It returns `transport` (`http` or `websocket`), `state` (`http`, `disabled`, `connecting`, `connected`, `reconnecting`, or `disconnected`), optional `observed_at`, `last_event_at`, and a bounded `error_code`. It exposes no token, socket URL, owner identity, or other installation. A missing or superseded connection observation is `connecting`; an expired lease is `disconnected`. `http` reports configuration only, not callback reachability. `connected` reports a current transport observation, not Agent execution, event subscription correctness, or successful replies. Changing Account configuration invalidates prior connection observations.

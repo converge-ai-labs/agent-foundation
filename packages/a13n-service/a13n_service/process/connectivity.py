@@ -39,6 +39,7 @@ from a13n_service.connectivity.runtime import (
     ConnectivityDataRuntime,
     ConnectivityRuntime,
 )
+from a13n_service.connectivity.transports.supervisor import EventConnectionSupervisor
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 from a13n_service.process.background import BackgroundTask
@@ -321,8 +322,12 @@ def _build_data_runtime(
         poll_interval_seconds=settings.connectivity.retention_poll_interval_seconds,
         batch_size=settings.connectivity.retention_batch_size,
     )
-    runtime = ConnectivityDataRuntime(ingress_events=ingress_events)
+    sockets = EventConnectionSupervisor(
+        storage.sessions, ingress_events, owner=settings.service.instance_id or new_object_id("svc")
+    )
+    runtime = ConnectivityDataRuntime(ingress_events=ingress_events, event_connections=sockets)
     background_components = (
+        BackgroundTask("event connection supervisor", sockets.run, return_is_expected=sockets.is_draining),
         BackgroundTask("ingress admission reconciler", admission.run),
         BackgroundTask("ingress retention reconciler", retention.run),
     )

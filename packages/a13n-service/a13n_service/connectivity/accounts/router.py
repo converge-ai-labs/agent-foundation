@@ -21,6 +21,7 @@ from .domain import (
     AccountProviderDefinitionCollection,
     AccountStatus,
     CreateAccountRequest,
+    EventConnectionStatus,
     ReplaceAccountCredentialsRequest,
     UpdateAccountRequest,
 )
@@ -159,3 +160,8 @@ async def delete_account(
 ) -> Response:
     await _service(request).delete_account(actor=actor, account_id=account_id, expected_version=expected_version)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/application-accounts/{account_id}/event-connection", response_model=EventConnectionStatus)
+async def event_connection(request: Request, actor: Actor, account_id: str) -> EventConnectionStatus:
+    return await _service(request).event_connection(actor=actor, account_id=account_id)

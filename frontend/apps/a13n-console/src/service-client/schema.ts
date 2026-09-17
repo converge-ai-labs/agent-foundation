@@ -291,6 +291,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/application-accounts/{account_id}/event-connection": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Event Connection */
+    get: operations["get_application_accounts_account_id_event_connection"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/application-accounts/{account_id}/memory-scopes": {
     parameters: {
       query?: never;
@@ -6940,6 +6957,31 @@ export interface components {
     ErrorResponse: {
       error: components["schemas"]["ErrorDetail"];
     };
+    /** EventConnectionStatus */
+    EventConnectionStatus: {
+      /** Error Code */
+      error_code?: string | null;
+      /** Last Event At */
+      last_event_at?: string | null;
+      /** Observed At */
+      observed_at?: string | null;
+      /**
+       * State
+       * @enum {string}
+       */
+      state:
+        | "http"
+        | "disabled"
+        | "connecting"
+        | "connected"
+        | "reconnecting"
+        | "disconnected";
+      /**
+       * Transport
+       * @enum {string}
+       */
+      transport: "http" | "websocket";
+    };
     /** ExistingEnvironmentSelection */
     ExistingEnvironmentSelection: {
       /** Environment Id */
@@ -11920,6 +11962,50 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Account"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_event_connection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["EventConnectionStatus"];
         };
       };
       /** @description Invalid request. */

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
+import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import { useAgent } from "./queries";
 
@@ -9,13 +10,18 @@ export function AgentLink({
   children,
 }: {
   agentId: string;
-  children: ReactNode;
+  children?: ReactNode;
 }) {
   const agent = useAgent(agentId);
   const { basePath } = useWorkspace();
-  return agent.data ? (
-    <Link to={`${basePath}/agents/${agent.data.key}`}>{children}</Link>
+  const { t } = useTranslation();
+  return agent.data && !agent.error ? (
+    <Link to={`${basePath}/agents/${agent.data.key}`}>
+      {children ?? agent.data.name}
+    </Link>
   ) : (
-    <span>{children}</span>
+    <span>
+      {children ?? t(agent.isPending ? "Loading…" : "Agent unavailable")}
+    </span>
   );
 }
