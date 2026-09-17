@@ -21,7 +21,7 @@ In particular, notification server delivery and reconnection behavior are define
 
 `notify-service-contract.yml` sends the full Service `main` SHA to the four SDK repos. Its paths include exported evidence, Service/API specs, Service runtime, Harness, Stream Protocol and dependency locks, so non-HTTP changes remain visible. Manual dispatch retries a main-line SHA; inspect all four results after partial failure.
 
-Each SDK opens a draft snapshot PR and owns adaptation, generation, CI and release. Main neither builds nor publishes SDKs. Its docs retain Service protocol/integration guidance and link to SDK repositories; language API references belong downstream.
+Each SDK maintains at most one open rolling snapshot PR on `sync/service-contract` and owns adaptation, generation, CI and release. New notifications advance the proposal's immutable source pin; repeated or older notifications cannot rewind it. SDK repositories own branch recovery and maintainer-edit handling, as documented in their `CONTRIBUTING.md`. Main neither builds nor publishes SDKs. Its docs retain Service protocol/integration guidance and link to SDK repositories; language API references belong downstream.
 
 Install receiving workflows on each SDK default branch before configuring the dedicated GitHub App. Restrict its installation to these five repos, with Contents and Pull requests read/write. Set variable `SERVICE_CONTRACT_APP_CLIENT_ID` and secret `SERVICE_CONTRACT_APP_PRIVATE_KEY`; never extract a developer's OAuth token. Each workflow narrows tokens to its source/destination. No client ID means the job is skipped, not operational.
 
