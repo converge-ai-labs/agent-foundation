@@ -262,6 +262,7 @@ name = "a13n-service"
 version = "0.0.0"
 source = { editable = "packages/a13n-service" }
 dependencies = [
+    { name = "a13n-envd-client" },
     { name = "a13n-environment" },
     { name = "a13n-harness" },
     { name = "a13n-logging" },
@@ -310,6 +311,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
     { name = "a13n-environment", editable = "packages/a13n-environment" },
     { name = "a13n-harness", editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
