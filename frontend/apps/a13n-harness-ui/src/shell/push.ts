@@ -5,6 +5,7 @@ const SUBSCRIPTION = "notifications.push-subscription";
 export const pushSubscriptionId = () => readPreference(SUBSCRIPTION, "");
 export const supportsPush = () =>
   window.isSecureContext &&
+  typeof Notification !== "undefined" &&
   "serviceWorker" in navigator &&
   "PushManager" in window;
 
@@ -22,7 +23,7 @@ function keyBytes(key: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(value, (character) => character.charCodeAt(0));
 }
 
-async function ready(): Promise<ServiceWorkerRegistration> {
+export async function notificationWorker(): Promise<ServiceWorkerRegistration> {
   await navigator.serviceWorker.register("/sw.js", {
     scope: "/",
     updateViaCache: "none",
@@ -74,15 +75,20 @@ export async function enablePush(
         signal: AbortSignal.timeout(15000),
       }),
     );
-    const registration = await ready();
+    const registration = await notificationWorker();
     const publicKey = keyBytes(configuration.public_key);
     let subscription = await registration.pushManager.getSubscription();
     const existingKey = subscription?.options.applicationServerKey;
-    if (
-      subscription &&
-      existingKey &&
-      String(new Uint8Array(existingKey)) !== String(publicKey)
-    ) {
+    const keyChanged =
+      !!existingKey &&
+      String(new Uint8Array(existingKey)) !== String(publicKey);
+    if (!prompt && (!subscription || keyChanged))
+      throw new Error(
+        "This device's push subscription has expired. Reconnect background notifications.",
+      );
+    // An explicit reconnect must replace endpoints rejected by the provider,
+    // even when getSubscription() still returns the old browser object.
+    if (subscription && (keyChanged || (prompt && previousId))) {
       await subscription.unsubscribe();
       subscription = null;
     }

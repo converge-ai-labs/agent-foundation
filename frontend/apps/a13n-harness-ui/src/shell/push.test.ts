@@ -196,3 +196,33 @@ it("reports provider acceptance without claiming device delivery", async () => {
   fetchMock.mockResolvedValue(Response.json({ accepted: false }));
   await expect(testPush(transport)).rejects.toThrow("did not accept");
 });
+
+it("requires explicit reconnection when a tracked browser subscription has disappeared", async () => {
+  await enablePush(transport, []);
+  current = null;
+  await expect(enablePush(transport, [], false)).rejects.toThrow("expired");
+  expect(subscribe).toHaveBeenCalledOnce();
+  expect(pushSubscriptionId()).toBe("subscription-one");
+  await enablePush(transport, []);
+  expect(subscribe).toHaveBeenCalledTimes(2);
+});
+
+it("does not silently replace a subscription when the server signing key changes", async () => {
+  await enablePush(transport, []);
+  Object.assign(current!.options, {
+    applicationServerKey: new Uint8Array([1]).buffer,
+  });
+  await expect(enablePush(transport, [], false)).rejects.toThrow("expired");
+  expect(unsubscribe).not.toHaveBeenCalled();
+  expect(subscribe).toHaveBeenCalledOnce();
+  await enablePush(transport, []);
+  expect(unsubscribe).toHaveBeenCalledOnce();
+  expect(subscribe).toHaveBeenCalledTimes(2);
+});
+
+it("replaces a rejected endpoint on explicit reconnect even if the browser still returns it", async () => {
+  await enablePush(transport, []);
+  await enablePush(transport, []);
+  expect(unsubscribe).toHaveBeenCalledOnce();
+  expect(subscribe).toHaveBeenCalledTimes(2);
+});

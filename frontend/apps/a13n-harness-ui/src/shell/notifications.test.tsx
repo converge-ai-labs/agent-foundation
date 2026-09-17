@@ -13,6 +13,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   deliverOnce,
   NotificationSettings,
+  notificationPermission,
   NotificationsProvider,
   useNotifications,
 } from "./notifications";
@@ -389,7 +390,9 @@ it("continues in-app delivery when native notification construction fails", asyn
   mount();
   fireEvent.click(screen.getByText("Emit"));
   expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
-  expect(screen.getByRole("alert").textContent).toContain("could not display");
+  expect(screen.getAllByRole("alert")[0].textContent).toContain(
+    "could not display",
+  );
 });
 
 it("allows foreground test notifications without claiming delivery and reports asynchronous failures", async () => {
@@ -407,7 +410,7 @@ it("allows foreground test notifications without claiming delivery and reports a
   act(() => notification.onshow());
   expect(screen.getByText(/browser reported/)).toBeTruthy();
   act(() => notification.onerror());
-  expect(screen.getByRole("alert").textContent).toContain(
+  expect(screen.getAllByRole("alert")[0].textContent).toContain(
     "system notification settings",
   );
   expect(screen.queryByText(/browser reported/)).toBeNull();
@@ -423,4 +426,273 @@ it("falls back to native delivery when optional cross-tab locking is unavailable
   fireEvent.click(screen.getByText("Emit"));
   await waitFor(() => expect(native).toHaveBeenCalledOnce());
   expect(screen.queryByText(event.notice!.brief)).toBeNull();
+});
+
+function worker() {
+  const close = vi.fn();
+  const showNotification = vi.fn(
+    async (_title: string, _options: NotificationOptions) => {},
+  );
+  const getNotifications = vi.fn(
+    async (_filter?: GetNotificationOptions) => [] as Notification[],
+  );
+  const registration = {
+    showNotification,
+    getNotifications,
+  } as unknown as ServiceWorkerRegistration;
+  vi.stubGlobal("navigator", { serviceWorker: {} });
+  vi.spyOn(push, "notificationWorker").mockResolvedValue(registration);
+  return { registration, showNotification, getNotifications, close };
+}
+
+it("uses worker notifications on Android for live alerts and foreground tests without a push subscription", async () => {
+  permission = "granted";
+  native.mockImplementation(function () {
+    throw new TypeError("Illegal constructor");
+  });
+  const sw = worker();
+  mount();
+  fireEvent.click(screen.getByText("Emit"));
+  await waitFor(() => expect(sw.showNotification).toHaveBeenCalledOnce());
+  expect(sw.showNotification).toHaveBeenCalledWith(
+    "Task completed · UI polish",
+    expect.objectContaining({
+      tag: "a13n-harness-ui.receipt-1",
+      data: { path: "/threads/thread-1" },
+    }),
+  );
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send test notification" }),
+  );
+  await screen.findByText(/browser accepted the test notification/);
+  expect(sw.showNotification).toHaveBeenCalledTimes(2);
+  expect(native).not.toHaveBeenCalled();
+  expect(push.pushSubscriptionId()).toBe("");
+});
+
+it("does not suppress live worker alerts when an enabled push provider silently fails", async () => {
+  permission = "granted";
+  const sw = worker();
+  writePreference("notifications.push-subscription", "subscription-one");
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "enablePush").mockResolvedValue();
+  mount("/threads/thread-1", transport);
+  await screen.findByText("Enabled on this device");
+  fireEvent.click(screen.getByText("Emit"));
+  await waitFor(() => expect(sw.showNotification).toHaveBeenCalledOnce());
+  transport.close();
+});
+
+it("reuses an already displayed push with the same receipt tag", async () => {
+  permission = "granted";
+  const sw = worker();
+  sw.getNotifications.mockResolvedValue([
+    { close: sw.close } as unknown as Notification,
+  ]);
+  mount();
+  await act(async () => fireEvent.click(screen.getByText("Emit")));
+  expect(sw.getNotifications).toHaveBeenCalledWith({
+    tag: "a13n-harness-ui.receipt-1",
+  });
+  expect(sw.showNotification).not.toHaveBeenCalled();
+});
+
+it.each(["disable", "focus", "unmount"] as const)(
+  "rechecks %s after waiting for the worker",
+  async (change) => {
+    permission = "granted";
+    const sw = worker();
+    let ready!: (registration: ServiceWorkerRegistration) => void;
+    vi.mocked(push.notificationWorker).mockReturnValue(
+      new Promise((resolve) => {
+        ready = resolve;
+      }),
+    );
+    const view = mount();
+    fireEvent.click(screen.getByText("Emit"));
+    if (change === "disable")
+      fireEvent.click(
+        screen.getByRole("switch", { name: "Enable browser notifications" }),
+      );
+    else if (change === "focus")
+      vi.mocked(document.hasFocus).mockReturnValue(true);
+    else view.unmount();
+    await act(async () => ready(sw.registration));
+    expect(sw.showNotification).not.toHaveBeenCalled();
+  },
+);
+
+it("retains a failed subscription as reconnect intent, not enabled delivery, and retries on reconnect", async () => {
+  permission = "granted";
+  const sw = worker();
+  writePreference("notifications.push-subscription", "stale-subscription");
+  const transport = createTransport("fixture-key", vi.fn());
+  const enable = vi
+    .spyOn(push, "enablePush")
+    .mockRejectedValue(new Error("offline"));
+  mount("/threads/thread-1", transport);
+  expect(screen.getByText("Checking subscription…")).toBeTruthy();
+  expect(screen.queryByText("Enabled on this device")).toBeNull();
+  await screen.findByText("Subscription needs attention");
+  expect(push.pushSubscriptionId()).toBe("stale-subscription");
+  fireEvent.click(screen.getByText("Emit"));
+  await waitFor(() => expect(sw.showNotification).toHaveBeenCalledOnce());
+  enable.mockResolvedValue();
+  fireEvent(window, new Event("online"));
+  await screen.findByText("Enabled on this device");
+  expect(enable).toHaveBeenCalledTimes(2);
+  expect(screen.queryAllByRole("alert")).toHaveLength(0);
+  transport.close();
+});
+
+it("marks a rejected background test as needing attention instead of claiming enabled delivery", async () => {
+  permission = "granted";
+  writePreference("notifications.push-subscription", "subscription-one");
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "enablePush").mockResolvedValue();
+  vi.spyOn(push, "testPush").mockRejectedValue(
+    new Error("Reconnect background notifications"),
+  );
+  mount("/settings/notifications", transport);
+  await screen.findByText("Enabled on this device");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send test notification" }),
+  );
+  await screen.findByText("Subscription needs attention");
+  expect(screen.getByRole("alert").textContent).toContain("Reconnect");
+  transport.close();
+});
+
+it.each([
+  {
+    userAgent: "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) CriOS/130",
+    platform: "iPad",
+    maxTouchPoints: 5,
+  },
+  {
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) CriOS/130",
+    platform: "MacIntel",
+    maxTouchPoints: 5,
+  },
+])(
+  "explains Home Screen installation in iPad Chrome including desktop mode: %j",
+  (device) => {
+    vi.stubGlobal("navigator", device);
+    vi.stubGlobal("Notification", undefined);
+    mount("/settings/notifications");
+    expect(screen.getByText("Open from Home Screen")).toBeTruthy();
+    expect(
+      screen.getAllByText(/Use Share → Add to Home Screen/).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.queryByRole("button", { name: "Allow notifications" }),
+    ).toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "Send test notification" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    expect(request).not.toHaveBeenCalled();
+  },
+);
+
+it("uses real capabilities in the installed iPad app without blocking permission on a platform hint", async () => {
+  vi.stubGlobal("navigator", {
+    userAgent: "iPad",
+    standalone: true,
+    serviceWorker: {},
+  });
+  vi.stubGlobal("PushManager", function () {});
+  expect(notificationPermission()).toBe("default");
+  const transport = createTransport("fixture-key", vi.fn());
+  const enable = vi.spyOn(push, "enablePush").mockImplementation(async () => {
+    permission = "granted";
+    writePreference("notifications.push-subscription", "ipad-subscription");
+  });
+  mount("/settings/notifications", transport);
+  expect(enable).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Allow notifications" }));
+  await screen.findByText("Enabled on this device");
+  expect(enable).toHaveBeenCalledWith(transport, []);
+  transport.close();
+});
+
+it("holds cross-tab delivery claims until worker display completes, and does not claim rejected delivery", async () => {
+  let tail = Promise.resolve();
+  vi.stubGlobal("navigator", {
+    locks: {
+      request: vi.fn((_name, callback) => {
+        tail = tail.then(callback);
+        return tail;
+      }),
+    },
+  });
+  let complete!: (accepted: boolean) => void;
+  const show = vi.fn(
+    () =>
+      new Promise<boolean>((resolve) => {
+        complete = resolve;
+      }),
+  );
+  const first = deliverOnce("worker-receipt", show);
+  const second = deliverOnce("worker-receipt", show);
+  await waitFor(() => expect(show).toHaveBeenCalledOnce());
+  complete(true);
+  await Promise.all([first, second]);
+  expect(show).toHaveBeenCalledOnce();
+  await deliverOnce("worker-failed", async () => false);
+  const retry = vi.fn(async () => true);
+  await deliverOnce("worker-failed", retry);
+  expect(retry).toHaveBeenCalledOnce();
+});
+
+it("sends a new local test each time even while the previous test remains in the notification center", async () => {
+  permission = "granted";
+  const sw = worker();
+  const displayed = new Set<string>();
+  sw.showNotification.mockImplementation(async (_title, options) => {
+    displayed.add(options.tag!);
+  });
+  sw.getNotifications.mockImplementation(async (filter) =>
+    displayed.has(filter?.tag ?? "")
+      ? [{ close: sw.close } as unknown as Notification]
+      : [],
+  );
+  mount("/settings/notifications");
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    fireEvent.click(
+      screen.getByRole("button", { name: "Send test notification" }),
+    );
+    await screen.findByText(/browser accepted the test notification/);
+    expect(sw.showNotification).toHaveBeenCalledTimes(attempt);
+  }
+  expect(displayed.size).toBe(2);
+});
+
+it.each([
+  { userAgent: "iPad", standalone: true, platform: "iPad", maxTouchPoints: 5 },
+  { userAgent: "Macintosh", platform: "MacIntel", maxTouchPoints: 0 },
+])(
+  "does not prescribe installation for an already installed app or ordinary Mac: %j",
+  (device) => {
+    vi.stubGlobal("navigator", device);
+    vi.stubGlobal("Notification", undefined);
+    expect(notificationPermission()).toBe("unavailable");
+  },
+);
+
+it("keeps installation guidance inline without duplicating a persistent toast in notification settings", () => {
+  vi.stubGlobal("navigator", {
+    userAgent: "iPad",
+    platform: "iPad",
+    maxTouchPoints: 5,
+  });
+  vi.stubGlobal("Notification", undefined);
+  mount("/settings/notifications");
+  expect(screen.getAllByText(/Use Share → Add to Home Screen/)).toHaveLength(1);
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
+  expect(
+    screen.queryByText(/Without background delivery, keep WebUI open/),
+  ).toBeNull();
 });
