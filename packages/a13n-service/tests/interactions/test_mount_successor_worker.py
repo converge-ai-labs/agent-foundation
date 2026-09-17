@@ -4,7 +4,7 @@ import json
 from unittest.mock import Mock
 
 import pytest
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import CreateManagedEnvironmentRequest
 from a13n_service.environments.local_directory import ManagedLocalDirectory
@@ -47,7 +47,9 @@ async def test_retry_worker_installs_inherited_mount_before_first_model_request(
         request=CreateManagedEnvironmentRequest(template_id=template.id),
     )
     async with transaction(sessions) as database:
-        (await database.get(AgentRecord, AGENT_ID)).default_environment_template_id = None
+        agent = await database.get(AgentRecord, AGENT_ID)
+        revision = await database.get(AgentRevisionRecord, agent.default_revision_id)
+        revision.config = {**revision.config, "default_environment_template_id": None}
     states, source, initial = await _accept_root(sessions, objects)
     async with transaction(sessions) as database:
         database.add(accepted_mount(source.id, target.id, name="computer", access="read_write"))

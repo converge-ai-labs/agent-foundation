@@ -5,7 +5,7 @@ from unittest.mock import Mock
 
 import pytest
 from a13n_harness import AgentContext
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.reconstruction import AgentReconstructor
 from a13n_service.digests import digest_request
 from a13n_service.environments.domain import CreateManagedEnvironmentRequest
@@ -46,7 +46,8 @@ async def test_live_mount_refreshes_facade_tools_and_context_at_next_root_reques
     )
     async with transaction(sessions) as session:
         agent = await session.get(AgentRecord, AGENT_ID)
-        agent.default_environment_template_id = None
+        revision = await session.get(AgentRevisionRecord, agent.default_revision_id)
+        revision.config = {**revision.config, "default_environment_template_id": None}
     config = effective_agent_config()
     config = config.model_copy(
         update={
