@@ -4,26 +4,28 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from time import monotonic
 from typing import Literal
 
 from a13n_environment import EnvironmentState
 from a13n_environment.remote_envd.configuration import RemoteEnvdProviderConfiguration
 from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from a13n_environment.remote_envd.environment import REQUIRED_METHODS, decode_state
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.audit import SystemAuditActor, security_audit_record
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import assume_utc, next_updated_at, utc_now
+from a13n_service.temporal import assume_utc, next_updated_at, optional_assume_utc, utc_now
 
 from ..access import authorize_environment_resource
 from ..domain import EnvironmentConfiguration
 from ..errors import environment_not_found, invalid_environment
 from ..models import EnvironmentProviderRecord, EnvironmentRecord
 from ..service import EnvironmentService
+from .authority import LeaseDeadline
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +44,8 @@ class ConnectionTarget:
     provider_updated_at: datetime
     operation_generation: int
     operation_id: str | None
+    operation_action: str | None
+    operation_expires_at: datetime | None
 
     def require_eligible(self) -> None:
         if not self.provider_enabled:
@@ -119,6 +123,8 @@ class ConnectionResources:
             provider_updated_at=assume_utc(provider.updated_at),
             operation_generation=row.operation_generation,
             operation_id=row.operation_id,
+            operation_action=row.operation_action,
+            operation_expires_at=optional_assume_utc(row.operation_expires_at),
         )
 
     async def publish(
@@ -127,11 +133,12 @@ class ConnectionResources:
         status: Literal["running", "unavailable"],
         *,
         publication_id: str,
+        evidence_deadline: LeaseDeadline,
     ) -> bool:
         """CAS a captured observation; retry the same ID after an uncertain commit.
 
         Lifecycle claims and connection observations serialize on the Environment
-        row. An in-flight lifecycle operation must resolve through its own owner.
+        row. Only an expired connection preparation can be recovered by observation.
         No connection observation changes the backing identity or generation.
         """
         details = {"status": status, "operation_generation": target.operation_generation}
@@ -147,7 +154,15 @@ class ConnectionResources:
                 ):
                     raise ValueError("Connection publication receipt does not match its observation")
                 return True
-            if row is None or row.operation_id is not None:
+            now = utc_now()
+            if row is None or (
+                row.operation_id is not None
+                and (
+                    row.operation_action != "prepare"
+                    or row.operation_expires_at is None
+                    or assume_utc(row.operation_expires_at) > now
+                )
+            ):
                 return False
             provider = await session.get(EnvironmentProviderRecord, row.provider_id, with_for_update=True)
             if (
@@ -158,9 +173,12 @@ class ConnectionResources:
                 or (status == "running" and not target.provider_enabled)
             ):
                 return False
-            now = utc_now()
+            if monotonic() >= evidence_deadline.monotonic_at:
+                return False
             row.status = status
             row.operation_generation += 1
+            row.operation_id = row.operation_owner = row.operation_action = None
+            row.operation_expires_at = row.next_maintenance_at = None
             row.updated_at = next_updated_at(row.updated_at, now)
             row.last_error = None if status == "running" else {"code": "environment_unavailable"}
             session.add(
@@ -191,7 +209,13 @@ class ConnectionResources:
                     EnvironmentRecord.id > after_id,
                     EnvironmentRecord.ownership == "external",
                     EnvironmentRecord.status.in_(("running", "unavailable")),
-                    EnvironmentRecord.operation_id.is_(None),
+                    or_(
+                        EnvironmentRecord.operation_id.is_(None),
+                        and_(
+                            EnvironmentRecord.operation_action == "prepare",
+                            EnvironmentRecord.operation_expires_at <= utc_now(),
+                        ),
+                    ),
                     EnvironmentProviderRecord.type == WEBSOCKET_PROVIDER_KEY,
                 )
                 .order_by(EnvironmentRecord.id)

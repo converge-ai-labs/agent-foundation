@@ -18,6 +18,24 @@ from redis.crc import key_slot
 
 pytestmark = pytest.mark.anyio
 
+
+async def test_coordination_wait_is_bounded_by_lease_horizon(coordination, monkeypatch):
+    cancelled = asyncio.Event()
+
+    async def stalled(**kwargs):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    monkeypatch.setattr(coordination, "_script", stalled)
+    async with asyncio.timeout(1):
+        with pytest.raises(CoordinationError) as error:
+            await coordination.issue("org", "env")
+    assert error.value.code == "coordination_unavailable"
+    assert cancelled.is_set()
+
+
 LIMITS = CoordinationLimits(
     lease_ms=150, ticket_ms=1_000, candidate_ms=1_000, retention_ms=5_000, safety_margin_seconds=0.005
 )

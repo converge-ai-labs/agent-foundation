@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import secrets
@@ -222,12 +223,13 @@ class ConnectionCoordination:
         }
         started = monotonic()
         try:
-            raw = await self._script(
-                keys=[environment_key(organization, environment), ticket_key(ticket)],
-                args=[json.dumps(request, separators=(",", ":"), allow_nan=False)],
-            )
+            async with asyncio.timeout(min(1, self.limits.lease_ms / 2000)):
+                raw = await self._script(
+                    keys=[environment_key(organization, environment), ticket_key(ticket)],
+                    args=[json.dumps(request, separators=(",", ":"), allow_nan=False)],
+                )
             result = json.loads(raw)
-        except (RedisError, ValueError, TypeError) as error:
+        except (RedisError, ValueError, TypeError, TimeoutError) as error:
             raise CoordinationError("coordination_unavailable") from error
         if not isinstance(result, dict) or not isinstance(result.get("code"), str):
             raise CoordinationError("coordination_unavailable")
