@@ -153,7 +153,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
     async def respond(messages, _info):
         assert both_staged.is_set()
         assert len(materializers) == 2
-        root = workspace / Path(arrivals[0][2]).parent.parent.relative_to("/")
+        root = workspace / "environments" / environment_id / Path(arrivals[0][2]).parent.parent.relative_to("/")
         completion = json.loads((root / ".a13n-service-complete.json").read_bytes())
         assert completion["packages"] == [lock.model_dump(mode="json")]
         for item in package.files:

@@ -294,7 +294,7 @@ async def test_lazy_environment_span_times_actual_first_use(interaction_sessions
         assert phase.attributes["a13n.environment.id"] == environment.environment_id
         assert phase.attributes["a13n.environment.generation"] == 1
         assert phase.attributes["a13n.service.phase.outcome"] == "succeeded"
-        assert (tmp_path / "first-use.txt").read_text() == "ready"
+        assert (tmp_path / "environments" / environment.environment_id / "first-use.txt").read_text() == "ready"
     finally:
         await observation.aclose()
 
