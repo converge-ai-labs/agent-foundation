@@ -443,10 +443,68 @@ it("projects skills before creation and validates references on submit and activ
     }),
   );
   expect(steered.accepted).toBe(true);
-  await result(
+  const cancellation = await result(
     transport.client.POST("/api/operations/{receipt_id}/cancel", {
       params: { path: { receipt_id: accepted.receipt_id } },
     }),
+  );
+  expect(cancellation).toMatchObject({
+    receipt_id: accepted.receipt_id,
+    accepted: true,
+  });
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: accepted.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("cancelled");
+      const detail = await result(
+        transport.client.GET("/api/threads/{thread_id}", { params: { path } }),
+      );
+      expect(detail.thread.root_activity.state).toBe("inactive");
+    },
+    { timeout: 10000 },
+  );
+  const replacement = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: { prompt: "wait for skill inspection again" },
+    }),
+  );
+  const oldStop = await result(
+    transport.client.POST("/api/operations/{receipt_id}/cancel", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+    }),
+  );
+  expect(oldStop.accepted).toBe(false);
+  await vi.waitFor(
+    async () => {
+      const next = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: replacement.receipt_id } },
+        }),
+      );
+      expect(next.status).toBe("running");
+    },
+    { timeout: 10000 },
+  );
+  await result(
+    transport.client.POST("/api/operations/{receipt_id}/cancel", {
+      params: { path: { receipt_id: replacement.receipt_id } },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const next = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: replacement.receipt_id } },
+        }),
+      );
+      expect(next.status).toBe("cancelled");
+    },
+    { timeout: 10000 },
   );
 });
 

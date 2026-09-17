@@ -523,6 +523,22 @@
 .attachments small {
   color: var(--a13n-secondary);
 }
+.composerStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.composerStatus p {
+  flex: 1 1 220px;
+  margin: 0;
+}
+.composerStatus [role="alert"] {
+  color: var(--a13n-text);
+}
 .warning {
   font-size: 13px;
   color: var(--a13n-text);
@@ -613,6 +629,17 @@
     position: absolute;
     right: 39px;
     top: 5px;
+  }
+  .composer .secondaryStop {
+    position: absolute;
+    right: 39px;
+    top: 2px;
+  }
+  .composerBody[data-stop-secondary="true"] .mobileOptionsButton {
+    right: 77px;
+  }
+  .composerBody[data-stop-secondary="true"] .composerEditor {
+    padding-inline-end: 116px;
   }
   .composer .composerOptions {
     display: none;

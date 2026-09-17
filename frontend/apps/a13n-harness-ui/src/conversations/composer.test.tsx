@@ -325,7 +325,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   query.clear();
 });
 
-it("uses one action for empty Stop and authored Steer, without turning the keyboard shortcut into cancellation", async () => {
+it("keeps Stop available beside authored Steer, preserves input, and never cancels from a submission shortcut", async () => {
   const draft = new ThreadDraft();
   vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
   draft.receive({
@@ -334,14 +334,22 @@ it("uses one action for empty Stop and authored Steer, without turning the keybo
     participants: {},
     update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
   });
-  const post = vi.fn().mockResolvedValue({ data: {} });
+  const post = vi
+    .fn()
+    .mockResolvedValue({ data: { receipt_id: "current", accepted: true } });
+  const get = vi.fn().mockResolvedValue({
+    data: {
+      receipt: { receipt_id: "current", thread_id: "one" },
+      status: "running",
+    },
+  });
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const view = render(
     <QueryClientProvider client={query}>
       <TransportContext
-        value={{ client: { POST: post } } as unknown as Transport}
+        value={{ client: { POST: post, GET: get } } as unknown as Transport}
       >
         <ComposerDrafts value={new Map([["one", draft]])}>
           <Composer
@@ -367,16 +375,32 @@ it("uses one action for empty Stop and authored Steer, without turning the keybo
   expect(post).not.toHaveBeenCalled();
   act(() => draft.doc.getText("text").insert(0, "Change direction"));
   expect(screen.getByRole("button", { name: "Steer" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
-  act(() =>
-    draft.doc.getText("text").delete(0, draft.doc.getText("text").length),
-  );
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith("/api/operations/{receipt_id}/cancel", {
       params: { path: { receipt_id: "current" } },
+      signal: expect.any(AbortSignal),
     }),
   );
+  await waitFor(() =>
+    expect(screen.getByRole("status").textContent).toContain("Stopping"),
+  );
+  expect(values(draft.doc).prompt).toBe("Change direction");
+  expect(
+    (screen.getByRole("button", { name: "Stopping" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(
+    (screen.getByRole("button", { name: "Steer" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  fireEvent.keyDown(editor, { key: "Enter" });
+  expect(post).toHaveBeenCalledTimes(1);
+  act(() =>
+    draft.doc.getText("text").delete(0, draft.doc.getText("text").length),
+  );
+  expect(screen.getAllByRole("button", { name: "Stopping" })).toHaveLength(1);
   view.unmount();
   query.clear();
 });
@@ -803,5 +827,65 @@ it("explains unavailable send conditions without consuming the authored draft", 
   expect(post).not.toHaveBeenCalled();
   expect(values(draft.doc).prompt).toBe("Keep my input");
   cleanup();
+  query.clear();
+});
+
+it("stops while steering waits for synchronization without submitting or clearing that draft", async () => {
+  const draft = new ThreadDraft();
+  vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+  draft.receive({
+    draft_id: "draft",
+    participant_id: "person",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  draft.doc.getText("text").insert(0, "Keep this unsynchronized guidance");
+  const post = vi
+    .fn()
+    .mockResolvedValue({ data: { receipt_id: "current", accepted: true } });
+  const get = vi.fn().mockResolvedValue({
+    data: {
+      receipt: { receipt_id: "current", thread_id: "one" },
+      status: "running",
+    },
+  });
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = render(
+    <QueryClientProvider client={query}>
+      <TransportContext
+        value={{ client: { POST: post, GET: get } } as unknown as Transport}
+      >
+        <ComposerDrafts value={new Map([["one", draft]])}>
+          <Composer
+            threadId="one"
+            canRun
+            activity={{
+              state: "running",
+              receipt_id: "current",
+              available_actions: ["cancel", "steer"],
+            }}
+            profile={{ display_name: "Test", color: "#000000" }}
+            unauthorized={() => {}}
+            reconcile={() => {}}
+          />
+        </ComposerDrafts>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Steer" }));
+  expect(draft.submission.kind).toBe("pending");
+  expect(post).not.toHaveBeenCalled();
+  const stop = screen.getByRole("button", {
+    name: "Stop",
+  }) as HTMLButtonElement;
+  expect(stop.disabled).toBe(false);
+  fireEvent.click(stop);
+  await waitFor(() => expect(draft.submission.kind).toBe("rejected"));
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post.mock.calls[0][0]).toBe("/api/operations/{receipt_id}/cancel");
+  expect(values(draft.doc).prompt).toBe("Keep this unsynchronized guidance");
+  view.unmount();
   query.clear();
 });

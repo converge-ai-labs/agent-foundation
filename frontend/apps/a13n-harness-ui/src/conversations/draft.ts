@@ -1,6 +1,7 @@
 import * as Y from "yjs";
 import type { Schema, Transport } from "../transport/client";
 import type { LocalInput } from "./local-input";
+import type { StopRequest } from "./stop-operation";
 import {
   attachmentSelections,
   attachmentToken,
@@ -91,6 +92,8 @@ export class ThreadDraft {
   status = "Disconnected";
   error = "";
   submission: Submission = { kind: "idle" };
+  // Private cancellation feedback, never serialized into the shared document.
+  stop: StopRequest | undefined;
   // Private presentation only. This is neither shared input nor an execution queue.
   localInputs: LocalInput[] = [];
   // A private, in-tab Send choice, not shared input or sticky Thread configuration.

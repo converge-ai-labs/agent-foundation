@@ -36,6 +36,7 @@ import type { Profile } from "../shell/presence";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
+import { useStopOperation } from "./stop-operation";
 import { skillReferences, type LoadSkills } from "./skill-references";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
@@ -448,11 +449,27 @@ export function Composer({
   );
   const hasInput = !!(input.prompt.trim() || selections.length);
   const valid = hasInput && !missing;
-  const [stopping, setStopping] = useState(false);
+  const cancellation = useStopOperation(threadId, draft, activity, reconcile);
+  const { stopping, canStop } = cancellation;
+  const stop = () => {
+    if (!canStop) return;
+    // Stop remains available while Steer is synchronizing. Abort unsubmitted
+    // preparation, without pretending to undo any request already admitted.
+    preparation.current?.abort(
+      new Error("Submission preparation stopped. Your input is retained."),
+    );
+    return cancellation.stop();
+  };
+  const stopLabel = cancellation.retryable
+    ? "Retry Stop"
+    : stopping
+      ? "Stopping"
+      : "Stop";
   const ready =
     local ||
     (draft.status === "Connected" && !draft.replacement && !draft.error);
   const canSteer =
+    !cancellation.request &&
     busy &&
     ready &&
     !preparing &&
@@ -461,34 +478,6 @@ export function Composer({
     valid &&
     !!activity.available_actions?.includes("steer");
   const stopAction = busy && !hasInput;
-  const canStop =
-    stopAction &&
-    !!activity.receipt_id &&
-    !!activity.available_actions?.includes("cancel") &&
-    !stopping &&
-    !preparing &&
-    !pending;
-  const stop = async () => {
-    if (!canStop || !activity.receipt_id) return;
-    setStopping(true);
-    setError("");
-    try {
-      await result(
-        transport.client.POST("/api/operations/{receipt_id}/cancel", {
-          params: { path: { receipt_id: activity.receipt_id } },
-        }),
-      );
-    } catch (failure) {
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "Could not confirm Stop. Refresh the operation before retrying.",
-      );
-    } finally {
-      setStopping(false);
-      reconcile();
-    }
-  };
   const canSend =
     canRun && !busy && ready && !preparing && !pending && !unknown && valid;
   const blockedReason =
@@ -496,6 +485,7 @@ export function Composer({
     !preparing &&
     !pending &&
     !unknown &&
+    !cancellation.request &&
     !draft.error &&
     !draft.replacement
       ? missing
@@ -774,7 +764,10 @@ export function Composer({
           />
         </div>
       )}
-      <div className={styles.composerBody}>
+      <div
+        className={styles.composerBody}
+        data-stop-secondary={busy && hasInput}
+      >
         <div inert={preparing} className={styles.composerEditor}>
           <ComposerEditor
             autoFocus={autoFocus}
@@ -876,6 +869,25 @@ export function Composer({
             {blockedReason}
           </p>
         )}
+        {cancellation.request && (
+          <div className={styles.composerStatus}>
+            <p
+              role={
+                cancellation.observationFailed ||
+                ["uncertain", "rejected"].includes(cancellation.request.phase)
+                  ? "alert"
+                  : "status"
+              }
+            >
+              {cancellation.request.message}
+              {cancellation.observationFailed &&
+                " Current status is unavailable; stopping is not yet confirmed."}
+            </p>
+            <Button variant="ghost" size="sm" onClick={cancellation.refresh}>
+              Refresh stop status
+            </Button>
+          </div>
+        )}
         {(error || draft.error) && (
           <p role="alert" className={styles.warning}>
             {error || draft.error}
@@ -954,22 +966,40 @@ export function Composer({
             <div className={styles.composerOptions} data-open={mobileOptions}>
               {controls}
             </div>
+            {busy && hasInput && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={styles.secondaryStop}
+                aria-label={stopLabel}
+                title={
+                  cancellation.request?.message ??
+                  "Stop this operation without discarding your draft"
+                }
+                disabled={!canStop}
+                loading={stopping}
+                onClick={() => void stop()}
+              >
+                <Stop weight="fill" />
+              </Button>
+            )}
             <Button
               ref={sendButton}
               size="icon"
               className={styles.sendButton}
               aria-label={
-                pending
-                  ? "Submitting"
-                  : preparing
-                    ? "Preparing"
-                    : stopAction
-                      ? "Stop"
+                stopAction
+                  ? stopLabel
+                  : pending
+                    ? "Submitting"
+                    : preparing
+                      ? "Preparing"
                       : busy
                         ? "Steer"
                         : "Send"
               }
               title={
+                (stopAction ? cancellation.request?.message : undefined) ??
                 blockedReason ??
                 (stopAction
                   ? "Stop this operation"
@@ -978,7 +1008,7 @@ export function Composer({
                     : "Send message · Enter")
               }
               disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
-              loading={pending || preparing || stopping}
+              loading={stopAction ? stopping : pending || preparing}
               onClick={() =>
                 stopAction ? void stop() : void submit(busy ? "steer" : "send")
               }
