@@ -41,7 +41,7 @@ async def test_live_client_mount_is_usable_by_the_next_model_request(
     tmp_path,
     monkeypatch,
 ):
-    connection_service, target, workspace = native_client
+    connection_service, target, workspace, _ = native_client
     environment_service, _, _ = client_environment
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     mounts = RunEnvironmentMountService(

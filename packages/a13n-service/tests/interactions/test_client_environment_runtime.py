@@ -77,7 +77,7 @@ async def native_client(client_environment, interaction_sessions, relay_redis, e
             ):
                 try:
                     await online(service, target, ticket.connection_id)
-                    yield service, target, workspace
+                    yield service, target, workspace, url
                 finally:
                     await host.close()
                     await asyncio.wait_for(process.wait(), 5)
@@ -89,7 +89,7 @@ async def native_client(client_environment, interaction_sessions, relay_redis, e
 @pytest.fixture
 async def client_runtime(admitted_use, native_client, interaction_sessions, relay_redis, redis_url, tmp_path):
     case = admitted_use
-    service, target, workspace = native_client
+    service, target, workspace, _ = native_client
     attempt = await prepare_permissions(interaction_sessions, case.run, _authority(case.claim))
     lifecycle = EnvironmentLifecycle(
         interaction_sessions, case.service.catalog, case.service.protector, tmp_path / "service-files"
@@ -236,3 +236,55 @@ async def test_accepted_addition_prepares_with_its_own_access_and_retained_use(c
         assert row.use_started_at is not None
         assert (run.environment_use_started_at is not None) == (primary is not None)
         assert (run.environment_id is not None) == (primary is not None)
+
+
+@pytest.mark.parametrize("admitted_use", ["full"], indirect=True)
+async def test_client_takeover_recovers_fresh_use_without_reviving_old_operations(
+    client_runtime,
+    native_client,
+    envd_binary,
+    tmp_path,
+):
+    lifecycle, connections, attempt, old_workspace, service, target = client_runtime
+    _, _, _, url = native_client
+    environment = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
+    assert environment is not None
+    await environment.enter(
+        thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="mount-reconnect"
+    )
+    await environment.ensure_ready(frozenset({"files"}))
+    old_files = environment.operations.files
+    assert old_files is not None
+    await old_files.write_text("/before.txt", "old connection", mode="create")
+    old_identity = environment._client.identity
+    generation = environment.backing_generation
+    ticket = await service.issue_ticket(hook_actor(), target.environment_id)
+    try:
+        async with daemon(envd_binary, tmp_path / "replacement", url, ticket.ticket, "native") as (_, new_workspace):
+            await online(service, target, ticket.connection_id)
+            # Let the real Worker renewal loop retire all clients of the old use.
+            async with asyncio.timeout(5):
+                while connections._slots:
+                    await asyncio.sleep(0.02)
+            assert environment.availability.status == "unavailable"
+            with pytest.raises(EnvironmentError) as refreshed:
+                await environment.ensure_ready(frozenset({"files"}))
+            assert refreshed.value.code == "environment_connection_refreshed"
+            assert environment.backing_generation == generation
+            assert environment.environment_id == target.environment_id
+            assert environment._client.identity != old_identity
+            assert environment._client.identity.connection.connection_id == ticket.connection_id
+            with pytest.raises(EnvironmentError) as stale:
+                await old_files.write_text("/stale.txt", "forbidden", mode="create")
+            assert stale.value.code == "environment_unavailable"
+            await environment.ensure_ready(frozenset({"files"}))
+            files = environment.operations.files
+            assert files is not None and files is not old_files
+            await files.write_text("/after.txt", "fresh connection", mode="create")
+            assert (new_workspace / "after.txt").read_text() == "fresh connection"
+            assert (old_workspace / "before.txt").read_text() == "old connection"
+            assert not (old_workspace / "after.txt").exists()
+            assert not (old_workspace / "stale.txt").exists()
+            assert not (new_workspace / "stale.txt").exists()
+    finally:
+        await environment.close()
