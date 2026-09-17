@@ -14,6 +14,14 @@ import { Bell } from "@phosphor-icons/react";
 import { Button, Switch, ToastProvider, useToast } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "./preferences";
+import { TransportContext } from "../transport/context";
+import {
+  disablePush,
+  enablePush,
+  pushSubscriptionId,
+  supportsPush,
+  testPush,
+} from "./push";
 import { PageHeader, Panel } from "./ui";
 import styles from "./notifications.module.css";
 
@@ -65,6 +73,7 @@ type Notifications = {
   requesting: boolean;
   error: string;
   testStatus: string;
+  background: boolean;
   setEnabled: (value: boolean) => void;
   request: () => Promise<void>;
   test: () => void;
@@ -93,6 +102,8 @@ function NotificationState({ children }: { children: ReactNode }) {
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState("");
   const [testStatus, setTestStatus] = useState("");
+  const [background, setBackground] = useState(() => !!pushSubscriptionId());
+  const transport = useContext(TransportContext);
   const navigate = useNavigate();
   const match = useMatch("/threads/:threadId");
   const queries = useQueryClient();
@@ -112,6 +123,7 @@ function NotificationState({ children }: { children: ReactNode }) {
     alive.current = true;
     const refresh = () => {
       setPermission(notificationPermission());
+      setBackground(!!pushSubscriptionId());
       updateEnabled(
         readPreference(ENABLED, String(current.current.enabled)) !== "false",
       );
@@ -136,6 +148,27 @@ function NotificationState({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!enabled || permission !== "granted") closeNative();
   }, [enabled, permission, closeNative]);
+  useEffect(() => {
+    if (!transport || !pushSubscriptionId()) return;
+    let active = true;
+    const sync =
+      enabled && permission === "granted"
+        ? enablePush(transport, readIds(VISITED), false)
+        : disablePush(transport);
+    void sync
+      .then(() => {
+        if (active) setBackground(!!pushSubscriptionId());
+      })
+      .catch(() => {
+        if (active)
+          setError(
+            "Background notifications could not be synchronized. Check your connection and enable them again.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [transport, enabled, permission, threadId]);
   const setEnabled = (value: boolean) => {
     current.current.enabled = value;
     writePreference(ENABLED, String(value));
@@ -143,19 +176,42 @@ function NotificationState({ children }: { children: ReactNode }) {
     setPermission(notificationPermission());
     setError("");
     setTestStatus("");
+    if (!value) {
+      void disablePush(transport ?? undefined)
+        .then(() => setBackground(false))
+        .catch(() => {
+          setBackground(!!pushSubscriptionId());
+          setError(
+            "Could not confirm background notifications were disabled. Check browser site permissions and try again.",
+          );
+        });
+    }
   };
   const request = async () => {
-    if (requesting || notificationPermission() !== "default") return;
+    if (
+      requesting ||
+      ["denied", "unavailable"].includes(notificationPermission())
+    )
+      return;
     setEnabled(true);
     setRequesting(true);
     try {
-      const next = await Notification.requestPermission();
-      if (alive.current) setPermission(next);
-    } catch {
-      if (alive.current)
+      if (supportsPush() && transport) {
+        await enablePush(transport, readIds(VISITED));
+        if (alive.current) setBackground(!!pushSubscriptionId());
+      } else {
+        await Notification.requestPermission();
+      }
+      if (alive.current) setPermission(notificationPermission());
+    } catch (failure) {
+      if (alive.current) {
+        setPermission(notificationPermission());
         setError(
-          "Notification permission could not be requested. Check this site's browser settings.",
+          failure instanceof Error
+            ? failure.message
+            : "Notification setup failed. Check this site's browser settings.",
         );
+      }
     } finally {
       if (alive.current) setRequesting(false);
     }
@@ -167,6 +223,7 @@ function NotificationState({ children }: { children: ReactNode }) {
         !current.current.enabled ||
         readPreference(ENABLED, "true") === "false" ||
         notificationPermission() !== "granted" ||
+        !!pushSubscriptionId() ||
         (tag !== "a13n-harness-ui.test" &&
           document.visibilityState === "visible" &&
           document.hasFocus())
@@ -279,11 +336,21 @@ function NotificationState({ children }: { children: ReactNode }) {
       if (!current.current.enabled || notificationPermission() !== "granted")
         return;
       void deliverOnce(id, () => {
-        return showNative(title, notice.brief, id, path);
+        return showNative(
+          title,
+          notice.brief,
+          `a13n-harness-ui.${notice.receipt_id}`,
+          path,
+        );
       }).catch(() => {
         // Optional cross-tab coordination must not silently swallow an alert.
         // The native tag still provides best-effort replacement.
-        showNative(title, notice.brief, id, path);
+        showNative(
+          title,
+          notice.brief,
+          `a13n-harness-ui.${notice.receipt_id}`,
+          path,
+        );
       });
     },
     [queries, showNative],
@@ -291,6 +358,26 @@ function NotificationState({ children }: { children: ReactNode }) {
   const test = () => {
     setError("");
     setTestStatus("");
+    if (pushSubscriptionId() && transport) {
+      setTestStatus("Sending through the background push service…");
+      void testPush(transport)
+        .then(() => {
+          if (alive.current)
+            setTestStatus(
+              "The push service accepted the test. This does not confirm delivery to your device; check the notification and your system settings.",
+            );
+        })
+        .catch((failure: unknown) => {
+          if (!alive.current) return;
+          setTestStatus("");
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "Background notification test failed.",
+          );
+        });
+      return;
+    }
     const requested = showNative(
       "Harness UI test notification",
       "Task results and requests for your input will appear here while WebUI is open.",
@@ -307,6 +394,7 @@ function NotificationState({ children }: { children: ReactNode }) {
     requesting,
     error,
     testStatus,
+    background,
     setEnabled,
     request,
     test,
@@ -388,16 +476,15 @@ export function NotificationSettings() {
         title="Notifications"
         description="Personal preferences for this browser. Changes apply immediately and do not affect other collaborators."
       />
-      <Panel title="Desktop notifications">
+      <Panel title="Browser notifications">
         <div className={styles.settingRow}>
           <div>
             <label htmlFor="desktop-notifications">
               Enable browser notifications
             </label>
             <p>
-              For conversations opened in this browser, while WebUI remains
-              open. Notifications may show result text on your desktop or lock
-              screen.
+              Task results and requests for your input, for conversations opened
+              on this device. Previews may appear on your lock screen.
             </p>
           </div>
           <Switch
@@ -415,7 +502,32 @@ export function NotificationSettings() {
             <PermissionDescription permission={notifications.permission} />
           </p>
         )}
+        <p>
+          Background delivery:{" "}
+          <strong>
+            {notifications.background
+              ? "Enabled on this device"
+              : "Not enabled"}
+          </strong>
+          <br />
+          {notifications.background
+            ? "You can close WebUI or lock your phone. The server must stay running and able to reach your browser's push service."
+            : "Without background delivery, keep WebUI open to receive live alerts."}
+        </p>
         <div className={styles.actions}>
+          {notifications.enabled &&
+            notifications.permission === "granted" &&
+            supportsPush() && (
+              <Button
+                onClick={() => void notifications.request()}
+                loading={notifications.requesting}
+                variant={notifications.background ? "outline" : "default"}
+              >
+                {notifications.background
+                  ? "Reconnect background notifications"
+                  : "Enable background notifications"}
+              </Button>
+            )}
           {notifications.enabled && notifications.permission === "default" && (
             <Button
               variant="outline"
@@ -440,15 +552,16 @@ export function NotificationSettings() {
           <p role="status">{notifications.testStatus}</p>
         )}
         <p>
-          Alerts are sent even while this page is in the foreground. On macOS,
-          check System Settings → Notifications for your browser or this
-          website, and check whether Focus is silencing alerts. Site permission
-          alone does not guarantee a desktop banner.
+          On Android Chrome, allow this site's notifications and Chrome's system
+          notifications. Force-stopping the browser, battery restrictions, or Do
+          Not Disturb can prevent alerts. On iPhone or iPad, use the app added
+          to your Home Screen. Permission alone does not confirm delivery.
         </p>
         <p>
-          In-app task notices remain available without desktop permission.
-          Closing WebUI stops live notifications; missed history is not replayed
-          as new alerts.
+          In-app notices remain available without notification permission.
+          Background push uses your browser's push service and can show alerts
+          even while WebUI is open. Missed history is not replayed as new
+          alerts.
         </p>
       </Panel>
     </>

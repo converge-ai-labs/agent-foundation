@@ -88,6 +88,7 @@ from a13n_harness_ui.page_presence import (
     PresenceFrame,
     PresenceReport,
 )
+from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupModelOptions, SetupModelOptionsRequest, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
 from a13n_harness_ui.storage import ThreadConfiguration
@@ -485,6 +486,25 @@ def create_webui(
             status_code=200 if available else 503,
             headers={"Cache-Control": "no-store"},
         )
+
+    @server.get("/api/push/configuration", response_model=PushConfiguration)
+    async def push_configuration() -> PushConfiguration:
+        return await app().push_configuration()
+
+    @server.put(
+        "/api/push/subscription", response_model=PushSubscriptionView, openapi_extra=_body(PushSubscriptionInput)
+    )
+    async def subscribe_push(request: Request) -> PushSubscriptionView:
+        return await app().subscribe_push(await _document(request, PushSubscriptionInput))
+
+    @server.delete("/api/push/subscriptions/{subscription_id}", status_code=204)
+    async def unsubscribe_push(subscription_id: str) -> Response:
+        await app().unsubscribe_push(subscription_id)
+        return Response(status_code=204)
+
+    @server.post("/api/push/subscriptions/{subscription_id}/test", response_model=PushTestResult)
+    async def test_push(subscription_id: str) -> PushTestResult:
+        return await app().test_push(subscription_id)
 
     @server.get("/api/status", response_model=ListenerStatus)
     async def status() -> ListenerStatus:
@@ -1422,6 +1442,7 @@ def create_webui(
     async def static(path: str) -> FileResponse | JSONResponse:
         install_assets = {
             "manifest.webmanifest": "application/manifest+json",
+            "sw.js": "text/javascript",
             "icons/icon-192.png": "image/png",
             "icons/icon-512.png": "image/png",
             "icons/icon-maskable-512.png": "image/png",
@@ -1448,6 +1469,7 @@ def create_webui(
             "settings/source",
             "settings/accounts",
             "settings/catalog",
+            "settings/notifications",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects", "new"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)

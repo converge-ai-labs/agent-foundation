@@ -6,7 +6,7 @@ Harness UI keeps execution persistence continuation-oriented and stores publishe
 
 1. editable YAML, MCP JSON, and local Markdown files own desired resources and global defaults;
 2. data-root Content Plugin ID directories contain editable local files with optional Git provenance;
-3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, execution heads, selected references, and published output comments;
+3. SQLite owns accepted-generation indexes, Project/resource lookup projections, terminal Project Model preferences, sticky Thread configurations, execution heads, selected references, published output comments, and browser push subscriptions/VAPID identity;
 4. immutable content-addressed files own normalized configuration generations, resolved Run compositions, and complete continuation checkpoints;
 5. shared browser drafts, live runtime objects, presence, and native terminal sessions remain in process memory.
 
@@ -28,6 +28,7 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Compact child display                                                                             | Immutable child checkpoint    | Inspection history only                                                  |
 | Environment-state references                                                                      | SQLite plus immutable files   | Current Host-authoritative state                                         |
 | Published output comments and original saved target references                                    | SQLite                        | Durable human discussion; never model history or execution authority     |
+| Browser push subscriptions and VAPID identity                                                     | SQLite                        | Device opt-in delivery destinations; never execution or delivery history |
 | Shared browser drafts                                                                             | Process memory                | Synchronized editing state only; not execution or continuation authority |
 | Participant presence and native Host terminal sessions                                            | Process memory                | Current shared instance only                                             |
 | Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
@@ -50,6 +51,14 @@ Saved transcript projection exposes only the recognized bounded evidence through
 The App stores the last explicit terminal Model choice as one Model resource ID per Project ID in the data root's SQLite database. This is user interaction state, not a resource definition, Project YAML default, Thread configuration axis, or continuation authority. The preference can precede creation of a cwd-derived Project resource using the same deterministic identity. Resource definitions and credentials continue to resolve from the accepted configuration.
 
 Each explicit selection atomically replaces one Project's preference; reset deletes only that Project's preference. Short SQLite write transactions serialize updates with last-write-wins semantics, including across independent Apps. Different Projects never replace each other's entries. Reads, Runs, and shutdown do not write preferences. Active terminals do not subscribe to preference changes. A removed Project or Model does not turn a preference into a resource definition, and lookup never resurrects missing resources. Downgrading past this additive table discards preferences only; it does not rewrite Threads, checkpoints, or YAML. [Interactive CLI](07-interactive-cli.md#agent-selection-and-reasoning) owns selection and fallback behavior.
+
+## Browser Push Subscriptions
+
+The data root stores one lazily generated VAPID private key and browser subscription rows in additive `web_push_key` and `web_push_subscription` tables. The private key survives App restart; its public counterpart is returned by the authenticated configuration API. Treat data-root backups as sensitive: rows contain push endpoints and encryption auth secrets. They are not configuration resources, model-visible state, or access credentials for the WebUI API.
+
+An endpoint hash identifies one device subscription. A short transaction replaces its keys/origin, refreshes its activity time, and merges at most 256 recently opened root Thread identities so same-origin tabs do not overwrite each other's interest. Reads detach subscription values before network I/O. App subscription input drops missing and child Thread IDs. Inactive subscriptions older than 90 days are pruned during recipient selection; explicit removal is idempotent. Provider 404/410 removes the matching subscription unless its auth secret has since changed. A removed or changed subscription snapshot is rechecked before delivery.
+
+Server restart retains subscriptions and identity, not queued reminders. Delivery is a bounded, best-effort current-App worker, without an outbox, acknowledgment history, durable retry schedule, or replay from saved completions. Only the WebUI App runs this worker; terminal-only Apps do not send push. Removing these additive tables during downgrade loses opt-ins and signing identity, not conversations or continuations. Browsers must explicitly reconnect if the signing identity changes. [Task notifications](webui/04-workbench-interaction.md#task-notifications) owns user opt-in, cleanup, and browser delivery behavior.
 
 ## Shared Browser Drafts
 

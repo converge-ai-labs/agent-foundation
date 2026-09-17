@@ -64,6 +64,26 @@ class ResourceIndexRecord(Base):
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
 
 
+class WebPushKeyRecord(Base):
+    __tablename__ = "web_push_key"
+    __table_args__ = (CheckConstraint("singleton_id = 1", name="singleton"),)
+
+    singleton_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    private_key: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class WebPushSubscriptionRecord(Base):
+    __tablename__ = "web_push_subscription"
+
+    subscription_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    p256dh: Mapped[str] = mapped_column(Text, nullable=False)
+    auth: Mapped[str] = mapped_column(Text, nullable=False)
+    origin: Mapped[str] = mapped_column(Text, nullable=False)
+    thread_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
 class ProjectModelPreferenceRecord(Base):
     __tablename__ = "project_model_preference"
 

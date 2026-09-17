@@ -10,6 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { parse } from "yaml";
 import { BrowserApp } from "./app";
+import * as push from "./shell/push";
 import { IDBFactory } from "fake-indexeddb";
 import { onlineManager } from "@tanstack/react-query";
 
@@ -104,6 +105,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
@@ -192,6 +194,47 @@ it("forgets the retained credential and closes protected views", async () => {
   expect(
     screen.queryByRole("heading", { name: "What would you like to build?" }),
   ).toBeNull();
+});
+
+it("keeps logout cleanup authenticated and warns when background delivery cannot be disabled", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "remembered");
+  const cleanupPush = vi
+    .spyOn(push, "disablePush")
+    .mockImplementation(async (transport) => {
+      if (!transport) return;
+      // A real request proves logout has not closed the transport yet.
+      const response = await transport.fetch(
+        "/api/push/subscriptions/subscription-one",
+        { method: "DELETE" },
+      );
+      expect(response.status).toBe(204);
+      throw new Error("Browser and server cleanup could not be confirmed");
+    });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (request.method === "DELETE") {
+        expect(request.headers.get("Authorization")).toBe("Bearer remembered");
+        expect(request.signal.aborted).toBe(false);
+        return new Response(null, { status: 204 });
+      }
+      return request.headers.has("Authorization")
+        ? fixture(request)
+        : json({}, 401);
+    }),
+  );
+  render(<BrowserApp />);
+  await screen.findByText("1.2.3rc2");
+  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+  await screen.findByRole("heading", { name: "Log in to Harness UI" });
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    expect.stringContaining(
+      "Block notifications in this site's browser settings",
+    ),
+  );
+  expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
+  expect(cleanupPush).toHaveBeenCalled();
 });
 
 it("retains dirty source fields through navigation and external invalidation", async () => {
