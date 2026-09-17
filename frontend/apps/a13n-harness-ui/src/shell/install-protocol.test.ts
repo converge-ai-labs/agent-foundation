@@ -153,6 +153,7 @@ it("keeps root metadata links valid on deep links and keeps hashed assets immuta
     "/new?project=project-one",
     "/new/thread_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "/settings",
+    "/settings/models",
     "/settings/notifications",
     "/threads/thread-fixture",
   ]) {

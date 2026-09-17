@@ -1488,6 +1488,7 @@ def create_webui(
             "settings/source",
             "settings/accounts",
             "settings/catalog",
+            "settings/models",
             "settings/notifications",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects", "new"} and bool(segments[1]))
         if not recognized:
