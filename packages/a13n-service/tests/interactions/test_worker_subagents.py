@@ -314,12 +314,15 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
 async def test_inline_and_root_share_ten_loop_iam_refresh(
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, caplog, refresh
 ):
+    from a13n_harness import ModelRecoveryPolicy
     from a13n_service.iam import attempts as iam_attempts
     from a13n_service.iam.models import UserRecord
     from a13n_service.interactions.models import RunAttemptRecord
     from sqlalchemy.exc import OperationalError
 
     caplog.set_level("INFO")
+    recovery_delay = Mock(return_value=0)
+    monkeypatch.setattr(ModelRecoveryPolicy, "delay", recovery_delay)
     await _grant_and_seed_child(interaction_sessions)
     config = frozen_graph("inline")
     child = config.child_configs[CHILD_REVISION_ID]
@@ -394,6 +397,7 @@ async def test_inline_and_root_share_ten_loop_iam_refresh(
                 await loop.wait_stopped()
                 tasks.cancel_scope.cancel()
     assert requests == ["root", "child"] * 5 + (["root"] if refresh == "healthy" else [])
+    recovery_delay.assert_not_called()
     assert reads.await_count == 2
     assert attempt.status == ("succeeded" if refresh == "healthy" else "failed")
     if refresh == "healthy":

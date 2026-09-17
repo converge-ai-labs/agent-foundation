@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import dataclass
 
+from a13n_harness.errors import RunError
 from a13n_logging import get_logger
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -21,12 +22,11 @@ logger = get_logger(__name__)
 _LOOPS_PER_REFRESH = 10
 
 
-class AttemptAuthorizationError(RuntimeError):
-    """The Attempt cannot continue without a valid, sufficiently fresh IAM snapshot."""
+class AttemptAuthorizationError(RunError):
+    """A terminal IAM failure that must bypass Harness model recovery."""
 
     def __init__(self, code: str) -> None:
-        super().__init__(code)
-        self.code = code
+        super().__init__(code, code=code)
 
 
 @dataclass(frozen=True, slots=True)
