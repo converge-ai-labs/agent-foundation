@@ -79,9 +79,16 @@ class ConnectionResources:
 
     async def capture(self, organization_id: str, environment_id: str) -> ConnectionTarget:
         """Revalidate a ticket-bound target without carrying an actor or DB session."""
+        target = await self.resolve(environment_id)
+        if target.organization_id != organization_id:
+            raise environment_not_found()
+        return target
+
+    async def resolve(self, environment_id: str) -> ConnectionTarget:
+        """Internal target lookup; the ingress still requires a matching one-use ticket."""
         async with short_session(self._sessions) as session:
             row = await session.get(EnvironmentRecord, environment_id)
-            if row is None or row.organization_id != organization_id:
+            if row is None:
                 raise environment_not_found()
             provider = await session.get(EnvironmentProviderRecord, row.provider_id)
             target = self._target(row, provider)

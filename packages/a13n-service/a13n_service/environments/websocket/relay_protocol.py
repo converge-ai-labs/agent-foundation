@@ -67,6 +67,7 @@ class RelayRequest(DomainModel):
     request_id: ObjectId
     use: UseIdentity
     operation: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.]{1,63}$")]
+    mount_id: Annotated[str, StringConstraints(pattern=r"^[a-zA-Z0-9_-]{1,128}$")] = "mount-prepare"
     deadline_ms: int = Field(gt=0, le=2**53 - 1, strict=True)
     payload: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
 

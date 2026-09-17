@@ -47,7 +47,11 @@ class RelayUseClient:
         self._server_ms = observation.value.now_ms
         self._received_at = monotonic()
         self._closed = False
+        self._mount_id = "mount-prepare"
         self._authority.check(identity)
+
+    def bind_mount(self, mount_id: str) -> None:
+        self._mount_id = mount_id
 
     @property
     def limits(self) -> RelayLimits:
@@ -106,6 +110,7 @@ class RelayUseClient:
             request_id=new_object_id("erq"),
             use=self.identity,
             operation=operation,
+            mount_id=self._mount_id,
             payload=payload,
             deadline_ms=self._server_ms + math.floor((deadline.monotonic_at - self._received_at) * 1000),
         )

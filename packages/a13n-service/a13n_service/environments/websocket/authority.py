@@ -116,8 +116,12 @@ class DispatchAuthority:
                 self.check(identity)
                 yield
 
+    def invalidate(self) -> None:
+        """Synchronously reject new writes, including during process drain."""
+        self._fenced = True
+
     async def fence(self) -> None:
         """Reject admission immediately; return only after previously admitted writes settle."""
-        self._fenced = True
+        self.invalidate()
         async with self._write_lock:
             pass

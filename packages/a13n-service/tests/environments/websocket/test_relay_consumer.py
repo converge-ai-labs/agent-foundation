@@ -120,7 +120,7 @@ async def test_saturated_operations_leave_cancellation_capacity(relay):
     entered, cancelled = asyncio.Event(), asyncio.Event()
 
     class Blocked:
-        def prepare(self, operation, payload):
+        def prepare(self, message):
             async def execute():
                 entered.set()
                 try:

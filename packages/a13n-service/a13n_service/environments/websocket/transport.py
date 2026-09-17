@@ -30,11 +30,14 @@ class ClientWebSocket:
         self._available = asyncio.Event()
         self._closed = asyncio.Event()
         self._reader_started = False
+        self._invalidated = False
         self._connection: DispatchAuthority | None = None
         self._use: DispatchAuthority | None = None
         self._use_required = False
 
     def bind_connection(self, authority: DispatchAuthority) -> None:
+        if self._invalidated or self._closed.is_set():
+            raise DispatchDenied("Client WebSocket cannot regain dispatch authority")
         if self._connection is not None or not isinstance(authority.identity, ConnectionIdentity):
             raise ValueError("A carrier can bind exactly one connection authority")
         authority.check(authority.identity)
@@ -57,9 +60,18 @@ class ClientWebSocket:
         self._use = authority
         self._use_required = True
 
+    def invalidate(self) -> None:
+        self._invalidated = True
+        if self._connection is not None:
+            self._connection.invalidate()
+        if self._use is not None:
+            self._use.invalidate()
+
     async def send(self, message: str | bytes) -> None:
         if self._closed.is_set():
             raise EOFError("Client WebSocket is closed")
+        if self._invalidated:
+            raise OSError("Client WebSocket dispatch authority is unavailable")
         connection = self._connection
         if connection is None:
             raise OSError("Client WebSocket has no dispatch authority")
@@ -136,5 +148,6 @@ class ClientWebSocket:
         await self._closed.wait()
 
     def _mark_closed(self) -> None:
+        self.invalidate()
         self._closed.set()
         self._available.set()

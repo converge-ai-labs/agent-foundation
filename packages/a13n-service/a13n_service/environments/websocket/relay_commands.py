@@ -12,6 +12,7 @@ from a13n_environment.retention import EnvironmentOutputPolicy
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, model_validator
 
 from ..domain import DomainModel
+from .relay_protocol import RelayRequest
 from .relay_values import (
     BinaryValue,
     CommandInput,
@@ -164,7 +165,8 @@ class CommandRelayDispatch:
         self._operations = operations
         self._permissions = permissions
 
-    def prepare(self, operation: str, payload: dict[str, JsonValue]) -> Callable[[], Awaitable[JsonValue]]:
+    def prepare(self, message: RelayRequest) -> Callable[[], Awaitable[JsonValue]]:
+        operation, payload = message.operation, message.payload
         if "operation" in payload:
             raise ValueError("Command relay payload cannot override its operation")
         request = COMMAND_OPERATION.validate_python({"operation": operation, **payload}, extra="forbid")

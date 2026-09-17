@@ -22,9 +22,7 @@ from .relay_transfers import FileTransferExecution, FileTransferPlan
 
 
 class RelayOperationDispatch(Protocol):
-    def prepare(
-        self, operation: str, payload: dict[str, JsonValue]
-    ) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan: ...
+    def prepare(self, request: RelayRequest) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan: ...
 
 
 class CancelRequest(DomainModel):
@@ -147,8 +145,10 @@ class RelayControlConsumer:
             await self._reject(entry, request, "environment_request_invalid")
             return
         except EnvironmentError as error:
-            code = "environment_forbidden" if error.code == "environment_forbidden" else "environment_unsupported"
-            await self._reject(entry, request, code)
+            failure = RelayFailure.from_environment(error).model_copy(update={"certainty": "not_dispatched"})
+            await self._complete(
+                entry, request, RelayTerminal(request_id=request.request_id, use=request.use, error=failure)
+            )
             return
         if isinstance(execute, FileTransferPlan):
             transfer = execute.bind(self._store, request, entry)
@@ -191,7 +191,7 @@ class RelayControlConsumer:
                 return None
 
             return close_scope
-        return self._dispatch.prepare(request.operation, request.payload)
+        return self._dispatch.prepare(request)
 
     def _deadline(self, request: RelayRequest) -> float:
         observed = self._observation

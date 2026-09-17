@@ -15,7 +15,11 @@ from a13n_service.environments.websocket.relay_processes import (
     RelayProcessOperations,
     RelayShellOperations,
 )
+from a13n_service.environments.websocket.relay_protocol import RelayRequest
 from a13n_service.environments.websocket.relay_values import BinaryValue, ProcessHandle
+from a13n_service.ids import new_object_id
+
+from .conftest import USE
 
 pytestmark = pytest.mark.anyio
 POLICY = EnvironmentOutputPolicy(max_inline_bytes=32, max_output_bytes=4096, overflow="retain")
@@ -137,14 +141,19 @@ def test_command_authorization_precedes_process_execution(operations):
     dispatch = CommandRelayDispatch(operations, frozenset({EnvironmentAction.PROCESS_INSPECT}))
     with pytest.raises(EnvironmentError) as error:
         dispatch.prepare(
-            "process.kill",
-            {
-                "handle": {
-                    "mount_id": "m",
-                    "token": "p",
-                    "observed_generation": "1",
-                    "identity": {"provider_type": "p", "environment_id": "e", "generation": "1", "process_id": "p"},
-                }
-            },
+            RelayRequest(
+                request_id=new_object_id("erq"),
+                use=USE,
+                deadline_ms=1,
+                operation="process.kill",
+                payload={
+                    "handle": {
+                        "mount_id": "m",
+                        "token": "p",
+                        "observed_generation": "1",
+                        "identity": {"provider_type": "p", "environment_id": "e", "generation": "1", "process_id": "p"},
+                    }
+                },
+            )
         )
     assert error.value.code == "environment_forbidden"

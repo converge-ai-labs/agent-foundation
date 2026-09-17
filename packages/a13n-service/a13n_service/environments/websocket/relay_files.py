@@ -10,6 +10,7 @@ from a13n_environment.models import EnvironmentAction, EnvironmentError
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from ..domain import DomainModel
+from .relay_protocol import RelayRequest
 from .relay_transfers import FileTransferPlan, ReadBytes, WriteBytes
 
 
@@ -104,9 +105,8 @@ class FileRelayDispatch:
         self._files = files
         self._permissions = permissions
 
-    def prepare(
-        self, operation: str, payload: dict[str, JsonValue]
-    ) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan:
+    def prepare(self, message: RelayRequest) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan:
+        operation, payload = message.operation, message.payload
         if "operation" in payload:
             raise ValueError("File relay payload cannot override its operation")
         request = FILE_REQUEST.validate_python({"operation": operation, **payload})

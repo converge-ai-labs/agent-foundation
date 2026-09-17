@@ -8,6 +8,7 @@ import pytest
 from a13n_service.environments.websocket.authority import (
     ConnectionIdentity,
     DispatchAuthority,
+    DispatchDenied,
     LeaseDeadline,
     UseIdentity,
 )
@@ -157,3 +158,13 @@ async def test_blocked_socket_write_is_cancelled_before_retirement_ack():
     with pytest.raises(OSError, match="authority"):
         await operation
     await client.close()
+
+
+async def test_invalidated_candidate_cannot_later_bind_a_fresh_grant():
+    async with carrier() as (client, _, outbound):
+        client.invalidate()
+        with pytest.raises(DispatchDenied):
+            client.bind_connection(grant())
+        with pytest.raises(OSError):
+            await client.send("initialize")
+        assert not any(event["type"] == "websocket.send" for event in outbound)
