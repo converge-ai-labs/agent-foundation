@@ -1,0 +1,99 @@
+# Select an environment overlay before installing. Secrets are always external.
+profile: local
+# Used only by the local profile. Distributed replicas are per role below.
+replicaCount: 1
+roles:
+  control:
+    replicaCount: 2
+    resources: {}
+  worker:
+    replicaCount: 2
+    resources: {}
+  connectivity:
+    replicaCount: 2
+    resources: {}
+image:
+  repository: a13n-service
+  tag: local
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+existingSecret: a13n-service-secrets
+console:
+  enabled: true
+  replicaCount: 1
+  image:
+    repository: a13n-console
+    tag: local
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    annotations: {}
+    nodePort: 30080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: "1"
+      memory: 256Mi
+publicOrigin: http://127.0.0.1:8000
+environmentName: local
+objects:
+  bucket: ""
+  region: ""
+  endpointUrl: ""
+  forcePathStyle: false
+# Mount an existing RWX claim for distributed deployments. Local claims are retained.
+persistence:
+  existingClaim: ""
+  storageClassName: null
+  size: 10Gi
+serviceAccount:
+  annotations: {}
+podAnnotations: {}
+serviceAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: agents.example.com
+  paths: [/]
+  tls: []
+resources:
+  requests:
+    cpu: 250m
+    memory: 512Mi
+  limits:
+    cpu: "2"
+    memory: 2Gi
+# Additional non-secret TOML sections, e.g. observability. Do not redefine sections
+# owned by the chart or override backend/profile/role settings through the Secret.
+extraConfig: ""
+redis:
+  enabled: false
+  image: redis:7-alpine
+  storageClassName: null
+  size: 5Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+postgresql:
+  enabled: false
+  image: postgres:17-alpine
+  existingSecret: a13n-postgres-secrets
+  storageClassName: null
+  size: 10Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
