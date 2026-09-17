@@ -382,3 +382,80 @@ async def test_response_dispatch_recovers_a_lost_read_reply_without_losing_waite
     finally:
         dispatcher.close()
         await reader
+
+
+async def test_upload_input_window_ack_and_finish_preserve_one_terminal(stores, request_message, relay_redis):
+    from a13n_service.environments.websocket.relay_protocol import RelayCredit, RelayFinish
+    from a13n_service.environments.websocket.relay_storage import RelayInputDelivery
+
+    owner, worker = stores
+    transfer_id = new_object_id("etr")
+    request = request_message.model_copy(
+        update={"operation": "file.write_bytes", "payload": {"transfer_id": transfer_id}}
+    )
+    entry = await pending(owner, request)
+    await owner.start(request, entry)
+    baseline = int(await relay_redis.hget(owner.ledger_key, "_bytes"))
+    frames = [
+        RelayChunk(
+            request_id=request.request_id,
+            use=request.use,
+            data="eA==",
+            transfer=TransferPosition(transfer_id=transfer_id, sequence=i, offset=i),
+        )
+        for i in range(9)
+    ]
+    for frame in frames[:8]:
+        await owner.send_input(request, frame)
+    with pytest.raises(RelayStoreError) as error:
+        await owner.send_input(request, frames[8])
+    assert error.value.code == "relay_overloaded"
+    assert int(await relay_redis.hget(owner.ledger_key, "_count")) == 1
+    rows = await owner.read()
+    assert all(isinstance(delivery, RelayInputDelivery) for _, delivery in rows)
+    first_entry, first = rows[0]
+    await owner.acknowledge_input(first_entry, first)
+    released = int(await relay_redis.hget(owner.ledger_key, "_bytes"))
+    await owner.acknowledge_input(first_entry, first)
+    assert int(await relay_redis.hget(owner.ledger_key, "_bytes")) == released
+    await owner.send_input(request, frames[8])
+    for i in range(9):
+        position = TransferPosition(transfer_id=transfer_id, sequence=i + 1, offset=i + 1)
+        credit = RelayCredit(request_id=request.request_id, use=request.use, transfer=position)
+        await owner.credit(request, entry, credit)
+        await owner.credit(request, entry, credit)
+    result = RelayTerminal(request_id=request.request_id, use=request.use, transfer=position)
+    with pytest.raises(RelayStoreError) as error:
+        await owner.complete(request, entry, result)
+    assert error.value.code == "transfer_conflict"
+    finish = RelayFinish(request_id=request.request_id, use=request.use, transfer=position)
+    await owner.send_input(request, finish)
+    for input_entry, delivery in rows[1:] + await owner.read():
+        await owner.acknowledge_input(input_entry, delivery)
+    assert int(await relay_redis.hget(owner.ledger_key, "_bytes")) == baseline
+    assert len(await worker.read()) == 9
+    await owner.complete(request, entry, result)
+    assert [frame for _, frame in await worker.read()] == [result]
+    assert (await relay_redis.xpending(owner.requests_key, "owner"))["pending"] == 0
+
+
+async def test_pruning_parent_also_removes_unconsumed_inputs(stores, request_message, relay_redis):
+    owner, _ = stores
+    transfer_id = new_object_id("etr")
+    request = request_message.model_copy(
+        update={"operation": "file.write_bytes", "payload": {"transfer_id": transfer_id}}
+    )
+    await owner.append(request)
+    await owner.send_input(
+        request,
+        RelayChunk(
+            request_id=request.request_id,
+            use=request.use,
+            data="eA==",
+            transfer=TransferPosition(transfer_id=transfer_id, sequence=0, offset=0),
+        ),
+    )
+    await relay_redis.zadd(owner.expiries_key, {request.request_id: 0})
+    await owner.prune()
+    assert await relay_redis.xlen(owner.requests_key) == 0
+    assert await relay_redis.hmget(owner.ledger_key, "_count", "_bytes") == [b"0", b"0"]

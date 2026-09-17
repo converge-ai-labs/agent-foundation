@@ -1,4 +1,4 @@
-"""Typed, allowlisted unary file operations at the Control relay boundary."""
+"""Typed, allowlisted file operations at the Control relay boundary."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from a13n_environment.models import EnvironmentAction, EnvironmentError
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter
 
 from ..domain import DomainModel
+from .relay_transfers import FileTransferPlan, ReadBytes, WriteBytes
 
 
 class ReadText(DomainModel):
@@ -83,10 +84,10 @@ class Copy(DomainModel):
     replace: bool = False
 
 
-type FileRequest = Annotated[
-    ReadText | WriteText | PatchText | Stat | ListFiles | Query | SearchText | Mkdir | Move | Remove | Copy,
-    Field(discriminator="operation"),
-]
+type UnaryFileRequest = (
+    ReadText | WriteText | PatchText | Stat | ListFiles | Query | SearchText | Mkdir | Move | Remove | Copy
+)
+type FileRequest = Annotated[UnaryFileRequest | ReadBytes | WriteBytes, Field(discriminator="operation")]
 FILE_REQUEST = TypeAdapter[FileRequest](FileRequest)
 _JSON = TypeAdapter(JsonValue)
 
@@ -103,7 +104,9 @@ class FileRelayDispatch:
         self._files = files
         self._permissions = permissions
 
-    def prepare(self, operation: str, payload: dict[str, JsonValue]) -> Callable[[], Awaitable[JsonValue]]:
+    def prepare(
+        self, operation: str, payload: dict[str, JsonValue]
+    ) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan:
         if "operation" in payload:
             raise ValueError("File relay payload cannot override its operation")
         request = FILE_REQUEST.validate_python({"operation": operation, **payload})
@@ -114,13 +117,16 @@ class FileRelayDispatch:
         if not required <= self._permissions:
             raise EnvironmentError("File operation exceeds the admitted access policy", code="environment_forbidden")
 
+        if isinstance(request, ReadBytes | WriteBytes):
+            return FileTransferPlan(self._files, request)
+
         async def execute() -> JsonValue:
             result = await self._execute(request)
             return _JSON.validate_python(result.model_dump(mode="json"))
 
         return execute
 
-    async def _execute(self, request: FileRequest) -> BaseModel:
+    async def _execute(self, request: UnaryFileRequest) -> BaseModel:
         files = self._files
         match request:
             case ReadText():

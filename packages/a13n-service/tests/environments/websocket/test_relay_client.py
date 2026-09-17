@@ -146,7 +146,7 @@ async def test_cancellation_and_early_stream_exit_send_bounded_control_request(r
 
     serving = asyncio.create_task(server())
     if exit_early:
-        async with client.request("file.read_bytes_stream", {}, timeout_seconds=2, streaming=True):
+        async with client.request("file.read_bytes_stream", {}, timeout_seconds=2, streaming="download"):
             await started.wait()
     else:
         task = asyncio.create_task(client.call("file.stat", timeout_seconds=2))

@@ -157,7 +157,7 @@ async def test_slow_transfer_fails_alone_and_does_not_block_unary_response(dispa
     stream, unary = request(), request()
     transfer_id = new_object_id("etr")
     with (
-        dispatcher.register(stream, authority(), deadline(), streaming=True) as slow,
+        dispatcher.register(stream, authority(), deadline(), streaming="download") as slow,
         dispatcher.register(unary, authority(), deadline()) as fast,
     ):
         dispatcher.accept(chunk(stream, transfer_id))
@@ -172,7 +172,7 @@ async def test_slow_transfer_fails_alone_and_does_not_block_unary_response(dispa
 async def test_duplicate_chunk_is_ignored_and_missing_chunk_never_becomes_eof(dispatcher):
     message = request()
     transfer_id = new_object_id("etr")
-    with dispatcher.register(message, authority(), deadline(), streaming=True) as pending:
+    with dispatcher.register(message, authority(), deadline(), streaming="download") as pending:
         frame = chunk(message, transfer_id)
         dispatcher.accept(frame)
         dispatcher.accept(frame)
@@ -191,7 +191,7 @@ async def test_duplicate_chunk_is_ignored_and_missing_chunk_never_becomes_eof(di
 
 async def test_empty_transfer_requires_explicit_successful_terminal(dispatcher):
     message = request()
-    with dispatcher.register(message, authority(), deadline(), streaming=True) as pending:
+    with dispatcher.register(message, authority(), deadline(), streaming="download") as pending:
         dispatcher.accept(
             RelayTerminal(
                 request_id=message.request_id,
@@ -249,3 +249,58 @@ async def test_waiter_capacity_reserves_cancellation(dispatcher):
         cancellation = request().model_copy(update={"operation": "operation.cancel"})
         with limited.register(cancellation, authority(), deadline()):
             pass
+
+
+async def test_upload_wait_for_credit_is_woken_by_use_loss(dispatcher):
+    message = request().model_copy(update={"payload": {"transfer_id": new_object_id("etr")}})
+    with dispatcher.register(message, authority(), deadline(), streaming="upload") as pending:
+        pending.begin_publication()
+        window = await pending.upload_slot()
+        window.sent(5)
+        waiting = asyncio.create_task(pending.upload_slot())
+        await asyncio.sleep(0)
+        assert not waiting.done()
+        dispatcher.fence_use(USE)
+        with pytest.raises(RelayOperationError) as error:
+            await waiting
+        assert error.value.code == "environment_unavailable"
+
+
+@pytest.mark.parametrize("fault", ["foreign_transfer", "wrong_offset", "out_of_order", "before_finish"])
+async def test_upload_rejects_invalid_credit_and_premature_success(dispatcher, fault):
+    from a13n_service.environments.websocket.relay_protocol import RelayCredit
+
+    message = request().model_copy(update={"payload": {"transfer_id": new_object_id("etr")}})
+    with dispatcher.register(message, authority(), deadline(), streaming="upload") as pending:
+        window = await pending.upload_slot()
+        window.sent(5)
+        position = window.position
+        if fault == "before_finish":
+            dispatcher.accept(RelayTerminal(request_id=message.request_id, use=USE, transfer=position))
+        else:
+            changed = {
+                "foreign_transfer": {"transfer_id": new_object_id("etr")},
+                "wrong_offset": {"offset": 6},
+                "out_of_order": {"sequence": 2},
+            }[fault]
+            dispatcher.accept(
+                RelayCredit(request_id=message.request_id, use=USE, transfer=position.model_copy(update=changed))
+            )
+        with pytest.raises(RelayOperationError) as error:
+            await pending.result()
+        assert error.value.code == "environment_transfer_incomplete"
+
+
+async def test_duplicate_credit_cannot_reopen_a_consumed_slot(dispatcher):
+    from a13n_service.environments.websocket.relay_protocol import RelayCredit
+
+    message = request().model_copy(update={"payload": {"transfer_id": new_object_id("etr")}})
+    with dispatcher.register(message, authority(), deadline(), streaming="upload") as pending:
+        window = await pending.upload_slot()
+        window.sent(5)
+        frame = RelayCredit(request_id=message.request_id, use=USE, transfer=window.position)
+        dispatcher.accept(frame)
+        assert window.has_capacity
+        window.sent(5)
+        dispatcher.accept(frame)
+        assert not window.has_capacity

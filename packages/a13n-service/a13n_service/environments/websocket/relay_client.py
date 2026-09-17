@@ -7,6 +7,7 @@ import math
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from time import monotonic
+from typing import Literal
 
 from anyio import move_on_after
 from pydantic import JsonValue
@@ -15,7 +16,7 @@ from a13n_service.ids import new_object_id
 
 from .authority import DispatchAuthority, DispatchDenied, LeaseDeadline, UseIdentity
 from .coordination import ConfirmedObservation
-from .relay_protocol import CONTROL_OPERATIONS, RelayFailure, RelayRequest
+from .relay_protocol import CONTROL_OPERATIONS, RelayFailure, RelayInput, RelayLimits, RelayRequest, canonical_message
 from .relay_storage import ConnectionRelayStore, RelayStoreError
 from .relay_waiters import PendingRelayRequest, RelayOperationError, RelayResponseDispatcher
 
@@ -47,6 +48,10 @@ class RelayUseClient:
         self._received_at = monotonic()
         self._closed = False
         self._authority.check(identity)
+
+    @property
+    def limits(self) -> RelayLimits:
+        return self._store.limits
 
     async def renew(self, observation: ConfirmedObservation) -> None:
         if (
@@ -91,7 +96,7 @@ class RelayUseClient:
         payload: dict[str, JsonValue],
         *,
         timeout_seconds: float = 30,
-        streaming: bool = False,
+        streaming: Literal["download", "upload"] | None = None,
     ) -> AsyncIterator[PendingRelayRequest]:
         if not math.isfinite(timeout_seconds) or not 0 < timeout_seconds <= 60:
             raise ValueError("Relay operation deadlines must be finite and at most 60 seconds")
@@ -120,6 +125,12 @@ class RelayUseClient:
                     await self._cancel(message)
 
     async def _publish(self, message: RelayRequest, pending: PendingRelayRequest) -> None:
+        canonical_message(
+            message,
+            max_bytes=self._store.limits.control_bytes
+            if message.operation in CONTROL_OPERATIONS
+            else self._store.limits.request_bytes,
+        )
         pending.begin_publication()
         for attempt in range(2):
             try:
@@ -151,6 +162,23 @@ class RelayUseClient:
             except DispatchDenied as error:
                 pending.fail("environment_unavailable")
                 raise RelayOperationError(RelayFailure(code="environment_unavailable", certainty="unknown")) from error
+
+    async def send_input(self, pending: PendingRelayRequest, frame: RelayInput) -> None:
+        if pending.request.use != self.identity:
+            raise ValueError("Input publication requires this client's request")
+        for attempt in range(2):
+            try:
+                async with self._authority.write(self.identity):
+                    self._check()
+                    await self._store.send_input(pending.request, frame)
+                return
+            except RelayStoreError as error:
+                if error.code == "relay_unavailable" and attempt == 0:
+                    continue
+                pending.fail("environment_transfer_incomplete")
+                raise RelayOperationError(
+                    RelayFailure(code="environment_transfer_incomplete", certainty="unknown")
+                ) from error
 
     async def _cancel(self, message: RelayRequest) -> None:
         if message.operation in CONTROL_OPERATIONS or self._closed:

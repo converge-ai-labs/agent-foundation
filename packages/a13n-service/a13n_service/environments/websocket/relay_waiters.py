@@ -10,13 +10,16 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from time import monotonic
+from typing import Literal
 
 from a13n_environment.models import EnvironmentError
 
 from .authority import DispatchAuthority, DispatchDenied, LeaseDeadline, UseIdentity
+from .relay_flow import TransferWindow
 from .relay_protocol import (
     CONTROL_OPERATIONS,
     RelayChunk,
+    RelayCredit,
     RelayFailure,
     RelayFrame,
     RelayRequest,
@@ -50,7 +53,7 @@ class PendingRelayRequest:
         authority: DispatchAuthority,
         deadline: LeaseDeadline,
         *,
-        streaming: bool,
+        streaming: Literal["download", "upload"] | None,
         chunk_capacity: int,
         chunk_bytes: int,
     ) -> None:
@@ -62,7 +65,16 @@ class PendingRelayRequest:
         self._chunk_bytes = chunk_bytes
         self._chunks: deque[ReceivedChunk] = deque()
         self._history: OrderedDict[int, tuple[TransferPosition, bytes]] = OrderedDict()
-        self._transfer_id: str | None = None
+        transfer_id = request.payload.get("transfer_id")
+        if streaming == "upload" and not isinstance(transfer_id, str):
+            raise ValueError("Upload waiters require a transfer identity")
+        self.upload = (
+            TransferWindow(transfer_id, chunk_capacity)
+            if streaming == "upload" and isinstance(transfer_id, str)
+            else None
+        )
+        self._upload_finished = False
+        self._transfer_id: str | None = transfer_id if isinstance(transfer_id, str) else None
         self._sequence = self._offset = 0
         self._terminal: RelayTerminal | None = None
         self._failure: RelayFailure | None = None
@@ -104,6 +116,15 @@ class PendingRelayRequest:
             return
         if isinstance(frame, RelayChunk):
             self._accept_chunk(frame)
+        elif isinstance(frame, RelayCredit):
+            if self.upload is None:
+                self.fail("environment_transfer_incomplete")
+            else:
+                try:
+                    self.upload.credit(frame.transfer)
+                except EnvironmentError:
+                    self.fail("environment_transfer_incomplete")
+                self._changed.set()
         elif frame.error is not None:
             self._remote_completed = True
             self._accept_failure(frame.error)
@@ -115,7 +136,7 @@ class PendingRelayRequest:
             self.fail("environment_transfer_incomplete")
 
     def _accept_chunk(self, frame: RelayChunk) -> None:
-        if not self._streaming or len(frame.data) > ((self._chunk_bytes + 2) // 3) * 4:
+        if self._streaming != "download" or len(frame.data) > ((self._chunk_bytes + 2) // 3) * 4:
             self.fail("environment_transfer_incomplete")
             return
         try:
@@ -154,6 +175,8 @@ class PendingRelayRequest:
     def _valid_terminal(self, frame: RelayTerminal) -> bool:
         if not self._streaming:
             return frame.transfer is None
+        if self.upload is not None:
+            return self._upload_finished and frame.transfer == self.upload.position
         position = frame.transfer
         return (
             position is not None
@@ -161,6 +184,24 @@ class PendingRelayRequest:
             and position.offset == self._offset
             and (self._transfer_id is None or position.transfer_id == self._transfer_id)
         )
+
+    def finish_upload(self) -> TransferPosition:
+        self._check()
+        if self.upload is None:
+            raise ValueError("Only uploads have an input terminator")
+        self._upload_finished = True
+        return self.upload.position
+
+    async def upload_slot(self) -> TransferWindow:
+        if self.upload is None:
+            raise ValueError("Only uploads publish input data")
+        self._check()
+        # Credit and failure wake the common waiter; no second queue can mask
+        # use loss while a producer is waiting for remote capacity.
+        while not self.upload.has_capacity:
+            await self._wait_change()
+            self._check()
+        return self.upload
 
     async def result(self) -> RelayTerminal:
         while True:
@@ -170,8 +211,8 @@ class PendingRelayRequest:
             await self._wait_change()
 
     async def next_chunk(self) -> ReceivedChunk | None:
-        if not self._streaming:
-            raise ValueError("Unary relay operations have no chunk iterator")
+        if self._streaming != "download":
+            raise ValueError("Only downloads have a chunk iterator")
         while True:
             self._check()
             if self._chunks:
@@ -225,7 +266,12 @@ class RelayResponseDispatcher:
 
     @contextmanager
     def register(
-        self, request: RelayRequest, authority: DispatchAuthority, deadline: LeaseDeadline, *, streaming: bool = False
+        self,
+        request: RelayRequest,
+        authority: DispatchAuthority,
+        deadline: LeaseDeadline,
+        *,
+        streaming: Literal["download", "upload"] | None = None,
     ) -> Iterator[PendingRelayRequest]:
         if self._closed or request.use.worker_instance_id != self._mailbox.worker_instance_id:
             raise RelayOperationError(RelayFailure(code="environment_unavailable", certainty="not_dispatched"))

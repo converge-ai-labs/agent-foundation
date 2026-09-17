@@ -20,6 +20,7 @@ class RelayLimits:
     request_bytes: int = 65_536
     response_bytes: int = 262_144
     chunk_bytes: int = 65_536
+    input_window: int = 8
     retained_requests: int = 512
     pending_bytes: int = 8 * 1024 * 1024
     response_frames: int = 2048
@@ -36,6 +37,7 @@ class RelayLimits:
                 self.request_bytes,
                 self.response_bytes,
                 self.chunk_bytes,
+                self.input_window,
                 self.retained_requests,
                 self.pending_bytes,
                 self.response_frames,
@@ -137,11 +139,31 @@ class RelayChunk(DomainModel):
     data: str = Field(repr=False)
 
 
-type RelayFrame = Annotated[RelayTerminal | RelayChunk, Field(discriminator="kind")]
+class RelayCredit(DomainModel):
+    version: Literal[1] = 1
+    kind: Literal["credit"] = "credit"
+    request_id: ObjectId
+    use: UseIdentity
+    transfer: TransferPosition
+
+
+class RelayFinish(DomainModel):
+    version: Literal[1] = 1
+    kind: Literal["finish"] = "finish"
+    request_id: ObjectId
+    use: UseIdentity
+    transfer: TransferPosition
+
+
+type RelayInput = Annotated[RelayChunk | RelayCredit | RelayFinish, Field(discriminator="kind")]
+RELAY_INPUT = TypeAdapter[RelayInput](RelayInput)
+type RelayFrame = Annotated[RelayTerminal | RelayChunk | RelayCredit, Field(discriminator="kind")]
 RELAY_FRAME = TypeAdapter[RelayFrame](RelayFrame)
 
 
-def canonical_message(message: RelayRequest | RelayTerminal | RelayChunk, *, max_bytes: int) -> str:
+def canonical_message(
+    message: RelayRequest | RelayTerminal | RelayChunk | RelayCredit | RelayFinish, *, max_bytes: int
+) -> str:
     """Retain exact canonical input, including bigint Attempt fences, for deduplication."""
     encoded = json.dumps(message.model_dump(mode="json"), sort_keys=True, separators=(",", ":"), allow_nan=False)
     if len(encoded.encode()) > max_bytes:

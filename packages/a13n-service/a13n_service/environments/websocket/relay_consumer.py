@@ -17,11 +17,14 @@ from ..domain import DomainModel
 from .authority import DispatchAuthority, DispatchDenied, UseIdentity
 from .coordination import ConfirmedObservation
 from .relay_protocol import CONTROL_OPERATIONS, RelayFailure, RelayRequest, RelayTerminal
-from .relay_storage import ConnectionRelayStore, RelayStoreError
+from .relay_storage import ConnectionRelayStore, RelayInputDelivery, RelayStoreError
+from .relay_transfers import FileTransferExecution, FileTransferPlan
 
 
 class RelayOperationDispatch(Protocol):
-    def prepare(self, operation: str, payload: dict[str, JsonValue]) -> Callable[[], Awaitable[JsonValue]]: ...
+    def prepare(
+        self, operation: str, payload: dict[str, JsonValue]
+    ) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan: ...
 
 
 class CancelRequest(DomainModel):
@@ -32,6 +35,7 @@ class CancelRequest(DomainModel):
 class _Executing:
     request: RelayRequest
     task: asyncio.Task[None]
+    transfer: FileTransferExecution | None
 
 
 class RelayControlConsumer:
@@ -104,7 +108,10 @@ class RelayControlConsumer:
                             self._authority.check(self._use)
                             if self._closed:
                                 break
-                            await self._admit(tasks, entry, request)
+                            if isinstance(request, RelayInputDelivery):
+                                await self._input(entry, request)
+                            else:
+                                await self._admit(tasks, entry, request)
                 finally:
                     self._closed = True
                     for running in tuple(self._executing.values()):
@@ -143,11 +150,28 @@ class RelayControlConsumer:
             code = "environment_forbidden" if error.code == "environment_forbidden" else "environment_unsupported"
             await self._reject(entry, request, code)
             return
+        if isinstance(execute, FileTransferPlan):
+            transfer = execute.bind(self._store, request, entry)
+            execute = transfer
+        else:
+            transfer = None
         task = tasks.create_task(self._execute(entry, request, execute), name="environment-relay-operation")
-        self._executing[request.request_id] = _Executing(request, task)
+        self._executing[request.request_id] = _Executing(request, task, transfer)
         task.add_done_callback(lambda _: self._executing.pop(request.request_id, None))
 
-    def _prepare(self, request: RelayRequest) -> Callable[[], Awaitable[JsonValue]]:
+    async def _input(self, entry: str, delivery: RelayInputDelivery) -> None:
+        running = self._executing.get(delivery.request.request_id)
+        if running is not None:
+            if delivery.request != running.request or running.transfer is None:
+                raise RelayStoreError("request_conflict")
+            try:
+                running.transfer.accept(delivery.frame)
+            except EnvironmentError as error:
+                running.transfer.failure = error
+                running.task.cancel()
+        await self._store.acknowledge_input(entry, delivery)
+
+    def _prepare(self, request: RelayRequest) -> Callable[[], Awaitable[JsonValue]] | FileTransferPlan:
         if request.operation == "operation.cancel":
             cancel = CancelRequest.model_validate(request.payload)
 
@@ -192,7 +216,12 @@ class RelayControlConsumer:
             async with asyncio.timeout_at(self._deadline(request)):
                 possible_effect = True
                 result = await execute()
-            terminal = RelayTerminal(request_id=request.request_id, use=request.use, result=result)
+            terminal = RelayTerminal(
+                request_id=request.request_id,
+                use=request.use,
+                result=result,
+                transfer=execute.position if isinstance(execute, FileTransferExecution) else None,
+            )
         except (asyncio.CancelledError, TimeoutError, DispatchDenied) as error:
             code = (
                 "environment_cancelled"
@@ -211,6 +240,10 @@ class RelayControlConsumer:
                 request_id=request.request_id,
                 use=request.use,
                 error=RelayFailure.from_environment(error),
+            )
+        if isinstance(execute, FileTransferExecution) and execute.failure is not None:
+            terminal = RelayTerminal(
+                request_id=request.request_id, use=request.use, error=RelayFailure.from_environment(execute.failure)
             )
         await self._complete(entry, request, terminal)
         if request.operation == "scope.close" and terminal.error is None:

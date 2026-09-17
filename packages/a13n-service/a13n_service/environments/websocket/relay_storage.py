@@ -7,7 +7,7 @@ import base64
 import hashlib
 import json
 import re
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from importlib.resources import files
 from typing import Literal
 
@@ -24,8 +24,11 @@ from .relay_protocol import (
     CONTROL_OPERATIONS,
     DEFAULT_RELAY_LIMITS,
     RELAY_FRAME,
+    RELAY_INPUT,
     RelayChunk,
+    RelayCredit,
     RelayFrame,
+    RelayInput,
     RelayLimits,
     RelayRequest,
     RelayTerminal,
@@ -41,6 +44,12 @@ class RelayStoreError(Exception):
     def __init__(self, code: str) -> None:
         self.code = code
         super().__init__("Client Environment operation transport could not complete")
+
+
+@dataclass(frozen=True, slots=True)
+class RelayInputDelivery:
+    request: RelayRequest
+    frame: RelayInput
 
 
 class RelayEvidence(DomainModel):
@@ -115,6 +124,10 @@ class ConnectionRelayStore:
         self.ledger_key = _key("ledger", self._scope)
         self.expiries_key = _key("expiries", self._scope)
 
+    @property
+    def limits(self) -> RelayLimits:
+        return self._storage.limits
+
     async def prepare(self) -> None:
         await self._call("prepare_connection")
 
@@ -143,9 +156,18 @@ class ConnectionRelayStore:
             raise RelayStoreError("response_invalid")
         await self._call("chunk", request, entry_id=entry_id, frame=frame)
 
+    async def credit(self, request: RelayRequest, entry_id: str, frame: RelayCredit) -> None:
+        await self._call("credit", request, entry_id=entry_id, frame=frame)
+
+    async def send_input(self, request: RelayRequest, frame: RelayInput) -> RelayEvidence:
+        return await self._call("send_input", request, input_frame=frame)
+
+    async def acknowledge_input(self, entry_id: str, delivery: RelayInputDelivery) -> None:
+        await self._call("ack_input", delivery.request, entry_id=entry_id, input_frame=delivery.frame)
+
     async def read(
         self, *, pending: bool = False, count: int = 16, after_id: str = "0-0"
-    ) -> tuple[tuple[str, RelayRequest], ...]:
+    ) -> tuple[tuple[str, RelayRequest | RelayInputDelivery], ...]:
         rows = await self._storage.read(
             self.requests_key,
             "owner",
@@ -154,7 +176,7 @@ class ConnectionRelayStore:
             count=count,
             after_id=after_id,
         )
-        result: list[tuple[str, RelayRequest]] = []
+        result: list[tuple[str, RelayRequest | RelayInputDelivery]] = []
         try:
             for entry, fields in rows:
                 raw = fields["request"]
@@ -163,7 +185,15 @@ class ConnectionRelayStore:
                 request = RelayRequest.model_validate_json(raw)
                 if fields["request_id"] != request.request_id or self._encode(request) != raw:
                     raise ValueError("Relay request is not canonical or scoped to this connection")
-                result.append((entry, request))
+                if "input" in fields:
+                    if len(fields["input"].encode()) > self.limits.response_bytes:
+                        raise ValueError("Relay input exceeds its byte budget")
+                    frame = RELAY_INPUT.validate_json(fields["input"])
+                    if self._encode_input(request, frame) != fields["input"]:
+                        raise ValueError("Relay input is not canonical")
+                    result.append((entry, RelayInputDelivery(request, frame)))
+                else:
+                    result.append((entry, request))
         except (KeyError, ValueError, TypeError) as error:
             raise RelayStoreError("request_invalid") from error
         return tuple(result)
@@ -178,6 +208,24 @@ class ConnectionRelayStore:
         )
         return canonical_message(request, max_bytes=limit)
 
+    def _encode_input(self, request: RelayRequest, frame: RelayInput) -> str:
+        expected = "file.read_bytes" if isinstance(frame, RelayCredit) else "file.write_bytes"
+        if (
+            request.operation != expected
+            or frame.request_id != request.request_id
+            or frame.use != request.use
+            or frame.transfer.transfer_id != request.payload.get("transfer_id")
+        ):
+            raise RelayStoreError("transfer_conflict")
+        if isinstance(frame, RelayChunk):
+            try:
+                data = base64.b64decode(frame.data, validate=True)
+            except ValueError as error:
+                raise RelayStoreError("request_invalid") from error
+            if not 0 < len(data) <= self.limits.chunk_bytes or base64.b64encode(data).decode() != frame.data:
+                raise RelayStoreError("request_invalid")
+        return canonical_message(frame, max_bytes=self.limits.response_bytes)
+
     async def _call(
         self,
         operation: str,
@@ -185,6 +233,7 @@ class ConnectionRelayStore:
         *,
         entry_id: str | None = None,
         frame: RelayFrame | None = None,
+        input_frame: RelayInput | None = None,
     ) -> RelayEvidence:
         reply_key = _UNUSED_KEY
         payload: dict[str, object] = {
@@ -200,6 +249,17 @@ class ConnectionRelayStore:
             payload["is_control"] = request.operation in CONTROL_OPERATIONS
         if entry_id is not None:
             payload["entry_id"] = entry_id
+        if input_frame is not None:
+            if request is None:
+                raise RelayStoreError("request_invalid")
+            encoded = self._encode_input(request, input_frame)
+            payload["input_json"] = encoded
+            payload["input_digest"] = hashlib.sha256(encoded.encode()).hexdigest()
+            payload["input_kind"] = input_frame.kind
+            payload["transfer"] = input_frame.transfer.model_dump()
+            payload["chunk_bytes"] = (
+                len(base64.b64decode(input_frame.data, validate=True)) if isinstance(input_frame, RelayChunk) else 0
+            )
         if frame is not None:
             if request is None or frame.request_id != request.request_id or frame.use != request.use:
                 raise RelayStoreError("response_invalid")
@@ -208,11 +268,13 @@ class ConnectionRelayStore:
                 if request.operation in CONTROL_OPERATIONS
                 else self._storage.limits.response_bytes
             )
-            payload["response_json"] = canonical_message(frame, max_bytes=limit)
+            encoded = canonical_message(frame, max_bytes=limit)
+            payload["response_json"] = encoded
+            payload["response_digest"] = hashlib.sha256(encoded.encode()).hexdigest()
             payload["transfer"] = None if frame.transfer is None else frame.transfer.model_dump()
             if isinstance(frame, RelayChunk):
                 payload["chunk_bytes"] = len(base64.b64decode(frame.data, validate=True))
-            else:
+            elif isinstance(frame, RelayTerminal):
                 payload["not_dispatched"] = frame.error is not None and frame.error.certainty == "not_dispatched"
                 payload["failed"] = frame.error is not None
         return await self._storage.call((self.requests_key, self.ledger_key, self.expiries_key, reply_key), **payload)

@@ -88,6 +88,10 @@ elseif input.operation == 'prune' then
             redis.call('XACK', requests, 'owner', record.entry_id)
             redis.call('XDEL', requests, record.entry_id)
         end
+        for entry in pairs(record.inputs or {}) do
+            redis.call('XACK', requests, 'owner', entry)
+            redis.call('XDEL', requests, entry)
+        end
         redis.call('HDEL', ledger, id)
         redis.call('ZREM', expiries, id)
         count, bytes = count - 1, bytes - record.cost
@@ -132,6 +136,83 @@ end
 
 if not record then return reply('outcome_unknown') end
 if record.phase == 'reserved' then return reply('outcome_unknown') end
+-- Input frames belong to one retained operation. Their transport ACK releases
+-- memory only; the parent terminal remains the sole evidence of file mutation.
+if input.operation == 'send_input' or input.operation == 'ack_input' then
+    local encoded, position = input.input_json, input.transfer
+    if not encoded or #encoded > limits.response_bytes or not position then return reply('request_invalid') end
+    if record.input_reserved then return reply('outcome_unknown') end
+    local digest = input.input_digest
+    local last = record.last_input
+    if input.operation == 'ack_input' then
+        if not input.entry_id then return reply('request_invalid') end
+        local cost = (record.inputs or {})[input.entry_id]
+        local entries = redis.call('XRANGE', requests, input.entry_id, input.entry_id)
+        if #entries == 0 and not cost then return reply('ok') end
+        local pending = redis.call('XPENDING', requests, 'owner', input.entry_id, input.entry_id, 1)
+        if not cost or #entries ~= 1 or #pending ~= 1 or pending[1][2] ~= input.owner then
+            return reply('request_not_owned')
+        end
+        local fields, found_request, found_input = entries[1][2], nil, nil
+        for index = 1, #fields, 2 do
+            if fields[index] == 'request' then found_request = fields[index + 1] end
+            if fields[index] == 'input' then found_input = fields[index + 1] end
+        end
+        if found_request ~= request_json or found_input ~= encoded then return reply('request_conflict') end
+        redis.call('XACK', requests, 'owner', input.entry_id)
+        redis.call('XDEL', requests, input.entry_id)
+        record.inputs[input.entry_id] = nil
+        record.cost, bytes = record.cost - cost, bytes - cost
+        redis.call('HSET', ledger, id, cjson.encode(record), '_bytes', bytes)
+        return reply('ok')
+    end
+    if input.deadline_ms <= now then return reply('request_expired') end
+    if last and last.digest == digest then return reply('ok', {entry_id = last.entry_id}) end
+    if record.phase == 'completed' and input.input_kind == 'credit' then
+        local stream = record.stream
+        if stream and position.transfer_id == stream.transfer_id and position.sequence <= stream.sequence and
+           position.offset <= stream.offset then return reply('ok') end
+        return reply('transfer_conflict')
+    end
+    if record.phase ~= 'queued' and record.phase ~= 'inflight' then return reply('request_not_started') end
+    if record.input_finished then return reply('transfer_conflict') end
+    local previous = record.input_position or {transfer_id = position.transfer_id, sequence = 0, offset = 0}
+    if previous.transfer_id ~= position.transfer_id then return reply('transfer_conflict') end
+    local next_position
+    if input.input_kind == 'credit' then
+        local stream = record.stream
+        if not stream or position.sequence ~= previous.sequence + 1 or position.offset <= previous.offset or
+           position.sequence > stream.sequence or position.offset > stream.offset then return reply('transfer_conflict') end
+        next_position = position
+    else
+        if position.sequence ~= previous.sequence or position.offset ~= previous.offset then
+            return reply('transfer_conflict')
+        end
+        if input.input_kind == 'chunk' then
+            if input.chunk_bytes <= 0 or input.chunk_bytes > limits.chunk_bytes then return reply('request_invalid') end
+            next_position = {transfer_id = position.transfer_id, sequence = position.sequence + 1,
+                             offset = position.offset + input.chunk_bytes}
+        elseif input.input_kind == 'finish' then next_position = position
+        else return reply('request_invalid') end
+    end
+    local inputs, pending_count = record.inputs or {}, 0
+    for _ in pairs(inputs) do pending_count = pending_count + 1 end
+    local capacity = limits.input_window + (input.input_kind == 'finish' and 1 or 0)
+    local cost = (#request_json + #encoded) * 2 + 256
+    if pending_count >= capacity or bytes + cost > byte_limit then return reply('relay_overloaded') end
+    -- Reserve before appending: a partial script can never silently retry an
+    -- input whose publication is uncertain, nor exceed the retained byte bound.
+    record.input_reserved, record.cost = true, record.cost + cost
+    redis.call('HSET', ledger, id, cjson.encode(record), '_bytes', bytes + cost)
+    local entry = redis.call('XADD', requests, '*', 'request_id', id, 'request', request_json, 'input', encoded)
+    inputs[entry] = cost
+    record.inputs, record.input_reserved, record.input_position = inputs, nil, next_position
+    record.input_finished = input.input_kind == 'finish'
+    record.last_input = {digest = digest, entry_id = entry}
+    redis.call('HSET', ledger, id, cjson.encode(record))
+    return reply('ok', {entry_id = entry})
+end
+
 if not input.entry_id then return reply('request_invalid') end
 
 -- Completed originals may already have been ACKed/deleted. Other entries must
@@ -143,6 +224,7 @@ if not completed_original then
     if #pending ~= 1 or pending[1][2] ~= input.owner or #entries ~= 1 then return reply('request_not_owned') end
     local fields, found_id, found_request = entries[1][2], nil, nil
     for index = 1, #fields, 2 do
+        if fields[index] == 'input' then return reply('request_not_owned') end
         if fields[index] == 'request_id' then found_id = fields[index + 1] end
         if fields[index] == 'request' then found_request = fields[index + 1] end
     end
@@ -162,7 +244,23 @@ end
 
 local response_json = input.response_json
 if not response_json or #response_json > limits.response_bytes then return reply('response_invalid') end
-if input.operation == 'chunk' then
+if input.operation == 'credit' then
+    if input.deadline_ms <= now then return reply('request_expired') end
+    if record.phase ~= 'inflight' then return reply('request_not_started') end
+    if record.last_credit == input.response_digest then return reply('ok') end
+    local position, uploaded = input.transfer, record.input_position
+    local previous = record.stream or {transfer_id = position.transfer_id, sequence = 0, offset = 0}
+    if not uploaded or uploaded.transfer_id ~= position.transfer_id or previous.transfer_id ~= position.transfer_id or
+       position.sequence ~= previous.sequence + 1 or position.offset <= previous.offset or
+       position.sequence > uploaded.sequence or position.offset > uploaded.offset then return reply('transfer_conflict') end
+    if redis.call('XLEN', responses) >= limits.response_frames - limits.terminal_reserve then
+        return reply('relay_overloaded')
+    end
+    redis.call('XADD', responses, '*', 'frame', response_json)
+    record.stream, record.last_credit = position, input.response_digest
+    redis.call('HSET', ledger, id, cjson.encode(record))
+    return reply('ok')
+elseif input.operation == 'chunk' then
     if input.deadline_ms <= now then return reply('request_expired') end
     if record.phase ~= 'inflight' then return reply('request_not_started') end
     local position = input.transfer
@@ -189,6 +287,13 @@ else
     if not input.failed then
         local position = input.transfer ~= cjson.null and input.transfer or nil
         local stream = record.stream
+        local request = cjson.decode(request_json)
+        if request.operation == 'file.write_bytes' then
+            local uploaded = record.input_position
+            if not record.input_finished or not position or not uploaded or
+               uploaded.transfer_id ~= position.transfer_id or uploaded.sequence ~= position.sequence or
+               uploaded.offset ~= position.offset then return reply('transfer_conflict') end
+        end
         if stream and (not position or stream.transfer_id ~= position.transfer_id or stream.sequence ~= position.sequence or
                        stream.offset ~= position.offset) then return reply('transfer_conflict') end
         if position and not stream and (position.sequence ~= 0 or position.offset ~= 0) then return reply('transfer_conflict') end
