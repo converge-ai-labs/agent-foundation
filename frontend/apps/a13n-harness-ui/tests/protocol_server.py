@@ -117,6 +117,19 @@ async def main() -> None:
                 yield "Preparing the review.\n\n"
                 await asyncio.sleep(1)
                 raise httpx2.ReadError("Isolated fixture interruption")
+            if "--streaming-layout" in sys.argv:
+                # Deterministic browser QA: repeated line/Markdown reflow without
+                # a paid model, followed by the ordinary saved-history cutover.
+                yield "## Streaming layout\n\n"
+                for index in range(40):
+                    yield f"Paragraph {index + 1}: "
+                    for _ in range(4):
+                        yield "The reader follows new output without restarting its connection. "
+                        await asyncio.sleep(0.08)
+                    yield "\n\n"
+                yield "| Surface | Status |\n| --- | --- |\n| Streaming | Complete |\n\n"
+                yield "Layout verification complete."
+                return
             if "--rich-output" in sys.argv:
                 yield "## Review result\n\nThe conversation stays readable while work continues.\n\n"
                 await asyncio.sleep(2)

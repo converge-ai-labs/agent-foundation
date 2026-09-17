@@ -107,6 +107,64 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+it("keeps a public startup shell instead of flashing login while checking a retained key", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  window.history.replaceState(
+    null,
+    "",
+    "/settings/source?path=agents%2Fassistant.yaml",
+  );
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const requests: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      requests.push(path);
+      if (path === "/api/status") await delayed;
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  expect(screen.getByText("Connecting to Harness UI…")).toBeTruthy();
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  expect(screen.queryByLabelText("Name")).toBeNull();
+  expect(requests).toEqual(["/api/status"]);
+  release();
+  await screen.findByLabelText("Name");
+  expect(
+    screen.queryByRole("heading", { name: "Log in to Harness UI" }),
+  ).toBeNull();
+  expect(window.location.pathname + window.location.search).toBe(
+    "/settings/source?path=agents%2Fassistant.yaml",
+  );
+});
+
+it("distinguishes an unavailable listener from rejected credentials and retries the same key", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  let unavailable = true;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (unavailable) throw new TypeError("Network unavailable");
+      expect(request.headers.get("Authorization")).toBe("Bearer retained-key");
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  await screen.findByText(
+    "Unable to reach the server. Check your connection and try again.",
+  );
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  unavailable = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+  await screen.findByText("1.2.3rc2");
+  expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("retained-key");
+});
+
 it("consumes the fragment before all network requests and retains only an accepted key", async () => {
   window.history.replaceState(null, "", "/#api_key=generated%2Bkey&keep=yes");
   const fetcher = vi.fn((request: Request) => {

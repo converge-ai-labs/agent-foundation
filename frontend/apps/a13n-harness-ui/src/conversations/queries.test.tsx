@@ -63,6 +63,31 @@ it("retains successful history and its identity across replacement loading and e
   queryClient.clear();
 });
 
+it("uses warmed history on first mount while a newer continuation loads", () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(["thread", "one", "history", "C0"], {
+    pages: [{ continuation_id: "C0", entries: [], next_cursor: null }],
+    pageParams: [undefined],
+  });
+  const transport = {
+    client: { GET: vi.fn(() => new Promise(() => {})) },
+  } as unknown as Transport;
+  const hook = renderHook(() => useHistory("one", "C1", true), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportContext value={transport}>{children}</TransportContext>
+      </QueryClientProvider>
+    ),
+  });
+  expect(hook.result.current.data?.pages[0].continuation_id).toBe("C0");
+  expect(hook.result.current.isPreviousHistory).toBe(true);
+  expect(hook.result.current.hasNextPage).toBe(false);
+  hook.unmount();
+  queryClient.clear();
+});
+
 it("bootstraps initial detail and operation from a snapshot and fences a slower initial HTTP read", async () => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },

@@ -50,6 +50,7 @@ import { ConversationPage } from "../conversations/conversation";
 import { NewConversationPage } from "../conversations/new-conversation";
 import { NativeWorkspace } from "../native/workspace";
 import { ResultsProvider, useResults } from "../conversations/results";
+import { LiveThreadsProvider } from "../conversations/live-threads";
 
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
@@ -80,7 +81,9 @@ export function Workbench(props: {
 }) {
   return (
     <ResultsProvider>
-      <WorkbenchContent {...props} />
+      <LiveThreadsProvider>
+        <WorkbenchContent {...props} />
+      </LiveThreadsProvider>
     </ResultsProvider>
   );
 }

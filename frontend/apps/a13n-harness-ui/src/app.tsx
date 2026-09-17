@@ -2,7 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BrowserRouter } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
-import { createTransport, result, type Schema } from "./transport/client";
+import {
+  ApiError,
+  createTransport,
+  result,
+  type Schema,
+} from "./transport/client";
+import { Startup } from "./shell/startup";
 import { TransportContext } from "./transport/context";
 import { DraftContext, type SourceDraft } from "./configuration/sources";
 import { Workbench } from "./shell/workbench";
@@ -54,6 +60,9 @@ export function BrowserApp() {
   const [status, setStatus] = useState<Schema<"ListenerStatus"> | null>(null);
   const [error, setError] = useState("");
   const [connecting, setConnecting] = useState(true);
+  const [access, setAccess] = useState<"checking" | "login" | "unavailable">(
+    "checking",
+  );
   const drafts = useRef(new Map<string, SourceDraft>());
   const composers = useRef(new Map<string, ThreadDraft>());
   const [newConversations] = useState(() => {
@@ -77,6 +86,7 @@ export function BrowserApp() {
   const unauthorized = useCallback(() => {
     transportRef.current?.close();
     setStatus(null);
+    setAccess("login");
     setError("Access expired. Enter the API key printed by this server.");
     setConnecting(false);
     void queries.cancelQueries();
@@ -115,6 +125,10 @@ export function BrowserApp() {
       })
       .catch((failure: unknown) => {
         if (active) {
+          if (!(failure instanceof ApiError && failure.status === 401))
+            setAccess((current) =>
+              current === "login" ? current : "unavailable",
+            );
           setError(
             failure instanceof Error ? failure.message : "Connection failed.",
           );
@@ -132,6 +146,7 @@ export function BrowserApp() {
     retainKey("");
     setInput("");
     setKey("");
+    setAccess("login");
     queries.clear();
     setStatus(null);
     setAttempt((value) => value + 1);
@@ -154,6 +169,17 @@ export function BrowserApp() {
                         />
                       </NotificationsProvider>
                     </BrowserRouter>
+                  ) : access !== "login" ? (
+                    <Startup
+                      error={error}
+                      connecting={connecting}
+                      retry={() => {
+                        setError("");
+                        setConnecting(true);
+                        setAccess("checking");
+                        setAttempt((value) => value + 1);
+                      }}
+                    />
                   ) : (
                     <main className={styles.access}>
                       <div className={styles.accessCard}>

@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import {
   useInfiniteQuery,
   useQuery,
+  useQueryClient,
   type Query,
   type QueryClient,
 } from "@tanstack/react-query";
@@ -199,6 +200,7 @@ export function useHistory(
   enabled: boolean,
 ) {
   const { client } = useTransport();
+  const queries = useQueryClient();
   const query = useInfiniteQuery({
     queryKey: ["thread", threadId, "history", continuation],
     enabled,
@@ -227,17 +229,26 @@ export function useHistory(
   useEffect(() => {
     if (query.isSuccess) previous.current = { threadId, data: query.data };
   }, [threadId, query.data, query.isSuccess]);
+  // A newly opened page can reuse history warmed by the workbench even while a
+  // newer continuation is loading. Keep its original identity, never relabel it.
+  const cached =
+    !query.data && previous.current?.threadId !== threadId
+      ? queries
+          .getQueryCache()
+          .findAll({ queryKey: ["thread", threadId, "history"] })
+          .filter((candidate) => candidate.state.data !== undefined)
+          .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)[0]
+      : undefined;
+  const retained =
+    previous.current?.threadId === threadId
+      ? previous.current.data
+      : cached
+        ? queries.getQueryData<NonNullable<typeof query.data>>(cached.queryKey)
+        : undefined;
   return {
     ...query,
-    data:
-      query.data ??
-      (previous.current?.threadId === threadId
-        ? previous.current.data
-        : undefined),
+    data: query.data ?? retained,
     hasNextPage: !!query.data && query.hasNextPage,
-    isPreviousHistory:
-      !query.data &&
-      previous.current?.threadId === threadId &&
-      !!previous.current.data,
+    isPreviousHistory: !query.data && !!retained,
   };
 }

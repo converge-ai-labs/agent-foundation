@@ -22,6 +22,7 @@ import {
 } from "./new-conversation";
 import { NewDraftStore } from "./new-draft";
 import { ConversationPage } from "./conversation";
+import { LiveThreadsProvider } from "./live-threads";
 import type { Schema } from "../transport/client";
 
 const id = `thread_${"a".repeat(32)}`;
@@ -304,44 +305,46 @@ function mount(initial = path) {
         <ComposerDrafts value={drafts}>
           <NewConversationDrafts value={creations}>
             <MemoryRouter initialEntries={[initial]}>
-              <Link to="/settings">Settings</Link>
-              <Link to={initial}>Return to draft</Link>
-              <Link to="/">Home</Link>
-              <Link to={newConversationPath("project-two")}>
-                New in second project
-              </Link>
-              <Link to={newConversationPath()}>New without project</Link>
-              <Location />
-              <Routes>
-                <Route
-                  path="/new/:draftId?"
-                  element={
-                    <NewConversationPage
-                      profile={{ display_name: "Test", color: "#000000" }}
-                      unauthorized={() => {}}
-                    />
-                  }
-                />
-                <Route
-                  path="/"
-                  element={
-                    <NewConversationPage
-                      profile={{ display_name: "Test", color: "#000000" }}
-                      unauthorized={() => {}}
-                    />
-                  }
-                />
-                <Route
-                  path="/threads/:threadId"
-                  element={
-                    <ConversationPage
-                      profile={{ display_name: "Test", color: "#000000" }}
-                      unauthorized={() => {}}
-                    />
-                  }
-                />
-                <Route path="*" element={<p>Other page</p>} />
-              </Routes>
+              <LiveThreadsProvider>
+                <Link to="/settings">Settings</Link>
+                <Link to={initial}>Return to draft</Link>
+                <Link to="/">Home</Link>
+                <Link to={newConversationPath("project-two")}>
+                  New in second project
+                </Link>
+                <Link to={newConversationPath()}>New without project</Link>
+                <Location />
+                <Routes>
+                  <Route
+                    path="/new/:draftId?"
+                    element={
+                      <NewConversationPage
+                        profile={{ display_name: "Test", color: "#000000" }}
+                        unauthorized={() => {}}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/"
+                    element={
+                      <NewConversationPage
+                        profile={{ display_name: "Test", color: "#000000" }}
+                        unauthorized={() => {}}
+                      />
+                    }
+                  />
+                  <Route
+                    path="/threads/:threadId"
+                    element={
+                      <ConversationPage
+                        profile={{ display_name: "Test", color: "#000000" }}
+                        unauthorized={() => {}}
+                      />
+                    }
+                  />
+                  <Route path="*" element={<p>Other page</p>} />
+                </Routes>
+              </LiveThreadsProvider>
             </MemoryRouter>
           </NewConversationDrafts>
         </ComposerDrafts>
@@ -375,7 +378,13 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
   });
   await screen.findByRole("button", { name: "notes.txt · ready to upload" });
   expect(writes).toHaveLength(0);
-  expect(reads.some((item) => item.startsWith("/api/threads/"))).toBe(false);
+  // Workbench discovery may read activity, but blank input has no Thread yet.
+  expect(
+    reads.some(
+      (item) =>
+        item.startsWith("/api/threads/") && item !== "/api/threads/activity",
+    ),
+  ).toBe(false);
   expect(ThreadDraft.prototype.connect).not.toHaveBeenCalled();
   const send = screen.getByRole("button", { name: "Send" });
   fireEvent.click(send);
@@ -893,14 +902,15 @@ it("keeps saved history at the real bottom after viewport resize without reclaim
     '[class*="reading"]',
   )! as HTMLElement;
   let height = 600;
+  let contentHeight = 2000;
   let top = 0;
   Object.defineProperties(reader, {
-    scrollHeight: { get: () => 2000 },
+    scrollHeight: { get: () => contentHeight },
     clientHeight: { get: () => height },
     scrollTop: {
       get: () => top,
       set: (value: number) => {
-        top = Math.max(0, Math.min(value, 2000 - height));
+        top = Math.max(0, Math.min(value, contentHeight - height));
       },
     },
   });
@@ -910,10 +920,48 @@ it("keeps saved history at the real bottom after viewport resize without reclaim
   height = 560;
   act(() => resized());
   expect(top).toBe(1440);
+  // Streaming commits must not start an animation for ResizeObserver to cancel.
+  // Simulate a line arriving and then a Markdown reflow reducing its height.
+  const frames = vi.spyOn(window, "requestAnimationFrame");
+  for (const next of [2026, 2052, 2026]) {
+    contentHeight = next;
+    await act(async () => {
+      queries.setQueriesData(
+        { queryKey: ["thread", id, "history"] },
+        {
+          pages: [
+            {
+              continuation_id: "initial:one",
+              entries: [
+                {
+                  position: 0,
+                  message_kind: "response",
+                  parts: [{ kind: "assistant", text: `Updated ${next}` }],
+                },
+              ],
+              next_cursor: null,
+            },
+          ],
+          pageParams: [undefined],
+        },
+      );
+    });
+    await screen.findByText(`Updated ${next}`);
+    expect(top).toBe(contentHeight - height);
+    act(() => resized());
+    expect(top).toBe(contentHeight - height);
+  }
+  expect(frames).not.toHaveBeenCalled();
+  frames.mockRestore();
+  contentHeight = 2000;
+  act(() => resized());
   fireEvent.wheel(reader, { deltaY: -30 });
   reader.scrollTop -= 30;
   fireEvent.scroll(reader);
   height = 540;
+  act(() => resized());
+  expect(top).toBe(1410);
+  contentHeight += 100;
   act(() => resized());
   expect(top).toBe(1410);
 });

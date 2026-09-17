@@ -277,12 +277,22 @@
   font-size: 13px;
 }
 .page {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
 }
 .activityBar {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  z-index: 2;
+  max-width: calc(100% - 16px);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--a13n-surface);
+  pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: flex-end;
