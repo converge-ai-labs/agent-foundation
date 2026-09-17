@@ -33,6 +33,7 @@ let paused: Promise<void> | undefined;
 let readPaused: Promise<void> | undefined;
 let readFailure = false;
 let historyPaused: Promise<void> | undefined;
+let focusPaused: Promise<void> | undefined;
 let focused: Schema<"ThreadFocusSnapshot"> | undefined;
 const threadDetail: Schema<"ThreadDetail"> = {
   thread: {
@@ -70,6 +71,7 @@ beforeEach(() => {
   readPaused = undefined;
   readFailure = false;
   historyPaused = undefined;
+  focusPaused = undefined;
   focused = undefined;
   drafts = new Map();
   localStorage.clear();
@@ -198,15 +200,21 @@ beforeEach(() => {
           return json(detail);
         }
         if (pathname === `/api/threads/${id}/events`) {
+          await focusPaused;
+          const snapshot = focused ?? {
+            epoch: "epoch-one",
+            cutover_sequence: 0,
+            thread: threadDetail,
+            children: { executions: [], total: 0 },
+          };
           return new Response(
             new ReadableStream({
               start(controller) {
-                if (focused)
-                  controller.enqueue(
-                    new TextEncoder().encode(
-                      `data: ${JSON.stringify({ kind: "snapshot", snapshot: focused, resume_cursor: "cursor-one" })}\n\n`,
-                    ),
-                  );
+                controller.enqueue(
+                  new TextEncoder().encode(
+                    `data: ${JSON.stringify({ kind: "snapshot", snapshot, resume_cursor: "cursor-one" })}\n\n`,
+                  ),
+                );
                 request.signal.addEventListener(
                   "abort",
                   () => controller.close(),
@@ -549,33 +557,47 @@ it("distinguishes inherited choices and sends an independent model without chang
   });
 });
 
-it("opens immediately with retained input and a stable composer while detail and history load", async () => {
+it("reveals the new conversation together after detail, history and editor initialize", async () => {
   let resume!: () => void;
-  readPaused = new Promise<void>((resolve) => {
+  let resumeHistory!: () => void;
+  readPaused = focusPaused = new Promise<void>((resolve) => {
     resume = resolve;
   });
-  mount();
+  historyPaused = new Promise<void>((resolve) => {
+    resumeHistory = resolve;
+  });
+  const view = mount();
   await fill();
-  historyPaused = new Promise(() => {});
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(reads).toContain(`/api/threads/${id}/events`));
-  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  const editor = view.container.querySelector('[role="textbox"]')!;
   const input = screen.getByText("Build this");
   expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
-  expect(screen.queryByText(/Accepted|Preparing…|Sending…/)).toBeNull();
+  expect(screen.queryByRole("textbox", { name: "Shared prompt" })).toBeNull();
+  expect(screen.getByText("Opening conversation…")).toBeTruthy();
   expect(writes).toHaveLength(2);
   await act(async () => resume());
-  await waitFor(() =>
-    expect(screen.getByLabelText("Location").textContent).toBe(
-      `/threads/${id}`,
-    ),
-  );
-  expect(queries.getQueryData(["thread", id, "detail"])).toBeTruthy();
   await waitFor(() => expect(reads).toContain(`/api/threads/${id}/transcript`));
+  expect(drafts.get(id)!.status).toBe("Connected");
+  expect(screen.queryByRole("textbox", { name: "Shared prompt" })).toBeNull();
+  await act(async () => resumeHistory());
+  expect(await screen.findByRole("textbox", { name: "Shared prompt" })).toBe(
+    editor,
+  );
+  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(document.activeElement).toBe(editor);
   expect(screen.getByText("Build this")).toBe(input);
-  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
   expect(screen.queryByText("Start something together.")).toBeNull();
   expect(writes).toHaveLength(2);
+  // Later observations do not replace the composer or re-enter loading.
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Follow up"));
+  await act(async () => {
+    await queries.invalidateQueries({ queryKey: ["thread", id] });
+  });
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(editor.textContent).toBe("Follow up");
+  expect(document.activeElement).toBe(editor);
+  expect(screen.queryByText("Opening conversation…")).toBeNull();
 });
 
 function reload(initial = path) {
@@ -813,7 +835,6 @@ it("uses the focused first frame without waiting for a slow detail read or allow
   readPaused = new Promise<void>((resolve) => {
     release = resolve;
   });
-  historyPaused = new Promise(() => {});
   focused = {
     epoch: "epoch-one",
     cutover_sequence: 1,
@@ -917,3 +938,197 @@ it("keeps saved history at the real bottom after viewport resize without reclaim
   act(() => resized());
   expect(top).toBe(1410);
 });
+
+it("waits for project, catalog and the selected defaults before exposing the new composer", async () => {
+  const release = new Map<string, () => void>();
+  const waits = new Map(
+    [
+      "/api/projects",
+      "/api/selectors",
+      "/api/threads/configuration-preview",
+    ].map((path) => [
+      path,
+      new Promise<void>((resolve) => release.set(path, resolve)),
+    ]),
+  );
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const path = new URL((request as Request).url).pathname;
+    await waits.get(path);
+    return original(request);
+  });
+  mount();
+  expect(screen.getByText("Preparing your conversation…")).toBeTruthy();
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("heading")).toBeNull();
+  await act(async () => release.get("/api/projects")!());
+  await act(async () => release.get("/api/selectors")!());
+  expect(screen.queryByRole("textbox")).toBeNull();
+  await act(async () => release.get("/api/threads/configuration-preview")!());
+  const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(document.activeElement).toBe(editor);
+  expect(screen.getByRole("heading").textContent).toContain("Example project");
+  expect(
+    screen.getByRole("combobox", { name: "Environment" }).textContent,
+  ).toContain("Local");
+  expect(screen.queryByText("Preparing your conversation…")).toBeNull();
+  expect(writes).toHaveLength(0);
+});
+
+it("keeps the new draft sendable during background preview refresh and explains changed defaults", async () => {
+  mount();
+  await fill();
+  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  let release!: () => void;
+  const paused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    if (
+      new URL((request as Request).url).pathname.endsWith(
+        "configuration-preview",
+      )
+    )
+      await paused;
+    return original(request);
+  });
+  act(() => {
+    void queries.invalidateQueries({ queryKey: ["new-thread-preview"] });
+  });
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(false);
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByText("Updating conversation settings…");
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(screen.queryByText("Preparing your conversation…")).toBeNull();
+  fireEvent.keyDown(editor, { key: "Enter" });
+  expect(writes).toHaveLength(0);
+  await act(async () => release());
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.keyDown(editor, { key: "Enter" });
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect((await writes[0].json()).defaults.project_id).toBe("project-two");
+});
+
+it("reveals setup errors instead of trapping a retained new draft behind loading", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) =>
+    new URL((request as Request).url).pathname.endsWith("configuration-preview")
+      ? json({ error: { message: "Choose an available agent" } }, 400)
+      : original(request),
+  );
+  mount();
+  const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(screen.getByText("Choose an available agent")).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Continue setup" })).toBeTruthy();
+  expect(screen.queryByText("Preparing your conversation…")).toBeNull();
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Keep this"));
+  fireEvent.keyDown(editor, { key: "Enter" });
+  expect(writes).toHaveLength(0);
+  expect(values(drafts.get(id)!.doc).prompt).toBe("Keep this");
+});
+
+it("waits for focused replay on an existing conversation and retains the page for later sends", async () => {
+  let release!: () => void;
+  focusPaused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  mount(`/threads/${id}?compose=1`);
+  await waitFor(() => expect(reads).toContain(`/api/threads/${id}/transcript`));
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.getByText("Opening conversation…")).toBeTruthy();
+  await act(async () => release());
+  const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(document.activeElement).toBe(editor);
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue our work"));
+  await waitFor(() => expect(drafts.get(id)!.synchronized).toBe(true));
+  fireEvent.keyDown(editor, { key: "Enter" });
+  await waitFor(() => expect(writes).toHaveLength(1));
+  await waitFor(() => expect(values(drafts.get(id)!.doc).prompt).toBe(""));
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(screen.queryByText("Opening conversation…")).toBeNull();
+  expect(screen.getByText("Continue our work")).toBeTruthy();
+});
+
+it("shows saved content with a reconnect notice when the initial live connection fails", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) =>
+    new URL((request as Request).url).pathname.endsWith("/events")
+      ? new Response("Unavailable", { status: 503 })
+      : original(request),
+  );
+  mount(`/threads/${id}`);
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(await screen.findByText(/Reconnecting live updates/)).toBeTruthy();
+  expect(screen.queryByText("Opening conversation…")).toBeNull();
+});
+
+it.each([false, true])(
+  "restores reading position before automatic pagination after delayed opening (saved: %s)",
+  async (saved) => {
+    if (saved)
+      localStorage.setItem(
+        `a13n-harness-ui.scroll.${id}`,
+        JSON.stringify({ top: 430, follow: false }),
+      );
+    let releaseFocus!: () => void;
+    let releaseHistory!: () => void;
+    focusPaused = new Promise<void>((resolve) => {
+      releaseFocus = resolve;
+    });
+    const delayedHistory = new Promise<void>((resolve) => {
+      releaseHistory = resolve;
+    });
+    const historyRequests: string[] = [];
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (request) => {
+      const url = new URL((request as Request).url);
+      if (!url.pathname.endsWith("/transcript")) return original(request);
+      historyRequests.push(url.search);
+      await delayedHistory;
+      return json({
+        continuation_id: "initial:one",
+        entries: [],
+        next_cursor: "older",
+      });
+    });
+    const view = mount(`/threads/${id}`);
+    const reader = view.container.querySelector(
+      '[class*="reading"]',
+    )! as HTMLElement;
+    let top = 0;
+    Object.defineProperties(reader, {
+      scrollHeight: { get: () => 2500 },
+      clientHeight: { get: () => 500 },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => {
+          top = Math.max(0, Math.min(2000, value));
+        },
+      },
+    });
+    await waitFor(() => expect(historyRequests).toHaveLength(1));
+    await act(async () => releaseHistory());
+    await waitFor(() =>
+      expect(
+        queries.getQueryData(["thread", id, "history", null]),
+      ).toBeTruthy(),
+    );
+    fireEvent.scroll(reader);
+    expect(historyRequests).toHaveLength(1);
+    expect(top).toBe(0);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    await act(async () => releaseFocus());
+    await screen.findByRole("textbox", { name: "Shared prompt" });
+    expect(top).toBe(saved ? 430 : 2000);
+    expect(historyRequests).toHaveLength(1);
+  },
+);

@@ -62,6 +62,10 @@ export function conversationTitle(
 
 export function inputStatus(input?: LocalInput) {
   switch (input?.state) {
+    case "preparing":
+      return "Preparing message…";
+    case "pending":
+      return "Sending…";
     case "rejected":
       return "Not sent · input retained";
     case "unknown":
