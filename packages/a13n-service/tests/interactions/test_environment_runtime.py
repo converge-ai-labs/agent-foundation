@@ -382,7 +382,12 @@ def test_environment_modules_import_independently():
     import subprocess
     import sys
 
-    for module in ("environments.runtime", "environments.selection", "interactions.attempt_executor"):
+    for module in (
+        "environments.runtime",
+        "environments.selection",
+        "environments.mount_observations",
+        "interactions.attempt_executor",
+    ):
         subprocess.run([sys.executable, "-c", f"import a13n_service.{module}"], check=True, capture_output=True)
 
 

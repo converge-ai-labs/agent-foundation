@@ -131,17 +131,21 @@ class EnvironmentLifecycle:
     def lease_duration(self) -> timedelta:
         return timedelta(seconds=self.timeout_seconds + 10)
 
-    async def acquire_preparation(self, environment_id: str, *, attempt: AttemptContext) -> LifecycleOperation:
+    async def acquire_preparation(
+        self, environment_id: str, *, attempt: AttemptContext, mount_name: str = "workspace"
+    ) -> LifecycleOperation:
         now = assume_utc(self.clock())
         async with transaction(self.sessions) as session:
-            run, row, provider = await lock_run_environment_use(session, environment_id, attempt, self.capacity, now)
+            binding, row, provider = await lock_run_environment_use(
+                session, environment_id, attempt, self.capacity, now, mount_name=mount_name
+            )
             if row.operation_id is not None:
                 if row.operation_expires_at is not None and assume_utc(row.operation_expires_at) > now:
                     raise EnvironmentOperationBusy("Environment lifecycle operation is in progress")
                 if row.operation_action != "prepare":
                     raise EnvironmentOperationBusy("The preceding Environment operation must be reconciled first")
             await self.capacity.admit(session, row)
-            mark_run_environment_use(run, row, now)
+            mark_run_environment_use(binding, row, now)
             configuration = await load_configuration(session, row)
             return self._claim(row, provider, configuration, "prepare", now, attempt=attempt)
 

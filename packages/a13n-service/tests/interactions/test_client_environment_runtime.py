@@ -12,7 +12,12 @@ from a13n_environment import EnvironmentAction, EnvironmentError
 from a13n_environment.commands import ArgvCommand, CommandRequest
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.models import EnvironmentRecord
+from a13n_service.environments.mount_domain import AddEnvironmentMountRequest
+from a13n_service.environments.mount_models import RunEnvironmentMountRecord
+from a13n_service.environments.mount_observations import RunMountObservations
+from a13n_service.environments.mounts import RunEnvironmentMountService
 from a13n_service.environments.runtime import prepare_run_environment
+from a13n_service.environments.websocket.admission import OnlineAdmission
 from a13n_service.environments.websocket.connection_host import ClientConnectionHost
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.environments.websocket.resources import ConnectionResources
@@ -166,10 +171,58 @@ async def test_read_only_use_rejects_write_before_redis_publication(client_runti
     async def unexpected(*args, **kwargs):
         pytest.fail("forbidden request reached Redis")
 
-    monkeypatch.setattr(environment._client._store, "append", unexpected)
+    monkeypatch.setattr(environment._client._scope.store, "append", unexpected)
     with pytest.raises(EnvironmentError) as denied:
         await files.write_text("/forbidden.txt", "no", mode="create")
     assert denied.value.code == "environment_forbidden"
     assert not (workspace / "forbidden.txt").exists()
     monkeypatch.undo()
     await environment.close()
+
+
+@pytest.mark.parametrize("admitted_use", [None, "read_only"], indirect=True)
+async def test_accepted_addition_prepares_with_its_own_access_and_retained_use(client_runtime, interaction_sessions):
+    lifecycle, connections, attempt, workspace, service, target = client_runtime
+    primary = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
+    if primary is not None:
+        await primary.enter(
+            thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="primary-harness"
+        )
+    mounts = RunEnvironmentMountService(
+        interaction_sessions, OnlineAdmission(interaction_sessions, service.coordination)
+    )
+    await mounts.add(
+        actor=hook_actor(),
+        run_id=attempt.run_id,
+        idempotency_key="live-writer",
+        request=AddEnvironmentMountRequest(name="writer", environment_id=target.environment_id, access="full"),
+    )
+    mount = (await RunMountObservations(interaction_sessions).snapshot(attempt))[0]
+    addition = await prepare_run_environment(lifecycle, attempt, mount=mount, client_connections=connections)
+    assert addition is not None and addition.access == "full"
+    await addition.enter(
+        thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="writer-harness"
+    )
+    await addition.ensure_ready(frozenset({"files"}))
+    files = addition.operations.files
+    assert files is not None
+    await files.write_text("/from-addition.txt", "shared target", mode="create")
+    assert (workspace / "from-addition.txt").read_text() == "shared target"
+    if primary is not None:
+        assert primary._client.identity == addition._client.identity
+        assert EnvironmentAction.FILE_WRITE_TEXT not in primary.descriptor.permissions.operations
+        with pytest.raises(EnvironmentError) as denied:
+            await primary.operations.files.write_text("/from-addition.txt", "forbidden", mode="replace")
+        assert denied.value.code == "environment_forbidden"
+        assert (workspace / "from-addition.txt").read_text() == "shared target"
+    await addition.close()
+    if primary is not None:
+        await primary.ensure_ready(frozenset({"files"}))
+        assert (await primary.operations.files.read_text("/from-addition.txt")).text == "shared target"
+        await primary.close()
+    async with short_session(interaction_sessions) as session:
+        run = await session.get(RunRecord, attempt.run_id)
+        row = await session.get(RunEnvironmentMountRecord, (attempt.run_id, "writer"))
+        assert row.use_started_at is not None
+        assert (run.environment_use_started_at is not None) == (primary is not None)
+        assert (run.environment_id is not None) == (primary is not None)

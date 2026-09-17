@@ -2,34 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from a13n_harness import SafeFailure
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, next_updated_at, utc_now
 
+from .mount_domain import AcceptedRunMount
 from .mount_models import RunEnvironmentMountRecord
 
-
-@dataclass(frozen=True, slots=True)
-class AcceptedRunMount:
-    """Immutable acceptance facts; loading state is deliberately not installation evidence."""
-
-    run_id: str
-    name: str
-    environment_id: str
-    access: str
-    created_at: datetime
-
-    @classmethod
-    def from_record(cls, row: RunEnvironmentMountRecord) -> AcceptedRunMount:
-        return cls(row.run_id, row.name, row.environment_id, row.access, assume_utc(row.created_at))
+if TYPE_CHECKING:
+    from a13n_service.interactions.attempts import AttemptContext
 
 
 class RunMountObservations:
@@ -39,6 +26,8 @@ class RunMountObservations:
 
     async def snapshot(self, attempt: AttemptContext) -> tuple[AcceptedRunMount, ...]:
         """Capture acceptance order under the same lock used by additions and Attempt transitions."""
+        from a13n_service.interactions.attempts import lock_attempt_authority
+
         now = assume_utc(self._clock())
         attempt.lease.require_current(now)
         async with transaction(self._sessions) as session:
@@ -81,6 +70,8 @@ class RunMountObservations:
     async def _lock(
         self, session: AsyncSession, attempt: AttemptContext, mount: AcceptedRunMount, now: datetime
     ) -> RunEnvironmentMountRecord:
+        from a13n_service.interactions.attempts import lock_attempt_authority
+
         attempt.lease.require_current(now)
         await lock_attempt_authority(session, attempt, now)
         if mount.run_id != attempt.run_id:

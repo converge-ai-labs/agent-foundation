@@ -30,6 +30,9 @@ from .domain import TemplateConfiguration
 from .lifecycle import EnvironmentLifecycle, EnvironmentOperationBusy
 from .local_directory import instance_configuration
 from .models import EnvironmentProviderRecord, EnvironmentRecord
+from .mount_domain import AcceptedRunMount
+from .mount_models import RunEnvironmentMountRecord
+from .run_use import load_run_environment_binding
 from .websocket.environment import ClientRunEnvironment
 from .websocket.worker_resources import ClientUseResources
 
@@ -54,11 +57,14 @@ class RunEnvironment(Environment):
         provider_key: str,
         descriptor: EnvironmentDescriptor,
         access: str,
+        *,
+        mount_name: str = "workspace",
     ) -> None:
         super().__init__(None)
         self._coordinator = lifecycle
         self._attempt = attempt
         self._environment_id = environment_id
+        self._mount_name = mount_name
         self._provider_key = provider_key
         self._configured_descriptor = descriptor
         self._delegate: Environment | None = None
@@ -129,7 +135,9 @@ class RunEnvironment(Environment):
         async with asyncio.timeout(self._coordinator.lease_duration.total_seconds()):
             while True:
                 try:
-                    operation = await self._coordinator.acquire_preparation(self.environment_id, attempt=self._attempt)
+                    operation = await self._coordinator.acquire_preparation(
+                        self.environment_id, attempt=self._attempt, mount_name=self._mount_name
+                    )
                     break
                 except EnvironmentOperationBusy:
                     await asyncio.sleep(delay)
@@ -199,6 +207,7 @@ class RunEnvironment(Environment):
 
 @dataclass(frozen=True, slots=True)
 class _RunEnvironmentSelection:
+    mount_name: str
     environment_id: str
     provider_key: str
     descriptor: EnvironmentDescriptor
@@ -207,7 +216,7 @@ class _RunEnvironmentSelection:
 
 
 async def validate_run_environment(
-    lifecycle: EnvironmentLifecycle, attempt: AttemptContext
+    lifecycle: EnvironmentLifecycle, attempt: AttemptContext, *, mount: AcceptedRunMount | None = None
 ) -> _RunEnvironmentSelection | None:
     """Validate the fixed logical selection without acquiring use or calling a Provider."""
 
@@ -215,10 +224,20 @@ async def validate_run_environment(
         run = await session.get(RunRecord, attempt.run_id)
         if run is None or run.organization_id != attempt.organization_id:
             raise ValueError("Run is unavailable")
-        if run.environment_id is None:
+        binding = await load_run_environment_binding(
+            session, run, name=mount.name if mount is not None else "workspace"
+        )
+        if binding is None:
+            if mount is not None:
+                raise ValueError("The accepted Run mount is unavailable")
             return None
-        row = await session.get(EnvironmentRecord, run.environment_id)
-        if row is None:
+        if mount is not None and (
+            not isinstance(binding.record, RunEnvironmentMountRecord)
+            or AcceptedRunMount.from_record(binding.record) != mount
+        ):
+            raise ValueError("The accepted Run mount changed")
+        row = await session.get(EnvironmentRecord, binding.environment_id)
+        if row is None or (row.organization_id, row.workspace_id) != (run.organization_id, binding.workspace_id):
             raise ValueError("Environment is unavailable")
         await authorize_persisted_agent_principal_actions(
             session,
@@ -230,7 +249,12 @@ async def validate_run_environment(
             snapshot=attempt.authorization.snapshot,
         )
         provider = await session.get(EnvironmentProviderRecord, row.provider_id)
-        if provider is None or not provider.enabled:
+        if (
+            provider is None
+            or not provider.enabled
+            or provider.organization_id != row.organization_id
+            or provider.workspace_id not in {None, row.workspace_id}
+        ):
             raise ValueError("Environment Provider is unavailable")
         configuration = await load_configuration(session, row)
         implementation = lifecycle.catalog.require(provider.type)
@@ -239,13 +263,12 @@ async def validate_run_environment(
             value=instance_configuration(provider.type, row.id, configuration),
         )
         descriptor = implementation.describe_configuration(validated)
-        if run.environment_access is None:
-            raise ValueError("Run Environment access is missing")
         return _RunEnvironmentSelection(
+            binding.name,
             row.id,
             provider.type,
             descriptor,
-            run.environment_access,
+            binding.access,
             not isinstance(configuration, TemplateConfiguration) or configuration.preparation == "on_run",
         )
 
@@ -255,8 +278,13 @@ async def prepare_run_environment(
     attempt: AttemptContext,
     *,
     client_connections: WorkerClientConnections | None = None,
+    mount: AcceptedRunMount | None = None,
 ) -> RunEnvironment | ClientRunEnvironment | None:
-    selection = await validate_run_environment(lifecycle, attempt)
+    if mount is not None:
+        if mount.run_id != attempt.run_id:
+            raise ValueError("Mount does not belong to this Attempt's Run")
+        await attempt.authorization.admit_environment(name=mount.name, environment_id=mount.environment_id)
+    selection = await validate_run_environment(lifecycle, attempt, mount=mount)
     if selection is None:
         return None
     if selection.provider_key == WEBSOCKET_PROVIDER_KEY:
@@ -271,11 +299,18 @@ async def prepare_run_environment(
             selection.environment_id,
             selection.descriptor,
             selection.access,
+            mount_name=selection.mount_name,
         )
     else:
         environment = RunEnvironment(
-            lifecycle, attempt, selection.environment_id, selection.provider_key, selection.descriptor, selection.access
+            lifecycle,
+            attempt,
+            selection.environment_id,
+            selection.provider_key,
+            selection.descriptor,
+            selection.access,
+            mount_name=selection.mount_name,
         )
-    if selection.prepare_on_run:
+    if mount is not None or selection.prepare_on_run:
         await environment.prepare()
     return environment

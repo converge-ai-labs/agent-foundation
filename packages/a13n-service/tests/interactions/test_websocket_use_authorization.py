@@ -79,11 +79,12 @@ async def admitted_use(request, interaction_sessions, interaction_object_store, 
     await asyncio.sleep(coordination.limits.lease_ms / 1000 + 0.02)
     await coordination.promote(connection)
     await coordination.online(connection)
+    access = getattr(request, "param", "read_only")
     _, run, _ = await _accept_root(
         interaction_sessions,
         interaction_object_store,
-        environment_id=environment.id,
-        environment_access=getattr(request, "param", "read_only"),
+        environment_id=environment.id if access is not None else None,
+        environment_access=access or "full",
         coordination=coordination,
     )
     await coordination.retire(connection)

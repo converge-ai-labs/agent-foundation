@@ -42,10 +42,13 @@ class ClientRunEnvironment(Environment):
         environment_id: str,
         descriptor: EnvironmentDescriptor,
         access: str,
+        *,
+        mount_name: str = "workspace",
     ) -> None:
         super().__init__(None)
         self._resources, self._connections, self._attempt = resources, connections, attempt
         self._environment_id = environment_id
+        self._mount_name = mount_name
         self._descriptor = descriptor
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
@@ -84,10 +87,12 @@ class ClientRunEnvironment(Environment):
     ) -> None:
         with observe_phase("a13n.service.environment.prepare"):
             await self._close()
-            target = await self._resources.admit(self._attempt, self.environment_id)
+            target = await self._resources.admit(self._attempt, self.environment_id, mount_name=self._mount_name)
             if target.access != self.access:
                 raise ValueError("Accepted Environment access changed")
-            client = await self._connections.acquire(self._attempt, self.environment_id, target.permissions)
+            client = await self._connections.acquire(
+                self._attempt, self.environment_id, target.permissions, mount_name=self._mount_name
+            )
             self._client = client
             if self.is_entered:
                 client.bind_mount(mount_id)

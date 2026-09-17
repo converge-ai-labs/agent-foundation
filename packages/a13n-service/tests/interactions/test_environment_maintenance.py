@@ -102,9 +102,7 @@ async def test_run_preparation_cannot_enter_between_maintenance_decision_and_cla
     due_environment, interaction_object_store, monkeypatch
 ):
     sessions, environment_id, lifecycle = due_environment
-    _, run, _ = await _accept_root(sessions, interaction_object_store)
-    async with transaction(sessions) as session:
-        (await session.get(RunRecord, run.id)).environment_id = environment_id
+    _, run, _ = await _accept_root(sessions, interaction_object_store, environment_id=environment_id)
     claim = await AttemptScheduler(
         sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
