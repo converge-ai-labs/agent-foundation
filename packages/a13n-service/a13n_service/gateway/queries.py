@@ -29,7 +29,7 @@ from a13n_service.labels import Labels, label_predicates
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.projections import public_output_reference
 from a13n_service.lifecycle.reconciliation import load_owning_run
-from a13n_service.run_stream import RunDisplayStore, RunStreamError
+from a13n_service.run_stream import RetainedItem, RunDisplayStore, RunStreamError
 from a13n_service.storage import ObjectStoreError, short_session
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
@@ -516,9 +516,10 @@ class NativeInteractionQueries:
         run_id: str,
         limit: int,
         cursor: str | None,
+        order: Literal["asc", "desc"] = "asc",
     ) -> ItemCollection:
-        scope = _scope(actor, "items", run_id)
-        offset, expected_version = _item_cursor(cursor, scope=scope)
+        scope = {**_scope(actor, "items", run_id), "order": order}
+        offset, expected_version = _item_cursor(cursor, scope=scope) if order == "asc" else (0, None)
         async with short_session(self._sessions) as database:
             run = await _load_run(database, actor=actor, run_id=run_id)
             await _authorize_agent(
@@ -544,13 +545,18 @@ class NativeInteractionQueries:
                 "The display snapshot changed; restart Item pagination.",
                 category=ErrorCategory.conflict,
             )
-        values = snapshot.items[offset : offset + limit + 1]
-        page = values[:limit]
-        next_cursor = (
-            encode_collection_cursor({"offset": offset + limit, "version": snapshot.version}, scope=scope, kind="items")
-            if len(values) > limit
-            else None
-        )
+        if order == "desc":
+            page, next_cursor = _earlier_items(snapshot.items, cursor=cursor, limit=limit, scope=scope)
+        else:
+            values = snapshot.items[offset : offset + limit + 1]
+            page = values[:limit]
+            next_cursor = (
+                encode_collection_cursor(
+                    {"offset": offset + limit, "version": snapshot.version}, scope=scope, kind="items"
+                )
+                if len(values) > limit
+                else None
+            )
         return ItemCollection(
             snapshot_version=snapshot.version,
             projection_cursor=snapshot.cursor,
@@ -791,6 +797,34 @@ def _cursor_boundary(cursor: str | None, *, scope: dict[str, object], kind: str)
         raise NativeQueryError(
             "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
         ) from error
+
+
+def _earlier_items(
+    items: tuple[RetainedItem, ...], *, cursor: str | None, limit: int, scope: dict[str, object]
+) -> tuple[tuple[RetainedItem, ...], str | None]:
+    end = len(items)
+    if cursor is not None:
+        try:
+            boundary = decode_collection_cursor(cursor, scope=scope, kind="items")["before"]
+            if not isinstance(boundary, str):
+                raise ValueError
+            end = next(index for index, item in enumerate(items) if item.id == boundary)
+        except (
+            InvalidCollectionCursorError,
+            CollectionCursorMismatchError,
+            KeyError,
+            ValueError,
+            StopIteration,
+        ) as error:
+            raise NativeQueryError(
+                "invalid_cursor", "The Item boundary is invalid.", category=ErrorCategory.invalid_request
+            ) from error
+    start = max(0, end - limit)
+    page = tuple(reversed(items[start:end]))
+    next_cursor = (
+        encode_collection_cursor({"before": items[start].id}, scope=scope, kind="items") if start > 0 else None
+    )
+    return page, next_cursor
 
 
 def _item_cursor(cursor: str | None, *, scope: dict[str, object]) -> tuple[int, int | None]:

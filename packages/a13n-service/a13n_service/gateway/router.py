@@ -677,8 +677,9 @@ async def list_run_items(
     run_id: str,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    order: Literal["asc", "desc"] = "asc",
 ) -> ItemCollection:
-    return await _queries(request).items(actor=actor, run_id=run_id, limit=limit, cursor=cursor)
+    return await _queries(request).items(actor=actor, run_id=run_id, limit=limit, cursor=cursor, order=order)
 
 
 @router.get("/api/v1/runs/{run_id}/lineage", response_model=RunLineage)

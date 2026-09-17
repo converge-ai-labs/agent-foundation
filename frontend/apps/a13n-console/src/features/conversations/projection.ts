@@ -85,18 +85,28 @@ function applyPayload(
   if (payload.interruption !== undefined) next.failure = payload.interruption;
   return next;
 }
+/** Lifecycle closure must not overwrite a newer Item read from another page. */
+export function interruptOpenItems(
+  items: ReadonlyMap<string, PresentedItem>,
+  cursor: string,
+): Map<string, PresentedItem> {
+  return new Map(
+    [...items].map(([id, item]) => [
+      id,
+      item.state === "in_progress" &&
+      compareCursors(cursor, item.lastCursor) >= 0
+        ? { ...item, state: "interrupted", lastCursor: cursor }
+        : item,
+    ]),
+  );
+}
 export function applyRunEvent(
   items: ReadonlyMap<string, PresentedItem>,
   entry: RunEvent,
 ): Map<string, PresentedItem> {
   const { event, cursor } = entry;
   if (event.event_type === "run.recovery")
-    return new Map(
-      [...items].map(([id, item]) => [
-        id,
-        item.state === "in_progress" ? { ...item, state: "interrupted" } : item,
-      ]),
-    );
+    return interruptOpenItems(items, cursor);
   if (!event.item_id) return new Map(items);
   const previous = items.get(event.item_id);
   if (previous && compareCursors(cursor, previous.lastCursor) <= 0)

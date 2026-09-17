@@ -25,24 +25,18 @@ const page = (
   finalized: false,
 });
 
-it("discards an obsolete page and restarts against one display version", async () => {
-  const responses = [
-    Response.json(page(1, [item("old")], "v1-next")),
-    Response.json(
-      { error: { code: "items_snapshot_changed", message: "Changed" } },
-      { status: 409 },
-    ),
-    Response.json(page(2, [item("new-first")], "v2-next")),
-    Response.json(page(2, [item("new-second")], null)),
-  ];
-  const cursors: (string | null)[] = [];
+it("reads only the latest page and presents it in chronological order", async () => {
+  const fetch = vi.fn(async (input) => {
+    const query = new URL((input as Request).url).searchParams;
+    expect(query.get("order")).toBe("desc");
+    expect(query.get("limit")).toBe("50");
+    expect(query.has("cursor")).toBe(false);
+    return Response.json(page(1, [item("newest"), item("older")], "earlier"));
+  });
   const client = createClient({
     baseUrl: "https://test.invalid",
     auth: { type: "session" },
-    fetch: vi.fn(async (input) => {
-      cursors.push(new URL((input as Request).url).searchParams.get("cursor"));
-      return responses.shift()!;
-    }),
+    fetch,
   });
   const display = await readDisplay(
     client,
@@ -50,29 +44,38 @@ it("discards an obsolete page and restarts against one display version", async (
     "run",
     new AbortController().signal,
   );
-  expect(cursors).toEqual([null, "v1-next", null, "v2-next"]);
+  expect(fetch).toHaveBeenCalledTimes(1);
   expect(display).toMatchObject({
     available: true,
-    snapshot_version: 2,
-    projection_cursor: "2-0",
+    next_cursor: "earlier",
+    projection_cursor: "1-0",
   });
-  expect(display.items.map((value) => value.id)).toEqual([
-    "new-first",
-    "new-second",
-  ]);
+  expect(display.items.map((value) => value.id)).toEqual(["older", "newest"]);
 });
 
-it("rejects pages with inconsistent coverage instead of merging them", async () => {
-  const responses = [
-    Response.json(page(1, [item("first")], "next")),
-    Response.json(page(2, [item("second")], null)),
-  ];
+it("loads a requested earlier page even when the live snapshot has advanced", async () => {
+  const fetch = vi.fn(async (input) => {
+    expect(new URL((input as Request).url).searchParams.get("cursor")).toBe(
+      "earlier",
+    );
+    return Response.json(page(2, [item("oldest")], null));
+  });
   const client = createClient({
     baseUrl: "https://test.invalid",
     auth: { type: "session" },
-    fetch: vi.fn(async () => responses.shift()!),
+    fetch,
   });
-  await expect(
-    readDisplay(client, "workspace", "run", new AbortController().signal),
-  ).rejects.toThrow("inconsistent coverage");
+  const display = await readDisplay(
+    client,
+    "workspace",
+    "run",
+    new AbortController().signal,
+    "earlier",
+  );
+  expect(display).toMatchObject({
+    available: true,
+    next_cursor: null,
+    snapshot_version: 2,
+  });
+  expect(fetch).toHaveBeenCalledTimes(1);
 });

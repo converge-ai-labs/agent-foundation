@@ -19201,6 +19201,7 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        order?: "asc" | "desc";
       };
       header?: never;
       path: {

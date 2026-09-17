@@ -1,3 +1,4 @@
+import { useEarlierMessages } from "./earlier";
 import { ReplayGapError } from "../../service-client";
 import { isCancelledError, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
@@ -10,6 +11,7 @@ import {
 } from "./api";
 import {
   applyRunEvent,
+  interruptOpenItems,
   compareCursors,
   mergeRetainedItems,
   type PresentedItem,
@@ -30,6 +32,19 @@ export function useLiveRun(runId: string) {
     [incomplete, setIncomplete] = useState(false),
     [error, setError] = useState<unknown>(),
     [generation, setGeneration] = useState(0);
+  const earlier = useEarlierMessages(runId, (page) => {
+    projection.current = mergeRetainedItems(projection.current, page.items);
+    setItems(
+      [...projection.current.values()].sort((a, b) =>
+        compareCursors(a.firstCursor, b.firstCursor),
+      ),
+    );
+    if (!page.complete) {
+      setIncomplete(true);
+      setGap(true);
+    }
+  });
+  const { resetEarlier } = earlier;
   useEffect(() => {
     const controller = new AbortController(),
       { signal } = controller,
@@ -44,6 +59,8 @@ export function useLiveRun(runId: string) {
       setIncomplete(false);
     }
     let frame: number | undefined;
+    let initialized = false;
+    let partial = false;
     function publish() {
       if (frame !== undefined) return;
       frame = requestAnimationFrame(() => {
@@ -84,15 +101,18 @@ export function useLiveRun(runId: string) {
       ]);
       if (signal.aborted) return { run, retained };
       if (retained.available) {
-        const coversCurrent =
-          cursor.current === undefined ||
-          (retained.projection_cursor !== null &&
-            compareCursors(retained.projection_cursor, cursor.current) >= 0);
+        // A new attachment/gap starts a fresh window; ordinary reconciliation
+        // keeps pages the reader has already requested.
+        if (reset || !initialized) {
+          resetEarlier(retained.next_cursor);
+          partial = retained.next_cursor !== null;
+          initialized = true;
+        }
         projection.current = mergeRetainedItems(
-          reset || coversCurrent ? new Map() : projection.current,
+          reset ? new Map() : projection.current,
           retained.items,
         );
-        if (reset || coversCurrent)
+        if (reset || cursor.current === undefined)
           cursor.current = retained.projection_cursor ?? undefined;
         setIncomplete(!retained.complete);
         if (!retained.complete) setGap(true);
@@ -107,7 +127,18 @@ export function useLiveRun(runId: string) {
       retained: Awaited<ReturnType<typeof reconcile>>["retained"],
     ) {
       if (!retained.available) return false;
-      if (retained.finalized || !retained.complete) {
+      const caughtUp =
+        retained.projection_cursor === null ||
+        (cursor.current !== undefined &&
+          compareCursors(cursor.current, retained.projection_cursor) >= 0);
+      if (!retained.complete || (retained.finalized && caughtUp)) {
+        if (retained.finalized && cursor.current !== undefined) {
+          projection.current = interruptOpenItems(
+            projection.current,
+            cursor.current,
+          );
+          publish();
+        }
         setState(retained.finalized ? "closed" : "disconnected");
         return true;
       }
@@ -129,7 +160,17 @@ export function useLiveRun(runId: string) {
           })) {
             if (signal.aborted) return;
             // The in-memory projection is committed before advancing our replay checkpoint.
-            projection.current = applyRunEvent(projection.current, entry);
+            const { event } = entry;
+            // An older, unloaded Item can still be generating. Do not render a
+            // fragment without its prefix; its page will provide the full Item.
+            const hiddenContinuation =
+              partial &&
+              event.item_id &&
+              !projection.current.has(event.item_id) &&
+              !event.event_type.endsWith("_start") &&
+              event.payload.item_kind !== "run_output";
+            if (!hiddenContinuation)
+              projection.current = applyRunEvent(projection.current, entry);
             cursor.current = entry.cursor;
             publish();
             setState("connected");
@@ -191,8 +232,9 @@ export function useLiveRun(runId: string) {
       controller.abort();
       if (frame !== undefined) cancelAnimationFrame(frame);
     };
-  }, [client, workspace.id, runId, cache, generation]);
+  }, [client, workspace.id, runId, cache, generation, resetEarlier]);
   return {
+    ...earlier,
     items,
     state,
     gap,

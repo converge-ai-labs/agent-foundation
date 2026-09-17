@@ -103,3 +103,92 @@ async def test_active_display_pagination_restarts_when_snapshot_changes(queries:
     assert captured.value.code == "items_snapshot_changed" and application_error_status(captured.value) == 409
     restarted = await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=10, cursor=None)
     assert restarted.snapshot_version == 2 and restarted.projection_cursor == "4-0"
+
+
+async def test_newest_first_items_keep_their_boundary_across_snapshot_updates(
+    queries: NativeInteractionQueries,
+) -> None:
+    from a13n_service.run_stream import RetainedItem, RunDisplaySnapshot, run_stream_key_digest_sha256
+
+    from tests.interactions.conftest import ORGANIZATION_ID
+
+    items = tuple(
+        RetainedItem(
+            id=f"itm_{index:016d}",
+            kind="text_message",
+            state="completed",
+            first_stream_id=f"{index}-0",
+            last_stream_id=f"{index}-0",
+            content={"text": str(index)},
+        )
+        for index in range(1, 126)
+    )
+    snapshot = RunDisplaySnapshot(
+        version=1,
+        run_id=RUN_ID,
+        thread_id=THREAD_ID,
+        cursor="125-0",
+        stream_key_digest_sha256=run_stream_key_digest_sha256(ORGANIZATION_ID, RUN_ID),
+        items=items,
+    )
+    stored = await queries._display.publish(ORGANIZATION_ID, snapshot, previous=None)
+    first = await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=None, order="desc")
+    assert [item.content["text"] for item in first.items] == [str(i) for i in range(125, 75, -1)]
+    assert first.next_cursor is not None
+    appended = RetainedItem(
+        id="itm_0000000000000126",
+        kind="text_message",
+        state="in_progress",
+        first_stream_id="126-0",
+        last_stream_id="126-0",
+        content={"text": "new"},
+    )
+    await queries._display.publish(
+        ORGANIZATION_ID,
+        snapshot.model_copy(update={"version": 2, "cursor": "126-0", "items": (*items, appended)}),
+        previous=stored,
+    )
+    second = await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=first.next_cursor, order="desc")
+    assert second.snapshot_version == 2 and second.projection_cursor == "126-0"
+    assert [item.content["text"] for item in second.items] == [str(i) for i in range(75, 25, -1)]
+    assert second.next_cursor is not None
+    last = await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=second.next_cursor, order="desc")
+    assert [item.content["text"] for item in last.items] == [str(i) for i in range(25, 0, -1)]
+    assert last.next_cursor is None
+    assert len({item.id for page in (first, second, last) for item in page.items}) == 125
+    with pytest.raises(NativeQueryError) as captured:
+        await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=first.next_cursor, order="asc")
+    assert captured.value.code == "invalid_cursor"
+    with pytest.raises(NativeQueryError) as captured:
+        await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor="invalid", order="desc")
+    assert captured.value.code == "invalid_cursor"
+
+
+@pytest.mark.parametrize("count", [0, 1, 50, 51])
+async def test_latest_item_page_boundaries(queries: NativeInteractionQueries, count: int) -> None:
+    from a13n_service.run_stream import RetainedItem, RunDisplaySnapshot, run_stream_key_digest_sha256
+
+    from tests.interactions.conftest import ORGANIZATION_ID
+
+    snapshot = RunDisplaySnapshot(
+        version=1,
+        run_id=RUN_ID,
+        thread_id=THREAD_ID,
+        cursor=f"{count + 1}-0",
+        stream_key_digest_sha256=run_stream_key_digest_sha256(ORGANIZATION_ID, RUN_ID),
+        items=tuple(
+            RetainedItem(
+                id=f"itm_{index:016d}",
+                kind="text_message",
+                state="completed",
+                first_stream_id=f"{index}-0",
+                last_stream_id=f"{index}-0",
+                content={"text": str(index)},
+            )
+            for index in range(1, count + 1)
+        ),
+    )
+    await queries._display.publish(ORGANIZATION_ID, snapshot, previous=None)
+    page = await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=None, order="desc")
+    assert len(page.items) == min(50, count)
+    assert (page.next_cursor is not None) == (count > 50)

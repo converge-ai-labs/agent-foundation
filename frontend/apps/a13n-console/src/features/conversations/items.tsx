@@ -47,6 +47,7 @@ export function PresentedItems({
         return (
           <DisclosureSection
             key={item.id}
+            data-message-id={item.id}
             className={styles.tool}
             title={
               <span className={styles.disclosureTitle}>
@@ -90,6 +91,7 @@ export function PresentedItems({
         return (
           <DisclosureSection
             key={item.id}
+            data-message-id={item.id}
             className={styles.reasoning}
             title={
               <span className={styles.disclosureTitle}>
@@ -109,6 +111,7 @@ export function PresentedItems({
         return (
           <DisclosureSection
             key={item.id}
+            data-message-id={item.id}
             className={styles.tool}
             title={
               <>
@@ -120,7 +123,12 @@ export function PresentedItems({
           </DisclosureSection>
         );
       return (
-        <article key={item.id} className={styles.message} data-role={item.role}>
+        <article
+          key={item.id}
+          data-message-id={item.id}
+          className={styles.message}
+          data-role={item.role}
+        >
           <MarkdownContent
             text={
               item.text ||
