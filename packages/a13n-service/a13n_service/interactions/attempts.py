@@ -481,24 +481,16 @@ async def lock_attempt_authority(
     *,
     lock_inbox_origins: bool = False,
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
-    thread_id = await session.scalar(
-        select(RunRecord.thread_id).where(
-            RunRecord.organization_id == authority.organization_id,
-            RunRecord.id == authority.run_id,
-        )
-    )
-    if thread_id is None:
-        raise AttemptAuthorityError("Run authority was not found")
     thread = await session.scalar(
         select(ThreadRecord)
-        .where(ThreadRecord.organization_id == authority.organization_id, ThreadRecord.id == thread_id)
+        .where(ThreadRecord.organization_id == authority.organization_id, ThreadRecord.id == authority.thread_id)
         .with_for_update()
     )
     if lock_inbox_origins:
         locked_runs = await lock_inbox_related_runs(
             session,
             organization_id=authority.organization_id,
-            thread_id=thread_id,
+            thread_id=authority.thread_id,
             required_run_ids=(authority.run_id,),
         )
     else:

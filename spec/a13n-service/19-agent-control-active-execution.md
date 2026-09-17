@@ -112,7 +112,9 @@ POST /api/v1/runs/{run_id}/steer
 Idempotency-Key: opaque-caller-key
 ```
 
-The request carries one submitted `AgentInput`. Service validates and canonicalizes its binary source descriptions, exact Asset IDs, and delivery selections without acquiring source bytes. The final short transaction authenticates and authorizes `run.steer` from the IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry), revalidates every Asset reference, then locks the owning Thread, named Run, and affected inbox rows in canonical order. It requires the named Run to remain current and either:
+The request carries one submitted `AgentInput`. Service authenticates the caller and authorizes `run.steer` from the IAM [stable action registry](33-identity-and-access-management.md#stable-action-registry) during the initial precheck, before returning an idempotent receipt or reading Run state and preparing input. That authorization permits this request to finish even if the caller loses permission during preparation; later requests, including idempotent retries and receipt reads, check current authority again. Target loading and the acceptance transaction do not repeat this caller authorization.
+
+Service validates and canonicalizes binary source descriptions, exact Asset IDs, and delivery selections without acquiring source bytes; Asset references retain their input-specific authorization. The final short transaction locks the owning Thread and named Run in canonical order and rechecks mutable admission conditions. It requires the named Run to remain current and either:
 
 - `status` is `accepted` or `running`, in which case the new entry binds directly to that Run; or
 - `status="waiting"` with `current_run_id=head_run_id=run_id`, in which case the entry records that waiting Run as its source and has no active target.
