@@ -289,6 +289,22 @@ def _environment(config: Path, root: Path):
     return environment
 
 
+def _apply_private_resources(environment: Environment) -> None:
+    """Keep optional private resources outside baseline reset and startup success."""
+    import anyio
+
+    from .dev_resource_sync import sync_existing
+
+    try:
+        result = anyio.run(sync_existing, environment.settings, environment.state)
+    except Exception as error:
+        detail = str(error) if isinstance(error, (RuntimeError, ValueError)) else type(error).__name__
+        print(f"Private development resources were not applied: {detail}", file=sys.stderr, flush=True)
+        return
+    if result is not None:
+        print(f"Private development resources: {result}", flush=True)
+
+
 def _run_prepared(args: argparse.Namespace, root: Path) -> None:
     from .docker import ensure_docker
     from .langfuse import USER_EMAIL, USER_PASSWORD, Langfuse, local_traces
@@ -302,6 +318,7 @@ def _run_prepared(args: argparse.Namespace, root: Path) -> None:
     if args.command in {"dev", "service-dev", "setup"}:
         setup(environment, langfuse, args.config, mem0_settings=mem0_settings)
     if args.command == "dev":
+        _apply_private_resources(environment)
         if args.foreground:
             _run_dev(environment, args.config, args.mem0_config)
         else:
@@ -314,6 +331,8 @@ def _run_prepared(args: argparse.Namespace, root: Path) -> None:
             langfuse.start()
         with local_traces(langfuse):
             reset(environment, args.state)
+            if args.state == "seeded":
+                _apply_private_resources(environment)
     elif args.command == "down":
         ensure_docker()
         environment.require_stopped()

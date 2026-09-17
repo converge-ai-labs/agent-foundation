@@ -1,0 +1,36 @@
+# Copy to ~/.a13n/dev-resources.toml and set mode 0600 before entering real credentials.
+version = 1
+
+[[model_providers]]
+type = "openrouter"
+name = "OpenRouter (local)"
+credential = { api_key = "" }
+
+[[model_providers.models]]
+key = "openrouter-glm-5.3-flash"
+name = "GLM 5.3 Flash"
+upstream_model = "z-ai/glm-5.3-flash"
+
+[[web_providers]]
+type = "brave"
+name = "Brave (local)"
+credential = { api_key = "" }
+
+[[environment_providers]]
+type = "a13n.e2b"
+name = "E2B (local)"
+credential = { api_key = "" }
+
+[[environment_templates]]
+name = "E2B base"
+provider = "E2B (local)"
+access = "full"
+preparation = "on_run"
+stop_after = 3600
+delete_after = 86400
+configuration = { template = "base", root = "/home/user", timeout_seconds = 3600 }
+
+[[connector_providers]]
+type = "composio"
+name = "Composio (local)"
+credentials = { api_key = "" }
