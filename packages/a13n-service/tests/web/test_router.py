@@ -26,7 +26,17 @@ async def test_http_contract_safe_credentials_preconditions_and_catalog(
         async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
             catalog = await client.get("/api/v1/web-provider-types")
             assert catalog.status_code == 200, catalog.text
-            assert [item["type"] for item in catalog.json()["items"]] == ["brave", "exa"]
+            assert [item["type"] for item in catalog.json()["items"]] == [
+                "brave",
+                "duckduckgo",
+                "exa",
+                "firecrawl",
+                "jina",
+                "parallel",
+                "perplexity",
+                "serpapi",
+                "tavily",
+            ]
             for definition in catalog.json()["items"]:
                 assert definition["credential_schema"]["writeOnly"]
                 assert (await client.get(f"/api/v1/web-provider-types/{definition['type']}")).json() == definition
@@ -54,6 +64,15 @@ async def test_http_contract_safe_credentials_preconditions_and_catalog(
                 assert created.status_code == 201, created.text
                 assert "top-secret" not in created.text and "credential" not in created.json()
                 assert created.json()["credential_configured"]
+                keyless = await client.post(path, headers=headers, json={"type": "duckduckgo", "name": "DuckDuckGo"})
+                assert keyless.status_code == 201, keyless.text
+                assert not keyless.json()["credential_configured"]
+                unexpected_key = await client.post(
+                    path,
+                    headers=headers,
+                    json={"type": "duckduckgo", "name": "Invalid", "credential": {"api_key": "top-secret"}},
+                )
+                assert unexpected_key.status_code == 400 and "top-secret" not in unexpected_key.text
                 item_path = f"{path}/{created.json()['id']}"
                 assert (await client.get(item_path, headers=headers)).headers["etag"] == created.headers["etag"]
                 assert (await client.patch(item_path, headers=headers, json={"enabled": False})).status_code == 428

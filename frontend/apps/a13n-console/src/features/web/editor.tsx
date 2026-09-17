@@ -111,9 +111,13 @@ export function WebProviderEditor({
                   </ReadOnlyField>
                   <ReadOnlyField label={t("Credentials")}>
                     {t(
-                      resource.data.value.credential_configured
-                        ? "Configured"
-                        : "Not configured",
+                      definitions.data.items.find(
+                        (item) => item.type === resource.data?.value.type,
+                      )?.credential_required === false
+                        ? "Not required"
+                        : resource.data.value.credential_configured
+                          ? "Configured"
+                          : "Not configured",
                     )}
                   </ReadOnlyField>
                 </div>
@@ -153,7 +157,9 @@ export function WebProviderForm({
     client = useClient(),
     cache = useQueryClient();
   const [original, setOriginal] = useState(resource),
-    [type, setType] = useState(resource?.value.type ?? "brave"),
+    [type, setType] = useState(
+      resource?.value.type ?? definitions[0]?.type ?? "",
+    ),
     { name, setName, suggestName } = useSuggestedName(resource?.value.name),
     [credential, setCredential] = useState(""),
     [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
@@ -190,18 +196,19 @@ export function WebProviderForm({
       if (!name.trim() || !definition)
         throw new Error(t("Choose a provider type and name."));
       if (
+        definition.credential_required &&
         (!original || credential) &&
         (!credential.trim() ||
           new TextEncoder().encode(credential).length > 4096)
       )
         throw new Error(t("Enter a nonblank API key of at most 4096 bytes."));
       if (!original) {
-        if (type !== "brave" && type !== "exa")
-          throw new Error(t("Choose a provider type."));
         return api.createProvider({
           type,
           name,
-          credential: { api_key: credential },
+          ...(definition.credential_required
+            ? { credential: { api_key: credential } }
+            : {}),
           configuration: {},
           enabled,
         });
@@ -282,31 +289,35 @@ export function WebProviderForm({
             setCredential("");
           }}
           labelAction={
-            definition && <ProviderKeyLink href={definition.setup_url} />
+            definition?.credential_required && (
+              <ProviderKeyLink href={definition.setup_url} />
+            )
           }
         />
-        <FormField
-          label={t("API Key")}
-          description={t(
-            original
-              ? "Leave empty to keep the current credential."
-              : "The key is stored securely and cannot be read back.",
-          )}
-        >
-          <Input
-            type="password"
-            placeholder={
-              original?.value.credential_configured
-                ? t("Saved credential · enter to replace")
-                : undefined
-            }
-            autoComplete="new-password"
-            name="search-api-key"
-            required={!original}
-            value={credential}
-            onChange={(event) => setCredential(event.target.value)}
-          />
-        </FormField>
+        {definition?.credential_required && (
+          <FormField
+            label={t("API Key")}
+            description={t(
+              original
+                ? "Leave empty to keep the current credential."
+                : "The key is stored securely and cannot be read back.",
+            )}
+          >
+            <Input
+              type="password"
+              placeholder={
+                original?.value.credential_configured
+                  ? t("Saved credential · enter to replace")
+                  : undefined
+              }
+              autoComplete="new-password"
+              name="search-api-key"
+              required={!original}
+              value={credential}
+              onChange={(event) => setCredential(event.target.value)}
+            />
+          </FormField>
+        )}
       </FormSection>
       <ErrorNotice error={reloadError ?? save.error ?? reconcileError} />
       {conflict && (

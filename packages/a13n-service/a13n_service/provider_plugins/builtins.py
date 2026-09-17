@@ -52,16 +52,24 @@ def register(registry: ProviderPluginRegistry) -> None:
             ),
         )
     )
-    for provider_type, display_name, setup_url, search, scrape in (
-        ("brave", "Brave Search", "https://api-dashboard.search.brave.com/", True, False),
-        ("exa", "Exa", "https://dashboard.exa.ai/api-keys", True, True),
+    for provider_type, display_name, setup_url, search, scrape, key_required in (
+        ("brave", "Brave Search", "https://api-dashboard.search.brave.com/", True, False, True),
+        ("exa", "Exa", "https://dashboard.exa.ai/api-keys", True, True, True),
+        ("duckduckgo", "DuckDuckGo", "https://duckduckgo.com/", True, False, False),
+        ("parallel", "Parallel", "https://platform.parallel.ai/", True, True, True),
+        ("tavily", "Tavily", "https://app.tavily.com/", True, True, True),
+        ("firecrawl", "Firecrawl", "https://www.firecrawl.dev/app", True, True, True),
+        ("jina", "Jina", "https://jina.ai/reader/", True, True, True),
+        ("perplexity", "Perplexity", "https://www.perplexity.ai/settings/api", True, False, True),
+        ("serpapi", "SerpApi", "https://serpapi.com/manage-api-key", True, False, True),
     ):
         registry.web.register(
             WebProviderRegistration(
                 type=provider_type,
                 display_name=display_name,
                 configuration_model=EmptyConfiguration,
-                credential_model=ApiKeyCredential,
+                credential_model=ApiKeyCredential if key_required else EmptyConfiguration,
+                credential_required=key_required,
                 setup_url=setup_url,
                 factory=lambda provider_type=provider_type: BoundWebProviderRuntime(provider_type),
                 supports_search=search,

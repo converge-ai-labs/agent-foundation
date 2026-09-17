@@ -6467,9 +6467,9 @@ export interface components {
         [key: string]: unknown;
       };
       /** Credential */
-      credential: {
+      credential?: {
         [key: string]: unknown;
-      };
+      } | null;
       /**
        * Enabled
        * @default true

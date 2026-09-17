@@ -91,7 +91,7 @@ class WebProviderTransport:
             def build_request(client: httpx2.AsyncClient) -> httpx2.Request:
                 return client.build_request("POST", endpoint, headers={"x-api-key": credential}, json=body)
 
-        payload = await self._exchange_json(
+        payload = await self.exchange_json(
             build_request,
             endpoint=endpoint,
             operation="search",
@@ -114,13 +114,19 @@ class WebProviderTransport:
         deny_domains: tuple[str, ...],
     ) -> WebSearchResponse:
         del configuration
-        credential = _api_key(credentials)
         selection = SearchSelection.model_construct(
             provider_id="wprov_builtin",
             max_results=max_results,
             allow_domains=allow_domains,
             deny_domains=deny_domains,
         )
+        if provider_type not in SEARCH_ENDPOINTS:
+            from .vendor_adapters import search
+
+            return await search(
+                self, provider_type, _api_key(credentials) if provider_type != "duckduckgo" else "", request, selection
+            )
+        credential = _api_key(credentials)
         return await self.search(provider_type, credential, request, selection)
 
     async def scrape(
@@ -141,7 +147,7 @@ class WebProviderTransport:
                 json={"urls": [request.url], "text": {"maxCharacters": limit + 1}},
             )
 
-        payload = await self._exchange_json(
+        payload = await self.exchange_json(
             build_request,
             endpoint=endpoint,
             operation="scrape",
@@ -163,16 +169,20 @@ class WebProviderTransport:
         max_content_bytes: int,
     ) -> WebScrapeResult:
         del configuration, policy
-        credential = _api_key(credentials)
         selection = ScrapeSelection.model_construct(
             provider_id="wprov_builtin",
             max_content_bytes=max_content_bytes,
             allow_domains=(),
             deny_domains=(),
         )
+        if provider_type not in SCRAPE_ENDPOINTS:
+            from .vendor_adapters import scrape
+
+            return await scrape(self, provider_type, _api_key(credentials), request, selection)
+        credential = _api_key(credentials)
         return await self.scrape(provider_type, credential, request, selection)
 
-    async def _exchange_json(
+    async def exchange_json(
         self,
         build_request: Callable[[httpx2.AsyncClient], httpx2.Request],
         *,
@@ -180,6 +190,25 @@ class WebProviderTransport:
         operation: Literal["search", "scrape"],
         max_response_bytes: int,
     ) -> object:
+        content = await self.exchange(
+            build_request,
+            endpoint=endpoint,
+            operation=operation,
+            max_response_bytes=max_response_bytes,
+        )
+        try:
+            return json.loads(content)
+        except (ValueError, UnicodeError) as error:
+            raise WebProviderError(f"web_{operation}_response_invalid") from error
+
+    async def exchange(
+        self,
+        build_request: Callable[[httpx2.AsyncClient], httpx2.Request],
+        *,
+        endpoint: str,
+        operation: Literal["search", "scrape"],
+        max_response_bytes: int,
+    ) -> bytes:
         failure_code = f"web_{operation}_failed"
         response_invalid_code = f"web_{operation}_response_invalid"
         client: httpx2.AsyncClient | None = None
@@ -201,7 +230,7 @@ class WebProviderTransport:
                     _failure_code(response.status_code, operation=operation),
                     retry_after=_retry_after(response.headers.get("Retry-After")),
                 )
-            return json.loads(content)
+            return bytes(content)
         except httpx2.TimeoutException as error:
             raise TimeoutError from error
         except (httpx2.HTTPError, EndpointPolicyError, UnicodeError) as error:

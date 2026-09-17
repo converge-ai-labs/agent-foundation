@@ -14,10 +14,12 @@ export function eligibleWebProvider(
 ) {
   return (
     provider.enabled &&
-    provider.credential_configured &&
-    definitions
-      .find((definition) => definition.type === provider.type)
-      ?.operations.includes(operation)
+    definitions.some(
+      (definition) =>
+        definition.type === provider.type &&
+        (!definition.credential_required || provider.credential_configured) &&
+        definition.operations.includes(operation),
+    )
   );
 }
 

@@ -62,7 +62,7 @@ class CreateWebProviderRequest(BaseModel):
     type: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     name: DisplayName
     configuration: dict[str, object] = Field(default_factory=dict)
-    credential: dict[str, object] = Field(repr=False, json_schema_extra={"writeOnly": True})
+    credential: dict[str, object] | None = Field(default=None, repr=False, json_schema_extra={"writeOnly": True})
     enabled: bool = True
 
 

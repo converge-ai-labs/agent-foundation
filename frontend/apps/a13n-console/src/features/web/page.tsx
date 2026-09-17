@@ -1,5 +1,5 @@
 import { useResourceRows } from "../../shared/resource-modal";
-import type { Schema } from "../../shared/api";
+import { data, type Schema } from "../../shared/api";
 import { ProviderIcon } from "../../shared/provider-icon";
 import { ResourceIdentity } from "../../shared/collection";
 import { ScopeBadge } from "../../shared/scope-badge";
@@ -24,6 +24,11 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
     queryKey: ["web-providers", scope.kind, scope.id, page.cursor],
     queryFn: ({ signal }) =>
       webProviderApi(client, scope).providers(signal, page.cursor),
+  });
+  const definitions = useQuery({
+    queryKey: ["web-provider-types"],
+    queryFn: ({ signal }) =>
+      client.http.GET("/api/v1/web-provider-types", { signal }).then(data),
   });
   const manage =
     scope.kind === "organization"
@@ -82,9 +87,13 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
                 label: t("Credentials"),
                 render: (item) =>
                   t(
-                    item.credential_configured
-                      ? "Configured"
-                      : "Not configured",
+                    definitions.data?.items.find(
+                      (definition) => definition.type === item.type,
+                    )?.credential_required === false
+                      ? "Not required"
+                      : item.credential_configured
+                        ? "Configured"
+                        : "Not configured",
                   ),
               },
               {
@@ -100,9 +109,7 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
       ) : (
         <Empty
           title={t("No Web Providers yet")}
-          description={t(
-            "Add a Brave or Exa provider, then select it in your agent.",
-          )}
+          description={t("Add a Web Provider, then select it in your agent.")}
         />
       )}
     </div>
