@@ -22,14 +22,13 @@ it("copies and downloads the same complete saved configuration shown in raw prev
     name: "Research",
     description: "Saved description",
     key: "research",
-    version: 3,
   } as Schema["Agent"];
   const config = {
     ...initialConfig("Research"),
     model: { model_key: "research" },
     instructions: "Preserve\nall instructions.",
   };
-  render(<ExportAgent agent={agent} config={config} />);
+  render(<ExportAgent agent={agent} config={config} version={3} />);
   await user.click(screen.getByRole("button", { name: "Export agent" }));
   await user.click(screen.getByRole("tab", { name: "Raw" }));
   const yaml = screen.getByLabelText("Agent YAML").textContent!;

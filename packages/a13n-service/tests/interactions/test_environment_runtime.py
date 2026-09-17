@@ -3,16 +3,18 @@ from datetime import timedelta
 
 import pytest
 from a13n_environment import build_environment_provider_catalog
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.agents.persistence import copy_revision
 from a13n_service.environments.domain import (
     CreateManagedEnvironmentRequest,
     CreateProviderRequest,
     CreateTemplateRequest,
+    CreateTemplateRevisionRequest,
     ExistingEnvironmentSelection,
     NewEnvironmentSelection,
 )
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
-from a13n_service.environments.models import EnvironmentRecord
+from a13n_service.environments.models import EnvironmentRecord, EnvironmentTemplateRevisionRecord
 from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.environments.service import EnvironmentService
 from a13n_service.interactions.control_domain import ThreadRunSubmissionIntent
@@ -64,7 +66,8 @@ async def template_config(sessions, path, preparation, *, shell=False):
     )
     async with transaction(sessions) as session:
         agent = await session.get(AgentRecord, AGENT_ID)
-        agent.default_environment_template_id = template.id
+        revision = await session.get(AgentRevisionRecord, agent.default_revision_id)
+        revision.config = {**revision.config, "default_environment_template_id": template.id}
     return (
         service,
         template,
@@ -158,6 +161,60 @@ async def test_switching_defaults_does_not_retarget_retry_or_reuse_template_allo
             intent=ExplicitEnvironment(ExistingEnvironmentSelection(environment_id=first.environment_id)),
         )
         assert reused.environment_id == first.environment_id
+
+
+async def test_historical_agent_choice_uses_current_template_revision_after_default_switch(
+    interaction_sessions, interaction_object_store, tmp_path
+):
+    service, template, _ = await template_config(interaction_sessions, tmp_path, "on_use")
+    _, first, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    async with short_session(interaction_sessions) as session:
+        template_revision = await session.get(EnvironmentTemplateRevisionRecord, template.current_revision_id)
+        provider_id = template_revision.provider_id
+    updated_template = await service.create_revision(
+        actor=hook_actor(),
+        template_id=template.id,
+        request=CreateTemplateRevisionRequest(
+            expected_version=1,
+            provider_id=provider_id,
+            configuration={"root": {"path": str(tmp_path / "new")}},
+            preparation="on_use",
+            retention={"idle": {"stop_after": None, "delete_after": None}},
+        ),
+    )
+    async with transaction(interaction_sessions) as session:
+        agent = await session.get(AgentRecord, AGENT_ID)
+        historical = await session.get(AgentRevisionRecord, agent.default_revision_id)
+        replacement = copy_revision(
+            historical,
+            revision_id="agtr_abcdef0123456789",
+            version=2,
+            source_revision_id=historical.id,
+            actor=hook_actor(),
+            now=NOW,
+        )
+        replacement.config = {**historical.config, "default_environment_template_id": None}
+        session.add(replacement)
+        agent.default_revision_id = replacement.id
+        first_row = await session.get(RunRecord, first.id)
+        first_environment_id = first_row.environment_id
+        historical_run = first_row.to_resource().model_copy(
+            update={"id": "run_history12345678", "environment_id": None, "environment_access": None}
+        )
+        selected = await select_run_environment(
+            session, run=historical_run, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.agent
+        )
+        allocated = await session.get(EnvironmentRecord, selected.environment_id)
+        assert allocated.template_revision_id == updated_template.id
+        assert (
+            await session.get(EnvironmentRecord, first_environment_id)
+        ).template_revision_id == template.current_revision_id
+        default_run = historical_run.model_copy(update={"agent_revision_id": replacement.id})
+        assert (
+            await select_run_environment(
+                session, run=default_run, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.agent
+            )
+        ).environment_id is None
 
 
 async def test_queued_choice_roundtrip_preserves_omitted_and_null():

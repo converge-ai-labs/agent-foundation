@@ -15,6 +15,7 @@ from a13n_service.agents.invocation_resolution import (
     AgentInvocationResolver,
     AgentSelectorKind,
 )
+from a13n_service.etags import resource_etag
 from a13n_service.models.domain import CatalogRef
 from a13n_service.models.models import ModelRecord
 from a13n_service.storage import transaction
@@ -28,7 +29,9 @@ def test_absent_override_inherits_complete_agent_config() -> None:
 
     merged = merge_agent_run_override(base, None)
 
-    assert merged.model_dump(mode="json", by_alias=True) == base.model_dump(mode="json", by_alias=True)
+    assert merged.model_dump(mode="json", by_alias=True) == base.model_dump(
+        mode="json", by_alias=True, exclude={"default_environment_template_id"}
+    )
 
 
 def test_scalar_and_list_overrides_replace_and_clear() -> None:
@@ -348,9 +351,9 @@ async def test_exact_historical_revision_never_follows_current(
         agent_id=created.agent.id,
         idempotency_key="create-exact-v2",
         request=CreateAgentRevisionRequest(
-            expected_version=1,
             config=agent_config(instructions="v2"),
         ),
+        if_match=resource_etag(created.agent.id, created.agent.updated_at),
     )
 
     prepared = await agent_invocation_resolver.preparation.prepare(
@@ -385,15 +388,15 @@ async def test_current_selector_detects_revision_change_between_prepare_and_comm
         agent_id=created.agent.id,
         idempotency_key="advance-current-race",
         request=CreateAgentRevisionRequest(
-            expected_version=1,
             config=agent_config(instructions="advanced"),
         ),
+        if_match=resource_etag(created.agent.id, created.agent.updated_at),
     )
 
     with pytest.raises(AgentError) as conflict:
         async with transaction(agent_sessions) as session:
             await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
-    assert conflict.value.code == "current_revision_conflict"
+    assert conflict.value.code == "default_revision_conflict"
 
 
 @pytest.mark.anyio

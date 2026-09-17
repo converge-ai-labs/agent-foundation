@@ -33,7 +33,7 @@ from ..domain import (
 )
 from ..errors import (
     agent_revision_not_executable,
-    current_revision_conflict,
+    default_revision_conflict,
     map_authorization_error,
     map_model_error,
 )
@@ -97,15 +97,15 @@ class AgentInvocationFreezer:
                 policy=prepared.root_state_policy,
             )
             if (
-                prepared.expected_current_revision_id is not None
-                and agent.current_revision_id != prepared.expected_current_revision_id
+                prepared.expected_default_revision_id is not None
+                and agent.default_revision_id != prepared.expected_default_revision_id
             ):
-                raise current_revision_conflict(agent.current_revision_id)
+                raise default_revision_conflict(agent.default_revision_id)
             if (
                 prepared.selector_kind is AgentSelectorKind.current
-                and agent.current_revision_id != prepared.agent_revision_id
+                and agent.default_revision_id != prepared.agent_revision_id
             ):
-                raise current_revision_conflict(agent.current_revision_id)
+                raise default_revision_conflict(agent.default_revision_id)
             if prepared.agent_revision_id is None:
                 # This source is reachable only through protected configuration admission.
                 authored = prepared.merged

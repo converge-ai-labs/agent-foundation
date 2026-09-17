@@ -72,7 +72,9 @@ def merge_agent_run_override(
     """Apply the finite typed override contract without resolving managed resources."""
 
     if override is None:
-        return MergedAgentRunConfig.model_validate(base.model_dump(mode="python", by_alias=True))
+        return MergedAgentRunConfig.model_validate(
+            base.model_dump(mode="python", by_alias=True, exclude={"default_environment_template_id"})
+        )
 
     fields = override.model_fields_set
     model = base.model

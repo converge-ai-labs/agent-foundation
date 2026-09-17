@@ -8,7 +8,7 @@ import e2b
 import pytest
 from a13n_environment import EnvironmentError, build_environment_provider_catalog
 from a13n_environment._guest_files import GuestFiles
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.runtime import prepare_run_environment
@@ -84,7 +84,9 @@ async def test_host_publishes_recovery_before_exposing_the_new_backing(
         ),
     )
     async with transaction(interaction_sessions) as session:
-        (await session.get(AgentRecord, AGENT_ID)).default_environment_template_id = template.id
+        agent = await session.get(AgentRecord, AGENT_ID)
+        revision = await session.get(AgentRevisionRecord, agent.default_revision_id)
+        revision.config = {**revision.config, "default_environment_template_id": template.id}
     api = SandboxAPI()
     monkeypatch.setattr(e2b, "AsyncSandbox", api)
     monkeypatch.setattr(GuestFiles, "stat", AsyncMock())

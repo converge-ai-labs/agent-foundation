@@ -60,7 +60,7 @@ async def test_readiness_never_initializes_resources_and_exact_system_definition
     ).items == ()
     with pytest.raises((ApplicationError, AuthorizationError)):
         await agent_management.queries.get(actor=actor(), agent_id=created.id)
-    assert created.current_revision_id is None and created.version == 1
+    assert created.default_revision_id is None
     assert KnowledgeFiles().validate().is_dir()
     changed = definition.model_copy(update={"instructions": definition.instructions + "\nBe concise."})
     advanced = await SystemConfigurationAgent(agent_sessions, changed).ensure(

@@ -92,7 +92,7 @@ async def create_draft(
             raise failure("configuration_source_invalid", "An update draft requires a retained target Revision.")
         revision = await session.scalar(
             select(AgentRevisionRecord).where(
-                AgentRevisionRecord.id == (selection.revision_id or target.current_revision_id),
+                AgentRevisionRecord.id == (selection.revision_id or target.default_revision_id),
                 AgentRevisionRecord.agent_id == target.id,
                 AgentRevisionRecord.workspace_id == conversation.workspace_id,
             )
@@ -112,7 +112,7 @@ async def create_draft(
         source_agent_revision_id=None if revision is None else revision.id,
         source_agent_revision_version=None if revision is None else revision.version,
         base_agent_revision_id=None if revision is None else revision.id,
-        base_agent_version=None if target is None else target.version,
+        base_agent_etag=None if target is None else resource_etag(target.id, target.updated_at),
         version=1,
         config=config,
         content_digest=candidate_digest(config, None),

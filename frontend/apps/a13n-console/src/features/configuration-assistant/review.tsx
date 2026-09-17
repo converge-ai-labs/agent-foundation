@@ -62,10 +62,10 @@ function Receipt({
               <Link
                 to={`${basePath}/agents/${encodeURIComponent(agent.data.key)}`}
               >
-                {t("Open agent")} · v{receipt.agent_version}
+                {t("Open agent")} · v{receipt.agent_revision_version}
               </Link>
             ) : (
-              <span>v{receipt.agent_version}</span>
+              <span>v{receipt.agent_revision_version}</span>
             )}
           </dd>
         </div>
@@ -169,7 +169,7 @@ export function DraftReview({ draftId }: { draftId: string }) {
           <dt>{t("Source revision")}</dt>
           <dd>{draft.source ? `v${draft.source.version}` : t("Empty")}</dd>
           <dt>{t("Base version")}</dt>
-          <dd>{draft.base_agent_version ?? "—"}</dd>
+          <dd>{draft.base ? `v${draft.base.version}` : "—"}</dd>
           <dt>{t("Current target")}</dt>
           <dd>
             {draft.current_target ? `v${draft.current_target.version}` : "—"}
@@ -305,6 +305,7 @@ function DraftActions({
     [reviewed, setReviewed] = useState<Review>(),
     [reviewEtag, setReviewEtag] = useState<string>();
   const [reason, setReason] = useState("");
+  const [changeSummary, setChangeSummary] = useState("");
   const header = (key: string, tag = etag) => {
     if (!tag) throw new Error(t("Reload the draft before making changes."));
     return { ...commandHeaders(workspace.id, key), "If-Match": tag };
@@ -316,8 +317,8 @@ function DraftActions({
       const body: Schema["ApplyDraftRequest"] = {
         expected_version: reviewed.version,
         content_digest: reviewed.content_digest,
-        expected_target_version: reviewed.base_agent_version,
         dependency_digest: reviewed.latest_validation.dependency_digest,
+        change_summary: changeSummary.trim() || null,
         verification_acknowledgement: {
           outcome: "unverified",
           reason: reason.trim(),
@@ -337,6 +338,7 @@ function DraftActions({
       applyKey.reset();
       setReviewed(undefined);
       setReason("");
+      setChangeSummary("");
       await refresh();
       await Promise.all([
         cache.invalidateQueries({ queryKey: ["agents", workspace.id] }),
@@ -418,6 +420,7 @@ function DraftActions({
           }
           onClick={() => {
             setReviewed(draft);
+            setChangeSummary(draft.suggested_change_summary ?? "");
             setReviewEtag(etag);
             apply.reset();
           }}
@@ -473,6 +476,13 @@ function DraftActions({
               title={t("Changes to apply")}
               changes={reviewed.current_target_to_candidate}
             />
+            <FormField label={t("Version note")}>
+              <Textarea
+                value={changeSummary}
+                maxLength={2048}
+                onChange={(event) => setChangeSummary(event.target.value)}
+              />
+            </FormField>
             <p>
               {t(
                 "This candidate has not been execution-verified. Explain why you are applying it without verification.",
@@ -528,12 +538,12 @@ function DraftEditor({
     mutationFn: async (rebase: boolean) => {
       const config = JSON.parse(text) as Schema["AgentConfig-Input"];
       if (rebase) {
-        if (!draft.current_target || !etag)
+        if (!draft.current_target || !draft.current_target_etag || !etag)
           throw new Error(t("Reload the draft before making changes."));
         const body = {
           config,
           expected_version: draft.version,
-          expected_target_version: draft.current_target.version,
+          expected_target_etag: draft.current_target_etag,
         };
         data(
           await client.http.POST(

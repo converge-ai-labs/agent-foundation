@@ -8,7 +8,7 @@ from enum import StrEnum
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.agents.domain import ChildEnvironmentPolicy
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection, NewEnvironmentSelection
 from a13n_service.environments.errors import invalid_environment
 from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentTemplateRevisionRecord
@@ -51,6 +51,7 @@ async def resolve_requested_environment(
     session: AsyncSession,
     *,
     agent_id: str,
+    agent_revision_id: str | None = None,
     choice: EnvironmentSelection | Omitted | None,
     inherited_id: str | Omitted | None = Omitted.UNSET,
 ) -> EnvironmentSelection | None:
@@ -63,12 +64,14 @@ async def resolve_requested_environment(
         return choice
     if inherited_id is not Omitted.UNSET:
         return ExistingEnvironmentSelection(environment_id=inherited_id) if inherited_id else None
-    agent = await session.get(AgentRecord, agent_id)
-    return (
-        NewEnvironmentSelection(template_id=agent.default_environment_template_id)
-        if agent and agent.default_environment_template_id
-        else None
-    )
+    if agent_revision_id is None:
+        agent = await session.get(AgentRecord, agent_id)
+        agent_revision_id = agent.default_revision_id if agent else None
+    revision = await session.get(AgentRevisionRecord, agent_revision_id) if agent_revision_id else None
+    if agent_revision_id is not None and (revision is None or revision.agent_id != agent_id):
+        raise invalid_environment("Agent Revision for Environment selection is unavailable")
+    template_id = revision.config.get("default_environment_template_id") if revision else None
+    return NewEnvironmentSelection(template_id=template_id) if template_id else None
 
 
 async def select_run_environment(
@@ -77,7 +80,9 @@ async def select_run_environment(
     if isinstance(intent, ExplicitEnvironment):
         choice = intent.selection
     elif intent is EnvironmentDefault.agent:
-        choice = await resolve_requested_environment(session, agent_id=run.agent_id, choice=Omitted.UNSET)
+        choice = await resolve_requested_environment(
+            session, agent_id=run.agent_id, agent_revision_id=run.agent_revision_id, choice=Omitted.UNSET
+        )
     elif intent is EnvironmentDefault.thread:
         thread = await session.get(ThreadRecord, run.thread_id)
         if thread is None or thread.organization_id != run.organization_id or thread.session_id != run.session_id:

@@ -81,9 +81,11 @@ export function AgentFilePreview({ file }: { file: AgentFile }) {
 export function ExportAgent({
   agent,
   config,
+  version,
 }: {
   agent: Schema["Agent"];
   config: AgentConfig;
+  version: number;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -135,7 +137,7 @@ export function ExportAgent({
         <p className="text-xs text-muted-foreground">
           {t(
             "Saved version {{version}} · Credentials and dependent resources are not included.",
-            { version: agent.version },
+            { version },
           )}
         </p>
         <AgentFilePreview file={file} />

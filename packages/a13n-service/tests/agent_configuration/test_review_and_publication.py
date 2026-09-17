@@ -30,7 +30,8 @@ async def test_historical_source_review_uses_current_target_for_application(agen
         actor=actor(),
         agent_id=original.agent.id,
         idempotency_key="advanced",
-        request=CreateAgentRevisionRequest(expected_version=1, config=agent_config(instructions="Current")),
+        request=CreateAgentRevisionRequest(config=agent_config(instructions="Current")),
+        if_match=resource_etag(original.agent.id, original.agent.updated_at),
     )
     conversations, _, _ = services(agent_sessions)
     conversation = await conversations.create_session(
@@ -44,7 +45,7 @@ async def test_historical_source_review_uses_current_target_for_application(agen
     draft = (await conversations.get_thread(actor=actor(), thread_id=conversation.root_thread_id)).draft
     review = await ConfigurationReviews(agent_sessions).get(actor=actor(), draft_id=draft.id)
     assert review.source_to_candidate == review.base_to_candidate == ()
-    assert not review.target_conflict and review.base_agent_version == 2
+    assert not review.target_conflict and review.base.version == 1 and review.current_target.version == 2
     change = next(item for item in review.current_target_to_candidate if item.path == ("instructions",))
     assert (change.before, change.after) == ("Current", "Historical")
 

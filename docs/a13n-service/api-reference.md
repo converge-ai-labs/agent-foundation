@@ -403,6 +403,7 @@ Duplicate Agent.
 | `workspace`       | path     | true     | string        | —                          |
 | `agent`           | path     | true     | string        | —                          |
 | `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
 
 Request body: required.
 
@@ -475,6 +476,7 @@ Create Agent Revision.
 | `workspace`       | path     | true     | string        | —                          |
 | `agent`           | path     | true     | string        | —                          |
 | `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
 
 Request body: required.
 
@@ -486,9 +488,9 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore`
+### `POST /api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/default`
 
-Restore Agent Revision.
+Set Default Agent Revision.
 
 | Parameter         | Location | Required | Type / schema | Constraints and default    |
 | ----------------- | -------- | -------- | ------------- | -------------------------- |
@@ -496,14 +498,15 @@ Restore Agent Revision.
 | `workspace`       | path     | true     | string        | —                          |
 | `agent`           | path     | true     | string        | —                          |
 | `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
 
 Request body: required.
 
-- `application/json`: `RestoreAgentRevisionRequest`.
+- `application/json`: `SetDefaultAgentRevisionRequest`.
 
 Responses:
 
-- **201** — Successful Response (`application/json: AgentRevisionCreateResult`).
+- **200** — Successful Response (`application/json: AgentRevisionCreateResult`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

@@ -13,7 +13,6 @@ from a13n_service.durable_operations.idempotency import (
     is_evidence_unique_race,
 )
 from a13n_service.durable_operations.requests import evidence_record
-from a13n_service.environments.authoring import authorize_template
 from a13n_service.etags import etag_matches
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -140,20 +139,15 @@ class AgentCommands:
                     resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
                 except Exception as error:
                     raise resolution_error(error) from error
-                await authorize_template(
-                    session, actor=actor, workspace_id=workspace_id, template_id=request.default_environment_template_id
-                )
                 record = AgentRecord(
                     id=agent_id,
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
                     source=AgentSource.custom.value,
-                    default_environment_template_id=request.default_environment_template_id,
                     name=request.name,
                     description=request.description,
                     labels=request.labels,
-                    version=1,
-                    current_revision_id=revision_id,
+                    default_revision_id=revision_id,
                     enabled=True,
                     archived_at=None,
                     duplicated_from_agent_id=None,
@@ -199,6 +193,7 @@ class AgentCommands:
                         action="agent.create",
                         agent_id=agent_id,
                         now=now,
+                        details={"from_revision_id": None, "to_revision_id": revision.id},
                     )
                 )
                 await session.flush()
@@ -287,14 +282,6 @@ class AgentCommands:
                     record.key = request.key
                 if "description" in request.model_fields_set:
                     record.description = request.description
-                if "default_environment_template_id" in request.model_fields_set:
-                    await authorize_template(
-                        session,
-                        actor=actor,
-                        workspace_id=workspace.workspace_id,
-                        template_id=request.default_environment_template_id,
-                    )
-                    record.default_environment_template_id = request.default_environment_template_id
                 touch_agent(record, actor=actor, now=now)
                 session.add(
                     new_agent_audit(

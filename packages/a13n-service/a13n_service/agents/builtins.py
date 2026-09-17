@@ -15,7 +15,7 @@ from a13n_service.iam import (
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.resource_keys import insert_with_key
 from a13n_service.storage import transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, next_updated_at, utc_now
 
 from .domain import (
     AgentRevisionCreateResult,
@@ -34,6 +34,7 @@ from .persistence import (
     new_agent_audit,
     new_builtin_agent,
     new_revision,
+    next_revision_number,
 )
 from .resolution import AgentResolver, resolution_error
 
@@ -136,7 +137,7 @@ class BuiltinAgents:
                 revision = new_revision(
                     record,
                     revision_id=revision_id,
-                    version=1 if created else record.version + 1,
+                    version=1 if created else await next_revision_number(session, record.id),
                     config=registration.config,
                     resolved=resolved,
                     source_revision_id=None,
@@ -146,7 +147,7 @@ class BuiltinAgents:
                 revision.created_by_type = "system"
                 revision.created_by_id = registration.system_actor_id
                 expected_content_digest = revision.content_digest
-                assert record.current_revision_id is not None
+                assert record.default_revision_id is not None
                 current_revision = (
                     None
                     if created
@@ -155,7 +156,7 @@ class BuiltinAgents:
                         organization_id=record.organization_id,
                         workspace_id=record.workspace_id,
                         agent_id=record.id,
-                        revision_id=record.current_revision_id,
+                        revision_id=record.default_revision_id,
                     )
                 )
                 content_changed = current_revision is None or current_revision.content_digest != revision.content_digest
@@ -171,10 +172,9 @@ class BuiltinAgents:
                 record.description = registration.description
                 record.updated_by_type = "system"
                 record.updated_by_id = registration.system_actor_id
-                record.updated_at = now
+                record.updated_at = next_updated_at(record.updated_at, now)
                 if content_changed:
-                    record.version = revision.version
-                    record.current_revision_id = revision.id
+                    record.default_revision_id = revision.id
                     session.add(revision)
                 session.add(
                     new_agent_audit(
@@ -184,6 +184,12 @@ class BuiltinAgents:
                         action="agent.builtin.register",
                         agent_id=record.id,
                         now=now,
+                        details={
+                            "from_revision_id": None if current_revision is None else current_revision.id,
+                            "to_revision_id": revision.id,
+                        }
+                        if content_changed
+                        else None,
                     )
                 )
                 await session.flush()
@@ -244,7 +250,7 @@ class BuiltinAgents:
                 return None
             revision = await session.scalar(
                 select(AgentRevisionRecord).where(
-                    AgentRevisionRecord.id == record.current_revision_id,
+                    AgentRevisionRecord.id == record.default_revision_id,
                     AgentRevisionRecord.agent_id == record.id,
                     AgentRevisionRecord.content_digest == expected_content_digest,
                 )

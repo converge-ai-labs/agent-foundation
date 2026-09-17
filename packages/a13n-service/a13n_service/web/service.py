@@ -321,7 +321,7 @@ class WebProviderService:
                             agent_id=agent.id,
                             agent_revision_id=revision.id,
                             version=revision.version,
-                            is_current=agent.current_revision_id == revision.id,
+                            is_current=agent.default_revision_id == revision.id,
                         )
                     )
                     if len(items) > limit:

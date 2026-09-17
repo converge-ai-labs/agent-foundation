@@ -84,7 +84,7 @@ The definition digest identifies the accepted assistant definition, not the cont
 
 For an existing target, creating a draft defaults to the target's current immutable Revision; the user can explicitly select a retained authorized historical Revision of that same Agent. A new Agent starts from `empty` with absent config until initialized. Source selectors are `current`, `explicit`, and `empty`; no system-hidden Agent is a valid target or source.
 
-`source_agent_revision_id` and its version identify the immutable original content and never change after draft creation. The source content is read from that retained Revision rather than copied into a second authoritative draft history. `base_agent_revision_id` starts at the source and changes only through explicit rebase or successful application, which establishes the resulting business Revision as the new baseline. `base_agent_version` captures the target head's current concurrency version, even when the source is historical. Starting from v3 while the current target is v7 therefore records source v3 and expected target head v7.
+`source_agent_revision_id` and its version identify the immutable original content and never change after draft creation. The source content is read from that retained Revision rather than copied into a second authoritative draft history. `base_agent_revision_id` starts at the source and changes only through explicit rebase or successful application, which establishes the resulting business Revision as the new baseline. `base_agent_etag` captures the strong target Agent representation ETag, even when the source is historical. A default switch changes that ETag, so a draft based on an earlier state cannot apply after the default switches away and back.
 
 Reads distinguish original-source-to-draft, merge-base-to-draft, and current-target-to-draft diffs. The apply diff always identifies the current target baseline; source history cannot masquerade as the current state to be overwritten.
 
@@ -104,7 +104,7 @@ class ConfigurationDraft:
     source_agent_revision_id: AgentRevisionId | None
     source_agent_revision_version: int | None
     base_agent_revision_id: AgentRevisionId | None
-    base_agent_version: int | None
+    base_agent_etag: str | None
     version: int
     config: AgentConfig | None
     creation_metadata: CreationMetadata | None
@@ -118,9 +118,9 @@ Draft identity remains stable across edits, rebase, application and subsequent e
 
 `version` starts at 1 and advances once for a material candidate edit, explicit rebase or successful new application. Application advances it because the committed baseline, last application and possibly create-to-update binding change; it does not imply another content edit. A semantic no-op edit and an idempotent application replay do not advance it. Validation-only observations and discard/expiry do not advance the version. Strong ETags protect mutable representations under the [shared mutation contract](../api-conventions.md#mutations-and-retries). Writes compare exact expected version and digest. A version identifies authoring and review state but is not an address for arbitrary historical draft content.
 
-`content_digest` covers canonical config and retained creation metadata. Version and status checks remain necessary even when content is unchanged. `config=None` is allowed only before create-mode initialization and cannot pass apply or verification admission. Create mode has no target or base. First application binds its newly created business Agent, changes mode to update and establishes the result Revision as base without changing draft ID or original `source_*` provenance. Consequently an update-mode draft originally created from empty keeps an empty original source. Existing-target drafts retain their original current/explicit source. References retain organization and Workspace consistency.
+`content_digest` covers canonical config and retained creation metadata, excluding the reviewable assistant `suggested_change_summary`. The user can edit the final immutable Revision summary before apply; a summary-only change does not publish a Revision. Version and status checks remain necessary even when content is unchanged. `config=None` is allowed only before create-mode initialization and cannot pass apply or verification admission. Create mode has no target or base. First application binds its newly created business Agent, changes mode to update and establishes the result Revision as base without changing draft ID or original `source_*` provenance. Consequently an update-mode draft originally created from empty keeps an empty original source. Existing-target drafts retain their original current/explicit source. References retain organization and Workspace consistency.
 
-Application receipts are immutable retained records keyed by `(draft_id, reviewed_version)`, not one overwritten field on the draft. Each records reviewed digest, mode and target/baseline at review, resulting Agent/Revision and Agent version, applying User, timestamp, verification references/acknowledgement and no-change outcome. Retained request identity supports replay after generic idempotency evidence expires. The reviewed candidate is recoverable from the resulting immutable business Revision and retained reviewed creation metadata. Receipt history is paginated; a latest receipt in a draft response is a projection rather than a second authority.
+Application receipts are immutable retained records keyed by `(draft_id, reviewed_version)`, not one overwritten field on the draft. Each records reviewed digest, mode and target/baseline at review, resulting Agent/Revision and immutable Revision version, applying User, timestamp, verification references/acknowledgement and no-change outcome. Retained request identity supports replay after generic idempotency evidence expires. The reviewed candidate is recoverable from the resulting immutable business Revision and retained reviewed creation metadata. Receipt history is paginated; a latest receipt in a draft response is a projection rather than a second authority.
 
 ```mermaid
 stateDiagram-v2
@@ -163,11 +163,11 @@ The latest successful-save validation report is bounded data on the draft, tied 
 
 ### Explicit Rebase
 
-When the target changes, apply reports a conflict and preserves the candidate. The user can submit an explicit merged config and the newly reviewed target version through rebase. Rebase validates and atomically replaces the current candidate, merge base, and target concurrency baseline under draft and target preconditions, advances the draft version, and preserves the original `source_*` provenance, including an empty source for a draft that began in create mode. Ordinary model edits cannot rebase or force overwrite. Earlier validation or Run evidence does not become current merely because the conflict was resolved.
+When the target changes, apply reports a conflict and preserves the candidate. The user can submit an explicit merged config and the newly reviewed target ETag through rebase. Rebase validates and atomically replaces the current candidate, merge base, and target concurrency baseline under draft and target preconditions, advances the draft version, and preserves the original `source_*` provenance, including an empty source for a draft that began in create mode. Ordinary model edits cannot rebase or force overwrite. Earlier validation or Run evidence does not become current merely because the conflict was resolved.
 
 ## User Application
 
-Apply is a deterministic authenticated user command, absent from the assistant toolset. Questions, model output, conversational agreement, and an `approved` tool argument do not invoke it or provide authority. The request identifies the reviewed draft version/digest, expected target version for update mode, accepted dependency observations, selected verification Run references, any explicit unverified/failure acknowledgement with reason, and an idempotency key.
+Apply is a deterministic authenticated user command, absent from the assistant toolset. Questions, model output, conversational agreement, and an `approved` tool argument do not invoke it or provide authority. The request identifies the reviewed draft version/digest, accepted dependency observations, selected verification Run references, any explicit unverified/failure acknowledgement with reason, and an idempotency key.
 
 After checking current User authority, Service first resolves any retained application receipt for the reviewed version; an exact replay does not depend on reconstructing the draft's old mutable state. For a new application, Service reads and prepares the exact candidate and dependency resolution outside the final transaction. It never holds a database session while calling a model, Provider, tool or storage backend. The final short transaction:
 
@@ -183,7 +183,7 @@ No-op application reuses the target's current Revision and records a no-change r
 
 At most one application result exists for a reviewed draft version. Concurrent applications from different Threads cannot create duplicate business Agents or Revisions. An exact semantic replay returns the committed receipt even after later edits; changed request content for an already applied version conflicts. An idempotency key cannot be reused for another request. First creation permanently binds the draft's business target, so later applications update that Agent. Independent creation uses a new configuration Session and draft.
 
-A lost response is reconciled through retained request identity or the receipt for the reviewed version, even after generic HTTP idempotency evidence expires. Notification failure does not undo application. Updated target configuration applies to later ordinary invocations; existing Runs retain their frozen selections. Historical restoration creates a later business Revision and does not undo external effects.
+A lost response is reconciled through retained request identity or the receipt for the reviewed version, even after generic HTTP idempotency evidence expires. Notification failure does not undo application. Updated target configuration applies to later ordinary invocations; existing Runs retain their frozen selections. Selecting a historical Revision as default does not create another Revision or undo external effects.
 
 ## Verification Evidence and Run Reuse
 

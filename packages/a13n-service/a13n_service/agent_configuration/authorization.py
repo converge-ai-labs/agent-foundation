@@ -38,6 +38,8 @@ async def authorize_candidate_snapshot(
         actions.add(WorkspaceAction.connection_read)
     if config.secret_requirements:
         actions.add(WorkspaceAction.secrets_bind)
+    if config.default_environment_template_id is not None:
+        actions.add(WorkspaceAction.environment_template_use)
     web = config.toolsets.get("web")
     if web is not None and web.enabled:
         actions.add(WorkspaceAction.web_provider_read)

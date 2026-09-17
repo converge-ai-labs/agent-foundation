@@ -54,7 +54,7 @@ class PreparedAgentInvocation:
     agent_id: str
     agent_revision_id: str | None
     selector_kind: AgentSelectorKind
-    expected_current_revision_id: str | None
+    expected_default_revision_id: str | None
     revision_content_digest: str | None
     merged: MergedAgentRunConfig
     model: PreparedModelExecution

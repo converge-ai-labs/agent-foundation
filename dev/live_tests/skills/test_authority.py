@@ -177,7 +177,7 @@ async def test_skill_reauthorizes_after_preparation(skills: SkillJourney, skill_
         barrier = skills.arm("skill.source_prepared", upload_id=staged.json()["upload_id"])
     elif operation == "binding":
         path = skills.base + "/agents/" + agent["agent"]["id"] + "/revisions"
-        body = {"expected_version": 1, "config": agent_config(skills=[{"skill_key": key, "version": 1}])}
+        body = {"config": agent_config(skills=[{"skill_key": key, "version": 1}])}
         barrier = skills.arm("skill.binding_prepared", agent_id=agent["agent"]["id"])
     else:
         environment, _ = await skills.environment()
@@ -189,7 +189,10 @@ async def test_skill_reauthorizes_after_preparation(skills: SkillJourney, skill_
         }
         barrier = skills.arm("skill.invocation_prepared", agent_id=agent["agent"]["id"])
     before = await skills.runs()
-    task = asyncio.create_task(user.post(path, json=body, headers={"Idempotency-Key": uuid4().hex}))
+    headers = {"Idempotency-Key": uuid4().hex}
+    if operation == "binding":
+        headers["If-Match"] = (await user.get(skills.base + "/agents/" + agent["agent"]["id"])).headers["etag"]
+    task = asyncio.create_task(user.post(path, json=body, headers=headers))
     try:
         await skills.reached(barrier)
         binding_path = "/api/v1/role-bindings/" + binding["id"]

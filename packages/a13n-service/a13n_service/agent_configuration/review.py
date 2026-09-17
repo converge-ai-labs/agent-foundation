@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentConfig
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.storage import short_session
 
@@ -37,6 +38,7 @@ class ConfigurationDraftReview(ConfigurationDraft):
     source: ConfigurationRevisionView | None
     base: ConfigurationRevisionView | None
     current_target: ConfigurationRevisionView | None
+    current_target_etag: str | None
     source_to_candidate: tuple[ConfigurationDifference, ...]
     base_to_candidate: tuple[ConfigurationDifference, ...]
     current_target_to_candidate: tuple[ConfigurationDifference, ...]
@@ -55,7 +57,7 @@ class ConfigurationReviews:
             source = await revision_view(session, draft.source_agent_revision_id)
             base = await revision_view(session, draft.base_agent_revision_id)
             target = None if draft.target_agent_id is None else await session.get(AgentRecord, draft.target_agent_id)
-            current = None if target is None else await revision_view(session, target.current_revision_id)
+            current = None if target is None else await revision_view(session, target.default_revision_id)
             application = await session.scalar(
                 select(ConfigurationApplicationRecord)
                 .where(ConfigurationApplicationRecord.draft_id == draft_id)
@@ -68,13 +70,15 @@ class ConfigurationReviews:
                 source=source,
                 base=base,
                 current_target=current,
+                current_target_etag=None if target is None else resource_etag(target.id, target.updated_at),
                 source_to_candidate=config_diff(None if source is None else source.config, draft.config),
                 current_target_to_candidate=config_diff(None if current is None else current.config, draft.config),
                 base_to_candidate=config_diff(None if base is None else base.config, draft.config),
                 base_to_current_target=config_diff(
                     None if base is None else base.config, None if current is None else current.config
                 ),
-                target_conflict=target is not None and target.version != draft.base_agent_version,
+                target_conflict=target is not None
+                and resource_etag(target.id, target.updated_at) != draft.base_agent_etag,
             )
 
 

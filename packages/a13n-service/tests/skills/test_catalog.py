@@ -404,7 +404,6 @@ async def test_references_include_disabled_unarchived_current_agents_and_block_d
                 name="Disabled Agent",
                 key="disabled-agent",
                 description=None,
-                version=1,
                 current_revision_id=revision_id,
                 enabled=False,
                 archived_at=None,

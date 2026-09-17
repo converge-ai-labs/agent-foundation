@@ -18,7 +18,7 @@ class StartRunIntent(StrictModel):
     input: AgentInput
     session_id: str | None = None
     agent_revision_id: str | None = None
-    expected_current_revision_id: str | None = None
+    expected_default_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
     session_labels: Labels = Field(default_factory=dict)
@@ -36,7 +36,7 @@ class ContinueRunIntent(StrictModel):
     input: AgentInput
     agent_id: str | None = None
     agent_revision_id: str | None = None
-    expected_current_revision_id: str | None = None
+    expected_default_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
     labels: Labels = Field(default_factory=dict)
@@ -64,7 +64,7 @@ class ForkRunIntent(StrictModel):
     input: AgentInput
     agent_id: str | None = None
     agent_revision_id: str | None = None
-    expected_current_revision_id: str | None = None
+    expected_default_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
     thread_labels: Labels = Field(default_factory=dict)

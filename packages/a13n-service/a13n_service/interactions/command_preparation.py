@@ -59,7 +59,7 @@ class CommandInput:
         actor: AuthenticatedActor,
         agent_id: str,
         agent_revision_id: str | None,
-        expected_current_revision_id: str | None,
+        expected_default_revision_id: str | None,
         config_override: AgentRunOverride | None,
         submitted: AgentInput,
         environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
@@ -76,7 +76,7 @@ class CommandInput:
             actor=actor,
             agent_id=agent_id,
             agent_revision_id=agent_revision_id,
-            expected_current_revision_id=expected_current_revision_id,
+            expected_default_revision_id=expected_default_revision_id,
             config_override=config_override,
         )
         async with transaction(self._sessions) as database:
@@ -137,6 +137,7 @@ class CommandInput:
                 database,
                 actor=actor,
                 agent_id=frozen.agent_id,
+                agent_revision_id=frozen.agent_revision_id,
                 choice=environment,
                 inherited_id=inherited_environment_id,
                 access_ceiling=environment_access_ceiling,

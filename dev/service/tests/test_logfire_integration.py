@@ -86,7 +86,7 @@ async def preflight(client, manifest):
     }
     for agent_id in agents.values():
         agent = await client.request("GET", base + "/agents/" + agent_id)
-        revision = await client.request("GET", "/api/v1/agent-revisions/" + agent["current_revision_id"])
+        revision = await client.request("GET", "/api/v1/agent-revisions/" + agent["default_revision_id"])
         assert revision["config"]["model"]["model_key"] == "local-scripted"
     return agents
 

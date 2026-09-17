@@ -108,7 +108,7 @@ async def test_unbound_child_results_wait_behind_recoverably_blocked_queue(contr
     source = await live.run(parent["run_id"])
     agent = await live.request("GET", f"{journey.base}/agents/{source['agent_id']}")
     later = await journey.case()
-    row = await journey.queue(parent, later, expected_current_revision_id=source["agent_revision_id"])
+    row = await journey.queue(parent, later, expected_default_revision_id=source["agent_revision_id"])
     await journey.revision(agent, instructions="Queue repair uses the current revision")
     (root / "parent_release").touch()
     completed = await live.finish(parent["run_id"])
@@ -121,7 +121,7 @@ async def test_unbound_child_results_wait_behind_recoverably_blocked_queue(contr
     assert all(item["status"] == "pending" and item["target_run_id"] is None for item in rows)
     await live.assert_stable(lambda: journey.thread_runs(parent), [completed], seconds=2)
     assert await journey.queue_row(row) == row and journey.observations(later) == []
-    repaired = {key: value for key, value in row["submission"].items() if key != "expected_current_revision_id"}
+    repaired = {key: value for key, value in row["submission"].items() if key != "expected_default_revision_id"}
     await live.request(
         "PATCH",
         f"/api/v1/queued-submissions/{row['queued_submission_id']}",

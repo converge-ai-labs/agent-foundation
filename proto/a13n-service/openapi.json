@@ -643,7 +643,7 @@
           "created_by": {
             "$ref": "#/components/schemas/ActorRef"
           },
-          "current_revision_id": {
+          "default_revision_id": {
             "anyOf": [
               {
                 "maxLength": 72,
@@ -654,20 +654,7 @@
                 "type": "null"
               }
             ],
-            "title": "Current Revision Id"
-          },
-          "default_environment_template_id": {
-            "anyOf": [
-              {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Environment Template Id"
+            "title": "Default Revision Id"
           },
           "description": {
             "anyOf": [
@@ -782,11 +769,6 @@
           "updated_by": {
             "$ref": "#/components/schemas/ActorRef"
           },
-          "version": {
-            "minimum": 1.0,
-            "title": "Version",
-            "type": "integer"
-          },
           "workspace_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -802,8 +784,7 @@
           "name",
           "key",
           "description",
-          "version",
-          "current_revision_id",
+          "default_revision_id",
           "enabled",
           "archived_at",
           "duplicated_from_agent_id",
@@ -865,6 +846,19 @@
             "maxItems": 128,
             "title": "Connection Tools",
             "type": "array"
+          },
+          "default_environment_template_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment Template Id"
           },
           "input_adapter": {
             "$ref": "#/components/schemas/InputAdapterConfig"
@@ -1011,6 +1005,19 @@
             "maxItems": 128,
             "title": "Connection Tools",
             "type": "array"
+          },
+          "default_environment_template_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment Template Id"
           },
           "input_adapter": {
             "$ref": "#/components/schemas/InputAdapterConfig"
@@ -1364,6 +1371,18 @@
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
             "title": "Agent Id",
             "type": "string"
+          },
+          "change_summary": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Summary"
           },
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Output"
@@ -1992,6 +2011,18 @@
       "ApplyDraftRequest": {
         "additionalProperties": false,
         "properties": {
+          "change_summary": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Summary"
+          },
           "content_digest": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Content Digest",
@@ -2001,18 +2032,6 @@
             "pattern": "^[0-9a-f]{64}$",
             "title": "Dependency Digest",
             "type": "string"
-          },
-          "expected_target_version": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Expected Target Version"
           },
           "expected_version": {
             "minimum": 1.0,
@@ -4201,9 +4220,9 @@
             "title": "Agent Revision Id",
             "type": "string"
           },
-          "agent_version": {
+          "agent_revision_version": {
             "minimum": 1.0,
-            "title": "Agent Version",
+            "title": "Agent Revision Version",
             "type": "integer"
           },
           "applied_at": {
@@ -4239,18 +4258,6 @@
               }
             ],
             "title": "Reviewed Base Agent Revision Id"
-          },
-          "reviewed_base_agent_version": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Reviewed Base Agent Version"
           },
           "reviewed_creation_metadata": {
             "anyOf": [
@@ -4322,11 +4329,10 @@
           "reviewed_mode",
           "reviewed_target_agent_id",
           "reviewed_base_agent_revision_id",
-          "reviewed_base_agent_version",
           "reviewed_creation_metadata",
           "agent_id",
           "agent_revision_id",
-          "agent_version",
+          "agent_revision_version",
           "applied_by_user_id",
           "applied_at",
           "no_change"
@@ -4372,6 +4378,17 @@
       "ConfigurationDraft": {
         "additionalProperties": false,
         "properties": {
+          "base_agent_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Agent Etag"
+          },
           "base_agent_revision_id": {
             "anyOf": [
               {
@@ -4384,18 +4401,6 @@
               }
             ],
             "title": "Base Agent Revision Id"
-          },
-          "base_agent_version": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Base Agent Version"
           },
           "config": {
             "anyOf": [
@@ -4517,6 +4522,18 @@
             "title": "Status",
             "type": "string"
           },
+          "suggested_change_summary": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Change Summary"
+          },
           "target_agent_id": {
             "anyOf": [
               {
@@ -4591,6 +4608,17 @@
               }
             ]
           },
+          "base_agent_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Agent Etag"
+          },
           "base_agent_revision_id": {
             "anyOf": [
               {
@@ -4603,18 +4631,6 @@
               }
             ],
             "title": "Base Agent Revision Id"
-          },
-          "base_agent_version": {
-            "anyOf": [
-              {
-                "minimum": 1.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Base Agent Version"
           },
           "base_to_candidate": {
             "items": {
@@ -4669,6 +4685,17 @@
                 "type": "null"
               }
             ]
+          },
+          "current_target_etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Target Etag"
           },
           "current_target_to_candidate": {
             "items": {
@@ -4794,6 +4821,18 @@
             "title": "Status",
             "type": "string"
           },
+          "suggested_change_summary": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Change Summary"
+          },
           "target_agent_id": {
             "anyOf": [
               {
@@ -4859,6 +4898,7 @@
           "source",
           "base",
           "current_target",
+          "current_target_etag",
           "source_to_candidate",
           "base_to_candidate",
           "current_target_to_candidate",
@@ -6096,7 +6136,7 @@
               }
             ]
           },
-          "expected_current_revision_id": {
+          "expected_default_revision_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -6105,7 +6145,7 @@
                 "type": "null"
               }
             ],
-            "title": "Expected Current Revision Id"
+            "title": "Expected Default Revision Id"
           },
           "expected_thread_version": {
             "minimum": 1.0,
@@ -6395,19 +6435,6 @@
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Input"
           },
-          "default_environment_template_id": {
-            "anyOf": [
-              {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Environment Template Id"
-          },
           "description": {
             "anyOf": [
               {
@@ -6464,17 +6491,23 @@
       "CreateAgentRevisionRequest": {
         "additionalProperties": false,
         "properties": {
+          "change_summary": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Summary"
+          },
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Input"
-          },
-          "expected_version": {
-            "minimum": 1.0,
-            "title": "Expected Version",
-            "type": "integer"
           }
         },
         "required": [
-          "expected_version",
           "config"
         ],
         "title": "CreateAgentRevisionRequest",
@@ -8190,11 +8223,6 @@
             ],
             "title": "Description"
           },
-          "expected_version": {
-            "minimum": 1.0,
-            "title": "Expected Version",
-            "type": "integer"
-          },
           "key": {
             "anyOf": [
               {
@@ -8230,7 +8258,6 @@
           }
         },
         "required": [
-          "expected_version",
           "name"
         ],
         "title": "DuplicateAgentRequest",
@@ -9073,7 +9100,7 @@
               }
             ]
           },
-          "expected_current_revision_id": {
+          "expected_default_revision_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -9082,7 +9109,7 @@
                 "type": "null"
               }
             ],
-            "title": "Expected Current Revision Id"
+            "title": "Expected Default Revision Id"
           },
           "hook_subscription": {
             "anyOf": [
@@ -14036,10 +14063,11 @@
           "config": {
             "$ref": "#/components/schemas/AgentConfig-Input"
           },
-          "expected_target_version": {
-            "minimum": 1.0,
-            "title": "Expected Target Version",
-            "type": "integer"
+          "expected_target_etag": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Expected Target Etag",
+            "type": "string"
           },
           "expected_version": {
             "minimum": 1.0,
@@ -14049,7 +14077,7 @@
         },
         "required": [
           "expected_version",
-          "expected_target_version",
+          "expected_target_etag",
           "config"
         ],
         "title": "RebaseDraftRequest",
@@ -14678,21 +14706,6 @@
           "response"
         ],
         "title": "RespondPendingResolution",
-        "type": "object"
-      },
-      "RestoreAgentRevisionRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "expected_version": {
-            "minimum": 1.0,
-            "title": "Expected Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "expected_version"
-        ],
-        "title": "RestoreAgentRevisionRequest",
         "type": "object"
       },
       "ResumeEntry": {
@@ -16561,6 +16574,12 @@
         "title": "SessionResource",
         "type": "object"
       },
+      "SetDefaultAgentRevisionRequest": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "SetDefaultAgentRevisionRequest",
+        "type": "object"
+      },
       "SetOperation": {
         "additionalProperties": false,
         "properties": {
@@ -17335,7 +17354,7 @@
               }
             ]
           },
-          "expected_current_revision_id": {
+          "expected_default_revision_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -17344,7 +17363,7 @@
                 "type": "null"
               }
             ],
-            "title": "Expected Current Revision Id"
+            "title": "Expected Default Revision Id"
           },
           "hook_subscription": {
             "anyOf": [
@@ -18534,7 +18553,7 @@
               }
             ]
           },
-          "expected_current_revision_id": {
+          "expected_default_revision_id": {
             "anyOf": [
               {
                 "maxLength": 72,
@@ -18545,7 +18564,7 @@
                 "type": "null"
               }
             ],
-            "title": "Expected Current Revision Id"
+            "title": "Expected Default Revision Id"
           },
           "hook_subscription": {
             "anyOf": [
@@ -18631,7 +18650,7 @@
               }
             ]
           },
-          "expected_current_revision_id": {
+          "expected_default_revision_id": {
             "anyOf": [
               {
                 "maxLength": 72,
@@ -18642,7 +18661,7 @@
                 "type": "null"
               }
             ],
-            "title": "Expected Current Revision Id"
+            "title": "Expected Default Revision Id"
           },
           "hook_subscription": {
             "anyOf": [
@@ -18772,7 +18791,7 @@
               }
             ]
           },
-          "expected_current_revision_id": {
+          "expected_default_revision_id": {
             "anyOf": [
               {
                 "maxLength": 72,
@@ -18783,7 +18802,7 @@
                 "type": "null"
               }
             ],
-            "title": "Expected Current Revision Id"
+            "title": "Expected Default Revision Id"
           },
           "expected_thread_version": {
             "minimum": 1.0,
@@ -19903,19 +19922,6 @@
       "UpdateAgentRequest": {
         "additionalProperties": false,
         "properties": {
-          "default_environment_template_id": {
-            "anyOf": [
-              {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Default Environment Template Id"
-          },
           "description": {
             "anyOf": [
               {
@@ -20013,6 +20019,18 @@
             "maxItems": 32,
             "title": "Operations",
             "type": "array"
+          },
+          "suggested_change_summary": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggested Change Summary"
           }
         },
         "required": [
@@ -45846,6 +45864,16 @@
               "title": "Idempotency-Key",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -46292,6 +46320,16 @@
               "title": "Idempotency-Key",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -46376,9 +46414,9 @@
         ]
       }
     },
-    "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore": {
+    "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/default": {
       "post": {
-        "operationId": "post_workspaces_workspace_agents_agent_revisions_revision_id_restore",
+        "operationId": "post_workspaces_workspace_agents_agent_revisions_revision_id_default",
         "parameters": [
           {
             "in": "path",
@@ -46417,20 +46455,30 @@
               "title": "Idempotency-Key",
               "type": "string"
             }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RestoreAgentRevisionRequest"
+                "$ref": "#/components/schemas/SetDefaultAgentRevisionRequest"
               }
             }
           },
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -46495,7 +46543,7 @@
             "SessionAuth": []
           }
         ],
-        "summary": "Restore Agent Revision",
+        "summary": "Set Default Agent Revision",
         "tags": [
           "agent-management"
         ]

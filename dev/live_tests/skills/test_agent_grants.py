@@ -37,14 +37,19 @@ async def test_agent_builder_binds_readable_skill_without_management(skills: Ski
     skill = await skills.skill()
     target, other = await skills.agent(), await skills.agent()
     await grant(skills, binding, target, "builder")
-    body = {"expected_version": 1, "config": agent_config(skills=[{"skill_key": skill["skill"]["key"]}])}
+    body = {"config": agent_config(skills=[{"skill_key": skill["skill"]["key"]}])}
     path = skills.base + "/agents/" + target["agent"]["id"]
-    created = await user.post(path + "/revisions", json=body, headers={"Idempotency-Key": uuid4().hex})
+    target_etag = (await user.get(path)).headers["etag"]
+    created = await user.post(
+        path + "/revisions",
+        json=body,
+        headers={"Idempotency-Key": uuid4().hex, "If-Match": target_etag},
+    )
     assert created.status_code == 201, created.json()
     foreign = await user.post(
         skills.base + "/agents/" + other["agent"]["id"] + "/revisions",
         json=body,
-        headers={"Idempotency-Key": uuid4().hex},
+        headers={"Idempotency-Key": uuid4().hex, "If-Match": '"unavailable"'},
     )
     assert foreign.status_code in {403, 404}
     skill_path = "/api/v1/skills/" + skill["skill"]["id"]
@@ -56,12 +61,14 @@ async def test_agent_builder_binds_readable_skill_without_management(skills: Ski
     assert (await user.get(path)).status_code == 200
     assert (await user.get("/api/v1/skill-revisions/" + skill["revision"]["id"] + "/content")).status_code in {403, 404}
     denied = await user.post(
-        path + "/revisions", json={**body, "expected_version": 2}, headers={"Idempotency-Key": uuid4().hex}
+        path + "/revisions",
+        json=body,
+        headers={"Idempotency-Key": uuid4().hex, "If-Match": created.headers["etag"]},
     )
     assert denied.status_code == 409, denied.json()
     assert denied.json()["error"]["code"] == "agent_revision_create_failed"
     assert denied.json()["error"]["details"]["reason"] == "managed_resource_unavailable"
-    assert (await skills.live.http.get(path)).json()["version"] == 2
+    assert (await skills.live.http.get(path)).json()["default_revision_id"] == created.json()["revision"]["id"]
     assert (await skills.live.http.get(skill_path)).json() == head.json()
 
 

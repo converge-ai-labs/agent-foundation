@@ -63,7 +63,7 @@ To reuse it, open **Agents → Create agent → Import from YAML** in the destin
 
 The file contains dependency references, not the Models, Skill packages, Connections, or credentials themselves. Import those resources separately when needed. Matching a key or version in another Workspace does not guarantee identical contents or behavior. Service still validates configuration and authority, and plugin availability and Secret access retain their runtime checks.
 
-Import always creates a new Agent. It does not restore its original ID, URL key, avatar, labels, default Environment, or version history. Choose the new Agent's default Environment separately if required. The format is specific to Service `AgentConfig`; Harness UI YAML uses a different schema. Managed credentials are never fetched by export, while authored instructions and configuration text are preserved.
+Import always creates a new Agent. It does not restore its original ID, URL key, avatar, labels, or version history. The default Environment template choice is part of the imported `AgentConfig` and resolves the current template revision when a new Environment is allocated. The format is specific to Service `AgentConfig`; Harness UI YAML uses a different schema. Managed credentials are never fetched by export, while authored instructions and configuration text are preserved.
 
 ## Configure tool permissions and a reviewer
 
@@ -129,7 +129,7 @@ curl --fail-with-body "$SERVICE_URL/api/v1/workspaces/$WORKSPACE/runs" \
 
 `202` returns an acceptance receipt with `session_id`, `thread_id`, `thread_version`, `run_id`, and `run_version`. Its `status` is `accepted`, **not completed**. The client does not hold a database transaction or worker connection open while the Run executes.
 
-To pin an Agent revision, supply `agent_revision_id`. The optional `expected_current_revision_id` guards a current-head assumption. Read current state before choosing those preconditions; pinning and asking for the latest head are different intentions.
+To pin an Agent revision, supply `agent_revision_id`. The optional `expected_default_revision_id` guards a default-selection assumption. Read current state before choosing those preconditions; pinning and asking for the default version are different intentions.
 
 ## Observe the result
 
@@ -191,7 +191,7 @@ Service `AgentConfig` contains Model selection, instructions, input adapter, pro
 
 Model defaults, Agent settings, and Run overrides merge at their documented top-level boundary. Acceptance freezes execution selection and child graph. Current authorization and credentials are still rechecked at execution/dispatch; a captured ID or snapshot is not restored authority.
 
-Agent revisions are immutable. Updating, restoring, duplicating, enabling/disabling, and other lifecycle operations have their own preconditions; do not edit a historical revision or assume every configuration resource has revision history. Models and Model Providers, for example, are mutable versioned resources without Agent-style revisions.
+Agent revisions are immutable. Saving a new configuration, selecting a default revision, duplicating, enabling/disabling, and other lifecycle operations have their own preconditions; do not edit a historical revision or assume every configuration resource has revision history. Models and Model Providers, for example, are mutable versioned resources without Agent-style revisions.
 
 ### Hosted subagents
 

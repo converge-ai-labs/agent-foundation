@@ -9,6 +9,7 @@ from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
 )
+from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -22,27 +23,26 @@ from .domain import (
     AgentConfig,
     AgentRevisionCreateResult,
     CreateAgentRevisionRequest,
-    RestoreAgentRevisionRequest,
+    SetDefaultAgentRevisionRequest,
     new_agent_revision_id,
 )
 from .errors import (
     agent_archived,
-    agent_version_conflict,
     map_authorization_error,
 )
 from .invocation_resolution import AgentInvocationResolver, RootAgentStatePolicy
 from .persistence import (
     add_command_evidence_and_audit,
     authorize_agent_scope,
-    copy_revision,
     load_replay,
     lock_agent,
     lock_revision,
     new_revision,
+    next_revision_number,
     request_identity,
     require_custom,
     require_custom_mutable,
-    require_version,
+    require_etag,
     touch_agent,
 )
 from .queries import AgentQueries
@@ -72,6 +72,7 @@ class AgentRevisions:
         agent_id: str,
         idempotency_key: str,
         request: CreateAgentRevisionRequest,
+        if_match: str,
     ) -> AgentRevisionCreateResult:
         identity = request_identity(idempotency_key, request)
         replay = await self._revision_create_replay(
@@ -86,8 +87,6 @@ class AgentRevisions:
         require_custom(current)
         if current.archived_at is not None:
             raise agent_archived()
-        if current.version != request.expected_version:
-            raise agent_version_conflict(current.version)
         prepared = await self._prepare_resolution(
             actor=actor,
             agent=current,
@@ -96,27 +95,31 @@ class AgentRevisions:
         return await self._commit_revision_create(
             actor=actor,
             agent_id=agent_id,
-            expected_version=request.expected_version,
+            if_match=if_match,
             operation="agent.revision.create",
             identity=identity,
             prepared=prepared,
             source_revision_id=None,
+            change_summary=request.change_summary,
         )
 
-    async def restore_revision(
+    async def set_default_revision(
         self,
         *,
         actor: AuthenticatedActor,
         agent_id: str,
         revision_id: str,
         idempotency_key: str,
-        request: RestoreAgentRevisionRequest,
+        request: SetDefaultAgentRevisionRequest,
+        if_match: str,
     ) -> AgentRevisionCreateResult:
-        identity = request_identity(idempotency_key, request)
+        identity = request_identity(
+            idempotency_key, {"revision_id": revision_id, "request": request.model_dump(mode="json")}
+        )
         replay = await self._revision_create_replay(
             actor=actor,
             agent_id=agent_id,
-            operation="agent.revision.restore",
+            operation="agent.revision.set_default",
             identity=identity,
         )
         if replay is not None:
@@ -125,8 +128,6 @@ class AgentRevisions:
         require_custom(current)
         if current.archived_at is not None:
             raise agent_archived()
-        if current.version != request.expected_version:
-            raise agent_version_conflict(current.version)
         prepared_graph = await self._invocation_resolver.preparation.prepare(
             actor=actor,
             agent_id=agent_id,
@@ -143,8 +144,18 @@ class AgentRevisions:
                     action=WorkspaceAction.agent_revision_create,
                 )
                 record = await lock_agent(session, workspace.organization_id, workspace.workspace_id, agent_id)
+                replay_ref = await load_replay(
+                    session,
+                    actor=actor,
+                    operation="agent.revision.set_default",
+                    scope_id=agent_id,
+                    identity=identity,
+                    now=now,
+                )
+                if replay_ref is not None:
+                    return replay_ref.restore(AgentRevisionCreateResult)
                 require_custom_mutable(record)
-                require_version(record, request.expected_version)
+                require_etag(record, if_match)
                 source = await lock_revision(
                     session,
                     organization_id=workspace.organization_id,
@@ -152,46 +163,38 @@ class AgentRevisions:
                     agent_id=agent_id,
                     revision_id=revision_id,
                 )
-                replay_ref = await load_replay(
+                await authorize_template(
                     session,
                     actor=actor,
-                    operation="agent.revision.restore",
-                    scope_id=agent_id,
-                    identity=identity,
-                    now=now,
+                    workspace_id=record.workspace_id,
+                    template_id=source.config.get("default_environment_template_id"),
                 )
-                if replay_ref is not None:
-                    return replay_ref.restore(AgentRevisionCreateResult)
                 await self._invocation_resolver.freezing.freeze_in_transaction(
                     session,
                     prepared=prepared_graph,
                 )
-                restored = copy_revision(
-                    source,
-                    revision_id=new_agent_revision_id(),
-                    version=record.version + 1,
-                    source_revision_id=source.id,
-                    agent_id=record.id,
-                    actor=actor,
-                    now=now,
-                )
-                session.add(restored)
-                record.version = restored.version
-                record.current_revision_id = restored.id
-                touch_agent(record, actor=actor, now=now)
+                prior_id = record.default_revision_id
+                if prior_id != source.id:
+                    record.default_revision_id = source.id
+                    touch_agent(record, actor=actor, now=now)
+                result = AgentRevisionCreateResult(agent=record.to_resource(), revision=source.to_resource())
                 add_command_evidence_and_audit(
                     session,
                     actor=actor,
                     record=record,
-                    operation="agent.revision.restore",
+                    operation="agent.revision.set_default",
                     identity=identity,
                     result_kind="agent_revision",
-                    result_ref=restored.id,
+                    result_ref=source.id,
                     now=now,
-                    response=AgentRevisionCreateResult(agent=record.to_resource(), revision=restored.to_resource()),
+                    response=result,
+                    audit_details={"from_revision_id": prior_id, "to_revision_id": source.id}
+                    if prior_id != source.id
+                    else None,
+                    audit=prior_id != source.id,
                 )
                 await session.flush()
-                return AgentRevisionCreateResult(agent=record.to_resource(), revision=restored.to_resource())
+                return result
         except AuthorizationError as error:
             raise map_authorization_error(error, exact=True) from error
         except IntegrityError as error:
@@ -199,7 +202,7 @@ class AgentRevisions:
                 replay = await self._revision_create_replay(
                     actor=actor,
                     agent_id=agent_id,
-                    operation="agent.revision.restore",
+                    operation="agent.revision.set_default",
                     identity=identity,
                 )
                 if replay is not None:
@@ -225,11 +228,12 @@ class AgentRevisions:
         *,
         actor: AuthenticatedActor,
         agent_id: str,
-        expected_version: int,
+        if_match: str,
         operation: str,
         identity: IdempotencyIdentity,
         prepared: PreparedRevisionResolution,
         source_revision_id: str | None,
+        change_summary: str | None,
     ) -> AgentRevisionCreateResult:
         now = self._clock()
         try:
@@ -240,6 +244,7 @@ class AgentRevisions:
                     agent_id=agent_id,
                     action=WorkspaceAction.agent_revision_create,
                 )
+                record = await lock_agent(session, workspace.organization_id, workspace.workspace_id, agent_id)
                 replay_ref = await load_replay(
                     session,
                     actor=actor,
@@ -250,9 +255,8 @@ class AgentRevisions:
                 )
                 if replay_ref is not None:
                     return replay_ref.restore(AgentRevisionCreateResult)
-                record = await lock_agent(session, workspace.organization_id, workspace.workspace_id, agent_id)
                 require_custom_mutable(record)
-                require_version(record, expected_version)
+                require_etag(record, if_match)
                 try:
                     resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
                 except Exception as error:
@@ -260,27 +264,27 @@ class AgentRevisions:
                 revision = new_revision(
                     record,
                     revision_id=new_agent_revision_id(),
-                    version=record.version + 1,
+                    version=await next_revision_number(session, record.id),
                     config=prepared.config,
                     resolved=resolved,
                     source_revision_id=source_revision_id,
+                    change_summary=change_summary,
                     actor=actor,
                     now=now,
                 )
-                assert record.current_revision_id is not None
+                assert record.default_revision_id is not None
                 current = await lock_revision(
                     session,
                     organization_id=record.organization_id,
                     workspace_id=record.workspace_id,
                     agent_id=record.id,
-                    revision_id=record.current_revision_id,
+                    revision_id=record.default_revision_id,
                 )
                 if current.content_digest == revision.content_digest:
                     revision = current
                 else:
                     session.add(revision)
-                    record.version = revision.version
-                    record.current_revision_id = revision.id
+                    record.default_revision_id = revision.id
                     touch_agent(record, actor=actor, now=now)
                 add_command_evidence_and_audit(
                     session,
@@ -292,6 +296,10 @@ class AgentRevisions:
                     result_ref=revision.id,
                     now=now,
                     response=AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource()),
+                    audit_details={"from_revision_id": current.id, "to_revision_id": revision.id}
+                    if current.id != revision.id
+                    else None,
+                    audit=current.id != revision.id,
                 )
                 await session.flush()
                 return AgentRevisionCreateResult(agent=record.to_resource(), revision=revision.to_resource())

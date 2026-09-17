@@ -91,7 +91,7 @@ it("only queries dependency kinds actually selected by the configuration", async
 });
 
 it("preserves historical dedicated-environment revisions that remain visible", async () => {
-  const { client } = clientFor((url) => {
+  const { client, fetch } = clientFor((url) => {
     if (url.pathname.endsWith("/models"))
       return {
         items: [
@@ -120,6 +120,7 @@ it("preserves historical dedicated-environment revisions that remain visible", a
   const checks = await inspectAgentDependencies(client, "ws_target", {
     ...initialConfig("Research"),
     model: { model_key: "research" },
+    default_environment_template_id: "et_local",
     subagents: {
       helper: {
         agent_id: "ap_child",
@@ -128,10 +129,63 @@ it("preserves historical dedicated-environment revisions that remain visible", a
     },
   });
   expect(checks.every((item) => item.available)).toBe(true);
-  expect(checks[2]?.options.map((item) => item.value)).toEqual([
-    "etr_new",
-    "etr_old",
-  ]);
+  expect(
+    checks
+      .find((item) => item.path === "default_environment_template_id")
+      ?.options.map((item) => item.value),
+  ).toEqual(["et_local"]);
+  expect(
+    checks
+      .find((item) => item.path.endsWith("template_revision_id"))
+      ?.options.map((item) => item.value),
+  ).toEqual(["etr_new", "etr_old"]);
+  expect(
+    fetch.mock.calls.filter(([request]) =>
+      new URL(new Request(request).url).pathname.endsWith(
+        "/environment-templates",
+      ),
+    ),
+  ).toHaveLength(1);
+});
+
+it("blocks an unavailable root template and remaps only its identity", async () => {
+  const { client } = clientFor((url) => {
+    if (url.pathname.endsWith("/models"))
+      return {
+        items: [
+          { id: "mdl_local", key: "research", name: "Research", enabled: true },
+        ],
+      };
+    return {
+      items: [
+        {
+          id: "et_local",
+          name: "Sandbox",
+          version: 2,
+          current_revision_id: "etr_local",
+        },
+      ],
+    };
+  });
+  const config = {
+    ...initialConfig("Research"),
+    model: { model_key: "research" },
+    default_environment_template_id: "et_source",
+    retries: { tools: 2, output: 1 },
+  };
+  const checks = await inspectAgentDependencies(client, "ws_target", config);
+  const root = checks.find(
+    (item) => item.path === "default_environment_template_id",
+  );
+  expect(root?.available).toBe(false);
+  expect(root?.options.map((item) => item.value)).toEqual(["et_local"]);
+  const replaced = agentDependencies(config)
+    .find((item) => item.path === "default_environment_template_id")!
+    .replace("et_local");
+  expect(replaced).toEqual({
+    ...config,
+    default_environment_template_id: "et_local",
+  });
 });
 
 it("checks search and scrape against the shared Web Provider catalog", async () => {

@@ -43,11 +43,12 @@ const draft = {
   status: "open",
   config: initialConfig("Support"),
   target_agent_id: "agt_test",
-  base_agent_version: 7,
+  base_agent_etag: '"target-v7"',
   target_conflict: false,
   source: { version: 3 },
   base: { version: 3 },
   current_target: { version: 7 },
+  current_target_etag: '"target-v7"',
   content_digest: "a".repeat(64),
   created_at: "2026-09-15T10:00:00Z",
   updated_at: "2026-09-15T10:00:00Z",
@@ -129,7 +130,7 @@ it("applies the frozen review and current-target diff, retaining the key after a
   const first = http.POST.mock.calls[0]?.[1],
     second = http.POST.mock.calls[1]?.[1];
   expect(first.body.expected_version).toBe(2);
-  expect(first.body.expected_target_version).toBe(7);
+  expect(first.body).not.toHaveProperty("expected_target_version");
   expect(first.body.content_digest).toBe("a".repeat(64));
   expect(first.params.header["If-Match"]).toBe('"v2"');
   expect(second.params.header["Idempotency-Key"]).toBe(
@@ -182,14 +183,14 @@ it("keeps the same draft editable after application and shows its retained recei
     reviewed_digest: draft.content_digest,
     agent_id: "agt_test",
     agent_revision_id: "arev_applied",
-    agent_version: 8,
+    agent_revision_version: 8,
     applied_at: draft.updated_at,
     no_change: false,
   };
   const continued = {
     ...draft,
     version: 3,
-    base_agent_version: 8,
+    base_agent_etag: '"target-v8"',
     latest_validation: null,
     latest_application_receipt: receipt,
     current_target_to_candidate: [],
@@ -240,4 +241,33 @@ it("keeps the same draft editable after application and shows its retained recei
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
+});
+
+it("rebases against the target ETag reviewed when the editor opened", async () => {
+  const { user, cache } = setup();
+  await screen.findByRole("button", { name: "Edit draft" });
+  cache.setQueryData(["configuration-draft", "ws_test", draft.id], {
+    value: { ...draft, target_conflict: true },
+    etag: '"v2"',
+  });
+  await user.click(screen.getByRole("button", { name: "Edit draft" }));
+  const dialog = within(
+    screen.getByRole("dialog", { name: "Edit configuration draft" }),
+  );
+  cache.setQueryData(["configuration-draft", "ws_test", draft.id], {
+    value: {
+      ...draft,
+      target_conflict: true,
+      current_target_etag: '"target-v8"',
+    },
+    etag: '"v2"',
+  });
+  http.POST.mockRejectedValue(new Error("Target changed after review"));
+  await user.click(
+    dialog.getByRole("button", { name: "Use edited candidate and rebase" }),
+  );
+  await dialog.findByText("Target changed after review");
+  const request = http.POST.mock.calls[0]?.[1];
+  expect(request.body.expected_target_etag).toBe('"target-v7"');
+  expect(request.params.header["If-Match"]).toBe('"v2"');
 });

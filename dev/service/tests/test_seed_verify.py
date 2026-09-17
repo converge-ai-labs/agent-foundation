@@ -75,7 +75,7 @@ def test_verify_batches_runs_and_reads_every_transcript_page():
 
         async def request(self, method, path):
             if path.endswith("/agents/agent"):
-                return {"current_revision_id": "new"}
+                return {"default_revision_id": "new"}
             return {"expires_at": "2020-01-01T00:00:00+00:00"}
 
         def scope(self, workspace_id):

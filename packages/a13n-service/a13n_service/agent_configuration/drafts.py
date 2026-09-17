@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.agents.domain import new_agent_id
 from a13n_service.agents.resolution import AgentResolver, resolution_error
 from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
+from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.ids import new_object_id
@@ -71,6 +72,9 @@ class ConfigurationDrafts:
             current = record.to_resource()
         candidate = edit_config(current.config, request.operations) if request.operations else current.config
         metadata = current.creation_metadata
+        suggested_summary = current.suggested_change_summary
+        if "suggested_change_summary" in request.model_fields_set:
+            suggested_summary = request.suggested_change_summary
         if "creation_metadata" in request.model_fields_set:
             if current.mode != "create":
                 raise failure("configuration_metadata_invalid", "Only create drafts can change creation metadata.")
@@ -124,12 +128,13 @@ class ConfigurationDrafts:
             except Exception as error:
                 raise resolution_error(error) from error
             digest = candidate_digest(candidate, metadata)
-            if digest != record.content_digest:
+            if digest != record.content_digest or suggested_summary != record.suggested_change_summary:
                 record.version += 1
                 record.evidence_refs = []
                 record.config = candidate.model_dump(mode="json", by_alias=True)
                 record.creation_metadata = None if metadata is None else metadata.model_dump(mode="json")
                 record.content_digest = digest
+                record.suggested_change_summary = suggested_summary
             record.latest_validation = ConfigurationValidation(
                 draft_version=record.version,
                 content_digest=digest,
@@ -209,16 +214,16 @@ class ConfigurationDrafts:
                 return replay.restore(ConfigurationDraft)
             require_open(record, expected_version=request.expected_version, if_match=if_match)
             target = await lock_agent(session, record.organization_id, record.workspace_id, current.target_agent_id)
-            if target.version != request.expected_target_version:
-                raise failure("configuration_target_conflict", "The target changed while preparing the rebase.")
+            if resource_etag(target.id, target.updated_at) != request.expected_target_etag:
+                raise failure("configuration_target_conflict", "The target changed after review; review it again.")
             try:
                 resolved = await self._resolver.freeze_in_transaction(session, prepared=prepared)
             except Exception as error:
                 raise resolution_error(error) from error
             record.config = request.config.model_dump(mode="json", by_alias=True)
             record.content_digest = candidate_digest(request.config, current.creation_metadata)
-            record.base_agent_revision_id = target.current_revision_id
-            record.base_agent_version = target.version
+            record.base_agent_revision_id = target.default_revision_id
+            record.base_agent_etag = resource_etag(target.id, target.updated_at)
             record.version += 1
             record.evidence_refs = []
             record.updated_at = next_updated_at(record.updated_at, self._clock())

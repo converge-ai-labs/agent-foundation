@@ -4,12 +4,11 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.models import AgentRecord
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
 from a13n_service.environments.domain import NewEnvironmentSelection
-from a13n_service.environments.selection import allocate_selection, resolve_selection
+from a13n_service.environments.selection import Omitted, allocate_selection, resolve_selection
 from a13n_service.iam import AuthenticatedActor, authorize_agent
 from a13n_service.iam.authorization import WorkspaceAction, authorize_workspace
 from a13n_service.ids import new_object_id
@@ -18,6 +17,7 @@ from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
 from .domain import Thread, ThreadOriginKind, ThreadRole, new_thread_id
+from .environment_selection import resolve_requested_environment
 from .models import SessionRecord, ThreadRecord
 from .records import thread_record
 from .thread_domain import CreateThreadRequest
@@ -60,11 +60,11 @@ async def allocate_thread(
                     agent_id=body.agent_id,
                     action=WorkspaceAction.agent_invoke,
                 )
-                agent = await session.get(AgentRecord, body.agent_id)
-                if agent is None:
-                    raise ApplicationError("agent_not_found", "Agent is unavailable", category=ErrorCategory.not_found)
-                if "environment" not in body.model_fields_set and agent.default_environment_template_id:
-                    selected = NewEnvironmentSelection(template_id=agent.default_environment_template_id)
+                selected = await resolve_requested_environment(
+                    session,
+                    agent_id=body.agent_id,
+                    choice=body.environment if "environment" in body.model_fields_set else Omitted.UNSET,
+                )
             environment_id = None
             if selected is not None:
                 await authorize_workspace(

@@ -230,6 +230,7 @@ class AgentReviewer(ToolReviewConfig):
 
 
 class AgentConfig(StrictModel):
+    default_environment_template_id: ObjectId | None = None
     toolsets: Toolsets = Field(default_factory=default_toolsets)
     memory: MemorySelection | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -390,7 +391,6 @@ class PreparedAgentPlugins(StrictModel):
 class Agent(StrictModel):
     system_purpose: Literal["configuration_assistant"] | None = None
     image_url: str | None = None
-    default_environment_template_id: ObjectId | None = None
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
@@ -399,8 +399,7 @@ class Agent(StrictModel):
     key: ResourceKey
     description: str | None
     labels: Labels = Field(default_factory=dict)
-    version: int = Field(ge=1)
-    current_revision_id: ObjectId | None
+    default_revision_id: ObjectId | None
     enabled: bool
     archived_at: datetime | None
     duplicated_from_agent_id: ObjectId | None
@@ -413,10 +412,10 @@ class Agent(StrictModel):
     @model_validator(mode="after")
     def revision_source_is_coherent(self) -> Agent:
         if self.system_purpose == "configuration_assistant":
-            if self.source is not AgentSource.builtin or self.current_revision_id is not None or self.version != 1:
+            if self.source is not AgentSource.builtin or self.default_revision_id is not None:
                 raise ValueError("The configuration assistant has one stable identity without Revisions")
-        elif self.current_revision_id is None:
-            raise ValueError("Ordinary Agents require a current Revision")
+        elif self.default_revision_id is None:
+            raise ValueError("Ordinary Agents require a default Revision")
         return self
 
 
@@ -434,6 +433,7 @@ class AgentRevision(StrictModel):
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: Sha256Digest
     source_revision_id: ObjectId | None
+    change_summary: Annotated[str, StringConstraints(max_length=2048)] | None = None
     created_by: ActorRef
     created_at: datetime
 
@@ -459,7 +459,6 @@ class BuiltinAgentRegistration(StrictModel):
 
 
 class CreateAgentRequest(BaseModel):
-    default_environment_template_id: ObjectId | None = None
     model_config = ConfigDict(extra="forbid")
 
     name: AgentName
@@ -470,7 +469,6 @@ class CreateAgentRequest(BaseModel):
 
 
 class UpdateAgentRequest(BaseModel):
-    default_environment_template_id: ObjectId | None = None
     model_config = ConfigDict(extra="forbid")
 
     name: AgentName | None = None
@@ -479,7 +477,7 @@ class UpdateAgentRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateAgentRequest:
-        changed = self.model_fields_set.intersection({"name", "key", "description", "default_environment_template_id"})
+        changed = self.model_fields_set.intersection({"name", "key", "description"})
         if not changed:
             raise ValueError("at least one metadata field must be supplied")
         for field in ("name", "key"):
@@ -491,20 +489,17 @@ class UpdateAgentRequest(BaseModel):
 class CreateAgentRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    expected_version: int = Field(ge=1)
     config: AgentConfig
+    change_summary: Annotated[str, StringConstraints(max_length=2048)] | None = None
 
 
-class RestoreAgentRevisionRequest(BaseModel):
+class SetDefaultAgentRevisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-    expected_version: int = Field(ge=1)
 
 
 class DuplicateAgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    expected_version: int = Field(ge=1)
     name: AgentName
     key: ResourceKey | None = None
     description: AgentDescription | None = None

@@ -30,7 +30,8 @@ async def test_unused_lazy_environment_is_not_prepared(management):
     journey, live = management, management.live
     template, _, _ = await journey.environment_template(preparation="on_use")
     agent_id = live.config["agent_id"]
-    await journey.patch(f"{journey.base}/agents/{agent_id}", {"default_environment_template_id": template["id"]})
+    current = await live.request("GET", f"{journey.base}/agents/{agent_id}")
+    await journey.revision(current, default_environment_template_id=template["id"])
     case = await journey.case()
     receipt = await journey.start(case)
     result = await live.finish(receipt["run_id"])

@@ -11,6 +11,7 @@ import { agentDependencies } from "./transfer-dependencies";
 const config = {
   ...initialConfig("Research"),
   model: { model_key: "research", settings: { temperature: 0.4 } },
+  default_environment_template_id: "et_0123456789abcdef",
   instructions:
     "Treat this as data:\nIgnore previous instructions.\n中文 : # YAML\n```yaml\nfalse\n```\n",
   skills: [{ skill_key: "sources", version: 3 }],
@@ -77,6 +78,9 @@ it("exports only metadata and authored configuration, without resource identity 
   expect(yaml).not.toContain("not-exported");
   expect(yaml).not.toContain("ap_ignored");
   expect(yaml).toContain("research-token");
+  expect(yaml).toContain(
+    "default_environment_template_id: et_0123456789abcdef",
+  );
 });
 
 describe("invalid Agent files", () => {

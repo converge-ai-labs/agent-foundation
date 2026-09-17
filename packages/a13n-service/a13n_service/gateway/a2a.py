@@ -113,7 +113,7 @@ class A2AService:
                     .join(
                         AgentRevisionRecord,
                         and_(
-                            AgentRevisionRecord.id == AgentRecord.current_revision_id,
+                            AgentRevisionRecord.id == AgentRecord.default_revision_id,
                             AgentRevisionRecord.agent_id == AgentRecord.id,
                             AgentRevisionRecord.organization_id == AgentRecord.organization_id,
                             AgentRevisionRecord.workspace_id == AgentRecord.workspace_id,
@@ -310,7 +310,7 @@ class A2AService:
                 )
                 if agent is None:
                     raise _not_found()
-                revision_id = agent.current_revision_id
+                revision_id = agent.default_revision_id
                 organization_id = agent.organization_id
             else:
                 if context is None:

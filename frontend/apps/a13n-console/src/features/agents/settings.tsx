@@ -283,19 +283,25 @@ export function AgentActions({
             }
             action={async () => {
               const body = {
-                expected_version: agent.version,
                 name: `${agent.name} (${t("copy")})`,
               };
+              if (!etag)
+                throw new Error(
+                  t("Version information is unavailable. Reload this page."),
+                );
               const result = data(
                 await client.http.POST(
                   "/api/v1/workspaces/{workspace}/agents/{agent}/duplicate",
                   {
                     params: {
                       path: { workspace: workspace.id, agent: agent.id },
-                      header: commandHeaders(
-                        workspace.id,
-                        idempotency.forBody(body),
-                      ),
+                      header: {
+                        ...commandHeaders(
+                          workspace.id,
+                          idempotency.forBody(body),
+                        ),
+                        "If-Match": etag,
+                      },
                     },
                     body,
                   },

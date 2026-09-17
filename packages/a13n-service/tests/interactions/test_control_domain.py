@@ -22,7 +22,7 @@ from pydantic import ValidationError
     [
         {"agent_id": "agent_1111111111111111"},
         {"agent_revision_id": "arev_1111111111111111"},
-        {"expected_current_revision_id": "arev_1111111111111111"},
+        {"expected_default_revision_id": "arev_1111111111111111"},
         {"environment": None},
         {"config_override": {"instructions": "Changed execution"}},
     ],

@@ -26,7 +26,7 @@ from .domain import (
     CreateAgentRequest,
     CreateAgentRevisionRequest,
     DuplicateAgentRequest,
-    RestoreAgentRevisionRequest,
+    SetDefaultAgentRevisionRequest,
     UpdateAgentRequest,
 )
 from .errors import AgentError
@@ -179,37 +179,41 @@ async def create_agent_revision(
     agent_id: AgentId,
     body: CreateAgentRevisionRequest,
     idempotency_key: IdempotencyKey,
+    if_match: IfMatch,
 ) -> AgentRevisionCreateResult:
     result = await _management(request).revisions.create_revision(
         actor=actor,
         agent_id=agent_id,
         idempotency_key=idempotency_key,
         request=body,
+        if_match=if_match,
     )
     _set_etag(response, result.agent)
     return result
 
 
 @router.post(
-    "/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore",
+    "/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/default",
     response_model=AgentRevisionCreateResult,
-    status_code=status.HTTP_201_CREATED,
+    status_code=status.HTTP_200_OK,
 )
-async def restore_agent_revision(
+async def set_default_agent_revision(
     request: Request,
     response: Response,
     actor: Actor,
     agent_id: AgentId,
     revision_id: str,
-    body: RestoreAgentRevisionRequest,
+    body: SetDefaultAgentRevisionRequest,
     idempotency_key: IdempotencyKey,
+    if_match: IfMatch,
 ) -> AgentRevisionCreateResult:
-    result = await _management(request).revisions.restore_revision(
+    result = await _management(request).revisions.set_default_revision(
         actor=actor,
         agent_id=agent_id,
         revision_id=revision_id,
         idempotency_key=idempotency_key,
         request=body,
+        if_match=if_match,
     )
     _set_etag(response, result.agent)
     return result
@@ -227,12 +231,14 @@ async def duplicate_agent(
     agent_id: AgentId,
     body: DuplicateAgentRequest,
     idempotency_key: IdempotencyKey,
+    if_match: IfMatch,
 ) -> Agent:
     agent = await _management(request).duplication.duplicate(
         actor=actor,
         agent_id=agent_id,
         idempotency_key=idempotency_key,
         request=body,
+        if_match=if_match,
     )
     _set_etag(response, agent)
     return agent

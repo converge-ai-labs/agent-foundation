@@ -8,35 +8,46 @@ async def resource_history(client: Client, base: str, catalog: dict) -> dict:
     scenarios = {}
     path = f"{base}/agents/{agents[0]}"
     agent = await client.request("GET", path)
-    original = await client.request("GET", f"/api/v1/agent-revisions/{agent['current_revision_id']}")
-    updated = await client.request(
+    original = await client.request("GET", f"/api/v1/agent-revisions/{agent['default_revision_id']}")
+    await client.request(
         "POST",
         path + "/revisions",
         expected=201,
+        headers=await client.etag(path),
         json={
-            "expected_version": agent["version"],
             "config": {
                 **original["config"],
                 "instructions": "Revision 2: produce a concise fictional review with explicit tradeoffs.",
             },
         },
     )
-    restored = await client.request(
+    selected = await client.request(
         "POST",
-        path + f"/revisions/{original['id']}/restore",
+        path + f"/revisions/{original['id']}/default",
+        expected=200,
+        headers=await client.etag(path),
+        json={},
+    )
+    edited = await client.request(
+        "POST",
+        path + "/revisions",
         expected=201,
-        json={"expected_version": updated["agent"]["version"]},
+        headers=await client.etag(path),
+        json={
+            "config": {**original["config"], "instructions": "Revision 3: edited from the older default."},
+            "change_summary": "Edit the selected historical configuration",
+        },
     )
     revisions = await client.collection(path + "/revisions")
-    if len(revisions) != 3 or restored["revision"]["source_revision_id"] != original["id"]:
-        raise RuntimeError("Agent revision and restore scenario did not preserve history")
-    scenarios["agent_revision_restore"] = agent["id"]
+    if len(revisions) != 3 or selected["revision"]["id"] != original["id"] or edited["revision"]["version"] != 3:
+        raise RuntimeError("Agent revision and default-selection scenario did not preserve history")
+    scenarios["agent_revision_default"] = agent["id"]
     duplicate = await client.request(
         "POST",
         path + "/duplicate",
         expected=201,
+        headers=await client.etag(path),
         json={
-            "expected_version": restored["agent"]["version"],
             "name": "Release reviewer · independent duplicate",
             "description": "Duplicated after real run history; no Runs yet.",
         },

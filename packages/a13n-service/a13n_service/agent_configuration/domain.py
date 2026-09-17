@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, StringConstraints, model_validator
 
 from a13n_service.agents.domain import AgentConfig, AgentDescription, AgentName, StrictModel
 from a13n_service.digests import Sha256Digest, digest_request
@@ -30,11 +30,10 @@ class ConfigurationApplicationReceipt(StrictModel):
     reviewed_mode: Literal["create", "update"]
     reviewed_target_agent_id: ObjectId | None
     reviewed_base_agent_revision_id: ObjectId | None
-    reviewed_base_agent_version: int | None = Field(ge=1)
     reviewed_creation_metadata: CreationMetadata | None
     agent_id: ObjectId
     agent_revision_id: ObjectId
-    agent_version: int = Field(ge=1)
+    agent_revision_version: int = Field(ge=1)
     applied_by_user_id: ObjectId
     applied_at: datetime
     no_change: bool
@@ -61,10 +60,11 @@ class ConfigurationDraft(StrictModel):
     source_agent_revision_id: ObjectId | None
     source_agent_revision_version: int | None = Field(default=None, ge=1)
     base_agent_revision_id: ObjectId | None
-    base_agent_version: int | None = Field(default=None, ge=1)
+    base_agent_etag: str | None = None
     version: int = Field(ge=1)
     config: AgentConfig | None
     creation_metadata: CreationMetadata | None = None
+    suggested_change_summary: Annotated[str, StringConstraints(max_length=2048)] | None = None
     content_digest: Sha256Digest
     status: Literal["open", "discarded", "expired"]
     latest_validation: ConfigurationValidation | None = None
@@ -84,14 +84,14 @@ class ConfigurationDraft(StrictModel):
             if (
                 self.target_agent_id is None
                 or self.base_agent_revision_id is None
-                or self.base_agent_version is None
+                or self.base_agent_etag is None
                 or self.config is None
             ):
                 raise ValueError("Update drafts require a target, baseline and complete configuration.")
         elif (
             self.target_agent_id is not None
             or self.base_agent_revision_id is not None
-            or self.base_agent_version is not None
+            or self.base_agent_etag is not None
             or self.source_selector != "empty"
         ):
             raise ValueError("Create drafts retain their empty original source and absent target.")

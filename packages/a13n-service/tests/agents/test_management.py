@@ -1,24 +1,33 @@
 from __future__ import annotations
 
+import asyncio
+import base64
 from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from a13n_environment import build_environment_provider_catalog
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     CreateAgentRequest,
     CreateAgentRevisionRequest,
     DuplicateAgentRequest,
-    RestoreAgentRevisionRequest,
+    SetDefaultAgentRevisionRequest,
     UpdateAgentRequest,
 )
 from a13n_service.agents.errors import AgentError
+from a13n_service.agents.models import AgentRecord
 from a13n_service.agents.persistence import load_replay, request_identity
 from a13n_service.digests import digest_request
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest, UpdateTemplateRequest
+from a13n_service.environments.errors import EnvironmentManagementError
+from a13n_service.environments.service import EnvironmentService
 from a13n_service.etags import resource_etag
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthorizationError
+from a13n_service.iam.models import SecurityAuditRecord
+from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -38,8 +47,8 @@ async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_management: Ag
     )
 
     assert replay == created
-    assert created.agent.version == created.revision.version == 1
-    assert created.agent.current_revision_id == created.revision.id
+    assert created.revision.version == 1
+    assert created.agent.default_revision_id == created.revision.id
     assert created.revision.config == request.config
     assert created.revision.config_digest == digest_request(request.config)
     assert created.revision.connection_tools == ()
@@ -112,8 +121,9 @@ async def test_agent_creation_rejects_unavailable_connections(
 
 
 @pytest.mark.anyio
-async def test_revision_noop_new_revision_and_restore_follow_one_lineage(
+async def test_revision_noop_default_switch_and_monotonic_lineage(
     agent_management: AgentManagement,
+    agent_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
     created = await agent_management.commands.create(
         actor=actor(),
@@ -126,39 +136,156 @@ async def test_revision_noop_new_revision_and_restore_follow_one_lineage(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="noop-lineage",
-        request=CreateAgentRevisionRequest(expected_version=1, config=agent_config()),
+        request=CreateAgentRevisionRequest(config=agent_config()),
+        if_match=resource_etag(created.agent.id, created.agent.updated_at),
+    )
+    note_only = await agent_management.revisions.create_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        idempotency_key="note-only-lineage",
+        request=CreateAgentRevisionRequest(config=agent_config(), change_summary="No configuration change"),
+        if_match=resource_etag(noop.agent.id, noop.agent.updated_at),
     )
     second = await agent_management.revisions.create_revision(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="second-lineage",
         request=CreateAgentRevisionRequest(
-            expected_version=1,
             config=agent_config(instructions="Analyze carefully."),
+            change_summary="Explain the new instructions",
         ),
+        if_match=resource_etag(noop.agent.id, noop.agent.updated_at),
     )
-    restored = await agent_management.revisions.restore_revision(
+    assert noop.revision.id == created.revision.id
+    assert noop.agent.default_revision_id == created.revision.id
+    assert note_only.revision.id == created.revision.id
+    assert note_only.agent.default_revision_id == created.revision.id
+    assert second.revision.version == 2
+    assert second.revision.change_summary == "Explain the new instructions"
+    summary_only = await agent_management.revisions.create_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        idempotency_key="summary-only-after-v2",
+        request=CreateAgentRevisionRequest(
+            config=agent_config(instructions="Analyze carefully."), change_summary="Different note"
+        ),
+        if_match=resource_etag(second.agent.id, second.agent.updated_at),
+    )
+    assert summary_only.revision == second.revision
+    selected = await agent_management.revisions.set_default_revision(
         actor=actor(),
         agent_id=created.agent.id,
         revision_id=created.revision.id,
-        idempotency_key="restore-lineage",
-        request=RestoreAgentRevisionRequest(expected_version=2),
+        idempotency_key="select-lineage",
+        request=SetDefaultAgentRevisionRequest(),
+        if_match=resource_etag(second.agent.id, second.agent.updated_at),
     )
-
-    assert noop.revision.id == created.revision.id
-    assert noop.agent.version == 1
-    assert second.agent.version == second.revision.version == 2
-    assert restored.agent.version == restored.revision.version == 3
-    assert restored.revision.source_revision_id == created.revision.id
-    assert restored.revision.config == created.revision.config
+    assert selected.agent.updated_at != second.agent.updated_at
+    assert selected.revision.id == created.revision.id
+    assert selected.agent.default_revision_id == created.revision.id
+    replay = await agent_management.revisions.set_default_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        revision_id=created.revision.id,
+        idempotency_key="select-lineage",
+        request=SetDefaultAgentRevisionRequest(),
+        if_match=resource_etag(second.agent.id, second.agent.updated_at),
+    )
+    assert replay == selected
+    with pytest.raises(AgentError) as wrong_target:
+        await agent_management.revisions.set_default_revision(
+            actor=actor(),
+            agent_id=created.agent.id,
+            revision_id=second.revision.id,
+            idempotency_key="select-lineage",
+            request=SetDefaultAgentRevisionRequest(),
+            if_match=resource_etag(selected.agent.id, selected.agent.updated_at),
+        )
+    assert wrong_target.value.code == "idempotency_conflict"
+    same_default = await agent_management.revisions.set_default_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        revision_id=created.revision.id,
+        idempotency_key="same-default-lineage",
+        request=SetDefaultAgentRevisionRequest(),
+        if_match=resource_etag(selected.agent.id, selected.agent.updated_at),
+    )
+    assert same_default.agent.updated_at == selected.agent.updated_at
     revisions = await agent_management.queries.list_revisions(
         actor=actor(), agent_id=created.agent.id, limit=10, cursor=None
     )
-    assert [item.version for item in revisions.items] == [3, 2, 1]
+    assert [item.version for item in revisions.items] == [2, 1]
+    async with transaction(agent_sessions) as session:
+        audits = tuple(
+            await session.scalars(
+                select(SecurityAuditRecord).where(
+                    SecurityAuditRecord.resource_id == created.agent.id,
+                    SecurityAuditRecord.action.in_(("agent.revision.create", "agent.revision.set_default")),
+                )
+            )
+        )
+    assert {(audit.action, audit.details["from_revision_id"], audit.details["to_revision_id"]) for audit in audits} == {
+        ("agent.revision.create", created.revision.id, second.revision.id),
+        ("agent.revision.set_default", second.revision.id, created.revision.id),
+    }
 
 
 @pytest.mark.anyio
-async def test_revision_create_rejects_stale_head_version(agent_management: AgentManagement) -> None:
+async def test_concurrent_revision_and_selection_replay_one_result(
+    agent_management: AgentManagement, agent_sessions: async_sessionmaker[AsyncSession]
+) -> None:
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="concurrent-agent",
+        request=CreateAgentRequest(name="Concurrent", config=agent_config()),
+    )
+    request = CreateAgentRevisionRequest(config=agent_config(instructions="Concurrent update"))
+    etag = resource_etag(created.agent.id, created.agent.updated_at)
+
+    async def save():
+        return await agent_management.revisions.create_revision(
+            actor=actor(),
+            agent_id=created.agent.id,
+            idempotency_key="concurrent-save",
+            request=request,
+            if_match=etag,
+        )
+
+    first, replay = await asyncio.gather(save(), save())
+    assert first == replay and first.revision.version == 2
+    selected_etag = resource_etag(first.agent.id, first.agent.updated_at)
+
+    async def select_default():
+        return await agent_management.revisions.set_default_revision(
+            actor=actor(),
+            agent_id=created.agent.id,
+            revision_id=created.revision.id,
+            idempotency_key="concurrent-select",
+            request=SetDefaultAgentRevisionRequest(),
+            if_match=selected_etag,
+        )
+
+    switched, selected_replay = await asyncio.gather(select_default(), select_default())
+    assert switched == selected_replay
+    history = await agent_management.queries.list_revisions(
+        actor=actor(), agent_id=created.agent.id, limit=10, cursor=None
+    )
+    assert [revision.version for revision in history.items] == [2, 1]
+    async with transaction(agent_sessions) as session:
+        actions = tuple(
+            await session.scalars(
+                select(SecurityAuditRecord.action).where(
+                    SecurityAuditRecord.resource_id == created.agent.id,
+                    SecurityAuditRecord.action.in_(("agent.revision.create", "agent.revision.set_default")),
+                )
+            )
+        )
+    assert sorted(actions) == ["agent.revision.create", "agent.revision.set_default"]
+
+
+@pytest.mark.anyio
+async def test_revision_create_rejects_stale_head_etag(agent_management: AgentManagement) -> None:
     created = await agent_management.commands.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -170,9 +297,9 @@ async def test_revision_create_rejects_stale_head_version(agent_management: Agen
         agent_id=created.agent.id,
         idempotency_key="advance-conflict",
         request=CreateAgentRevisionRequest(
-            expected_version=1,
             config=agent_config(instructions="Changed"),
         ),
+        if_match=resource_etag(created.agent.id, created.agent.updated_at),
     )
 
     with pytest.raises(AgentError) as stale:
@@ -181,16 +308,99 @@ async def test_revision_create_rejects_stale_head_version(agent_management: Agen
             agent_id=created.agent.id,
             idempotency_key="stale-conflict",
             request=CreateAgentRevisionRequest(
-                expected_version=1,
                 config=agent_config(instructions="Stale"),
             ),
+            if_match=resource_etag(created.agent.id, created.agent.updated_at),
         )
-    assert application_error_status(stale.value) == 409
-    assert stale.value.details == {"current_version": 2}
+    assert application_error_status(stale.value) == 412
+    assert "current_etag" in stale.value.details
 
 
 @pytest.mark.anyio
-async def test_metadata_and_lifecycle_use_etag_without_incrementing_version(
+async def test_unavailable_historical_environment_blocks_default_switch_atomically(
+    agent_management: AgentManagement, agent_sessions: async_sessionmaker[AsyncSession], tmp_path
+) -> None:
+    environments = EnvironmentService(
+        agent_sessions,
+        build_environment_provider_catalog(builtin_keys=("direct-local",)),
+        SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test"),
+    )
+    provider = await environments.create_provider(
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Local")
+    )
+    template = await environments.create_template(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="historical-template",
+        request=CreateTemplateRequest(
+            name="Historical",
+            provider_id=provider.id,
+            configuration={"root": {"path": str(tmp_path)}},
+            preparation="on_use",
+            retention={"idle": {"stop_after": None, "delete_after": None}},
+        ),
+    )
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="historical-environment",
+        request=CreateAgentRequest(
+            name="Historical environment",
+            config=agent_config().model_copy(update={"default_environment_template_id": template.id}),
+        ),
+    )
+    second = await agent_management.revisions.create_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        idempotency_key="historical-environment-v2",
+        request=CreateAgentRevisionRequest(config=agent_config(instructions="v2")),
+        if_match=resource_etag(created.agent.id, created.agent.updated_at),
+    )
+    copy = await agent_management.duplication.duplicate(
+        actor=actor(),
+        agent_id=created.agent.id,
+        idempotency_key="copy-current-environment",
+        request=DuplicateAgentRequest(name="Template default copy"),
+        if_match=resource_etag(second.agent.id, second.agent.updated_at),
+    )
+    copied_revision = await agent_management.revisions.create_revision(
+        actor=actor(),
+        agent_id=copy.id,
+        idempotency_key="copy-environment-choice",
+        request=CreateAgentRevisionRequest(config=created.revision.config),
+        if_match=resource_etag(copy.id, copy.updated_at),
+    )
+    await environments.update_template(
+        actor=actor(),
+        template_id=template.id,
+        request=UpdateTemplateRequest(archived=True),
+        if_match=resource_etag(template.id, template.updated_at),
+    )
+    with pytest.raises(EnvironmentManagementError) as unavailable:
+        await agent_management.revisions.set_default_revision(
+            actor=actor(),
+            agent_id=created.agent.id,
+            revision_id=created.revision.id,
+            idempotency_key="historical-environment-switch",
+            request=SetDefaultAgentRevisionRequest(),
+            if_match=resource_etag(second.agent.id, second.agent.updated_at),
+        )
+    assert unavailable.value.code == "environment_not_found"
+    with pytest.raises(EnvironmentManagementError):
+        await agent_management.duplication.duplicate(
+            actor=actor(),
+            agent_id=copy.id,
+            idempotency_key="duplicate-unavailable-template",
+            request=DuplicateAgentRequest(name="Unavailable copy"),
+            if_match=resource_etag(copy.id, copied_revision.agent.updated_at),
+        )
+    async with transaction(agent_sessions) as session:
+        head = await session.get(AgentRecord, created.agent.id)
+        assert head.default_revision_id == second.revision.id
+
+
+@pytest.mark.anyio
+async def test_metadata_and_lifecycle_each_advance_etag(
     agent_management: AgentManagement,
 ) -> None:
     created = await agent_management.commands.create(
@@ -231,7 +441,7 @@ async def test_metadata_and_lifecycle_use_etag_without_incrementing_version(
     )
 
     assert updated.name == "Renamed"
-    assert updated.version == disabled.version == archived.version == 1
+    assert len({updated.updated_at, disabled.updated_at, archived.updated_at}) == 3
     assert not disabled.enabled
     assert archived.archived_at is not None
 
@@ -249,22 +459,23 @@ async def test_duplicate_copies_exact_current_revision_as_new_v1(agent_managemen
         agent_id=created.agent.id,
         idempotency_key="advance-duplicate",
         request=CreateAgentRevisionRequest(
-            expected_version=1,
             config=agent_config(instructions="Current"),
         ),
+        if_match=resource_etag(created.agent.id, created.agent.updated_at),
     )
 
     duplicate = await agent_management.duplication.duplicate(
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="duplicate",
-        request=DuplicateAgentRequest(expected_version=2, name="Copy"),
+        request=DuplicateAgentRequest(name="Copy"),
+        if_match=resource_etag(second.agent.id, second.agent.updated_at),
     )
     duplicate_revision = await agent_management.queries.get_revision(
-        actor=actor(), revision_id=duplicate.current_revision_id
+        actor=actor(), revision_id=duplicate.default_revision_id
     )
 
-    assert duplicate.version == duplicate_revision.version == 1
+    assert duplicate_revision.version == 1
     assert duplicate.duplicated_from_revision_id == second.revision.id
     assert duplicate_revision.source_revision_id == second.revision.id
     assert duplicate_revision.config.instructions == "Current"

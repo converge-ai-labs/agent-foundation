@@ -30,7 +30,6 @@ import styles from "../../shared/shared.module.css";
 import agentStyles from "./agents.module.css";
 import { type AgentConfig } from "./configuration";
 import { AgentForm } from "./form";
-import { AgentEnvironment } from "./environment";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
 import { ExportAgent } from "./export";
@@ -58,12 +57,12 @@ export function AgentDetail() {
           signal,
         }),
       );
-      if (!resource.value.current_revision_id)
+      if (!resource.value.default_revision_id)
         throw new Error(t("Agent configuration is unavailable."));
       const revision = data(
         await client.http.GET("/api/v1/agent-revisions/{agent_revision_id}", {
           params: {
-            path: { agent_revision_id: resource.value.current_revision_id },
+            path: { agent_revision_id: resource.value.default_revision_id },
           },
           headers: workspaceHeaders(workspace.id),
           signal,
@@ -75,15 +74,24 @@ export function AgentDetail() {
   const save = useMutation({
     mutationFn: async (body: {
       config: AgentConfig;
-      expected_version: number;
+      etag?: string;
+      change_summary?: string | null;
     }) => {
+      if (!body.etag)
+        throw new Error(
+          t("Version information is unavailable. Reload this page."),
+        );
+      const { etag, ...requestBody } = body;
       return client.http
         .POST("/api/v1/workspaces/{workspace}/agents/{agent}/revisions", {
           params: {
             path: { workspace: workspace.id, agent: agentKey },
-            header: commandHeaders(workspace.id, idempotency.forBody(body)),
+            header: {
+              ...commandHeaders(workspace.id, idempotency.forBody(requestBody)),
+              "If-Match": etag,
+            },
           },
-          body,
+          body: requestBody,
         })
         .then(data);
     },
@@ -120,15 +128,6 @@ export function AgentDetail() {
       agentKey={agent.key}
       imageUrl={agent.image_url}
       description={agent.description ?? ""}
-      environment={
-        <AgentEnvironment
-          resource={query.data}
-          disabled={save.isPending}
-          onSaved={async () => {
-            await query.refetch();
-          }}
-        />
-      }
       identityAction={
         can("agent.update") && (
           <ModalFrame
@@ -208,7 +207,11 @@ export function AgentDetail() {
               {t("Configure with assistant")}
             </Button>
           )}
-          <ExportAgent agent={agent} config={query.data.revision.config} />
+          <ExportAgent
+            agent={agent}
+            config={query.data.revision.config}
+            version={query.data.revision.version}
+          />
           <ModalFrame
             trigger={
               <Button variant="ghost" type="button">
@@ -218,10 +221,16 @@ export function AgentDetail() {
             }
             size="lg"
             title={t("Version history")}
-            description={t("Review and restore saved configurations.")}
+            description={t(
+              "Review saved configurations and choose the default version.",
+            )}
             closeLabel={t("Close")}
           >
-            <AgentVersions agent={agent} />
+            <AgentVersions
+              agent={agent}
+              etag={query.data.etag}
+              onDefaultChanged={reload}
+            />
           </ModalFrame>
           {(can("agent.lifecycle") || can("agent.duplicate")) && (
             <AgentActions
@@ -233,13 +242,13 @@ export function AgentDetail() {
         </div>
       }
       initial={query.data.revision.config}
-      version={agent.version}
+      version={query.data.revision.version}
+      etag={query.data.etag}
       pending={save.isPending}
       error={save.error}
       readonly={!can("agent.revision.create")}
-      submit={(config, _name, _description, version) => {
-        if (version !== undefined)
-          save.mutate({ config, expected_version: version });
+      submit={(config, _name, _description, etag, changeSummary) => {
+        save.mutate({ config, etag, change_summary: changeSummary });
       }}
       reload={() => void reload()}
     />

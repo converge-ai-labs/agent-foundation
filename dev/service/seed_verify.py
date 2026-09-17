@@ -148,7 +148,7 @@ async def verify(client: Client, manifest: dict) -> dict:
     first_agent = manifest["agent_ids"][0]
     agent = await client.request("GET", f"{base}/agents/{first_agent}")
     if not any(
-        item["agent_id"] == first_agent and item["agent_revision_id"] != agent["current_revision_id"]
+        item["agent_id"] == first_agent and item["agent_revision_id"] != agent["default_revision_id"]
         for item in all_runs
     ):
         raise RuntimeError("Historical runs no longer preserve their original Agent revisions")

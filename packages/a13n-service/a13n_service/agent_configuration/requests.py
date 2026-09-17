@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import Field, model_validator
+from pydantic import Field, StringConstraints, model_validator
 
 from a13n_service.agents.domain import AgentConfig, StrictModel
 from a13n_service.digests import Sha256Digest
@@ -40,17 +40,20 @@ class UpdateConfigurationDraftRequest(StrictModel):
     expected_digest: Sha256Digest | None = None
     operations: tuple[Operation, ...] = Field(default=(), max_length=32)
     creation_metadata: CreationMetadata | None = None
+    suggested_change_summary: Annotated[str, StringConstraints(max_length=2048)] | None = None
 
     @model_validator(mode="after")
     def require_change(self) -> UpdateConfigurationDraftRequest:
-        if not self.operations and "creation_metadata" not in self.model_fields_set:
-            raise ValueError("Provide configuration operations or creation metadata.")
+        if not self.operations and not self.model_fields_set.intersection(
+            {"creation_metadata", "suggested_change_summary"}
+        ):
+            raise ValueError("Provide configuration operations, creation metadata, or a suggested summary.")
         return self
 
 
 class RebaseDraftRequest(StrictModel):
     expected_version: int = Field(ge=1)
-    expected_target_version: int = Field(ge=1)
+    expected_target_etag: str = Field(min_length=1, max_length=256)
     config: AgentConfig
 
 
@@ -61,7 +64,7 @@ class DiscardDraftRequest(StrictModel):
 class ApplyDraftRequest(StrictModel):
     expected_version: int = Field(ge=1)
     content_digest: Sha256Digest
-    expected_target_version: int | None = Field(default=None, ge=1)
     dependency_digest: Sha256Digest
+    change_summary: Annotated[str, StringConstraints(max_length=2048)] | None = None
     verification_run_ids: tuple[ObjectId, ...] = Field(default=(), max_length=32)
     verification_acknowledgement: VerificationAcknowledgement | None = None

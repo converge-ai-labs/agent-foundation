@@ -52,30 +52,44 @@ async def test_complete_agent_http_lifecycle(api_client: httpx2.AsyncClient) -> 
     assert created.status_code == 201
     result = created.json()
     agent = result["agent"]
-    assert agent["version"] == result["revision"]["version"] == 1
-    assert agent["current_revision_id"] == result["revision"]["id"]
+    assert result["revision"]["version"] == 1
+    assert agent["default_revision_id"] == result["revision"]["id"]
 
     revision_result = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/agents/{agent['id']}/revisions",
-        headers={"Idempotency-Key": "http-create_revision"},
+        headers={"Idempotency-Key": "http-create_revision", "If-Match": created.headers["ETag"]},
         json={
-            "expected_version": 1,
             "config": agent_config(instructions="Changed").model_dump(mode="json", by_alias=True),
         },
     )
     assert revision_result.status_code == 201
     revised = revision_result.json()
     assert revised["revision"]["version"] == 2
-    assert revised["agent"]["current_revision_id"] == revised["revision"]["id"]
+    assert revised["agent"]["default_revision_id"] == revised["revision"]["id"]
 
-    restored = await api_client.post(
-        f"/api/v1/workspaces/{WORKSPACE_ID}/agents/{agent['id']}/revisions/{result['revision']['id']}/restore",
-        headers={"Idempotency-Key": "http-restore"},
-        json={"expected_version": 2},
+    selected = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/agents/{agent['id']}/revisions/{result['revision']['id']}/default",
+        headers={"Idempotency-Key": "http-default", "If-Match": revision_result.headers["ETag"]},
+        json={},
     )
-    assert restored.status_code == 201
-    assert restored.json()["agent"]["version"] == 3
-    assert restored.json()["revision"]["source_revision_id"] == result["revision"]["id"]
+    assert selected.status_code == 200
+    assert selected.headers["ETag"] != revision_result.headers["ETag"]
+    assert selected.json()["agent"]["default_revision_id"] == result["revision"]["id"]
+    assert selected.json()["revision"]["id"] == result["revision"]["id"]
+
+    stale = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/agents/{agent['id']}/revisions",
+        headers={"Idempotency-Key": "http-stale-aba", "If-Match": created.headers["ETag"]},
+        json={"config": agent_config(instructions="Stale").model_dump(mode="json")},
+    )
+    assert stale.status_code == 412
+    third = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/agents/{agent['id']}/revisions",
+        headers={"Idempotency-Key": "http-third", "If-Match": selected.headers["ETag"]},
+        json={"config": agent_config(instructions="After switch").model_dump(mode="json")},
+    )
+    assert third.status_code == 201
+    assert third.json()["revision"]["version"] == 3
 
     listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/agents")
     revisions = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/agents/{agent['id']}/revisions")
@@ -87,11 +101,11 @@ async def test_complete_agent_http_lifecycle(api_client: httpx2.AsyncClient) -> 
 
     duplicated = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/agents/{agent['id']}/duplicate",
-        headers={"Idempotency-Key": "http-duplicate"},
-        json={"expected_version": 3, "name": "HTTP Support Copy"},
+        headers={"Idempotency-Key": "http-duplicate", "If-Match": third.headers["ETag"]},
+        json={"name": "HTTP Support Copy"},
     )
     assert duplicated.status_code == 201
-    assert duplicated.json()["duplicated_from_revision_id"] == restored.json()["revision"]["id"]
+    assert duplicated.json()["duplicated_from_revision_id"] == third.json()["revision"]["id"]
     assert "agent" not in duplicated.json()
 
 
@@ -135,8 +149,8 @@ async def test_agent_references_and_key_changes(api_client: httpx2.AsyncClient) 
     assert (await api_client.get(f"/api/v1/workspaces/missing/agents/{agent['id']}")).status_code == 404
     duplicate = await api_client.post(
         "/api/v1/workspaces/default/agents/reviewer/duplicate",
-        headers={"Idempotency-Key": "key-duplicate"},
-        json={"name": "Code Reviewer", "expected_version": agent["version"]},
+        headers={"Idempotency-Key": "key-duplicate", "If-Match": renamed.headers["ETag"]},
+        json={"name": "Code Reviewer"},
     )
     assert duplicate.status_code == 201, duplicate.text
     assert duplicate.json()["key"] == "code-reviewer"
@@ -209,8 +223,7 @@ async def test_agent_avatar_upload_replace_remove_and_authorization(api_client: 
     assert uploaded.status_code == 200, uploaded.text
     avatar = uploaded.json()
     assert avatar["image_url"] and "image_id" not in avatar
-    assert avatar["version"] == original["version"]
-    assert avatar["current_revision_id"] == original["current_revision_id"]
+    assert avatar["default_revision_id"] == original["default_revision_id"]
     assert uploaded.headers["ETag"] != created.headers["ETag"]
     read = await api_client.get(avatar["image_url"])
     assert read.status_code == 200
@@ -233,7 +246,6 @@ async def test_agent_avatar_upload_replace_remove_and_authorization(api_client: 
     removed = await api_client.delete(path, headers={"If-Match": replaced.headers["ETag"]})
     assert removed.status_code == 200
     assert removed.json()["image_url"] is None
-    assert removed.json()["version"] == original["version"]
     assert (await api_client.get(replaced.json()["image_url"])).status_code == 404
 
 
@@ -250,5 +262,5 @@ async def test_agent_labels_http_contract(api_client):
     assert created.status_code == 201, created.text
     identity = created.json()["agent"]["id"]
     await assert_labels_http_contract(
-        api_client, f"{collection}/{identity}", collection, immutable_fields=["version", "current_revision_id"]
+        api_client, f"{collection}/{identity}", collection, immutable_fields=["default_revision_id"]
     )

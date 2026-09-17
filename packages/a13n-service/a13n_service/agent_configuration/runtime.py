@@ -17,7 +17,7 @@ from a13n_harness.model_context import (
 )
 from a13n_harness.tools import current_invocation_scope
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
-from pydantic import Field, JsonValue, model_validator
+from pydantic import Field, JsonValue, StringConstraints, model_validator
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -52,11 +52,14 @@ class ModelDraftUpdate(StrictModel):
     content_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     operations: tuple[Operation, ...] = Field(default=(), max_length=32)
     creation_metadata: CreationMetadata | None = None
+    suggested_change_summary: Annotated[str, StringConstraints(max_length=2048)] | None = None
 
     @model_validator(mode="after")
     def require_change(self) -> ModelDraftUpdate:
-        if not self.operations and "creation_metadata" not in self.model_fields_set:
-            raise ValueError("Provide configuration operations or creation metadata.")
+        if not self.operations and not self.model_fields_set.intersection(
+            {"creation_metadata", "suggested_change_summary"}
+        ):
+            raise ValueError("Provide configuration operations, creation metadata, or a suggested summary.")
         return self
 
 
@@ -140,7 +143,6 @@ class ConfigurationCapability(AbstractModelContextCapability):
                     "status",
                     "source_agent_revision_id",
                     "base_agent_revision_id",
-                    "base_agent_version",
                     "latest_application_receipt",
                 }
             },
@@ -378,7 +380,7 @@ def model_draft(draft: ConfigurationDraft) -> dict[str, JsonValue]:
         "status": draft.status,
         "source_agent_revision_id": draft.source_agent_revision_id,
         "base_agent_revision_id": draft.base_agent_revision_id,
-        "base_agent_version": draft.base_agent_version,
+        "suggested_change_summary": draft.suggested_change_summary,
         "config": None if draft.config is None else draft.config.model_dump(mode="json", by_alias=True),
         "creation_metadata": None
         if draft.creation_metadata is None

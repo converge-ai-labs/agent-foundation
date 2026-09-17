@@ -1190,6 +1190,20 @@
   },
   "additionalProperties": false,
   "properties": {
+    "default_environment_template_id": {
+      "anyOf": [
+        {
+          "maxLength": 72,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Default Environment Template Id"
+    },
     "toolsets": {
       "additionalProperties": {
         "$ref": "#/$defs/ToolsetSelection"

@@ -869,7 +869,7 @@ class HostedAguiService:
                     "The requested resource was not found.",
                     category=ErrorCategory.not_found,
                 )
-            selected_revision_id = revision_id or agent.current_revision_id
+            selected_revision_id = revision_id or agent.default_revision_id
             revision = await database.scalar(
                 select(AgentRevisionRecord).where(
                     AgentRevisionRecord.id == selected_revision_id,

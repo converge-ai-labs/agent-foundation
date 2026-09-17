@@ -11,6 +11,7 @@ from a13n_service.durable_operations.idempotency import (
     is_evidence_unique_race,
 )
 from a13n_service.durable_operations.requests import evidence_record
+from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -32,7 +33,6 @@ from .domain import (
 from .errors import (
     AgentError,
     agent_archived,
-    agent_version_conflict,
     map_authorization_error,
 )
 from .invocation_resolution import AgentInvocationResolver, RootAgentStatePolicy
@@ -45,7 +45,7 @@ from .persistence import (
     lock_revision,
     new_agent_audit,
     request_identity,
-    require_version,
+    require_etag,
 )
 from .queries import AgentQueries
 
@@ -71,20 +71,19 @@ class AgentDuplication:
         agent_id: str,
         idempotency_key: str,
         request: DuplicateAgentRequest,
+        if_match: str,
     ) -> Agent:
         identity = request_identity(idempotency_key, request)
         replay = await self._duplicate_replay(actor=actor, agent_id=agent_id, identity=identity)
         if replay is not None:
             return replay
         current = await self._queries.get(actor=actor, agent_id=agent_id)
-        if current.version != request.expected_version:
-            raise agent_version_conflict(current.version)
         if current.archived_at is not None:
             raise agent_archived()
         prepared_graph = await self._invocation_resolver.preparation.prepare(
             actor=actor,
             agent_id=agent_id,
-            agent_revision_id=current.current_revision_id,
+            agent_revision_id=current.default_revision_id,
             root_state_policy=RootAgentStatePolicy.disabled_allowed,
         )
         now = self._clock()
@@ -102,6 +101,12 @@ class AgentDuplication:
                     workspace_id=source_workspace.workspace_id,
                     action=WorkspaceAction.agent_duplicate,
                 )
+                source = await lock_agent(
+                    session,
+                    source_workspace.organization_id,
+                    source_workspace.workspace_id,
+                    agent_id,
+                )
                 replay_ref = await load_replay(
                     session,
                     actor=actor,
@@ -112,22 +117,22 @@ class AgentDuplication:
                 )
                 if replay_ref is not None:
                     return replay_ref.restore(Agent)
-                source = await lock_agent(
-                    session,
-                    source_workspace.organization_id,
-                    source_workspace.workspace_id,
-                    agent_id,
-                )
-                require_version(source, request.expected_version)
+                require_etag(source, if_match)
                 if source.archived_at is not None:
                     raise agent_archived()
-                assert source.current_revision_id is not None
+                assert source.default_revision_id is not None
                 source_revision = await lock_revision(
                     session,
                     organization_id=source_workspace.organization_id,
                     workspace_id=source_workspace.workspace_id,
                     agent_id=agent_id,
-                    revision_id=source.current_revision_id,
+                    revision_id=source.default_revision_id,
+                )
+                await authorize_template(
+                    session,
+                    actor=actor,
+                    workspace_id=source_workspace.workspace_id,
+                    template_id=source_revision.config.get("default_environment_template_id"),
                 )
                 await self._invocation_resolver.freezing.freeze_in_transaction(
                     session,
@@ -151,8 +156,7 @@ class AgentDuplication:
                     name=request.name,
                     description=request.description,
                     labels=labels,
-                    version=1,
-                    current_revision_id=new_revision_id,
+                    default_revision_id=new_revision_id,
                     enabled=True,
                     archived_at=None,
                     duplicated_from_agent_id=source.id,
@@ -197,6 +201,7 @@ class AgentDuplication:
                         action="agent.duplicate",
                         agent_id=duplicate_agent_id,
                         now=now,
+                        details={"from_revision_id": None, "to_revision_id": revision.id},
                     )
                 )
                 await session.flush()

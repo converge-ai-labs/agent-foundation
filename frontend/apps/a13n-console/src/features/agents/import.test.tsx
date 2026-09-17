@@ -131,6 +131,73 @@ it("blocks missing dependencies and requires an explicit replacement", async () 
   expect(http.POST).not.toHaveBeenCalled();
 });
 
+it("blocks an unavailable root Environment template until mapped in the destination", async () => {
+  const { user } = setup();
+  http.GET.mockImplementation(async (url: string) => ({
+    data: url.endsWith("/environment-templates")
+      ? {
+          items: [
+            {
+              id: "et_fedcba9876543210",
+              name: "Local sandbox",
+              version: 2,
+              current_revision_id: "etr_fedcba9876543210",
+            },
+          ],
+        }
+      : {
+          items: [
+            {
+              id: "mdl_local",
+              key: "research",
+              name: "Research model",
+              enabled: true,
+            },
+          ],
+        },
+  }));
+  const sourceWithTemplate = serializeAgentFile(
+    agentFile(
+      { name: "Research", description: null },
+      {
+        ...config,
+        default_environment_template_id: "et_0123456789abcdef",
+      },
+    ),
+  );
+  await user.click(screen.getByLabelText("Agent YAML"));
+  await user.paste(sourceWithTemplate);
+  await user.click(screen.getByRole("button", { name: "Review import" }));
+  await screen.findByText(
+    "Dependency unavailable. Choose a resource in this workspace.",
+  );
+  expect(
+    (screen.getByRole("button", { name: "Create agent" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  await user.click(
+    screen.getByRole("combobox", { name: "default_environment_template_id" }),
+  );
+  await user.keyboard("{ArrowDown}");
+  await user.click(
+    await screen.findByRole("option", { name: "Local sandbox · v2" }),
+  );
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Create agent",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  await user.click(screen.getByRole("button", { name: "Edit YAML" }));
+  expect(
+    (screen.getByLabelText("Agent YAML") as HTMLTextAreaElement).value,
+  ).toContain("default_environment_template_id: et_fedcba9876543210");
+  expect(http.POST).not.toHaveBeenCalled();
+});
+
 it("uploads a file, validates its contents, and rejects unsupported versions without a write", async () => {
   const { user, container } = setup();
   const file = new File(["schema_version: 9"], "agent.yaml", {

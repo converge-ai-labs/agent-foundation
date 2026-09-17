@@ -162,12 +162,11 @@ function editor(
     skills: [{ skill_key: "sources", version: 3 }],
     secret_requirements: [{ key: "research-token", required: true }],
   };
-  render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = render(
+    <QueryClientProvider client={cache}>
       <MemoryRouter>
         <AgentForm
           back="/agents"
@@ -177,6 +176,7 @@ function editor(
           context={<button type="button">More agent actions</button>}
           initial={initial}
           version={7}
+          etag='"agent-v1"'
           pending={false}
           error={undefined}
           readonly={readonly}
@@ -185,8 +185,43 @@ function editor(
       </MemoryRouter>
     </QueryClientProvider>,
   );
-  return { submit, initial };
+  return { submit, initial, view, cache };
 }
+
+it("keeps the editor's configuration and ETag through a background refetch", async () => {
+  const { submit, initial, view, cache } = editor();
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByRole("textbox", { name: "System instructions" }),
+    " Local draft.",
+  );
+  view.rerender(
+    <QueryClientProvider client={cache}>
+      <MemoryRouter>
+        <AgentForm
+          back="/agents"
+          name="Research"
+          initial={{ ...initial, instructions: "Remote replacement" }}
+          version={8}
+          etag='"agent-v2"'
+          pending={false}
+          error={undefined}
+          submit={submit}
+        />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("v7")).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("textbox", {
+        name: "System instructions",
+      }) as HTMLTextAreaElement
+    ).value,
+  ).toBe("Check the evidence. Local draft.");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[0]?.[3]).toBe('"agent-v1"');
+});
 
 it("shows the catalog model logo in the model picker and selected value", async () => {
   const user = userEvent.setup();
@@ -294,7 +329,8 @@ it("preserves hidden reviewer configuration verbatim when saving other changes",
     expect.objectContaining({ reviewer }),
     "Research",
     "",
-    7,
+    '"agent-v1"',
+    null,
   );
 });
 
@@ -347,7 +383,8 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
     }),
     "Research",
     "",
-    7,
+    '"agent-v1"',
+    null,
   );
 });
 
@@ -389,7 +426,8 @@ it("requires saving the instruction draft before trial or agent management", asy
     }),
     "Research",
     "",
-    7,
+    '"agent-v1"',
+    null,
   );
 });
 

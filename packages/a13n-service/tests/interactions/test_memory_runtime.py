@@ -107,7 +107,7 @@ async def test_child_agent_scope_is_independent_and_disabled_agent_fails_before_
     async with transaction(interaction_sessions) as session:
         root = await session.get(AgentRecord, run.agent_id)
         fields = {column.name: getattr(root, column.name) for column in AgentRecord.__table__.columns}
-        fields.update(id=child_id, key="memory-child", name="Memory child", current_revision_id="apr_memorychild123456")
+        fields.update(id=child_id, key="memory-child", name="Memory child", default_revision_id="apr_memorychild123456")
         session.add(AgentRecord(**fields))
     records, calls = {}, []
     async with httpx2.AsyncClient(

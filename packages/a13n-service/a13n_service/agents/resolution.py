@@ -127,6 +127,12 @@ class AgentResolver:
                 agent_id=authorization_agent_id or agent_id,
                 creation=creation,
             )
+            await authorize_template(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                template_id=config.default_environment_template_id,
+            )
             skills = await self._prepare_skills(
                 session,
                 actor=actor,
@@ -177,6 +183,12 @@ class AgentResolver:
             workspace_id=prepared.workspace_id,
             agent_id=prepared.authorization_agent_id or prepared.agent_id,
             creation=prepared.creation,
+        )
+        await authorize_template(
+            session,
+            actor=prepared.actor,
+            workspace_id=prepared.workspace_id,
+            template_id=prepared.config.default_environment_template_id,
         )
         if prepared.config.memory is not None:
             await authorize_workspace(
@@ -302,7 +314,7 @@ class AgentResolver:
                 AgentRevisionRecord.workspace_id == workspace_id,
             )
             if selection.version is None:
-                revision_query = revision_query.where(AgentRevisionRecord.id == child.current_revision_id)
+                revision_query = revision_query.where(AgentRevisionRecord.id == child.default_revision_id)
             else:
                 revision_query = revision_query.where(AgentRevisionRecord.version == selection.version)
             revision = await session.scalar(revision_query)

@@ -106,7 +106,7 @@ async def test_waiting_continue_rejects_stale_and_execution_override_requests_at
         ({"waiting_resolution": {"mode": "defaults", "sealed_state_digest_sha256": "0" * 64}}, 409),
         ({"agent_id": waiting["agent_id"]}, 400),
         ({"agent_revision_id": waiting["agent_revision_id"]}, 400),
-        ({"expected_current_revision_id": waiting["agent_revision_id"]}, 400),
+        ({"expected_default_revision_id": waiting["agent_revision_id"]}, 400),
         ({"config_override": {"instructions": "Changed instructions"}}, 400),
         ({"environment": None}, 400),
     ]

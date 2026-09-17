@@ -70,7 +70,7 @@ async def test_recoverable_queue_head_blocks_its_tail_but_not_other_threads(cont
     await journey.reached(model)
     cases = [await journey.case(), await journey.case()]
     rows = [
-        await journey.queue(source, cases[0], expected_current_revision_id=agent["revision"]["id"]),
+        await journey.queue(source, cases[0], expected_default_revision_id=agent["revision"]["id"]),
         await journey.queue(source, cases[1]),
     ]
     changed = await journey.revision(agent["agent"], instructions="SECOND_REVISION")
@@ -124,7 +124,7 @@ async def test_recoverable_queue_head_blocks_its_tail_but_not_other_threads(cont
             path,
             json={
                 "expected_version": rows[0]["version"],
-                "submission": {**rows[0]["submission"], "expected_current_revision_id": changed["revision"]["id"]},
+                "submission": {**rows[0]["submission"], "expected_default_revision_id": changed["revision"]["id"]},
             },
             headers={"Idempotency-Key": uuid4().hex},
         )

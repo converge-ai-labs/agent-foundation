@@ -21,7 +21,6 @@ def upgrade() -> None:
     """Create the domain schema."""
     op.create_table(
         "agents",
-        sa.Column("default_environment_template_id", sa.String(length=72), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
@@ -30,8 +29,7 @@ def upgrade() -> None:
         sa.Column("key", sa.String(length=64), nullable=False),
         sa.Column("description", sa.String(length=4096), nullable=True),
         sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'"), nullable=False),
-        sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("current_revision_id", sa.String(length=72), nullable=False),
+        sa.Column("default_revision_id", sa.String(length=72), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("duplicated_from_agent_id", sa.String(length=72), nullable=True),
@@ -50,7 +48,6 @@ def upgrade() -> None:
             "updated_by_type IN ('user', 'service_account', 'system')", name=op.f("ck_agents_updated_by_type_valid")
         ),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_agents_name_bounded")),
-        sa.CheckConstraint("version >= 1", name=op.f("ck_agents_version_positive")),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
@@ -91,6 +88,7 @@ def upgrade() -> None:
         sa.Column("resolved_subagents", sa.JSON(), nullable=False),
         sa.Column("content_digest", sa.String(length=64), nullable=False),
         sa.Column("source_revision_id", sa.String(length=72), nullable=True),
+        sa.Column("change_summary", sa.String(length=2048), nullable=True),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),

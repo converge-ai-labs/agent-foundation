@@ -5,7 +5,7 @@ from datetime import timedelta
 import pytest
 from a13n_environment import build_environment_provider_catalog
 from a13n_harness import SafeFailure
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.environments.models import EnvironmentRecord
@@ -50,7 +50,9 @@ async def retained_environment(interaction_sessions, tmp_path, monkeypatch):
         ),
     )
     async with transaction(interaction_sessions) as session:
-        (await session.get(AgentRecord, AGENT_ID)).default_environment_template_id = template.id
+        agent = await session.get(AgentRecord, AGENT_ID)
+        revision = await session.get(AgentRevisionRecord, agent.default_revision_id)
+        revision.config = {**revision.config, "default_environment_template_id": template.id}
     events = []
 
     async def construct(operation):

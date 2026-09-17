@@ -105,7 +105,7 @@ async def create_current_revision(
 
     del expected_version, key
     selected = await service.queries.get(actor=actor(), agent_id=agent_id)
-    revision = await service.queries.get_revision(actor=actor(), revision_id=selected.current_revision_id)
+    revision = await service.queries.get_revision(actor=actor(), revision_id=selected.default_revision_id)
     return AgentRevisionCreateResult(agent=selected, revision=revision), selected
 
 

@@ -14,6 +14,7 @@ const commonFields = new Set([
   "skills",
   "connection_tools",
   "reviewer",
+  "default_environment_template_id",
   "plugins",
   "secret_requirements",
 ]);
@@ -45,6 +46,7 @@ export function buildConfig(
     | "toolsets"
     | "memory"
     | "reviewer"
+    | "default_environment_template_id"
   >,
   advanced: string,
 ): AgentConfig {

@@ -27,7 +27,7 @@ async def current_agent_references(
         (
             await session.execute(
                 select(AgentRecord, AgentRevisionRecord)
-                .join(AgentRevisionRecord, AgentRevisionRecord.id == AgentRecord.current_revision_id)
+                .join(AgentRevisionRecord, AgentRevisionRecord.id == AgentRecord.default_revision_id)
                 .where(
                     AgentRecord.organization_id == organization_id,
                     AgentRecord.workspace_id == workspace_id,

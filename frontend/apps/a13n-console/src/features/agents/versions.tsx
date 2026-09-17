@@ -17,7 +17,15 @@ import { Confirm, JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 
-export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
+export function AgentVersions({
+  agent,
+  etag,
+  onDefaultChanged,
+}: {
+  agent: Schema["Agent"];
+  etag?: string;
+  onDefaultChanged: () => Promise<void>;
+}) {
   const client = useClient(),
     { t } = useTranslation(),
     { workspace, can, basePath } = useWorkspace(),
@@ -39,12 +47,14 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
         })
         .then(data),
   });
-  if (query.isPending) return <Loading variant="table" columns={4} rows={5} />;
+  if (query.isPending) return <Loading variant="table" columns={6} rows={5} />;
   if (!query.data) return <ErrorNotice error={query.error} />;
   return (
     <div className={styles.stack}>
       <p className={styles.muted}>
-        {t("Versions are immutable. Restoring one creates a new version.")}
+        {t(
+          "Versions are immutable. Setting the default does not create a version.",
+        )}
       </p>
       <ResourceTable
         items={query.data.items}
@@ -59,9 +69,9 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
                 type="button"
               >
                 v{item.version}{" "}
-                {item.id === agent.current_revision_id && (
+                {item.id === agent.default_revision_id && (
                   <span className="text-xs text-muted-foreground">
-                    {t("Current")}
+                    {t("Default version")}
                   </span>
                 )}
               </Button>
@@ -69,45 +79,67 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
           },
           { label: t("Model"), render: (item) => item.config.model.model_key },
           {
+            label: t("Version note"),
+            render: (item) => item.change_summary || "—",
+          },
+          {
             label: t("Created"),
             tone: "muted",
             render: (item) => <Timestamp value={item.created_at} />,
+          },
+          {
+            label: t("Created by"),
+            tone: "muted",
+            render: (item) => item.created_by.principal_id,
           },
           {
             label: t("Actions"),
             align: "right",
             render: (item) =>
               can("agent.revision.create") &&
-              item.id !== agent.current_revision_id && (
+              item.id !== agent.default_revision_id && (
                 <Confirm
                   subject={`${agent.name} · v${item.version}`}
                   triggerVariant="ghost"
-                  title={t("Restore version")}
+                  title={t("Set as default")}
                   description={t(
-                    "This creates a new current version using the selected configuration.",
+                    "Future runs will use this version unless another version is selected.",
                   )}
-                  trigger={t("Restore")}
+                  trigger={t("Set as default")}
                   action={async () => {
-                    const body = { expected_version: agent.version };
-                    await client.http.POST(
-                      "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore",
-                      {
-                        params: {
-                          path: {
-                            workspace: workspace.id,
-                            agent: agent.id,
-                            revision_id: item.id,
+                    if (!etag)
+                      throw new Error(
+                        t(
+                          "Version information is unavailable. Reload this page.",
+                        ),
+                      );
+                    await client.http
+                      .POST(
+                        "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/default",
+                        {
+                          params: {
+                            path: {
+                              workspace: workspace.id,
+                              agent: agent.id,
+                              revision_id: item.id,
+                            },
+                            header: {
+                              ...commandHeaders(
+                                workspace.id,
+                                idempotency.forBody({ revision: item.id }),
+                              ),
+                              "If-Match": etag,
+                            },
                           },
-                          header: commandHeaders(
-                            workspace.id,
-                            idempotency.forBody({ ...body, revision: item.id }),
-                          ),
+                          body: {},
                         },
-                        body,
-                      },
-                    );
+                      )
+                      .then(data);
                     idempotency.reset();
-                    await cache.invalidateQueries();
+                    await onDefaultChanged();
+                    await cache.invalidateQueries({
+                      queryKey: ["agent-revisions", workspace.id, agent.id],
+                    });
                   }}
                 />
               ),
@@ -132,6 +164,12 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
               <dt className={styles.muted}>{t("Model")}</dt>
               <dd>{selected.config.model.model_key}</dd>
             </div>
+            {selected.change_summary && (
+              <div>
+                <dt className={styles.muted}>{t("Version note")}</dt>
+                <dd>{selected.change_summary}</dd>
+              </div>
+            )}
             <div>
               <dt className={styles.muted}>{t("Instructions")}</dt>
               <dd className="whitespace-pre-wrap">

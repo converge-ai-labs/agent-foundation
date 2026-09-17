@@ -187,7 +187,7 @@ class QueuedSubmissionService:
             labels=request.labels,
             agent_id=request.agent_id,
             agent_revision_id=request.agent_revision_id,
-            expected_current_revision_id=request.expected_current_revision_id,
+            expected_default_revision_id=request.expected_default_revision_id,
             config_override=request.config_override,
             hook_subscription=request.hook_subscription,
             environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,

@@ -3191,7 +3191,7 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore": {
+  "/api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/default": {
     parameters: {
       query?: never;
       header?: never;
@@ -3200,8 +3200,8 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Restore Agent Revision */
-    post: operations["post_workspaces_workspace_agents_agent_revisions_revision_id_restore"];
+    /** Set Default Agent Revision */
+    post: operations["post_workspaces_workspace_agents_agent_revisions_revision_id_default"];
     delete?: never;
     options?: never;
     head?: never;
@@ -4425,10 +4425,8 @@ export interface components {
        */
       created_at: string;
       created_by: components["schemas"]["ActorRef"];
-      /** Current Revision Id */
-      current_revision_id: string | null;
-      /** Default Environment Template Id */
-      default_environment_template_id?: string | null;
+      /** Default Revision Id */
+      default_revision_id: string | null;
       /** Description */
       description: string | null;
       /** Duplicated From Agent Id */
@@ -4460,8 +4458,6 @@ export interface components {
        */
       updated_at: string;
       updated_by: components["schemas"]["ActorRef"];
-      /** Version */
-      version: number;
       /** Workspace Id */
       workspace_id: string;
     };
@@ -4484,6 +4480,8 @@ export interface components {
        * @default []
        */
       connection_tools?: components["schemas"]["ConnectionToolSelection"][];
+      /** Default Environment Template Id */
+      default_environment_template_id?: string | null;
       input_adapter: components["schemas"]["InputAdapterConfig"];
       /**
        * Instructions
@@ -4538,6 +4536,8 @@ export interface components {
        * @default []
        */
       connection_tools?: components["schemas"]["ConnectionToolSelection"][];
+      /** Default Environment Template Id */
+      default_environment_template_id?: string | null;
       input_adapter: components["schemas"]["InputAdapterConfig"];
       /**
        * Instructions
@@ -4676,6 +4676,8 @@ export interface components {
     AgentRevision: {
       /** Agent Id */
       agent_id: string;
+      /** Change Summary */
+      change_summary?: string | null;
       config: components["schemas"]["AgentConfig-Output"];
       /** Config Digest */
       config_digest: string;
@@ -4824,12 +4826,12 @@ export interface components {
     };
     /** ApplyDraftRequest */
     ApplyDraftRequest: {
+      /** Change Summary */
+      change_summary?: string | null;
       /** Content Digest */
       content_digest: string;
       /** Dependency Digest */
       dependency_digest: string;
-      /** Expected Target Version */
-      expected_target_version?: number | null;
       /** Expected Version */
       expected_version: number;
       verification_acknowledgement?:
@@ -5566,8 +5568,8 @@ export interface components {
       agent_id: string;
       /** Agent Revision Id */
       agent_revision_id: string;
-      /** Agent Version */
-      agent_version: number;
+      /** Agent Revision Version */
+      agent_revision_version: number;
       /**
        * Applied At
        * Format: date-time
@@ -5581,8 +5583,6 @@ export interface components {
       no_change: boolean;
       /** Reviewed Base Agent Revision Id */
       reviewed_base_agent_revision_id: string | null;
-      /** Reviewed Base Agent Version */
-      reviewed_base_agent_version: number | null;
       reviewed_creation_metadata:
         components["schemas"]["CreationMetadata"] | null;
       /** Reviewed Digest */
@@ -5617,10 +5617,10 @@ export interface components {
     };
     /** ConfigurationDraft */
     ConfigurationDraft: {
+      /** Base Agent Etag */
+      base_agent_etag?: string | null;
       /** Base Agent Revision Id */
       base_agent_revision_id: string | null;
-      /** Base Agent Version */
-      base_agent_version?: number | null;
       config: components["schemas"]["AgentConfig-Output"] | null;
       /** Content Digest */
       content_digest: string;
@@ -5662,6 +5662,8 @@ export interface components {
        * @enum {string}
        */
       status: "open" | "discarded" | "expired";
+      /** Suggested Change Summary */
+      suggested_change_summary?: string | null;
       /** Target Agent Id */
       target_agent_id: string | null;
       /** Terminal Reason */
@@ -5679,10 +5681,10 @@ export interface components {
     /** ConfigurationDraftReview */
     ConfigurationDraftReview: {
       base: components["schemas"]["ConfigurationRevisionView"] | null;
+      /** Base Agent Etag */
+      base_agent_etag?: string | null;
       /** Base Agent Revision Id */
       base_agent_revision_id: string | null;
-      /** Base Agent Version */
-      base_agent_version?: number | null;
       /** Base To Candidate */
       base_to_candidate: components["schemas"]["ConfigurationDifference"][];
       /** Base To Current Target */
@@ -5697,6 +5699,8 @@ export interface components {
       created_at: string;
       creation_metadata?: components["schemas"]["CreationMetadata"] | null;
       current_target: components["schemas"]["ConfigurationRevisionView"] | null;
+      /** Current Target Etag */
+      current_target_etag: string | null;
       /** Current Target To Candidate */
       current_target_to_candidate: components["schemas"]["ConfigurationDifference"][];
       /**
@@ -5736,6 +5740,8 @@ export interface components {
        * @enum {string}
        */
       status: "open" | "discarded" | "expired";
+      /** Suggested Change Summary */
+      suggested_change_summary?: string | null;
       /** Target Agent Id */
       target_agent_id: string | null;
       /** Target Conflict */
@@ -6196,8 +6202,8 @@ export interface components {
       agent_revision_id?: string | null;
       config_override?: components["schemas"]["AgentRunOverride-Input"] | null;
       environment?: components["schemas"]["EnvironmentSelection"] | null;
-      /** Expected Current Revision Id */
-      expected_current_revision_id?: string | null;
+      /** Expected Default Revision Id */
+      expected_default_revision_id?: string | null;
       /** Expected Thread Version */
       expected_thread_version: number;
       hook_subscription?:
@@ -6278,8 +6284,6 @@ export interface components {
     /** CreateAgentRequest */
     CreateAgentRequest: {
       config: components["schemas"]["AgentConfig-Input"];
-      /** Default Environment Template Id */
-      default_environment_template_id?: string | null;
       /** Description */
       description?: string | null;
       /** Key */
@@ -6293,9 +6297,9 @@ export interface components {
     };
     /** CreateAgentRevisionRequest */
     CreateAgentRevisionRequest: {
+      /** Change Summary */
+      change_summary?: string | null;
       config: components["schemas"]["AgentConfig-Input"];
-      /** Expected Version */
-      expected_version: number;
     };
     /** CreateAuthorizationRequest */
     CreateAuthorizationRequest: {
@@ -6873,8 +6877,6 @@ export interface components {
     DuplicateAgentRequest: {
       /** Description */
       description?: string | null;
-      /** Expected Version */
-      expected_version: number;
       /** Key */
       key?: string | null;
       /** Labels */
@@ -7207,8 +7209,8 @@ export interface components {
       agent_revision_id?: string | null;
       config_override?: components["schemas"]["AgentRunOverride-Input"] | null;
       environment?: components["schemas"]["EnvironmentSelection"] | null;
-      /** Expected Current Revision Id */
-      expected_current_revision_id?: string | null;
+      /** Expected Default Revision Id */
+      expected_default_revision_id?: string | null;
       hook_subscription?:
         components["schemas"]["InlineHookSubscriptionInput"] | null;
       input: components["schemas"]["AgentInput"];
@@ -8907,8 +8909,8 @@ export interface components {
     /** RebaseDraftRequest */
     RebaseDraftRequest: {
       config: components["schemas"]["AgentConfig-Input"];
-      /** Expected Target Version */
-      expected_target_version: number;
+      /** Expected Target Etag */
+      expected_target_etag: string;
       /** Expected Version */
       expected_version: number;
     };
@@ -9109,11 +9111,6 @@ export interface components {
       /** Call Id */
       call_id: string;
       response: components["schemas"]["JsonValue"];
-    };
-    /** RestoreAgentRevisionRequest */
-    RestoreAgentRevisionRequest: {
-      /** Expected Version */
-      expected_version: number;
     };
     /**
      * ResumeEntry
@@ -9731,6 +9728,8 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
+    /** SetDefaultAgentRevisionRequest */
+    SetDefaultAgentRevisionRequest: Record<string, never>;
     /** SetOperation */
     SetOperation: {
       /**
@@ -9981,8 +9980,8 @@ export interface components {
       agent_revision_id?: string | null;
       config_override?: components["schemas"]["AgentRunOverride-Input"] | null;
       environment?: components["schemas"]["EnvironmentSelection"] | null;
-      /** Expected Current Revision Id */
-      expected_current_revision_id?: string | null;
+      /** Expected Default Revision Id */
+      expected_default_revision_id?: string | null;
       hook_subscription?:
         components["schemas"]["InlineHookSubscriptionInput"] | null;
       input: components["schemas"]["AgentInput"];
@@ -10327,8 +10326,8 @@ export interface components {
       agent_revision_id?: string | null;
       config_override?: components["schemas"]["AgentRunOverride-Input"] | null;
       environment?: components["schemas"]["EnvironmentSelection"] | null;
-      /** Expected Current Revision Id */
-      expected_current_revision_id?: string | null;
+      /** Expected Default Revision Id */
+      expected_default_revision_id?: string | null;
       hook_subscription?:
         components["schemas"]["InlineHookSubscriptionInput"] | null;
       input: components["schemas"]["AgentInput"];
@@ -10345,8 +10344,8 @@ export interface components {
       agent_revision_id?: string | null;
       config_override?: components["schemas"]["AgentRunOverride-Output"] | null;
       environment?: components["schemas"]["EnvironmentSelection"] | null;
-      /** Expected Current Revision Id */
-      expected_current_revision_id?: string | null;
+      /** Expected Default Revision Id */
+      expected_default_revision_id?: string | null;
       hook_subscription?:
         components["schemas"]["InlineHookSubscriptionInput"] | null;
       input: components["schemas"]["AgentInput"];
@@ -10375,8 +10374,8 @@ export interface components {
       agent_revision_id?: string | null;
       config_override?: components["schemas"]["AgentRunOverride-Input"] | null;
       environment?: components["schemas"]["EnvironmentSelection"] | null;
-      /** Expected Current Revision Id */
-      expected_current_revision_id?: string | null;
+      /** Expected Default Revision Id */
+      expected_default_revision_id?: string | null;
       /** Expected Thread Version */
       expected_thread_version: number;
       hook_subscription?:
@@ -10772,8 +10771,6 @@ export interface components {
     };
     /** UpdateAgentRequest */
     UpdateAgentRequest: {
-      /** Default Environment Template Id */
-      default_environment_template_id?: string | null;
       /** Description */
       description?: string | null;
       /** Key */
@@ -10797,6 +10794,8 @@ export interface components {
         | components["schemas"]["RemoveOperation"]
         | components["schemas"]["ReplaceTextOperation"]
       )[];
+      /** Suggested Change Summary */
+      suggested_change_summary?: string | null;
     };
     /** UpdateConnectionRequest */
     UpdateConnectionRequest: {
@@ -22637,6 +22636,7 @@ export interface operations {
       query?: never;
       header: {
         "Idempotency-Key": string;
+        "If-Match": string;
       };
       path: {
         workspace: string;
@@ -22832,6 +22832,7 @@ export interface operations {
       query?: never;
       header: {
         "Idempotency-Key": string;
+        "If-Match": string;
       };
       path: {
         workspace: string;
@@ -22878,11 +22879,12 @@ export interface operations {
       };
     };
   };
-  post_workspaces_workspace_agents_agent_revisions_revision_id_restore: {
+  post_workspaces_workspace_agents_agent_revisions_revision_id_default: {
     parameters: {
       query?: never;
       header: {
         "Idempotency-Key": string;
+        "If-Match": string;
       };
       path: {
         revision_id: string;
@@ -22893,12 +22895,12 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": components["schemas"]["RestoreAgentRevisionRequest"];
+        "application/json": components["schemas"]["SetDefaultAgentRevisionRequest"];
       };
     };
     responses: {
       /** @description Successful Response */
-      201: {
+      200: {
         headers: {
           "X-Request-ID"?: string;
           [name: string]: unknown;

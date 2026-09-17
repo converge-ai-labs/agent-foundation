@@ -31,10 +31,11 @@ def upgrade() -> None:
         sa.Column("source_agent_revision_id", sa.String(length=72), nullable=True),
         sa.Column("source_agent_revision_version", sa.BigInteger(), nullable=True),
         sa.Column("base_agent_revision_id", sa.String(length=72), nullable=True),
-        sa.Column("base_agent_version", sa.BigInteger(), nullable=True),
+        sa.Column("base_agent_etag", sa.String(length=256), nullable=True),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("config", sa.JSON(none_as_null=True), nullable=True),
         sa.Column("creation_metadata", sa.JSON(none_as_null=True), nullable=True),
+        sa.Column("suggested_change_summary", sa.String(length=2048), nullable=True),
         sa.Column("content_digest", sa.String(length=64), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("latest_validation", sa.JSON(none_as_null=True), nullable=True),
@@ -43,7 +44,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "(mode = 'create' AND target_agent_id IS NULL AND source_selector = 'empty' AND base_agent_revision_id IS NULL AND base_agent_version IS NULL) OR (mode = 'update' AND target_agent_id IS NOT NULL AND base_agent_revision_id IS NOT NULL AND base_agent_version IS NOT NULL AND base_agent_version >= 1 AND config IS NOT NULL)",
+            "(mode = 'create' AND target_agent_id IS NULL AND source_selector = 'empty' AND base_agent_revision_id IS NULL AND base_agent_etag IS NULL) OR (mode = 'update' AND target_agent_id IS NOT NULL AND base_agent_revision_id IS NOT NULL AND base_agent_etag IS NOT NULL AND config IS NOT NULL)",
             name=op.f("ck_configuration_drafts_target_shape_valid"),
         ),
         sa.CheckConstraint(
@@ -130,12 +131,12 @@ def upgrade() -> None:
         unique=False,
     )
     op.add_column("agents", sa.Column("system_purpose", sa.String(length=32), nullable=True))
-    op.alter_column("agents", "current_revision_id", existing_type=sa.VARCHAR(length=72), nullable=True)
+    op.alter_column("agents", "default_revision_id", existing_type=sa.VARCHAR(length=72), nullable=True)
     op.create_index("uq_agents_workspace_system_purpose", "agents", ["workspace_id", "system_purpose"], unique=True)
     op.create_check_constraint(
         op.f("ck_agents_revision_source_valid"),
         "agents",
-        "(system_purpose IS NULL AND current_revision_id IS NOT NULL) OR (system_purpose IS NOT NULL AND system_purpose = 'configuration_assistant' AND current_revision_id IS NULL AND version = 1)",
+        "(system_purpose IS NULL AND default_revision_id IS NOT NULL) OR (system_purpose IS NOT NULL AND system_purpose = 'configuration_assistant' AND default_revision_id IS NULL)",
     )
     op.create_check_constraint(
         op.f("ck_agents_system_purpose_valid"),
@@ -221,7 +222,7 @@ def downgrade() -> None:
     op.drop_constraint(op.f("ck_agents_system_purpose_valid"), "agents", type_="check")
     op.drop_constraint(op.f("ck_agents_revision_source_valid"), "agents", type_="check")
     op.drop_index("uq_agents_workspace_system_purpose", table_name="agents")
-    op.alter_column("agents", "current_revision_id", existing_type=sa.VARCHAR(length=72), nullable=False)
+    op.alter_column("agents", "default_revision_id", existing_type=sa.VARCHAR(length=72), nullable=False)
     op.drop_column("agents", "system_purpose")
     op.drop_index("ix_configuration_applications_draft_created", table_name="configuration_applications")
     op.drop_table("configuration_applications")

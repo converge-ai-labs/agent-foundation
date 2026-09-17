@@ -8,7 +8,8 @@ type DependencyKind =
   | "skill"
   | "connection"
   | "agent"
-  | "environment"
+  | "environment_template"
+  | "environment_revision"
   | "web"
   | "memory";
 export interface AgentDependency {
@@ -42,6 +43,16 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
       }),
     },
   ];
+  if (config.default_environment_template_id)
+    refs.push({
+      path: "default_environment_template_id",
+      kind: "environment_template",
+      value: config.default_environment_template_id,
+      replace: (value) => ({
+        ...config,
+        default_environment_template_id: value,
+      }),
+    });
   const reviewer = config.reviewer;
   if (reviewer)
     refs.push({
@@ -96,7 +107,7 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
     if (environment?.template_revision_id)
       refs.push({
         path: `subagents.${name}.environment.template_revision_id`,
-        kind: "environment",
+        kind: "environment_revision",
         value: environment.template_revision_id,
         replace: (value) => ({
           ...config,
@@ -160,6 +171,19 @@ export async function inspectAgentDependencies(
   const refs = agentDependencies(config);
   const path = { workspace };
   const headers = workspaceHeaders(workspace);
+  function fetchEnvironmentTemplates() {
+    return allPages((cursor) =>
+      client.http
+        .GET("/api/v1/workspaces/{workspace}/environment-templates", {
+          params: { path, query: { cursor, limit: 100 } },
+          headers,
+          signal,
+        })
+        .then(data),
+    );
+  }
+  let environmentTemplates:
+    ReturnType<typeof fetchEnvironmentTemplates> | undefined;
   async function choices(kind: DependencyKind): Promise<DependencyOption[]> {
     switch (kind) {
       case "model":
@@ -235,20 +259,17 @@ export async function inspectAgentDependencies(
             id: item.id,
           }));
       }
-      case "environment": {
-        const items = await allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace}/environment-templates", {
-              params: { path, query: { cursor, limit: 100 } },
-              headers,
-              signal,
-            })
-            .then(data),
-        );
+      case "environment_template":
+      case "environment_revision": {
+        const items = await (environmentTemplates ??=
+          fetchEnvironmentTemplates());
         return items
           .filter((item) => !item.archived_at)
           .map((item) => ({
-            value: item.current_revision_id,
+            value:
+              kind === "environment_template"
+                ? item.id
+                : item.current_revision_id,
             label: `${item.name} · v${item.version}`,
             id: item.id,
           }));
@@ -298,7 +319,7 @@ export async function inspectAgentDependencies(
     refs.map(async (ref): Promise<DependencyCheck> => {
       const options = [...(await catalogs.get(ref.kind)!)];
       let selected = options.find((option) => option.value === ref.value);
-      if (ref.kind === "environment" && !selected) {
+      if (ref.kind === "environment_revision" && !selected) {
         try {
           const revision = data(
             await client.http.GET(

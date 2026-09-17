@@ -1,3 +1,4 @@
+from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
@@ -25,11 +26,45 @@ from a13n_service.storage.object_store import LocalObjectStore
 
 from tests.memory.selection_support import ordinary_memory
 
-from ..agents.conftest import MODEL_ID, NOW, PROVIDER_ID, WORKSPACE_ID, actor
+from ..agents.conftest import MODEL_ID, NOW, ORG_ID, PROVIDER_ID, WORKSPACE_ID, actor, agent_config
 from ..lifecycle_support import test_lifecycle_writer as lifecycle_writer
 from .test_drafts import new_draft, services
 
 pytestmark = pytest.mark.anyio
+
+
+async def test_model_edit_root_template_requires_attempt_snapshot_authority(agent_sessions):
+    from a13n_service.agent_configuration.authorization import authorize_candidate_snapshot
+    from a13n_service.iam import AuthorizationError
+    from a13n_service.iam.authorization import PrincipalPermissions, WorkspaceAction, authorize_workspace
+
+    candidate = agent_config().model_copy(update={"default_environment_template_id": "et_1234567890abcdef"})
+    attempt_actor = replace(actor(), auth_method="internal", credential_source="host")
+    snapshot = PrincipalPermissions(
+        principal=actor().principal,
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        workspace_actions=frozenset({WorkspaceAction.models_read}),
+        agent_actions=(),
+    )
+    async with short_session(agent_sessions) as session:
+        await authorize_workspace(
+            session, actor=actor(), workspace_id=WORKSPACE_ID, action=WorkspaceAction.environment_template_use
+        )
+        with pytest.raises(AuthorizationError):
+            await authorize_candidate_snapshot(
+                session, actor=attempt_actor, config=candidate, target_agent_id=None, snapshot=snapshot
+            )
+        await authorize_candidate_snapshot(
+            session,
+            actor=attempt_actor,
+            config=candidate,
+            target_agent_id=None,
+            snapshot=replace(
+                snapshot,
+                workspace_actions=frozenset({WorkspaceAction.models_read, WorkspaceAction.environment_template_use}),
+            ),
+        )
 
 
 async def inputs_service(sessions, tmp_path, *, definition=None):
@@ -246,8 +281,6 @@ async def test_continuation_retains_accepted_definition_after_deployment_and_app
 
 
 async def test_create_scope_snapshot_cannot_authorize_newly_bound_target(agent_sessions, tmp_path):
-    from dataclasses import replace
-
     from a13n_service.agent_configuration.authorization import authorize_execution
     from a13n_service.etags import resource_etag
     from a13n_service.iam import AuthorizationError

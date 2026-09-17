@@ -275,7 +275,6 @@ def upgrade() -> None:
     op.create_index("uq_workspaces_organization_key", "workspaces", ["organization_id", "key"], unique=True)
     op.create_table(
         "agents",
-        sa.Column("default_environment_template_id", sa.String(length=72), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
@@ -286,8 +285,7 @@ def upgrade() -> None:
         sa.Column("image_id", sa.String(length=72), nullable=True),
         sa.Column("description", sa.String(length=4096), nullable=True),
         sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'"), nullable=False),
-        sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("current_revision_id", sa.String(length=72), nullable=True),
+        sa.Column("default_revision_id", sa.String(length=72), nullable=True),
         sa.Column("enabled", sa.Boolean(), nullable=False),
         sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("duplicated_from_agent_id", sa.String(length=72), nullable=True),
@@ -299,7 +297,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "(system_purpose IS NULL AND current_revision_id IS NOT NULL) OR (system_purpose IS NOT NULL AND system_purpose = 'configuration_assistant' AND current_revision_id IS NULL AND version = 1)",
+            "(system_purpose IS NULL AND default_revision_id IS NOT NULL) OR (system_purpose IS NOT NULL AND system_purpose = 'configuration_assistant' AND default_revision_id IS NULL)",
             name=op.f("ck_agents_revision_source_valid"),
         ),
         sa.CheckConstraint(
@@ -314,7 +312,6 @@ def upgrade() -> None:
             "updated_by_type IN ('user', 'service_account', 'system')", name=op.f("ck_agents_updated_by_type_valid")
         ),
         sa.CheckConstraint("length(name) BETWEEN 1 AND 128", name=op.f("ck_agents_name_bounded")),
-        sa.CheckConstraint("version >= 1", name=op.f("ck_agents_version_positive")),
         sa.ForeignKeyConstraint(
             ["workspace_id", "organization_id"],
             ["workspaces.id", "workspaces.organization_id"],
@@ -1042,6 +1039,7 @@ def upgrade() -> None:
         sa.Column("resolved_subagents", sa.JSON(), nullable=False),
         sa.Column("content_digest", sa.String(length=64), nullable=False),
         sa.Column("source_revision_id", sa.String(length=72), nullable=True),
+        sa.Column("change_summary", sa.String(length=2048), nullable=True),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -1453,10 +1451,11 @@ def upgrade() -> None:
         sa.Column("source_agent_revision_id", sa.String(length=72), nullable=True),
         sa.Column("source_agent_revision_version", sa.BigInteger(), nullable=True),
         sa.Column("base_agent_revision_id", sa.String(length=72), nullable=True),
-        sa.Column("base_agent_version", sa.BigInteger(), nullable=True),
+        sa.Column("base_agent_etag", sa.String(length=256), nullable=True),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("config", sa.JSON(none_as_null=True), nullable=True),
         sa.Column("creation_metadata", sa.JSON(none_as_null=True), nullable=True),
+        sa.Column("suggested_change_summary", sa.String(length=2048), nullable=True),
         sa.Column("content_digest", sa.String(length=64), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("latest_validation", sa.JSON(none_as_null=True), nullable=True),
@@ -1465,7 +1464,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
-            "(mode = 'create' AND target_agent_id IS NULL AND source_selector = 'empty' AND base_agent_revision_id IS NULL AND base_agent_version IS NULL) OR (mode = 'update' AND target_agent_id IS NOT NULL AND base_agent_revision_id IS NOT NULL AND base_agent_version IS NOT NULL AND base_agent_version >= 1 AND config IS NOT NULL)",
+            "(mode = 'create' AND target_agent_id IS NULL AND source_selector = 'empty' AND base_agent_revision_id IS NULL AND base_agent_etag IS NULL) OR (mode = 'update' AND target_agent_id IS NOT NULL AND base_agent_revision_id IS NOT NULL AND base_agent_etag IS NOT NULL AND config IS NOT NULL)",
             name=op.f("ck_configuration_drafts_target_shape_valid"),
         ),
         sa.CheckConstraint(

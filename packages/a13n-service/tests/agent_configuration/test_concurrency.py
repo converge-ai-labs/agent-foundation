@@ -41,7 +41,7 @@ async def test_concurrent_provisioning_and_apply_have_one_committed_result(postg
     initialized = await asyncio.gather(*[system.ensure(actor=actor(), session_id=draft.session_id) for _ in range(5)])
     assert ready.ready
     assert len({item.id for item in initialized}) == 1
-    assert all(item.current_revision_id is None for item in initialized)
+    assert all(item.default_revision_id is None for item in initialized)
     saved = await save(drafts, draft)
     receipts = await asyncio.gather(
         *[

@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
@@ -27,6 +27,7 @@ from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.ids import new_object_id
+from a13n_service.temporal import next_updated_at
 
 from .domain import (
     Agent,
@@ -41,7 +42,6 @@ from .errors import (
     agent_archived,
     agent_not_found,
     agent_revision_not_found,
-    agent_version_conflict,
     idempotency_conflict,
     invalid_idempotency_key,
     map_authorization_error,
@@ -130,6 +130,13 @@ async def lock_revision(
     return record
 
 
+async def next_revision_number(session: AsyncSession, agent_id: str) -> int:
+    highest = await session.scalar(
+        select(func.max(AgentRevisionRecord.version)).where(AgentRevisionRecord.agent_id == agent_id)
+    )
+    return (highest or 0) + 1
+
+
 def new_builtin_agent(
     *,
     organization_id: str,
@@ -145,8 +152,7 @@ def new_builtin_agent(
         source=AgentSource.builtin.value,
         name=registration.name,
         description=registration.description,
-        version=1,
-        current_revision_id=revision_id,
+        default_revision_id=revision_id,
         enabled=True,
         archived_at=None,
         duplicated_from_agent_id=None,
@@ -168,6 +174,7 @@ def new_revision(
     config: AgentConfig,
     resolved: ResolvedRevisionContent,
     source_revision_id: str | None,
+    change_summary: str | None = None,
     actor: AuthenticatedActor,
     now: datetime,
 ) -> AgentRevisionRecord:
@@ -193,6 +200,7 @@ def new_revision(
         resolved_subagents=[item.model_dump(mode="json") for item in resolved.resolved_subagents],
         content_digest=content_digest,
         source_revision_id=source_revision_id,
+        change_summary=change_summary,
         created_by_type=actor.principal.principal_type.value,
         created_by_id=actor.principal.principal_id,
         created_at=now,
@@ -223,6 +231,7 @@ def copy_revision(
         resolved_subagents=source.resolved_subagents,
         content_digest=source.content_digest,
         source_revision_id=source_revision_id,
+        change_summary=None,
         created_by_type=actor.principal.principal_type.value,
         created_by_id=actor.principal.principal_id,
         created_at=now,
@@ -254,11 +263,6 @@ def require_custom_mutable(record: AgentRecord) -> None:
         raise agent_archived()
 
 
-def require_version(record: AgentRecord, expected: int) -> None:
-    if record.version != expected:
-        raise agent_version_conflict(record.version)
-
-
 def require_etag(record: AgentRecord, if_match: str) -> None:
     current = resource_etag(record.id, record.updated_at)
     if not etag_matches(if_match, current):
@@ -273,7 +277,7 @@ def require_etag(record: AgentRecord, if_match: str) -> None:
 def touch_agent(record: AgentRecord, *, actor: AuthenticatedActor, now: datetime) -> None:
     record.updated_by_type = actor.principal.principal_type.value
     record.updated_by_id = actor.principal.principal_id
-    record.updated_at = now
+    record.updated_at = next_updated_at(record.updated_at, now)
 
 
 def apply_lifecycle_transition(
@@ -322,7 +326,7 @@ async def require_not_in_use(session: AsyncSession, target: AgentRecord) -> None
         (
             await session.scalars(
                 select(AgentRevisionRecord)
-                .join(AgentRecord, AgentRecord.current_revision_id == AgentRevisionRecord.id)
+                .join(AgentRecord, AgentRecord.default_revision_id == AgentRevisionRecord.id)
                 .where(
                     AgentRecord.organization_id == target.organization_id,
                     AgentRecord.workspace_id == target.workspace_id,
@@ -376,6 +380,8 @@ def add_command_evidence_and_audit(
     result_ref: str,
     now: datetime,
     response: BaseModel,
+    audit_details: dict[str, object] | None = None,
+    audit: bool = True,
 ) -> None:
     session.add(
         evidence_record(
@@ -391,16 +397,18 @@ def add_command_evidence_and_audit(
             now=now,
         )
     )
-    session.add(
-        new_agent_audit(
-            actor=actor,
-            organization_id=record.organization_id,
-            workspace_id=record.workspace_id,
-            action=operation,
-            agent_id=record.id,
-            now=now,
+    if audit:
+        session.add(
+            new_agent_audit(
+                actor=actor,
+                organization_id=record.organization_id,
+                workspace_id=record.workspace_id,
+                action=operation,
+                agent_id=record.id,
+                now=now,
+                details=audit_details,
+            )
         )
-    )
 
 
 def request_identity(idempotency_key: str, request: object) -> IdempotencyIdentity:
@@ -444,6 +452,7 @@ def new_agent_audit(
     action: str,
     agent_id: str,
     now: datetime,
+    details: dict[str, object] | None = None,
 ) -> SecurityAuditRecord:
     return security_audit_record(
         audit_id=new_object_id("audit"),
@@ -455,5 +464,5 @@ def new_agent_audit(
         resource_id=agent_id,
         outcome="success",
         occurred_at=now,
-        details=None,
+        details=details,
     )

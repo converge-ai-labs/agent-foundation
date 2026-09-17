@@ -47,8 +47,8 @@ async def test_builtin_registration_is_executable_idempotent_and_upgradable(
     assert first.agent.id == BUILTIN_AGENT_ID
     assert first.agent.source == "builtin"
     assert first.agent.enabled is True
-    assert first.agent.current_revision_id == first.revision.id
-    assert first.agent.version == first.revision.version == 1
+    assert first.agent.default_revision_id == first.revision.id
+    assert first.revision.version == 1
     assert first.revision.created_by.principal_id == SYSTEM_ACTOR_ID
 
     replay = await agent_management.builtins.register_builtin(
@@ -63,8 +63,8 @@ async def test_builtin_registration_is_executable_idempotent_and_upgradable(
         workspace_id=WORKSPACE_ID,
         registration=registration(instructions="Use the upgraded behavior."),
     )
-    assert upgraded.agent.version == upgraded.revision.version == 2
-    assert upgraded.agent.current_revision_id == upgraded.revision.id
+    assert upgraded.revision.version == 2
+    assert upgraded.agent.default_revision_id == upgraded.revision.id
     assert upgraded.revision.config.instructions == "Use the upgraded behavior."
 
     revisions = await agent_management.queries.list_revisions(
@@ -103,7 +103,7 @@ async def test_builtin_metadata_update_does_not_create_a_revision(agent_manageme
     )
 
     assert renamed.agent.name == "Service Helper"
-    assert renamed.agent.version == 1
+    assert renamed.revision.version == 1
     assert renamed.revision == first.revision
     revisions = await agent_management.queries.list_revisions(
         actor=actor(),
@@ -176,7 +176,7 @@ async def test_builtin_registration_does_not_revision_for_mutable_model_content(
     assert upgraded.revision.config == first.revision.config
     assert upgraded.revision.resolved_model.model_id == MODEL_ID
     assert upgraded.revision.content_digest == first.revision.content_digest
-    assert upgraded.agent.current_revision_id == upgraded.revision.id
+    assert upgraded.agent.default_revision_id == upgraded.revision.id
 
 
 @pytest.mark.anyio
@@ -202,9 +202,9 @@ async def test_builtin_is_user_read_only_but_can_be_duplicated(agent_management:
             agent_id=BUILTIN_AGENT_ID,
             idempotency_key="builtin-user-revision",
             request=CreateAgentRevisionRequest(
-                expected_version=registered.agent.version,
                 config=agent_config(instructions="User mutation."),
             ),
+            if_match=resource_etag(registered.agent.id, registered.agent.updated_at),
         )
     assert revision_rejected.value.code == "agent_state_conflict"
 
@@ -212,10 +212,8 @@ async def test_builtin_is_user_read_only_but_can_be_duplicated(agent_management:
         actor=actor(),
         agent_id=BUILTIN_AGENT_ID,
         idempotency_key="duplicate-builtin",
-        request=DuplicateAgentRequest(
-            expected_version=registered.agent.version,
-            name="Customized Assistant",
-        ),
+        request=DuplicateAgentRequest(name="Customized Assistant"),
+        if_match=resource_etag(registered.agent.id, registered.agent.updated_at),
     )
     assert duplicate.source == "custom"
     assert duplicate.enabled is True

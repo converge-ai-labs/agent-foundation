@@ -143,8 +143,8 @@ export function Agents() {
               {
                 label: t("Model"),
                 render: (agent) =>
-                  agent.current_revision_id ? (
-                    <AgentModel revisionId={agent.current_revision_id} />
+                  agent.default_revision_id ? (
+                    <AgentModel revisionId={agent.default_revision_id} />
                   ) : (
                     "—"
                   ),

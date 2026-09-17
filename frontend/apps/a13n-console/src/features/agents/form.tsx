@@ -30,6 +30,7 @@ import { useAgentChoices } from "./choices";
 import { ModelIcon } from "../models/model-icon";
 import { useModelProviderDefinitions } from "../models/provider-definitions";
 import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
+import { AgentEnvironment } from "./environment";
 
 function thinkingSelection(value: unknown): string {
   if (value === false) return "false";
@@ -40,6 +41,7 @@ function thinkingSelection(value: unknown): string {
 export function AgentForm({
   initial: providedInitial,
   version,
+  etag,
   creating = false,
   name: initialName = "",
   description: initialDescription = "",
@@ -55,12 +57,12 @@ export function AgentForm({
   agentId,
   agentKey,
   imagePicker,
-  environment,
   metadata,
   back,
 }: {
   initial: AgentConfig;
   version?: number;
+  etag?: string;
   creating?: boolean;
   name?: string;
   description?: string;
@@ -70,7 +72,8 @@ export function AgentForm({
     config: AgentConfig,
     name: string,
     description: string,
-    version?: number,
+    etag?: string,
+    changeSummary?: string | null,
   ) => void;
   reload?: () => void;
   readonly?: boolean;
@@ -81,12 +84,12 @@ export function AgentForm({
   agentId?: string;
   agentKey?: string;
   imagePicker?: (name: string) => ReactNode;
-  environment?: ReactNode;
   metadata?: ReactNode;
   back: string;
 }) {
   const [initial] = useState(providedInitial),
-    [originalVersion] = useState(version);
+    [originalVersion] = useState(version),
+    [originalEtag] = useState(etag);
   const { t } = useTranslation();
   const initialSettings = initial.model.settings ?? {};
   const {
@@ -96,6 +99,10 @@ export function AgentForm({
   } = initialSettings;
   const [name, setName] = useState(initialName),
     [description, setDescription] = useState(initialDescription),
+    [environmentTemplateId, setEnvironmentTemplateId] = useState(
+      initial.default_environment_template_id ?? null,
+    ),
+    [changeSummary, setChangeSummary] = useState(""),
     [instructions, setInstructions] = useState(initial.instructions ?? ""),
     [model, setModel] = useState(initial.model.model_key),
     [thinking, setThinking] = useState(thinkingSelection(initialThinking)),
@@ -188,13 +195,20 @@ export function AgentForm({
           },
           skills,
           connection_tools: connections,
+          default_environment_template_id: environmentTemplateId,
         },
         advanced,
       );
       if (creating && !config.protocol.public_name)
         config.protocol.public_name = name;
       setValidation(undefined);
-      submit(config, name, description, originalVersion);
+      submit(
+        config,
+        name,
+        description,
+        originalEtag,
+        changeSummary.trim() || null,
+      );
     } catch (error) {
       setValidation(
         error instanceof Error ? error : new Error(t("Invalid configuration")),
@@ -205,6 +219,8 @@ export function AgentForm({
   const dirty =
     creating ||
     JSON.stringify(memory) !== JSON.stringify(initial.memory) ||
+    environmentTemplateId !==
+      (initial.default_environment_template_id ?? null) ||
     JSON.stringify(toolsets) !== JSON.stringify(initial.toolsets ?? {}) ||
     instructions !== (initial.instructions ?? "") ||
     model !== initial.model.model_key ||
@@ -266,9 +282,9 @@ export function AgentForm({
           </div>
           <div className={styles.headerDetails}>
             <div className={styles.headerMeta}>
-              {version !== undefined && (
+              {originalVersion !== undefined && (
                 <span>
-                  {t("Current version")} <strong>v{version}</strong>
+                  {t("Default version")} <strong>v{originalVersion}</strong>
                 </span>
               )}
               {metadata}
@@ -422,7 +438,11 @@ export function AgentForm({
               </div>
             </EditorSection>
           </fieldset>
-          {environment}
+          <AgentEnvironment
+            value={environmentTemplateId}
+            onChange={setEnvironmentTemplateId}
+            disabled={readonly || pending}
+          />
           <fieldset
             disabled={pending}
             className={`fieldset-reset ${styles.configurationSections}`}
@@ -501,6 +521,22 @@ export function AgentForm({
                 </div>
               </DisclosureSection>
             </EditorSection>
+            {!creating && !readonly && (
+              <EditorSection
+                title={t("Version note")}
+                description={t(
+                  "Optional explanation saved with the new version.",
+                )}
+              >
+                <TextAreaField
+                  label={t("Version note")}
+                  hideLabel
+                  value={changeSummary}
+                  onChange={setChangeSummary}
+                  rows={2}
+                />
+              </EditorSection>
+            )}
           </fieldset>
         </div>
 

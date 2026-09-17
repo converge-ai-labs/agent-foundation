@@ -17,6 +17,7 @@ async def test_revision_and_override_reach_harness_without_drifting(management):
     accepted_case = await journey.case()
     accepted = await journey.start(accepted_case, agent_id=agent_id)
     assert (await live.run(accepted["run_id"]))["status"] == "accepted"
+    stale_etag = (await live.http.get(f"{journey.base}/agents/{agent_id}")).headers["etag"]
     second = await journey.revision(first["agent"], instructions="REVISION_TWO")
     await journey.lab.start_worker()
     frozen = await live.finish(accepted["run_id"])
@@ -40,12 +41,32 @@ async def test_revision_and_override_reach_harness_without_drifting(management):
     assert stored["config"]["instructions"] == "REVISION_TWO"
     assert await live.run(frozen["id"]) == frozen
 
+    # Selecting an existing revision changes future implicit runs without copying configuration.
+    agent_path = f"{journey.base}/agents/{agent_id}"
+    current = await live.http.get(agent_path)
+    selection_headers = {"If-Match": current.headers["etag"]}
+    selection_path = f"{agent_path}/revisions/{first['revision']['id']}/default"
+    selected = await journey.post(selection_path, {}, expected=200, key="select-first", headers=selection_headers)
+    replay = await journey.post(selection_path, {}, expected=200, key="select-first", headers=selection_headers)
+    assert replay == selected and selected["revision"]["id"] == first["revision"]["id"]
+    history = await live.request("GET", agent_path + "/revisions")
+    assert [item["version"] for item in history["items"]] == [2, 1]
+    case = await journey.case()
+    receipt = await journey.start(case, agent_id=agent_id)
+    result = await live.finish(receipt["run_id"])
+    assert result["agent_revision_id"] == first["revision"]["id"]
+    assert "REVISION_ONE" in json.dumps(journey.observations(case)[0]["body"]["messages"])
+    third = await journey.revision(selected["agent"], instructions="REVISION_THREE")
+    assert third["revision"]["version"] == 3
+    assert await live.run(frozen["id"]) == frozen
+
     # Stale management writes and non-overridable fields cannot create executions.
     before = await journey.runs()
     await journey.post(
         f"{journey.base}/agents/{agent_id}/revisions",
-        {"expected_version": first["agent"]["version"], "config": agent_config(instructions="STALE")},
-        expected=409,
+        {"config": agent_config(instructions="STALE")},
+        expected=412,
+        headers={"If-Match": stale_etag},
     )
     await journey.post(
         journey.base + "/runs",

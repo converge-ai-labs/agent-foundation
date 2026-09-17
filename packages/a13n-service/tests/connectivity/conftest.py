@@ -314,7 +314,6 @@ async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]
                 name="Support",
                 key="support",
                 description=None,
-                version=1,
                 current_revision_id="agtr_connectivity_test",
                 enabled=True,
                 archived_at=None,

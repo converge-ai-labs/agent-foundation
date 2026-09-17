@@ -13,6 +13,7 @@ from a13n_service.agents.persistence import (
     lock_revision,
     new_agent_audit,
     new_revision,
+    next_revision_number,
     require_custom_mutable,
     touch_agent,
 )
@@ -21,6 +22,7 @@ from a13n_service.collection_cursors import encode_time_cursor
 from a13n_service.durable_operations.idempotency import IdempotencyIdentity
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
+from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
 from a13n_service.resource_keys import insert_with_key
@@ -136,8 +138,7 @@ class ConfigurationApplication:
                     name=candidate.creation_metadata.name,
                     description=candidate.creation_metadata.description,
                     labels={},
-                    version=1,
-                    current_revision_id=new_agent_revision_id(),
+                    default_revision_id=new_agent_revision_id(),
                     enabled=True,
                     archived_at=None,
                     created_by_type=actor.principal.principal_type.value,
@@ -150,7 +151,7 @@ class ConfigurationApplication:
             else:
                 target = await lock_agent(session, record.organization_id, record.workspace_id, agent_id)
                 require_custom_mutable(target)
-                if target.version != record.base_agent_version or request.expected_target_version != target.version:
+                if resource_etag(target.id, target.updated_at) != record.base_agent_etag:
                     raise failure(
                         "configuration_target_conflict",
                         "The target has changed; review and explicitly rebase the candidate.",
@@ -165,16 +166,22 @@ class ConfigurationApplication:
                     "Dependencies changed after review; save and review a fresh validation.",
                 )
             no_change = False
+            previous_default_revision_id = None if record.mode == "create" else target.default_revision_id
             if record.mode == "create":
                 await insert_with_key(session, target, prefix="agent")
-            assert target.current_revision_id is not None
+            assert target.default_revision_id is not None
             revision = new_revision(
                 target,
-                revision_id=target.current_revision_id if record.mode == "create" else new_agent_revision_id(),
-                version=1 if record.mode == "create" else target.version + 1,
+                revision_id=target.default_revision_id if record.mode == "create" else new_agent_revision_id(),
+                version=1 if record.mode == "create" else await next_revision_number(session, target.id),
                 config=candidate.config,
                 resolved=resolved,
                 source_revision_id=record.source_agent_revision_id,
+                change_summary=(
+                    request.change_summary
+                    if "change_summary" in request.model_fields_set
+                    else candidate.suggested_change_summary
+                ),
                 actor=actor,
                 now=now,
             )
@@ -184,13 +191,13 @@ class ConfigurationApplication:
                     organization_id=record.organization_id,
                     workspace_id=record.workspace_id,
                     agent_id=target.id,
-                    revision_id=target.current_revision_id,
+                    revision_id=target.default_revision_id,
                 )
                 if current.content_digest == revision.content_digest:
                     revision, no_change = current, True
             if not no_change:
                 session.add(revision)
-                target.version, target.current_revision_id = revision.version, revision.id
+                target.default_revision_id = revision.id
                 touch_agent(target, actor=actor, now=now)
             # Persist the revision before the draft receipt references it.
             await session.flush()
@@ -201,11 +208,10 @@ class ConfigurationApplication:
                 reviewed_mode=candidate.mode,
                 reviewed_target_agent_id=candidate.target_agent_id,
                 reviewed_base_agent_revision_id=candidate.base_agent_revision_id,
-                reviewed_base_agent_version=candidate.base_agent_version,
                 reviewed_creation_metadata=candidate.creation_metadata,
                 agent_id=target.id,
                 agent_revision_id=revision.id,
-                agent_version=revision.version,
+                agent_revision_version=revision.version,
                 applied_by_user_id=actor.principal.principal_id,
                 applied_at=now,
                 no_change=no_change,
@@ -228,7 +234,7 @@ class ConfigurationApplication:
             record.mode = "update"
             record.target_agent_id = target.id
             record.base_agent_revision_id = revision.id
-            record.base_agent_version = target.version
+            record.base_agent_etag = resource_etag(target.id, target.updated_at)
             record.version += 1
             record.latest_validation = None
             record.evidence_refs = []
@@ -268,16 +274,18 @@ class ConfigurationApplication:
                     last_error_code=None,
                 )
             )
-            session.add(
-                new_agent_audit(
-                    actor=actor,
-                    organization_id=record.organization_id,
-                    workspace_id=record.workspace_id,
-                    action="agent.configuration.apply",
-                    agent_id=target.id,
-                    now=now,
+            if not no_change:
+                session.add(
+                    new_agent_audit(
+                        actor=actor,
+                        organization_id=record.organization_id,
+                        workspace_id=record.workspace_id,
+                        action="agent.configuration.apply",
+                        agent_id=target.id,
+                        now=now,
+                        details={"from_revision_id": previous_default_revision_id, "to_revision_id": revision.id},
+                    )
                 )
-            )
             await session.flush()
         logger.info(
             "configuration_draft_applied",
@@ -369,10 +377,6 @@ def require_review(record: ConfigurationDraftRecord, *, request: ApplyDraftReque
         raise failure(
             "configuration_uninitialized", "Application requires a complete configuration and creation metadata."
         )
-    if record.mode == "create" and request.expected_target_version is not None:
-        raise failure("configuration_target_conflict", "A create draft has no target version.")
-    if record.mode == "update" and request.expected_target_version != record.base_agent_version:
-        raise failure("configuration_target_conflict", "Review the draft's exact target baseline before application.")
     validation = record.latest_validation
     if (
         validation is None

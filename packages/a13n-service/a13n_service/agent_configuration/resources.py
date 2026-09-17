@@ -154,8 +154,7 @@ async def resource_query(
             AgentRecord.id,
             AgentRecord.name,
             AgentRecord.key,
-            AgentRecord.version,
-            AgentRecord.current_revision_id,
+            AgentRecord.default_revision_id,
             AgentRecord.enabled,
             AgentRecord.archived_at,
         ).where(AgentRecord.workspace_id == actor.workspace_id, AgentRecord.system_purpose.is_(None))
@@ -258,8 +257,7 @@ def project(kind: ResourceKind, row) -> ConfigurationResource:
             return ConfigurationResource(
                 **{**common, "available": row["enabled"] and row["archived_at"] is None},
                 key=row["key"],
-                version=row["version"],
-                revision_id=row["current_revision_id"],
+                revision_id=row["default_revision_id"],
             )
         case "connection":
             return ConfigurationResource(

@@ -63,9 +63,9 @@ class ConfigurationDraftRecord(Base):
         ),
         CheckConstraint(
             "(mode = 'create' AND target_agent_id IS NULL AND source_selector = 'empty' "
-            "AND base_agent_revision_id IS NULL AND base_agent_version IS NULL) OR "
+            "AND base_agent_revision_id IS NULL AND base_agent_etag IS NULL) OR "
             "(mode = 'update' AND target_agent_id IS NOT NULL AND base_agent_revision_id IS NOT NULL "
-            "AND base_agent_version IS NOT NULL AND base_agent_version >= 1 AND config IS NOT NULL)",
+            "AND base_agent_etag IS NOT NULL AND config IS NOT NULL)",
             name="target_shape_valid",
         ),
         CheckConstraint("length(content_digest) = 64", name="digest_sha256"),
@@ -84,10 +84,11 @@ class ConfigurationDraftRecord(Base):
     source_agent_revision_id: Mapped[str | None] = mapped_column(String(72))
     source_agent_revision_version: Mapped[int | None] = mapped_column(BigInteger)
     base_agent_revision_id: Mapped[str | None] = mapped_column(String(72))
-    base_agent_version: Mapped[int | None] = mapped_column(BigInteger)
+    base_agent_etag: Mapped[str | None] = mapped_column(String(256))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     config: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     creation_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    suggested_change_summary: Mapped[str | None] = mapped_column(String(2048))
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False)
     latest_validation: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))

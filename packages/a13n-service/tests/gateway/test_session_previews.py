@@ -112,7 +112,7 @@ async def _add_hidden_agent(database: AsyncSession) -> str:
     revision = await database.get(AgentRevisionRecord, AGENT_REVISION_ID)
     assert agent is not None and revision is not None
     agent_values = {column.name: getattr(agent, column.name) for column in AgentRecord.__table__.columns}
-    agent_values.update(id="agt_hidden", name="Hidden", key="hidden", current_revision_id="agtr_hidden")
+    agent_values.update(id="agt_hidden", name="Hidden", key="hidden", default_revision_id="agtr_hidden")
     database.add(AgentRecord(**agent_values))
     await database.flush()
     revision_values = {column.name: getattr(revision, column.name) for column in AgentRevisionRecord.__table__.columns}

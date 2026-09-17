@@ -67,9 +67,9 @@ def agent_revision_not_found() -> AgentError:
     return AgentError("agent_revision_not_found", "The AgentRevision was not found.", category=ErrorCategory.not_found)
 
 
-def agent_current_revision_missing() -> AgentError:
+def agent_default_revision_missing() -> AgentError:
     return AgentError(
-        "agent_current_revision_missing",
+        "agent_default_revision_missing",
         "The Agent has no current Revision.",
         category=ErrorCategory.conflict,
     )
@@ -93,21 +93,12 @@ def agent_revision_not_executable(reason: str | None = None) -> AgentError:
     )
 
 
-def current_revision_conflict(current_revision_id: str | None) -> AgentError:
+def default_revision_conflict(default_revision_id: str | None) -> AgentError:
     return AgentError(
-        "current_revision_conflict",
+        "default_revision_conflict",
         "The current AgentRevision has changed.",
         category=ErrorCategory.conflict,
-        details={"current_revision_id": current_revision_id},
-    )
-
-
-def agent_version_conflict(current_version: int) -> AgentError:
-    return AgentError(
-        "agent_version_conflict",
-        "The Agent version has changed.",
-        category=ErrorCategory.conflict,
-        details={"current_version": current_version},
+        details={"default_revision_id": default_revision_id},
     )
 
 

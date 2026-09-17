@@ -276,7 +276,7 @@ class QueuedRunCommands:
             actor=retained_actor,
             agent_id=target_agent_id,
             agent_revision_id=queued.submission.agent_revision_id,
-            expected_current_revision_id=queued.submission.expected_current_revision_id,
+            expected_default_revision_id=queued.submission.expected_default_revision_id,
             config_override=queued.submission.config_override,
             submitted=queued.submission.input,
             environment=queued.submission.environment

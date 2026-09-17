@@ -45,7 +45,7 @@ class ThreadRunSubmissionIntent(StrictModel):
     labels: Labels = Field(default_factory=dict)
     agent_id: ObjectId | None = None
     agent_revision_id: ObjectId | None = None
-    expected_current_revision_id: ObjectId | None = None
+    expected_default_revision_id: ObjectId | None = None
     environment: EnvironmentSelection | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
@@ -83,7 +83,7 @@ class ThreadRunSubmissionRequest(StrictModel):
     labels: Labels = Field(default_factory=dict)
     agent_id: ObjectId | None = None
     agent_revision_id: ObjectId | None = None
-    expected_current_revision_id: ObjectId | None = None
+    expected_default_revision_id: ObjectId | None = None
     environment: EnvironmentSelection | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
@@ -94,7 +94,7 @@ class ThreadRunSubmissionRequest(StrictModel):
         execution_fields = {
             "agent_id",
             "agent_revision_id",
-            "expected_current_revision_id",
+            "expected_default_revision_id",
             "environment",
             "config_override",
         }

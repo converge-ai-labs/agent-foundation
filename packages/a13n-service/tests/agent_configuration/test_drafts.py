@@ -10,12 +10,13 @@ from a13n_service.agent_configuration.requests import (
     RebaseDraftRequest,
     UpdateConfigurationDraftRequest,
 )
-from a13n_service.agents.domain import CreateAgentRequest, CreateAgentRevisionRequest
-from a13n_service.agents.models import AgentRecord
+from a13n_service.agents.domain import CreateAgentRequest, CreateAgentRevisionRequest, SetDefaultAgentRevisionRequest
+from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.application_errors import ApplicationError
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
+from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.storage import short_session, transaction
@@ -64,7 +65,6 @@ def apply_request(draft, *, acknowledge=True):
         {
             "expected_version": draft.version,
             "content_digest": draft.content_digest,
-            "expected_target_version": draft.base_agent_version,
             "dependency_digest": draft.latest_validation.dependency_digest,
             "verification_acknowledgement": {"outcome": "unverified", "reason": "Reviewed for a limited trial."}
             if acknowledge
@@ -127,6 +127,35 @@ async def test_save_is_not_publication_and_apply_is_atomic_replayable(agent_sess
     assert await drafts.get(actor=actor(), draft_id=draft.id) == edited
 
 
+async def test_reviewed_summary_overrides_assistant_suggestion(agent_sessions) -> None:
+    conversations, drafts, applications = services(agent_sessions)
+    saved = await save(drafts, await new_draft(conversations))
+    suggested = await drafts.update(
+        actor=actor(),
+        draft_id=saved.id,
+        idempotency_key="suggest-summary",
+        request=UpdateConfigurationDraftRequest(
+            expected_version=saved.version, suggested_change_summary="Assistant suggestion"
+        ),
+        if_match=resource_etag(saved.id, saved.updated_at),
+    )
+    assert suggested.suggested_change_summary == "Assistant suggestion"
+    from a13n_service.agent_configuration.runtime import model_draft
+
+    assert model_draft(suggested)["suggested_change_summary"] == "Assistant suggestion"
+    request = apply_request(suggested).model_copy(update={"change_summary": "Human wording"})
+    receipt = await applications.apply(
+        actor=actor(),
+        draft_id=suggested.id,
+        request=request,
+        idempotency_key="apply-summary",
+        if_match=resource_etag(suggested.id, suggested.updated_at),
+    )
+    async with short_session(agent_sessions) as session:
+        revision = await session.get(AgentRevisionRecord, receipt.agent_revision_id)
+    assert revision.change_summary == "Human wording"
+
+
 async def test_conflict_preserves_candidate_and_rebase_preserves_original_source(
     agent_sessions, agent_management
 ) -> None:
@@ -143,7 +172,8 @@ async def test_conflict_preserves_candidate_and_rebase_preserves_original_source
         actor=actor(),
         agent_id=created.agent.id,
         idempotency_key="external-edit",
-        request=CreateAgentRevisionRequest(expected_version=1, config=agent_config(instructions="External edit")),
+        request=CreateAgentRevisionRequest(config=agent_config(instructions="External edit")),
+        if_match=resource_etag(created.agent.id, created.agent.updated_at),
     )
     with pytest.raises(ApplicationError, match="target has changed"):
         await applications.apply(
@@ -154,12 +184,25 @@ async def test_conflict_preserves_candidate_and_rebase_preserves_original_source
             if_match=resource_etag(saved.id, saved.updated_at),
         )
     assert await drafts.get(actor=actor(), draft_id=saved.id) == saved
+    with pytest.raises(ApplicationError, match="target changed after review"):
+        await drafts.rebase(
+            actor=actor(),
+            draft_id=saved.id,
+            request=RebaseDraftRequest(
+                expected_version=saved.version,
+                expected_target_etag=resource_etag(created.agent.id, created.agent.updated_at),
+                config=agent_config(instructions="Stale merged edit"),
+            ),
+            idempotency_key="stale-rebase",
+            if_match=resource_etag(saved.id, saved.updated_at),
+        )
+    assert await drafts.get(actor=actor(), draft_id=saved.id) == saved
     rebased = await drafts.rebase(
         actor=actor(),
         draft_id=saved.id,
         request=RebaseDraftRequest(
             expected_version=saved.version,
-            expected_target_version=advanced.agent.version,
+            expected_target_etag=resource_etag(advanced.agent.id, advanced.agent.updated_at),
             config=agent_config(instructions="Merged edit"),
         ),
         idempotency_key="rebase",
@@ -175,7 +218,61 @@ async def test_conflict_preserves_candidate_and_rebase_preserves_original_source
         idempotency_key="apply-merged",
         if_match=resource_etag(rebased.id, rebased.updated_at),
     )
-    assert receipt.agent_version == 3
+    assert receipt.agent_revision_version == 3
+    async with short_session(agent_sessions) as session:
+        audit = await session.scalar(
+            select(SecurityAuditRecord).where(
+                SecurityAuditRecord.action == "agent.configuration.apply",
+                SecurityAuditRecord.resource_id == created.agent.id,
+            )
+        )
+    assert audit.details == {
+        "from_revision_id": advanced.revision.id,
+        "to_revision_id": receipt.agent_revision_id,
+    }
+
+
+async def test_default_switch_aba_invalidates_assistant_baseline(agent_sessions, agent_management) -> None:
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="aba-target",
+        request=CreateAgentRequest(name="ABA target", config=agent_config()),
+    )
+    advanced = await agent_management.revisions.create_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        idempotency_key="aba-v2",
+        request=CreateAgentRevisionRequest(config=agent_config(instructions="v2")),
+        if_match=resource_etag(created.agent.id, created.agent.updated_at),
+    )
+    conversations, drafts, applications = services(agent_sessions)
+    saved = await save(drafts, await new_draft(conversations, target=created.agent.id))
+    older = await agent_management.revisions.set_default_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        revision_id=created.revision.id,
+        idempotency_key="aba-older",
+        request=SetDefaultAgentRevisionRequest(),
+        if_match=resource_etag(advanced.agent.id, advanced.agent.updated_at),
+    )
+    restored = await agent_management.revisions.set_default_revision(
+        actor=actor(),
+        agent_id=created.agent.id,
+        revision_id=advanced.revision.id,
+        idempotency_key="aba-newer",
+        request=SetDefaultAgentRevisionRequest(),
+        if_match=resource_etag(older.agent.id, older.agent.updated_at),
+    )
+    assert restored.agent.default_revision_id == saved.base_agent_revision_id
+    with pytest.raises(ApplicationError, match="target has changed"):
+        await applications.apply(
+            actor=actor(),
+            draft_id=saved.id,
+            request=apply_request(saved),
+            idempotency_key="aba-apply",
+            if_match=resource_etag(saved.id, saved.updated_at),
+        )
 
 
 async def test_failed_dependency_resolution_preserves_saved_validation(agent_sessions) -> None:
@@ -302,11 +399,11 @@ async def test_database_rejects_missing_required_revision_and_baseline_fields(
         async with transaction(agent_sessions) as session:
             if mutation == "ordinary_revision":
                 record = await session.get(AgentRecord, created.agent.id)
-                record.current_revision_id = None
+                record.default_revision_id = None
             else:
                 record = await session.get(ConfigurationDraftRecord, draft.id)
                 if mutation == "update_baseline":
-                    record.base_agent_version = None
+                    record.base_agent_etag = None
                 else:
                     record.source_agent_revision_version = None
             await session.flush()

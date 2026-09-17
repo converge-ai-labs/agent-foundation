@@ -14,11 +14,18 @@ async def input_environment_access(
     *,
     actor: AuthenticatedActor,
     agent_id: str,
+    agent_revision_id: str | None = None,
     choice: EnvironmentSelection | Omitted | None,
     inherited_id: str | Omitted | None = Omitted.UNSET,
     access_ceiling: str | None = None,
 ) -> str | None:
-    choice = await resolve_requested_environment(database, agent_id=agent_id, choice=choice, inherited_id=inherited_id)
+    choice = await resolve_requested_environment(
+        database,
+        agent_id=agent_id,
+        agent_revision_id=agent_revision_id,
+        choice=choice,
+        inherited_id=inherited_id,
+    )
     if choice is None:
         return None
     await authorize_agent(

@@ -804,21 +804,3 @@
     width: 100%;
   }
 }
-
-.autoSaveNotice {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: fit-content;
-  margin-top: 10px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  background: var(--a13n-surface);
-  color: var(--a13n-text);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1.5;
-}
-.autoSaveNotice svg {
-  flex: none;
-}

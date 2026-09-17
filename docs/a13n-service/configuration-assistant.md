@@ -17,7 +17,7 @@ The assistant uses deployment-bundled, read-only configuration knowledge. You do
 1. Describe the Agent's purpose, expected results and required tools. The assistant can select existing authorized resources; it cannot create credentials or roles.
 2. Inspect the current draft. Review its complete configuration and differences against the original source and current target. A historical source is distinct from the version that applying the draft would replace.
 3. Use **Edit draft** for direct changes, or **Validate candidate** to refresh dependency checks. Validation is not proof of successful execution.
-4. Choose **Review and apply**. The review retains the exact draft version, digest and target version. Candidate execution is currently unsupported; applying requires your explicit reason for proceeding without execution verification.
+4. Choose **Review and apply**. Review or edit the assistant's optional version note, which stays separate from the Agent description. The review retains the exact draft version, digest and target version. Candidate execution is currently unsupported; applying requires your explicit reason for proceeding without execution verification.
 5. Apply the reviewed content. The receipt identifies the resulting Agent and immutable Revision. A no-change application reuses the existing Revision.
 
 If another edit advances the target, application fails without overwriting it. Review the base, candidate and current target differences, then edit the complete candidate and choose **Use edited candidate and rebase**. Rebase preserves the original source while updating the concurrency baseline. Review again before applying. A lost response can be retried with the same command identity or reconciled from the retained receipt.

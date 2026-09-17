@@ -94,7 +94,7 @@ Every input-bearing command and terminal Retry in this contract can select an in
 
 ## Input-Bearing Operations
 
-Start, existing-Thread Run submission, and continue-from requests carry an [`AgentInput`](17-agent-input.md#agent-input-protocol), a selected stable Agent when permitted, an optional exact `agent_revision_id`, an independent optional `expected_current_revision_id`, one typed `config_override`, and, for start, an optional Session selector. Fork accepts the same ordinary input and policy-permitted selections against its source. Ingress provenance is supplied only by the trusted Connectivity path, not as caller-declared metadata on the public start command. Fields other than `AgentInput` are command options and never enter its `content` or `structured_content`.
+Start, existing-Thread Run submission, and continue-from requests carry an [`AgentInput`](17-agent-input.md#agent-input-protocol), a selected stable Agent when permitted, an optional exact `agent_revision_id`, an independent optional `expected_default_revision_id`, one typed `config_override`, and, for start, an optional Session selector. Fork accepts the same ordinary input and policy-permitted selections against its source. Ingress provenance is supplied only by the trusted Connectivity path, not as caller-declared metadata on the public start command. Fields other than `AgentInput` are command options and never enter its `content` or `structured_content`.
 
 The existing-Thread route's reusable submitted intent has this conceptual shape. Its fields are top-level fields of the POST request beside `expected_thread_version`; a queued resource retains them together as `submission`.
 
@@ -103,7 +103,7 @@ class ThreadRunSubmissionIntent:
     input: AgentInput
     agent_id: AgentId | None
     agent_revision_id: AgentRevisionId | None
-    expected_current_revision_id: AgentRevisionId | None
+    expected_default_revision_id: AgentRevisionId | None
     config_override: AgentRunOverride | None
     environment: EnvironmentSelection | None  # May be absent; omission inherits.
     hook_subscription: InlineHookSubscriptionInput | None  # May be absent.
@@ -131,7 +131,7 @@ POST /api/v1/workspaces/{workspace}/runs
 Idempotency-Key: opaque-caller-key
 ```
 
-The request names one stable `agent_id` and supplies one `AgentInput`. Omitting `agent_revision_id` selects the current Revision; supplying it selects that exact retained executable Revision even when historical. `expected_current_revision_id`, when present, separately requires the Agent's current pointer to match. Acceptance applies the typed override, resolves and freezes `EffectiveAgentConfig` plus one then selects or creates one Session and allocates its root Thread ID. It initializes `HarnessState.new(thread_id=thread.id)` and atomically commits the version `1` Thread row, its first root Run, lifecycle facts, idempotency evidence, and Outbox records. A separate `POST /api/v1/workspaces/{workspace}/threads` operation uses the same allocation rules without accepting input or a Run; it can create the root Session, records its optional Environment/default and returns the empty Thread. First input then uses the existing-Thread Run route. Neither allocation path performs Provider I/O.
+The request names one stable `agent_id` and supplies one `AgentInput`. Omitting `agent_revision_id` selects the current Revision; supplying it selects that exact retained executable Revision even when historical. `expected_default_revision_id`, when present, separately requires the Agent's current pointer to match. Acceptance applies the typed override, resolves and freezes `EffectiveAgentConfig` plus one then selects or creates one Session and allocates its root Thread ID. It initializes `HarnessState.new(thread_id=thread.id)` and atomically commits the version `1` Thread row, its first root Run, lifecycle facts, idempotency evidence, and Outbox records. A separate `POST /api/v1/workspaces/{workspace}/threads` operation uses the same allocation rules without accepting input or a Run; it can create the root Session, records its optional Environment/default and returns the empty Thread. First input then uses the existing-Thread Run route. Neither allocation path performs Provider I/O.
 
 The existing-Thread Run route accepts a continuation immediately when the Thread is eligible and otherwise queues the complete submission intent:
 

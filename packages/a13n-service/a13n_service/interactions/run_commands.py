@@ -126,7 +126,7 @@ class RunCommands:
             actor=actor,
             agent_id=request.agent_id,
             agent_revision_id=request.agent_revision_id,
-            expected_current_revision_id=request.expected_current_revision_id,
+            expected_default_revision_id=request.expected_default_revision_id,
             config_override=request.config_override,
             submitted=request.input,
             environment=environment,
@@ -287,7 +287,7 @@ class RunCommands:
             actor=actor,
             agent_id=request.agent_id or source.agent_id,
             agent_revision_id=request.agent_revision_id,
-            expected_current_revision_id=request.expected_current_revision_id,
+            expected_default_revision_id=request.expected_default_revision_id,
             config_override=request.config_override,
             submitted=request.input,
             environment=environment,
@@ -426,7 +426,7 @@ class RunCommands:
             actor=actor,
             agent_id=target_agent_id,
             agent_revision_id=request.agent_revision_id,
-            expected_current_revision_id=request.expected_current_revision_id,
+            expected_default_revision_id=request.expected_default_revision_id,
             config_override=request.config_override,
             submitted=request.input,
             environment=environment,
@@ -523,7 +523,7 @@ class RunCommands:
         reuse_exact_source = (
             request.agent_id is None
             and request.agent_revision_id is None
-            and request.expected_current_revision_id is None
+            and request.expected_default_revision_id is None
             and request.config_override is None
         )
         frozen = None
@@ -556,7 +556,7 @@ class RunCommands:
                 agent_revision_id=source.agent_revision_id
                 if request.agent_id is None and request.agent_revision_id is None
                 else request.agent_revision_id,
-                expected_current_revision_id=request.expected_current_revision_id,
+                expected_default_revision_id=request.expected_default_revision_id,
                 config_override=request.config_override,
                 submitted=request.input,
                 environment=environment,

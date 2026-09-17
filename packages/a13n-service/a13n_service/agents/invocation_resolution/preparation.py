@@ -29,9 +29,9 @@ from ..domain import (
     ResolvedSubagentEdge,
 )
 from ..errors import (
-    agent_current_revision_missing,
+    agent_default_revision_missing,
     agent_revision_not_executable,
-    current_revision_conflict,
+    default_revision_conflict,
     map_authorization_error,
     map_model_error,
 )
@@ -80,7 +80,7 @@ class AgentInvocationPreparer:
         actor: AuthenticatedActor,
         agent_id: str,
         agent_revision_id: str | None = None,
-        expected_current_revision_id: str | None = None,
+        expected_default_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
         root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
         _active_agents: tuple[str, ...] = (),
@@ -113,14 +113,14 @@ class AgentInvocationPreparer:
                 )
                 require_invocable_agent(agent, policy=root_state_policy)
                 if (
-                    expected_current_revision_id is not None
-                    and agent.current_revision_id != expected_current_revision_id
+                    expected_default_revision_id is not None
+                    and agent.default_revision_id != expected_default_revision_id
                 ):
-                    raise current_revision_conflict(agent.current_revision_id)
+                    raise default_revision_conflict(agent.default_revision_id)
                 selector_kind = AgentSelectorKind.exact if agent_revision_id is not None else AgentSelectorKind.current
-                revision_id = agent_revision_id or agent.current_revision_id
+                revision_id = agent_revision_id or agent.default_revision_id
                 if revision_id is None:
-                    raise agent_current_revision_missing()
+                    raise agent_default_revision_missing()
                 revision_record = await load_revision_record(
                     session,
                     organization_id=authorized.organization_id,
@@ -219,7 +219,7 @@ class AgentInvocationPreparer:
             agent_id=agent_id,
             agent_revision_id=revision.id,
             selector_kind=selector_kind,
-            expected_current_revision_id=expected_current_revision_id,
+            expected_default_revision_id=expected_default_revision_id,
             revision_content_digest=revision.content_digest,
             merged=merged,
             model=model,
@@ -270,7 +270,7 @@ class AgentInvocationPreparer:
             agent_id=agent_id,
             agent_revision_id=None,
             selector_kind=AgentSelectorKind.configuration,
-            expected_current_revision_id=None,
+            expected_default_revision_id=None,
             revision_content_digest=None,
             merged=merged,
             model=model,

@@ -17,9 +17,13 @@ class ManagementJourney:
         self.lab, self.live = lab, lab.client
         self.base = f"/api/v1/workspaces/{self.live.config['workspace_id']}"
 
-    async def post(self, path, body, *, expected=201, key=None):
+    async def post(self, path, body, *, expected=201, key=None, headers=None):
         return await self.live.request(
-            "POST", path, expected=expected, headers={"Idempotency-Key": key or uuid4().hex}, json=body
+            "POST",
+            path,
+            expected=expected,
+            headers={"Idempotency-Key": key or uuid4().hex, **(headers or {})},
+            json=body,
         )
 
     async def patch(self, path, body):
@@ -33,9 +37,15 @@ class ManagementJourney:
         )
 
     async def revision(self, agent, **config):
-        return await self.post(
-            f"{self.base}/agents/{agent['id']}/revisions",
-            {"expected_version": agent["version"], "config": agent_config(**config)},
+        path = f"{self.base}/agents/{agent['id']}"
+        response = await self.live.http.get(path)
+        assert response.status_code == 200 and response.headers.get("etag")
+        return await self.live.request(
+            "POST",
+            path + "/revisions",
+            expected=201,
+            headers={"Idempotency-Key": uuid4().hex, "If-Match": response.headers["etag"]},
+            json={"config": agent_config(**config)},
         )
 
     async def case(self, **plan):

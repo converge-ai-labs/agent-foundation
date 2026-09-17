@@ -32,7 +32,8 @@ async def test_skill_delete_linearizes_with_new_authority(skills: SkillJourney, 
         point, success = "skill.invocation_prepared", 202
     elif operation == "binding":
         path = agent_path + "/revisions"
-        body = {"expected_version": 1, "config": agent_config(skills=[{"skill_key": key}])}
+        headers["If-Match"] = (await skills.live.http.get(agent_path)).headers["etag"]
+        body = {"config": agent_config(skills=[{"skill_key": key}])}
         point, success = "skill.binding_prepared", 201
     else:
         await skills.lifecycle(agent["agent"], "disable")
@@ -65,7 +66,7 @@ async def test_skill_delete_linearizes_with_new_authority(skills: SkillJourney, 
             )
             assert skills.observations(case) == []
             current = (await skills.live.http.get(agent_path)).json()
-            assert current["current_revision_id"] == agent["revision"]["id"]
+            assert current["default_revision_id"] == agent["revision"]["id"]
             if operation == "unarchive":
                 assert current["archived_at"] is not None
         else:

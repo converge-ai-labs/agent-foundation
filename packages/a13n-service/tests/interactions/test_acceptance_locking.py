@@ -39,7 +39,7 @@ async def test_freezing_allows_retained_run_references_but_excludes_metadata_cha
                 revision_id=run.agent_revision_id,
                 for_update=True,
             )
-            assert agent.current_revision_id == revision.id == run.agent_revision_id
+            assert agent.default_revision_id == revision.id == run.agent_revision_id
             for model, identity in selections:
                 with pytest.raises(OperationalError) as conflict:
                     async with transaction(sessions) as updating:
