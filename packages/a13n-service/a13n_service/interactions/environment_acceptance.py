@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.environments.errors import invalid_environment
 from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentRecord
+from a13n_service.environments.mount_inheritance import inherit_run_mounts
 from a13n_service.environments.usage import lock_run_environments
 from a13n_service.environments.websocket.admission import OnlineEvidence
 from a13n_service.interactions.domain import Run, RunInputKind
@@ -93,4 +94,5 @@ async def add_run_with_environment(
     if thread is not None:
         thread.default_environment_id = run.environment_id
     await database.flush()
+    await inherit_run_mounts(database, run=run, workspace_id=workspace_id)
     return record

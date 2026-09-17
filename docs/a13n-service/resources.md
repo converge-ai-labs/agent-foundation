@@ -117,6 +117,8 @@ The Agent accesses this example at `/environment/computer`. Without a primary, t
 
 Retrying the same request with its original idempotency key returns the original acceptance receipt. Use the list endpoint for fresh loading observations. Mount names, targets, and access are immutable after acceptance; this API does not unmount, replace, or switch defaults. A failed addition leaves other installed mounts usable. Temporary unavailability is retried with bounded backoff at later model boundaries.
 
+Retrying a failed or cancelled Run, or continuing its sealed waiting state, copies the accepted additional mounts with their original access ceilings and relative order. Each successor acquires fresh use and reports its own loading status. Ordinary new Runs, forks, and independently scheduled children do not inherit these additions; inline children share the parent’s facade.
+
 ### Host-local placement
 
 Direct Local and Docker require `deployment.mode = "single_host"`. All participating Workers must share the same configured filesystem and Docker backend; Service does not route Runs by hostname. Docker records its `docker_host` endpoint. Managed Direct Local templates use their root as a base and allocate `environments/<env_id>` underneath it. Share an Environment ID to share its files; another Environment gets its own directory.
