@@ -35,6 +35,17 @@ make dev-reset STATE=seeded   # Delete only this checkout's state; provision fic
 
 Stop the checkout's applications with Ctrl+C or `make dev-stop` before reset. A lifecycle lock prevents setup, serve, down, and reset races. Reset checks for database and Redis clients and leaves `var/dev/reset-incomplete` when rebuilding fails; rerun the intended reset to recover. It never kills a process merely because that process owns a port. `dev-down` and reset do not stop or delete shared Langfuse.
 
+To inspect every worktree's local test environment, run `make dev-env-list`. For structured output use `python3 -m dev.service.envs list --json`. The list also shows registered checkouts outside this repository's Git worktree list and Docker projects whose instance registration is missing.
+
+To delete several registered environments, preview the exact instance IDs and paths, then run:
+
+```sh
+python3 -m dev.service.envs rm ID1 ID2 --dry-run
+python3 -m dev.service.envs rm ID1 ID2 --yes
+```
+
+Removal stops detached applications, deletes each selected checkout's Service and optional Mem0 containers and volumes, removes its `var/dev` directory, and releases its machine-wide port reservation. It does not remove the Git worktree or any shared Langfuse resources. Foreground applications must be stopped first. Unregistered Docker projects are listed for investigation and cannot be deleted through this command.
+
 The `empty` state contains only the migrated schema. The `seeded` state retains the representative UI and API journeys: Agents, Skills, Assets, both built-in Web Provider types with fictional credentials, three bulk Sessions, a 13-Run conversation, attachments, revisions, failure/retry, fork, pending client feedback, cancellation/queue, structured output, child Threads, MCP, publication, and an empty Workspace. Seeding uses real Service execution and persistence, verifies semantics, and writes `seed.json`, `seed-report.md`, and private diagnostics under `var/dev/service/`. Seeding happens only on explicit reset. The fictional Web Provider credentials make the accounts selectable in Agent configuration but cannot make real Brave or Exa requests.
 
 After a seeded reset, sign in as `admin@example.com` with `local-public-password-123`. The builder, runner, and viewer fictional accounts use the same password. Each instance uses its own cookie name so two Console origins on `127.0.0.1` can keep independent sessions in one browser. Cookies remain `Secure`, `HttpOnly`, and `SameSite=Lax`; unique names prevent accidental collision but are not a security boundary.

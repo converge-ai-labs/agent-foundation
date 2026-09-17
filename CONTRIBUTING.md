@@ -82,6 +82,7 @@ Use the Makefile as the stable development interface:
 | `make dev-reset STATE=seeded`    | Rebuild owned Service storage with fictional resources and history |
 | `make dev-state-check`           | Validate state tools with disposable local infrastructure          |
 | `make dev-status`                | Report this checkout's identity, ports and listener state as JSON  |
+| `make dev-env-list`              | List worktrees and their local test environments                   |
 | `make dev-down`                  | Stop this checkout's infrastructure; preserve data and Langfuse    |
 | `make env-init`                  | Initialize missing Harness development `.env` files                |
 | `make cli`                       | Run Harness UI with Git-ignored config/data in `var/harness-ui/`   |
