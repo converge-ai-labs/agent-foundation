@@ -23,7 +23,7 @@ The envelope is a shared serialized boundary. A Provider owns the exact model fo
 
 Rules:
 
-1. `provider_key` is a bounded lowercase namespaced key such as `a13n.docker`.
+1. `provider_key` is a bounded lowercase namespaced key such as `docker`.
 2. `schema_version` is non-blank and belongs to the configuration schema, not the state codec.
 3. `configuration` is canonical JSON and rejects unknown fields through the provider model.
 4. Configuration contains no credential, live client, transport session, provider target ID, resolved endpoint, PID, operation receipt, or Host record identity.
@@ -154,10 +154,10 @@ The built-in catalog keys are:
 
 | Key                   | Target                                                                   |
 | --------------------- | ------------------------------------------------------------------------ |
-| `a13n.direct-local`   | One Host-selected local root using direct operating-system access        |
+| `direct-local`        | One Host-selected local root using direct operating-system access        |
 | `a13n.local-envd`     | One Host-selected workspace served by a fresh local envd process         |
-| `a13n.docker`         | One Docker container running envd                                        |
-| `a13n.e2b`            | One native E2B sandbox                                                   |
+| `docker`              | One Docker container running envd                                        |
+| `e2b`                 | One native E2B sandbox                                                   |
 | `a13n.http-envd`      | One externally operated daemon through HTTP(S)                           |
 | `a13n.websocket-envd` | One externally operated daemon through a Host-accepted reverse WebSocket |
 

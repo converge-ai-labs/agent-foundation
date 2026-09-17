@@ -28,7 +28,7 @@ async def test_five_configuration_resources_support_org_collections(
         components=Components(
             request_authenticator=authenticate,
             connector_provider_registry=fake_registry(FakeConnectorBackend()),
-            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=("a13n.direct-local",)),
+            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=("direct-local",)),
             model_catalog=model_catalog,
         ),
     )
@@ -65,7 +65,7 @@ async def test_five_configuration_resources_support_org_collections(
             environment_provider = await client.post(
                 f"{org_path}/environment-providers",
                 headers=headers,
-                json={"type": "a13n.direct-local", "name": "Organization local"},
+                json={"type": "direct-local", "name": "Organization local"},
             )
             assert environment_provider.status_code == 201, environment_provider.text
             template = await client.post(

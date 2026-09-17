@@ -65,11 +65,11 @@ async def test_host_publishes_recovery_before_exposing_the_new_backing(
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, missing
 ):
     service, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
-    service.catalog = lifecycle.catalog = build_environment_provider_catalog(builtin_keys=("a13n.e2b",))
+    service.catalog = lifecycle.catalog = build_environment_provider_catalog(builtin_keys=("e2b",))
     provider = await service.create_provider(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="a13n.e2b", name="E2B", credential={"api_key": "test-key"}),
+        request=CreateProviderRequest(type="e2b", name="E2B", credential={"api_key": "test-key"}),
     )
     template = await service.create_template(
         actor=hook_actor(),

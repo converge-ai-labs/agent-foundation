@@ -49,7 +49,7 @@ uv run environment-provider-example direct-local
 The command:
 
 - creates a Host-owned workspace;
-- selects only `a13n.direct-local` in an immutable catalog;
+- selects only `direct-local` in an immutable catalog;
 - validates a credential-free version `1` configuration;
 - constructs and enters one fresh adapter;
 - writes and reads `/provider-example.txt` through `EnvironmentOperations.files`;

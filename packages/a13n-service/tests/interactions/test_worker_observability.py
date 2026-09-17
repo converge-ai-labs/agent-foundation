@@ -57,7 +57,7 @@ async def test_worker_trace_matches_real_phase_boundaries_and_durable_outcomes(
     environment_catalog = None
     if scenario in {"on_run", "on_use_unused"}:
         await template_config(interaction_sessions, tmp_path, "on_run" if scenario == "on_run" else "on_use")
-        environment_catalog = build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
+        environment_catalog = build_environment_provider_catalog(builtin_keys=("direct-local",))
     else:
         await seed_hook_actor_access(interaction_sessions)
     _, run, _ = await _accept_root(

@@ -6,14 +6,14 @@
 
 | Route  | Provider key          | Backing target                              | Operation backend            | Lifecycle boundary                              |
 | ------ | --------------------- | ------------------------------------------- | ---------------------------- | ----------------------------------------------- |
-| Native | `a13n.direct-local`   | Existing Host directory                     | Local OS file/process APIs   | Caller-owned directory                          |
-| Native | `a13n.e2b`            | Native E2B sandbox                          | E2B SDK and bounded commands | Sandbox create, pause/resume, renew and destroy |
+| Native | `direct-local`        | Existing Host directory                     | Local OS file/process APIs   | Caller-owned directory                          |
+| Native | `e2b`                 | Native E2B sandbox                          | E2B SDK and bounded commands | Sandbox create, pause/resume, renew and destroy |
 | Envd   | `a13n.local-envd`     | Local workspace and private daemon          | EIP over stdio               | Adapter-owned daemon; caller-owned workspace    |
-| Native | `a13n.docker`         | Docker container                            | Docker Engine API            | Managed container; close preserves target       |
+| Native | `docker`              | Docker container                            | Docker Engine API            | Managed container; close preserves target       |
 | Envd   | `a13n.http-envd`      | External daemon at a configured origin      | EIP over HTTP(S)             | Connect-only                                    |
 | Envd   | `a13n.websocket-envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket  | Connect-only; Host-integrated SDK               |
 
-Native Docker uses the key `a13n.docker`. Local Envd serves CLI and local Agent use; Docker supplies container-backed execution for single-host self-hosting. Multi-tenant authorization and allocation remain Host responsibilities. Remote Envd supports network-reachable environments through HTTP or outbound-only environments through reverse WebSocket. A connection Session is not a tenant boundary.
+Native Docker uses the key `docker`. Local Envd serves CLI and local Agent use; Docker supplies container-backed execution for single-host self-hosting. Multi-tenant authorization and allocation remain Host responsibilities. Remote Envd supports network-reachable environments through HTTP or outbound-only environments through reverse WebSocket. A connection Session is not a tenant boundary.
 
 Every built-in follows the same three-entity model: an inert `EnvironmentProvider`, a fresh process-local `Environment`, and optional `EnvironmentState`. Envd-backed Providers use EIP for Agent file, shell, process, output and port operations. Native Providers use their native backends without requiring envd. No Provider emulates an unsupported operation through a different backend.
 
@@ -35,7 +35,7 @@ Stable environment identity is allocated by the Host per Environment and supplie
 
 ### Configuration
 
-`a13n.direct-local` configuration schema version `1` has this conceptual public shape:
+`direct-local` configuration schema version `1` has this conceptual public shape:
 
 ```python
 class DirectLocalRootConfiguration(BaseModel):
@@ -179,20 +179,22 @@ Because every independent Run creates a fresh daemon, Local Envd state does not 
 
 ### Configuration and runtime
 
-`a13n.docker` uses the Docker Engine SDK directly. No Envd executable, EIP connection, bootstrap credential, or control port exists in this Provider. A template describes an image and container creation options; the backend configuration supplies `docker_host`. Service offers Docker only in `deployment.mode = "single_host"`.
+`docker` uses the Docker Engine SDK directly. No Envd executable, EIP connection, bootstrap credential, or control port exists in this Provider. A template describes an image and container creation options; the backend configuration supplies `docker_host`. Service offers Docker only in `deployment.mode = "single_host"`.
 
 Configuration schema version `1` includes:
 
-- `image`, `pull_policy` (`if_missing`, `always`, or `never`).
+- `image`. The selected Engine uses the local image when present and pulls it only when absent.
 - `environment` and optional `init_script`, executed only on a newly created container.
-- Optional `cpus` (CPU cores), `memory_mib`, and `pids_limit`.
+- Optional `cpus` (CPU cores), `memory_gb` (decimal GB, 1 GB = 1,000,000,000 bytes; minimum 6,291,456 bytes), and `pids_limit`.
 - `disable_network`, default false; true selects Docker's `none` network for initialization and commands alike. No ports are published.
 - `mounts`: existing absolute host `source`, absolute container `target`, and `read_only` (default true). Named volumes are not a template option. External mounts cannot replace `/workspace`, the root filesystem, or the Provider's private `/tmp/a13n` command metadata directory.
 - Advanced `user`, `shell`, `python`, stop grace, request timeout, file/query limits, output preview/capture limits, and concurrent observation limit.
 
 `/workspace` belongs to the container writable layer. Each Environment owns a separate container. Explicit external host directories are shared only when templates name the same source. Docker resolves source paths in the Engine's filesystem namespace, which may differ from the Worker's namespace. Destruction never removes an external source.
 
-The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:latest`. Custom images supply Linux, Python 3.11 or later, the configured shell, and a configured user able to write `/workspace` and `/tmp`. Git-ignore queries additionally require Git. The Provider replaces the image's ENTRYPOINT/CMD, enables Docker init, and runs a Python waiting process. There is no guest operation server. File and port operations use bounded one-shot Python standard-library commands through Docker exec; file semantics share the native E2B helper.
+The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:dev`. Custom images supply Linux, Python 3.10 or later, the configured shell, and a configured user able to write `/workspace` and `/tmp/a13n`. Git-ignore queries additionally require Git. The Provider replaces the image's ENTRYPOINT/CMD, enables Docker init, and runs a Python waiting process. There is no guest operation server. File and port operations use bounded one-shot Python standard-library commands through Docker exec; file semantics share the native E2B helper.
+
+The deployment shares the host Docker Engine in single-host mode. Service socket access grants host Docker authority. A locally built image is used directly when present; a missing image is pulled once. Tag changes do not recreate an existing container. A manual image test pins the resolved image ID for its temporary container, uses the configured user, Python, and shell, and omits the init script and external mounts. It exercises file, command/output, and process-control operations, reports that exact image ID and the checks, and removes the temporary container after success, failure, timeout, or cancellation. A previous manual test is not required for normal creation.
 
 A `DockerProviderRuntime` owns a `DockerSDKEngine` and declares whether target lifecycle is managed. Docker SDK I/O runs outside the event loop. The Engine client has a finite request timeout. Provider discovery and configuration validation are inert; runtime creation establishes the Engine client.
 
@@ -218,7 +220,7 @@ Output observations are scoped to the current adapter. Per-stream and aggregate 
 
 ### Configuration and runtime
 
-`a13n.e2b` configuration schema version `1` selects `template` (default `base`), logical filesystem `root` (default `/home/user`), sandbox `user`, the Python executable used by file/port helpers, sandbox and request timeouts, sandbox-wide internet access, read-only access, finite file/traversal bounds and local observation limits. `timeout_seconds` defaults to 3600 seconds for sandbox TTL; `request_timeout_seconds` defaults to 30 seconds for native requests. `max_active_observations` defaults to 128 concurrent native attachments, `max_observation_bytes` to 1 MiB cumulative combined stdout/stderr per observed command, and `max_retained_output_bytes` to 128 MiB retained text across the adapter. Configuration contains no credential, sandbox ID, endpoint or live SDK object.
+`e2b` configuration schema version `1` selects `template` (default `base`), logical filesystem `root` (default `/home/user`), sandbox `user`, the Python executable used by file/port helpers, sandbox and request timeouts, sandbox-wide internet access, read-only access, finite file/traversal bounds and local observation limits. `timeout_seconds` defaults to 3600 seconds for sandbox TTL; `request_timeout_seconds` defaults to 30 seconds for native requests. `max_active_observations` defaults to 128 concurrent native attachments, `max_observation_bytes` to 1 MiB cumulative combined stdout/stderr per observed command, and `max_retained_output_bytes` to 128 MiB retained text across the adapter. Configuration contains no credential, sandbox ID, endpoint or live SDK object.
 
 `E2BProviderRuntime` supplies an explicit secret API key, backend domain, managed/external selection and optional Host operation correlation. Generic Provider Backend configuration contains the domain and an optional HTTP(S) `api_url`; its credential contains `api_key`. All SDK lifecycle calls use the explicit API URL or `https://api.<domain>`, without inheriting an ambient API URL. The domain remains the sandbox routing suffix. Compatible services may require their own template IDs and may not implement every lifecycle operation. The library does not load `.env` or acquire credentials. Construction, discovery of Provider definitions and scope entry are inert.
 

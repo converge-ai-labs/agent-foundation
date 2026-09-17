@@ -301,6 +301,17 @@ function ProviderForm({
   const definition = definitions.find((item) => item.type === type),
     configSchema = schema(definition?.configuration_schema),
     credentialSchema = schema(definition?.credential_schema);
+  const connectivity = useQuery({
+    queryKey: ["environment-provider-connectivity", basis?.value.id],
+    enabled: basis?.value.type === "docker",
+    refetchInterval: 5000,
+    queryFn: () =>
+      client.http
+        .GET("/api/v1/environment-providers/{provider_id}/connectivity", {
+          params: { path: { provider_id: basis!.value.id } },
+        })
+        .then(data),
+  });
   function done() {
     void cache.invalidateQueries({ queryKey: ["environment-providers"] });
     close();
@@ -401,11 +412,26 @@ function ProviderForm({
             setCredential({});
           }}
           labelAction={
-            type === "a13n.e2b" && (
+            type === "e2b" && (
               <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
             )
           }
         />
+        {basis?.value.type === "docker" && (
+          <div className={styles.stack}>
+            <p>
+              {t("Enabled: {{value}}", {
+                value: basis.value.enabled ? t("Yes") : t("No"),
+              })}
+            </p>
+            <p role="status">
+              {t("Engine: {{status}}", {
+                status: t(connectivity.data?.status ?? "unknown"),
+              })}
+            </p>
+            {connectivity.data?.error && <p>{connectivity.data.error}</p>}
+          </div>
+        )}
         {basis && Object.keys(configuration).length > 0 && (
           <DisclosureSection title={t("Configuration details")}>
             <ConfigurationSummary value={configuration} schema={configSchema} />

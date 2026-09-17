@@ -38,7 +38,16 @@ from .errors import engine_errors
 from .processes import DockerProcesses
 from .runtime import DockerProviderRuntime
 
-_KEY = "a13n.docker"
+_KEY = "docker"
+
+
+def resolve_image(client, image_ref: str):
+    from docker.errors import ImageNotFound
+
+    try:
+        return client.images.get(image_ref), "local"
+    except ImageNotFound:
+        return client.images.pull(image_ref), "pulled"
 
 
 def descriptor(generation: str, config: DockerProviderConfiguration) -> EnvironmentDescriptor:
@@ -151,7 +160,12 @@ class DockerEnvironment(Environment):
             if created:
                 if not self.runtime.managed:
                     raise _missing()
-                container = await asyncio.to_thread(self._create)
+                creation = asyncio.create_task(asyncio.to_thread(self._create))
+                try:
+                    container = await asyncio.shield(creation)
+                except asyncio.CancelledError:
+                    await asyncio.gather(creation, return_exceptions=True)
+                    raise
             container_id = container.id
             if container_id is None:
                 raise EnvironmentError(
@@ -219,21 +233,15 @@ class DockerEnvironment(Environment):
             self._available = True
 
     def _create(self):
-        from docker.errors import ImageNotFound
         from docker.types import Mount
 
         client = self.runtime.engine.client
-        if self.config.pull_policy == "always":
-            client.images.pull(self.config.image)
-        else:
-            try:
-                client.images.get(self.config.image)
-            except ImageNotFound:
-                if self.config.pull_policy == "never":
-                    raise
-                client.images.pull(self.config.image)
+        image, _ = resolve_image(client, self.config.image)
+        image_id = image.id
+        if not isinstance(image_id, str) or not image_id:
+            raise EnvironmentError("Docker did not return an image identity", code="environment_provider_failure")
         return client.containers.create(
-            self.config.image,
+            image_id,
             name="a13n-" + self.allocation_id,
             entrypoint=[self.config.python, "-I", "-c"],
             command=["import signal; signal.pause()"],
@@ -246,7 +254,7 @@ class DockerEnvironment(Environment):
             mounts=[Mount(str(m.target), m.source, type="bind", read_only=m.read_only) for m in self.config.mounts],
             labels=self.labels,
             nano_cpus=int(self.config.cpus * 1_000_000_000) if self.config.cpus is not None else None,
-            mem_limit=self.config.memory_mib * 1024 * 1024 if self.config.memory_mib is not None else None,
+            mem_limit=int(self.config.memory_gb * 1_000_000_000) if self.config.memory_gb is not None else None,
             pids_limit=self.config.pids_limit,
         )
 

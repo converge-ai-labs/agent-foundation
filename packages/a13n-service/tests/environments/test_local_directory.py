@@ -60,7 +60,7 @@ async def test_service_allocates_distinct_manual_environments_and_cleans_only_ow
 
     now = datetime(2026, 9, 17, tzinfo=UTC)
     provider = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Local")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Local")
     )
     template = await environment_service.create_template(
         actor=actor(),

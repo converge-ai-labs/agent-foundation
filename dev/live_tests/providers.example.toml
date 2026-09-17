@@ -1,7 +1,7 @@
 # Copy to providers.local.toml (gitignored) and chmod 600 the copy.
 # All sections are optional. Keep unused sections entirely blank.
 [environment]
-type = "" # a13n.e2b
+type = "" # e2b
 api_key = ""
 template = "" # Optional; defaults to base when enabled.
 

@@ -255,7 +255,7 @@ def test_direct_local_provider_is_inert_and_rejects_state(tmp_path: Path) -> Non
             environment_id="local-test",
             configuration=configuration,
             state=EnvironmentState(
-                provider_key="a13n.direct-local",
+                provider_key="direct-local",
                 state_version="1",
                 state={"target": "invalid"},
             ),

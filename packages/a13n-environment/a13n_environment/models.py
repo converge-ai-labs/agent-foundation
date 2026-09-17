@@ -299,7 +299,9 @@ class EnvironmentProviderSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    provider_key: Annotated[str, Field(min_length=3, max_length=128, pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$")]
+    provider_key: Annotated[
+        str, Field(min_length=3, max_length=128, pattern=r"^(?:docker|e2b|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$")
+    ]
     schema_version: Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
     configuration: JsonValue
 
@@ -317,7 +319,9 @@ class EnvironmentState(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    provider_key: Annotated[str, Field(min_length=3, max_length=128, pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)+$")]
+    provider_key: Annotated[
+        str, Field(min_length=3, max_length=128, pattern=r"^(?:docker|e2b|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$")
+    ]
     state_version: Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
     state: JsonValue
 

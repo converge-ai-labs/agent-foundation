@@ -1273,6 +1273,23 @@ export interface paths {
     patch: operations["patch_environment_providers_provider_id"];
     trace?: never;
   };
+  "/api/v1/environment-providers/{provider_id}/connectivity": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Provider Connectivity */
+    get: operations["get_environment_providers_provider_id_connectivity"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environment-providers/{provider_id}/credential": {
     parameters: {
       query?: never;
@@ -1284,6 +1301,40 @@ export interface paths {
     /** Replace Credential */
     put: operations["put_environment_providers_provider_id_credential"];
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environment-providers/{provider_id}/test-image": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Image */
+    post: operations["post_environment_providers_provider_id_test_image"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environment-providers/{provider_id}/test-image/{request_id}/cancel": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Cancel Image Test */
+    post: operations["post_environment_providers_provider_id_test_image_request_id_cancel"];
     delete?: never;
     options?: never;
     head?: never;
@@ -5215,6 +5266,11 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** CancelDockerImageRequest */
+    CancelDockerImageRequest: {
+      /** Workspace Id */
+      workspace_id: string | null;
+    };
     /** CatalogModel */
     CatalogModel: {
       declarations: components["schemas"]["ModelDeclarations-Output"];
@@ -7264,6 +7320,22 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** ImageTestResponse */
+    ImageTestResponse: {
+      /**
+       * Checks
+       * @default []
+       */
+      checks?: string[];
+      /** Configuration Hash */
+      configuration_hash?: string | null;
+      /** Error */
+      error?: string | null;
+      /** Image Id */
+      image_id?: string | null;
+      /** Image Source */
+      image_source?: ("local" | "pulled") | null;
+    };
     /** InlineHookSubscriptionInput */
     InlineHookSubscriptionInput: {
       /** Hook Names */
@@ -8626,6 +8698,16 @@ export interface components {
        */
       max_output_bytes?: number;
     };
+    /** ProviderConnectivity */
+    ProviderConnectivity: {
+      /** Error */
+      error?: string | null;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "connected" | "unavailable" | "unknown";
+    };
     /** QueuedSubmission */
     QueuedSubmission: {
       authority_principal: components["schemas"]["PrincipalRef"];
@@ -9960,6 +10042,17 @@ export interface components {
        * @enum {string}
        */
       target_kind: "conversation" | "repository";
+    };
+    /** TestDockerImageRequest */
+    TestDockerImageRequest: {
+      /** Configuration */
+      configuration: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Request Id */
+      request_id: string;
+      /** Workspace Id */
+      workspace_id: string | null;
     };
     /** TextContent */
     TextContent: {
@@ -15285,6 +15378,50 @@ export interface operations {
       };
     };
   };
+  get_environment_providers_provider_id_connectivity: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ProviderConnectivity"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   put_environment_providers_provider_id_credential: {
     parameters: {
       query?: never;
@@ -15311,6 +15448,101 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["EnvironmentProvider"];
         };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_environment_providers_provider_id_test_image: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["TestDockerImageRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ImageTestResponse"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_environment_providers_provider_id_test_image_request_id_cancel: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+        request_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CancelDockerImageRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Invalid request. */
       400: {

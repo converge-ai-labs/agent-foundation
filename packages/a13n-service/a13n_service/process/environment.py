@@ -30,9 +30,7 @@ def build_environment_catalog(
     )
     if "a13n.local-envd" in selected:
         raise ValueError("Local Envd is not supported by Service")
-    if settings.deployment.mode == "distributed" and any(
-        key in selected for key in ("a13n.direct-local", "a13n.docker")
-    ):
+    if settings.deployment.mode == "distributed" and any(key in selected for key in ("direct-local", "docker")):
         raise ValueError("Local Environment Providers require deployment.mode=single_host")
     return selected
 

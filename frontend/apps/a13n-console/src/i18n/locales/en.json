@@ -1290,6 +1290,7 @@
   "trigger.inbound": "External message",
   "trigger.queued_submission": "Queued submission",
   "trigger.user_input": "User input",
+  "connected": "connected",
   "unavailable": "unavailable",
   "unknown": "unknown",
   "unprepared": "unprepared",
@@ -2721,5 +2722,13 @@
   "Connect a Slack, Feishu, or GitHub identity, select an agent, and choose where it can respond.": "Connect a Slack, Feishu, or GitHub identity, select an agent, and choose where it can respond.",
   "Use one application account for each platform identity or installation.": "Use one application account for each platform identity or installation.",
   "Connect a platform identity you own, then choose an agent and reception scope.": "Connect a platform identity you own, then choose an agent and reception scope.",
-  "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed.": "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed."
+  "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed.": "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed.",
+  "Enabled: {{value}}": "Enabled: {{value}}",
+  "Engine: {{status}}": "Engine: {{status}}",
+  "Image {{id}} passed: {{checks}}": "Image {{id}} passed: {{checks}}",
+  "Mounts": "Mounts",
+  "No": "No",
+  "Test image": "Test image",
+  "Testing image…": "Testing image…",
+  "Yes": "Yes"
 }

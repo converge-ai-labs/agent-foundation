@@ -31,8 +31,8 @@ async def main() -> None:
     with TemporaryDirectory(prefix="a13n-environment-") as temporary:
         workspace = Path(temporary).resolve()
         provider = build_environment_provider_catalog(
-            builtin_keys=("a13n.direct-local",),
-        ).require("a13n.direct-local")
+            builtin_keys=("direct-local",),
+        ).require("direct-local")
         configuration = provider.validate_configuration(
             schema_version="1",
             value={"root": {"path": str(workspace)}},

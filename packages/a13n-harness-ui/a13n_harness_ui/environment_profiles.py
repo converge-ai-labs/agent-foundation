@@ -57,7 +57,7 @@ FULL_CONTROL_PROFILE: Final = BuiltInEnvironmentProfile(
         "Runs commands directly as the Host user; commands may access paths outside Project roots "
         "and use Host networking."
     ),
-    provider_key="a13n.direct-local",
+    provider_key="direct-local",
     adapter_key="a13n.native-project-root",
 )
 SANDBOX_PROFILE: Final = BuiltInEnvironmentProfile(

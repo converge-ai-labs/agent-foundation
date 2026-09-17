@@ -30,7 +30,7 @@ pytestmark = pytest.mark.anyio
 
 async def create_template_config(service, path, *, preparation="on_run"):
     provider = await service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Local")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Local")
     )
     template = await service.create_template(
         actor=actor(),
@@ -137,7 +137,7 @@ async def test_provider_disable_blocks_new_allocation(environment_service, tmp_p
 
 async def test_local_provider_accepts_managed_retention(environment_service, tmp_path):
     provider = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Local")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Local")
     )
     await environment_service.create_template(
         actor=actor(),
@@ -195,7 +195,7 @@ async def test_explicit_null_disables_action_and_invalid_deadlines_fail():
 
 async def test_manual_command_is_a_durable_idempotent_receipt(environment_service, environment_sessions):
     provider = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.docker", name="Docker")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="docker", name="Docker")
     )
     template = await environment_service.create_template(
         actor=actor(),
@@ -253,7 +253,7 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
     provider = await environment_service.create_provider(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="a13n.direct-local", name="Owned", credential={"token": "initial-token"}),
+        request=CreateProviderRequest(type="direct-local", name="Owned", credential={"token": "initial-token"}),
     )
     assert provider.credential_configured and "initial-token" not in provider.model_dump_json()
     async with short_session(environment_sessions) as session:
@@ -283,7 +283,7 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
 async def test_collection_cursors_cannot_cross_resource_scope(environment_service, tmp_path):
     await create_template_config(environment_service, tmp_path)
     await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Second")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Second")
     )
     first = await environment_service.list_providers(actor=actor(), workspace_id=WORKSPACE_ID, limit=1)
     assert first.next_cursor
@@ -300,10 +300,10 @@ async def test_registering_same_target_under_another_provider_is_a_conflict(envi
     from a13n_service.environments.errors import EnvironmentManagementError
 
     first = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="First")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="First")
     )
     second = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Second")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Second")
     )
     request = RegisterEnvironmentRequest(provider_id=first.id, configuration={"root": {"path": str(tmp_path)}})
     await environment_service.create_environment(
@@ -338,7 +338,7 @@ def test_request_identity_canonicalizes_objects_but_preserves_semantics():
     assert request_identity("key", changed) != request_identity("key", reversed_steps)
 
 
-@pytest.mark.parametrize("provider_type", ["a13n.direct-local", "a13n.docker"])
+@pytest.mark.parametrize("provider_type", ["direct-local", "docker"])
 async def test_child_sharing_and_dedicated_provider_contract(
     environment_service, environment_sessions, tmp_path, provider_type
 ):
@@ -358,7 +358,7 @@ async def test_child_sharing_and_dedicated_provider_contract(
         request=CreateTemplateRequest(
             name="Child",
             provider_id=provider.id,
-            configuration={"root": {"path": str(tmp_path)}} if provider_type == "a13n.direct-local" else {},
+            configuration={"root": {"path": str(tmp_path)}} if provider_type == "direct-local" else {},
             retention={"idle": {"stop_after": None, "delete_after": None}},
         ),
     )
@@ -370,7 +370,7 @@ async def test_child_sharing_and_dedicated_provider_contract(
         assert (
             await child_environment_choice(session, parent=parent, policy=ChildEnvironmentPolicy(mode="none")) is None
         )
-        if provider_type == "a13n.direct-local":
+        if provider_type == "direct-local":
             with pytest.raises(EnvironmentManagementError, match="dedicated"):
                 await authorize_template(
                     session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.current_revision_id

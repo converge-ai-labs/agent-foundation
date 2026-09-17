@@ -15,14 +15,14 @@ It covers the common Provider lifecycle:
 
 ## Choose a route
 
-| Route  | Provider                      | Use it for                               | Operation and ownership boundary                            |
-| ------ | ----------------------------- | ---------------------------------------- | ----------------------------------------------------------- |
-| Native | `a13n.direct-local`           | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
-| Native | `a13n.e2b`                    | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
-| Envd   | `a13n.local-envd`             | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
-| Envd   | `a13n.docker` (Native Docker) | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
-| Envd   | `a13n.http-envd`              | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
-| Envd   | `a13n.websocket-envd`         | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
+| Route  | Provider                 | Use it for                               | Operation and ownership boundary                            |
+| ------ | ------------------------ | ---------------------------------------- | ----------------------------------------------------------- |
+| Native | `direct-local`           | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `e2b`                    | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Envd   | `a13n.local-envd`        | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Envd   | `docker` (Native Docker) | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
+| Envd   | `a13n.http-envd`         | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
+| Envd   | `a13n.websocket-envd`    | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 ## Try remote providers in one command
 

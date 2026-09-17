@@ -118,7 +118,7 @@ async def environment_sessions(service_database: PostgreSQLConfig) -> AsyncItera
 
 @pytest.fixture
 def provider_catalog():
-    return build_environment_provider_catalog(builtin_keys=("a13n.direct-local", "a13n.docker"))
+    return build_environment_provider_catalog(builtin_keys=("direct-local", "docker"))
 
 
 @pytest.fixture

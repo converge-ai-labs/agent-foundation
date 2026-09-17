@@ -16,7 +16,7 @@ class Settings(BaseModel):
 
 
 class EnvironmentSettings(Settings):
-    type: Literal["a13n.e2b"]
+    type: Literal["e2b"]
     api_key: SecretStr = Field(min_length=1)
     template: str = Field(default="base", min_length=1)
 

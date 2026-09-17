@@ -44,6 +44,6 @@ class LifecycleBarrierProvider(E2BEnvironmentProvider):
 def environment_catalog(config, builtin_keys):
     root = Path(config["workspace_root"]).parent / "e2b-fault"
     return build_environment_provider_catalog(
-        builtin_keys=tuple(key for key in builtin_keys if key != "a13n.e2b"),
+        builtin_keys=tuple(key for key in builtin_keys if key != "e2b"),
         explicit_providers=(LifecycleBarrierProvider(root),),
     )

@@ -30,7 +30,7 @@ class DockerEnvironmentProvider(EnvironmentProvider):
 
     @property
     def key(self) -> str:
-        return "a13n.docker"
+        return "docker"
 
     @property
     def configuration_models(self) -> dict[str, type[BaseModel]]:

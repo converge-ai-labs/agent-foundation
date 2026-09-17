@@ -42,7 +42,7 @@ from a13n_environment import (
 )
 
 spec = EnvironmentProviderSpec(
-    provider_key="a13n.direct-local",
+    provider_key="direct-local",
     schema_version="1",
     configuration={
         "root": {"path": "/srv/agent-workspaces/current"},
@@ -50,7 +50,7 @@ spec = EnvironmentProviderSpec(
 )
 
 catalog = build_environment_provider_catalog(
-    builtin_keys=("a13n.direct-local",),
+    builtin_keys=("direct-local",),
 )
 provider = catalog.require(spec.provider_key)
 configuration = provider.validate_configuration(

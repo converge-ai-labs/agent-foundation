@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from pathlib import PurePosixPath
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DEFAULT_DOCKER_IMAGE = "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
-
-
-class DockerImagePullPolicy(StrEnum):
-    IF_MISSING = "if_missing"
-    ALWAYS = "always"
-    NEVER = "never"
 
 
 class DockerMountConfiguration(BaseModel):
@@ -53,14 +46,13 @@ class DockerProviderConfiguration(BaseModel):
                 "init_script",
                 "disable_network",
                 "cpus",
-                "memory_mib",
+                "memory_gb",
                 "mounts",
             ]
         },
     )
 
     image: Annotated[str, Field(min_length=1, max_length=1024)] = DEFAULT_DOCKER_IMAGE
-    pull_policy: DockerImagePullPolicy = DockerImagePullPolicy.IF_MISSING
     mounts: tuple[DockerMountConfiguration, ...] = Field(
         default=(),
         title="Host directory mounts",
@@ -79,10 +71,15 @@ class DockerProviderConfiguration(BaseModel):
     shell: str = "/bin/sh"
     python: str = "python3"
     cpus: float | None = Field(default=None, ge=0.001, allow_inf_nan=False, title="CPU cores")
-    memory_mib: int | None = Field(default=None, ge=6, title="Memory (MiB)")
+    memory_gb: float | None = Field(default=None, ge=0.006291456, allow_inf_nan=False, title="Memory (GB)")
     pids_limit: int | None = Field(default=None, gt=0)
     stop_grace_seconds: int = Field(default=10, ge=0, le=300)
-    request_timeout_seconds: int = Field(default=60, gt=0, le=3600)
+    request_timeout_seconds: int = Field(
+        default=60,
+        gt=0,
+        le=3600,
+        description="Bounds one internal helper operation, including an initialization script; not an Agent Run or ordinary shell duration.",
+    )
     max_file_bytes: int = Field(default=16 * 1024 * 1024, gt=0)
     max_query_entries: int = Field(default=100_000, gt=0)
     max_output_preview_bytes: int = Field(default=64 * 1024, gt=0)
@@ -95,6 +92,13 @@ class DockerProviderConfiguration(BaseModel):
     def nonblank(cls, value: str) -> str:
         if not value.strip() or value != value.strip() or "\x00" in value:
             raise ValueError("Docker command and image values must be nonblank and contain no NUL")
+        return value
+
+    @field_validator("memory_gb")
+    @classmethod
+    def valid_memory_limit(cls, value: float | None) -> float | None:
+        if value is not None and (value > (2**63 - 1) / 1_000_000_000 or int(value * 1_000_000_000) > 2**63 - 1):
+            raise ValueError("Docker memory limit exceeds signed 64-bit bytes")
         return value
 
     @model_validator(mode="after")

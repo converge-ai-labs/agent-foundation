@@ -152,6 +152,6 @@ async def child_environment_choice(
     if revision is None:
         raise invalid_environment("Child Environment template revision is unavailable")
     provider = await session.get(EnvironmentProviderRecord, revision.provider_id)
-    if provider is not None and provider.type == "a13n.direct-local":
+    if provider is not None and provider.type == "direct-local":
         raise invalid_environment("Direct Local does not support dedicated child environments")
     return NewEnvironmentSelection(template_id=revision.template_id, version=revision.version)

@@ -552,7 +552,7 @@ image-check-sandbox: ## Smoke-check the existing sandbox container image
 
 .PHONY: image-check
 image-check: images ## Build and smoke-check all container images
-	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-a13n-harness-ui
+	@$(MAKE) --no-print-directory image-check-a13n-service image-check-sandbox image-check-a13n-harness-ui image-check-docker-environment
 
 .PHONY: python-check
 python-check: lint typecheck ## Run Python workspace lint and type checks
@@ -618,7 +618,7 @@ image-docker-environment: ## Build the native Docker execution image without Env
 
 image-check-docker-environment: ## Validate native Docker image prerequisites
 	@test "$$(docker image inspect --format '{{.Config.User}}' "$(DOCKER_ENVIRONMENT_IMAGE)")" = "sandbox"
-	@docker run --rm --entrypoint sh "$(DOCKER_ENVIRONMENT_IMAGE)" -c 'python3 --version && git --version && test -w /workspace && ! command -v a13n-envd'
+	@docker run --rm --entrypoint sh "$(DOCKER_ENVIRONMENT_IMAGE)" -c 'python3 --version && git --version && bash --version && node --version && npm --version && test -w /workspace && test -w /tmp/a13n && ! command -v a13n-envd'
 
 .PHONY: docker-provider-live-test
 docker-provider-live-test: ## Exercise native Docker against an explicitly selected real Engine

@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from typing import cast
 
 from a13n_environment import EnvironmentProviderCatalog, EnvironmentProviderError
+from a13n_environment.docker.configuration import DockerProviderConfiguration
 from pydantic import ValidationError
+from redis.asyncio import Redis
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -40,6 +43,7 @@ from .domain import (
     EnvironmentProviderDefinition,
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
+    JsonObject,
     NewEnvironmentSelection,
     RegisterEnvironmentRequest,
     ReplaceCredentialRequest,
@@ -51,6 +55,15 @@ from .domain import (
 from .errors import EnvironmentManagementError, environment_not_found, invalid_environment, is_target_identity_conflict
 from .identity import default_environment_name
 from .identity import target_identity as scoped_target_identity
+from .image_jobs import (
+    ImageTestIdentity,
+    ImageTestRequest,
+    ImageTestResponse,
+    ProviderConnectivity,
+    cancel_image_test,
+    connectivity_key,
+    request_image_test,
+)
 from .models import (
     EnvironmentCommandRecord,
     EnvironmentProviderRecord,
@@ -69,11 +82,13 @@ class EnvironmentService:
         protector: SecretProtector,
         *,
         deployment_provider_types: frozenset[str] = frozenset(),
+        redis: Redis | None = None,
     ) -> None:
         self.sessions = sessions
         self.catalog = catalog
         self.protector = protector
         self.deployment_provider_types = deployment_provider_types
+        self.redis = redis
 
     async def provider_types(self, actor: AuthenticatedActor) -> Collection[EnvironmentProviderDefinition]:
         async with short_session(self.sessions) as session:
@@ -104,6 +119,106 @@ class EnvironmentService:
                 )
                 for provider in self.catalog.values()
             )
+        )
+
+    async def provider_connectivity(self, *, actor: AuthenticatedActor, provider_id: str) -> ProviderConnectivity:
+        async with short_session(self.sessions) as session:
+            provider = await self._provider(session, actor, provider_id)
+            if provider.type != "docker":
+                raise invalid_environment("Connectivity is available for Docker Providers")
+        if self.redis is None:
+            return ProviderConnectivity(status="unknown")
+        value = await self.redis.get(connectivity_key(provider_id))
+        return ProviderConnectivity.model_validate_json(value) if value else ProviderConnectivity(status="unknown")
+
+    async def test_docker_image(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        provider_id: str,
+        workspace_id: str | None,
+        request_id: str,
+        configuration: JsonObject,
+    ) -> ImageTestResponse:
+        if self.redis is None:
+            raise EnvironmentManagementError(
+                "environment_unavailable", "Worker image testing is unavailable", category=ErrorCategory.unavailable
+            )
+        identity = await self._docker_image_identity(
+            actor=actor,
+            provider_id=provider_id,
+            workspace_id=workspace_id,
+            request_id=request_id,
+            require_enabled=True,
+        )
+        try:
+            checked = self.catalog.require("docker").validate_configuration(schema_version="1", value=configuration)
+        except (ValidationError, EnvironmentProviderError) as error:
+            raise invalid_environment("Docker image configuration is invalid") from error
+        try:
+            return await request_image_test(
+                self.redis,
+                ImageTestRequest(
+                    identity=identity,
+                    configuration=cast(DockerProviderConfiguration, checked).model_copy(
+                        update={"mounts": (), "init_script": None}
+                    ),
+                ),
+            )
+        except TimeoutError as error:
+            raise EnvironmentManagementError(
+                "environment_image_test_timeout", "Worker image test timed out", category=ErrorCategory.timeout
+            ) from error
+        except ValueError as error:
+            raise invalid_environment("Image test request ID is already in use") from error
+
+    async def cancel_docker_image(
+        self, *, actor: AuthenticatedActor, provider_id: str, workspace_id: str | None, request_id: str
+    ) -> None:
+        if self.redis is None:
+            raise EnvironmentManagementError(
+                "environment_unavailable", "Worker image testing is unavailable", category=ErrorCategory.unavailable
+            )
+        identity = await self._docker_image_identity(
+            actor=actor,
+            provider_id=provider_id,
+            workspace_id=workspace_id,
+            request_id=request_id,
+            require_enabled=False,
+        )
+        await cancel_image_test(self.redis, identity)
+
+    async def _docker_image_identity(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        provider_id: str,
+        workspace_id: str | None,
+        request_id: str,
+        require_enabled: bool,
+    ) -> ImageTestIdentity:
+        async with short_session(self.sessions) as session:
+            provider = await self._provider(session, actor, provider_id)
+            scope = await authorize_environment_workspace(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                action=WorkspaceAction.environment_template_manage,
+            )
+            if (
+                provider.organization_id != scope.organization_id
+                or (provider.workspace_id is not None and provider.workspace_id != workspace_id)
+                or provider.type != "docker"
+                or (require_enabled and not provider.enabled)
+            ):
+                raise invalid_environment("Select an enabled Docker Provider in this scope")
+        return ImageTestIdentity(
+            request_id=request_id,
+            provider_id=provider_id,
+            organization_id=scope.organization_id,
+            workspace_id=scope.workspace_id,
+            principal_type=actor.principal.principal_type,
+            principal_id=actor.principal.principal_id,
         )
 
     async def create_provider(

@@ -1289,6 +1289,7 @@
   "trigger.inbound": "外部消息",
   "trigger.queued_submission": "队列提交",
   "trigger.user_input": "用户输入",
+  "connected": "已连接",
   "unavailable": "不可用",
   "unknown": "未知",
   "unprepared": "未准备",
@@ -2721,5 +2722,13 @@
   "Connect a Slack, Feishu, or GitHub identity, select an agent, and choose where it can respond.": "连接 Slack、飞书或 GitHub 身份，选择 Agent 并指定它可以回复的范围。",
   "Use one application account for each platform identity or installation.": "为每个平台身份或应用安装配置一个应用账号。",
   "Connect a platform identity you own, then choose an agent and reception scope.": "连接你拥有的平台身份，然后选择 Agent 和接收范围。",
-  "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed.": "使用专用 GitHub 账号和经典 PAT：公开仓库需要 notifications 和 public_repo 权限，私有仓库需要 repo 权限。无需公网回调地址。"
+  "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed.": "使用专用 GitHub 账号和经典 PAT：公开仓库需要 notifications 和 public_repo 权限，私有仓库需要 repo 权限。无需公网回调地址。",
+  "Enabled: {{value}}": "已启用：{{value}}",
+  "Engine: {{status}}": "Docker 引擎：{{status}}",
+  "Image {{id}} passed: {{checks}}": "镜像 {{id}} 通过测试：{{checks}}",
+  "Mounts": "挂载",
+  "No": "否",
+  "Test image": "测试镜像",
+  "Testing image…": "正在测试镜像…",
+  "Yes": "是"
 }

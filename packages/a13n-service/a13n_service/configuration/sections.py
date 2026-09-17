@@ -123,7 +123,7 @@ class SubagentsSettings(Section):
 
 
 class EnvironmentsSettings(Section):
-    provider_builtins: tuple[str, ...] = ("a13n.e2b", "a13n.http-envd")
+    provider_builtins: tuple[str, ...] = ("e2b", "a13n.http-envd")
     local_providers: dict[LocalProviderType, JsonObject] = Field(default_factory=dict)
     maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
     operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)

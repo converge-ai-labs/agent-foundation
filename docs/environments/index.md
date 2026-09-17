@@ -12,10 +12,10 @@ Use no Environment when the Agent needs only ordinary tools or remote APIs. Othe
 
 | Route  | Provider              | Use it for                               | Operation and ownership boundary                            |
 | ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
-| Native | `a13n.direct-local`   | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
-| Native | `a13n.e2b`            | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Native | `direct-local`        | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `e2b`                 | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
 | Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
-| Native | `a13n.docker`         | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
+| Native | `docker`              | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
 | Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 

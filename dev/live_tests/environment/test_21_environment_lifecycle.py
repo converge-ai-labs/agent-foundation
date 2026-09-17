@@ -14,7 +14,7 @@ pytestmark = pytest.mark.anyio
 
 @pytest.fixture
 async def docker_environment(management):
-    environment, root = await management.environment(provider_type="a13n.docker")
+    environment, root = await management.environment(provider_type="docker")
     try:
         yield environment, root
     finally:

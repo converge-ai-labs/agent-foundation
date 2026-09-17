@@ -801,27 +801,6 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications`
-
-Publish Document.
-
-| Parameter         | Location | Required | Type / schema | Constraints and default    |
-| ----------------- | -------- | -------- | ------------- | -------------------------- |
-| `account_id`      | path     | true     | string        | —                          |
-| `scope_id`        | path     | true     | string        | —                          |
-| `document_id`     | path     | true     | string        | —                          |
-| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=128 |
-
-Request body: required.
-
-- `application/json`: `PublishDocument`.
-
-Responses:
-
-- **201** — Successful Response (`application/json: Document`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
 ### `GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index`
 
 Index.
@@ -884,149 +863,6 @@ Reconcile Operation.
 Responses:
 
 - **200** — Successful Response (`application/json: DocumentEntry`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications`
-
-Publications.
-
-| Parameter    | Location | Required | Type / schema  | Constraints and default            |
-| ------------ | -------- | -------- | -------------- | ---------------------------------- |
-| `account_id` | path     | true     | string         | —                                  |
-| `scope_id`   | path     | true     | string         | —                                  |
-| `source_id`  | query    | false    | string or null | —                                  |
-| `limit`      | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`     | query    | false    | string or null | —                                  |
-
-Responses:
-
-- **200** — Successful Response (`application/json: DocumentCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}`
-
-Publication.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `account_id`  | path     | true     | string        | —                       |
-| `scope_id`    | path     | true     | string        | —                       |
-| `document_id` | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: Document`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience`
-
-Publication Audience.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `account_id`  | path     | true     | string        | —                       |
-| `scope_id`    | path     | true     | string        | —                       |
-| `document_id` | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: PublicationAccess`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience`
-
-Change Audience.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `account_id`  | path     | true     | string        | —                       |
-| `scope_id`    | path     | true     | string        | —                       |
-| `document_id` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `PublicationAudience`.
-
-Responses:
-
-- **204** — Successful Response.
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw`
-
-Withdraw Publication.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `account_id`  | path     | true     | string        | —                       |
-| `scope_id`    | path     | true     | string        | —                       |
-| `document_id` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `WithdrawPublication`.
-
-Responses:
-
-- **204** — Successful Response.
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/application-accounts/{account_id}/memory-sharing-policies`
-
-Policies.
-
-| Parameter    | Location | Required | Type / schema  | Constraints and default            |
-| ------------ | -------- | -------- | -------------- | ---------------------------------- |
-| `account_id` | path     | true     | string         | —                                  |
-| `limit`      | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`     | query    | false    | string or null | —                                  |
-
-Responses:
-
-- **200** — Successful Response (`application/json: SharingPolicyCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/application-accounts/{account_id}/memory-sharing-policies`
-
-New Policy.
-
-| Parameter    | Location | Required | Type / schema | Constraints and default |
-| ------------ | -------- | -------- | ------------- | ----------------------- |
-| `account_id` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `SharingPolicyInput`.
-
-Responses:
-
-- **201** — Successful Response (`application/json: SharingPolicy`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id}`
-
-Replace Policy.
-
-| Parameter    | Location | Required | Type / schema | Constraints and default |
-| ------------ | -------- | -------- | ------------- | ----------------------- |
-| `account_id` | path     | true     | string        | —                       |
-| `policy_id`  | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `ReplaceSharingPolicy`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: SharingPolicy`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -1218,7 +1054,7 @@ Bot Collection.
 | `workspace` | path     | true     | string                                                                                 | —                                  |
 | `limit`     | query    | false    | integer                                                                                | minimum=1; maximum=100; default=50 |
 | `cursor`    | query    | false    | string or null                                                                         | —                                  |
-| `platform`  | query    | false    | "slack", "lark" or null                                                                | —                                  |
+| `platform`  | query    | false    | "slack", "lark", "github" or null                                                      | —                                  |
 | `condition` | query    | false    | "disabled", "needs_verification", "check_failed", "reception_off", "receiving" or null | —                                  |
 | `search`    | query    | false    | string or null                                                                         | —                                  |
 
@@ -1239,6 +1075,24 @@ Discover Feishu Installation.
 Request body: required.
 
 - `application/json`: `DiscoverFeishuInstallationRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: InstallationInfo`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/bots/github/user`
+
+Discover Github User.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `DiscoverGitHubUserRequest`.
 
 Responses:
 
@@ -1572,6 +1426,20 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Account`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/application-accounts/{account_id}/event-connection`
+
+Event Connection.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default |
+| ------------ | -------- | -------- | ------------- | ----------------------- |
+| `account_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: EventConnectionStatus`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2120,6 +1988,20 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/environment-providers/{provider_id}/connectivity`
+
+Provider Connectivity.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default |
+| ------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ProviderConnectivity`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `PUT /api/v1/environment-providers/{provider_id}/credential`
 
 Replace Credential.
@@ -2136,6 +2018,24 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: EnvironmentProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/environment-providers/{provider_id}/test-image`
+
+Test Image.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default |
+| ------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `TestDockerImageRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ImageTestResponse`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -4599,6 +4499,7 @@ List Run Items.
 | `run_id`  | path     | true     | string         | —                                  |
 | `limit`   | query    | false    | integer        | minimum=1; maximum=200; default=50 |
 | `cursor`  | query    | false    | string or null | —                                  |
+| `order`   | query    | false    | "asc", "desc"  | default="asc"                      |
 
 Responses:
 

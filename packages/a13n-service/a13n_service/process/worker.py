@@ -25,6 +25,7 @@ from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.native_actions import NativeObservationFactory
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.capacity import CapacityLimits
+from a13n_service.environments.image_jobs import DockerConnectivityProbe, DockerImageTestWorker
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
@@ -81,6 +82,11 @@ async def build_worker_runtime(
             max_targets=settings.environments.max_targets_per_workspace,
             max_active=settings.environments.max_active_per_workspace,
         ),
+    )
+    image_test_worker = (
+        DockerImageTestWorker(shared.storage.sessions, shared.storage.redis)
+        if "docker" in environment_catalog
+        else None
     )
     environment_maintenance = EnvironmentMaintenanceLoop(
         environments,
@@ -230,8 +236,26 @@ async def build_worker_runtime(
     execution_task = BackgroundTask(
         "RunAttempt execution", execution_loop.run, execution_loop.is_draining, shutdown_execution
     )
+    image_test_tasks: tuple[BackgroundTask, ...] = ()
+    if image_test_worker is not None:
+        docker_connectivity = DockerConnectivityProbe(shared.storage.sessions, shared.storage.redis)
+        image_test_tasks = (
+            BackgroundTask(
+                name="docker_connectivity_probe",
+                run=docker_connectivity.run,
+                return_is_expected=lambda: docker_connectivity.draining,
+                shutdown=docker_connectivity.shutdown,
+            ),
+            BackgroundTask(
+                name="docker_image_tests",
+                run=image_test_worker.run,
+                return_is_expected=lambda: image_test_worker.draining,
+                shutdown=image_test_worker.shutdown,
+            ),
+        )
     return runtime, (
         execution_task,
+        *image_test_tasks,
         BackgroundTask(
             name="environment_maintenance",
             run=environment_maintenance.run,

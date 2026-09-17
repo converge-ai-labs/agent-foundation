@@ -110,10 +110,10 @@ const curatedBrands: Record<string, Brand> = {
   deepseek: { icon: `${lobeIconsCdn}deepseek-color.svg` },
   moonshot: { icon: `${lobeIconsCdn}kimi-color.svg` },
   zhipu: { icon: `${lobeIconsCdn}zhipu-color.svg` },
-  "a13n.docker": {
+  docker: {
     icon: "https://cdn.jsdelivr.net/gh/devicons/devicon@v2.17.0/icons/docker/docker-original.svg",
   },
-  "a13n.e2b": { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
+  e2b: { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
 };
 
 export const brands = mergeBrandCatalogs(lobeBrands, curatedBrands);

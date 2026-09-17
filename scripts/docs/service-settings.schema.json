@@ -461,7 +461,7 @@
       "properties": {
         "provider_builtins": {
           "default": [
-            "a13n.e2b",
+            "e2b",
             "a13n.http-envd"
           ],
           "items": {
@@ -927,8 +927,8 @@
     },
     "LocalProviderType": {
       "enum": [
-        "a13n.direct-local",
-        "a13n.docker"
+        "direct-local",
+        "docker"
       ],
       "type": "string"
     },

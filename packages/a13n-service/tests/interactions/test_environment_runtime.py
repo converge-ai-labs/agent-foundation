@@ -40,12 +40,12 @@ pytestmark = pytest.mark.anyio
 async def template_config(sessions, path, preparation, *, shell=False):
     await seed_hook_actor_access(sessions)
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
-    catalog = build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
+    catalog = build_environment_provider_catalog(builtin_keys=("direct-local",))
     service = EnvironmentService(sessions, catalog, protector)
     provider = await service.create_provider(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="a13n.direct-local", name="Local"),
+        request=CreateProviderRequest(type="direct-local", name="Local"),
     )
     template = await service.create_template(
         actor=hook_actor(),

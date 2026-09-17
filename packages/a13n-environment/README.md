@@ -43,10 +43,10 @@ Direct Local exposes an existing Host directory and never deletes, tags, locks, 
 
 | Route  | Provider              | Use it for                               | Operation and ownership boundary                            |
 | ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
-| Native | `a13n.direct-local`   | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
-| Native | `a13n.e2b`            | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Native | `direct-local`        | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `e2b`                 | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
 | Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
-| Native | `a13n.docker`         | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
+| Native | `docker`              | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
 | Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
@@ -54,7 +54,7 @@ See [Remote Envd](../../docs/a13n-environment/remote-envd.md) for one-command lo
 
 ## Docker development
 
-The default configuration selects the Envd-free `ghcr.io/converge-ai-labs/a13n-docker-environment:latest` image. Each Environment has its own `/workspace`. Templates can add existing host-directory mounts; named volumes and bootstrap storage are not template options.
+The default configuration selects the Envd-free `ghcr.io/converge-ai-labs/a13n-docker-environment:dev` image. Each Environment has its own `/workspace`. Templates can add existing host-directory mounts; named volumes and bootstrap storage are not template options.
 
 The Host supplies a Docker client through the runtime and owns its closure:
 
@@ -72,7 +72,7 @@ Run unit tests with `make docker-provider-test`. Build the native image with `ma
 make docker-provider-live-test
 ```
 
-[Single-host Compose](../../deploy/compose/README.md) supplies a separate DinD Engine and shared Unix socket. Configure external bind paths in that Engine's filesystem namespace.
+[Single-host Compose](../../deploy/compose/README.md) uses the host Docker Engine through its Unix socket. Configure external bind paths in that Engine's filesystem namespace.
 
 ## Local Envd development
 

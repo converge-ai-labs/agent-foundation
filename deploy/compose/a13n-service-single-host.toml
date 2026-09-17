@@ -22,7 +22,7 @@ auto_migrate = true
 [logging]
 format = "json"
 
-[environments.local_providers."a13n.direct-local"]
+[environments.local_providers."direct-local"]
 
-[environments.local_providers."a13n.docker"]
-docker_host = "unix:///run/a13n-docker/docker.sock"
+[environments.local_providers."docker"]
+docker_host = "unix:///var/run/docker.sock"

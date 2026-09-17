@@ -332,7 +332,7 @@ If a trusted local proxy resolves a configured model hostname to a private or re
 
 | Parameter               | Meaning when enabled                                                     | Empty/default behavior                                                                                             |
 | ----------------------- | ------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `environment.type`      | `a13n.e2b`, the native E2B Environment implementation                    | No additional cloud Environment test; existing direct-local and explicit Docker cases keep their current providers |
+| `environment.type`      | `e2b`, the native E2B Environment implementation                         | No additional cloud Environment test; existing direct-local and explicit Docker cases keep their current providers |
 | `environment.api_key`   | E2B account API key; required with `type`                                | No credentials required by the existing local cases                                                                |
 | `environment.template`  | Optional E2B template ID or alias                                        | `base` when E2B is enabled                                                                                         |
 | `connector.provider`    | `composio`                                                               | No additional external Connector test; case 27 keeps its local TLS Composio fixture and local MCP server           |
@@ -647,7 +647,7 @@ These tests do not exercise external model inference quality, hosted OAuth user 
 
 ## Five-backend Environment matrix
 
-`environment/test_28_environment_backends.py` adds separately selected journeys for `a13n.docker`, `a13n.e2b`, `a13n.http-envd`, and `a13n.websocket-envd`. Each backend runs tools/access, template/preparation, and lifecycle/continuity journeys. The access journey checks read-only, read-write, and full ceilings, actual file/Shell results, and forged tool calls whose prohibited filesystem effects must remain absent. The existing case 22 continues to cover explicit no-environment selection.
+`environment/test_28_environment_backends.py` adds separately selected journeys for `docker`, `e2b`, `a13n.http-envd`, and `a13n.websocket-envd`. Each backend runs tools/access, template/preparation, and lifecycle/continuity journeys. The access journey checks read-only, read-write, and full ceilings, actual file/Shell results, and forged tool calls whose prohibited filesystem effects must remain absent. The existing case 22 continues to cover explicit no-environment selection.
 
 | Backend        | Template and preparation                                               | Lifecycle                                                                                                          |
 | -------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |

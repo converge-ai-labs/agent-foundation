@@ -36,11 +36,11 @@ pytestmark = pytest.mark.anyio
 async def due_environment(interaction_sessions, tmp_path):
     sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
-    catalog = build_environment_provider_catalog(builtin_keys=("a13n.docker",))
+    catalog = build_environment_provider_catalog(builtin_keys=("docker",))
     protector = SecretProtector(key=b"e" * 32, encryption_key_id="test")
     service = EnvironmentService(sessions, catalog, protector)
     provider = await service.create_provider(
-        actor=hook_actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.docker", name="Docker")
+        actor=hook_actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="docker", name="Docker")
     )
     template = await service.create_template(
         actor=hook_actor(),

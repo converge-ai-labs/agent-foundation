@@ -8,7 +8,7 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-PROVIDER_KEY = "a13n.e2b"
+PROVIDER_KEY = "e2b"
 
 
 class E2BBackendConfiguration(BaseModel):

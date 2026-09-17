@@ -98,6 +98,10 @@ def entries(root: Path, path: Path, request: dict, ceiling: int):
                 yield child
 
     if request.get("ignore_mode") == "git":
+        if shutil.which("git") is None:
+            raise FileRequestError(
+                "ignore_mode", "missing_dependency", "Install Git in the image for git-ignore queries."
+            )
         # An isolated Git directory reads only the mount's nested .gitignore files,
         # including outside a repository; no index, global excludes, or target writes.
         with TemporaryDirectory(prefix="a13n-ignore-") as git_directory:

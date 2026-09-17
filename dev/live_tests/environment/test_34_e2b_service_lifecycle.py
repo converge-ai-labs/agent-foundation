@@ -53,7 +53,7 @@ class ServiceSandboxes(ServiceEnvironments):
             journey.base + "/environment-providers",
             {
                 "name": "E2B lifecycle " + str(len(self.lab.client.runs)),
-                "type": "a13n.e2b",
+                "type": "e2b",
                 "configuration": {},
                 "credential": {"api_key": self.pool.settings.api_key.get_secret_value()},
             },

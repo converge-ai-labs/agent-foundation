@@ -17,7 +17,7 @@ name = "Brave (local)"
 credential = { api_key = "" }
 
 [[environment_providers]]
-type = "a13n.e2b"
+type = "e2b"
 name = "E2B (local)"
 credential = { api_key = "" }
 

@@ -73,7 +73,7 @@ The complete machine-readable validation schema, including named enum/union defi
 
 | Setting                                     | Environment variable                                    | Type / choices  | Constraints and default                      |
 | ------------------------------------------- | ------------------------------------------------------- | --------------- | -------------------------------------------- |
-| `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["a13n.e2b", "a13n.http-envd"]       |
+| `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["e2b", "a13n.http-envd"]            |
 | `environments.local_providers`              | `A13N_SERVICE_ENVIRONMENT_LOCAL_PROVIDERS`              | object          | —                                            |
 | `environments.maintenance_interval_seconds` | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | number          | maximum=300; exclusiveMinimum=0; default=5   |
 | `environments.operation_timeout_seconds`    | `A13N_SERVICE_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | number          | maximum=3600; exclusiveMinimum=0; default=60 |

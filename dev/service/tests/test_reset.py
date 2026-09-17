@@ -136,7 +136,7 @@ def test_reset_seeded_then_empty_clears_all_stores_and_invalidates_login(environ
                         ],
                         "environment_providers": [
                             {
-                                "type": "a13n.e2b",
+                                "type": "e2b",
                                 "name": "Test E2B",
                                 "credential": {"api_key": "fictional-test-key"},
                             }

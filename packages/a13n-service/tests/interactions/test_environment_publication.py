@@ -80,7 +80,7 @@ async def test_first_preparation_failure_retains_known_target_and_dispatch_certa
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, failure
 ):
     lifecycle, environment, _ = await accepted_environment(interaction_sessions, interaction_object_store, tmp_path)
-    state = EnvironmentState(provider_key="a13n.direct-local", state_version="1", state={"target": "allocated"})
+    state = EnvironmentState(provider_key="direct-local", state_version="1", state={"target": "allocated"})
     events = []
 
     class AllocatedTarget(Target):
@@ -102,7 +102,7 @@ async def test_first_preparation_failure_retains_known_target_and_dispatch_certa
         return AllocatedTarget(None, events)
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    monkeypatch.setattr(lifecycle.catalog.require("a13n.direct-local"), "target_identity", lambda **kwargs: "allocated")
+    monkeypatch.setattr(lifecycle.catalog.require("direct-local"), "target_identity", lambda **kwargs: "allocated")
     attempts = interrupt_publication(monkeypatch, lifecycle, after_commit=True)
     with pytest.raises(BaseException, match=r"[Cc]ancelled|[Cc]onstruction|Readiness") as error:
         await environment.prepare()

@@ -58,7 +58,7 @@ async def run_direct_local(workspace: Path) -> StatelessExampleResult:
 
     root = _prepare_workspace(workspace)
     spec = EnvironmentProviderSpec(
-        provider_key="a13n.direct-local",
+        provider_key="direct-local",
         schema_version="1",
         configuration={
             "root": {"path": str(root)},
@@ -148,7 +148,7 @@ async def run_docker(
     """Create, re-enter, and explicitly destroy one Docker Environment."""
 
     spec = EnvironmentProviderSpec(
-        provider_key="a13n.docker",
+        provider_key="docker",
         schema_version="1",
         configuration={
             "image": image,

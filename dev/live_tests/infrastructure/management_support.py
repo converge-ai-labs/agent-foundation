@@ -69,7 +69,7 @@ class ManagementJourney:
         return sorted(runs, key=lambda run: run["id"])
 
     async def environment_template(
-        self, *, preparation="on_run", access="full", name=None, provider_type="a13n.direct-local", retention=None
+        self, *, preparation="on_run", access="full", name=None, provider_type="direct-local", retention=None
     ):
         name = name or uuid4().hex
         root = self.lab.root / ("environment-" + name)
@@ -92,10 +92,9 @@ class ManagementJourney:
                 "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],
             },
         }
-        if provider_type == "a13n.docker":
+        if provider_type == "docker":
             template_config["configuration"] = {
                 "image": os.environ.get("LIVE_TEST_DOCKER_IMAGE", "a13n-docker-environment:local"),
-                "pull_policy": "never",
             }
         template = await self.post(self.base + "/environment-templates", {"name": name, **template_config})
         return template, template_config, root
@@ -103,7 +102,7 @@ class ManagementJourney:
     async def environment(self, **options):
         template, _, root = await self.environment_template(**options)
         resource = await self.post(self.base + "/environments", {"template_id": template["id"]})
-        if options.get("provider_type", "a13n.direct-local") == "a13n.direct-local":
+        if options.get("provider_type", "direct-local") == "direct-local":
             root = root / "environments" / resource["id"]
             root.mkdir(parents=True, exist_ok=True)
         return resource, root
