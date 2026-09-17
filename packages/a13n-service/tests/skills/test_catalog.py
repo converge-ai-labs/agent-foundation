@@ -381,7 +381,7 @@ async def test_revision_name_must_match_the_stable_skill_key(
 
 
 @pytest.mark.anyio
-async def test_references_include_disabled_unarchived_current_agents_and_block_delete(
+async def test_default_revision_references_include_disabled_unarchived_agents_and_block_delete(
     skill_services: SkillTestServices,
 ) -> None:
     source = await staged_source(skill_services.uploads, key="references-upload", content=archive())
@@ -404,7 +404,7 @@ async def test_references_include_disabled_unarchived_current_agents_and_block_d
                 name="Disabled Agent",
                 key="disabled-agent",
                 description=None,
-                current_revision_id=revision_id,
+                default_revision_id=revision_id,
                 enabled=False,
                 archived_at=None,
                 duplicated_from_agent_id=None,

@@ -96,10 +96,10 @@ async def _exercise(
     async with transaction(sessions) as session:
         original = await session.get(AgentRecord, AGENT_ID)
         values = {column.key: getattr(original, column.key) for column in AgentRecord.__table__.columns}
-        values.update(id=next_agent, name="Next", key="next", current_revision_id=next_revision)
+        values.update(id=next_agent, name="Next", key="next", default_revision_id=next_revision)
         session.add(AgentRecord(**values))
         await session.flush()
-        revision = await session.get(AgentRevisionRecord, original.current_revision_id)
+        revision = await session.get(AgentRevisionRecord, original.default_revision_id)
         values = {column.key: getattr(revision, column.key) for column in AgentRevisionRecord.__table__.columns}
         values.update(id=next_revision, agent_id=next_agent)
         session.add(AgentRevisionRecord(**values))

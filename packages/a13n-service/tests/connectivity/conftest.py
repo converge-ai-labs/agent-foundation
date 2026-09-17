@@ -314,7 +314,7 @@ async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]
                 name="Support",
                 key="support",
                 description=None,
-                current_revision_id="agtr_connectivity_test",
+                default_revision_id="agtr_connectivity_test",
                 enabled=True,
                 archived_at=None,
                 duplicated_from_agent_id=None,
