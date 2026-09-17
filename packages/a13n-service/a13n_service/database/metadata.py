@@ -34,6 +34,7 @@ def core_metadata() -> MetaData:
     from a13n_service.connectivity.transports import models as transport_models
     from a13n_service.durable_operations import models as durable_operations_models
     from a13n_service.environments import models as environment_models
+    from a13n_service.environments import mount_models
     from a13n_service.gateway import models as gateway_models
     from a13n_service.hooks import models as hook_models
     from a13n_service.iam import models as iam_models
@@ -57,6 +58,7 @@ def core_metadata() -> MetaData:
         connector_models,
         durable_operations_models,
         environment_models,
+        mount_models,
         gateway_models,
         hook_models,
         iam_models,

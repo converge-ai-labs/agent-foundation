@@ -11,25 +11,46 @@ from a13n_service.interactions.models import RunRecord
 
 from .errors import invalid_environment
 from .models import EnvironmentRecord
+from .mount_models import RunEnvironmentMountRecord
 from .retention import refresh_retention
 
 
 async def refresh_run_retention(database: AsyncSession, *, run: RunRecord, now: datetime) -> None:
     """Refresh aggregate retention after the complete Run status change, before inbox locks."""
-    if run.environment_id is None or run.environment_use_started_at is None:
-        return
-    environment = await database.scalar(
-        select(EnvironmentRecord).where(EnvironmentRecord.id == run.environment_id).with_for_update()
+    used_ids = set(
+        await database.scalars(
+            select(RunEnvironmentMountRecord.environment_id).where(
+                RunEnvironmentMountRecord.run_id == run.id,
+                RunEnvironmentMountRecord.use_started_at.is_not(None),
+            )
+        )
     )
-    if environment is None:
-        raise invalid_environment("Run Environment is missing")
-    await refresh_retention(database, environment, now)
+    if run.environment_id is not None and run.environment_use_started_at is not None:
+        used_ids.add(run.environment_id)
+    if used_ids:
+        environments = tuple(
+            await database.scalars(
+                select(EnvironmentRecord)
+                .where(EnvironmentRecord.id.in_(used_ids))
+                .order_by(EnvironmentRecord.id)
+                .with_for_update()
+            )
+        )
+        if len(environments) != len(used_ids):
+            raise invalid_environment("Run Environment is missing")
+        for environment in environments:
+            await refresh_retention(database, environment, now)
 
 
 async def lock_run_environments(
     database: AsyncSession, *, run: RunRecord, additional_environment_ids: tuple[str, ...] = ()
 ) -> None:
-    ids = sorted(set(additional_environment_ids + ((run.environment_id,) if run.environment_id else ())))
+    mount_ids = tuple(
+        await database.scalars(
+            select(RunEnvironmentMountRecord.environment_id).where(RunEnvironmentMountRecord.run_id == run.id)
+        )
+    )
+    ids = sorted(set(additional_environment_ids + mount_ids + ((run.environment_id,) if run.environment_id else ())))
     if ids:
         rows = tuple(
             await database.scalars(

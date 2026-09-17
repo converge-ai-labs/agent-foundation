@@ -3,24 +3,37 @@
 from datetime import datetime
 from typing import Literal
 
-from sqlalchemy import SQLColumnExpression, select
+from sqlalchemy import SQLColumnExpression, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.selectable import Exists
 
 from a13n_service.interactions.models import RunRecord
 
 from .models import EnvironmentRecord
+from .mount_models import RunEnvironmentMountRecord
 
 type RetentionCondition = Literal["active", "idle"]
 
 
 def active_use_exists(environment_id: str | SQLColumnExpression[str]) -> Exists:
+    additional_use = (
+        select(RunEnvironmentMountRecord.run_id)
+        .where(
+            RunEnvironmentMountRecord.run_id == RunRecord.id,
+            RunEnvironmentMountRecord.environment_id == environment_id,
+            RunEnvironmentMountRecord.use_started_at.is_not(None),
+        )
+        .correlate_except(RunEnvironmentMountRecord)
+        .exists()
+    )
     return (
         select(RunRecord.id)
         .where(
-            RunRecord.environment_id == environment_id,
             RunRecord.status == "running",
-            RunRecord.environment_use_started_at.is_not(None),
+            or_(
+                (RunRecord.environment_id == environment_id) & RunRecord.environment_use_started_at.is_not(None),
+                additional_use,
+            ),
         )
         .exists()
     )

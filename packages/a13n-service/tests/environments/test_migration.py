@@ -8,6 +8,7 @@ from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect
 
 ENVIRONMENT_TABLES = {
+    "run_environment_mounts",
     "environment_providers",
     "environment_templates",
     "environments",
