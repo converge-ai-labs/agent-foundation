@@ -164,3 +164,67 @@ def test_completed_output_preview_is_bounded_and_excludes_reasoning():
     assert len(turn.output_preview) <= 512
     assert turn.output_preview.startswith("Answer")
     assert "Private" not in turn.output_preview
+
+
+def test_additional_inputs_exclude_notifications_and_count_submissions_not_parts():
+    steering = {"a13n.steering-run": "run-1"}
+    multipart = ModelRequest(
+        parts=[
+            UserPromptPart(
+                [
+                    TextContent("Use this", metadata={"source_id": "multipart"}),
+                    TextContent(
+                        "Attachment path",
+                        metadata={
+                            "source_id": "multipart",
+                            "harness_ui": {"attachment": {"name": "image.png"}},
+                        },
+                    ),
+                ]
+            ),
+            UserPromptPart([TextContent("Hidden context", metadata={"display": False})]),
+        ],
+        metadata={**steering, "a13n.steering-input": "multipart"},
+    )
+    messages = [input_message("Question", "first"), multipart, multipart]
+    for source in ("background_process", "async_subagent"):
+        # Both current message-level metadata and retained content-only metadata work.
+        messages.extend(
+            [
+                ModelRequest(parts=[UserPromptPart("Update")], metadata={**steering, "a13n.steering-source": source}),
+                ModelRequest(
+                    parts=[UserPromptPart([TextContent("Update", metadata={"a13n.steering-source": source})])],
+                    metadata=steering,
+                ),
+            ]
+        )
+    messages.extend(
+        [
+            ModelRequest(parts=[UserPromptPart("Process finished; please continue")], metadata=steering),
+            ModelRequest(
+                parts=[UserPromptPart([TextContent("Hidden", metadata={"display": False})])], metadata=steering
+            ),
+            ModelRequest(parts=[UserPromptPart("Summary")], metadata={**steering, "a13n.context": "handoff"}),
+            ModelRequest(
+                parts=[
+                    UserPromptPart(
+                        [TextContent("File path", metadata={"harness_ui": {"attachment": {"name": "notes.txt"}}})]
+                    )
+                ],
+                metadata=steering,
+            ),
+            ModelResponse(parts=[ToolCallPart("read", {})]),
+            ModelResponse(parts=[TextPart("Answer")]),
+        ]
+    )
+    turn = _transcript_turns(tuple(messages))[0]
+    assert turn.steering_count == 3
+    assert turn.tool_count == 1
+
+
+def test_content_source_identity_deduplicates_additional_input_parts_across_requests():
+    first = input_message("First part", "additional")
+    second = input_message("Second part", "additional")
+    first.metadata = second.metadata = {"a13n.steering-run": "run-1"}
+    turn = _transcript_turns((input_message("Question", "first"), first, second))[0]
+    assert turn.steering_count == 1

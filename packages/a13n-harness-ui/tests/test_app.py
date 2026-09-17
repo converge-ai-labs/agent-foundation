@@ -2394,3 +2394,67 @@ async def test_history_rebuilds_share_only_their_thread_and_focus_does_not_load_
                 release.set()
         assert len(results) == 2 and first_reads == 1
         assert not app._projections._inspection_loads
+
+
+async def test_old_inspection_counts_rebuild_from_saved_metadata_across_history_pages(tmp_path, monkeypatch):
+    from a13n_harness.state import encode_messages
+    from a13n_harness_ui import thread_projection
+    from a13n_harness_ui.storage import StoredContinuation, inspection
+    from a13n_harness_ui.storage.read_models import project_continuation
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextContent, TextPart, UserPromptPart
+
+    settings = _settings(tmp_path / "state")
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        created = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=created.thread_id, prompt="Seed composition")
+        await app.wait_root_operation(receipt.receipt_id)
+        thread = await app._store.threads.get(created.thread_id)
+        assert thread is not None and thread.continuation is not None
+        stored = await app._store.objects.read_model(thread.continuation, StoredContinuation)
+        history = [ModelRequest(parts=[UserPromptPart("Question")])]
+        for source in ("background_process", "async_subagent", "external"):
+            history.append(
+                ModelRequest(
+                    parts=[UserPromptPart([TextContent(source, metadata={"a13n.steering-source": source})])],
+                    metadata={"a13n.steering-run": "run-one", "a13n.steering-source": source},
+                )
+            )
+        history.append(ModelResponse(parts=[TextPart("Answer")]))
+        value = stored.model_copy(
+            update={
+                "harness_state": stored.harness_state.model_copy(
+                    update={"message_history_json": encode_messages(history)},
+                )
+            }
+        )
+        replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
+        await app._store.threads.select_continuation(
+            thread_id=thread.thread_id,
+            expected=thread.continuation,
+            replacement=replacement,
+            read_model=project_continuation(value),
+        )
+        project = thread_projection._transcript_turns
+
+        def legacy_counts(history, completed=()):
+            return tuple(turn.model_copy(update={"steering_count": 3}) for turn in project(history, completed))
+
+        with monkeypatch.context() as old:
+            old.setattr(inspection, "INSPECTION_VERSION", 1)
+            old.setattr(thread_projection, "_transcript_turns", legacy_counts)
+            page = await app.get_thread_transcript(thread_id=thread.thread_id, limit=1)
+            assert page.turns[0].steering_count == 3
+        assert await app._store.inspections.header(thread.thread_id, replacement.logical_digest) is None
+
+    async with open_harness_ui_app(settings, configuration_path=root) as reopened:
+        page = await reopened.get_thread_transcript(thread_id=thread.thread_id, limit=1)
+        assert page.turns[0].steering_count == 1
+        assert page.entries[0].parts[0].text == "Answer"
+        assert page.next_cursor is not None
+        earlier = await reopened.get_thread_transcript(thread_id=thread.thread_id, cursor=page.next_cursor, limit=1)
+        assert earlier.turns == page.turns
+        directory = await reopened.get_thread_inputs(thread_id=thread.thread_id)
+        assert directory.turns == page.turns
+        assert await reopened._store.inspections.header(thread.thread_id, replacement.logical_digest) is not None

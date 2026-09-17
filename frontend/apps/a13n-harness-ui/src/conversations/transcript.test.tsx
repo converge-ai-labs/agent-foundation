@@ -158,7 +158,9 @@ it.each(["background_process", "async_subagent"])(
         }
       />,
     );
-    expect(screen.getByText("System notification")).toBeTruthy();
+    const title =
+      source === "background_process" ? "Process update" : "Subagent update";
+    expect(screen.getByText(title).closest("details")?.open).toBe(false);
     expect(screen.queryByText("You")).toBeNull();
     expect(screen.queryByText("System context")).toBeNull();
     expect(screen.queryByText("Request context")).toBeNull();
@@ -179,7 +181,7 @@ it.each(["background_process", "async_subagent"])(
         blocks={[{ id: "real-user", kind: "user", text }]}
       />,
     );
-    expect(screen.queryByText("System notification")).toBeNull();
+    expect(screen.queryByText(title)).toBeNull();
     expect(screen.getByText(text).closest("details")).toBeNull();
   },
 );

@@ -1378,6 +1378,13 @@
   margin-inline-start: -8px;
   cursor: pointer;
 }
+.executionTitle {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 6px;
+  white-space: nowrap;
+}
 .executionToggle:hover {
   background: var(--a13n-hover);
   color: var(--a13n-text);

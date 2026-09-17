@@ -610,6 +610,41 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
     )
 
 
+def _additional_input_count(messages: tuple[ModelMessage, ...]) -> int:
+    identities: set[tuple[str, str | int]] = set()
+    for position, message in enumerate(messages):
+        metadata = message.metadata or {}
+        if (
+            not isinstance(message, ModelRequest)
+            or "a13n.steering-run" not in metadata
+            or metadata.get("a13n.context")
+            or metadata.get("a13n.steering-source") in {"background_process", "async_subagent"}
+        ):
+            continue
+        visible = [
+            projected[1]
+            for part in message.parts
+            if isinstance(part, UserPromptPart)
+            for item in user_prompt_content(part)
+            if (projected := project_input_content(item)) is not None
+            and projected[1].display
+            and (projected[1].model_extra or {}).get("a13n.steering-source")
+            not in {"background_process", "async_subagent"}
+        ]
+        if not visible:
+            continue
+        identity = metadata.get("a13n.steering-input")
+        source = next((part.source_id for part in visible if part.source_id), None)
+        if isinstance(identity, str):
+            identities.add(("input", identity))
+        elif source:
+            identities.add(("source", source))
+        else:
+            # Legacy steering has no input identity; each request is one submission.
+            identities.add(("request", position))
+    return len(identities)
+
+
 def _transcript_turns(
     history: tuple[ModelMessage, ...],
     completed: tuple[int, ...] = (),
@@ -681,7 +716,7 @@ def _transcript_turns(
                     for message in messages
                     for part in message.parts
                 ),
-                steering_count=sum("a13n.steering-run" in (message.metadata or {}) for message in messages),
+                steering_count=_additional_input_count(messages),
             )
         )
     return tuple(turns)

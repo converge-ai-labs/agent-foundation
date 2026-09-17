@@ -18,10 +18,14 @@ import { inputSource, type LocalInput } from "./local-input";
 import styles from "./conversation.module.css";
 
 function systemNotice(metadata?: Record<string, unknown> | null) {
-  return (
-    metadata?.["a13n.steering-source"] === "background_process" ||
-    metadata?.["a13n.steering-source"] === "async_subagent"
-  );
+  const source = metadata?.["a13n.steering-source"];
+  return source === "background_process" || source === "async_subagent"
+    ? source
+    : undefined;
+}
+
+function notificationTitle(source: string) {
+  return source === "background_process" ? "Process update" : "Subagent update";
 }
 
 type Row = {
@@ -45,6 +49,10 @@ type Row = {
       context: "handoff" | "compaction";
       text: string;
       status?: string;
+    }
+  | {
+      kind: "notifications";
+      notices: { id: string; source: string; text: string }[];
     }
   | { kind: "activity"; name: string; text: string }
 );
@@ -93,9 +101,14 @@ function savedRows(
       } else if (systemNotice(part.metadata)) {
         rows.push({
           id,
-          kind: "activity",
-          name: "System notification",
-          text: part.text ?? JSON.stringify(part.value, null, 2),
+          kind: "notifications",
+          notices: [
+            {
+              id,
+              source: systemNotice(part.metadata)!,
+              text: part.text ?? JSON.stringify(part.value, null, 2),
+            },
+          ],
         });
       } else if (part.kind === "user" || part.kind === "media") {
         appendInput(rows, part, identity);
@@ -157,9 +170,14 @@ function liveRows(blocks: DisplayBlock[]): Row[] {
     } else if (systemNotice(block.metadata)) {
       rows.push({
         id: block.id,
-        kind: "activity",
-        name: "System notification",
-        text: block.text,
+        kind: "notifications",
+        notices: [
+          {
+            id: block.id,
+            source: systemNotice(block.metadata)!,
+            text: block.text,
+          },
+        ],
       });
     } else if (block.kind === "user" || block.kind === "media") {
       const turn = block.id.includes(":input:")
@@ -209,7 +227,9 @@ function groupRows(rows: Row[]) {
   const grouped: Row[] = [];
   for (const row of rows) {
     const previous = grouped.at(-1);
-    if (row.kind === "thinking" && previous?.kind === "thinking") {
+    if (row.kind === "notifications" && previous?.kind === "notifications") {
+      previous.notices.push(...row.notices);
+    } else if (row.kind === "thinking" && previous?.kind === "thinking") {
       previous.segments.push(...row.segments);
     } else if (
       row.kind === "tools" &&
@@ -225,7 +245,9 @@ function groupRows(rows: Row[]) {
           ? { ...row, segments: [...row.segments] }
           : row.kind === "tools"
             ? { ...row, tools: [...row.tools] }
-            : row,
+            : row.kind === "notifications"
+              ? { ...row, notices: [...row.notices] }
+              : row,
       );
   }
   return grouped;
@@ -315,6 +337,22 @@ function Rows({
           text={row.text}
           status={row.status}
         />
+      ) : row.kind === "notifications" ? (
+        <details className={styles.activity}>
+          <summary>
+            {row.notices.length === 1
+              ? notificationTitle(row.notices[0].source)
+              : `System updates · ${row.notices.length}`}
+          </summary>
+          {row.notices.map((notice) => (
+            <div key={notice.id}>
+              {row.notices.length > 1 && (
+                <small>{notificationTitle(notice.source)}</small>
+              )}
+              <pre className={styles.code}>{notice.text}</pre>
+            </div>
+          ))}
+        </details>
       ) : (
         <details className={styles.activity}>
           <summary>{row.name}</summary>
@@ -542,12 +580,14 @@ function Turn({
             className={styles.executionToggle}
             onClick={() => setExpanded(!open)}
           >
-            {open ? (
-              <CaretDown aria-hidden="true" />
-            ) : (
-              <CaretRight aria-hidden="true" />
-            )}
-            Execution details
+            <span className={styles.executionTitle}>
+              {open ? (
+                <CaretDown aria-hidden="true" />
+              ) : (
+                <CaretRight aria-hidden="true" />
+              )}
+              Execution details
+            </span>
             {!!turn?.tool_count && (
               <span>
                 {" "}
@@ -560,8 +600,8 @@ function Turn({
                 {" "}
                 · {turn.steering_count}{" "}
                 {turn.steering_count === 1
-                  ? "steering message"
-                  : "steering messages"}
+                  ? "additional input"
+                  : "additional inputs"}
               </span>
             )}
           </button>

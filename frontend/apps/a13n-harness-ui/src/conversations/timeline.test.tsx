@@ -424,6 +424,8 @@ it("collapses the whole completed process including steering, preserving all fin
     />,
   );
   const toggle = screen.getByRole("button", { name: /Execution details/ });
+  expect(toggle.textContent).toContain("1 additional input");
+  expect(toggle.textContent).not.toContain("steering");
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   expect(screen.getByText("Change direction").closest("[hidden]")).toBeTruthy();
   expect(screen.getByText("Progress update").closest("[hidden]")).toBeTruthy();
@@ -594,3 +596,106 @@ it("retains the saved final outside details when live rows arrive before history
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 });
+
+it("groups only adjacent notifications in order across saved/live cutover", () => {
+  const notice = (text: string, source = "background_process") => ({
+    kind: "user" as const,
+    text,
+    metadata: { "a13n.steering-source": source },
+  });
+  const parts = [
+    notice("Process exited with code 1"),
+    notice("Child completed", "async_subagent"),
+    { kind: "user" as const, text: "Please investigate the exit" },
+    notice("Another process update"),
+    { kind: "assistant" as const, text: "Checking now" },
+    notice("Another child update", "async_subagent"),
+    {
+      kind: "tool_call" as const,
+      tool_name: "read",
+      tool_call_id: "read-1",
+      value: {},
+    },
+    notice("Last process update"),
+  ];
+  const view = render(
+    <ConversationTranscript
+      entries={[saved([parts[0]])]}
+      blocks={parts.slice(1).map((part, i) => ({
+        id: `live-${i}`,
+        kind: part.kind === "tool_call" ? "tool" : part.kind,
+        text: part.text ?? "{}",
+        metadata: "metadata" in part ? part.metadata : undefined,
+        name: "tool_name" in part ? part.tool_name : undefined,
+      }))}
+      localInputs={[]}
+      threadId="one"
+    />,
+  );
+  const check = () => {
+    const group = screen.getByText("System updates · 2").closest("details")!;
+    expect(group.open).toBe(false);
+    expect(group.querySelectorAll("details")).toHaveLength(0);
+    expect(
+      [...group.querySelectorAll("pre")].map((node) => node.textContent),
+    ).toEqual(["Process exited with code 1", "Child completed"]);
+    expect(
+      screen.getByText("Please investigate the exit").closest("details"),
+    ).toBeNull();
+    expect(
+      screen.getByText("Another process update").closest("details"),
+    ).not.toBe(group);
+    expect(
+      screen.getByText("Another child update").closest("details"),
+    ).not.toBe(screen.getByText("Last process update").closest("details"));
+    expect(
+      [...view.container.querySelectorAll("details > summary")].filter((node) =>
+        /^(System updates|Process update|Subagent update)/.test(
+          node.textContent ?? "",
+        ),
+      ),
+    ).toHaveLength(4);
+  };
+  check();
+  view.rerender(
+    <ConversationTranscript
+      entries={parts.map((part, i) => saved([part], i))}
+      blocks={[]}
+      localInputs={[]}
+      threadId="one"
+    />,
+  );
+  check();
+});
+
+it.each([0, 2])(
+  "keeps whole-turn counts with unloaded history (%s additional inputs)",
+  (count) => {
+    render(
+      <ConversationTranscript
+        entries={[
+          saved([{ kind: "user", text: "Question" }]),
+          saved([{ kind: "assistant", text: "Answer" }], 80),
+        ]}
+        turns={[
+          {
+            turn_id: "round",
+            input_position: 0,
+            end_position: 81,
+            final_position: 80,
+            preview: "Question",
+            tool_count: 128,
+            steering_count: count,
+          },
+        ]}
+        blocks={[]}
+        localInputs={[]}
+        threadId="one"
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: /Execution details/ });
+    expect(toggle.textContent).toBe(
+      `Execution details · 128 tool calls${count ? " · 2 additional inputs" : ""}`,
+    );
+  },
+);
