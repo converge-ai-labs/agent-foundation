@@ -11,6 +11,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from time import monotonic
 
+from a13n_environment.models import EnvironmentError
+
 from .authority import DispatchAuthority, DispatchDenied, LeaseDeadline, UseIdentity
 from .relay_protocol import (
     CONTROL_OPERATIONS,
@@ -24,10 +26,15 @@ from .relay_protocol import (
 from .relay_storage import RelayStoreError, WorkerResponseMailbox
 
 
-class RelayOperationError(Exception):
+class RelayOperationError(EnvironmentError):
     def __init__(self, failure: RelayFailure) -> None:
         self.failure = failure
-        super().__init__("Client Environment operation did not complete")
+        super().__init__(
+            "Client Environment operation did not complete",
+            code=failure.code,
+            details=failure.details,
+            retry_hint=failure.retry_hint,
+        )
 
 
 @dataclass(frozen=True, slots=True)

@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import re
 from dataclasses import asdict
 from importlib.resources import files
 from typing import Literal
@@ -82,14 +83,16 @@ class _RelayScript:
             raise RelayStoreError("relay_unavailable") from error
 
     async def read(
-        self, key: str, group: str, consumer: str, *, pending: bool, count: int
+        self, key: str, group: str, consumer: str, *, pending: bool, count: int, after_id: str = "0-0"
     ) -> tuple[tuple[str, dict[str, str]], ...]:
         if not 1 <= count <= 128:
             raise ValueError("Relay reads must contain 1 to 128 entries")
+        if not re.fullmatch(r"[0-9]{1,20}-[0-9]{1,20}", after_id) or (not pending and after_id != "0-0"):
+            raise ValueError("Relay pending cursor must be a bounded Stream entry ID")
         try:
             async with asyncio.timeout(1):
                 raw = await self.redis.xreadgroup(
-                    group, consumer, {key: "0-0" if pending else ">"}, count=count, block=None if pending else 100
+                    group, consumer, {key: after_id if pending else ">"}, count=count, block=None if pending else 100
                 )
             streams = _ROWS.validate_python(raw or [])
             if any(stream != key for stream, _ in streams):
@@ -140,9 +143,16 @@ class ConnectionRelayStore:
             raise RelayStoreError("response_invalid")
         await self._call("chunk", request, entry_id=entry_id, frame=frame)
 
-    async def read(self, *, pending: bool = False, count: int = 16) -> tuple[tuple[str, RelayRequest], ...]:
+    async def read(
+        self, *, pending: bool = False, count: int = 16, after_id: str = "0-0"
+    ) -> tuple[tuple[str, RelayRequest], ...]:
         rows = await self._storage.read(
-            self.requests_key, "owner", self.connection.owner_instance_id, pending=pending, count=count
+            self.requests_key,
+            "owner",
+            self.connection.owner_instance_id,
+            pending=pending,
+            count=count,
+            after_id=after_id,
         )
         result: list[tuple[str, RelayRequest]] = []
         try:

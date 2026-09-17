@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
+from a13n_environment.models import EnvironmentError
 from pydantic import Field, JsonValue, StringConstraints, TypeAdapter, model_validator
 
 from a13n_service.ids import ObjectId
@@ -89,20 +90,20 @@ class RelayRequest(DomainModel):
 
 
 class RelayFailure(DomainModel):
-    code: Literal[
-        "environment_request_invalid",
-        "environment_forbidden",
-        "environment_busy",
-        "environment_unavailable",
-        "environment_operation_failed",
-        "environment_unknown_outcome",
-        "environment_timeout",
-        "environment_cancelled",
-        "environment_transfer_incomplete",
-        "environment_overloaded",
-        "environment_unsupported",
-    ]
+    code: Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{0,127}$")]
     certainty: Literal["not_dispatched", "complete", "unknown"]
+    details: dict[str, JsonValue] = Field(default_factory=dict, repr=False)
+    retry_hint: str | None = Field(default=None, max_length=128)
+
+    @classmethod
+    def from_environment(cls, error: EnvironmentError) -> RelayFailure:
+        safe = error.safe_projection()
+        details = TypeAdapter(dict[str, JsonValue]).validate_python(safe["details"])
+        stage = details.get("dispatch_stage")
+        certainty = "not_dispatched" if stage == "pre_dispatch" else "complete" if stage == "completed" else "unknown"
+        return cls.model_validate(
+            {"code": safe["code"], "details": details, "retry_hint": safe.get("retry_hint"), "certainty": certainty}
+        )
 
 
 class TransferPosition(DomainModel):
