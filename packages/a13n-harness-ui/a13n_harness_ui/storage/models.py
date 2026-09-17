@@ -123,6 +123,44 @@ class ThreadRecord(Base):
     completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
+class ThreadInspectionRecord(Base):
+    """Rebuildable inspection index for one exact selected Thread source."""
+
+    __tablename__ = "thread_inspection"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    source_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    message_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    turn_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    metadata_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class TranscriptEntryRecord(Base):
+    __tablename__ = "transcript_entry"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread_inspection.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer, primary_key=True)
+    value_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class TranscriptTurnRecord(Base):
+    __tablename__ = "transcript_turn"
+
+    thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread_inspection.thread_id", ondelete="CASCADE"), primary_key=True
+    )
+    position: Mapped[int] = mapped_column(Integer, primary_key=True)
+    turn_id: Mapped[str] = mapped_column(Text, nullable=False)
+    input_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    end_position: Mapped[int] = mapped_column(Integer, nullable=False)
+    value_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class ThreadConfigurationRecord(Base):
     __tablename__ = "thread_configuration"
     __table_args__ = (

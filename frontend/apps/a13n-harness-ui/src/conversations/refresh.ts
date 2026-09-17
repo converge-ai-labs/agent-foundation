@@ -2,7 +2,7 @@ import type { Query, QueryClient } from "@tanstack/react-query";
 
 const scheduled = new WeakMap<Query, ReturnType<typeof setTimeout>>();
 
-// Summary and focused SSE can describe the same transition. Batch observations,
+// Summary and focused channels can describe the same transition. Batch observations,
 // and never cancel pagination or an in-flight read to start a duplicate request.
 export function scheduleRefresh(
   client: QueryClient,
@@ -10,6 +10,16 @@ export function scheduleRefresh(
 ) {
   const cache = client.getQueryCache();
   for (const query of cache.getAll().filter(matches)) {
+    const [kind, , section, continuation] = query.queryKey;
+    // Exact saved sources do not change on reconnect, lifecycle or configuration
+    // hints. Detail owns cutover to a new source; failed reads remain retryable.
+    if (
+      kind === "thread" &&
+      (typeof continuation === "string" || continuation === null) &&
+      ["history", "inputs", "tasks", "notes"].includes(String(section)) &&
+      (query.state.data !== undefined || query.state.fetchStatus === "fetching")
+    )
+      continue;
     if (scheduled.has(query)) continue;
     scheduled.set(
       query,

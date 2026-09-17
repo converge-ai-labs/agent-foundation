@@ -174,10 +174,11 @@ function Operation({
     </section>
   );
 }
-export function useChildExecutions(threadId: string) {
+export function useChildExecutions(threadId: string, enabled = true) {
   const { client } = useTransport();
   return useInfiniteQuery({
     queryKey: ["thread", threadId, "children"],
+    enabled,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       result(
@@ -401,13 +402,36 @@ function ChildPresentation({
   child: Schema<"ChildExecutionView">;
   live?: FocusDisplay;
 }) {
+  const { client } = useTransport();
+  const inspection = useQuery({
+    queryKey: [
+      "thread",
+      child.parent_thread_id,
+      "child-review",
+      child.execution_id,
+    ],
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/threads/{thread_id}/children", {
+          params: {
+            path: { thread_id: child.parent_thread_id },
+            query: { execution_id: child.execution_id },
+          },
+          signal,
+        }),
+      ),
+  });
+  const activity =
+    inspection.data?.executions?.find(
+      (item) => item.execution_id === child.execution_id,
+    )?.activity ?? child.activity;
   const observed = live && [...live.blocks.values()];
   // Snapshot tool IDs are synthetic; do not guess a join with observed tool IDs.
   const tools = observed?.some((block) => block.kind === "tool")
     ? observed.filter((block) => block.kind === "tool")
     : [
-        ...(child.activity.recent_tool_calls ?? []),
-        ...(child.activity.active_tool_calls ?? []),
+        ...(activity?.recent_tool_calls ?? []),
+        ...(activity?.active_tool_calls ?? []),
       ].map((tool) => ({
         id: tool.tool_call_id,
         kind: "tool" as const,
@@ -428,11 +452,11 @@ function ChildPresentation({
       gap={live?.gap ?? false}
       label="Current observed output"
     />
-  ) : child.activity.output_preview ? (
+  ) : activity?.output_preview ? (
     <section>
       <small>Activity preview · not a saved result</small>
-      <MessageText text={child.activity.output_preview} />
-      {child.activity.output_truncated && (
+      <MessageText text={activity?.output_preview} />
+      {activity?.output_truncated && (
         <p>Some activity is outside this preview.</p>
       )}
     </section>
@@ -442,8 +466,15 @@ function ChildPresentation({
   const running = child.persisted_status === "running";
   return (
     <div className={styles.childLive}>
+      <ErrorNotice
+        error={inspection.error}
+        retry={() => void inspection.refetch()}
+      />
+      {inspection.isPending && !activity && (
+        <p role="status">Loading activity…</p>
+      )}
       <LiveOutput blocks={tools} gap={false} />
-      {!!child.activity.dropped_tool_calls && (
+      {!!activity?.dropped_tool_calls && (
         <small>Earlier tools are outside this activity window.</small>
       )}
       <ChildSavedOutputs

@@ -5,19 +5,17 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
-from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Mapping
-from dataclasses import dataclass
 from datetime import datetime
 from typing import Literal
 
+from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, WorkingState
 from a13n_harness.model_context import user_prompt_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
-    ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
     NativeToolCallPart,
@@ -39,19 +37,25 @@ from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.output_comment_models import RootOutputLocation, SavedOutputTarget
 from a13n_harness_ui.storage import (
     LocalStore,
+    ObjectRef,
     StoredContinuation,
     StoredThreadInitialState,
     Thread,
     ThreadConfiguration,
 )
+from a13n_harness_ui.storage.inspection import InspectionData, InspectionHeader, InspectionTurn
 from a13n_harness_ui.surfaces import (
     AgentSourceView,
     ContextUsageView,
     DeferredRequestView,
+    NotePage,
+    NoteView,
     ProjectSummary,
     RootActivityState,
     RootActivityView,
     SurfaceModel,
+    TaskPage,
+    TaskView,
     ThreadConfigurationView,
     ThreadDetail,
     ThreadPage,
@@ -104,13 +108,11 @@ class _InputCursor(SurfaceModel):
     position: int = Field(ge=0)
 
 
-@dataclass(frozen=True)
-class _HistorySnapshot:
-    history: tuple[ModelMessage, ...]
-    continuation_id: str
-    completed: tuple[int, ...]
-    turns: tuple[TranscriptTurn, ...]
-    encoded_bytes: int
+class ThreadInspection(SurfaceModel):
+    run_composition: ObjectRef | None = None
+    latest_request_tokens: int | None = None
+    notes: NotePage = Field(default_factory=NotePage)
+    tasks: TaskPage = Field(default_factory=TaskPage)
 
 
 class ThreadProjectionService:
@@ -128,8 +130,7 @@ class ThreadProjectionService:
         self._configurations = configurations
         self._root_activity = root_activity
         self._root_activities = root_activities
-        self._histories: OrderedDict[tuple[str, str], _HistorySnapshot] = OrderedDict()
-        self._history_lock = Lock()
+        self._inspection_loads: dict[str, tuple[Lock, int]] = {}
 
     def set_root_activity_lookup(
         self,
@@ -278,16 +279,17 @@ class ThreadProjectionService:
         if not 1 <= limit <= 100:
             raise ThreadError("Transcript page is outside supported bounds.", code="thread_history_page_invalid")
         thread = await self._required_thread(thread_id)
-        history, continuation_id, completed = await self._history(thread)
+        header = await self._inspection_header(thread)
+        continuation_id = header.source_id
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError(
                 "The selected Thread continuation changed before transcript projection.",
                 code="thread_history_continuation_changed",
             )
-        turns = await self._turns(thread_id, history, continuation_id, completed)
-        upper_bound = len(history)
+        upper_bound = header.message_count
         if turn_id is not None and cursor is None:
-            selected_turn = next((turn for turn in turns if turn.turn_id == turn_id), None)
+            selected = await self._store.inspections.turns(thread_id, continuation_id, turn_id=turn_id, limit=1)
+            selected_turn = TranscriptTurn.model_validate_json(selected[0]) if selected else None
             if selected_turn is None:
                 raise ThreadError("Input is not in the selected history.", code="thread_history_input_missing")
             upper_bound = selected_turn.end_position
@@ -301,19 +303,15 @@ class ThreadProjectionService:
                 )
             if decoded.direction == "later":
                 position = decoded.position
-                upper_bound = min(len(history), position + limit)
+                upper_bound = min(header.message_count, position + limit)
             else:
                 upper_bound = decoded.position
                 position = max(0, upper_bound - limit)
-        if upper_bound > len(history) or position > len(history) or upper_bound < 0:
+        if upper_bound > header.message_count or position > header.message_count or min(position, upper_bound) < 0:
             raise ThreadError(
                 "Transcript cursor is outside the selected history.", code="thread_history_cursor_invalid"
             )
-        # Display history survives context replacement; execution still loads only HarnessState.
-        selected = history[position:upper_bound]
-        entries = tuple(
-            _message_entry(index, item, thread=thread) for index, item in enumerate(selected, start=position)
-        )
+        entries = await self._inspection_entries(thread_id, continuation_id, tuple(range(position, upper_bound)))
         next_cursor = None
         if position > 0:
             next_cursor = _encode_cursor(
@@ -324,7 +322,10 @@ class ThreadProjectionService:
                 )
             )
         visible_turns = tuple(
-            turn for turn in turns if turn.input_position < upper_bound and turn.end_position > position
+            TranscriptTurn.model_validate_json(value)
+            for value in await self._store.inspections.turns(
+                thread_id, continuation_id, lower=position, upper=upper_bound
+            )
         )
         boundaries = sorted(
             {
@@ -336,18 +337,18 @@ class ThreadProjectionService:
         )
         return TranscriptPage(
             turns=visible_turns,
-            boundary_entries=tuple(_message_entry(index, history[index], thread=thread) for index in boundaries),
+            boundary_entries=await self._inspection_entries(thread_id, continuation_id, tuple(boundaries)),
             newer_cursor=_encode_cursor(
                 _TranscriptCursor(
                     thread_id=thread_id, continuation_id=continuation_id, position=upper_bound, direction="later"
                 )
             )
-            if upper_bound < len(history)
+            if upper_bound < header.message_count
             else None,
             completion_version=0 if thread.completion is None else thread.completion.version,
             continuation_id=continuation_id,
             entries=entries,
-            total=len(history),
+            total=header.message_count,
             next_cursor=next_cursor,
         )
 
@@ -362,7 +363,8 @@ class ThreadProjectionService:
         if not 1 <= limit <= 100:
             raise ThreadError("Input page is outside supported bounds.", code="thread_history_page_invalid")
         thread = await self._required_thread(thread_id)
-        history, continuation_id, completed = await self._history(thread)
+        header = await self._inspection_header(thread)
+        continuation_id = header.source_id
         if expected_continuation_id is not None and expected_continuation_id != continuation_id:
             raise ThreadError("History changed before input projection.", code="thread_history_continuation_changed")
         position = 0
@@ -371,15 +373,20 @@ class ThreadProjectionService:
             if decoded.thread_id != thread_id or decoded.continuation_id != continuation_id:
                 raise ThreadError("Input cursor belongs to another history.", code="thread_history_cursor_mismatch")
             position = decoded.position
-        turns = await self._turns(thread_id, history, continuation_id, completed)
-        if position > len(turns):
+        if position > header.turn_count:
             raise ThreadError("Input cursor is outside history.", code="thread_history_cursor_invalid")
-        end = min(len(turns), position + limit)
+        end = min(header.turn_count, position + limit)
+        turns = tuple(
+            TranscriptTurn.model_validate_json(value)
+            for value in await self._store.inspections.turns(thread_id, continuation_id, position=position, limit=limit)
+        )
+        if len(turns) != end - position:
+            raise ThreadError("History changed before input projection.", code="thread_history_continuation_changed")
         return TranscriptInputPage(
             continuation_id=continuation_id,
-            turns=turns[position:end],
+            turns=turns,
             next_cursor=_encode_cursor(_InputCursor(thread_id=thread_id, continuation_id=continuation_id, position=end))
-            if end < len(turns)
+            if end < header.turn_count
             else None,
         )
 
@@ -391,15 +398,16 @@ class ThreadProjectionService:
         position: int,
     ) -> TranscriptEntry:
         thread = await self._required_thread(thread_id)
-        history, continuation_id, _completed = await self._history(thread)
+        header = await self._inspection_header(thread)
+        continuation_id = header.source_id
         if continuation_id != expected_continuation_id:
             raise ThreadError(
                 "The selected Thread continuation changed before transcript projection.",
                 code="thread_history_continuation_changed",
             )
-        if position < 0 or position >= len(history):
+        if position < 0 or position >= header.message_count:
             raise ThreadError("Transcript position is invalid.", code="thread_history_position_invalid")
-        return _message_entry(position, history[position], thread=thread)
+        return (await self._inspection_entries(thread_id, continuation_id, (position,)))[0]
 
     async def projects(self) -> tuple[ProjectSummary, ...]:
         source = await self._configurations.current()
@@ -460,18 +468,10 @@ class ThreadProjectionService:
             raise ThreadError("Session does not exist.", code="thread_missing")
         if thread.continuation is None:
             return ContextUsageView(thread_id=thread_id)
-        stored = await self._store.objects.read_model(thread.continuation, StoredContinuation)
-        if stored.harness_state.thread_id != thread_id:
-            raise ThreadError("Session state belongs to another session.", code="thread_continuation_incompatible")
-        composition = await self._store.objects.read_model(stored.run_composition, ResolvedRunComposition)
-        latest = next(
-            (
-                message.usage.total_tokens
-                for message in reversed(stored.harness_state.message_history)
-                if isinstance(message, ModelResponse) and message.usage.total_tokens > 0
-            ),
-            None,
-        )
+        inspection = await self.inspection(thread)
+        assert inspection.run_composition is not None
+        composition = await self._store.objects.read_model(inspection.run_composition, ResolvedRunComposition)
+        latest = inspection.latest_request_tokens
         observed = await self._store.usage.latest_root_request(thread_id=thread_id)
         if observed is not None:
             latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
@@ -490,58 +490,124 @@ class ThreadProjectionService:
             thinking_summary=summarize_thinking(model.route, model.settings),
         )
 
-    async def _history(self, thread: Thread) -> tuple[tuple[ModelMessage, ...], str, tuple[int, ...]]:
-        identity = (
+    async def inspection(self, thread: Thread) -> ThreadInspection:
+        header = await self._inspection_header(thread)
+        return ThreadInspection.model_validate_json(header.metadata_json)
+
+    async def _inspection_entries(
+        self, thread_id: str, source_id: str, positions: tuple[int, ...]
+    ) -> tuple[TranscriptEntry, ...]:
+        values = await self._store.inspections.entries(thread_id, source_id, positions)
+        return await to_thread.run_sync(lambda: tuple(TranscriptEntry.model_validate_json(value) for value in values))
+
+    async def _inspection_header(self, thread: Thread) -> InspectionHeader:
+        source_id = (
             thread.continuation.logical_digest
             if thread.continuation
             else f"initial:{thread.initial_state.logical_digest}"
         )
-        key = (thread.thread_id, identity)
-        async with self._history_lock:
-            snapshot = self._histories.pop(key, None)
-            if snapshot is None:
-                history, continuation_id, completed = await self._load_history(thread)
-                turns = await to_thread.run_sync(_transcript_turns, history, completed)
-                size = await to_thread.run_sync(lambda: len(ModelMessagesTypeAdapter.dump_json(list(history))))
-                snapshot = _HistorySnapshot(history, continuation_id, completed, turns, size)
-            # Inspection-only values are private; execution always reads verified state.
-            self._histories[key] = snapshot
-            while self._histories and (
-                len(self._histories) > 4
-                or sum(item.encoded_bytes for item in self._histories.values()) > 16 * 1024 * 1024
-            ):
-                self._histories.popitem(last=False)
-            return snapshot.history, snapshot.continuation_id, snapshot.completed
+        if (header := await self._store.inspections.header(thread.thread_id, source_id)) is not None:
+            return header
+        # Only callers building the same Thread wait together. No native history
+        # remains cached, and idle per-Thread locks disappear with the last waiter.
+        lock, users = self._inspection_loads.get(thread.thread_id, (Lock(), 0))
+        self._inspection_loads[thread.thread_id] = (lock, users + 1)
+        try:
+            async with lock:
+                if (header := await self._store.inspections.header(thread.thread_id, source_id)) is not None:
+                    return header
+                if thread.continuation is None:
+                    stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
+                else:
+                    stored = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+                data = await to_thread.run_sync(build_thread_inspection, thread, stored)
+                if not await self._store.inspections.publish(thread.thread_id, source_id, data):
+                    raise ThreadError("The selected history changed.", code="thread_history_continuation_changed")
+                return InspectionHeader(source_id, len(data.entries), len(data.turns), data.metadata_json)
+        finally:
+            _, users = self._inspection_loads[thread.thread_id]
+            if users == 1:
+                del self._inspection_loads[thread.thread_id]
+            else:
+                self._inspection_loads[thread.thread_id] = (lock, users - 1)
 
-    async def _turns(
-        self, thread_id: str, history: tuple[ModelMessage, ...], continuation_id: str, completed: tuple[int, ...]
-    ) -> tuple[TranscriptTurn, ...]:
-        cached = self._histories.get((thread_id, continuation_id))
-        if cached is not None:
-            return cached.turns
-        return await to_thread.run_sync(_transcript_turns, history, completed)
 
-    async def _load_history(self, thread: Thread) -> tuple[tuple[ModelMessage, ...], str, tuple[int, ...]]:
-        completed: tuple[int, ...] = ()
-        if thread.continuation is None:
-            stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
-            state = stored.harness_state
-            history = state.message_history
-            continuation_id = f"initial:{thread.initial_state.logical_digest}"
+def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredThreadInitialState) -> InspectionData:
+    """Project once off-loop, then read bounded indexed rows across process restarts."""
+    state = stored.harness_state
+    if state.thread_id != thread.thread_id:
+        raise ThreadError("Thread state belongs to another Thread.", code="thread_continuation_incompatible")
+    display = stored.display_history if isinstance(stored, StoredContinuation) else None
+    history = display.messages if display is not None else state.message_history
+    completed = display.completed_responses if display is not None else ()
+    continuation_id = thread.continuation.logical_digest if thread.continuation else None
+    notes = NotePage(continuation_id=continuation_id)
+    tasks = TaskPage(continuation_id=continuation_id)
+    entry = state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
+    if entry is not None and continuation_id is not None:
+        working = WorkingState.model_validate(entry.data)
+        visible_notes: list[NoteView] = []
+        size = 0
+        for key, value in sorted(working.notes.items()):
+            cost = len(key.encode()) + len(value.encode())
+            if len(visible_notes) >= 256 or size + cost > 256 * 1024:
+                break
+            visible_notes.append(NoteView(key=key, value=value))
+            size += cost
+        notes = NotePage(
+            continuation_id=continuation_id,
+            notes=tuple(visible_notes),
+            total=len(working.notes),
+            omitted=len(working.notes) - len(visible_notes),
+        )
+        if working.task_mode != "embedded" or working.tasks is None:
+            tasks = TaskPage(continuation_id=continuation_id, available=False)
         else:
-            stored_continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
-            state = stored_continuation.harness_state
-            display = await to_thread.run_sync(lambda: stored_continuation.display_history)
-            history = display.messages if display is not None else state.message_history
-            if display is not None:
-                completed = display.completed_responses
-            continuation_id = thread.continuation.logical_digest
-        if state.thread_id != thread.thread_id:
-            raise ThreadError(
-                "The selected Thread state belongs to another Thread.",
-                code="thread_continuation_incompatible",
+            ordered = sorted(working.tasks.tasks.values(), key=lambda item: int(item.id.removeprefix("task-")))
+            tasks = TaskPage(
+                continuation_id=continuation_id,
+                version=working.tasks.version,
+                tasks=tuple(
+                    TaskView(
+                        task_id=item.id,
+                        version=item.version,
+                        subject=item.subject,
+                        active_form=item.active_form,
+                        status=item.status,
+                        owner=item.owner,
+                        blocks=item.blocks,
+                        blocked_by=item.blocked_by,
+                    )
+                    for item in ordered[:256]
+                ),
+                total=len(ordered),
+                omitted=max(0, len(ordered) - 256),
             )
-        return history, continuation_id, completed
+    metadata = ThreadInspection(
+        run_composition=stored.run_composition if isinstance(stored, StoredContinuation) else None,
+        latest_request_tokens=next(
+            (
+                message.usage.total_tokens
+                for message in reversed(state.message_history)
+                if isinstance(message, ModelResponse) and message.usage.total_tokens > 0
+            ),
+            None,
+        ),
+        notes=notes,
+        tasks=tasks,
+    )
+    turns = _transcript_turns(history, completed)
+    return InspectionData(
+        metadata_json=metadata.model_dump_json(),
+        entries=tuple(
+            _message_entry(position, message, thread=thread).model_dump_json()
+            for position, message in enumerate(history)
+        ),
+        turns=tuple(
+            InspectionTurn(turn.turn_id, turn.input_position, turn.end_position, turn.model_dump_json())
+            for turn in turns
+        ),
+    )
 
 
 def _transcript_turns(

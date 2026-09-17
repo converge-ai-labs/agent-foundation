@@ -211,6 +211,9 @@ export function useHistory(
       ...(turnId ? [turnId] : []),
     ],
     enabled,
+    // A selected continuation is immutable. New checkpoints use a new key;
+    // returning to a cached page must not refetch every loaded history page.
+    staleTime: Infinity,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       result(

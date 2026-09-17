@@ -73,6 +73,7 @@ from a13n_harness_ui.storage.read_models import project_continuation
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
 from a13n_harness_ui.thread_files import ThreadFiles
+from a13n_harness_ui.thread_projection import build_thread_inspection
 from a13n_harness_ui.thread_service import ThreadService
 from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
 
@@ -522,11 +523,11 @@ class RootRunExecutor:
                 deferred_requests=deferred,
                 created_at=datetime.now(UTC),
             )
-            read_model = project_continuation(continuation)
+            read_model = await to_thread.run_sync(project_continuation, continuation)
             published_ref = (
                 await self._store.objects.publish_model(object_kind=ObjectKind.continuation, value=continuation)
             ).ref
-            await self._store.threads.select_continuation(
+            selected = await self._store.threads.select_continuation(
                 thread_id=thread.thread_id,
                 expected=thread.continuation,
                 replacement=published_ref,
@@ -537,6 +538,16 @@ class RootRunExecutor:
             )
         except Exception as exc:
             return RootContinuationSelection(status="failed", reference=published_ref, error=exc)
+        # A disposable inspection index cannot change a successfully selected
+        # execution checkpoint. Missing indexes rebuild on the next inspection.
+        try:
+            inspection = await to_thread.run_sync(build_thread_inspection, selected, continuation)
+            await self._store.inspections.publish(thread.thread_id, published_ref.logical_digest, inspection)
+        except Exception as exc:
+            get_logger("a13n_harness_ui.storage").warning(
+                "Could not publish Thread inspection index",
+                extra={"thread_id": thread.thread_id, "error_type": type(exc).__name__},
+            )
         return RootContinuationSelection(status="selected", reference=published_ref)
 
     async def _publish_live(

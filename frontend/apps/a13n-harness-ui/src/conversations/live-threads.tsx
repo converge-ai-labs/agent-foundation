@@ -19,9 +19,8 @@ import {
 } from "./queries";
 import { refreshThread } from "./refresh";
 
-// Leave room for summary, collaboration and ordinary HTTP requests. Excess
-// active Threads still receive summary hints and acquire a focus stream on open.
-const LIVE_LIMIT = 3;
+// Running roots stay observed independently of the bounded history/idle cache.
+// All focus channels share one transport; observation never mounts an editor.
 const RETAINED_LIMIT = 8;
 
 class LiveThread {
@@ -100,15 +99,17 @@ function ObserveThread({
   id,
   entry,
   live,
+  warm,
 }: {
   id: string;
   entry: LiveThread;
   live: boolean;
+  warm: boolean;
 }) {
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(id);
-  useHistory(id, detail.data?.continuation_id, !!detail.data);
+  useHistory(id, detail.data?.continuation_id, warm && !!detail.data);
   useEffect(() => {
     if (!live) return;
     return watchThread(
@@ -139,11 +140,11 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
   const active = (activity.data?.pages[0]?.active_rows ?? []).map(
     (row) => row.thread.thread_id,
   );
-  const preferred = [...recent.filter((id) => active.includes(id)), ...active];
-  const live = [
-    ...new Set([...(current ? [current] : []), ...preferred]),
-  ].slice(0, LIVE_LIMIT);
-  const retained = [...new Set([...live, ...recent])].slice(0, RETAINED_LIMIT);
+  const live = [...new Set([...(current ? [current] : []), ...active])];
+  const warm = [
+    ...new Set([...(current ? [current] : []), ...recent, ...active]),
+  ].slice(0, RETAINED_LIMIT);
+  const retained = [...new Set([...live, ...warm])];
   useEffect(() => {
     if (current)
       setRecent((previous) =>
@@ -159,7 +160,7 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
   // before their first visit. Never let the registry grow with the whole archive.
   useEffect(() => {
     setRecent((previous) => {
-      const next = [...new Set([...retained, ...previous])].slice(
+      const next = [...new Set([...warm, ...previous])].slice(
         0,
         RETAINED_LIMIT,
       );
@@ -176,6 +177,7 @@ export function LiveThreadsProvider({ children }: { children: ReactNode }) {
           id={id}
           entry={store.get(id)}
           live={live.includes(id)}
+          warm={warm.includes(id)}
         />
       ))}
       {children}

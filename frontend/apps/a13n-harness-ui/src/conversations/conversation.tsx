@@ -127,14 +127,9 @@ function Conversation({
     showAvailable ||
       detail.isError ||
       !!detail.data?.thread.parent_thread_id ||
-      (!!detail.data &&
-        (!!history.data || history.isError) &&
-        !selectors.isPending &&
-        (display.ready || reconnections > 0) &&
-        (detail.data.thread.archived ||
-          draft.status === "Connected" ||
-          !!draft.replacement ||
-          !!draft.error)),
+      (!!detail.data && (!!history.data || history.isError)),
+    // Saved body readiness is independent of live replay and editor sync.
+    // The composer retains its own connection/control guards before sending.
   );
   const rename = dialog === "rename";
   const setRename = (open: boolean) => {

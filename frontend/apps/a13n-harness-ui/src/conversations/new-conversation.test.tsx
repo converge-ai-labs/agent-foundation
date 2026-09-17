@@ -95,7 +95,6 @@ beforeEach(() => {
               epoch: "epoch-one",
               cutover_sequence: 0,
               thread: threadDetail,
-              children: { executions: [], total: 0 },
             },
           });
         });
@@ -837,6 +836,7 @@ it("retains staged files across project switches and explicitly requires reattac
 
 it("retains accepted input on a saved-page read failure and starts a fresh draft on plus", async () => {
   readFailure = true;
+  focusUnavailable = true;
   mount();
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -909,7 +909,6 @@ it("uses the focused first frame without waiting for a slow detail read or allow
       receipt: { thread_id: id, receipt_id: "receipt-one" },
       status: "running",
     } as Schema<"RootOperationView">,
-    children: { executions: [], total: 0 },
   };
   mount();
   await fill();
@@ -1129,17 +1128,54 @@ it("reveals setup errors instead of trapping a retained new draft behind loading
   expect(values(drafts.get(id)!.doc).prompt).toBe("Keep this");
 });
 
-it("waits for focused replay on an existing conversation and retains the page for later sends", async () => {
+it("shows cached history before replay and draft sync while keeping Send guarded", async () => {
   let release!: () => void;
   focusPaused = new Promise<void>((resolve) => {
     release = resolve;
   });
+  const connect = vi
+    .mocked(ThreadDraft.prototype.connect)
+    .getMockImplementation()!;
+  let synchronize!: () => void;
+  vi.mocked(ThreadDraft.prototype.connect).mockImplementation(function (
+    this: ThreadDraft,
+    ...args
+  ) {
+    synchronize = () => {
+      connect.apply(this, args);
+    };
+    return { presence() {}, close() {} };
+  });
+  queries.setQueryData(["thread", id, "detail"], threadDetail);
+  queries.setQueryData(["thread", id, "history", null], {
+    pages: [
+      {
+        continuation_id: "initial:one",
+        entries: [
+          {
+            position: 0,
+            message_kind: "response",
+            parts: [{ kind: "assistant", text: "Cached body" }],
+          },
+        ],
+        next_cursor: null,
+      },
+    ],
+    pageParams: [undefined],
+  });
   mount(`/threads/${id}?compose=1`);
-  await waitFor(() => expect(reads).toContain(`/api/threads/${id}/transcript`));
-  expect(screen.queryByRole("textbox")).toBeNull();
-  expect(screen.getByText("Opening conversation…")).toBeTruthy();
-  await act(async () => release());
+  expect(screen.getByText("Cached body")).toBeTruthy();
+  expect(screen.queryByText("Opening conversation…")).toBeNull();
   const editor = await screen.findByRole("textbox", { name: "Shared prompt" });
+  act(() => drafts.get(id)!.doc.getText("text").insert(0, "Waiting for sync"));
+  fireEvent.keyDown(editor, { key: "Enter" });
+  expect(writes).toHaveLength(0);
+  expect(drafts.get(id)!.synchronized).toBe(false);
+  act(() => drafts.get(id)!.doc.getText("text").delete(0, 16));
+  await act(async () => {
+    synchronize();
+    release();
+  });
   expect(document.activeElement).toBe(editor);
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue our work"));
   await waitFor(() => expect(drafts.get(id)!.synchronized).toBe(true));
@@ -1212,8 +1248,8 @@ it.each([false, true])(
     );
     fireEvent.scroll(reader);
     expect(historyRequests).toHaveLength(1);
-    expect(top).toBe(0);
-    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(top).toBe(saved ? 430 : 2000);
+    expect(screen.queryByText("Opening conversation…")).toBeNull();
     await act(async () => releaseFocus());
     await screen.findByRole("textbox", { name: "Shared prompt" });
     expect(top).toBe(saved ? 430 : 2000);

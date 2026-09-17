@@ -176,7 +176,6 @@ export class FocusDisplay {
     if (frame.kind === "snapshot") {
       this.reset();
       this.snapshot = frame.snapshot;
-      this.tasks = frame.snapshot.tasks;
       this.sequence = frame.snapshot.cutover_sequence;
       this.runId = frame.snapshot.root_stream?.run_id;
       this.baseContinuation = frame.snapshot.root_stream
@@ -241,15 +240,6 @@ export class FocusDisplay {
       !event.execution_id ||
       !event.parent_thread_id ||
       event.thread_id === event.root_thread_id
-    )
-      return;
-    const known = this.snapshot?.children.executions.find(
-      (child) => child.execution_id === event.execution_id,
-    );
-    if (
-      known &&
-      (known.child_thread_id !== event.thread_id ||
-        known.parent_thread_id !== event.parent_thread_id)
     )
       return;
     let child = this.children.get(event.execution_id);
@@ -853,7 +843,7 @@ export function showFocusedOutput(
 }
 
 export function focusRefresh(frame: FocusFrame): ThreadRefresh | undefined {
-  if (frame.kind === "snapshot" || frame.kind === "reset") return "reconcile";
+  if (frame.kind === "reset") return "reconcile";
   if (frame.kind !== "event") return;
   const event = frame.event;
   if (["RUN_STARTED", "RUN_FINISHED", "RUN_ERROR"].includes(event.event_type))
@@ -879,6 +869,7 @@ export function watchThread(
   let failures = 0;
   let snapshotRetryAvailable = true;
   let replacement: FocusDisplay | undefined;
+  let reconcileReplacement = false;
   let restarting = false;
   const subscription = transport.realtime.subscribe({
     stream: "focus",
@@ -907,6 +898,7 @@ export function watchThread(
         }
         if (frame.kind === "snapshot") {
           display.cursor = undefined;
+          reconcileReplacement = !!display.snapshot;
           replacement = new FocusDisplay();
           snapshotReceived?.(frame.snapshot);
         }
@@ -924,7 +916,9 @@ export function watchThread(
           Object.assign(display, replacement);
           display.retainedPresentation = retained;
           replacement = undefined;
-          invalidate("reconcile");
+          // The prefix seeds cold state. Only a replacement needs HTTP
+          // reconciliation; do not refetch a just-started initial history read.
+          if (reconcileReplacement) invalidate("reconcile");
         }
         const reason = focusRefresh(frame);
         if (reason) invalidate(reason);

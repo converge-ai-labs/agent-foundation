@@ -92,3 +92,32 @@ it("does not revive a cleared authentication cache after a queued reconciliation
   await vi.advanceTimersByTimeAsync(200);
   expect(client.getQueryCache().getAll()).toHaveLength(0);
 });
+
+it("reconciles control truth without refetching immutable pages, including an in-flight first page", async () => {
+  vi.useFakeTimers();
+  const client = new QueryClient();
+  client.setQueryData(["thread", "one", "detail"], {});
+  client.setQueryData(["thread", "one", "history", "C0"], {});
+  let resolve!: (value: object) => void;
+  const pending = client.fetchQuery({
+    queryKey: ["thread", "one", "inputs", "C0"],
+    queryFn: () =>
+      new Promise<object>((done) => {
+        resolve = done;
+      }),
+  });
+  refreshThread(client, "one", "reconcile");
+  resolve({});
+  await pending;
+  await vi.advanceTimersByTimeAsync(200);
+  expect(client.getQueryState(["thread", "one", "detail"])?.isInvalidated).toBe(
+    true,
+  );
+  expect(
+    client.getQueryState(["thread", "one", "history", "C0"])?.isInvalidated,
+  ).toBe(false);
+  expect(
+    client.getQueryState(["thread", "one", "inputs", "C0"])?.isInvalidated,
+  ).toBe(false);
+  client.clear();
+});

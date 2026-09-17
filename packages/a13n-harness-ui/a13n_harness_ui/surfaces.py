@@ -477,7 +477,8 @@ class ChildExecutionView(SurfaceModel):
     resumed_from: str | None = Field(default=None, min_length=1, max_length=80)
     failure: FailureView | None = None
     resumable: bool
-    activity: ChildActivityView
+    # List summaries omit activity; inspect one execution to load its payloads.
+    activity: ChildActivityView | None = None
     available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
     created_at: datetime
     updated_at: datetime
@@ -543,8 +544,6 @@ class ThreadFocusSnapshot(SurfaceModel):
     cutover_sequence: int = Field(ge=0)
     thread: ThreadDetail
     root_operation: RootOperationView | None = None
-    children: ChildExecutionPage
-    tasks: TaskPage = Field(default_factory=TaskPage)
     recent_events: tuple[LiveEvent, ...] = ()
     root_stream: RootStreamSummary | None = None
 

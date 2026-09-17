@@ -485,9 +485,11 @@ function NotificationState({ children }: { children: ReactNode }) {
         {children}
         {enabled &&
           !settings &&
+          !requesting &&
+          background !== "checking" &&
           (permission !== "granted" ||
-            error ||
-            (supportsPush() && background === "disabled")) && (
+            (supportsPush() &&
+              (background === "disabled" || background === "error"))) && (
             <PermissionToast />
           )}
       </div>
@@ -531,12 +533,20 @@ function PermissionToast() {
       <Bell size={20} aria-hidden="true" />
       <div>
         <h2>
-          {notifications.permission === "default"
-            ? "Enable task notifications"
-            : "Set up task notifications"}
+          {notifications.permission === "granted"
+            ? notifications.background === "error"
+              ? "Reconnect background notifications"
+              : "Enable background notifications"
+            : notifications.permission === "default"
+              ? "Enable task notifications"
+              : "Set up task notifications"}
         </h2>
         <p>
-          <PermissionDescription permission={notifications.permission} />
+          {notifications.permission === "granted" ? (
+            "Browser permission is already allowed. Background delivery is a separate subscription for alerts while WebUI is closed."
+          ) : (
+            <PermissionDescription permission={notifications.permission} />
+          )}
         </p>
         {notifications.error && <p role="alert">{notifications.error}</p>}
         <div className={styles.actions}>
@@ -547,7 +557,11 @@ function PermissionToast() {
               onClick={() => void notifications.request()}
               loading={notifications.requesting}
             >
-              Enable notifications
+              {notifications.permission === "granted"
+                ? notifications.background === "error"
+                  ? "Reconnect"
+                  : "Enable background delivery"
+                : "Enable notifications"}
             </Button>
           )}
           <Button

@@ -7,7 +7,6 @@ from typing import Any, cast
 import a13n_harness_ui.subagent_operator as subagent_module
 import pytest
 from a13n_harness import SafeFailure
-from a13n_harness.capabilities import SubagentExecutionView
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.settings import StorageSettings
 from a13n_harness_ui.storage import ChildExecutionHead, CompactChildDisplay, ObjectKind, ObjectRef, open_local_store
@@ -118,17 +117,8 @@ async def test_terminal_child_projection_does_not_expose_stale_local_control(
         display=CompactChildDisplay(),
     )
 
-    async def execution_view(_head: ChildExecutionHead) -> SubagentExecutionView:
-        return SubagentExecutionView(
-            execution_id=head.execution_id,
-            subagent_name="worker",
-            child_definition_id="a13n-harness-ui:agent:worker",
-            status="succeeded",
-            resumable=False,
-            thread_id=head.child_thread_id,
-            child_run_id=head.child_run_id,
-            segment_index=0,
-        )
+    async def unreadable_checkpoint(_head: ChildExecutionHead):
+        pytest.fail("list and locally active inspection must not deserialize checkpoints")
 
     async def child_thread(_head: ChildExecutionHead) -> Any:
         return unavailable
@@ -136,7 +126,11 @@ async def test_terminal_child_projection_does_not_expose_stale_local_control(
     async def root_thread_id(_thread: Any) -> str:
         return "thread-root"
 
-    monkeypatch.setattr(operator, "_execution_view", execution_view)
+    async def execution_identity(_head: ChildExecutionHead) -> tuple[str, str]:
+        return "worker", "a13n-harness-ui:agent:worker"
+
+    monkeypatch.setattr(operator, "_execution_identity", execution_identity)
+    monkeypatch.setattr(operator, "_read_checkpoint", unreadable_checkpoint)
     monkeypatch.setattr(operator, "_require_child_thread", child_thread)
     monkeypatch.setattr(operator, "_root_thread_id", root_thread_id)
 
@@ -145,6 +139,18 @@ async def test_terminal_child_projection_does_not_expose_stale_local_control(
     assert projection.persisted_status == "succeeded"
     assert projection.local_status == "unavailable"
     assert projection.available_actions == ()
+    assert projection.activity is None
+    active_head = head.model_copy(
+        update={
+            "status": "running",
+            "selected_checkpoint": ObjectRef(
+                object_kind=ObjectKind.child_checkpoint, logical_digest="2" * 64, object_schema_version="1"
+            ),
+        }
+    )
+    inspected = await operator._execution_projection(active_head, include_activity=True)
+    assert inspected.activity is not None
+    assert inspected.available_actions == ("wait", "steer", "cancel")
 
 
 def test_child_failure_projection_is_bounded() -> None:

@@ -15,6 +15,7 @@ from a13n_harness_ui import __version__
 from .comments import OutputCommentRepository
 from .contracts import StoredContinuation
 from .database import Database, open_database
+from .inspection import InspectionRepository
 from .layout import StorageLayout
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
 from .read_models import project_continuation
@@ -50,6 +51,7 @@ class LocalStore:
         self.configurations = ConfigurationRepository(database.sessions)
         self.project_models = ProjectModelPreferenceRepository(database.sessions)
         self.threads = ThreadRepository(database.sessions)
+        self.inspections = InspectionRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
         self.comments = OutputCommentRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)

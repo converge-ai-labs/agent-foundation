@@ -1489,7 +1489,7 @@ def create_webui(
     async def realtime(socket: WebSocket) -> None:
         if not await authenticate_interactive(socket, api_key):
             return
-        channels: dict[str, CancelScope] = {}
+        channels: dict[str, tuple[CancelScope, str | None]] = {}
         sending = Lock()
 
         async def send(frame: RealtimeFrame | RealtimePing) -> None:
@@ -1503,7 +1503,7 @@ def create_webui(
 
                 async def observe(command: RealtimeCommand, *, task_status: TaskStatus[None]) -> None:
                     with CancelScope() as scope:
-                        channels[command.channel] = scope
+                        channels[command.channel] = (scope, command.root_thread_id)
                         task_status.started()
                         frames = (
                             focus_frames(command.root_thread_id, command.after)
@@ -1515,11 +1515,27 @@ def create_webui(
                                 await send(RealtimeFrame(channel=command.channel, frame=frame))
                         finally:
                             await frames.aclose()
-                            if channels.get(command.channel) is scope:
+                            current = channels.get(command.channel)
+                            if current is not None and current[0] is scope:
                                 channels.pop(command.channel, None)
+
+                async def trim_idle_channels() -> set[str]:
+                    active = set(await app().active_root_thread_ids())
+                    idle = [channel for channel, (_, root) in channels.items() if root not in active]
+                    # Active capacity follows admitted work, not an arbitrary tab
+                    # limit. Completed roots return to the finite idle allowance.
+                    expired = [(channel, channels.pop(channel)[0]) for channel in idle[:-12]]
+                    for _, scope in expired:
+                        scope.cancel()
+                    # Detach the entire batch before yielding: heartbeat and
+                    # command handling can trim or unsubscribe concurrently.
+                    for channel, _ in expired:
+                        await send(RealtimeFrame(channel=channel, frame=ResetFrame(reason="channel_limit")))
+                    return active
 
                 async def heartbeat() -> None:
                     while not stopping.is_set():
+                        await trim_idle_channels()
                         await send(RealtimePing())
                         with move_on_after(20):
                             await stopping.wait()
@@ -1536,9 +1552,12 @@ def create_webui(
                             continue
                         previous = channels.pop(command.channel, None)
                         if previous is not None:
-                            previous.cancel()
+                            previous[0].cancel()
                         if command.kind == "subscribe":
-                            if len(channels) >= 12:
+                            active = await trim_idle_channels()
+                            duplicate = any(root == command.root_thread_id for _, root in channels.values())
+                            idle_count = sum(root not in active for _, root in channels.values())
+                            if duplicate or (command.root_thread_id not in active and idle_count >= 12):
                                 await send(
                                     RealtimeFrame(channel=command.channel, frame=ResetFrame(reason="channel_limit"))
                                 )

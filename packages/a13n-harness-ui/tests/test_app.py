@@ -1783,8 +1783,7 @@ async def test_conflicting_checkpoint_cannot_overwrite_excerpts(tmp_path: Path, 
         assert retained.activity_at == current.activity_at
 
 
-@pytest.mark.parametrize("query", ["detail", "task_page"])
-async def test_focused_watch_resets_when_new_run_saves_during_bootstrap(tmp_path: Path, monkeypatch, query) -> None:
+async def test_focused_watch_resets_when_new_run_saves_during_bootstrap(tmp_path: Path, monkeypatch) -> None:
     from a13n_harness_ui.errors import LivePresentationError
 
     async with open_harness_ui_app(
@@ -1792,8 +1791,9 @@ async def test_focused_watch_resets_when_new_run_saves_during_bootstrap(tmp_path
     ) as app:
         app._root_runs._executor._agents = _CompletedReconstructor()
         thread = await app.create_thread()
-        service = app._projections if query == "detail" else app._terminal_projections
-        original = service.detail if query == "detail" else service.task_page
+        service = app._projections
+        query = "detail"
+        original = service.detail
 
         async def complete_before_query(thread_id, **kwargs):
             # No observer existed at cutover. A complete Run now appears in both
@@ -2268,3 +2268,129 @@ async def test_input_directory_and_bidirectional_history_use_saved_turn_boundari
         await app.wait_root_operation(receipt.receipt_id)
         with pytest.raises(ThreadError, match="another history"):
             await app.get_thread_inputs(thread_id=thread.thread_id, cursor=index.next_cursor)
+
+
+async def test_oversized_history_is_indexed_once_and_hot_inspections_never_decode_native_state(tmp_path, monkeypatch):
+    from a13n_harness.state import encode_messages
+    from a13n_harness_ui.storage import StoredContinuation
+    from a13n_harness_ui.storage.inspection import InspectionData
+    from a13n_harness_ui.storage.read_models import project_continuation
+    from a13n_harness_ui.thread_projection import ThreadProjectionService
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
+    ) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        created = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=created.thread_id, prompt="Seed composition")
+        await app.wait_root_operation(receipt.receipt_id)
+        thread = await app._store.threads.get(created.thread_id)
+        assert thread is not None and thread.continuation is not None
+        saved = await app._store.objects.read_model(thread.continuation, StoredContinuation)
+        # The old 16 MiB cache inserted and immediately evicted this history.
+        history = tuple(
+            message
+            for index in range(80)
+            for message in (
+                ModelRequest(parts=[UserPromptPart(f"Input {index}")]),
+                ModelRequest(
+                    parts=[ToolReturnPart(tool_name="view", tool_call_id=f"call-{index}", content="x" * (256 * 1024))]
+                ),
+                ModelResponse(parts=[TextPart(f"Answer {index}")]),
+            )
+        )
+        value = saved.model_copy(
+            update={
+                "harness_state": saved.harness_state.model_copy(
+                    update={"message_history_json": encode_messages(history)}
+                )
+            }
+        )
+        replacement = (await app._store.objects.publish_model(object_kind=ObjectKind.continuation, value=value)).ref
+        selected = await app._store.threads.select_continuation(
+            thread_id=thread.thread_id,
+            expected=thread.continuation,
+            replacement=replacement,
+            read_model=project_continuation(value),
+        )
+        native_reads = 0
+        read = app._store.objects.read_model
+
+        async def counted(reference, model):
+            nonlocal native_reads
+            if model is StoredContinuation:
+                native_reads += 1
+            return await read(reference, model)
+
+        monkeypatch.setattr(app._store.objects, "read_model", counted)
+        page = await app.get_thread_transcript(thread_id=thread.thread_id, limit=5)
+        assert page.total == 240 and len(page.entries) == 5
+        assert page.entries[-1].parts[0].text == "Answer 79"
+        assert page.next_cursor is not None
+        earlier = await app.get_thread_transcript(thread_id=thread.thread_id, cursor=page.next_cursor, limit=5)
+        assert earlier.entries[-1].position < page.entries[0].position
+        inputs = await app.get_thread_inputs(thread_id=thread.thread_id, limit=3)
+        assert [turn.preview for turn in inputs.turns] == ["Input 0", "Input 1", "Input 2"]
+        await app._terminal_projections.task_page(thread_id=thread.thread_id)
+        await app._terminal_projections.note_page(thread_id=thread.thread_id)
+        await app.context_usage(thread.thread_id)
+        await app.inspect_thread_configuration(thread.thread_id)
+        # A fresh projection owner reuses the database, not an in-memory history.
+        fresh = ThreadProjectionService(store=app._store, configurations=app._configurations)
+        assert (await fresh.transcript(thread_id=thread.thread_id, limit=1)).entries == page.entries[-1:]
+        assert native_reads == 1
+        assert not app._projections._inspection_loads
+        # A delayed rebuild must not replace the index of a newer selected head.
+        assert not await app._store.inspections.publish(
+            thread.thread_id, thread.continuation.logical_digest, InspectionData("{}", (), ())
+        )
+        assert await app._store.inspections.header(thread.thread_id, replacement.logical_digest) is not None
+        assert selected.continuation == replacement
+
+
+async def test_history_rebuilds_share_only_their_thread_and_focus_does_not_load_inspectors(tmp_path, monkeypatch):
+    from a13n_harness_ui.storage import StoredThreadInitialState
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
+    ) as app:
+        first, second = await app.create_thread(), await app.create_thread()
+        first_head = await app._store.threads.get(first.thread_id)
+        assert first_head is not None
+        entered, release = Event(), Event()
+        first_reads = 0
+        read = app._store.objects.read_model
+
+        async def blocked(reference, model):
+            nonlocal first_reads
+            if reference == first_head.initial_state and model is StoredThreadInitialState:
+                first_reads += 1
+                entered.set()
+                await release.wait()
+            return await read(reference, model)
+
+        async def unreadable(*args, **kwargs):
+            pytest.fail("focused bootstrap must not load lazy inspectors")
+
+        monkeypatch.setattr(app._store.objects, "read_model", blocked)
+        monkeypatch.setattr(app._subagent_operator, "query_child_executions", unreadable)
+        monkeypatch.setattr(app._terminal_projections, "task_page", unreadable)
+        results = []
+
+        async def load_first():
+            results.append(await app.get_thread_transcript(thread_id=first.thread_id))
+
+        async with create_task_group() as group:
+            group.start_soon(load_first)
+            await entered.wait()
+            group.start_soon(load_first)
+            try:
+                with fail_after(2):
+                    assert (await app.get_thread_transcript(thread_id=second.thread_id)).total == 0
+                    async with app.watch_thread(root_thread_id=first.thread_id) as watch:
+                        assert watch.snapshot.thread.thread.thread_id == first.thread_id
+            finally:
+                release.set()
+        assert len(results) == 2 and first_reads == 1
+        assert not app._projections._inspection_loads

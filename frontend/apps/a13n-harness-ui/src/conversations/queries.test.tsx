@@ -134,3 +134,36 @@ it("bootstraps initial detail and operation from a snapshot and fences a slower 
   expect(client.getQueryData(["thread", "other", "detail"])).toBeUndefined();
   client.clear();
 });
+
+it("reuses old immutable history pages on remount instead of refetching the loaded window", async () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const key = ["thread", "one", "history", "C0"];
+  queryClient.setQueryData(
+    key,
+    {
+      pages: [
+        { continuation_id: "C0", entries: [], next_cursor: "older" },
+        { continuation_id: "C0", entries: [], next_cursor: null },
+      ],
+      pageParams: [undefined, "older"],
+    },
+    { updatedAt: Date.now() - 60_000 },
+  );
+  const GET = vi.fn();
+  const hook = renderHook(() => useHistory("one", "C0", true), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportContext value={{ client: { GET } } as unknown as Transport}>
+          {children}
+        </TransportContext>
+      </QueryClientProvider>
+    ),
+  });
+  expect(hook.result.current.data?.pages).toHaveLength(2);
+  await act(async () => {});
+  expect(GET).not.toHaveBeenCalled();
+  hook.unmount();
+  queryClient.clear();
+});

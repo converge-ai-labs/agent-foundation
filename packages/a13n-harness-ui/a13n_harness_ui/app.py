@@ -191,7 +191,6 @@ from a13n_harness_ui.shared_drafts import DraftCommand, SharedDraft
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     LocalStore,
-    StoredContinuation,
     ThreadConfiguration,
     ThreadConfigurationMutation,
     open_local_store,
@@ -1034,9 +1033,10 @@ class HarnessUiApp:
             elif thread.continuation is not None:
                 origin = "selected_continuation"
                 continuation_id = thread.continuation.logical_digest
-                saved = await self._store.objects.read_model(thread.continuation, StoredContinuation)
+                saved = await self._projections.inspection(thread)
+                assert saved.run_composition is not None
                 value = await self._store.objects.read_model(saved.run_composition, ResolvedRunComposition)
-                if saved.harness_state.thread_id != thread_id or value.thread_id != thread_id:
+                if value.thread_id != thread_id:
                     raise AppStateError(
                         "Captured configuration belongs to another Thread.", code="thread_continuation_incompatible"
                     )
@@ -1776,6 +1776,11 @@ class HarnessUiApp:
         async with self._operation():
             return await self._root_runs.get(receipt_id)
 
+    async def active_root_thread_ids(self) -> tuple[str, ...]:
+        """Lightweight process-local observation capacity, without Thread projections."""
+        async with self._operation():
+            return await self._root_runs.active_thread_ids()
+
     async def active_root_operation(self, thread_id: str) -> RootOperationView | None:
         async with self._operation():
             return await self._root_runs.active(thread_id)
@@ -2070,7 +2075,6 @@ class HarnessUiApp:
         self,
         *,
         root_thread_id: str,
-        child_limit: int = 20,
     ) -> AsyncGenerator[ThreadWatch]:
         self._require_ready()
         async with self._operation():
@@ -2085,18 +2089,12 @@ class HarnessUiApp:
                     )
                 if thread.thread.parent_thread_id is not None:
                     raise AppStateError("A focused watch requires a root Thread.", code="child_thread_scoped")
-                children = await self._subagent_operator.query_child_executions(
-                    parent_thread_id=root_thread_id,
-                    limit=child_limit,
-                )
                 root_operation = await self._root_runs.active(root_thread_id)
-                tasks = await self._terminal_projections.task_page(
-                    thread_id=root_thread_id,
-                    expected_continuation_id=thread.continuation_id,
-                )
+                selected = await self._threads.get(root_thread_id)
+                selected_id = selected.continuation.logical_digest if selected.continuation is not None else None
             cursor = subscription.cursor
             root_stream = subscription.root_stream
-            if tasks.continuation_id != thread.continuation_id or (
+            if selected_id != thread.continuation_id or (
                 root_stream is not None and not root_stream.includes_continuation(thread.continuation_id)
             ):
                 raise LivePresentationError(
@@ -2119,8 +2117,6 @@ class HarnessUiApp:
                     cutover_sequence=cursor.sequence,
                     thread=thread,
                     root_operation=root_operation,
-                    children=children,
-                    tasks=tasks,
                     recent_events=tuple(reversed(retained_events)),
                     root_stream=root_stream.summary if root_stream is not None else None,
                 ),

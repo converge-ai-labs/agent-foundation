@@ -155,6 +155,7 @@ it("schedules cleanup even when a first opt-in has not returned its subscription
   fireEvent.click(
     screen.getByRole("button", { name: "Enable background notifications" }),
   );
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
   fireEvent.click(
     screen.getByRole("switch", { name: "Enable browser notifications" }),
   );
@@ -528,19 +529,35 @@ it("retains a failed subscription as reconnect intent, not enabled delivery, and
   const sw = worker();
   writePreference("notifications.push-subscription", "stale-subscription");
   const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "supportsPush").mockReturnValue(true);
   const enable = vi
     .spyOn(push, "enablePush")
     .mockRejectedValue(new Error("offline"));
   mount("/threads/thread-1", transport);
   expect(screen.getByText("Checking subscription…")).toBeTruthy();
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(screen.queryByText("Enabled on this device")).toBeNull();
   await screen.findByText("Subscription needs attention");
   expect(push.pushSubscriptionId()).toBe("stale-subscription");
   fireEvent.click(screen.getByText("Emit"));
   await waitFor(() => expect(sw.showNotification).toHaveBeenCalledOnce());
-  enable.mockResolvedValue();
+  expect(
+    screen.getByRole("heading", { name: "Reconnect background notifications" }),
+  ).toBeTruthy();
+  let finish!: () => void;
+  enable.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
   fireEvent(window, new Event("online"));
+  expect(screen.getByText("Checking subscription…")).toBeTruthy();
+  // The previous error is not proof that this in-flight reconciliation failed.
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
+  await act(async () => finish());
   await screen.findByText("Enabled on this device");
+  expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(enable).toHaveBeenCalledTimes(2);
   expect(screen.queryAllByRole("alert")).toHaveLength(0);
   transport.close();

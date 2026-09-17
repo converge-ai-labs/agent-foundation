@@ -255,7 +255,8 @@ class HarnessUiLiveHub:
         self._ring: deque[LiveEvent] = deque(maxlen=ring_size)
         # Independent lineage retention: noisy roots cannot evict quiet roots.
         # The global ring remains for unscoped native observers. Both reference
-        # the same detached events; at most sixteen root rings are retained.
+        # the same detached events. Running/observed roots are pinned, with at
+        # most sixteen additional idle roots retained for short reconnects.
         self._root_rings: OrderedDict[str, deque[LiveEvent]] = OrderedDict()
         self._root_floors: dict[str, int] = {}
         self._evicted_root_floor = 0
@@ -324,10 +325,6 @@ class HarnessUiLiveHub:
                     self._root_floors[root_thread_id] = ring[0].sequence
                 ring.append(event)
                 self._root_rings.move_to_end(root_thread_id)
-                while len(self._root_rings) > 16:
-                    expired_root, expired_ring = self._root_rings.popitem(last=False)
-                    self._evicted_root_floor = max(self._evicted_root_floor, expired_ring[-1].sequence)
-                    self._root_floors.pop(expired_root, None)
                 if observer is not None:
                     current = self._root_streams.get(thread_id)
                     if current is None or current.run_id != run_id:
@@ -335,6 +332,7 @@ class HarnessUiLiveHub:
                         self._root_streams[thread_id] = current
                         self._terminal_streams.pop(thread_id, None)
                     current.published_count = index + 1
+                self._trim_root_rings()
                 for subscriber in self._subscribers:
                     if not subscriber.accepts(event) or subscriber.gap:
                         continue
@@ -359,12 +357,24 @@ class HarnessUiLiveHub:
             if saved_continuation_id is not None:
                 self._root_streams.pop(thread_id, None)
                 self._terminal_streams.pop(thread_id, None)
+                self._trim_root_rings()
                 return
             self._terminal_streams[thread_id] = None
             self._terminal_streams.move_to_end(thread_id)
             while len(self._terminal_streams) > 256:
                 expired, _ = self._terminal_streams.popitem(last=False)
                 self._root_streams.pop(expired, None)
+            self._trim_root_rings()
+
+    def _trim_root_rings(self) -> None:
+        pinned = self._root_streams.keys() - self._terminal_streams.keys()
+        pinned.update(sub.root_thread_id for sub in self._subscribers if sub.root_thread_id is not None)
+        idle = [root for root in self._root_rings if root not in pinned]
+        for root in idle[:-16]:
+            ring = self._root_rings.pop(root)
+            floor = ring[-1].sequence if ring else self._root_floors[root]
+            self._evicted_root_floor = max(self._evicted_root_floor, floor)
+            self._root_floors.pop(root, None)
 
     async def snapshot(self, *, root_thread_id: str | None = None) -> tuple[LiveEvent, ...]:
         async with self._lock:
@@ -398,6 +408,9 @@ class HarnessUiLiveHub:
             for event in replay:
                 send.send_nowait(event.model_copy(deep=True))
             self._subscribers.add(subscriber)
+            if root_thread_id is not None and root_thread_id not in self._root_rings:
+                self._root_rings[root_thread_id] = deque(maxlen=self._ring_size)
+                self._root_floors[root_thread_id] = start_sequence
             root_stream = self._root_streams.get(root_thread_id or "")
             subscription = LiveSubscription(
                 subscriber,
@@ -435,6 +448,7 @@ class HarnessUiLiveHub:
         self._subscribers.discard(subscriber)
         subscriber.send.close()
         subscriber.receive.close()
+        self._trim_root_rings()
 
     async def close(self) -> None:
         async with self._lock:

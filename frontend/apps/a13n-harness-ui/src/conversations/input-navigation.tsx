@@ -38,6 +38,7 @@ export function InputNavigation({
   const query = useInfiniteQuery({
     queryKey: ["thread", threadId, "inputs", continuation],
     enabled: !!continuation,
+    staleTime: Infinity,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       result(
@@ -153,10 +154,16 @@ export function InputNavigation({
       <div className={styles.mobile}>
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger
-            render={<Button variant="ghost" size="sm" />}
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className={styles.mobileTrigger}
+              />
+            }
             aria-label="Input history"
           >
-            <ListBullets /> Inputs
+            <ListBullets aria-hidden="true" />
           </PopoverTrigger>
           <PopoverPopup side="bottom" align="start" className={styles.menu}>
             <PopoverTitle>Input history</PopoverTitle>
