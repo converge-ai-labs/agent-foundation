@@ -311,6 +311,14 @@ async def prepare_run_environment(
             selection.access,
             mount_name=selection.mount_name,
         )
-    if mount is not None or selection.prepare_on_run:
-        await environment.prepare()
+    try:
+        if mount is not None or selection.prepare_on_run:
+            await environment.prepare()
+    except BaseException as error:
+        try:
+            with fail_after(attempt.cleanup_timeout.total_seconds(), shield=True):
+                await environment.close()
+        except BaseException as cleanup_error:
+            error.add_note(f"Environment preparation cleanup also failed: {cleanup_error!r}")
+        raise
     return environment

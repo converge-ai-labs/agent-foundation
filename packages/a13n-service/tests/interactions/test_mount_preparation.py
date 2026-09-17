@@ -1,5 +1,6 @@
 """Primary and additional bindings share preparation policy and retain separate evidence."""
 
+import asyncio
 from dataclasses import replace
 from datetime import timedelta
 
@@ -10,7 +11,7 @@ from a13n_service.environments.domain import CreateManagedEnvironmentRequest
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord
 from a13n_service.environments.mount_observations import RunMountObservations
-from a13n_service.environments.runtime import prepare_run_environment
+from a13n_service.environments.runtime import RunEnvironment, prepare_run_environment
 from a13n_service.interactions.attempts import AttemptAuthorityError
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
@@ -113,3 +114,21 @@ async def test_local_attempt_loss_prevents_additional_preparation_effects(intera
         assert (await session.get(RunEnvironmentMountRecord, (attempt.run_id, "first"))).use_started_at is None
         environment = await session.get(EnvironmentRecord, extra_id)
         assert environment.status == "unprepared" and environment.operation_id is None
+
+
+@pytest.mark.parametrize("failure", [OSError("injected preparation failure"), asyncio.CancelledError()])
+async def test_failed_preparation_closes_the_acquired_candidate(preparations, monkeypatch, failure):
+    lifecycle, attempt, mounts, _ = preparations
+    original_prepare = RunEnvironment.prepare
+    candidates = []
+
+    async def interrupted_prepare(environment):
+        candidates.append(environment)
+        await original_prepare(environment)
+        raise failure
+
+    monkeypatch.setattr(RunEnvironment, "prepare", interrupted_prepare)
+    with pytest.raises(type(failure)):
+        await prepare_run_environment(lifecycle, attempt, mount=mounts[0])
+    with pytest.raises(RuntimeError, match="closed"):
+        await original_prepare(candidates[0])
