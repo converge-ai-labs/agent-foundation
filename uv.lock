@@ -153,9 +153,11 @@ dependencies = [
     { name = "alembic" },
     { name = "anyio" },
     { name = "click" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "fastmcp-slim", extra = ["client"] },
     { name = "filelock" },
+    { name = "http-ece" },
     { name = "httpcore2" },
     { name = "httpx2" },
     { name = "mammoth" },
@@ -169,6 +171,7 @@ dependencies = [
     { name = "pillow" },
     { name = "prompt-toolkit" },
     { name = "psutil" },
+    { name = "py-vapid" },
     { name = "pycrdt" },
     { name = "pydantic" },
     { name = "pydantic-ai-slim" },
@@ -202,9 +205,11 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.17.1,<2" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "click", specifier = ">=8.2,<9" },
+    { name = "cryptography", specifier = ">=45" },
     { name = "fastapi", specifier = ">=0.135,<1" },
     { name = "fastmcp-slim", extras = ["client"], specifier = ">=4.0,<5" },
     { name = "filelock", specifier = ">=3.18,<4" },
+    { name = "http-ece", specifier = ">=1.2,<2" },
     { name = "httpcore2", specifier = ">=2.12,<3" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "mammoth", specifier = ">=1.11,<2" },
@@ -218,6 +223,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11,<13" },
     { name = "prompt-toolkit", specifier = ">=3.0.52,<4" },
     { name = "psutil", specifier = ">=7,<8" },
+    { name = "py-vapid", specifier = ">=1.9,<2" },
     { name = "pycrdt", specifier = ">=0.14.5,<0.15" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai-slim", specifier = ">=2.41.0,<3" },
@@ -285,6 +291,7 @@ dependencies = [
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
     { name = "pillow" },
+    { name = "protobuf" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic", extra = ["email"] },
     { name = "pydantic-ai" },
@@ -297,6 +304,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "starlette" },
     { name = "uvicorn" },
+    { name = "websockets" },
     { name = "zstandard" },
 ]
 
@@ -331,6 +339,7 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp", specifier = ">=1.39,<2" },
     { name = "opentelemetry-sdk", specifier = ">=1.39,<2" },
     { name = "pillow", specifier = ">=11.3,<13" },
+    { name = "protobuf", specifier = ">=6.32,<7" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2,<4" },
     { name = "pydantic", extras = ["email"], specifier = ">=2.12,<3" },
     { name = "pydantic-ai", specifier = ">=2.41.0,<3" },
@@ -343,6 +352,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
     { name = "starlette", specifier = ">=0.52,<2" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
+    { name = "websockets", specifier = ">=15,<16" },
     { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]
 
@@ -1919,6 +1929,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/26/5b/fcabf6028144a8723
 wheels = [
     { url = "https://files.pythonhosted.org/packages/71/b4/4a9fcfb2aef6ba44d9073ecd301443aa00b3dac95de5619f2a7de7ec8a91/hpack-4.2.0-py3-none-any.whl", hash = "sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986", size = 34246, upload-time = "2026-06-23T18:34:45.472Z" },
 ]
+
+[[package]]
+name = "http-ece"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/7c/af/249d1576653b69c20b9ac30e284b63bd94af6a175d72d87813235caf2482/http_ece-1.2.1.tar.gz", hash = "sha256:8c6ab23116bbf6affda894acfd5f2ca0fb8facbcbb72121c11c75c33e7ce8cff", size = 8830, upload-time = "2024-08-08T00:10:47.301Z" }
 
 [[package]]
 name = "httpcore"
@@ -3570,6 +3589,18 @@ memory = [
 ]
 
 [[package]]
+name = "py-vapid"
+version = "1.9.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/a3/ed/c648c8018fab319951764f4babe68ddcbbff7f2bbcd7ff7e531eac1788c8/py_vapid-1.9.4.tar.gz", hash = "sha256:a004023560cbc54e34fc06380a0580f04ffcc788e84fb6d19e9339eeb6551a28", size = 74750, upload-time = "2026-01-05T22:13:25.201Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/7f/15/f9d0171e1ad863ca49e826d5afb6b50566f20dc9b4f76965096d3555ce9e/py_vapid-1.9.4-py2.py3-none-any.whl", hash = "sha256:f165a5bf90dcf966b226114f01f178f137579a09784c7f0628fa2f0a299741b6", size = 23912, upload-time = "2026-01-05T20:42:05.455Z" },
+]
+
+[[package]]
 name = "pyasn1"
 version = "0.6.4"
 source = { registry = "https://pypi.org/simple" }
@@ -4565,8 +4596,8 @@ name = "secretstorage"
 version = "3.5.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "cryptography", marker = "sys_platform != 'win32'" },
-    { name = "jeepney", marker = "sys_platform != 'win32'" },
+    { name = "cryptography" },
+    { name = "jeepney" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/1c/03/e834bcd866f2f8a49a85eaff47340affa3bfa391ee9912a952a1faa68c7b/secretstorage-3.5.0.tar.gz", hash = "sha256:f04b8e4689cbce351744d5537bf6b1329c6fc68f91fa666f60a380edddcd11be", size = 19884, upload-time = "2025-11-23T19:02:53.191Z" }
 wheels = [

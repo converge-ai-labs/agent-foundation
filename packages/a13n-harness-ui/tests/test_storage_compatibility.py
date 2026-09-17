@@ -25,22 +25,51 @@ from .test_app import _write_configuration
 pytestmark = pytest.mark.anyio
 
 
-def older_package(tmp_path: Path) -> tuple[Path, MetaData]:
-    """Use the real previous schema/history, with the forward-compatible reader."""
+def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, MetaData]:
+    """Exercise the real comment upgrades with a current-code reader stand-in.
+
+    Keep unrelated navigation columns on both sides of this historical fixture;
+    the navigation migration itself has separate real old-schema coverage.
+    """
+    newer = tmp_path / "comment-migrations"
+    shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20260917_9aeed42d15b3_add_browser_push_subscriptions.py").unlink()
+    (newer / "versions/20260916_57b54299e47e_add_durable_thread_completion_markers.py").unlink()
+    (newer / "versions/20260916_122039abf689_add_thread_navigation_touch_time.py").unlink()
     older = tmp_path / "older-migrations"
-    shutil.copytree(migration.MIGRATIONS_PATH, older, ignore=shutil.ignore_patterns("__pycache__"))
+    shutil.copytree(newer, older)
+    monkeypatch.setattr(migration, "MIGRATIONS_PATH", newer)
     (older / "versions/20260912_4b71199c8ee5_add_saved_output_comments.py").unlink()
     (older / "versions/20260915_20e4b84abfd1_add_comment_editing_and_deletion.py").unlink()
     metadata = MetaData()
     for table in harness_ui_metadata().sorted_tables:
         if table.name not in {"output_comment", "output_comment_tombstone"}:
             table.to_metadata(metadata)
+    path = tmp_path / "data" / "metadata.sqlite3"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with monkeypatch.context() as patch:
+        patch.setattr(migration, "MIGRATIONS_PATH", older)
+        DatabaseMigrator(path)._run(lambda config: command.upgrade(config, "head"), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE thread ADD COLUMN completion_version INTEGER NOT NULL DEFAULT 0"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN completion_run_id VARCHAR(80)"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN completion_digest VARCHAR(64)"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN completed_at DATETIME"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN touched_at DATETIME"))
+            connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
+            # Keep unrelated push tables on both sides of this comment-only fixture.
+            for name in ("web_push_key", "web_push_subscription"):
+                harness_ui_metadata().tables[name].create(connection)
+    finally:
+        engine.dispose()
     return older, metadata
 
 
 async def test_old_app_saves_run_across_new_app_migration_and_reconnects(tmp_path, monkeypatch):
     configuration = _write_configuration(tmp_path)
-    older, metadata = older_package(tmp_path)
+    older, metadata = older_package(tmp_path, monkeypatch)
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
     started, release = Event(), Event()
 
@@ -122,7 +151,7 @@ async def test_comment_migration_preserves_heads_and_refuses_nonempty_downgrade(
     from .test_comment_protocol import publication
 
     configuration = _write_configuration(tmp_path)
-    older, metadata = older_package(tmp_path)
+    older, metadata = older_package(tmp_path, monkeypatch)
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
 
     async def stream(messages, info):

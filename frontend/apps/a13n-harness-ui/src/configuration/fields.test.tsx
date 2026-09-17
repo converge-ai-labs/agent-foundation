@@ -16,11 +16,35 @@ import { ResourceFields } from "./fields";
 
 const get = vi.hoisted(() =>
   vi.fn(async (path: string) => ({
-    data: path === "/api/auth/keys" ? [{ credential_ref: "key-work" }] : [],
+    data:
+      path === "/api/auth/keys"
+        ? [{ credential_ref: "key-work" }]
+        : path === "/api/models/choices"
+          ? {
+              connections: [
+                {
+                  id: "openai-responses",
+                  label: "OpenAI",
+                  provider: "openai-responses",
+                  authentication: "api_key",
+                  models: [],
+                  default_model: "gpt-5.4",
+                  supports_base_url: true,
+                },
+              ],
+            }
+          : path === "/api/models/catalog"
+            ? { items: [], status: "unavailable" }
+            : [],
   })),
 );
 vi.mock("../transport/context", () => ({
-  useTransport: () => ({ client: { GET: get } }),
+  useTransport: () => ({
+    client: {
+      GET: get,
+      POST: async () => ({ data: { presets: [], native_tools: [] } }),
+    },
+  }),
   useStatus: () => ({ data: { features: { host_files: false } } }),
   useSetup: () => ({ data: { suggested_project_path: "/srv" } }),
   useSources: () => ({ data: { sources: [] }, isPending: false }),
@@ -45,7 +69,7 @@ function renderFields(initial: string) {
     return (
       <>
         <ResourceFields source={source} onChange={setSource} />
-        <output>{source}</output>
+        <output data-testid="source">{source}</output>
       </>
     );
   }
@@ -64,33 +88,32 @@ function renderFields(initial: string) {
 
 it("selects saved key metadata without rewriting model settings or dropping an unresolved reference on load", async () => {
   const initial =
-    'schema_version: "1"\nkind: model\nid: model-one\nname: Model\nroute: openai:custom-model\nauthentication: {kind: api_key, credential_ref: key-missing}\nsettings: {temperature: 0.3}\n';
+    'schema_version: "1"\nkind: model\nid: model-one\nname: Model\nroute: openai-responses:custom-model\nauthentication: {kind: api_key, credential_ref: key-missing}\nsettings: {temperature: 0.3}\n';
   renderFields(initial);
   const user = userEvent.setup();
-  const key = screen.getByRole("combobox", { name: "Saved key name" });
+  const key = await screen.findByRole("combobox", {
+    name: "Credential source",
+  });
   await waitFor(() =>
-    expect(key.textContent).toContain("key-missing (unavailable)"),
+    expect(key.textContent).toContain("key-missing (saved reference)"),
   );
-  expect(screen.getByRole("status").textContent).toBe(initial);
+  expect(screen.getByTestId("source").textContent).toBe(initial);
   await user.click(key);
   await user.click(await screen.findByRole("option", { name: "key-work" }));
-  expect(parse(screen.getByRole("status").textContent ?? "")).toEqual({
+  expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual({
     ...parse(initial),
     authentication: { kind: "api_key", credential_ref: "key-work" },
   });
-  expect(
-    screen.getByRole("link", { name: "Manage API keys" }).getAttribute("href"),
-  ).toBe("/settings/accounts");
   expect(get.mock.calls.map(([path]) => path)).toContain("/api/auth/keys");
 });
 
 it("keeps an empty environment-variable draft in its chosen credential mode", async () => {
   renderFields(
-    'schema_version: "1"\nkind: model\nid: model-one\nname: Model\nauthentication: {kind: api_key, env: MODEL_KEY}\n',
+    'schema_version: "1"\nkind: model\nid: model-one\nname: Model\nroute: openai-responses:custom-model\nauthentication: {kind: api_key, env: MODEL_KEY}\n',
   );
   const user = userEvent.setup();
   await user.clear(
-    screen.getByRole("textbox", { name: "Environment variable" }),
+    await screen.findByRole("textbox", { name: "Environment variable" }),
   );
   expect(
     screen.getByRole("combobox", { name: "Credential source" }).textContent,
@@ -100,7 +123,7 @@ it("keeps an empty environment-variable draft in its chosen credential mode", as
     "NEW_KEY",
   );
   expect(
-    parse(screen.getByRole("status").textContent ?? "").authentication,
+    parse(screen.getByTestId("source").textContent ?? "").authentication,
   ).toEqual({ kind: "api_key", env: "NEW_KEY" });
 });
 
@@ -117,9 +140,9 @@ it("keeps HTTP transport selected while replacing its entire URL", async () => {
     screen.getByRole("textbox", { name: "Server URL" }),
     "https://new.example.test",
   );
-  expect(parse(screen.getByRole("status").textContent ?? "").transport).toEqual(
-    { url: "https://new.example.test", headers: { custom: "value" } },
-  );
+  expect(
+    parse(screen.getByTestId("source").textContent ?? "").transport,
+  ).toEqual({ url: "https://new.example.test", headers: { custom: "value" } });
 });
 
 it("edits Project folders as individual rows while preserving unrelated configuration", async () => {
@@ -137,7 +160,7 @@ it("edits Project folders as individual rows while preserving unrelated configur
     screen.getByRole("textbox", { name: "Additional server directory 1" }),
     { target: { value: "/other" } },
   );
-  expect(parse(screen.getByRole("status").textContent ?? "")).toEqual({
+  expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual({
     ...parse(initial),
     roots: [{ path: "/new" }, { path: "/other" }],
   });

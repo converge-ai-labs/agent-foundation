@@ -20,7 +20,6 @@ import {
 
 import {
   ArrowUpRightIcon,
-  PlugIcon,
   PlusIcon,
   PuzzlePieceIcon,
   XIcon,
@@ -33,6 +32,7 @@ import styles from "./agents.module.css";
 import { EditorSection } from "./section";
 import type { useAgentChoices } from "./choices";
 import type { AgentConfig } from "./configuration";
+import { AgentConnections } from "./connections";
 
 type Skills = NonNullable<AgentConfig["skills"]>;
 type Connections = NonNullable<AgentConfig["connection_tools"]>;
@@ -109,69 +109,11 @@ export function AgentCapabilities({
           };
         })}
       />
-      <CapabilityGroup
+      <AgentConnections
+        choices={choices}
+        connections={connections}
+        setConnections={setConnections}
         readOnly={readOnly}
-        title={t("Connections")}
-        description={t("Connected services this agent can use.")}
-        icon={<PlugIcon size={15} />}
-        setup={`${base}/connections`}
-        loading={choices.isPending}
-        choices={availableChoices(
-          (choices.data?.connections ?? []).map((item) => ({
-            key: item.id,
-            name: item.name,
-          })),
-          connections.map((item) => item.connection_id),
-        ).map((connection) => {
-          const selected = connections.find(
-            (item) => item.connection_id === connection.key,
-          );
-          return {
-            ...connection,
-            checked: !!selected,
-            onChange: (checked) =>
-              setConnections((previous) =>
-                checked
-                  ? [...previous, { connection_id: connection.key }]
-                  : previous.filter(
-                      (item) => item.connection_id !== connection.key,
-                    ),
-              ),
-            settings: selected && (
-              <>
-                <ToolNames
-                  readOnly={readOnly}
-                  tools={selected.tools}
-                  onChange={(tools) =>
-                    setConnections((previous) =>
-                      previous.map((item) =>
-                        item.connection_id === connection.key
-                          ? { ...item, tools }
-                          : item,
-                      ),
-                    )
-                  }
-                />
-                <Label>
-                  <Checkbox
-                    disabled={readOnly}
-                    checked={selected.defer_loading ?? false}
-                    onCheckedChange={(checked) =>
-                      setConnections((previous) =>
-                        previous.map((item) =>
-                          item.connection_id === connection.key
-                            ? { ...item, defer_loading: checked === true }
-                            : item,
-                        ),
-                      )
-                    }
-                  />
-                  {t("Load tools on demand")}
-                </Label>
-              </>
-            ),
-          };
-        })}
       />
     </>
   );
@@ -349,60 +291,5 @@ function CapabilityGroup({
         )}
       </div>
     </EditorSection>
-  );
-}
-
-function ToolNames({
-  readOnly,
-  tools,
-  onChange,
-}: {
-  readOnly?: boolean;
-  tools: string[] | null | undefined;
-  onChange: (tools: string[] | null) => void;
-}) {
-  const { t } = useTranslation();
-  const [text, setText] = useState(tools?.join(", ") ?? "");
-  return (
-    <div>
-      <Label>
-        <Checkbox
-          disabled={readOnly}
-          checked={tools?.length === 0}
-          onCheckedChange={(checked) => {
-            setText("");
-            onChange(checked ? [] : null);
-          }}
-        />
-        {t("Select no tools")}
-      </Label>
-      <FormField
-        className="min-w-0 w-full"
-        readOnly={readOnly}
-        label={t("Tool names")}
-        description={t("Comma-separated; empty selects all.")}
-      >
-        <Input
-          value={
-            readOnly
-              ? tools?.length === 0
-                ? t("No tools")
-                : text || t("All tools")
-              : text
-          }
-          disabled={tools?.length === 0}
-          placeholder={tools?.length === 0 ? t("No tools") : t("All tools")}
-          onChange={(event) => {
-            const value = event.target.value;
-            setText(value);
-            const names = value
-              .split(",")
-              .map((name) => name.trim())
-              .filter(Boolean);
-            onChange(names.length ? names : null);
-          }}
-        />
-      </FormField>
-    </div>
   );
 }

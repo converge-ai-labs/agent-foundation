@@ -5,6 +5,7 @@ import type { Schema } from "../transport/client";
 export class FileBuffer {
   value: string;
   observed: Schema<"FileText">;
+  position?: { anchor: number; head: number; top: number; left: number };
   saving = false;
   uncertain = false;
   constructor(public base: Schema<"FileText">) {

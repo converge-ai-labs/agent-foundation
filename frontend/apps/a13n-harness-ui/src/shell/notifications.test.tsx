@@ -16,7 +16,14 @@ import {
   NotificationsProvider,
   useNotifications,
 } from "./notifications";
-import type { Schema } from "../transport/client";
+import {
+  createTransport,
+  type Schema,
+  type Transport,
+} from "../transport/client";
+import { TransportContext } from "../transport/context";
+import * as push from "./push";
+import { writePreference } from "./preferences";
 
 let permission: NotificationPermission;
 let request: ReturnType<typeof vi.fn>;
@@ -62,6 +69,7 @@ beforeEach(() => {
     removeEventListener() {},
   }));
   vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
   queries = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   queries.setQueryData(["thread", "thread-1", "detail"], {
     thread: { title: "UI polish" },
@@ -84,17 +92,76 @@ function Controls() {
     </>
   );
 }
-function mount(path = "/threads/thread-1") {
+function mount(path = "/threads/thread-1", transport: Transport | null = null) {
   return render(
     <QueryClientProvider client={queries}>
-      <MemoryRouter initialEntries={[path]}>
-        <NotificationsProvider>
-          <Controls />
-        </NotificationsProvider>
-      </MemoryRouter>
+      <TransportContext.Provider value={transport}>
+        <MemoryRouter initialEntries={[path]}>
+          <NotificationsProvider>
+            <Controls />
+          </NotificationsProvider>
+        </MemoryRouter>
+      </TransportContext.Provider>
     </QueryClientProvider>,
   );
 }
+it("requires explicit background opt-in for granted permission and suppresses page-native duplicates", async () => {
+  permission = "granted";
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "supportsPush").mockReturnValue(true);
+  const enable = vi.spyOn(push, "enablePush").mockImplementation(async () => {
+    writePreference("notifications.push-subscription", "subscription-one");
+  });
+  const test = vi.spyOn(push, "testPush").mockResolvedValue();
+  vi.spyOn(push, "disablePush").mockImplementation(async () => {
+    writePreference("notifications.push-subscription", "");
+  });
+  mount("/threads/thread-1", transport);
+  expect(enable).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Enable background notifications" }),
+  );
+  await screen.findByText("Enabled on this device");
+  expect(enable).toHaveBeenCalledWith(transport, ["thread-1"]);
+  fireEvent.click(screen.getByText("Emit"));
+  expect(native).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send test notification" }),
+  );
+  await screen.findByText(/push service accepted the test/);
+  expect(test).toHaveBeenCalledWith(transport);
+  fireEvent.click(
+    screen.getByRole("switch", { name: "Enable browser notifications" }),
+  );
+  await screen.findByText("Not enabled");
+  expect(push.disablePush).toHaveBeenCalled();
+  transport.close();
+});
+
+it("schedules cleanup even when a first opt-in has not returned its subscription ID", async () => {
+  permission = "granted";
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "supportsPush").mockReturnValue(true);
+  let finish!: () => void;
+  vi.spyOn(push, "enablePush").mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const disable = vi.spyOn(push, "disablePush").mockResolvedValue();
+  mount("/threads/thread-1", transport);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Enable background notifications" }),
+  );
+  fireEvent.click(
+    screen.getByRole("switch", { name: "Enable browser notifications" }),
+  );
+  expect(disable).toHaveBeenCalledWith(transport);
+  await act(async () => finish());
+  transport.close();
+});
+
 it("keeps a single permission prompt until explicit permission or disabling, without automatic browser requests", async () => {
   const first = mount();
   expect(screen.getAllByLabelText("Notification permission")).toHaveLength(1);
@@ -168,7 +235,7 @@ it("renders actual briefs, deduplicates replay, and opens the matching conversat
     "Task completed · UI polish",
     expect.objectContaining({
       body: event.notice!.brief,
-      tag: "epoch-1:receipt-1",
+      tag: "a13n-harness-ui.receipt-1",
     }),
   );
   expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
@@ -178,14 +245,8 @@ it("renders actual briefs, deduplicates replay, and opens the matching conversat
   act(() => native.mock.results[0].value.onclick());
   expect(screen.getByText("/threads/thread-1")).toBeTruthy();
 });
-it("delivers native alerts in the foreground, but keeps only in-app notices without permission or when disabled", async () => {
-  permission = "granted";
-  vi.mocked(document.hasFocus).mockReturnValue(true);
+it("keeps attention notices without permission or when desktop reminders are disabled", async () => {
   mount();
-  fireEvent.click(screen.getByText("Emit"));
-  expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
-  expect(native).toHaveBeenCalledOnce();
-  native.mockClear();
   permission = "default";
   fireEvent(document, new Event("visibilitychange"));
   event = notice("receipt-2", "suspended");
@@ -198,6 +259,86 @@ it("delivers native alerts in the foreground, but keeps only in-app notices with
   vi.mocked(document.hasFocus).mockReturnValue(false);
   event = notice("receipt-3", "failed");
   fireEvent.click(screen.getByText("Emit"));
+  expect(native).not.toHaveBeenCalled();
+});
+it.each([
+  {
+    focused: true,
+    visibility: "visible",
+    current: true,
+    desktop: false,
+    banner: false,
+  },
+  {
+    focused: true,
+    visibility: "visible",
+    current: false,
+    desktop: false,
+    banner: true,
+  },
+  {
+    focused: false,
+    visibility: "visible",
+    current: true,
+    desktop: true,
+    banner: false,
+  },
+  {
+    focused: false,
+    visibility: "visible",
+    current: false,
+    desktop: true,
+    banner: true,
+  },
+  {
+    focused: true,
+    visibility: "hidden",
+    current: true,
+    desktop: true,
+    banner: false,
+  },
+] as const)(
+  "routes completion feedback by attention: %j",
+  async ({ focused, visibility, current, desktop, banner }) => {
+    permission = "granted";
+    vi.mocked(document.hasFocus).mockReturnValue(focused);
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue(visibility);
+    localStorage.setItem(
+      "a13n-harness-ui.notifications.conversations",
+      '["thread-1"]',
+    );
+    mount(current ? "/threads/thread-1" : "/threads/thread-2");
+    await act(async () => fireEvent.click(screen.getByText("Emit")));
+    expect(native).toHaveBeenCalledTimes(desktop ? 1 : 0);
+    expect(!!screen.queryByText(event.notice!.brief)).toBe(banner);
+  },
+);
+it.each(["failed", "suspended"] as const)(
+  "keeps %s banners in the focused conversation without a desktop alert",
+  async (status) => {
+    permission = "granted";
+    vi.mocked(document.hasFocus).mockReturnValue(true);
+    event = notice("receipt-1", status);
+    mount();
+    await act(async () => fireEvent.click(screen.getByText("Emit")));
+    expect(screen.getByText(event.notice!.brief)).toBeTruthy();
+    expect(native).not.toHaveBeenCalled();
+  },
+);
+it("rechecks focus after waiting for the native delivery lock", async () => {
+  permission = "granted";
+  let claim!: () => void;
+  vi.stubGlobal("navigator", {
+    locks: {
+      request: vi.fn(async (_name, callback) => {
+        claim = callback;
+      }),
+    },
+  });
+  mount();
+  fireEvent.click(screen.getByText("Emit"));
+  vi.mocked(document.hasFocus).mockReturnValue(true);
+  await act(async () => claim());
   expect(native).not.toHaveBeenCalled();
 });
 it("does not synthesize historical notices or notify for unopened conversations", () => {
@@ -244,19 +385,24 @@ it("continues in-app delivery when native notification construction fails", asyn
   native.mockImplementation(function () {
     throw new Error("Unsupported constructor");
   });
+  event = notice("receipt-1", "failed");
   mount();
   fireEvent.click(screen.getByText("Emit"));
   expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain("could not display");
 });
 
-it("reports asynchronous delivery errors and never treats a test request as confirmed macOS delivery", async () => {
+it("allows foreground test notifications without claiming delivery and reports asynchronous failures", async () => {
   permission = "granted";
+  vi.mocked(document.hasFocus).mockReturnValue(true);
   mount();
   fireEvent.click(
     screen.getByRole("button", { name: "Send test notification" }),
   );
-  expect(screen.getByText(/does not confirm/)).toBeTruthy();
+  expect(native).toHaveBeenCalledOnce();
+  expect(
+    screen.getByText(/Test requested from the browser/).textContent,
+  ).toContain("does not confirm");
   const notification = native.mock.results[0].value;
   act(() => notification.onshow());
   expect(screen.getByText(/browser reported/)).toBeTruthy();
@@ -276,5 +422,5 @@ it("falls back to native delivery when optional cross-tab locking is unavailable
   mount();
   fireEvent.click(screen.getByText("Emit"));
   await waitFor(() => expect(native).toHaveBeenCalledOnce());
-  expect(screen.getByText(event.notice!.brief)).toBeTruthy();
+  expect(screen.queryByText(event.notice!.brief)).toBeNull();
 });

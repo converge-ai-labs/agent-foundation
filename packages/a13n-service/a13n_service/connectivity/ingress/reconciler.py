@@ -8,7 +8,6 @@ from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
-from a13n_service.connectivity.bots.setup_tests import record_test_rejection
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -21,6 +20,7 @@ from .admission_domain import (
     RetryableInputOutcome,
 )
 from .admission_models import AgentThreadBindingRecord, IngressAdmissionRecord, IngressBatchRecord
+from .contributions import IngressObservations
 from .input import project_events
 from .provider import ExternalRef
 
@@ -46,6 +46,7 @@ class IngressAdmissionReconciler:
         max_backoff_seconds: float,
         input_max_bytes: int,
         clock: Clock = utc_now,
+        observations: IngressObservations | None = None,
     ) -> None:
         self._sessions = sessions
         self._acceptor = acceptor
@@ -56,6 +57,7 @@ class IngressAdmissionReconciler:
         self._max_backoff_seconds = max_backoff_seconds
         self._input_max_bytes = input_max_bytes
         self._clock = clock
+        self._observations = observations
 
     async def run(self) -> None:
         while True:
@@ -199,7 +201,8 @@ class IngressAdmissionReconciler:
             batch.status = "rejected"
             batch.rejection_reason = outcome.reason_code
             batch.terminal_at = now
-            await record_test_rejection(session, batch_id=batch.id, reason_code=outcome.reason_code)
+            if self._observations is not None:
+                await self._observations.rejected(session, batch_id=batch.id, reason_code=outcome.reason_code)
 
     def _retry_at(self, attempt_count: int) -> datetime:
         exponent = min(max(attempt_count - 1, 0), self._backoff_steps - 1)

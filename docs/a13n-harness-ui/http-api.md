@@ -161,6 +161,8 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
   --data '{"prompt":"Explain this project without changing files."}'
 ```
 
+Ordinary `/submit` also accepts optional `model_id` and `thinking` for that Run only. Omitted or null thinking inherits the effective Model settings; false explicitly requests Off. Read the Model's `thinking` descriptor from `/api/selectors` for its accepted values, configured-default summary, and disabled reasons rather than assuming every model accepts every level. Invalid or blocked selections are rejected without fallback. Neither override updates sticky Thread configuration, and steering rejects them. Captured configuration exposes a requested-thinking summary separately from current resource defaults.
+
 The returned `RootRunReceipt` has `receipt_id`, `thread_id`, and `submitted_at`. Read `/api/operations/{receipt_id}` until terminal status; there is no root-operation HTTP `wait` endpoint. Preparing/running is not completion. Completed/suspended/failed/cancelled describes the operation; inspect any `outcome.execution`, `outcome.continuation`, and `outcome.environment` separately.
 
 Only one active root operation is allowed per Thread. A second submit is rejected, not queued. There is no Service-style durable acceptance/idempotency contract here. After losing an acknowledgement, read current Thread/root activity before deciding what to do; do not blindly submit the input again. After process restart, old receipts can be unavailable while the saved continuation remains readable.
@@ -229,6 +231,7 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `GET /api/selectors`                                                | Configuration selection options                                        |
 | `GET /api/threads`                                                  | Query/page Threads                                                     |
 | `GET /api/threads/activity`                                         | Navigation activity and pending summaries                              |
+| `POST /api/threads/lookup`                                          | Bounded root summaries by identity, including saved completion markers |
 | `GET /api/threads/{thread_id}/tasks`                                | Selected Working State task projection                                 |
 | `GET /api/threads/{thread_id}/children`                             | Parent-scoped child listing or exact query                             |
 | `GET /api/threads/{thread_id}/children/wait`                        | Bounded child wait or poll                                             |
@@ -252,6 +255,12 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `GET /api/events`                                                   | Summary SSE invalidations                                              |
 
 `GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. `features.page_presence` and `features.output_comments` report transient page awareness and durable saved-output comments, independently of native sharing. These backend features do not imply browser panels exist.
+
+## Skill catalogs and references
+
+`POST /api/threads/skills-preview` accepts `NewThreadDefaults` and returns a `SkillCatalogView` without creating a Thread. `GET /api/threads/{thread_id}/skills` returns the idle Thread's next-Run catalog or the active Run's pinned catalog. Items expose `item_id`, `name`, `description`, `source_id`, and `logical_path`; the response includes `catalog_id` and `context_kind`.
+
+Submit and root steer accept an optional `skill_references` array (at most 512 entries), each with `catalog_id`, `item_id`, and `name`. The App validates these references before admission. Old-catalog references resolve by name; references claiming the applicable catalog must match its item identity. Missing, ambiguous, or duplicate references reject input. Keep `$name` in the ordinary prompt or ordered text parts; the references do not expand Skill bytes or grant permissions. Omitting this field preserves existing input behavior.
 
 ## Native Git Changes
 
@@ -336,6 +345,8 @@ Attachment upload uses raw bytes with a `name` query parameter, not multipart fo
 ## Navigate and inspect child work
 
 - `GET /api/threads/activity` returns navigation summaries, pending counts, current activity, and retained terminal outcomes. It accepts `project_id`, `query`, `include_archived`, `cursor`, and `limit`.
+- `POST /api/threads/lookup` accepts `{"thread_ids":["thread-..."]}` with 1–100 IDs (1–80 characters each). It returns a `ThreadPage` of matching root summaries, including archived roots and unavailable Project references, without pagination or continuation hydration. Missing IDs and child Threads are omitted; duplicate IDs coalesce. This read does not change metadata, navigation order, or execution.
+- Root summaries include optional `completion: {version, run_id, continuation_id, completed_at}` for the latest successfully saved root Run. It survives App restart; failures, cancellation, and subsequent checkpoints retain it. Existing databases start without historical markers. Transcript pages carry `completion_version` from the exact Thread snapshot used to load that transcript, or zero before any marked success. Clients implementing personal read state must acknowledge that rendered version, not a newer summary version; the server has no per-user acknowledgement endpoint.
 - `GET /api/threads/{thread_id}/tasks` returns the selected task projection. Tasks and decisions accept `expected_continuation_id`; a mismatch returns a conflict rather than mixing snapshots.
 - `GET /api/threads/{thread_id}/children` lists children under that exact parent. Supply `execution_id` for a specific child, or `cursor` and `limit` for a page.
 - `GET /api/threads/{thread_id}/children/wait` uses the same scope and selectors plus `timeout_seconds` (0–60), waiting only through the existing child operator.

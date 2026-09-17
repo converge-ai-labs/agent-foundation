@@ -196,7 +196,7 @@ it("honors display metadata, canonical reasoning events and tool result identity
   ]);
 });
 
-it("reboots on the next root Run and retains its authoritative unsaved base", async () => {
+it("reboots through a root Run and checkpoint race while retaining its authoritative unsaved base", async () => {
   vi.useFakeTimers();
   const display = new FocusDisplay();
   const first = snapshot(0);
@@ -219,28 +219,31 @@ it("reboots on the next root Run and retains its authoritative unsaved base", as
     .fn()
     .mockResolvedValueOnce(
       response([first, { kind: "ready", resume_cursor: "C0-ready" }, next]),
-    )
-    .mockResolvedValueOnce(
-      response([
-        second,
-        {
-          kind: "root_stream",
-          run_id: "run-two",
-          events: [
-            {
-              index: 0,
-              event_type: "TEXT_MESSAGE_CONTENT",
-              payload: {
-                message_id: "unsaved",
-                delta: "Retained failed output",
-              },
-              payload_omitted: false,
-            },
-          ],
-        },
-        { kind: "ready", resume_cursor: "C1-ready" },
-      ]),
     );
+  fetch.mockResolvedValueOnce(
+    response([{ kind: "reset", reason: "live_snapshot_changed" }]),
+  );
+  fetch.mockResolvedValueOnce(
+    response([
+      second,
+      {
+        kind: "root_stream",
+        run_id: "run-two",
+        events: [
+          {
+            index: 0,
+            event_type: "TEXT_MESSAGE_CONTENT",
+            payload: {
+              message_id: "unsaved",
+              delta: "Retained failed output",
+            },
+            payload_omitted: false,
+          },
+        ],
+      },
+      { kind: "ready", resume_cursor: "C1-ready" },
+    ]),
+  );
   const close = watchThread(
     { fetch } as unknown as Transport,
     "thread-one",
@@ -250,12 +253,11 @@ it("reboots on the next root Run and retains its authoritative unsaved base", as
     vi.fn(),
   );
   try {
-    await vi.advanceTimersByTimeAsync(1);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(fetch.mock.calls.map((call) => call[0])).toEqual([
-      "/api/threads/thread-one/events",
-      "/api/threads/thread-one/events",
-    ]);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls.map((call) => call[0])).toEqual(
+      Array(3).fill("/api/threads/thread-one/events"),
+    );
     expect(display.runId).toBe("run-two");
     expect(display.baseContinuation).toBe("C1");
     expect(display.snapshot!.thread.thread.root_activity.state).toBe(
@@ -335,10 +337,12 @@ it("dispatches native custom payloads and folds task/context operations without 
   expect(
     blocks.find((block) => block.id.endsWith("context:compact-one")),
   ).toMatchObject({
-    name: "compaction completed",
+    name: "Compact Summary",
+    context: "compaction",
     result: "Keep this context",
   });
-  expect(blocks.filter((block) => block.diagnostic)).toHaveLength(0);
+  expect(blocks.filter((block) => block.diagnostic)).toHaveLength(1);
+  expect(display.terminalFailure).toBe("Provider disconnected");
   expect(blocks.find((block) => block.id.endsWith(":execution"))).toMatchObject(
     { name: "Execution failed", text: "Provider disconnected" },
   );
@@ -715,6 +719,56 @@ it("merges same-version task batches, rejects stale projections and never mixes 
   expect(display.tasks).toBeUndefined();
 });
 
+it.each(["a13n.harness_ui.checkpoint", "plugin.test.fact"])(
+  "keeps %s out of conversation blocks in live delivery and replay",
+  (name) => {
+    const payload = {
+      name,
+      value: {
+        event: {
+          event_kind: "capability",
+          continuation_id: "checkpoint-one",
+          message: "internal fact",
+        },
+      },
+    };
+    for (const replay of [false, true]) {
+      const display = new FocusDisplay();
+      display.accept(snapshot(replay ? 1 : 0));
+      if (replay) {
+        display.accept(
+          focusFrame({
+            kind: "root_stream",
+            run_id: "run-one",
+            events: [
+              {
+                index: 0,
+                event_type: "CUSTOM",
+                payload,
+                payload_omitted: false,
+              },
+            ],
+          }),
+        );
+      }
+      display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+      if (!replay) {
+        const frame = event(101);
+        if (frame.kind !== "event") throw new Error("Expected event");
+        frame.event.event_type = "CUSTOM";
+        frame.event.payload = payload;
+        display.accept(frame);
+      }
+      expect(display.blocks.size).toBe(0);
+      expect(display.blocksAfter(null)).toEqual([]);
+      expect(display.gap).toBe(false);
+      expect(display.checkpoints.has("checkpoint-one")).toBe(
+        name === "a13n.harness_ui.checkpoint",
+      );
+    }
+  },
+);
+
 it("cuts over only the saved checkpoint prefix and reconstructs boundaries on replay", () => {
   const events = [
     {
@@ -835,4 +889,347 @@ it("updates context from the latest attributed root request, not cumulative or c
   expect(display.blocks.size).toBe(0);
   display.reset();
   expect(display.contextUsage).toBeUndefined();
+});
+
+it("publishes a replacement snapshot only after its complete replay, retaining the last good presentation", async () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "original" }));
+  display.accept(event(110, "Original complete output"));
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(value) {
+      controller = value;
+    },
+  });
+  const changed = vi.fn();
+  const invalidate = vi.fn();
+  const close = watchThread(
+    {
+      fetch: vi.fn().mockResolvedValue(new Response(stream)),
+    } as unknown as Transport,
+    "thread-one",
+    display,
+    changed,
+    vi.fn(),
+    invalidate,
+  );
+  const frame = async (value: unknown) => {
+    controller.enqueue(
+      new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  try {
+    await frame({ kind: "reset", reason: "expired" });
+    await frame(snapshot(2));
+    expect([...display.blocks.values()][0].text).toBe(
+      "Original complete output",
+    );
+    expect(changed).not.toHaveBeenCalled();
+    await frame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: [
+        {
+          index: 0,
+          event_type: "TEXT_MESSAGE_CONTENT",
+          payload: { message_id: "new", delta: "Replacement " },
+          payload_omitted: false,
+        },
+      ],
+    });
+    expect([...display.blocks.values()][0].text).toBe(
+      "Original complete output",
+    );
+    await frame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: [
+        {
+          index: 1,
+          event_type: "TEXT_MESSAGE_CONTENT",
+          payload: { message_id: "new", delta: "complete output" },
+          payload_omitted: false,
+        },
+      ],
+    });
+    expect(changed).not.toHaveBeenCalled();
+    await frame({ kind: "ready", resume_cursor: "replacement" });
+    expect([...display.blocks.values()][0].text).toBe(
+      "Replacement complete output",
+    );
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(display.cursor).toBe("replacement");
+    expect(invalidate).toHaveBeenCalledWith("reconcile");
+  } finally {
+    close();
+    controller.close();
+  }
+});
+
+it("hides recovery instructions and waits for visible progress before marking recovery resumed", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let sequence = 110;
+  const emit = (event_type: string, payload: unknown) => {
+    const frame = event(sequence++);
+    if (frame.kind !== "event") throw new Error("Expected event");
+    display.accept(
+      focusFrame({ ...frame, event: { ...frame.event, event_type, payload } }),
+    );
+  };
+  const retry = {
+    name: "a13n.harness.recovery",
+    value: {
+      event: { payload: { type: "model_retry_scheduled", attempt: 2 } },
+    },
+  };
+  emit("CUSTOM", retry);
+  emit("TEXT_MESSAGE_CONTENT", {
+    message_id: "recovery",
+    delta: "Internal instruction",
+    metadata: { display: false },
+  });
+  expect(display.blocks.size).toBe(0);
+  expect(display.recovery?.state).toBe("retrying");
+  emit("TEXT_MESSAGE_CONTENT", { message_id: "answer", delta: "Continuing" });
+  expect(display.recovery?.state).toBe("resumed");
+  emit("RUN_FINISHED", {});
+  expect(display.recovery).toMatchObject({ state: "resumed", retries: 1 });
+});
+
+it("does not resume an interrupted replacement using the old cursor", async () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "old" }));
+  display.accept(event(110, "Retained"));
+  const body = `data: ${JSON.stringify(snapshot(2))}\n\n`;
+  const fetch = vi.fn().mockResolvedValue(new Response(body));
+  const close = watchThread(
+    { fetch } as unknown as Transport,
+    "thread-one",
+    display,
+    vi.fn(),
+    vi.fn(),
+    vi.fn(),
+  );
+  try {
+    await vi.waitFor(() => expect(display.cursor).toBeUndefined());
+    expect([...display.blocks.values()][0].text).toBe("Retained");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2), {
+      timeout: 2000,
+    });
+    expect(fetch.mock.calls[1][0]).toBe("/api/threads/thread-one/events");
+  } finally {
+    close();
+  }
+});
+
+it.each([false, true])(
+  "retains visible output until replacement saved history arrives (next run: %s)",
+  async (nextRun) => {
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "old" }));
+    display.accept(event(110, "Already visible answer"));
+    const replacement = snapshot(nextRun ? 0 : undefined);
+    if (replacement.kind !== "snapshot") throw new Error("Expected snapshot");
+    replacement.snapshot.thread.continuation_id = "saved-new";
+    if (replacement.snapshot.root_stream) {
+      replacement.snapshot.root_stream.run_id = "run-two";
+      replacement.snapshot.root_stream.base_continuation_id = "saved-new";
+    }
+    const frames = [
+      replacement,
+      ...(nextRun ? [{ kind: "ready", resume_cursor: "new-ready" }] : []),
+    ];
+    const body = frames
+      .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
+      .join("");
+    const invalidate = vi.fn();
+    const close = watchThread(
+      {
+        fetch: vi.fn().mockResolvedValue(new Response(body)),
+      } as unknown as Transport,
+      "thread-one",
+      display,
+      vi.fn(),
+      vi.fn(),
+      invalidate,
+    );
+    try {
+      await vi.waitFor(() =>
+        expect(invalidate).toHaveBeenCalledWith("reconcile"),
+      );
+      expect(display.cursor).toBe(nextRun ? "new-ready" : "cursor-one");
+      expect(display.runId).toBe(nextRun ? "run-two" : undefined);
+      // Deferred and failed history reads still select the last successful page.
+      for (const staleRead of ["deferred", "failed"]) {
+        const shown = display.presentationFor("initial:thread-one");
+        expect(
+          shown.blocksAfter(null).map((block) => block.text),
+          staleRead,
+        ).toEqual(["Already visible answer"]);
+      }
+      expect(display.presentationFor("saved-new")).toBe(display);
+      expect(display.retainedPresentation).toBeUndefined();
+      expect(display.blocksAfter("saved-new")).toEqual([]);
+    } finally {
+      close();
+    }
+  },
+);
+
+it("folds root replay and child shell observations into the shared process inspector", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(3));
+  display.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: [
+        {
+          index: 0,
+          event_type: "TOOL_CALL_START",
+          payload: { tool_call_id: "shell", tool_call_name: "shell_exec" },
+          payload_omitted: false,
+        },
+        {
+          index: 1,
+          event_type: "TOOL_CALL_ARGS",
+          payload: {
+            tool_call_id: "shell",
+            delta: JSON.stringify({ command: "pnpm dev" }),
+          },
+          payload_omitted: false,
+        },
+        {
+          index: 2,
+          event_type: "TOOL_CALL_RESULT",
+          payload: {
+            tool_call_id: "shell",
+            content: JSON.stringify({
+              process_id: "process-one",
+              status: { phase: "running" },
+            }),
+          },
+          payload_omitted: false,
+        },
+      ],
+    }),
+  );
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  const send = (
+    sequence: number,
+    event_type: string,
+    payload: Record<string, unknown>,
+    child = false,
+  ) =>
+    display.accept(
+      focusFrame({
+        kind: "event",
+        resume_cursor: `cursor-${sequence}`,
+        event: {
+          sequence,
+          epoch: "epoch-one",
+          run_kind: child ? "child" : "root",
+          thread_id: child ? "child-one" : "thread-one",
+          root_thread_id: "thread-one",
+          run_id: child ? "child-run" : "run-one",
+          parent_thread_id: child ? "thread-one" : null,
+          execution_id: child ? "exec-one" : null,
+          event_type,
+          payload,
+          payload_omitted: false,
+        },
+      }),
+    );
+  send(
+    101,
+    "CUSTOM",
+    {
+      name: "a13n.pydantic_ai.function_tool_result",
+      value: {
+        event: {
+          part: {
+            part_kind: "tool-return",
+            tool_name: "shell_exec",
+            tool_call_id: "child-shell",
+            content: {
+              process_id: "process-one",
+              status: { phase: "running" },
+            },
+          },
+        },
+      },
+    },
+    true,
+  );
+  expect(display.processes.background).toHaveLength(2);
+  expect(display.processes.background[0].command).toBe("pnpm dev");
+  send(
+    102,
+    "CUSTOM",
+    {
+      name: "a13n.shell.status",
+      value: {
+        event: { process_id: "process-one", phase: "exited", exit_code: 2 },
+      },
+    },
+    true,
+  );
+  send(103, "RUN_FINISHED", {});
+  expect(display.processes.background.map((item) => item.phase)).toEqual([
+    "unavailable",
+    "exited",
+  ]);
+  expect(display.processes.background[1].exitCode).toBe(2);
+  display.reset();
+  expect(display.processes.background).toEqual([]);
+});
+
+it("backs off repeated snapshot races after one immediate retry while retaining visible output", async () => {
+  vi.useFakeTimers();
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept({ kind: "ready", resume_cursor: "ready" });
+  display.blocks.set("kept", {
+    id: "kept",
+    kind: "assistant",
+    text: "Keep this output",
+  });
+  const fetch = vi
+    .fn()
+    .mockImplementation(
+      async () =>
+        new Response(
+          `data: ${JSON.stringify({ kind: "reset", reason: "live_snapshot_changed" })}\n\n`,
+        ),
+    );
+  const connection = vi.fn();
+  const close = watchThread(
+    { fetch } as unknown as Transport,
+    "thread-one",
+    display,
+    vi.fn(),
+    connection,
+    vi.fn(),
+  );
+  try {
+    await vi.advanceTimersByTimeAsync(10);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(connection).toHaveBeenLastCalledWith("Reconnecting");
+    expect(display.blocks.get("kept")?.text).toBe("Keep this output");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).toHaveBeenCalledTimes(4);
+  } finally {
+    close();
+    vi.useRealTimers();
+  }
 });

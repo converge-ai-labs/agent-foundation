@@ -212,10 +212,12 @@ class EnvironmentService:
                 if replay:
                     await self._template(session, actor, replay.result_ref)
                     return replay.restore(EnvironmentTemplate)
-                recipe = TemplateConfiguration.model_validate(
+                template_config = TemplateConfiguration.model_validate(
                     request.model_dump(exclude={"name", "description", "labels"})
                 )
-                await self.validate_recipe(session, actor=actor, workspace_id=workspace_id, recipe=recipe)
+                await self.validate_template_config(
+                    session, actor=actor, workspace_id=workspace_id, template_config=template_config
+                )
                 row = EnvironmentTemplateRecord(
                     id=new_object_id("envtpl"),
                     organization_id=workspace.organization_id,
@@ -230,7 +232,7 @@ class EnvironmentService:
                 )
                 session.add(row)
                 await session.flush()
-                session.add(self._revision(row, recipe, now))
+                session.add(self._revision(row, template_config, now))
                 session.add(
                     evidence_record(
                         actor=actor,
@@ -262,15 +264,15 @@ class EnvironmentService:
                         return replay.restore(EnvironmentTemplate)
             raise
 
-    async def validate_recipe(
+    async def validate_template_config(
         self,
         session: AsyncSession,
         *,
         actor: AuthenticatedActor,
         workspace_id: str | None,
-        recipe: TemplateConfiguration,
+        template_config: TemplateConfiguration,
     ) -> None:
-        row = await self._provider(session, actor, recipe.provider_id)
+        row = await self._provider(session, actor, template_config.provider_id)
         if (row.workspace_id is not None and row.workspace_id != workspace_id) or not row.enabled:
             raise environment_not_found()
         provider = self.catalog.require(row.type)
@@ -278,11 +280,11 @@ class EnvironmentService:
             raise invalid_environment("the selected Provider supports external registration only")
         try:
             provider.validate_configuration(
-                schema_version=recipe.configuration_schema_version, value=recipe.configuration
+                schema_version=template_config.configuration_schema_version, value=template_config.configuration
             )
         except (ValidationError, EnvironmentProviderError) as error:
             raise invalid_environment("Environment template configuration is invalid") from error
-        window = recipe.retention.idle
+        window = template_config.retention.idle
         if window.stop_after is not None and not provider.supports_stop:
             raise invalid_environment("the selected Provider does not support stop")
         if window.delete_after is not None and not provider.supports_destroy:
@@ -290,16 +292,16 @@ class EnvironmentService:
 
     @staticmethod
     def _revision(
-        row: EnvironmentTemplateRecord, recipe: TemplateConfiguration, now: datetime
+        row: EnvironmentTemplateRecord, template_config: TemplateConfiguration, now: datetime
     ) -> EnvironmentTemplateRevisionRecord:
         return EnvironmentTemplateRevisionRecord(
             id=row.current_revision_id,
             template_id=row.id,
             organization_id=row.organization_id,
             workspace_id=row.workspace_id,
-            provider_id=recipe.provider_id,
+            provider_id=template_config.provider_id,
             version=row.version,
-            recipe=recipe.model_dump(mode="json"),
+            template_config=template_config.model_dump(mode="json"),
             created_at=now,
         )
 
@@ -314,15 +316,17 @@ class EnvironmentService:
                     "Template version changed or is archived.",
                     category=ErrorCategory.conflict,
                 )
-            recipe = TemplateConfiguration.model_validate(request.model_dump(exclude={"expected_version"}))
-            await self.validate_recipe(session, actor=actor, workspace_id=row.workspace_id, recipe=recipe)
+            template_config = TemplateConfiguration.model_validate(request.model_dump(exclude={"expected_version"}))
+            await self.validate_template_config(
+                session, actor=actor, workspace_id=row.workspace_id, template_config=template_config
+            )
             current = await session.get(EnvironmentTemplateRevisionRecord, row.current_revision_id)
-            if current is not None and current.recipe == recipe.model_dump(mode="json"):
+            if current is not None and current.template_config == template_config.model_dump(mode="json"):
                 return current.to_resource()
             row.version += 1
             row.current_revision_id = new_object_id("envrev")
             row.updated_at = utc_now()
-            revision = self._revision(row, recipe, row.updated_at)
+            revision = self._revision(row, template_config, row.updated_at)
             session.add(revision)
             return revision.to_resource()
 

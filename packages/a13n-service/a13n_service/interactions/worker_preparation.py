@@ -37,9 +37,6 @@ from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
-from a13n_service.memory.bots.runtime import bot_memory_capability
-from a13n_service.memory.runtime import graph_uses_memory, memory_capability, validate_memory_providers
-from a13n_service.memory.service import MemoryService
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
@@ -69,6 +66,7 @@ from .harness_runtime import (
 )
 from .input import AcceptedAgentInput
 from .objects import RunPayloadStore
+from .ports.memory import ActiveMemory, ExecutionMemoryRuntime, PreparedMemory
 from .protocol_context import ProtocolContextCapability
 from .run_control import RunAttemptControl
 from .state import CompletedOutcomeCandidate
@@ -98,13 +96,14 @@ class WorkerAttemptPreparer:
         subagent_capability: Callable[[], SubagentCapability],
         secrets: AgentSecretRuntime | None = None,
         web: WebRuntime | None = None,
-        memory: MemoryService | None = None,
+        memory: ExecutionMemoryRuntime | None = None,
         configuration_capability: Callable[[], ConfigurationCapability] | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
         self._secrets = secrets
         self._web = web
         self._memory = memory
+        self._prepared_memory: PreparedMemory | None = None
         self._configuration_capability = configuration_capability
         self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
@@ -148,15 +147,14 @@ class WorkerAttemptPreparer:
                 raise RunError("Configuration tools are unavailable.", code="configuration_worker_incompatible")
             validate_configuration_definition(run=self._run, config=config)
             await to_thread.run_sync(KnowledgeFiles().validate)
-        if self._run.bot_memory is None and graph_uses_memory(config):
-            if self._memory is None:
-                raise RunError("Memory is unavailable.", code="memory_provider_unavailable")
-            await validate_memory_providers(
-                self._memory,
-                organization_id=self._run.organization_id,
-                workspace_id=self._workspace_id,
-                config=config,
-            )
+        if self._memory is None:
+            raise RunError("Memory runtime is unavailable.", code="memory_binding_unavailable")
+        self._prepared_memory = await self._memory.prepare(
+            run=self._run,
+            workspace_id=self._workspace_id,
+            config=config,
+            current_context=lambda: self._control.current_context,
+        )
         if self._web is not None:
             await self._web.validate(
                 run=self._run,
@@ -193,6 +191,7 @@ class WorkerAttemptPreparer:
         )
         if self._control.current_state.envelope.prepared_plugins is None:
             await self._control.prepare_plugins(prepared)
+        selection = await validate_run_environment(self._environments, self._control.current_context)
         self._prepared_skills = await validate_agent_resources(
             sessions=self._sessions,
             run=self._run,
@@ -201,8 +200,8 @@ class WorkerAttemptPreparer:
             current_context=lambda: self._control.current_context,
             skills=self._skills,
             external_tools=self._external_tools,
+            working_directory=selection.descriptor.working_directory if selection is not None else "/",
         )
-        await validate_run_environment(self._environments, self._control.current_context)
 
     @asynccontextmanager
     async def open_runtime(self, context: AttemptContext) -> AsyncIterator[HarnessInvocation[Any]]:
@@ -261,33 +260,11 @@ class WorkerAttemptPreparer:
                 )
             if not context.is_root:
                 selected = (InlineRunControlCapability(self._control, agent_id=context.agent_id), *selected)
-            if run.bot_memory is not None:
-                if self._memory is None:
-                    if run.bot_memory.use_memory or run.bot_memory.save_on_request:
-                        raise RunError("Memory is unavailable.", code="memory_provider_unavailable")
-                else:
-                    bot_memory = bot_memory_capability(
-                        self._memory,
-                        run=run,
-                        agent_id=context.agent_id,
-                        current_context=lambda: self._control.current_context,
-                    )
-                    if bot_memory is not None:
-                        selected = (*selected, bot_memory)
-            elif context.config.memory is not None:
-                if self._memory is None:
-                    raise RuntimeError("Memory runtime is unavailable")
-                selected = (
-                    *selected,
-                    memory_capability(
-                        self._memory,
-                        run=run,
-                        workspace_id=self._workspace_id,
-                        agent_id=context.agent_id,
-                        selection=context.config.memory,
-                        current_context=lambda: self._control.current_context,
-                    ),
-                )
+            if self._prepared_memory is None:
+                raise RunError("Memory preparation is incomplete.", code="memory_binding_unavailable")
+            memory = self._prepared_memory.for_node(context)
+            if isinstance(memory, ActiveMemory):
+                selected = (*selected, memory.capability)
             protocol_context = self._control.current_state.envelope.protocol_context
             if context.is_root and protocol_context is not None:
                 selected = (*selected, ProtocolContextCapability(protocol_context))

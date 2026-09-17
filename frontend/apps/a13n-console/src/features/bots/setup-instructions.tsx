@@ -65,7 +65,7 @@ export function BotSetupInstructions({
             </li>
             <li>
               {t(
-                "Copy the bot token and signing secret. Save the account here, then add the event endpoint in Slack's Event Subscriptions.",
+                "Choose HTTP callbacks or Socket Mode below. HTTP uses a signing secret; Socket Mode uses an app-level token with connections:write. Both use the bot token.",
               )}
             </li>
             <li>
@@ -86,7 +86,7 @@ export function BotSetupInstructions({
           <DisclosureSection title={t("Slack manifest template")}>
             <p>
               {t(
-                "This template includes public and private channel history, direct messages, and group direct messages for discussion and chat modes. Remove unused event subscriptions and their scopes for a mention-only pilot. Add the HTTP request URL after saving the account.",
+                "This template includes public and private channel history, direct messages, and group direct messages for discussion and chat modes. Remove unused event subscriptions and their scopes for a mention-only pilot. For HTTP add the request URL after saving; for Socket Mode enable socket_mode_enabled and create an app-level token.",
               )}
             </p>
             <CopyButton value={slackManifest} copyLabel={t("Copy manifest")} />
@@ -110,12 +110,12 @@ export function BotSetupInstructions({
             </li>
             <li>
               {t(
-                "Grant the message permissions for your selected interaction mode and subscribe to im.message.receive_v1 using HTTP events.",
+                "Grant the message permissions for your selected interaction mode and subscribe to im.message.receive_v1 using your chosen connection method.",
               )}
             </li>
             <li>
               {t(
-                "Provide the App secret, verification token, and optional encryption key. Save here, then configure the event endpoint in Feishu.",
+                "Provide App ID and App Secret. For HTTP, also provide the verification token and optional encryption key. Save here, then finish the event connection in Feishu.",
               )}
             </li>
             <li>

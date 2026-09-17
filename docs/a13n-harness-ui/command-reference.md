@@ -264,7 +264,7 @@ Type these in the terminal composer, not your shell. Tab completes supported syn
 | `/cancel`                               | —       | Yes        | Stop the current task.                                                    |
 | `/quit`                                 | `/exit` | Yes        | End this session.                                                         |
 
-`/thinking` accepts `default`, `low`, `medium`, `high`, or `xhigh`; the actual choices shown depend on the Model. `/environment` selects `full-control` or `sandbox` where supported. Native `/steer` retains its whole trailing message rather than splitting it into shell words.
+`/thinking` opens the selected Model's supported choices; command completion uses the same list. `default` inherits the Model's configured settings. Depending on the model and adapter, explicit choices can include `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, or `max`. Unsupported choices are rejected, and unknown models offer only default with an explanation. `/environment` selects `full-control` or `sandbox` where supported. Native `/steer` retains its whole trailing message rather than splitting it into shell words.
 
 ## Consequential actions and limitations
 

@@ -148,13 +148,14 @@ class ModelRecoveryPolicy:
         return value
 
     def delay(self, attempt_index: int) -> float:
+        """Use equal jitter so enabled backoff never becomes an immediate retry."""
         if self.backoff_initial_seconds == 0 or self.backoff_max_seconds == 0:
             return 0
         ceiling = min(
             self.backoff_initial_seconds * (2 ** max(0, attempt_index - 1)),
             self.backoff_max_seconds,
         )
-        return random.uniform(0, ceiling)
+        return random.uniform(ceiling / 2, ceiling)
 
 
 @dataclass(slots=True)

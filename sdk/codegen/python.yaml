@@ -1,5 +1,0 @@
-# Run only the explicitly pinned formatter in generate.py.
-post_hooks: []
-content_type_overrides:
-  application/zip: application/octet-stream
-  image/webp: application/octet-stream

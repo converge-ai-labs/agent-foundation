@@ -73,7 +73,7 @@ async def test_app_setup_fills_only_omitted_capabilities(tmp_path: Path, capabil
     selection = SetupSelection.model_validate_json(
         json.dumps(
             {
-                "api_key_model": {
+                "model": {
                     "route": "anthropic:claude-sonnet-4-6",
                     "authentication": {"kind": "api_key", "env": "TEST_KEY"},
                     "model_characteristics": characteristics,
@@ -104,7 +104,7 @@ async def test_app_setup_fills_only_omitted_capabilities(tmp_path: Path, capabil
 async def test_programmatic_setup_without_characteristics_seeds_stable_media_list(tmp_path: Path) -> None:
     selection = SetupSelection.model_validate(
         {
-            "api_key_model": {
+            "model": {
                 "route": "google:gemini-2.5-pro",
                 "authentication": {"kind": "api_key", "env": "TEST_KEY"},
             },
@@ -119,7 +119,7 @@ async def test_programmatic_setup_without_characteristics_seeds_stable_media_lis
     characteristics = yaml.safe_load(preview.files["models/api-key.yaml"])["model_characteristics"]
     assert characteristics == {
         "capabilities": ["audio_understanding", "image_understanding", "video_understanding"],
-        "context_window_tokens": 350000,
+        "context_window_tokens": None,
         "proactive_context_management_threshold": 0.65,
         "compact_threshold": 0.90,
     }
@@ -135,7 +135,7 @@ async def test_all_creation_flows_persist_known_native_image_support(
     tmp_path: Path, mode, chosen_name, provider
 ) -> None:
     connection = {
-        "api": ["api", "anthropic", "", "off", "env:TEST_KEY", "claude-sonnet-4-6", "", ""],
+        "api": ["api", "anthropic", "", "new", "env:TEST_KEY", "claude-sonnet-4-6", "", ""],
         "codex": ["codex", "later", "gpt-5.6-sol", ""],
         "grok": ["grok", "later", "grok-4.6"],
     }[provider]
@@ -185,7 +185,7 @@ async def test_all_creation_flows_persist_known_native_image_support(
 
 def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> None:
     wizard = SetupWizard()
-    for answer in ("api", "anthropic", "", "off", "env:TEST_KEY", "claude-sonnet-4-6", "", "", ""):
+    for answer in ("api", "anthropic", "", "new", "env:TEST_KEY", "claude-sonnet-4-6", "", "", ""):
         wizard.accept(answer)
     assert "Native media input: image." in wizard.notice()
     while wizard.question.key != "model":
@@ -197,6 +197,6 @@ def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> No
     assert "Native media input: unknown; no native media enabled." in wizard.notice()
     while wizard.question.key != "api_provider":
         assert wizard.back()
-    for answer in ("google", "https://proxy.example/v1", "off", "env:TEST_KEY", "gemini-2.5-pro", "", ""):
+    for answer in ("google", "https://proxy.example/v1", "new", "env:TEST_KEY", "gemini-2.5-pro", "", ""):
         wizard.accept(answer)
     assert "Native media input: audio, image, video." in wizard.notice()

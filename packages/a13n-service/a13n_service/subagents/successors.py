@@ -32,6 +32,7 @@ from a13n_service.interactions.objects import (
     StaleStateWriter,
     StoredRunState,
 )
+from a13n_service.interactions.ports.memory import ExecutionBindings
 from a13n_service.labels import merge_labels
 from a13n_service.run_stream import RetainedItem, RunReplayStore
 from a13n_service.storage import ObjectStoreError, short_session, transaction
@@ -81,6 +82,7 @@ class AsyncSubagentSuccessorReconciler:
         replays: RunReplayStore,
         *,
         lifecycle: LifecycleWriter,
+        bindings: ExecutionBindings,
         signals: ThreadControlSignalPublisher | None = None,
         run_id_factory: Callable[[str, str, str], str] | None = None,
         clock: Clock = utc_now,
@@ -91,6 +93,7 @@ class AsyncSubagentSuccessorReconciler:
         self._replays = replays
         self._signals = signals
         self._lifecycle = lifecycle
+        self._bindings = bindings
         self._run_id_factory = run_id_factory or _successor_run_id
         self._clock = clock
 
@@ -300,6 +303,9 @@ class AsyncSubagentSuccessorReconciler:
                     intent=RetainedRunEnvironment(selected.selected_parent.id, selected.selected_parent.thread_id),
                 )
                 await database.flush()
+                await self._bindings.finalize(
+                    database, successor_record.to_resource(), source_run_id=selected.selected_parent.id
+                )
                 await self._lifecycle.append_accepted_run_lifecycle(database, successor_record)
                 consume_async_result_for_successor(
                     selected.thread,

@@ -8,12 +8,12 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from a13n_service.bots.connectivity.models import BotTestRecord
+from a13n_service.bots.connectivity.service import BotService
+from a13n_service.bots.connectivity.setup_tests import CreateBotTest
 from a13n_service.connectivity.accounts.domain import UpdateAccountRequest
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.targets import ReplaceTargetRequest
-from a13n_service.connectivity.bots.models import BotTestRecord
-from a13n_service.connectivity.bots.service import BotService
-from a13n_service.connectivity.bots.setup_tests import CreateBotTest
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.ingress.admission import IngressEventService
@@ -132,6 +132,8 @@ def _signed(marker, *, channel="C1", event_id="Ev1", valid=True, mention=True):
 
 
 def _ingress(sessions, protector, *, clock=lambda: NOW):
+    from a13n_service.bots.connectivity.setup_tests import SetupObservations
+
     return IngressEventService(
         sessions,
         AdapterRegistry(
@@ -146,6 +148,7 @@ def _ingress(sessions, protector, *, clock=lambda: NOW):
         batch_max_bytes=1024 * 1024,
         dedup_horizon_seconds=3600,
         clock=clock,
+        observations=SetupObservations(),
     )
 
 

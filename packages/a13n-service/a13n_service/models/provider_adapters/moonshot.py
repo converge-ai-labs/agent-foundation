@@ -5,7 +5,6 @@ from pydantic_ai.providers.moonshotai import MoonshotAIProvider
 
 from . import openai_provider
 from .base import ProviderIntegration, bearer_models_request
-from .openai_provider import openai_style_discovery
 from .types import ProviderConfiguration, RuntimeProvider
 
 
@@ -28,6 +27,5 @@ INTEGRATION = ProviderIntegration(
     supported_model_apis=("openai.chat_completions",),
     build_provider=_build_provider,
     endpoint="https://api.moonshot.cn/v1",
-    model_discovery=openai_style_discovery(bearer_models_request),
-    model_profile=MoonshotAIProvider.model_profile,
+    connection_probe=bearer_models_request,
 )

@@ -2,7 +2,7 @@
 
 Generated from the current built-in Provider Pydantic models by `scripts/docs/references.py`. Do not independently edit the rows. Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
 
-Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these recipe objects.
+Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these template configuration objects.
 
 ## `DirectLocalProviderConfiguration`
 
@@ -74,29 +74,28 @@ Choices: `"host", "deny"`.
 
 ## `DockerProviderConfiguration`
 
-| Field                         | Required | Type / choices                    | Constraints and default                                                                                                                        |
-| ----------------------------- | -------- | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-sandbox:latest"                                                            |
-| `pull_policy`                 | false    | "if_missing", "always", "never"   | default="if_missing"                                                                                                                           |
-| `root_mount_id`               | false    | string                            | minLength=1; maxLength=128; default="workspace"                                                                                                |
-| `mounts`                      | false    | array of DockerMountConfiguration | default=[{"mount_id": "workspace", "container_path": "/workspace", "source": null, "read_only": false, "allow_command_execution": true}]       |
-| `trusted_executable_roots`    | false    | array of string                   | default=[]                                                                                                                                     |
-| `shell_profiles`              | false    | array of DockerShellProfile       | default=\[{"profile_id": "default", "executable": "/bin/bash", "fixed_arguments": ["-c"], "allow_login": false, "max_script_bytes": 1048576}\] |
-| `nano_cpus`                   | false    | integer or null                   | default=null                                                                                                                                   |
-| `memory_bytes`                | false    | integer or null                   | default=null                                                                                                                                   |
-| `pids_limit`                  | false    | integer or null                   | default=null                                                                                                                                   |
-| `stop_grace_seconds`          | false    | integer                           | minimum=0; maximum=300; default=10                                                                                                             |
-| `max_file_bytes`              | false    | integer                           | exclusiveMinimum=0; default=16777216                                                                                                           |
-| `max_output_preview_bytes`    | false    | integer                           | maximum=16777216; exclusiveMinimum=0; default=65536                                                                                            |
-| `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=1073741824                                                                                                         |
-| `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=68719476736                                                                                                        |
-
-## `DockerBindMountSource`
-
-| Field  | Required | Type / choices | Constraints and default |
-| ------ | -------- | -------------- | ----------------------- |
-| `kind` | false    | "bind"         | default="bind"          |
-| `path` | true     | string         | format="path"           |
+| Field                         | Required | Type / choices                    | Constraints and default                                                                     |
+| ----------------------------- | -------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
+| `image`                       | false    | string                            | minLength=1; maxLength=1024; default="ghcr.io/converge-ai-labs/a13n-docker-environment:dev" |
+| `pull_policy`                 | false    | "if_missing", "always", "never"   | default="if_missing"                                                                        |
+| `mounts`                      | false    | array of DockerMountConfiguration | default=[]                                                                                  |
+| `environment`                 | false    | object                            | —; default from model factory                                                               |
+| `init_script`                 | false    | string or null                    | format="multiline"; default=null                                                            |
+| `disable_network`             | false    | boolean                           | default=false                                                                               |
+| `user`                        | false    | string or null                    | default=null                                                                                |
+| `shell`                       | false    | string                            | default="/bin/sh"                                                                           |
+| `python`                      | false    | string                            | default="python3"                                                                           |
+| `cpus`                        | false    | number or null                    | default=null                                                                                |
+| `memory_mib`                  | false    | integer or null                   | default=null                                                                                |
+| `pids_limit`                  | false    | integer or null                   | default=null                                                                                |
+| `stop_grace_seconds`          | false    | integer                           | minimum=0; maximum=300; default=10                                                          |
+| `request_timeout_seconds`     | false    | integer                           | maximum=3600; exclusiveMinimum=0; default=60                                                |
+| `max_file_bytes`              | false    | integer                           | exclusiveMinimum=0; default=16777216                                                        |
+| `max_query_entries`           | false    | integer                           | exclusiveMinimum=0; default=100000                                                          |
+| `max_output_preview_bytes`    | false    | integer                           | exclusiveMinimum=0; default=65536                                                           |
+| `max_output_bytes_per_stream` | false    | integer                           | exclusiveMinimum=0; default=16777216                                                        |
+| `max_spool_bytes`             | false    | integer                           | exclusiveMinimum=0; default=67108864                                                        |
+| `max_concurrent_processes`    | false    | integer                           | exclusiveMinimum=0; default=128                                                             |
 
 ## `DockerImagePullPolicy`
 
@@ -104,30 +103,11 @@ Choices: `"if_missing", "always", "never"`.
 
 ## `DockerMountConfiguration`
 
-| Field                     | Required | Type / choices                                           | Constraints and default    |
-| ------------------------- | -------- | -------------------------------------------------------- | -------------------------- |
-| `mount_id`                | true     | string                                                   | minLength=1; maxLength=128 |
-| `container_path`          | true     | string                                                   | format="path"              |
-| `source`                  | false    | DockerBindMountSource or DockerVolumeMountSource or null | default=null               |
-| `read_only`               | false    | boolean                                                  | default=false              |
-| `allow_command_execution` | false    | boolean                                                  | default=true               |
-
-## `DockerShellProfile`
-
-| Field              | Required | Type / choices  | Constraints and default             |
-| ------------------ | -------- | --------------- | ----------------------------------- |
-| `profile_id`       | true     | string          | minLength=1; maxLength=128          |
-| `executable`       | true     | string          | format="path"                       |
-| `fixed_arguments`  | false    | array of string | default=[]                          |
-| `allow_login`      | false    | boolean         | default=false                       |
-| `max_script_bytes` | false    | integer         | exclusiveMinimum=0; default=1048576 |
-
-## `DockerVolumeMountSource`
-
-| Field  | Required | Type / choices | Constraints and default    |
-| ------ | -------- | -------------- | -------------------------- |
-| `kind` | false    | "volume"       | default="volume"           |
-| `name` | true     | string         | minLength=1; maxLength=255 |
+| Field       | Required | Type / choices | Constraints and default |
+| ----------- | -------- | -------------- | ----------------------- |
+| `source`    | true     | string         | —                       |
+| `target`    | true     | string         | format="path"           |
+| `read_only` | false    | boolean        | default=true            |
 
 ## `E2BProviderConfiguration`
 
@@ -161,10 +141,9 @@ Choices: `"if_missing", "always", "never"`.
 
 ## `DockerBackendConfiguration`
 
-| Field         | Required | Type / choices | Constraints and default                                |
-| ------------- | -------- | -------------- | ------------------------------------------------------ |
-| `host_id`     | false    | string         | minLength=1; maxLength=256; default from model factory |
-| `docker_host` | false    | string         | minLength=1; default from model factory                |
+| Field         | Required | Type / choices | Constraints and default                 |
+| ------------- | -------- | -------------- | --------------------------------------- |
+| `docker_host` | false    | string         | minLength=1; default from model factory |
 
 ## `E2BBackendConfiguration`
 

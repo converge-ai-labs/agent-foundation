@@ -10,6 +10,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { parse } from "yaml";
 import { BrowserApp } from "./app";
+import * as push from "./shell/push";
+import { IDBFactory } from "fake-indexeddb";
 import { onlineManager } from "@tanstack/react-query";
 
 const status = {
@@ -81,6 +83,7 @@ function fixture(request: Request): Response | Promise<Response> {
   return json([]);
 }
 beforeEach(() => {
+  vi.stubGlobal("indexedDB", new IDBFactory());
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addListener() {},
@@ -102,7 +105,66 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
+});
+
+it("keeps a public startup shell instead of flashing login while checking a retained key", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  window.history.replaceState(
+    null,
+    "",
+    "/settings/source?path=agents%2Fassistant.yaml",
+  );
+  let release!: () => void;
+  const delayed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const requests: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      requests.push(path);
+      if (path === "/api/status") await delayed;
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  expect(screen.getByText("Connecting to Harness UI…")).toBeTruthy();
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  expect(screen.queryByLabelText("Name")).toBeNull();
+  expect(requests).toEqual(["/api/status"]);
+  release();
+  await screen.findByLabelText("Name");
+  expect(
+    screen.queryByRole("heading", { name: "Log in to Harness UI" }),
+  ).toBeNull();
+  expect(window.location.pathname + window.location.search).toBe(
+    "/settings/source?path=agents%2Fassistant.yaml",
+  );
+});
+
+it("distinguishes an unavailable listener from rejected credentials and retries the same key", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "retained-key");
+  let unavailable = true;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (unavailable) throw new TypeError("Network unavailable");
+      expect(request.headers.get("Authorization")).toBe("Bearer retained-key");
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  await screen.findByText(
+    "Unable to reach the server. Check your connection and try again.",
+  );
+  expect(screen.queryByLabelText("API key")).toBeNull();
+  unavailable = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry connection" }));
+  await screen.findByText("1.2.3rc2");
+  expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("retained-key");
 });
 
 it("consumes the fragment before all network requests and retains only an accepted key", async () => {
@@ -190,6 +252,47 @@ it("forgets the retained credential and closes protected views", async () => {
   expect(
     screen.queryByRole("heading", { name: "What would you like to build?" }),
   ).toBeNull();
+});
+
+it("keeps logout cleanup authenticated and warns when background delivery cannot be disabled", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "remembered");
+  const cleanupPush = vi
+    .spyOn(push, "disablePush")
+    .mockImplementation(async (transport) => {
+      if (!transport) return;
+      // A real request proves logout has not closed the transport yet.
+      const response = await transport.fetch(
+        "/api/push/subscriptions/subscription-one",
+        { method: "DELETE" },
+      );
+      expect(response.status).toBe(204);
+      throw new Error("Browser and server cleanup could not be confirmed");
+    });
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      if (request.method === "DELETE") {
+        expect(request.headers.get("Authorization")).toBe("Bearer remembered");
+        expect(request.signal.aborted).toBe(false);
+        return new Response(null, { status: 204 });
+      }
+      return request.headers.has("Authorization")
+        ? fixture(request)
+        : json({}, 401);
+    }),
+  );
+  render(<BrowserApp />);
+  await screen.findByText("1.2.3rc2");
+  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+  await screen.findByRole("heading", { name: "Log in to Harness UI" });
+  expect(await screen.findByRole("alert")).toHaveProperty(
+    "textContent",
+    expect.stringContaining(
+      "Block notifications in this site's browser settings",
+    ),
+  );
+  expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
+  expect(cleanupPush).toHaveBeenCalled();
 });
 
 it("retains dirty source fields through navigation and external invalidation", async () => {
@@ -614,7 +717,7 @@ it("reopens a one-click agent draft from its own settings list without writing o
     target: { value: "Unfinished assistant" },
   });
   const draftPath = new URLSearchParams(window.location.search).get("path")!;
-  fireEvent.click(screen.getByRole("link", { name: "Agents & models" }));
+  fireEvent.click(screen.getByRole("link", { name: "Agents" }));
   fireEvent.click(
     await screen.findByRole("link", {
       name: /Unfinished assistant.*Unsaved draft/,
@@ -733,15 +836,21 @@ it("edits project defaults directly while preserving unknown project fields", as
   expect(saved).toContain("/test");
 });
 
-it("generates a visible collaboration name, remembers it across visits, and lets the user save a nonempty replacement", async () => {
+it("persists generated and edited collaboration names across visits and rejects empty replacements", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "test-key");
-  const component = render(<BrowserApp />);
-  const profile = await screen.findByRole("button", {
+  let component = render(<BrowserApp />);
+  await screen.findByRole("button", {
     name: /^Your collaboration name: Guest /,
   });
   const generated = localStorage.getItem("a13n-harness-ui.display-name");
   expect(generated).toMatch(/^Guest [a-f0-9]{6}$/);
-  fireEvent.click(profile);
+  component.unmount();
+  component = render(<BrowserApp />);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: `Your collaboration name: ${generated}`,
+    }),
+  );
   const input = await screen.findByLabelText("Your display name");
   fireEvent.change(input, { target: { value: "   " } });
   expect(
@@ -755,18 +864,6 @@ it("generates a visible collaboration name, remembers it across visits, and lets
   component.unmount();
   render(<BrowserApp />);
   await screen.findByRole("button", { name: "Your collaboration name: Alex" });
-});
-
-it("keeps a generated collaboration name stable when the workbench is reopened", async () => {
-  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
-  const component = render(<BrowserApp />);
-  const first = await screen.findByRole("button", {
-    name: /^Your collaboration name: Guest /,
-  });
-  const label = first.getAttribute("aria-label")!;
-  component.unmount();
-  render(<BrowserApp />);
-  await screen.findByRole("button", { name: label });
 });
 
 it("configures Sidekick in General without changing defaults or starting conversations", async () => {
@@ -825,6 +922,13 @@ it("configures Sidekick in General without changing defaults or starting convers
             },
             { agent_id: "agent-empty", name: "No model", model_id: null },
           ],
+          models: [
+            {
+              model_id: "model-worker",
+              name: "Worker model",
+              route: "openai-responses:custom",
+            },
+          ],
           environments: [],
           harness_plugins: [],
           environment_run_extensions: [],
@@ -843,7 +947,7 @@ it("configures Sidekick in General without changing defaults or starting convers
     screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
   ).toContain("Inherit current agent");
   await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
-  await user.click(await screen.findByRole("option", { name: "model-worker" }));
+  await user.click(await screen.findByRole("option", { name: "Worker model" }));
   expect(parse(content).webui.sidekick).toBeUndefined();
   await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
   await user.click(await screen.findByRole("option", { name: "Worker" }));

@@ -10,7 +10,7 @@ import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
 import { type EnvironmentScope } from "./api";
-import { TemplateRecipe } from "./template-recipe";
+import { TemplateConfig } from "./template-config";
 
 export function TemplateHistory({
   template,
@@ -51,7 +51,7 @@ export function TemplateHistory({
           <ArrowLeftIcon size={14} aria-hidden="true" />{" "}
           {t("Back to revisions")}
         </Button>
-        <TemplateRecipe
+        <TemplateConfig
           scope={scope}
           template={template}
           revision={restore}
@@ -81,9 +81,11 @@ export function TemplateHistory({
                   render: (item) => <Timestamp value={item.created_at} />,
                 },
                 {
-                  label: t("Recipe"),
+                  label: t("Template configuration"),
                   render: (item) => (
-                    <DisclosureSection title={<>{t("View recipe")}</>}>
+                    <DisclosureSection
+                      title={<>{t("View template configuration")}</>}
+                    >
                       <JsonView value={item} />
                     </DisclosureSection>
                   ),

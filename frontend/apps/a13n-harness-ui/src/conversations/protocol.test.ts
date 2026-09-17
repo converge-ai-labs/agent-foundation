@@ -1,51 +1,16 @@
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
-import { once } from "node:events";
+import { startApp } from "../../tests/app-fixture";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createTransport, result, type Transport } from "../transport/client";
 import { ThreadDraft, values } from "./draft";
-import { submitDraft } from "./composer";
+import { submitDraft, submitContinuation } from "./composer";
 import { FocusDisplay, watchThread } from "./stream";
 
-let server: ReturnType<typeof spawn>;
+let app: Awaited<ReturnType<typeof startApp>>;
 let transport: Transport;
-let stderr = "";
 beforeAll(async () => {
-  server = spawn(
-    "uv",
-    [
-      "run",
-      "--locked",
-      "--package",
-      "a13n-harness-ui",
-      "--no-default-groups",
-      "python",
-      "tests/protocol_server.py",
-    ],
-    { stdio: ["pipe", "pipe", "pipe"] },
-  );
-  server.stderr!.on("data", (chunk) => {
-    stderr += chunk;
-  });
-  const lines = createInterface({ input: server.stdout! });
-  const origin = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Protocol listener timed out: ${stderr}`)),
-      30000,
-    );
-    server.once("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`Protocol listener exited (${code}): ${stderr}`));
-    });
-    lines.on("line", (line) => {
-      if (line.startsWith("{")) {
-        clearTimeout(timer);
-        resolve(JSON.parse(line).origin);
-      }
-    });
-  });
-  vi.stubGlobal("window", { location: { origin } });
+  app = await startApp();
+  vi.stubGlobal("window", { location: { origin: app.origin } });
   transport = createTransport("test-only-key", () => {
     throw new Error("Unexpected authentication failure");
   });
@@ -55,13 +20,7 @@ beforeAll(async () => {
 }, 40000);
 afterAll(async () => {
   transport?.close();
-  if (server?.exitCode === null) {
-    const exited = once(server, "exit");
-    server.stdin!.end("stop\n");
-    const kill = setTimeout(() => server.kill("SIGKILL"), 15000);
-    await exited;
-    clearTimeout(kill);
-  }
+  await app?.close();
   vi.unstubAllGlobals();
 }, 20000);
 async function until(predicate: () => boolean) {
@@ -155,10 +114,11 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
     expect(captured.parts[1]).toEqual({
       attachment_id: attachment.attachment_id,
     });
+    const sourceId = "input_0123456789abcdef0123456789abcdef";
     const receipt = await result(
       transport.client.POST("/api/threads/{thread_id}/submit", {
         params: { path: { thread_id: thread } },
-        body: { parts: captured.parts },
+        body: { parts: captured.parts, source_id: sourceId },
       }),
     );
     b.doc.getText("text").insert(0, "NEXT");
@@ -197,6 +157,13 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
       transport.client.GET("/api/threads/{thread_id}/transcript", {
         params: { path: { thread_id: thread } },
       }),
+    );
+    const authored = history.entries
+      .flatMap((entry) => entry.parts)
+      .filter((part) => part.metadata?.source_id === sourceId);
+    expect(authored.length).toBeGreaterThanOrEqual(captured.parts.length);
+    expect(authored.some((part) => part.text?.includes("example.txt"))).toBe(
+      true,
     );
     const retained = await transport.fetch(
       `/api/threads/${thread}/attachments/${attachment.attachment_id}`,
@@ -326,14 +293,22 @@ it("selects a model for one HTTP admission without changing sticky configuration
   const receipt = await result(
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
-      body: { prompt: "Use the alternate model", model_id: "model-alternate" },
+      body: {
+        prompt: "Use the alternate model",
+        model_id: "model-alternate",
+        thinking: "low",
+      },
     }),
   );
   await expect(
     transport.fetch(`/api/operations/${receipt.receipt_id}/steer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: "Continue", model_id: "model-fixture" }),
+      body: JSON.stringify({
+        prompt: "Continue",
+        model_id: "model-fixture",
+        thinking: "high",
+      }),
     }),
   ).rejects.toMatchObject({ status: 400 });
   await vi.waitFor(
@@ -353,6 +328,12 @@ it("selects a model for one HTTP admission without changing sticky configuration
     }),
   );
   expect(inspection.captured?.agent.model_id).toBe("model-alternate");
+  expect(inspection.captured?.agent.thinking_summary).toBe("Low");
+  expect(
+    catalog.models
+      ?.find((item) => item.model_id === "model-alternate")
+      ?.thinking?.options.map((option) => option.value),
+  ).toEqual([null, "minimal", "low", "medium", "high"]);
   expect(inspection.next_model_id).toBe("model-fixture");
   const rejected = await transport.client.POST(
     "/api/threads/{thread_id}/submit",
@@ -374,3 +355,288 @@ it("selects a model for one HTTP admission without changing sticky configuration
     { timeout: 10000 },
   );
 });
+
+it("projects skills before creation and validates references on submit and active steering", async () => {
+  const preview = await result(
+    transport.client.POST("/api/threads/skills-preview", { body: {} }),
+  );
+  expect(preview.context_kind).toBe("draft");
+  const skill = preview.items.find(
+    (item) => item.name === "harness-ui-configuration",
+  )!;
+  expect(skill).toBeTruthy();
+  const created = await result(
+    transport.client.POST("/api/threads", { body: {} }),
+  );
+  const path = { thread_id: created.thread_id };
+  const idle = await result(
+    transport.client.GET("/api/threads/{thread_id}/skills", {
+      params: { path },
+    }),
+  );
+  expect(idle.context_kind).toBe("idle");
+  const ref = {
+    catalog_id: preview.catalog_id,
+    item_id: skill.item_id,
+    name: skill.name,
+  };
+  await expect(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: "$missing",
+        skill_references: [{ ...ref, name: "missing" }],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  await expect(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: `$${skill.name}`,
+        skill_references: [
+          { ...ref, catalog_id: idle.catalog_id, item_id: "0".repeat(64) },
+        ],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  const accepted = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: `Use $${skill.name} and wait for skill inspection`,
+        skill_references: [ref],
+      },
+    }),
+  );
+  const active = await result(
+    transport.client.GET("/api/threads/{thread_id}/skills", {
+      params: { path },
+    }),
+  );
+  expect(active.context_kind).toBe("active");
+  expect(active.receipt_id).toBe(accepted.receipt_id);
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: accepted.receipt_id } },
+        }),
+      );
+      expect(operation.available_actions).toContain("steer");
+    },
+    { timeout: 10000 },
+  );
+  await expect(
+    transport.client.POST("/api/operations/{receipt_id}/steer", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+      body: {
+        prompt: "$missing",
+        skill_references: [{ ...ref, name: "missing" }],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  const steered = await result(
+    transport.client.POST("/api/operations/{receipt_id}/steer", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+      body: { prompt: `Check $${skill.name}`, skill_references: [ref] },
+    }),
+  );
+  expect(steered.accepted).toBe(true);
+  const cancellation = await result(
+    transport.client.POST("/api/operations/{receipt_id}/cancel", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+    }),
+  );
+  expect(cancellation).toMatchObject({
+    receipt_id: accepted.receipt_id,
+    accepted: true,
+  });
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: accepted.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("cancelled");
+      const detail = await result(
+        transport.client.GET("/api/threads/{thread_id}", { params: { path } }),
+      );
+      expect(detail.thread.root_activity.state).toBe("inactive");
+    },
+    { timeout: 10000 },
+  );
+  const replacement = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: { prompt: "wait for skill inspection again" },
+    }),
+  );
+  const oldStop = await result(
+    transport.client.POST("/api/operations/{receipt_id}/cancel", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+    }),
+  );
+  expect(oldStop.accepted).toBe(false);
+  await vi.waitFor(
+    async () => {
+      const next = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: replacement.receipt_id } },
+        }),
+      );
+      expect(next.status).toBe("running");
+    },
+    { timeout: 10000 },
+  );
+  await result(
+    transport.client.POST("/api/operations/{receipt_id}/cancel", {
+      params: { path: { receipt_id: replacement.receipt_id } },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const next = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: replacement.receipt_id } },
+        }),
+      );
+      expect(next.status).toBe("cancelled");
+    },
+    { timeout: 10000 },
+  );
+});
+
+it("the App resumes an unanswered question after all viewers disconnect, with one shared deadline", async () => {
+  const created = await result(
+    transport.client.POST("/api/threads", {
+      body: { title: "Timed clarification" },
+    }),
+  );
+  const thread = created.thread_id;
+  const receipt = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path: { thread_id: thread } },
+      body: { parts: ["ask a timed question"] },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("suspended");
+    },
+    { timeout: 10000 },
+  );
+  const viewer = createTransport("test-only-key", () => {});
+  const one = await result(
+    viewer.client.GET("/api/threads/{thread_id}/decisions", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  const two = await result(
+    transport.client.GET("/api/threads/{thread_id}/decisions", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  expect(one?.expires_at).toBeTruthy();
+  expect(one?.expires_at).toBe(two?.expires_at);
+  expect(one?.requests[0].kind).toBe("question");
+  viewer.close();
+  // No response POST, focus subscription or open decision form keeps this alive.
+  await vi.waitFor(
+    async () => {
+      const history = await result(
+        transport.client.GET("/api/threads/{thread_id}/transcript", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      const text = history.entries
+        .flatMap((entry) => entry.parts.map((part) => part.text ?? ""))
+        .join("\n");
+      expect(text).toContain("Continued:");
+      expect(text).toContain("timed out");
+      expect(text).toContain("No answer or approval was provided");
+    },
+    { timeout: 10000 },
+  );
+  expect(
+    await result(
+      transport.client.GET("/api/threads/{thread_id}/decisions", {
+        params: { path: { thread_id: thread } },
+      }),
+    ),
+  ).toBeNull();
+});
+
+it("continues a failed operation as a new turn without consuming the shared draft", async () => {
+  const failedApp = await startApp("--fail");
+  vi.stubGlobal("window", { location: { origin: failedApp.origin } });
+  const client = createTransport("test-only-key", () => {});
+  const draft = new ThreadDraft();
+  let connection: ReturnType<ThreadDraft["connect"]> | undefined;
+  try {
+    const created = await result(
+      client.client.POST("/api/threads", { body: { title: "Retry" } }),
+    );
+    const threadId = created.thread_id;
+    const first = await result(
+      client.client.POST("/api/threads/{thread_id}/submit", {
+        params: { path: { thread_id: threadId } },
+        body: { parts: ["Start the task"] },
+      }),
+    );
+    await vi.waitFor(
+      async () => {
+        const operation = await result(
+          client.client.GET("/api/operations/{receipt_id}", {
+            params: { path: { receipt_id: first.receipt_id } },
+          }),
+        );
+        expect(operation.status).toBe("failed");
+      },
+      { timeout: 10000 },
+    );
+    connection = draft.connect(client, threadId, () => {});
+    await until(() => draft.synchronized);
+    draft.doc.getText("text").insert(0, "Keep this next question");
+    await until(() => draft.synchronized);
+    await submitContinuation(draft, client, threadId);
+    expect(draft.submission.kind).toBe("accepted");
+    if (draft.submission.kind !== "accepted")
+      throw new Error("Continuation was not admitted");
+    const receipt = draft.submission.receipt;
+    expect(receipt).not.toBe(first.receipt_id);
+    await vi.waitFor(
+      async () => {
+        const operation = await result(
+          client.client.GET("/api/operations/{receipt_id}", {
+            params: { path: { receipt_id: receipt } },
+          }),
+        );
+        expect(operation.status).toBe("completed");
+      },
+      { timeout: 10000 },
+    );
+    expect(values(draft.doc).prompt).toBe("Keep this next question");
+    const history = await result(
+      client.client.GET("/api/threads/{thread_id}/transcript", {
+        params: { path: { thread_id: threadId } },
+      }),
+    );
+    const text = history.entries
+      .flatMap((entry) => entry.parts.map((part) => part.text ?? ""))
+      .join("\n");
+    expect(text).toContain("Continue completing the previous task.");
+    expect(text).not.toContain("Keep this next question");
+  } finally {
+    connection?.close();
+    client.close();
+    await failedApp.close();
+    vi.stubGlobal("window", { location: { origin: app.origin } });
+  }
+}, 40000);

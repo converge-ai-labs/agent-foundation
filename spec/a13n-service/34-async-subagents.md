@@ -176,3 +176,7 @@ The child relationship fields, `AsyncSubagentResultInboxPayload.schema_version`,
 11. Retry copies terminal intent and eligible parent state but never re-enables, rebinds, or consumes a result suppressed by the failed or cancelled source; a retry that needs child work creates a new child relationship under the retry Run.
 12. An asynchronous child inherits its parent Run's authority Principal. An automatic inactive-Thread successor inherits the spawning Run's authority Principal, and both paths reauthorize that persisted Principal rather than executing as a Worker or reconciliation actor.
 13. Each independent child acquires Environment use under its preparation policy; none/inline children add no independent use, and parent termination or switching does not release the child's active use. Waiting children follow the Environment's aggregate idle retention policy.
+
+## Memory Behavior Inheritance
+
+Child acceptance copies the parent's [Memory selection and binding](42-memory.md#execution-memory-selection) atomically with the child relationship. Resuming a retained child copies that child's source binding; automatic parent result successors inherit the selected parent. Inline reconstruction uses the same prepared behavior. No path transports Bot DTOs or chooses behavior from absence of an application row. Fresh Agent/Attempt authority is still checked at operation time.

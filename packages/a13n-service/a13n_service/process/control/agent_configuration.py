@@ -32,8 +32,10 @@ def build_configuration_service(
     assets: AssetCatalog,
     hooks: InlineHookValidator,
 ) -> ConfigurationService:
+    if shared.memory_behaviors is None:
+        raise RuntimeError("Execution memory behavior composition is required")
     sessions = shared.storage.sessions
-    definition = load_definition()
+    definition = load_definition(total_tokens_limit=settings.configuration_assistant.total_tokens_limit)
     readiness = ConfigurationReadiness(sessions, execution.model_provider_registry, definition)
     states = RunStateStore(shared.storage.objects)
     return ConfigurationService(
@@ -46,7 +48,12 @@ def build_configuration_service(
             sessions,
             resources.invocations,
             RunAcceptanceService(
-                sessions, states, RunPayloadStore(shared.storage.objects), hooks, lifecycle=shared.lifecycle
+                sessions,
+                states,
+                RunPayloadStore(shared.storage.objects),
+                hooks,
+                lifecycle=shared.lifecycle,
+                bindings=shared.memory_behaviors,
             ),
             states,
             CommandInput(sessions, assets, EndpointPolicy()),

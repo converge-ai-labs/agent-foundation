@@ -7,12 +7,13 @@ from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.configuration.setup import SetupSelection, preview_setup, publish_setup
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
+from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 
 
 def _selection(tmp_path: Path, **changes: object) -> SetupSelection:
     return SetupSelection.model_validate(
         {
-            "providers": ("codex", "grok"),
+            "model": prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol")),
             "default_agent": "agent-codex",
             "project": "project-local",
             "project_path": str(tmp_path),
@@ -27,7 +28,7 @@ def _validate():
 
 
 @pytest.mark.anyio
-async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_path: Path) -> None:
+async def test_setup_previews_without_publication_and_seeds_selected_connection(tmp_path: Path) -> None:
     path = tmp_path / "config" / "config.yaml"
     selection = _selection(tmp_path)
     preview = await preview_setup(path, selection, validate_candidate=_validate())
@@ -47,7 +48,7 @@ async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_p
     assert source.document.defaults.agent == "agent-codex"
     assert yaml.safe_load(path.read_text())["tools"] == root["tools"]
     assert source.document.tools.enable_codeact is True
-    assert len(source.agents) == 2
+    assert len(source.agents) == 1
     assert source.projects["project-local"].name == tmp_path.name
     assert yaml.safe_load(preview.files["projects/project-local.yaml"])["name"] == tmp_path.name
 
@@ -65,7 +66,13 @@ async def test_setup_writes_native_codex_service_tier(tmp_path: Path, tier: str 
             if operation == "add_model"
             else {"new_agent_id": "agent-second", "new_agent_name": "Second Agent"}
         )
-    selection = _selection(tmp_path, providers=("codex",), codex_service_tier=tier, **changes)
+    recipe = prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol"))
+    settings = dict(recipe.settings)
+    if tier is None:
+        settings.pop("openai_service_tier")
+    else:
+        settings["openai_service_tier"] = tier
+    selection = _selection(tmp_path, model=recipe.model_copy(update={"settings": settings}), **changes)
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     models = [yaml.safe_load(content) for name, content in preview.files.items() if name.startswith("models/")]
     settings = next(model["settings"] for model in models if model["settings"].get("thinking") == "high")
@@ -145,7 +152,7 @@ async def test_setup_publication_serializes_configuration_reload(
     from anyio import Event, create_task_group, fail_after, sleep_forever, wait_all_tasks_blocked
 
     path = tmp_path / "config.yaml"
-    selection = _selection(tmp_path, providers=(), default_agent="agent-default")
+    selection = _selection(tmp_path, model=None, default_agent="agent-default")
     assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
     entered = Event()
     release = Event()
@@ -257,7 +264,7 @@ async def test_setup_rejects_occupied_destination_for_another_resource(tmp_path:
         'schema_version: "1"\nkind: agent\nid: agent-unrelated\nname: Unrelated\nmodel: model-grok\n'
     )
     with pytest.raises(ConfigurationError, match="belongs to another resource"):
-        await preview_setup(path, _selection(tmp_path, default_agent="agent-grok"), validate_candidate=_validate())
+        await preview_setup(path, _selection(tmp_path), validate_candidate=_validate())
     assert not path.exists()
 
 
@@ -305,7 +312,6 @@ async def test_setup_with_global_guidance_saves_successfully(tmp_path: Path, ope
         if operation == "setup"
         else _selection(
             tmp_path,
-            providers=("codex",),
             **(
                 {"new_model_id": "model-second", "new_model_name": "Second Model"}
                 if operation == "add_model"
@@ -359,7 +365,7 @@ async def test_sandbox_preflight_validates_the_actual_publication_candidate(
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
     path = tmp_path / "config.yaml"
-    initial = _selection(tmp_path, providers=(), default_agent="agent-default")
+    initial = _selection(tmp_path, model=None, default_agent="agent-default")
     assert (await publish_setup(path, initial, validate_candidate=_validate())).completed
     original = path.read_bytes()
     unchecked = tmp_path / "unchecked"
@@ -520,7 +526,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
 
     monkeypatch.setattr(runtime, "CodexRequestModel", build)
     path = tmp_path / "config" / "config.yaml"
-    selection = _selection(tmp_path, providers=("codex",))
+    selection = _selection(tmp_path)
     await preview_setup(path, selection, validate_candidate=_validate())
     assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
     async with open_harness_ui_app(
@@ -589,7 +595,7 @@ async def test_not_now_finishes_setup_without_model_or_credentials(
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     path = tmp_path / "config" / "config.yaml"
-    selection = _selection(tmp_path, providers=(), default_agent="agent-default")
+    selection = _selection(tmp_path, model=None, default_agent="agent-default")
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
     ) as app:
@@ -648,7 +654,7 @@ async def test_new_user_enters_setup_without_a_root_configuration(
         assert len(questions) == 1
         assert not any("Configuration needs repair" in message for message in messages)
         assert not source.path.exists()
-        selection = _selection(tmp_path, providers=(), default_agent="agent-default")
+        selection = _selection(tmp_path, model=None, default_agent="agent-default")
         assert (await app.apply_setup(selection)).completed
         assert not (await app.setup_status()).needed
     assert source.path.is_file()
@@ -658,9 +664,8 @@ async def test_new_user_enters_setup_without_a_root_configuration(
 async def test_api_key_setup_publishes_only_reference_and_additional_instructions(tmp_path: Path) -> None:
     selection = _selection(
         tmp_path,
-        providers=(),
         default_agent="agent-api-key",
-        api_key_model={"route": "openai:gpt-5", "authentication": {"kind": "api_key", "env": "MY_EXISTING_KEY"}},
+        model={"route": "openai:gpt-5", "authentication": {"kind": "api_key", "env": "MY_EXISTING_KEY"}},
         instructions="Answer briefly.",
     )
     path = tmp_path / "config.yaml"
@@ -714,7 +719,7 @@ async def test_setup_run_delivers_base_and_additions_through_distinct_native_cha
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
     ) as app:
-        selection = _selection(tmp_path, providers=("codex",), instructions="Use short answers.", shell_review=False)
+        selection = _selection(tmp_path, instructions="Use short answers.", shell_review=False)
         await app.preview_setup(selection)
         assert (await app.apply_setup(selection)).completed
         thread = await app.create_thread()
@@ -763,9 +768,7 @@ async def test_saved_key_connects_deferred_default_agent_and_first_native_conver
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
     ) as app:
-        deferred = _selection(
-            tmp_path, providers=(), default_agent="agent-default", instructions="Keep my instructions."
-        )
+        deferred = _selection(tmp_path, model=None, default_agent="agent-default", instructions="Keep my instructions.")
         preview = await app.preview_setup(deferred)
         assert (await app.apply_setup(deferred)).completed
         await app.put_api_key(ApiKeyInput(credential_ref="key-test", key=SecretStr("first-secret")))
@@ -773,7 +776,7 @@ async def test_saved_key_connects_deferred_default_agent_and_first_native_conver
         selected = SetupSelection.model_validate(
             {
                 **selected.model_dump(),
-                "api_key_model": {
+                "model": {
                     "route": "openai:test",
                     "authentication": {"kind": "api_key", "credential_ref": "key-test"},
                 },
@@ -807,10 +810,9 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
     path = tmp_path / "config.yaml"
     first = _selection(
         tmp_path,
-        providers=(),
         default_agent="agent-api-key",
         connect_default=True,
-        api_key_model={"route": "openai:first", "authentication": {"kind": "api_key", "env": "MY_KEY"}},
+        model={"route": "openai:first", "authentication": {"kind": "api_key", "env": "MY_KEY"}},
     )
     preview = await preview_setup(path, first, validate_candidate=_validate())
     assert (await publish_setup(path, first, validate_candidate=_validate())).completed
@@ -818,7 +820,7 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
     second = SetupSelection.model_validate(
         {
             **first.model_dump(),
-            "api_key_model": {"route": "openai:second", "authentication": {"kind": "api_key", "env": "MY_KEY"}},
+            "model": {"route": "openai:second", "authentication": {"kind": "api_key", "env": "MY_KEY"}},
         }
     )
     preview = await preview_setup(path, second, validate_candidate=_validate())
@@ -876,16 +878,17 @@ async def test_add_agent_preserves_existing_files_defaults_and_retry_identity(
     tmp_path: Path, provider: str, model: str
 ) -> None:
     path = tmp_path / "config.yaml"
-    initial = _selection(tmp_path, providers=("codex",))
+    initial = _selection(tmp_path)
     preview = await preview_setup(path, initial, validate_candidate=_validate())
     assert (await publish_setup(path, initial, validate_candidate=_validate())).completed
     baseline = {p: p.read_bytes() for p in tmp_path.rglob("*.yaml")}
     added = _selection(
         tmp_path,
-        providers=(provider,),
+        model=prepare_model(
+            ModelRecipeRequest(connection="codex" if provider == "codex" else "grok-subscription", model_id=model)
+        ),
         new_agent_id="agent-second",
         new_agent_name="Second agent",
-        **{f"{provider}_model": model},
     )
     preview = await preview_setup(path, added, validate_candidate=_validate())
     assert preview.project_paths == ()
@@ -907,11 +910,16 @@ async def test_add_agent_preserves_existing_files_defaults_and_retry_identity(
 @pytest.mark.anyio
 async def test_setup_new_subscription_model_does_not_rewrite_shared_model(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
-    initial = _selection(tmp_path, providers=("codex",))
+    initial = _selection(tmp_path)
     await preview_setup(path, initial, validate_candidate=_validate())
     assert (await publish_setup(path, initial, validate_candidate=_validate())).completed
     model = (tmp_path / "models/codex.yaml").read_bytes()
-    changed = initial.model_copy(update={"codex_model": "gpt-6-astra", "connect_default": True})
+    changed = initial.model_copy(
+        update={
+            "model": prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-6-astra")),
+            "connect_default": True,
+        }
+    )
     await preview_setup(path, changed, validate_candidate=_validate())
     assert (await publish_setup(path, changed, validate_candidate=_validate())).completed
     source = await load_harness_ui_configuration(path)
@@ -925,10 +933,9 @@ async def test_api_key_setup_publishes_root_shell_review_not_agent_capabilities(
     path = tmp_path / "config.yaml"
     selection = _selection(
         tmp_path,
-        providers=(),
         default_agent="agent-api-key",
         shell_review=enabled,
-        api_key_model={"route": "openai:gpt-5", "authentication": {"kind": "api_key", "env": "TEST_KEY"}},
+        model={"route": "openai:gpt-5", "authentication": {"kind": "api_key", "env": "TEST_KEY"}},
     )
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     shortcut = yaml.safe_load(preview.files[path.name])["security"]["shell_review"]
@@ -949,14 +956,14 @@ async def test_api_key_setup_publishes_root_shell_review_not_agent_capabilities(
 async def test_setup_and_add_agent_preserve_authored_root_shortcut(tmp_path: Path, shortcut: dict[str, object]) -> None:
     path = tmp_path / "config.yaml"
     path.write_text(yaml.safe_dump({"schema_version": "1", "security": {"shell_review": shortcut}}))
-    selection = _selection(tmp_path, providers=("codex",))
+    selection = _selection(tmp_path)
     preview = await preview_setup(path, selection, validate_candidate=_validate())
     assert yaml.safe_load(preview.files[path.name])["security"]["shell_review"] == shortcut
     assert "models/codex-review.yaml" not in preview.files
     assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
     baseline = path.read_bytes()
     addition = _selection(
-        tmp_path, providers=(), new_agent_id="agent-second", new_agent_name="Second", existing_model_id="model-codex"
+        tmp_path, model=None, new_agent_id="agent-second", new_agent_name="Second", existing_model_id="model-codex"
     )
     preview = await preview_setup(path, addition, validate_candidate=_validate())
     assert set(preview.files) == {"agents/second.yaml"}
@@ -967,7 +974,7 @@ async def test_setup_and_add_agent_preserve_authored_root_shortcut(tmp_path: Pat
 @pytest.mark.anyio
 async def test_add_agent_initializes_absent_root_shortcut_without_mutating_existing_agent(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
-    selection = _selection(tmp_path, providers=("codex",))
+    selection = _selection(tmp_path)
     assert (await publish_setup(path, selection, validate_candidate=_validate())).completed
     root = yaml.safe_load(path.read_text())
     del root["security"]
@@ -975,7 +982,7 @@ async def test_add_agent_initializes_absent_root_shortcut_without_mutating_exist
     agent = tmp_path / "agents" / "codex.yaml"
     baseline = agent.read_bytes()
     addition = _selection(
-        tmp_path, providers=(), new_agent_id="agent-second", new_agent_name="Second", existing_model_id="model-codex"
+        tmp_path, model=None, new_agent_id="agent-second", new_agent_name="Second", existing_model_id="model-codex"
     )
     preview = await preview_setup(path, addition, validate_candidate=_validate())
     assert yaml.safe_load(preview.files[path.name])["security"]["shell_review"]["model"] == "model-codex-review"

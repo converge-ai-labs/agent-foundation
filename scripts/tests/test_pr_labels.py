@@ -172,7 +172,9 @@ def test_compatibility_notice_never_evaluates_or_echoes_untrusted_filenames():
 
 def test_release_jobs_can_read_labels_without_changing_publish_graphs():
     workflows = list((ROOT / ".github/workflows").glob("release-a13n-*.yml"))
-    assert len(workflows) == 10
+    from scripts.release_version import COMPONENTS
+
+    assert {path.stem.removeprefix("release-") for path in workflows} == set(COMPONENTS)
     for path in workflows:
         workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
         assert set(workflow["on"]) == {"push"}

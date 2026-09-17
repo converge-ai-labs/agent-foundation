@@ -56,6 +56,7 @@ from .input import AcceptedAgentInput
 from .lifecycle import LifecycleWriter
 from .models import RunRecord, SessionRecord, ThreadRecord
 from .objects import RunPayloadStore, RunStateStore, StaleStateWriter
+from .ports.memory import ExecutionBindings
 from .queue_persistence import QueueConsumptionConflict, consume_first_submission, fail_first_submission
 from .records import session_record, thread_record
 from .state import RunCheckpoint, RunPayloadEnvelope
@@ -70,14 +71,23 @@ class RunAcceptanceService:
         inline_hooks: InlineHookValidator,
         *,
         lifecycle: LifecycleWriter,
+        bindings: ExecutionBindings,
         clock: Clock | None = None,
     ) -> None:
         self._lifecycle = lifecycle
+        self._bindings = bindings
         self._sessions = sessions
         self._states = states
         self._payloads = payloads
         self._inline_hooks = InlineHookAcceptance(sessions, inline_hooks)
         self._clock = clock or utc_now
+
+    async def validate_in_session(self, session: AsyncSession, run_id: str) -> None:
+        await self._bindings.validate(session, run_id)
+
+    async def validate_retained(self, run_id: str) -> None:
+        async with short_session(self._sessions) as session:
+            await self._bindings.validate(session, run_id)
 
     async def accept_new_thread(
         self,
@@ -156,6 +166,7 @@ class RunAcceptanceService:
                 receipt = _receipt(thread, run, hook_subscription_id=hook_subscription_id)
                 if transaction_hook is not None:
                     await transaction_hook(database, receipt)
+                await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
         except IntegrityError as error:
             return await self._reconcile_conflict(run, state, error, accepted_thread_version=1)
         return receipt
@@ -283,6 +294,7 @@ class RunAcceptanceService:
                 )
                 if transaction_hook is not None:
                     await transaction_hook(database, receipt)
+                await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
         except IntegrityError as error:
             return await self._reconcile_conflict(
                 run,
@@ -429,6 +441,7 @@ class RunAcceptanceService:
                 )
                 if transaction_hook is not None:
                     await transaction_hook(database, receipt)
+                await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
         except IntegrityError as error:
             replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
             if replay is not None:
@@ -521,6 +534,7 @@ class RunAcceptanceService:
             )
             if record is None:
                 return None
+            await self._bindings.validate(database, record.id)
             return await _validate_replay(database, record, run, accepted_thread_version=accepted_thread_version)
 
     async def _publish_initial(self, run: Run, state: RunCheckpoint) -> None:
@@ -964,3 +978,15 @@ __all__ = [
     "RunAcceptanceReceipt",
     "RunAcceptanceService",
 ]
+
+
+def binding_source(run: Run) -> str | None:
+    """Only kernel-validated retained-execution lineage selects a binding source."""
+    if run.retry_of_run_id is not None:
+        return run.retry_of_run_id
+    if (
+        run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}
+        or run.lineage_kind is RunLineageKind.fork
+    ):
+        return run.parent_run_id
+    return None

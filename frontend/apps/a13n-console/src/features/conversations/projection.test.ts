@@ -1,4 +1,4 @@
-import type { RunEvent } from "@converge.ai/a13n";
+import type { RunEvent } from "../../service-client";
 import { describe, expect, it } from "vitest";
 import {
   applyRunEvent,

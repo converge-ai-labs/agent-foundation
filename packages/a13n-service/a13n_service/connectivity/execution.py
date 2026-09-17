@@ -49,11 +49,12 @@ from .mcp.management import require_connection as require_mcp_connection
 from .mcp.refresh import OAuthCredentialRefresh
 from .mcp.transport import RemoteTransport
 from .native import native_capability
+from .native_actions import NativeObservationFactory
 from .native_context import NativeToolContext, parse_native_contexts
 from .selection_domain import ConnectionRunSelection
 from .selection_resolution import ConnectivitySelectionResolver, FrozenRunConnectivity
 from .tool_validation import validate_result
-from .toolsets import connection_source_key, local_capability, namespaced, selected_tools
+from .toolsets import local_capability, namespaced, selected_tools
 
 _CONNECTIONS = TypeAdapter(tuple[ConnectionRunSelection, ...])
 
@@ -83,6 +84,7 @@ class ExternalToolRuntime:
         endpoints: EndpointPolicy,
         http_client: httpx2.AsyncClient,
         oauth_refresh: OAuthCredentialRefresh,
+        observations: NativeObservationFactory | None = None,
     ) -> None:
         self._sessions = sessions
         self._protector = protector
@@ -91,6 +93,7 @@ class ExternalToolRuntime:
         self._endpoints = endpoints
         self._http = http_client
         self._oauth_refresh = oauth_refresh
+        self._observations = observations
         self._selections = ConnectivitySelectionResolver(sessions)
 
     async def _scope(
@@ -256,6 +259,7 @@ class ExternalToolRuntime:
                     self._endpoints,
                     self._http,
                     attempt=attempt,
+                    observations=self._observations,
                 )
                 if capability is not None:
                     capabilities.append(capability)
@@ -353,7 +357,8 @@ class ExternalToolRuntime:
                 return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id).model_dump(mode="json")
 
         return await local_capability(
-            key=connection_source_key(selection.connection_id),
+            key=selection.connection_id,
+            model_alias=selection.model_alias,
             tools=tools,
             allowed=selection.tools,
             handler=call,
@@ -410,7 +415,7 @@ class ExternalToolRuntime:
             await to_thread.run_sync(validate_result, to_jsonable_python(result))
             return result
 
-        key = connection_source_key(selection.connection_id)
+        key = selection.connection_id
         async with self._remote.connect(endpoint, headers=await headers(), refresh_headers=headers) as client:
             toolset = MCPToolset[AgentContext](client, id=key, process_tool_call=call, tool_error_behavior="error")
             async with toolset:
@@ -425,7 +430,8 @@ class ExternalToolRuntime:
                                 lambda _ctx, tool: selection.tools is None or tool.name in selection.tools
                             ),
                             key,
+                            selection.model_alias,
                         ),  # type: ignore[arg-type]
-                        id=key,
+                        id=selection.model_alias,
                         defer_loading=selection.defer_loading,
                     )

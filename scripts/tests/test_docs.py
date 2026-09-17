@@ -208,7 +208,7 @@ def test_service_generated_references_match_current_definitions(built_site: Path
     schema = json.loads((ROOT / "scripts/docs/service-settings.schema.json").read_text(encoding="utf-8"))
     assert schema == Settings.model_json_schema()
     for generated, source in {
-        "service-openapi.json": ROOT / "sdk/typescript/openapi.json",
+        "service-openapi.json": ROOT / "proto/a13n-service/openapi.json",
         "service-settings.json": ROOT / "scripts/docs/service-settings.schema.json",
     }.items():
         assert (built_site / "assets/reference" / generated).read_bytes() == source.read_bytes()

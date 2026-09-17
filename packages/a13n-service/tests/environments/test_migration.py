@@ -44,7 +44,7 @@ def _assert_tables(config: PostgreSQLConfig, *, present: bool) -> None:
             revision_columns = {
                 column["name"] for column in inspect(engine).get_columns("environment_template_revisions")
             }
-            assert {"recipe", "template_id", "provider_id"} <= revision_columns
+            assert {"template_config", "template_id", "provider_id"} <= revision_columns
             assert "provider" not in revision_columns
             conditions = {c["name"]: c["sqltext"] for c in inspect(engine).get_check_constraints("environments")}
             condition = conditions["ck_environments_retention_condition_valid"]

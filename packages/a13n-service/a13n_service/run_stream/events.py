@@ -2,6 +2,8 @@
 
 from a13n_service.interactions.domain import RunPayloadObjectRef
 from a13n_service.lifecycle import LifecycleEvent
+from a13n_service.lifecycle.domain import LIFECYCLE_EVENT_TYPES
+from a13n_service.lifecycle.projections import public_lifecycle_payload, public_output_reference
 
 from .domain import RunStreamEvent, deterministic_item_id, deterministic_run_stream_event_id
 
@@ -57,3 +59,19 @@ def _run_output_item(event: LifecycleEvent) -> RunPayloadObjectRef | None:
     if isinstance(output_object, dict):
         return RunPayloadObjectRef.model_validate(output_object)
     return None
+
+
+def public_stream_event(event: RunStreamEvent) -> RunStreamEvent:
+    """Project at delivery so live and previously retained events share the boundary."""
+    if event.event_type not in LIFECYCLE_EVENT_TYPES:
+        return event
+    payload = dict(event.payload)
+    data = payload.get("data")
+    if isinstance(data, dict):
+        payload["data"] = public_lifecycle_payload(event.event_type, data)
+    if payload.get("actor_type") == "worker":
+        payload["actor_id"] = None
+    content = payload.get("content")
+    if event.event_type == "run.completed" and payload.get("item_kind") == "run_output" and isinstance(content, dict):
+        payload["content"] = public_output_reference(content)
+    return event.model_copy(update={"payload": payload})

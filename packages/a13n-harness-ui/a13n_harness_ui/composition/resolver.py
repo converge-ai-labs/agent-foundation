@@ -281,8 +281,14 @@ class AgentCompositionResolver:
                 if model_overrides.service_tier is not None:
                     # Native provider tiers otherwise take precedence over the generic override.
                     effective.pop(service_tier_setting(resource.route), None)
+                from a13n_harness_ui.model_thinking import apply_thinking
+
+                effective = apply_thinking(resource.route, effective, model_overrides.thinking)
+                settings.pop("thinking", None)
                 resource = resource.model_copy(update={"settings": {**effective, **settings}})
         model = self._model_recipe(resource)
+        if model_overrides is not None and model_overrides.thinking is not None:
+            model = model.model_copy(update={"thinking_override": model_overrides.thinking})
         capabilities = self._capability_recipes(source, agent, active_model=model)
         children: list[ResolvedSubagent] = []
         provisional = ResolvedAgentNode(

@@ -63,6 +63,12 @@ The complete machine-readable validation schema, including named enum/union defi
 | `subagents.reconcile_drain_seconds`         | `A13N_SERVICE_SUBAGENT_RECONCILE_DRAIN_SECONDS`         | number         | maximum=3600; exclusiveMinimum=0; default=30 |
 | `subagents.reconcile_poll_interval_seconds` | `A13N_SERVICE_SUBAGENT_RECONCILE_POLL_INTERVAL_SECONDS` | number         | maximum=60; exclusiveMinimum=0; default=1    |
 
+## `deployment`
+
+| Setting           | Environment variable           | Type / choices               | Constraints and default |
+| ----------------- | ------------------------------ | ---------------------------- | ----------------------- |
+| `deployment.mode` | `A13N_SERVICE_DEPLOYMENT_MODE` | "single_host", "distributed" | default="single_host"   |
+
 ## `environments`
 
 | Setting                                     | Environment variable                                    | Type / choices  | Constraints and default                      |
@@ -114,6 +120,7 @@ The complete machine-readable validation schema, including named enum/union defi
 
 | Setting                                  | Environment variable                                 | Type / choices  | Constraints and default                     |
 | ---------------------------------------- | ---------------------------------------------------- | --------------- | ------------------------------------------- |
+| `models.catalog_released_since`          | `A13N_SERVICE_MODEL_CATALOG_RELEASED_SINCE`          | string          | format="date"; default="2026-04-23"         |
 | `models.private_endpoint_domains`        | `A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_DOMAINS`        | array of string | default=[]                                  |
 | `models.private_endpoint_cidrs`          | `A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_CIDRS`          | array of string | default=[]                                  |
 | `models.resolve_dns_on_save`             | `A13N_SERVICE_MODEL_RESOLVE_DNS_ON_SAVE`             | boolean         | default=true                                |
@@ -124,6 +131,12 @@ The complete machine-readable validation schema, including named enum/union defi
 | Setting                  | Environment variable                  | Type / choices | Constraints and default                     |
 | ------------------------ | ------------------------------------- | -------------- | ------------------------------------------- |
 | `memory.timeout_seconds` | `A13N_SERVICE_MEMORY_TIMEOUT_SECONDS` | number         | maximum=300; exclusiveMinimum=0; default=30 |
+
+## `configuration_assistant`
+
+| Setting                                      | Environment variable                                      | Type / choices  | Constraints and default |
+| -------------------------------------------- | --------------------------------------------------------- | --------------- | ----------------------- |
+| `configuration_assistant.total_tokens_limit` | `A13N_SERVICE_CONFIGURATION_ASSISTANT_TOTAL_TOKENS_LIMIT` | integer or null | default=null            |
 
 ## `webhooks`
 

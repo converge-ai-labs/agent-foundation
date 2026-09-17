@@ -38,7 +38,7 @@ _MAX_CONTENT_BLOCKS = 256
 _MAX_TEXT_LENGTH = 1_048_576
 _MAX_URL_LENGTH = 8192
 _MAX_PATH_LENGTH = 4096
-_MATERIALIZED_INPUT_ROOT = "/workspace/.a13n/inputs"
+_MATERIALIZED_INPUT_ROOT = ".a13n/inputs"
 
 
 class BinaryContentDelivery(StrEnum):
@@ -353,7 +353,7 @@ class BinarySourceReader(Protocol):
 
 
 class EnvironmentInputWriter(Protocol):
-    async def replace(self, path: str, chunks: AsyncIterable[bytes]) -> None: ...
+    async def replace(self, path: str, chunks: AsyncIterable[bytes]) -> str: ...
 
 
 class InputAdapter(Protocol):
@@ -432,8 +432,7 @@ class AgentInputMapper:
         if environment is None:
             raise AgentInputError("input_environment_unavailable", "The selected Environment is unavailable")
         path = materialized_input_path(input_instance_id, block_index)
-        await environment.replace(path, _bounded_chunks(acquired.chunks, self._max_binary_bytes))
-        return path
+        return await environment.replace(path, _bounded_chunks(acquired.chunks, self._max_binary_bytes))
 
 
 def native_input_adapter(

@@ -84,7 +84,7 @@ it("requires an explicit check and submits the account version", async () => {
   );
   expect(
     screen.getByText(
-      "This is a dated provider check. Event reception, agent execution, and reply delivery are checked separately.",
+      "This result reflects the last check. It does not confirm that messages reach the bot, the agent runs, or replies are delivered.",
     ),
   ).toBeTruthy();
 });

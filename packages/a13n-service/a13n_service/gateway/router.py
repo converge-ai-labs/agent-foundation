@@ -412,21 +412,23 @@ async def update_queued_submission(
 
 @router.delete(
     "/api/v1/queued-submissions/{queued_submission_id}",
-    response_model=ThreadQueueMutationReceipt,
+    status_code=204,
 )
 async def delete_queued_submission(
     request: Request,
     actor: Actor,
     queued_submission_id: str,
-    body: DeleteQueuedSubmissionRequest,
+    expected_version: Annotated[int, Query(ge=1)],
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
-) -> ThreadQueueMutationReceipt:
-    return await _queued_submissions(request).delete(
+) -> Response:
+    # Keep canonical mutation evidence internal; the public DELETE has no response body.
+    await _queued_submissions(request).delete(
         actor=actor,
         queued_submission_id=queued_submission_id,
-        request=body,
+        request=DeleteQueuedSubmissionRequest(expected_version=expected_version),
         idempotency_key=idempotency_key,
     )
+    return Response(status_code=204)
 
 
 @router.post(

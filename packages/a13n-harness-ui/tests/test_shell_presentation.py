@@ -189,22 +189,33 @@ def test_child_background_completion_obeys_mode_and_keeps_run_identity() -> None
     renderer.transcript.close()
 
 
-def test_unknown_capability_events_still_have_a_fallback() -> None:
-    renderer = StreamRenderer(Status())
-    renderer.ingest(
-        "CUSTOM",
-        {
-            "name": "plugin.test.fact",
-            "value": {
-                "event": {
-                    "event_kind": "capability",
-                    "message": "important fact",
-                }
+@pytest.mark.parametrize("mode", ["concise", "detailed"])
+@pytest.mark.parametrize("child", [False, True])
+@pytest.mark.parametrize("name", ["a13n.harness_ui.checkpoint", "plugin.test.fact"])
+def test_internal_and_unknown_capability_events_are_not_conversation_content(mode: str, child: bool, name: str) -> None:
+    renderer = StreamRenderer(Status(mode=mode))
+    try:
+        renderer.ingest(
+            "CUSTOM",
+            {
+                "name": name,
+                "value": {
+                    "event": {
+                        "event_kind": "capability",
+                        "continuation_id": "checkpoint-one",
+                        "message": "internal fact",
+                    }
+                },
             },
-        },
-    )
-    assert "important fact" in _visible(renderer)
-    renderer.transcript.close()
+            child=child,
+        )
+        assert not renderer.transcript.blocks
+        assert _visible(renderer) == ""
+        assert _visible(renderer, detailed=True) == ""
+        assert renderer.drain() == ""
+        assert not renderer.gap
+    finally:
+        renderer.transcript.close()
 
 
 def _capture(renderer: StreamRenderer, result: dict, *, run: str = "root") -> None:

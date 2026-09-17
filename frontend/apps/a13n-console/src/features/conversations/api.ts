@@ -1,5 +1,5 @@
-import type { Client, paths } from "@converge.ai/a13n";
-import { ApiError } from "@converge.ai/a13n";
+import type { Client, paths } from "../../service-client";
+import { ApiError } from "../../service-client";
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import {
   allPages,

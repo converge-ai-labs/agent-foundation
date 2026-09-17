@@ -1,3 +1,4 @@
+import type { MemoryDialogControl } from "./memory-actions";
 import { Button, ModalFrame } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -12,9 +13,11 @@ import styles from "./bots.module.css";
 export function MemoryOperations({
   account,
   scopeId,
+  dialog,
 }: {
   account: Schema["Account"];
   scopeId: string;
+  dialog?: MemoryDialogControl;
 }) {
   const [open, setOpen] = useState(false),
     { t } = useTranslation();
@@ -22,16 +25,21 @@ export function MemoryOperations({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
-      title={t("Pending operations")}
+      {...dialog}
+      title={t("Memory needs attention")}
       size="lg"
       closeLabel={t("Close")}
       trigger={
-        <Button type="button" size="sm" variant="outline">
-          {t("Pending operations")}
-        </Button>
+        dialog ? undefined : (
+          <Button type="button" size="sm" variant="outline">
+            {t("Memory needs attention")}
+          </Button>
+        )
       }
     >
-      {open && <Operations account={account} scopeId={scopeId} />}
+      {(dialog?.open ?? open) && (
+        <Operations account={account} scopeId={scopeId} />
+      )}
     </ModalFrame>
   );
 }
@@ -116,16 +124,10 @@ function Operation({
             { params: { path } },
           )
           .then(data);
-      if (entry.publication_source_id)
-        await client.http.POST(
-          "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw",
-          { params: { path }, body: { expected_version: entry.version ?? 1 } },
-        );
-      else
-        await client.http.DELETE(
-          "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}",
-          { params: { path } },
-        );
+      await client.http.DELETE(
+        "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}",
+        { params: { path } },
+      );
       return client.http
         .GET(
           "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id}",

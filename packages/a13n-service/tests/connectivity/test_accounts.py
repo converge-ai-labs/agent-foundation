@@ -38,7 +38,9 @@ def request():
     )
 
 
-async def test_bot_account_filter_pages_only_messaging_accounts(account_service, connectivity_sessions):
+async def test_bot_collection_pages_only_messaging_accounts(account_service, connectivity_sessions):
+    from a13n_service.bots.connectivity.collection import list_bots
+
     records = []
     for index in range(3):
         record = await account_service.create_account(
@@ -57,13 +59,11 @@ async def test_bot_account_filter_pages_only_messaging_accounts(account_service,
         for index, provider in enumerate(("slack", "lark")):
             row = await session.get(AccountRecord, records[index].id)
             row.provider_key = provider
-    first = await account_service.list_accounts(
-        actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=None, bots_only=True
+    first = await list_bots(connectivity_sessions, actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=None)
+    second = await list_bots(
+        connectivity_sessions, actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=first.next_cursor
     )
-    second = await account_service.list_accounts(
-        actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=first.next_cursor, bots_only=True
-    )
-    assert {first.items[0].id, second.items[0].id} == {records[0].id, records[1].id}
+    assert {first.items[0].account.id, second.items[0].account.id} == {records[0].id, records[1].id}
     assert second.next_cursor is None
     with pytest.raises(NativeError):
         await account_service.list_accounts(actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=first.next_cursor)

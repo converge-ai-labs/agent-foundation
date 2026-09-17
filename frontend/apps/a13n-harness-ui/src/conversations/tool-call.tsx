@@ -19,6 +19,7 @@ import {
 import { structuredPatch } from "diff";
 import {
   describeTool,
+  questionReceipt,
   activityKind,
   activitySummary,
   hostLookupPath,
@@ -29,13 +30,22 @@ import {
   type ToolView,
 } from "./tool-presentation";
 import styles from "./tool-call.module.css";
+import { SyntaxCode, codeLanguage } from "./syntax-code";
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
 export const OpenHostFile = createContext<((path: string) => void) | undefined>(
   undefined,
 );
 
-function CodeContent({ title, value }: { title: string; value: unknown }) {
+function CodeContent({
+  title,
+  value,
+  language = "",
+}: {
+  title: string;
+  value: unknown;
+  language?: string;
+}) {
   const content = sourceText(value);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(false);
@@ -63,19 +73,18 @@ function CodeContent({ title, value }: { title: string; value: unknown }) {
       {error && (
         <small role="status">Copy unavailable. Select the text to copy.</small>
       )}
-      <pre>{content}</pre>
+      <pre>
+        <SyntaxCode
+          source={content}
+          language={language || (typeof value === "object" ? "json" : "")}
+        />
+      </pre>
     </section>
   );
 }
 
 export function editPatch(edit: AppliedEdit) {
-  if (
-    [edit.before, edit.after].some(
-      (value) => value.length > 512 * 1024 || value.split("\n").length > 10001,
-    )
-  )
-    return;
-  return structuredPatch(
+  const patch = structuredPatch(
     edit.file_path,
     edit.file_path,
     edit.before,
@@ -84,10 +93,44 @@ export function editPatch(edit: AppliedEdit) {
     undefined,
     { context: 3, maxEditLength: 2000, timeout: 100 },
   );
+  if (patch) return patch;
+  // Keep the computation bounded without omitting evidence: when minimal diff
+  // calculation exceeds its budget, show a complete replacement in linear time.
+  const replacement = (text: string, prefix: string) => {
+    if (!text) return { count: 0, lines: [] };
+    const lines = text.split("\n");
+    if (text.endsWith("\n")) lines.pop();
+    return {
+      count: lines.length,
+      lines: [
+        ...lines.map((line) => `${prefix}${line}`),
+        ...(text.endsWith("\n") ? [] : ["\\ No newline at end of file"]),
+      ],
+    };
+  };
+  const before = replacement(edit.before, "-");
+  const after = replacement(edit.after, "+");
+  return {
+    hunks: [
+      {
+        oldStart: before.count ? 1 : 0,
+        oldLines: before.count,
+        newStart: after.count ? 1 : 0,
+        newLines: after.count,
+        lines: [...before.lines, ...after.lines],
+      },
+    ],
+  };
 }
-const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
+const EditDiff = memo(function EditDiff({
+  edit,
+  applied = true,
+}: {
+  edit: AppliedEdit;
+  applied?: boolean;
+}) {
+  const title = applied ? "Applied edit" : "Requested replacement";
   const patch = useMemo(() => editPatch(edit), [edit]);
-  const [full, setFull] = useState(false);
   const lines = patch?.hunks.flatMap((hunk) => [
     `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
     ...hunk.lines,
@@ -101,9 +144,9 @@ const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
     0,
   );
   return (
-    <section className={styles.diff} aria-label="Applied edit">
+    <section className={styles.diff} aria-label={title}>
       <header>
-        <span>Applied edit</span>
+        <span>{title}</span>
         {patch && (
           <span>
             <span className={styles.addCount}>+{added}</span>{" "}
@@ -111,7 +154,11 @@ const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
           </span>
         )}
       </header>
-      <small>Observed before/after content, not the current file.</small>
+      <small>
+        {applied
+          ? "Observed before/after content, not the current file."
+          : "Requested fragment diff only; not proof of an applied change."}
+      </small>
       {!lines ? (
         <p>
           Diff preview unavailable for this large change. Inspect the recorded
@@ -121,7 +168,7 @@ const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
         <p>No content change.</p>
       ) : (
         <pre>
-          {(full ? lines : lines.slice(0, 100)).map((line, i) => (
+          {lines.map((line, i) => (
             <span
               key={i}
               className={
@@ -139,14 +186,17 @@ const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
           ))}
         </pre>
       )}
-      {lines && lines.length > 100 && (
-        <Button size="sm" variant="ghost" onClick={() => setFull(!full)}>
-          {full ? "Show fewer lines" : `Show all ${lines.length} lines`}
-        </Button>
-      )}
       <DisclosureSection title="Recorded content">
-        <CodeContent title="Before" value={edit.before} />
-        <CodeContent title="After" value={edit.after} />
+        <CodeContent
+          title="Before"
+          value={edit.before}
+          language={codeLanguage(edit.file_path)}
+        />
+        <CodeContent
+          title="After"
+          value={edit.after}
+          language={codeLanguage(edit.file_path)}
+        />
       </DisclosureSection>
     </section>
   );
@@ -170,11 +220,18 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       <CollaborationDetails tool={tool} />
       {tool.editOmitted && (
         <p role="status">
-          Applied edit content was not retained because the saved preview limit
-          was reached. Current Host content is not a historical diff.
+          This older record did not retain the applied edit content. Current
+          Host content is not a historical diff.
         </p>
       )}
-      {tool.edit && <EditDiff edit={tool.edit} />}
+      {tool.edit && tool.name !== "write" && <EditDiff edit={tool.edit} />}
+      {tool.edit && tool.name === "write" && (
+        <CodeContent
+          title="Written content"
+          value={tool.edit.after}
+          language={codeLanguage(tool.edit.file_path)}
+        />
+      )}
       {!tool.edit &&
         info.kind === "edit" &&
         !tool.editOmitted &&
@@ -184,26 +241,30 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             typeof edit.new_string === "string",
         ) && (
           <section>
-            <h4>Requested replacement</h4>
-            <small>
-              Tool input only; an applied diff was not recorded in this view.
-            </small>
-            {replacements.map((edit, i) => (
-              <div key={i}>
-                {typeof edit.old_string === "string" && (
-                  <CodeContent title="Find" value={edit.old_string} />
-                )}
-                {typeof edit.new_string === "string" && (
-                  <CodeContent title="Replace with" value={edit.new_string} />
-                )}
-              </div>
-            ))}
+            {replacements.map((edit, i) =>
+              typeof edit.old_string === "string" &&
+              typeof edit.new_string === "string" ? (
+                <EditDiff
+                  key={i}
+                  applied={false}
+                  edit={{
+                    file_path: String(info.args.file_path ?? ""),
+                    before: edit.old_string,
+                    after: edit.new_string,
+                  }}
+                />
+              ) : null,
+            )}
           </section>
         )}
       {info.kind === "shell" && (
         <>
           {typeof info.args.command === "string" && (
-            <CodeContent title="Command" value={info.args.command} />
+            <CodeContent
+              title="Command"
+              value={info.args.command}
+              language="bash"
+            />
           )}
           {record(info.result.status) && (
             <small>
@@ -232,18 +293,25 @@ function ToolDetails({ tool }: { tool: ToolView }) {
         </>
       )}
       {tool.name === "view" && typeof info.result.content === "string" && (
-        <CodeContent title="Read content" value={info.result.content} />
-      )}
-      {tool.name === "write" && typeof info.args.content === "string" && (
         <CodeContent
-          title={
-            info.args.mode === "a" ? "Requested append" : "Requested content"
-          }
-          value={info.args.content}
+          title="Read content"
+          value={info.result.content}
+          language={codeLanguage(String(info.args.file_path ?? ""))}
         />
       )}
+      {!tool.edit &&
+        tool.name === "write" &&
+        typeof info.args.content === "string" && (
+          <CodeContent
+            title={
+              info.args.mode === "a" ? "Requested append" : "Requested content"
+            }
+            value={info.args.content}
+            language={codeLanguage(String(info.args.file_path ?? ""))}
+          />
+        )}
       {tool.name === "run_code" && typeof info.args.code === "string" && (
-        <CodeContent title="Code" value={info.args.code} />
+        <CodeContent title="Code" value={info.args.code} language="python" />
       )}
       <DisclosureSection title="Arguments & result">
         <div className={styles.format}>
@@ -457,6 +525,75 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const [expanded, setExpanded] = useState(false);
   const Icon = toolIcons[info.kind];
+  const receipt = questionReceipt(tool);
+  if (receipt)
+    return (
+      <section
+        className={styles.questionReceipt}
+        data-tool-id={tool.id}
+        aria-label="Your answers"
+      >
+        <dl className={styles.answers}>
+          {receipt.items.map((item, index) => (
+            <div key={index}>
+              <dt>
+                <span className={styles.questionHeader}>{item.title}</span>
+                {item.question && item.question !== item.title && (
+                  <p className={styles.questionText}>{item.question}</p>
+                )}
+              </dt>
+              <dd>
+                {item.values.map((value, i) => (
+                  <div key={i}>
+                    <p className={styles.answerLabel}>{value.label}</p>
+                    {value.description && (
+                      <p className={styles.answerDescription}>
+                        {value.description}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <DisclosureSection
+          title="Questions & details"
+          open={expanded}
+          onOpenChange={setExpanded}
+        >
+          {expanded && (
+            <div className={styles.details}>
+              {receipt.questions.map((question, index) => (
+                <section key={index} className={styles.originalQuestion}>
+                  {typeof question.header === "string" && (
+                    <h4>{question.header}</h4>
+                  )}
+                  {typeof question.question === "string" && (
+                    <p>{question.question}</p>
+                  )}
+                  {Array.isArray(question.options) && (
+                    <ul>
+                      {question.options.filter(record).map((option, i) => (
+                        <li key={i}>
+                          {typeof option.label === "string" && (
+                            <strong>{option.label}</strong>
+                          )}
+                          {typeof option.description === "string" && (
+                            <span>{option.description}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ))}
+              <ToolDetails tool={tool} />
+            </div>
+          )}
+        </DisclosureSection>
+      </section>
+    );
   return (
     <section className={styles.tool} data-tool-id={tool.id}>
       <DisclosureSection
@@ -470,8 +607,10 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
           </span>
         }
         summary={
-          <span className={info.failed ? styles.error : styles.phase}>
-            {info.phase === "Result received" ? "" : info.phase}
+          <span className={styles.phase}>
+            {info.phase === "Result received" || info.phase === "Failed"
+              ? ""
+              : info.phase}
           </span>
         }
       >
@@ -524,9 +663,7 @@ export const ToolActivity = memo(function ToolActivity({
         }
         summary={
           info.status ? (
-            <span className={info.issue ? styles.error : styles.phase}>
-              {info.status}
-            </span>
+            <span className={styles.phase}>{info.status}</span>
           ) : undefined
         }
       >
@@ -546,11 +683,7 @@ export const ToolActivity = memo(function ToolActivity({
                       <span title={detail.summary}>{detail.summary}</span>
                     )}
                     {detail.phase !== "Result received" && (
-                      <small
-                        className={detail.failed ? styles.error : styles.phase}
-                      >
-                        {detail.phase}
-                      </small>
+                      <small className={styles.phase}>{detail.phase}</small>
                     )}
                   </header>
                   <ToolActions tool={tool} />

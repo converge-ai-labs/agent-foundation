@@ -4,8 +4,8 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-from a13n_environment import EnvironmentState
-from a13n_environment.docker._errors import runtime_failure
+from a13n_environment import EnvironmentProviderError, EnvironmentState
+from a13n_environment.errors import EnvironmentProviderErrorCategory, EnvironmentProviderOutcomeCertainty
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.iam.models import SecurityAuditRecord
@@ -20,14 +20,14 @@ from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import NOW
 from .test_attempt_execution import _accept_root, _authority, _worker
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
 
 
 async def accepted_environment(sessions, object_store, path):
-    _, _, lifecycle = await recipe(sessions, path, "on_use")
+    _, _, lifecycle = await template_config(sessions, path, "on_use")
     _, run, _ = await _accept_root(sessions, object_store)
     claim = await AttemptScheduler(
         sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
@@ -57,7 +57,10 @@ async def test_first_use_exposes_one_published_generation_after_write_interrupti
     try:
         await environment.ensure_ready(frozenset({"files"}))
         await environment.operations.files.write_text("/published.txt", "ready", mode="create")
-        assert environment.backing_generation == 1 and (tmp_path / "published.txt").read_text() == "ready"
+        assert (
+            environment.backing_generation == 1
+            and (tmp_path / "environments" / environment.environment_id / "published.txt").read_text() == "ready"
+        )
     finally:
         await environment.close()
     assert len(constructions) == 1 and len(attempts) == 2 and attempts[0] is attempts[1]
@@ -86,7 +89,12 @@ async def test_first_preparation_failure_retains_known_target_and_dispatch_certa
             events.append("allocated")
             if failure == "cancelled":
                 raise asyncio.CancelledError("Cancelled after allocation")
-            raise runtime_failure("Readiness failed after allocation")
+            raise EnvironmentProviderError(
+                "Readiness failed after allocation",
+                code="environment_provider_failure",
+                category=EnvironmentProviderErrorCategory.PROVIDER_FAILURE,
+                certainty=EnvironmentProviderOutcomeCertainty.KNOWN,
+            )
 
     async def construct(operation):
         if failure == "construction":

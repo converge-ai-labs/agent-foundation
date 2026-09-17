@@ -8,7 +8,6 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from random import uniform
 from typing import Any, cast
 
-from a13n_harness.errors import ModelResolutionError
 from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
 from a13n_logging import get_logger
@@ -18,7 +17,6 @@ from pydantic_ai.messages import ModelMessage, ModelResponse
 from pydantic_ai.models import Model as PydanticModel
 from pydantic_ai.models import ModelRequestParameters, StreamedResponse
 from pydantic_ai.models.wrapper import WrapperModel
-from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.settings import ModelSettings
 
 from .domain import ModelExecutionSnapshot
@@ -114,7 +112,6 @@ class LiveProviderModel(WrapperModel):
                 model = await self._fresh()
                 try:
                     async with model:
-                        self._validate_thinking(model_settings, model.profile)
                         return await model.request(messages, model_settings, model_request_parameters)
                 except ModelHTTPError as error:
                     await _wait_to_retry(error, attempt)
@@ -139,7 +136,6 @@ class LiveProviderModel(WrapperModel):
                     with fail_after(max(0, deadline - current_time())):
                         model = await self._fresh()
                         await stack.enter_async_context(model)
-                        self._validate_thinking(model_settings, model.profile)
                         stream = await stack.enter_async_context(
                             model.request_stream(messages, model_settings, model_request_parameters, run_context)
                         )
@@ -161,24 +157,6 @@ class LiveProviderModel(WrapperModel):
         # Caller settings retain the strict schema. Gateway affinity is injected
         # only after validation, using the live Provider configuration.
         validate_settings(self._snapshot.model_api, cast(JsonObject, value))
-
-    def _validate_thinking(self, settings: ModelSettings | None, profile: ModelProfile) -> None:
-        thinking = (settings or {}).get("thinking")
-        if thinking is None:
-            return
-        always_enabled = profile.get("thinking_always_enabled", False)
-        if thinking is False and always_enabled:
-            raise ModelResolutionError(
-                "The selected Model cannot disable thinking.",
-                code="model_thinking_always_enabled",
-                details={"model_id": self._snapshot.model_id},
-            )
-        if not (profile.get("supports_thinking", False) or always_enabled):
-            raise ModelResolutionError(
-                "The selected Model does not support unified thinking settings.",
-                code="model_thinking_unsupported",
-                details={"model_id": self._snapshot.model_id},
-            )
 
 
 def _request_timeout(settings: ModelSettings | None) -> float:

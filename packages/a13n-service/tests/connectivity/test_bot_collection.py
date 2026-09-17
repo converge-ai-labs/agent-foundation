@@ -3,14 +3,14 @@
 from datetime import timedelta
 
 import pytest
+from a13n_service.bots.connectivity.collection import get_bot_summary, list_bots
+from a13n_service.bots.connectivity.domain import BotCheck
+from a13n_service.bots.connectivity.models import BotCheckRecord, BotTestRecord
 from a13n_service.connectivity.accounts.domain import CreateAccountRequest
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
-from a13n_service.connectivity.bots.collection import get_bot_summary, list_bots
-from a13n_service.connectivity.bots.domain import BotCheck
-from a13n_service.connectivity.bots.models import BotCheckRecord, BotTestRecord
-from a13n_service.connectivity.bots.observations import InstallationInfo
 from a13n_service.connectivity.errors import NativeError
+from a13n_service.connectivity.inspection import InstallationInfo
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.storage import transaction
@@ -166,6 +166,23 @@ async def test_collection_target_count_test_stage_rotation_and_viewer(account_se
         target = await session.get(AccountTargetRecord, "tgt_catalog")
         record.status = "active"
         record.receive_enabled = target.receive_enabled = True
+    from a13n_service.bots.memory.settings import AccountSettingsRecord
+
+    async with transaction(connectivity_sessions) as session:
+        session.add(
+            AccountSettingsRecord(
+                account_id=account.id,
+                version=1,
+                provider_id=None,
+                use_memory=False,
+                save_on_request=False,
+                timezone="UTC",
+            )
+        )
+    changed_memory = await get_bot_summary(connectivity_sessions, actor=actor(), account_id=account.id)
+    assert changed_memory.test_stage == "stale"
+    assert changed_memory.account.version == 1
+    assert changed_memory.memory_settings.version == 1
     async with transaction(connectivity_sessions) as session:
         record = await session.get(AccountRecord, account.id)
         record.credential_generation += 1

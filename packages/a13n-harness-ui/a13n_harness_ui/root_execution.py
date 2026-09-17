@@ -46,6 +46,7 @@ from a13n_harness_ui.composition import (
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
 from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, checkpoint_excerpt
 from a13n_harness_ui.diagnostics import exception_feedback
+from a13n_harness_ui.display_history import DisplayHistoryCollector, saved_display_history, with_display_history
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
@@ -88,6 +89,7 @@ class RootRunOutcome:
     environment: EnvironmentFinalization
     continuation: RootContinuationSelection
     composition: ObjectRef
+    interaction_timeout_seconds: float = 120.0
 
 
 class RootRunExecutor:
@@ -178,6 +180,7 @@ class RootRunExecutor:
                 await on_composition(published.reference)
             preparation_span.set_attribute("a13n.phase.step", "continuation")
             previous_state, deferred = await self._load_run_state(thread)
+            display = DisplayHistoryCollector(previous_state.message_history, saved_display_history(previous_state))
             deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
             if prompt is not None and deferred is not None:
                 raise RunCoordinationError(
@@ -195,6 +198,7 @@ class RootRunExecutor:
                     thread=thread,
                     composition=published.reference,
                     state=state,
+                    display=display,
                     excerpt=excerpt,
                     activity_changed=excerpt != thread.excerpt,
                 )
@@ -213,6 +217,7 @@ class RootRunExecutor:
                 pricing_catalog=pricing_catalog,
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
+                    display,
                     RootCheckpointCapability(save_checkpoint),
                     *(
                         ()
@@ -354,7 +359,13 @@ class RootRunExecutor:
                         thread=thread,
                         composition=published.reference,
                         state=result.state,
+                        display=display,
                         deferred=result.deferred,
+                        completed_run_id=(
+                            stream.run_id
+                            if stream is not None and result.status == "completed" and run_error is None
+                            else None
+                        ),
                         excerpt=thread.excerpt if excerpts is None else excerpts.finish(result),
                         activity_changed=excerpts is not None and excerpts.changed,
                     )
@@ -368,6 +379,7 @@ class RootRunExecutor:
                             thread=thread,
                             composition=published.reference,
                             state=state,
+                            display=display,
                             excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
                             activity_changed=excerpts is not None and excerpts.changed,
                         )
@@ -432,6 +444,7 @@ class RootRunExecutor:
             environment=finalization,
             continuation=continuation,
             composition=published.reference,
+            interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
         )
 
     @asynccontextmanager
@@ -486,9 +499,11 @@ class RootRunExecutor:
         thread: Thread,
         composition: ObjectRef,
         state: HarnessState | None,
+        display: DisplayHistoryCollector | None = None,
         deferred: DeferredToolRequests | None = None,
         excerpt: ConversationExcerpt,
         activity_changed: bool,
+        completed_run_id: str | None = None,
     ) -> RootContinuationSelection:
         if state is None:
             return RootContinuationSelection(status="not_available")
@@ -500,7 +515,9 @@ class RootRunExecutor:
                     value=StoredContinuation(
                         harness_release=harness_version,
                         run_composition=composition,
-                        harness_state=state,
+                        harness_state=with_display_history(state, display.capture(state.message_history))
+                        if display is not None
+                        else state,
                         excerpt=excerpt,
                         deferred_requests=deferred,
                         created_at=datetime.now(UTC),
@@ -511,6 +528,7 @@ class RootRunExecutor:
                 thread_id=thread.thread_id,
                 expected=thread.continuation,
                 replacement=published_ref,
+                completed_run_id=completed_run_id,
                 excerpt=excerpt,
                 activity_changed=activity_changed,
             )

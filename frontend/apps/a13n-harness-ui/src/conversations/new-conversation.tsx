@@ -1,5 +1,18 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Robot, Folder, Monitor, ShieldWarning } from "@phosphor-icons/react";
 import { SearchPicker } from "a13n-ui";
@@ -17,23 +30,19 @@ import {
 } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
-import { Composer, useDraft } from "./composer";
-import { ModelPicker } from "./model-picker";
+import { Composer, ComposerDrafts, useDraft } from "./composer";
+import { NewDraftStore, type NewDraft } from "./new-draft";
+import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
+import { ThreadRunChoices } from "./thread-run-choices";
 import { refreshThreadLists } from "./queries";
+import { ConversationTranscript } from "./transcript";
+import { ConversationOpening, useInitialReady } from "./opening";
 import styles from "./new-conversation.module.css";
 
-export type NewDraft = {
-  threadId: string;
-  defaults: Schema<"NewThreadDefaults">;
-  created: boolean;
-  attempted: boolean;
-  pending?: Promise<void>;
-};
-export const NewConversationDrafts = createContext(new Map<string, NewDraft>());
+export const NewConversationDrafts = createContext(new NewDraftStore());
 
 export function newConversationPath(projectId: string | null = null) {
-  const id = `thread_${crypto.randomUUID().replaceAll("-", "")}`;
-  return `/new/${id}${projectId ? `?project=${encodeURIComponent(projectId)}` : ""}`;
+  return `/new?project=${encodeURIComponent(projectId ?? "")}`;
 }
 
 // Creation and admission remain separate. Resolve a lost creation acknowledgement
@@ -68,6 +77,7 @@ export async function ensureConversation(
       }
     }
     draft.attempted = true;
+    draft.save();
     try {
       const created = await result(
         transport.client.POST("/api/threads", {
@@ -95,6 +105,7 @@ export async function ensureConversation(
     await draft.pending;
   } finally {
     draft.pending = undefined;
+    draft.save();
   }
 }
 
@@ -104,42 +115,27 @@ export function NewConversationPage(props: {
 }) {
   const { draftId } = useParams();
   const drafts = useContext(NewConversationDrafts);
-  const [homeId] = useState(() => {
-    let home = drafts.get("@home");
-    if (!home) {
-      home = {
-        threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
-        defaults: { project_id: null },
-        created: false,
-        attempted: false,
-      };
-      drafts.set("@home", home);
-      drafts.set(home.threadId, home);
-    }
-    return home.threadId;
-  });
-  const [search] = useSearchParams();
-  return (
-    <NewConversation
-      key={draftId ?? homeId}
-      threadId={draftId ?? homeId}
-      projectId={search.get("project")}
-      {...props}
-    />
+  const composers = useContext(ComposerDrafts);
+  const { key } = useLocation();
+  // A new navigation can leave a retired composer behind after a successful
+  // Send whose saved-page read failed; ordinary rerenders must not replace it.
+  const draft = useMemo(
+    () => drafts.get(composers, draftId),
+    [drafts, composers, draftId, key],
   );
+  return <NewConversation key={draft.threadId} draft={draft} {...props} />;
 }
 
 function NewConversation({
-  threadId,
-  projectId,
+  draft,
   profile,
   unauthorized,
 }: {
-  threadId: string;
-  projectId: string | null;
+  draft: NewDraft;
   profile: Profile;
   unauthorized: () => void;
 }) {
+  const { threadId } = draft;
   const active = useRef(true);
   useEffect(() => {
     active.current = true;
@@ -154,19 +150,6 @@ function NewConversation({
   const setup = useSetup();
   const navigate = useNavigate();
   const drafts = useContext(NewConversationDrafts);
-  const [draft] = useState(() => {
-    let retained = drafts.get(threadId);
-    if (!retained) {
-      retained = {
-        threadId,
-        defaults: { project_id: projectId },
-        created: false,
-        attempted: false,
-      };
-      drafts.set(threadId, retained);
-    }
-    return retained;
-  });
   const [defaults, setDefaults] = useState(draft.defaults);
   const [preparing, setPreparing] = useState(false);
   const composerDraft = useDraft(threadId);
@@ -184,26 +167,48 @@ function NewConversation({
     mutationFn: () => ensureConversation(transport, threadId, draft),
     onSettled: (_data, error) => {
       if (draft.created) void refreshThreadLists(queries);
-      if (draft.created && error && active.current)
-        void openConversation().catch(() => {});
+      if (draft.created && error && active.current) openConversation();
     },
   });
   const [search, setSearch] = useSearchParams();
+  const requestedProject = search.get("project");
   useEffect(() => {
-    if (search.get("project") === (defaults.project_id ?? null)) return;
-    setSearch(
-      (current) => {
-        if (defaults.project_id) current.set("project", defaults.project_id);
-        else current.delete("project");
-        return current;
-      },
-      { replace: true },
-    );
-  }, [defaults.project_id, search, setSearch]);
+    // Home resumes the slot; a Project's plus explicitly changes only Project.
+    if (requestedProject === null || preparing || draft.attempted) {
+      if (requestedProject !== (draft.defaults.project_id ?? ""))
+        setSearch(
+          (current) => {
+            const next = new URLSearchParams(current);
+            next.set("project", draft.defaults.project_id ?? "");
+            return next;
+          },
+          { replace: true },
+        );
+      return;
+    }
+    if ((draft.defaults.project_id ?? null) === (requestedProject || null))
+      return;
+    draft.defaults = {
+      ...draft.defaults,
+      project_id: requestedProject || null,
+    };
+    setDefaults(draft.defaults);
+    draft.save();
+  }, [requestedProject, preparing, draft, setSearch]);
   const change = (patch: Schema<"NewThreadDefaults">) => {
     if (preparing || draft.attempted) return;
     draft.defaults = { ...defaults, ...patch };
     setDefaults(draft.defaults);
+    draft.save();
+    if ("project_id" in patch)
+      setSearch(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("project", patch.project_id ?? "");
+          return next;
+        },
+        { replace: true },
+      );
   };
   const project = projects.data?.find(
     (item) => item.project_id === defaults.project_id,
@@ -222,228 +227,230 @@ function NewConversation({
         ? "Sandbox"
         : "Custom environment";
   const choicesDisabled = preparing || draft.attempted;
-  const openConversation = async () => {
-    // Keep the current composer visible until the saved route has its first frame.
-    // Never retry admission here: this is only an exact-identity observation.
-    const detail = await queries.fetchQuery({
-      queryKey: ["thread", threadId, "detail"],
-      queryFn: () =>
-        result(
-          transport.client.GET("/api/threads/{thread_id}", {
-            params: { path: { thread_id: threadId } },
-          }),
-        ),
-      staleTime: 0,
-    });
-    await queries.prefetchInfiniteQuery({
-      queryKey: ["thread", threadId, "history", detail.continuation_id],
-      initialPageParam: undefined as string | undefined,
-      queryFn: () =>
-        result(
-          transport.client.GET("/api/threads/{thread_id}/transcript", {
-            params: {
-              path: { thread_id: threadId },
-              query: {
-                expected_continuation_id: detail.continuation_id ?? undefined,
-                limit: 30,
-              },
-            },
-          }),
-        ),
-    });
+  const [showAvailable, setShowAvailable] = useState(false);
+  const projectAligned =
+    requestedProject === null ||
+    draft.attempted ||
+    (requestedProject || null) === (defaults.project_id ?? null);
+  const pageReady = useInitialReady(
+    showAvailable ||
+      (projectAligned &&
+        !selectors.isPending &&
+        !projects.isPending &&
+        !preview.isPending),
+  );
+  const openConversation = () => {
+    // Admission and page observation are independent. Open the retained identity
+    // immediately so detail, history, focused output and the shared editor can
+    // initialize together behind the destination's first-observation gate.
     if (!active.current) return;
-    if (drafts.get("@home") === draft) drafts.delete("@home");
     navigate(`/threads/${encodeURIComponent(threadId)}?compose=1`, {
       replace: true,
     });
   };
   return (
-    <section className={styles.page} aria-label="New conversation">
-      <div className={styles.welcome}>
-        <Robot aria-hidden="true" />
-        <h1>
-          What would you like to build
-          {project ? (
-            <>
-              {" "}
-              in <span>{project.name}</span>
-            </>
-          ) : (
-            ""
-          )}
-          ?
-        </h1>
-      </div>
-      <div className={styles.inputArea}>
-        <fieldset
-          className={styles.context}
-          disabled={preparing || draft.attempted}
-        >
-          <legend className={styles.srOnly}>Conversation settings</legend>
-          <div className={styles.location}>
-            <Folder aria-hidden="true" />
-            <SearchPicker
-              label="Project"
-              popupClassName={styles.choicePopup}
-              placeholder="Without a project"
-              emptyMessage="No projects found."
-              disabled={preparing || draft.attempted}
-              value={defaults.project_id ?? ""}
-              onValueChange={(value) => change({ project_id: value || null })}
-              groups={[
-                {
-                  label: "Projects",
-                  options: [
-                    { value: "", label: "Without a project" },
-                    ...(projects.data ?? []).map((item) => ({
-                      value: item.project_id,
-                      label: item.name,
-                    })),
-                    ...(defaults.project_id && !project && !projects.isPending
-                      ? [
-                          {
-                            value: defaults.project_id,
-                            label: `${defaults.project_id} (unavailable)`,
-                            disabled: true,
-                          },
-                        ]
-                      : []),
-                  ],
-                },
-              ]}
-            />
-          </div>
-          <div className={styles.location}>
-            <Monitor aria-hidden="true" />
-            <SearchPicker
-              label="Environment"
-              popupClassName={styles.choicePopup}
-              placeholder={effectiveEnvironment?.name ?? "Default environment"}
-              emptyMessage="No environments found."
-              disabled={preparing || draft.attempted}
-              value={defaults.environment_profile_id ?? ""}
-              onValueChange={(value) =>
-                change({ environment_profile_id: value || null })
-              }
-              groups={[
-                {
-                  label: "Environments",
-                  options: [
-                    {
-                      value: "",
-                      label:
-                        !defaults.environment_profile_id && effectiveEnvironment
-                          ? `Default · ${effectiveEnvironment.name}`
-                          : "Default environment",
-                      description: "Follow the project or app default.",
-                    },
-                    ...(selectors.data?.environments ?? []).map((item) => ({
-                      value: item.profile_id,
-                      label: item.name,
-                      description: item.description,
-                    })),
-                  ],
-                },
-              ]}
-            />
-          </div>
-        </fieldset>
-        <Composer
-          autoFocus
-          threadId={threadId}
-          activity={{ state: "inactive" }}
-          canRun={!!preview.data && !preview.isFetching && !preview.error}
-          profile={profile}
-          unauthorized={unauthorized}
-          reconcile={() => {
-            void refreshThreadLists(queries);
-          }}
-          local={!draft.created}
-          prepareThread={() => create.mutateAsync()}
-          onPreparing={setPreparing}
-          onSubmitted={openConversation}
-          modelId={composerDraft.modelId}
-          leadingControls={
-            effectiveEnvironment && (
-              <span
-                className={styles.mode}
-                data-full-control={effectiveEnvironment.mode === "full-control"}
-                title={
-                  effectiveEnvironment.mode === "full-control"
-                    ? "Runs on the host with your account permissions."
-                    : effectiveEnvironment.description
+    <ConversationOpening
+      ready={pageReady}
+      label="Preparing your conversation…"
+      onContinue={() => setShowAvailable(true)}
+    >
+      <section className={styles.page} aria-label="New conversation">
+        <div className={styles.welcome}>
+          <Robot aria-hidden="true" />
+          <h1>
+            What would you like to build
+            {project ? (
+              <>
+                {" "}
+                in <span>{project.name}</span>
+              </>
+            ) : (
+              ""
+            )}
+            ?
+          </h1>
+        </div>
+        <div className={styles.inputArea}>
+          <ConversationTranscript
+            entries={[]}
+            blocks={[]}
+            localInputs={composerDraft.localInputs}
+            threadId={threadId}
+          />
+          <fieldset
+            className={styles.context}
+            disabled={preparing || draft.attempted}
+          >
+            <legend className={styles.srOnly}>Conversation settings</legend>
+            <div className={styles.location}>
+              <Folder aria-hidden="true" />
+              <SearchPicker
+                label="Project"
+                popupClassName={styles.choicePopup}
+                placeholder="Without a project"
+                emptyMessage="No projects found."
+                disabled={preparing || draft.attempted}
+                value={defaults.project_id ?? ""}
+                onValueChange={(value) => change({ project_id: value || null })}
+                groups={[
+                  {
+                    label: "Projects",
+                    options: [
+                      { value: "", label: "Without a project" },
+                      ...(projects.data ?? []).map((item) => ({
+                        value: item.project_id,
+                        label: item.name,
+                      })),
+                      ...(defaults.project_id && !project && !projects.isPending
+                        ? [
+                            {
+                              value: defaults.project_id,
+                              label: `${defaults.project_id} (unavailable)`,
+                              disabled: true,
+                            },
+                          ]
+                        : []),
+                    ],
+                  },
+                ]}
+              />
+            </div>
+            <div className={styles.location}>
+              <Monitor aria-hidden="true" />
+              <SearchPicker
+                label="Environment"
+                popupClassName={styles.choicePopup}
+                placeholder={
+                  effectiveEnvironment?.name ?? "Default environment"
                 }
-              >
-                <ShieldWarning aria-hidden="true" />
-                {isolation}
-              </span>
-            )
-          }
-          controls={
-            <div className={styles.runChoices}>
-              <div className={styles.runChoice}>
-                <span>Agent</span>
-                <SearchPicker
-                  label="Agent"
-                  popupClassName={styles.choicePopup}
-                  placeholder={
-                    effectiveAgent
-                      ? `Default · ${effectiveAgent.name}`
-                      : "Default agent"
+                emptyMessage="No environments found."
+                disabled={preparing || draft.attempted}
+                value={defaults.environment_profile_id ?? ""}
+                onValueChange={(value) =>
+                  change({ environment_profile_id: value || null })
+                }
+                groups={[
+                  {
+                    label: "Environments",
+                    options: [
+                      {
+                        value: "",
+                        label:
+                          !defaults.environment_profile_id &&
+                          effectiveEnvironment
+                            ? `Default · ${effectiveEnvironment.name}`
+                            : "Default environment",
+                        description: "Follow the project or app default.",
+                      },
+                      ...(selectors.data?.environments ?? []).map((item) => ({
+                        value: item.profile_id,
+                        label: item.name,
+                        description: item.description,
+                      })),
+                    ],
+                  },
+                ]}
+              />
+            </div>
+          </fieldset>
+          <Composer
+            autoFocus={pageReady}
+            threadId={threadId}
+            activity={{ state: "inactive" }}
+            canRun={!!preview.data && !preview.error}
+            unavailableReason={
+              preview.isPending
+                ? "Updating conversation settings…"
+                : preview.error
+                  ? "Review conversation settings before sending."
+                  : undefined
+            }
+            profile={profile}
+            unauthorized={unauthorized}
+            reconcile={() => {
+              void refreshThreadLists(queries);
+            }}
+            local={!draft.created}
+            skillDefaults={defaults}
+            prepareThread={() => create.mutateAsync()}
+            onPreparing={setPreparing}
+            onSubmitted={openConversation}
+            modelId={composerDraft.modelId}
+            leadingControls={
+              effectiveEnvironment && (
+                <span
+                  className={styles.mode}
+                  data-full-control={
+                    effectiveEnvironment.mode === "full-control"
                   }
-                  emptyMessage="No agents found."
-                  disabled={choicesDisabled}
-                  value={defaults.agent_id ?? ""}
-                  onValueChange={(value) => change({ agent_id: value || null })}
-                  groups={[
-                    {
-                      label: "Agents",
-                      options: [
-                        {
-                          value: "",
-                          label:
-                            !defaults.agent_id && effectiveAgent
-                              ? `Default · ${effectiveAgent.name}`
-                              : "Default agent",
-                          description: "Follow the project or app default.",
-                        },
-                        ...(selectors.data?.agents ?? []).map((item) => ({
-                          value: item.agent_id,
-                          label: item.name,
-                          description: item.agent_id,
-                        })),
-                      ],
-                    },
-                  ]}
-                />
-              </div>
-              <ModelPicker
-                models={selectors.data?.models ?? []}
-                defaultModelId={effectiveAgent?.model_id ?? undefined}
-                value={composerDraft.modelId}
+                  title={
+                    effectiveEnvironment.mode === "full-control"
+                      ? "Runs on the host with your account permissions."
+                      : effectiveEnvironment.description
+                  }
+                >
+                  <ShieldWarning aria-hidden="true" />
+                  {isolation}
+                </span>
+              )
+            }
+            controls={
+              <ThreadRunChoices
+                catalog={selectors.data}
+                agentId={defaults.agent_id ?? ""}
+                defaultAgentId={effectiveAgent?.agent_id}
+                modelId={composerDraft.modelId}
+                thinking={composerDraft.thinking}
                 disabled={choicesDisabled}
-                onChange={(value) => {
+                onAgentChange={(value) => {
+                  change({ agent_id: value || null });
+                  composerDraft.thinking = null;
+                  composerDraft.notify();
+                }}
+                onModelChange={(value) => {
                   composerDraft.modelId = value;
+                  composerDraft.thinking = null;
+                  composerDraft.notify();
+                }}
+                onThinkingChange={(value) => {
+                  composerDraft.thinking = value;
                   composerDraft.notify();
                 }}
               />
-            </div>
-          }
-        />
-        <ErrorNotice
-          error={preview.error || selectors.error || projects.error}
-        />
-        {draft.created && !preparing && (
-          <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
-            Open conversation with retained input
-          </Link>
-        )}
-        {(preview.error || setup.data?.needed) && (
-          <Link className={styles.setup} to="/setup">
-            Continue setup
-          </Link>
-        )}
-      </div>
-    </section>
+            }
+          />
+          {drafts.error && <p role="alert">{drafts.error}</p>}
+          {attachmentSelections(composerDraft.doc).some(
+            ({ key, id }) =>
+              !isReadyAttachment(id) && !composerDraft.uploads.has(key),
+          ) && (
+            <p role="alert">
+              Some attachments are unavailable. Local files are not saved across
+              reloads, and uploaded files belong to their original conversation.
+              Remove unavailable attachments and attach the files again before
+              sending.
+            </p>
+          )}
+          <ErrorNotice
+            error={preview.error || selectors.error || projects.error}
+            retry={() => {
+              void preview.refetch();
+              void selectors.refetch();
+              void projects.refetch();
+            }}
+          />
+          {draft.created && !preparing && (
+            <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
+              Open conversation with retained input
+            </Link>
+          )}
+          {(preview.error || setup.data?.needed) && (
+            <Link className={styles.setup} to="/setup">
+              Continue setup
+            </Link>
+          )}
+        </div>
+      </section>
+    </ConversationOpening>
   );
 }

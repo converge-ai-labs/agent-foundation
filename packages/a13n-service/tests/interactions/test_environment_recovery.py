@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 import e2b
 import pytest
 from a13n_environment import EnvironmentError, build_environment_provider_catalog
-from a13n_environment.e2b.files import E2BFiles
+from a13n_environment._guest_files import GuestFiles
 from a13n_service.agents.models import AgentRecord
 from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest
 from a13n_service.environments.models import EnvironmentRecord
@@ -21,7 +21,7 @@ from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import AGENT_ID, NOW, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
@@ -64,7 +64,7 @@ class SandboxAPI:
 async def test_host_publishes_recovery_before_exposing_the_new_backing(
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, missing
 ):
-    service, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    service, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
     service.catalog = lifecycle.catalog = build_environment_provider_catalog(builtin_keys=("a13n.e2b",))
     provider = await service.create_provider(
         actor=hook_actor(),
@@ -87,7 +87,7 @@ async def test_host_publishes_recovery_before_exposing_the_new_backing(
         (await session.get(AgentRecord, AGENT_ID)).default_environment_template_id = template.id
     api = SandboxAPI()
     monkeypatch.setattr(e2b, "AsyncSandbox", api)
-    monkeypatch.setattr(E2BFiles, "stat", AsyncMock())
+    monkeypatch.setattr(GuestFiles, "stat", AsyncMock())
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()

@@ -1,4 +1,4 @@
-"""Workspace-owned provider credentials, recipes, and target lifecycle authority."""
+"""Workspace-owned provider credentials, template configurations, and target lifecycle authority."""
 
 from __future__ import annotations
 
@@ -145,13 +145,13 @@ class EnvironmentTemplateRevisionRecord(Base):
     workspace_id: Mapped[str | None] = mapped_column(String(72))
     provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    recipe: Mapped[dict[str, JsonValue]] = mapped_column(JSON, nullable=False)
+    template_config: Mapped[dict[str, JsonValue]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     def to_resource(self) -> EnvironmentTemplateRevision:
         return EnvironmentTemplateRevision.model_validate(
             {
-                **self.recipe,
+                **self.template_config,
                 "id": self.id,
                 "template_id": self.template_id,
                 "organization_id": self.organization_id,
@@ -187,7 +187,7 @@ class EnvironmentRecord(ResourceColumns[str], Base):
         CheckConstraint("generation >= 0 AND operation_generation >= 0", name="generation_nonnegative"),
         CheckConstraint(
             "(ownership = 'managed' AND template_revision_id IS NOT NULL) OR (ownership = 'external' AND template_revision_id IS NULL)",
-            name="ownership_recipe",
+            name="ownership_template_config",
         ),
         CheckConstraint("status IN ('unprepared','running','stopped','deleted','unavailable')", name="status_valid"),
         CheckConstraint("retention_condition IN ('active','idle')", name="retention_condition_valid"),

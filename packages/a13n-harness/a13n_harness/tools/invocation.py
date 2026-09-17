@@ -32,7 +32,7 @@ from a13n_harness._json import (
     redact_json,
     require_finite_json,
 )
-from a13n_harness._review_context import ReviewEvidence, append_review_evidence, compact_target, record_approval_denials
+from a13n_harness._review_context import ReviewEvidence, append_review_evidence, record_approval_denials
 from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.capability_types import _validate_capability_id
 from a13n_harness.context import AgentContext
@@ -44,11 +44,14 @@ from a13n_harness.tools._output import (
     is_acknowledged_tool_output,
 )
 from a13n_harness.tools.approval import (
+    APPROVAL_PRESENTATION_KEY,
     RESOURCE_APPROVAL_KEY,
     TOOL_APPROVAL_KEY,
     ApprovalSource,
     approval_facts,
+    approval_presentation,
     approval_required,
+    compact_target,
     pending_approval_metadata,
     tool_approval_scope,
     verify_approval_facts,
@@ -353,7 +356,16 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
                 if _POLICY_APPROVAL_METADATA_KEY in (exc.metadata or {}):
                     sources = frozenset({"permission"})
                 raise approval_required(
-                    ctx, check.approval, binding=check.binding, sources=sources, metadata=exc.metadata
+                    ctx,
+                    check.approval,
+                    binding=check.binding,
+                    sources=sources,
+                    metadata={
+                        **(exc.metadata or {}),
+                        APPROVAL_PRESENTATION_KEY: approval_presentation(
+                            tool_args, reason="policy" if sources == frozenset({"permission"}) else None
+                        ),
+                    },
                 ) from exc
 
     async def _call_tool(

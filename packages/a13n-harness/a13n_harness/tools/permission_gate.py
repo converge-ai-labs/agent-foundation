@@ -18,7 +18,6 @@ from a13n_harness._json import dump_json_bytes, redact_json
 from a13n_harness._review_context import (
     ReviewEvidence,
     append_review_evidence,
-    compact_target,
     read_review_history,
     select_review_history,
 )
@@ -32,9 +31,12 @@ from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.observation import observe_operation, observe_output
 from a13n_harness.tools.approval import (
+    APPROVAL_PRESENTATION_KEY,
     NATIVE_TOOL_APPROVAL_KEY,
     ToolApprovalContext,
+    approval_presentation,
     approval_required,
+    compact_target,
     resolve_tool_approval,
     tool_approval_scope,
 )
@@ -117,6 +119,10 @@ async def check_permission(
             binding=binding,
             sources=frozenset({"permission"}),
             metadata={
+                APPROVAL_PRESENTATION_KEY: approval_presentation(
+                    arguments,
+                    reason="permission",
+                ),
                 "reason": "Tool permission configuration requires approval.",
             },
         )
@@ -141,6 +147,7 @@ async def _review(
     capability: ToolPermissionsCapability,
 ) -> None:
     review_metadata: dict[str, JsonValue] = {}
+    result = None
     try:
         request = await _review_request(ctx, tool_def, arguments, approval, binding)
         request.to_prompt()  # Enforce the same escaped-byte budget for custom reviewers.
@@ -238,7 +245,15 @@ async def _review(
             approval,
             binding=binding,
             sources=frozenset({"reviewer"}),
-            metadata={"reason": reason, **review_metadata},
+            metadata={
+                APPROVAL_PRESENTATION_KEY: approval_presentation(
+                    arguments,
+                    reason="review" if result is not None else "review_error",
+                    risk=result.assessment.risk.value if result is not None else None,
+                ),
+                "reason": reason,
+                **review_metadata,
+            },
         )
 
 
@@ -335,7 +350,14 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
                         await result
                 except ApprovalRequired as exc:
                     raise approval_required(
-                        ctx, check.approval, binding=check.binding, sources=frozenset({"tool"}), metadata=exc.metadata
+                        ctx,
+                        check.approval,
+                        binding=check.binding,
+                        sources=frozenset({"tool"}),
+                        metadata={
+                            **(exc.metadata or {}),
+                            APPROVAL_PRESENTATION_KEY: approval_presentation(args),
+                        },
                     ) from exc
             if tool.tool_def.kind == "unapproved" and not ctx.tool_call_approved:
                 # Native declarative approval owns its override_args semantics.
@@ -348,5 +370,8 @@ def gate_tool(tool: ToolsetTool[AgentContext]) -> ToolsetTool[AgentContext]:
                     "binding": check.binding,
                     "requested_sources": ["tool"],
                 }
+                ctx.deps._tool_pending_approvals[check.approval.tool_call_id][APPROVAL_PRESENTATION_KEY] = (
+                    approval_presentation(args)
+                )
 
     return replace(tool, args_validator_func=validate)

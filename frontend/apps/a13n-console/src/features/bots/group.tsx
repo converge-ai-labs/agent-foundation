@@ -1,3 +1,4 @@
+import { botAccount } from "./account";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -12,12 +13,15 @@ import {
   Page,
   StateBadge,
 } from "../../shared/feedback";
+import { AgentLink } from "../agents/link";
 import { TargetEditor } from "../application-accounts/targets";
 import {
   messagingPolicy,
   placementLabels,
+  automaticPlacementHint,
   responseLabels,
 } from "../application-accounts/messaging-fields";
+import { BotChecks } from "./checks";
 import { BotConversations } from "./conversations";
 import { BotGroupMemory } from "./memory";
 import styles from "./bots.module.css";
@@ -37,11 +41,12 @@ export function BotGroupDetail() {
     queryKey: ["application-accounts", workspace.id, accountId],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/application-accounts/{account_id}", {
+        .GET("/api/v1/application-accounts/{account_id}/bot/summary", {
           params: { path: { account_id: accountId } },
           signal,
         })
-        .then(data),
+        .then(data)
+        .then(botAccount),
   });
   const target = useQuery({
     queryKey: ["account-targets", workspace.id, accountId, targetId],
@@ -132,11 +137,17 @@ export function BotGroupDetail() {
         </TabsList>
         <TabsPanel value="configuration">
           {groupTab === "configuration" && (
-            <GroupConfiguration
-              account={account.data}
-              target={current}
-              memoryPath={path("memory")}
-            />
+            <>
+              <GroupConfiguration
+                account={account.data}
+                target={current}
+                memoryPath={path("memory")}
+              />
+              <BotChecks
+                account={account.data}
+                conversationId={current.external_target_id}
+              />
+            </>
           )}
         </TabsPanel>
         <TabsPanel value="conversations">
@@ -164,7 +175,7 @@ function GroupConfiguration({
   memoryPath: string;
 }) {
   const { t } = useTranslation(),
-    { basePath, can } = useWorkspace();
+    { can } = useWorkspace();
   const policy = messagingPolicy(
       target.provider_policy ?? account.provider_policy,
     ),
@@ -196,11 +207,7 @@ function GroupConfiguration({
         <div>
           <dt>{t("Agent")}</dt>
           <dd>
-            {agentId ? (
-              <Link to={`${basePath}/agents/${agentId}`}>{agentId}</Link>
-            ) : (
-              t("Not configured")
-            )}
+            {agentId ? <AgentLink agentId={agentId} /> : t("Not configured")}
             <small>
               {t(target.agent_id ? "Conversation override" : "Account default")}
             </small>
@@ -227,6 +234,9 @@ function GroupConfiguration({
             {policy
               ? t(placementLabels[policy.reply_mode])
               : t("Platform default")}
+            {policy?.reply_mode === "auto" && (
+              <small>{t(automaticPlacementHint)}</small>
+            )}
           </dd>
         </div>
         <div>

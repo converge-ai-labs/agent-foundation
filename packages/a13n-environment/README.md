@@ -10,7 +10,7 @@ The package owns:
 - single-use `Environment` adapters with creation or re-entry, readiness, provider-neutral operations, cached state, non-destructive close, and explicit destruction;
 - portable provider-owned `EnvironmentState` soft references;
 - typed Provider errors with bounded safe projections;
-- Native Direct Local/E2B and Envd Local/Docker/HTTP/WebSocket built-ins;
+- Native Direct Local/Docker/E2B and Envd Local/HTTP/WebSocket built-ins;
 - EIP session sources and reusable stdio-carrier values shared with managed sandbox Providers.
 
 Embedding code resolves a trusted Provider, validates configuration, supplies current state and fresh runtime collaborators, and constructs one new adapter per independent Harness Run:
@@ -37,45 +37,42 @@ Provider validation and adapter construction perform no external I/O. Harness en
 
 The package does not own durable storage, Host authorization or scheduling, Harness Runs, model-facing tools, mount names, access ceilings, or target retention policy. The Host persists authoritative `EnvironmentState`; Harness owns only Run-local aggregate routing and state mapping.
 
-Direct Local exposes an existing Host directory and never deletes, tags, locks, or claims ownership of it. Local Envd launches one compatible Host-selected `a13n-envd` generation for each fresh adapter and removes only its private runtime on close. Docker creates or re-enters one exact local container, exposes authenticated HTTP EIP operations, and preserves the container on close; explicit destruction removes the container and its Provider-owned bootstrap material. Docker never uses exec, archive, copy, or logs for Harness operations. E2B implements native SDK operations with bounded command-local byte capture, state re-entry, pause/resume, keepalive and explicit destruction; it requires no envd installation or custom template. The catalog contains no placeholder or fallback selection.
+Direct Local exposes an existing Host directory and never deletes, tags, locks, or claims ownership of it. Local Envd launches one compatible Host-selected `a13n-envd` generation for each fresh adapter and removes only its private runtime on close. Docker creates or re-enters a native container, uses Engine exec for operations, and preserves the container and background commands on close. Explicit destruction removes its private filesystem and preserves external host mounts. E2B implements native SDK operations with bounded command-local byte capture, state re-entry, pause/resume, keepalive and explicit destruction; it requires no envd installation or custom template. The catalog contains no placeholder or fallback selection.
 
 ## Choose a Provider
 
-| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
-| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
-| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
-| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
-| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
-| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
-| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
-| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
+| Route  | Provider              | Use it for                               | Operation and ownership boundary                            |
+| ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
+| Native | `a13n.direct-local`   | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `a13n.e2b`            | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Native | `a13n.docker`         | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
+| Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
+| Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 See [Remote Envd](../../docs/a13n-environment/remote-envd.md) for one-command local demos, external HTTP connection and Host-owned reverse WebSocket integration. The SDK starts no listener; close preserves the external daemon and workspace.
 
 ## Docker development
 
-The default Docker recipe is empty; the Host passes its instance ID separately to `create_environment()`. It uses `ghcr.io/converge-ai-labs/a13n-sandbox:latest`, pulls when the image is missing, exposes the container-backed `/workspace` virtual mount, and enables Bash. Hosts supply a local Engine adapter and a bootstrap store rooted at a Host-selected directory:
+The default configuration selects the Envd-free `ghcr.io/converge-ai-labs/a13n-docker-environment:latest` image. Each Environment has its own `/workspace`. Templates can add existing host-directory mounts; named volumes and bootstrap storage are not template options.
+
+The Host supplies a Docker client through the runtime and owns its closure:
 
 ```python
-from pathlib import Path
+import asyncio
+from a13n_environment import DockerProviderRuntime, DockerSDKEngine
 
-from a13n_environment import (
-    DirectoryDockerBootstrapStore,
-    DockerProviderRuntime,
-    DockerSDKEngine,
-)
-
-runtime = DockerProviderRuntime(
-    engine=DockerSDKEngine.from_env(),
-    bootstrap_store=DirectoryDockerBootstrapStore(Path("/var/lib/my-host/docker-bootstrap")),
-)
+engine = await asyncio.to_thread(DockerSDKEngine.connect, "unix:///var/run/docker.sock")
+runtime = DockerProviderRuntime(engine=engine)
 ```
 
-The Engine client uses ordinary Host Docker authentication, credential-helper, mirror, and proxy configuration. Bind mounts and existing named volumes are optional Host overrides; named volumes remain externally owned. Run the focused real-image lifecycle test with:
+Run unit tests with `make docker-provider-test`. Build the native image with `make image-docker-environment`, then run real lifecycle and operation checks:
 
-```bash
-make docker-provider-test
+```sh
+make docker-provider-live-test
 ```
+
+[Single-host Compose](../../deploy/compose/README.md) supplies a separate DinD Engine and shared Unix socket. Configure external bind paths in that Engine's filesystem namespace.
 
 ## Local Envd development
 

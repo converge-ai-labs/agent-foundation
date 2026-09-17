@@ -1,3 +1,6 @@
+import { refreshMemory } from "./memory-actions";
+import type { BotAccount } from "./account";
+import type { MemoryDialogControl } from "./memory-actions";
 import {
   Button,
   ChoiceField,
@@ -8,7 +11,8 @@ import {
   Switch,
 } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { MemoryProviderEditor } from "../memory/editor";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -16,14 +20,18 @@ import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import shared from "../../shared/shared.module.css";
-import { BotChecks } from "./checks";
+import styles from "./bots.module.css";
 
 export function MemorySettings({
   account,
   reload,
+  setup = false,
+  onConfigured,
 }: {
-  account: Schema["Account"];
-  reload: () => Promise<void>;
+  account: BotAccount;
+  reload?: () => Promise<void>;
+  setup?: boolean;
+  onConfigured?: () => void;
 }) {
   const [open, setOpen] = useState(false),
     { t } = useTranslation();
@@ -35,8 +43,11 @@ export function MemorySettings({
       closeLabel={t("Close")}
       size="md"
       trigger={
-        <Button variant="outline" onClick={() => setOpen(true)}>
-          {t("Memory settings")}
+        <Button
+          variant={setup ? "default" : "outline"}
+          onClick={() => setOpen(true)}
+        >
+          {t(setup ? "Set up memory" : "Memory settings")}
         </Button>
       }
     >
@@ -45,6 +56,7 @@ export function MemorySettings({
           account={account}
           close={() => setOpen(false)}
           reload={reload}
+          onConfigured={onConfigured}
         />
       )}
     </ModalFrame>
@@ -55,16 +67,22 @@ function SettingsForm({
   account,
   close,
   reload,
+  onConfigured,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   close: () => void;
-  reload: () => Promise<void>;
+  reload?: () => Promise<void>;
+  onConfigured?: () => void;
 }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    cache = useQueryClient(),
+    { workspace, can } = useWorkspace(),
     { t } = useTranslation();
+  const [enabled, setEnabled] = useState(!!account.memory);
+  const [addingProvider, setAddingProvider] = useState(false);
+  const addTrigger = useRef<HTMLButtonElement>(null);
   const [providerId, setProviderId] = useState(
-    account.memory?.provider_id ?? "none",
+    account.memory?.provider_id ?? "",
   );
   const [useMemory, setUseMemory] = useState(
     account.memory?.use_memory ?? true,
@@ -103,7 +121,7 @@ function SettingsForm({
     ]),
   );
   const unavailable =
-    providerId !== "none" &&
+    enabled &&
     !(providers.data ?? []).some(
       (item) =>
         item.id === providerId &&
@@ -115,24 +133,25 @@ function SettingsForm({
       if (unavailable)
         throw new Error(t("Choose a Provider that supports document memory."));
       await client.http
-        .PATCH("/api/v1/application-accounts/{account_id}", {
+        .PUT("/api/v1/application-accounts/{account_id}/bot/memory-settings", {
           params: { path: { account_id: account.id } },
           body: {
-            expected_version: account.version,
-            memory:
-              providerId === "none"
-                ? null
-                : {
-                    provider_id: providerId,
-                    use_memory: useMemory,
-                    save_on_request: saveMemory,
-                    timezone,
-                  },
+            expected_version: account.memoryVersion,
+            memory: !enabled
+              ? null
+              : {
+                  provider_id: providerId,
+                  use_memory: useMemory,
+                  save_on_request: saveMemory,
+                  timezone,
+                },
           },
         })
         .then(data);
-      await reload();
+      await cache.invalidateQueries({ queryKey: ["application-accounts"] });
+      await reload?.();
       close();
+      if (enabled && !account.memory) onConfigured?.();
     },
   });
   return (
@@ -148,37 +167,101 @@ function SettingsForm({
           "Only workspace administrators can view and manage connected private-group memory.",
         )}
       </p>
-      <ErrorNotice error={providers.error ?? types.error} />
-      {providers.isPending || types.isPending ? (
-        <Loading />
-      ) : (
-        <ChoiceField
-          label={t("Memory Provider")}
-          value={providerId}
-          onValueChange={setProviderId}
-          options={[
-            { value: "none", label: t("Disabled") },
-            ...(providers.data ?? []).map((item) => ({
-              value: item.id,
-              label: `${item.name}${!item.enabled ? ` · ${t("Disabled")}` : support.get(item.type) === false ? ` · ${t("Document memory unsupported")}` : support.get(item.type) !== true ? ` · ${t("Unavailable")}` : ""}`,
-              disabled: !item.enabled || support.get(item.type) !== true,
-            })),
-          ]}
-        />
-      )}
-      {unavailable && !providers.isPending && !types.isPending && (
-        <p role="note">
-          {t("Choose a Provider that supports document memory.")}
-        </p>
-      )}
-      {account.memory && providerId !== account.memory.provider_id && (
-        <p role="note">
+      <Label>
+        <Switch checked={enabled} onCheckedChange={setEnabled} />
+        {t("Enable memory")}
+      </Label>
+      {!enabled && (
+        <p>
           {t(
-            "Existing documents stay on the previous Provider. This does not migrate or delete them.",
+            "Enable memory to choose storage and configure conversation defaults.",
           )}
         </p>
       )}
-      {providerId !== "none" && (
+      {enabled && (
+        <>
+          <ErrorNotice
+            error={providers.error ?? types.error}
+            retry={() => {
+              void providers.refetch();
+              void types.refetch();
+            }}
+          />
+          {providers.isPending || types.isPending ? (
+            <Loading />
+          ) : (
+            <>
+              <ChoiceField
+                label={t("Memory storage")}
+                value={providerId}
+                onValueChange={setProviderId}
+                options={[
+                  {
+                    value: "",
+                    label: t("Select memory storage"),
+                    disabled: true,
+                  },
+                  ...(providers.data ?? []).map((item) => ({
+                    value: item.id,
+                    label: `${item.name}${!item.enabled ? ` · ${t("Disabled")}` : support.get(item.type) === false ? ` · ${t("Document memory unsupported")}` : support.get(item.type) !== true ? ` · ${t("Unavailable")}` : ""}`,
+                    disabled: !item.enabled || support.get(item.type) !== true,
+                  })),
+                ]}
+              />
+              {!providers.error &&
+                !types.error &&
+                !(providers.data ?? []).some(
+                  (item) => item.enabled && support.get(item.type) === true,
+                ) && (
+                  <p role="note">
+                    {t(
+                      "No compatible memory storage is available. Add storage to continue.",
+                    )}
+                  </p>
+                )}
+              {providerId && unavailable && (
+                <p role="note">
+                  {t("Choose a Provider that supports document memory.")}
+                </p>
+              )}
+              {can("memory_provider.manage") && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  ref={addTrigger}
+                  onClick={() => setAddingProvider(true)}
+                >
+                  {t("Add memory storage")}
+                </Button>
+              )}
+              {!can("memory_provider.manage") && (
+                <p>
+                  {t("Ask a workspace administrator to add memory storage.")}
+                </p>
+              )}
+            </>
+          )}
+        </>
+      )}
+      <MemoryProviderEditor
+        scope={{ kind: "workspace", id: workspace.id }}
+        controlledOpen={addingProvider}
+        onClose={() => setAddingProvider(false)}
+        finalFocus={addTrigger}
+        onSaved={(provider) => {
+          setProviderId(provider.id);
+          void providers.refetch();
+        }}
+      />
+      {account.memory &&
+        (!enabled || providerId !== account.memory.provider_id) && (
+          <p role="note">
+            {t(
+              "Existing documents stay on the previous Provider. This does not migrate or delete them.",
+            )}
+          </p>
+        )}
+      {enabled && providerId && !unavailable && (
         <>
           <Label>
             <Switch checked={useMemory} onCheckedChange={setUseMemory} />
@@ -205,7 +288,14 @@ function SettingsForm({
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}
-        disabled={unavailable}
+        disabled={
+          unavailable ||
+          (enabled &&
+            (providers.isPending ||
+              types.isPending ||
+              !!providers.error ||
+              !!types.error))
+        }
         onCancel={close}
       />
     </form>
@@ -215,9 +305,13 @@ function SettingsForm({
 export function GroupMemorySettings({
   account,
   target,
+  initialScope,
+  dialog,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   target?: Schema["AccountTarget"];
+  initialScope?: Schema["Scope"];
+  dialog?: MemoryDialogControl;
 }) {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
@@ -225,20 +319,24 @@ export function GroupMemorySettings({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
+      {...dialog}
       title={t("Configure group memory")}
       closeLabel={t("Close")}
       size="md"
       trigger={
-        <Button variant="outline" onClick={() => setOpen(true)}>
-          {t("Configure group")}
-        </Button>
+        dialog ? undefined : (
+          <Button variant="outline" onClick={() => setOpen(true)}>
+            {t("Configure group")}
+          </Button>
+        )
       }
     >
-      {open && (
+      {(dialog?.open ?? open) && (
         <GroupForm
           account={account}
           target={target}
-          close={() => setOpen(false)}
+          initialScope={initialScope}
+          close={() => (dialog ? dialog.onOpenChange(false) : setOpen(false))}
         />
       )}
     </ModalFrame>
@@ -249,19 +347,28 @@ function GroupForm({
   account,
   close,
   target,
+  initialScope,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   target?: Schema["AccountTarget"];
+  initialScope?: Schema["Scope"];
   close: () => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation();
-  const [group, setGroup] = useState(target?.external_target_id ?? ""),
+  const [group, setGroup] = useState(
+      target?.external_target_id ??
+        initialScope?.external_conversation_id ??
+        "",
+    ),
     [enabled, setEnabled] = useState(true),
     [read, setRead] = useState(true),
     [write, setWrite] = useState(true);
   const [timezone, setTimezone] = useState(account.memory?.timezone ?? "UTC");
+  const [visibility, setVisibility] = useState<"group" | "installation">(
+    "group",
+  );
   const [loaded, setLoaded] = useState(false);
   const [expectedVersion, setExpectedVersion] = useState<number | undefined>();
   const choices = useQuery({
@@ -325,9 +432,10 @@ function GroupForm({
   const scope = choices.data?.scopes.find(
     (item) => item.external_conversation_id === group,
   );
-  if (target && choices.data && !loaded) {
+  if ((target || initialScope) && choices.data && !loaded) {
     setLoaded(true);
     setEnabled(scope?.enabled ?? true);
+    setVisibility(scope?.visibility ?? "group");
     setRead(scope?.use_memory ?? true);
     setWrite(scope?.save_on_request ?? true);
     setTimezone(scope?.timezone ?? account.memory?.timezone ?? "UTC");
@@ -343,15 +451,14 @@ function GroupForm({
             external_conversation_id: group,
             expected_version: expectedVersion,
             enabled,
+            visibility,
             use_memory: read,
             save_on_request: write,
             timezone,
           },
         })
         .then(data);
-      await cache.invalidateQueries({
-        queryKey: ["bot-memory-scopes", account.id],
-      });
+      await refreshMemory(cache, account.id);
       close();
     },
   });
@@ -371,7 +478,7 @@ function GroupForm({
           label={t("Conversation")}
           value={group}
           required
-          readOnly={!!target}
+          readOnly={!!target || !!initialScope}
           options={(choices.data?.targets ?? [])
             .filter((target) => target.target_kind === "conversation")
             .map((target) => ({
@@ -389,6 +496,7 @@ function GroupForm({
             );
             setExpectedVersion(selected?.version);
             setEnabled(selected?.enabled ?? true);
+            setVisibility(selected?.visibility ?? "group");
             setRead(selected?.use_memory ?? true);
             setWrite(selected?.save_on_request ?? true);
             setTimezone(
@@ -401,29 +509,86 @@ function GroupForm({
         <Switch checked={enabled} onCheckedChange={setEnabled} />
         {t("Enable group memory")}
       </Label>
-      <Label>
-        <Switch checked={read} onCheckedChange={setRead} />
-        {t("Use memory during conversations")}
-      </Label>
-      <Label>
-        <Switch checked={write} onCheckedChange={setWrite} />
-        {t("Allow explicit save and forget requests")}
-      </Label>
-      <FormField label={t("Time zone")}>
-        <Input
-          value={timezone}
-          onChange={(event) => setTimezone(event.target.value)}
-          required
-        />
-      </FormField>
+      <div className={styles.groupMemoryCapabilities} data-disabled={!enabled}>
+        <Label>
+          <Switch
+            checked={read}
+            onCheckedChange={setRead}
+            disabled={!enabled}
+          />
+          {t("Refer to memory when answering")}
+        </Label>
+        <Label>
+          <Switch
+            checked={write}
+            onCheckedChange={setWrite}
+            disabled={!enabled}
+          />
+          {t("Allow saving or deleting memory through chat")}
+        </Label>
+      </div>
+      <ChoiceField
+        label={t("Who can read this group's memory?")}
+        value={visibility}
+        onValueChange={(value) =>
+          setVisibility(value as "group" | "installation")
+        }
+        options={[
+          { value: "group", label: t("Only this group") },
+          {
+            value: "installation",
+            label: t(
+              account.provider_key === "slack"
+                ? "All connected channels in this Slack workspace"
+                : "All connected groups in this Feishu enterprise",
+            ),
+            disabled: !scope || !["public", "private"].includes(scope.audience),
+          },
+        ]}
+      />
+      {visibility === "installation" && (
+        <p>
+          {t(
+            "Limited to groups connected to this bot. Other groups can use this group's memory when answering.",
+          )}
+        </p>
+      )}
       <p>
         {t(
-          "The platform must verify this conversation before the bot can use its memory. These settings do not grant sharing access.",
+          visibility === "installation"
+            ? "All existing and future memory in this group can be read by other groups connected to this bot in the same Slack workspace or Feishu tenant. Their private memory stays private."
+            : "Other groups cannot read this group's memory. This group can still read memory that other groups make visible.",
         )}
       </p>
-      {group && (
-        <BotChecks key={group} account={account} conversationId={group} />
+      {visibility !== (scope?.visibility ?? "group") && (
+        <p role="status">
+          {t(
+            visibility === "group"
+              ? "Saving immediately stops future reads from other groups. Messages already sent to chats are not removed."
+              : "This includes historical memory and groups connected to this bot later. No chat message or memory copy is created.",
+          )}
+        </p>
       )}
+      <p>
+        {t(
+          "Only verified group conversations can open their memory to other groups. Direct conversations stay private.",
+        )}
+      </p>
+      <details className={styles.memoryAdvancedSettings}>
+        <summary>{t("Advanced settings")}</summary>
+        <FormField label={t("Time zone")}>
+          <Input
+            value={timezone}
+            onChange={(event) => setTimezone(event.target.value)}
+            required
+          />
+        </FormField>
+        <p>
+          {t(
+            "Determines the default date for new memories and date filtering. Uses the bot's time zone unless changed for this group.",
+          )}
+        </p>
+      </details>
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}

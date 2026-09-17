@@ -18,6 +18,7 @@ from a13n_harness_ui.interactive.backend import SessionBackend
 from a13n_harness_ui.interactive.commands import Command, CommandRegistry
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer, terminal_text
 from a13n_harness_ui.interactive.setup import SetupWizard
+from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 from a13n_harness_ui.settings import EnvdRuntimeSettings, HarnessUiSettings, StorageSettings
 from pydantic_ai.models.function import FunctionModel
 
@@ -47,6 +48,9 @@ def test_command_registry_has_one_grammar_and_rejects_collisions() -> None:
     assert registry.parse("/mode detailed", busy=True).arguments == ("detailed",)
     assert registry.completions("/mo")[0][0] == "/mode"
     assert registry.completions("/mode d")[0][0] == "detailed"
+    registry.thinking_choices = (("default", "Configured native value"), ("off", "Disable thinking"))
+    assert registry.completions("/thinking o") == (("off", "Disable thinking"),)
+    assert registry.completions("/thinking h") == ()
     assert "Alt+Enter" in registry.help()
     for invalid in ("/unknown", "/model a b", "/mode invalid", '/attach "unclosed'):
         with pytest.raises(ValueError):
@@ -160,12 +164,13 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")
-    assert selection["codex_model"] == "gpt-5.6-sol"
-    assert selection["codex_context_window"] == 872000
-    assert selection["proactive_context_management_threshold"] == 0.65
-    assert selection["compact_threshold"] == 0.9
+    assert selection["model"]["route"] == "openai-codex:gpt-5.6-sol"
+    characteristics = selection["model"]["model_characteristics"]
+    assert characteristics["context_window_tokens"] == 872000
+    assert characteristics["proactive_context_management_threshold"] == 0.65
+    assert characteristics["compact_threshold"] == 0.9
     assert selection["environment_profile"] == "environment-sandbox"
-    assert selection["codex_thinking"] == "medium"
+    assert selection["model"]["settings"]["thinking"] == "medium"
 
 
 @pytest.mark.parametrize(
@@ -206,7 +211,7 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     selection = SetupSelection(
-        providers=("codex",),
+        model=prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol")),
         default_agent="agent-codex",
         project="project-local",
         project_path=str(tmp_path),
@@ -611,12 +616,14 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         assert await backend.execute(renderer, prompt="Do the task") == ""
         display = renderer.drain()
         assert "GLOBAL GUIDANCE" not in display
+        assert "surface-context" not in display
         assert "Repository rule" not in display
         sources = [block.source for block in renderer.transcript.blocks.values()]
         assert sum(source == "> Do the task" for source in sources) == 1, sources
         page = await app.get_thread_transcript(thread_id=backend.thread_id, limit=50)
         hidden = [part for entry in page.entries for part in entry.parts if not part.metadata.display]
         assert any("GLOBAL GUIDANCE" in (part.text or "") for part in hidden)
+        assert any("Harness UI TUI" in (part.text or "") for part in hidden)
         assert any("FINAL REPOSITORY RULE" in (part.text or "") for part in hidden)
         # A fresh adapter reads retained native metadata, not transient renderer state.
         resumed = SessionBackend(app, CliRequest(), cwd, Status())
@@ -624,6 +631,7 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         assert "GLOBAL GUIDANCE" not in await _retained_history(resumed)
         history = await _retained_history(backend)
         assert "Do the task" in history and "done" in history
+        assert "surface-context" not in history
         assert "GLOBAL GUIDANCE" not in history
         assert "Repository rule" not in history
         (path.parent / "AGENTS.md").unlink()
@@ -642,6 +650,8 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         if isinstance(part, UserPromptPart)
     )
     assert "GLOBAL GUIDANCE" in user_text
+    assert '<surface-context source="a13n-harness-ui">' in user_text
+    assert "Harness UI TUI" in user_text
     visible = str(seen[0])
     assert "Repository rule 0" in visible and "FINAL REPOSITORY RULE" in visible
     assert "DO NOT INJECT" not in visible
@@ -675,7 +685,14 @@ async def test_session_overrides_capture_native_context_and_resume(
         backend = SessionBackend(app, CliRequest(), tmp_path, status)
         assert await backend.initialize()
         assert status.context_window == 350000
+        choices = await backend.choices("thinking")
+        assert {item.value for item in choices} == {"default", "off", "low", "medium", "high", "xhigh"}
         await backend.thinking("low")
+        assert status.thinking == "Low"
+        assert "Thinking Low" in status.line(160)
+        with pytest.raises(ValueError, match="Unsupported"):
+            await backend.thinking("minimal")
+        assert backend.overrides.thinking == "low"
         renderer = StreamRenderer(status)
         assert await backend.execute(renderer, prompt="First") == ""
         assert "Hello from the mock." in renderer.drain()
@@ -1473,8 +1490,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
 
     path = await _seed(tmp_path, monkeypatch)
     second = SetupSelection(
-        providers=("codex",),
-        codex_model="gpt-6-astra",
+        model=prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-6-astra")),
         new_agent_id="agent-astra",
         new_agent_name="Astra",
         instructions="SECOND AGENT INSTRUCTIONS",

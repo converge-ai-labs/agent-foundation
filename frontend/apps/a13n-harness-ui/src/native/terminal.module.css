@@ -120,3 +120,23 @@
     gap: 2px;
   }
 }
+
+.retainedScreen {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.retainedScreen[hidden] {
+  display: none;
+}
+.search {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.search > :first-child {
+  flex: 1;
+  min-width: 160px;
+}

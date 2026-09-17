@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { startSetupApp } from "../../tests/app-fixture";
+import { startApp } from "../../tests/app-fixture";
 import type { Schema } from "../transport/client";
 
-let app: Awaited<ReturnType<typeof startSetupApp>>;
+let app: Awaited<ReturnType<typeof startApp>>;
 beforeAll(async () => {
-  app = await startSetupApp();
+  app = await startApp("--setup");
 }, 40000);
 afterAll(async () => {
   await app?.close();
@@ -30,18 +30,17 @@ it("takes an untouched real App from offline choices to saved configuration and 
   ).json();
   expect(setup.fresh).toBe(true);
   expect(setup.needed).toBe(true);
+  const directory = await request("/api/models/catalog");
+  expect(directory.ok).toBe(true);
+  expect((await directory.json()).status).toBe("ready");
   expect(await (await request("/api/auth/logins")).json()).toBeNull();
-  const provider = setup.choices!.api_providers.find(
-    (p) => p.value === "openai-responses",
-  )!;
-  const model = provider.models[0]!;
-  const options: Schema<"SetupModelOptions"> = await (
-    await request("/api/setup/model-options", {
-      provider: provider.value,
-      model_id: model,
-      base_url: provider.base_url,
-    })
+  const choices: Schema<"ModelChoices"> = await (
+    await request("/api/models/choices")
   ).json();
+  const provider = choices.connections!.find(
+    (p) => p.id === "openai-responses",
+  )!;
+  const model = provider.default_model;
   expect(
     (
       await request(
@@ -54,20 +53,21 @@ it("takes an untouched real App from offline choices to saved configuration and 
       )
     ).ok,
   ).toBe(true);
-  const selection: Schema<"SetupSelection"> = {
-    ...setup.choices!.defaults,
-    providers: [],
-    default_agent: "agent-api-key",
-    api_key_model: {
-      route: `${provider.value}:${model}`,
+  const recipe: Schema<"ModelRecipe"> = await (
+    await request("/api/models/prepare", {
+      connection: provider.id,
+      model_id: model,
+      base_url: provider.base_url,
       authentication: {
         kind: "api_key",
         credential_ref: "key-onboarding-fixture",
       },
-      settings: options.presets[0]!.settings,
-      model_configuration: { base_url: provider.base_url },
-      model_characteristics: { context_window_tokens: options.context_window },
-    },
+    })
+  ).json();
+  const selection: Schema<"SetupSelection"> = {
+    ...setup.defaults!,
+    default_agent: "agent-api-key",
+    model: recipe,
   };
   const preview: Schema<"SetupPreview"> = await (
     await request("/api/setup/preview", selection)

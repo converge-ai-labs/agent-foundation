@@ -1,10 +1,10 @@
 # a13n Console
 
-The private React and TypeScript web application for Agent Foundation Service. Console uses the shared `a13n-ui` design system and the TypeScript Service SDK. English is the default language; Simplified Chinese is available from the account menu.
+The private React and TypeScript web application for Agent Foundation Service. Console uses the shared `a13n-ui` design system and its private Service client. English is the default language; Simplified Chinese is available from the account menu.
 
 ## Local development
 
-From the repository root, prepare local PostgreSQL, Redis and Langfuse, upgrade the schema, prepare frontend dependencies and the TypeScript SDK, and run Service and Console together. Configuration comes from `dev/service/local.toml`; no `.env` or manual Langfuse setup is required:
+From the repository root, prepare local PostgreSQL, Redis and Langfuse, upgrade the schema, prepare frontend dependencies, and run Service and Console together. Configuration comes from `dev/service/local.toml`; no `.env` or manual Langfuse setup is required:
 
 ```bash
 make dev
@@ -16,7 +16,6 @@ To run only Console against an already running Service:
 
 ```bash
 make frontend-sync
-make sdk-typescript-build
 pnpm --dir frontend --filter a13n-console dev
 ```
 
@@ -34,6 +33,10 @@ The local launcher assigns a stable Console port per checkout and passes the mat
 Usage and Schedules remain clearly marked as coming soon. Plugin, Secret, and Hook editors are outside the Console scope. Existing hidden configuration is preserved when editing supported fields.
 
 Console uses Service permission hints for navigation and controls; the Service authorizes every request. API keys are workspace-bound, and one-time credentials are displayed only when created. The application has no demo data or embedded credentials.
+
+## Service contract
+
+Console owns `src/service-client/`; it does not install, build, or release with an external Service SDK. HTTP types are generated from `proto/a13n-service/openapi.json`, not edited by hand. After changing a Service route or model, run `make service-contract-generate`; `make service-contract-check` detects drift without modifying files. Transport, session/CSRF, Run stream, and notification tests run against the internal client.
 
 ## Validation and production build
 

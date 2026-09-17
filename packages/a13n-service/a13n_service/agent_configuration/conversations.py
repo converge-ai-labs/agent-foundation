@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import and_, literal, or_, select
+from sqlalchemy import and_, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import StrictModel
@@ -33,6 +33,8 @@ class ConfigurationSessionView(StrictModel):
     owner_user_id: str
     configuration_draft_id: str
     root_thread_id: str
+    title: str | None = None
+    has_runs: bool = False
     created_at: datetime
     updated_at: datetime
 
@@ -137,12 +139,8 @@ class ConfigurationConversations:
                 )
             except AuthorizationError as error:
                 raise not_found() from error
-            root = await session.scalar(
-                select(ThreadRecord.id).where(ThreadRecord.session_id == session_id, ThreadRecord.role == "root")
-            )
-            if root is None:
-                raise not_found()
-            return session_view(conversation, root_thread_id=root)
+            row = (await session.execute(session_summary_query().where(SessionRecord.id == conversation.id))).one()
+            return session_view(row[0], root_thread_id=row[1], title=row[2], has_runs=row[3])
 
     async def get_thread(self, *, actor: AuthenticatedActor, thread_id: str) -> ConfigurationThreadView:
         async with short_session(self._sessions) as session:
@@ -250,9 +248,8 @@ class ConfigurationConversations:
                 permissions.workspace_actions
             )
             query = (
-                select(SessionRecord, ThreadRecord.id)
+                session_summary_query()
                 .join(ConfigurationDraftRecord, ConfigurationDraftRecord.id == SessionRecord.configuration_draft_id)
-                .join(ThreadRecord, and_(ThreadRecord.session_id == SessionRecord.id, ThreadRecord.role == "root"))
                 .where(
                     SessionRecord.workspace_id == workspace.id,
                     SessionRecord.configuration_owner_user_id == actor.principal.principal_id,
@@ -277,7 +274,7 @@ class ConfigurationConversations:
             ).all()
             page = rows[:limit]
             return ConfigurationSessionCollection(
-                items=tuple(session_view(row[0], root_thread_id=row[1]) for row in page),
+                items=tuple(session_view(row[0], root_thread_id=row[1], title=row[2], has_runs=row[3]) for row in page),
                 next_cursor=encode_time_cursor(page[-1][0].updated_at, page[-1][0].id, scope=scope)
                 if len(rows) > limit
                 else None,
@@ -326,7 +323,24 @@ def cursor_boundary(cursor: str | None, *, scope: dict[str, object], prefix: str
         ) from error
 
 
-def session_view(record: SessionRecord, *, root_thread_id: str) -> ConfigurationSessionView:
+def session_summary_query():
+    first_input = (
+        select(func.substr(RunRecord.input_text, 1, 160))
+        .where(RunRecord.session_id == SessionRecord.id, RunRecord.input_kind == "agent_input")
+        .order_by(RunRecord.created_at, RunRecord.id)
+        .limit(1)
+        .correlate(SessionRecord)
+        .scalar_subquery()
+    )
+    has_runs = select(RunRecord.id).where(RunRecord.session_id == SessionRecord.id).correlate(SessionRecord).exists()
+    return select(SessionRecord, ThreadRecord.id, first_input, has_runs).join(
+        ThreadRecord, and_(ThreadRecord.session_id == SessionRecord.id, ThreadRecord.role == "root")
+    )
+
+
+def session_view(
+    record: SessionRecord, *, root_thread_id: str, title: str | None = None, has_runs: bool = False
+) -> ConfigurationSessionView:
     assert record.configuration_owner_user_id is not None and record.configuration_draft_id is not None
     return ConfigurationSessionView(
         id=record.id,
@@ -335,6 +349,8 @@ def session_view(record: SessionRecord, *, root_thread_id: str) -> Configuration
         owner_user_id=record.configuration_owner_user_id,
         configuration_draft_id=record.configuration_draft_id,
         root_thread_id=root_thread_id,
+        title=" ".join(title.split()) or None if title else None,
+        has_runs=has_runs,
         created_at=assume_utc(record.created_at),
         updated_at=assume_utc(record.updated_at),
     )

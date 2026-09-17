@@ -11,6 +11,7 @@ if TYPE_CHECKING:
     from a13n_service.agents.application import AgentManagement
     from a13n_service.assets.catalog import AssetCatalog
     from a13n_service.assets.uploads import AssetUploadService
+    from a13n_service.bots.connectivity.service import BotService
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.runtime import ConnectivityRuntime
     from a13n_service.environments.lifecycle import EnvironmentLifecycle
@@ -23,6 +24,7 @@ if TYPE_CHECKING:
     from a13n_service.interactions.lifecycle import LifecycleWriter
     from a13n_service.interactions.worker import WorkerExecutionLoop
     from a13n_service.lifecycle.service import LifecycleEventService
+    from a13n_service.memory.behaviors import MemoryBehaviors
     from a13n_service.memory.providers import MemoryProviderService
     from a13n_service.memory.service import MemoryService
     from a13n_service.models.model_factory import NativeModelFactory
@@ -52,6 +54,7 @@ class SharedRuntime:
     lifecycle: LifecycleWriter
     secret_protector: SecretProtector
     memories: MemoryService | None = None
+    memory_behaviors: MemoryBehaviors | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,11 +115,15 @@ class ProcessRuntime:
     control: ControlRuntime | None
     worker: WorkerRuntime | None
     connectivity: ConnectivityRuntime | None
+    bots: BotService | None = None
 
     def begin_drain(self) -> None:
         """Reject new work before the HTTP server waits for connections to close."""
         first_request = not self.status.draining
         self.status.draining = True
+        if self.connectivity is not None and self.connectivity.data is not None:
+            if self.connectivity.data.event_connections is not None:
+                self.connectivity.data.event_connections.drain()
         if self.worker is not None:
             if self.worker.execution_loop is not None:
                 self.worker.execution_loop.begin_drain()

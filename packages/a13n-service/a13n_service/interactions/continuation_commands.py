@@ -63,6 +63,7 @@ from .command_values import (
     WaitingContinueRunCommand,
 )
 from .errors import InteractionCommandError, command_not_found
+from .feedback import map_waiting_feedback
 from .input import input_text
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
@@ -106,6 +107,7 @@ class ContinuationCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         source, thread, parent = await self._load_retry_source(actor=actor, run_id=run_id)
@@ -242,6 +244,8 @@ class ContinuationCommands:
                 pending=source.pending,
                 submitted=request.resolutions,
             )
+            # Validate against sealed native requests before accepting a successor Run.
+            map_waiting_feedback(normalized, source_state.envelope)
         except ValueError as error:
             raise InteractionCommandError(
                 "run_feedback_invalid",
@@ -272,6 +276,7 @@ class ContinuationCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
         try:
             return await self._accept_waiting_successor(
@@ -321,6 +326,7 @@ class ContinuationCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
         try:
             return await self._accept_waiting_successor(

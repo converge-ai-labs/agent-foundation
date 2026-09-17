@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Button, FormField, SettingsSection, Textarea } from "a13n-ui";
 import { ResourceChoice } from "./resource-choice";
+import { AgentNativeTools } from "./native-tools";
 import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -92,6 +93,7 @@ export function AgentFields({
   return (
     <>
       <ErrorNotice error={catalog.error || proxy.error} />
+      <AgentNativeTools source={source} onChange={onChange} />
       <SettingsSection title="Capabilities">
         <div className={`${styles.stack} ${styles.fieldGroup}`}>
           {capabilities.map((item, index) => (

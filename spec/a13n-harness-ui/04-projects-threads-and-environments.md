@@ -160,7 +160,7 @@ The accepted patch applies to this Run and subsequent Runs. A separate update du
 
 ## Thread Queries
 
-Root Thread lists use opaque keyset cursors over descending `(updated_at, thread_id)`, with the optional Project filter, query, archive filter, and root-only shape bound into the cursor. Child execution and transcript pages likewise use deterministic opaque cursors for their own stable order. A cursor from another query shape is invalid rather than reinterpreted as an offset.
+Root Thread lists use opaque keyset cursors over descending `(sort_time, thread_id)`. The default `updated` sort retains `updated_at`; `activity` uses saved conversation activity with creation-time fallback, and `touched` uses [navigation recency](03-local-storage-and-recovery.md#navigation-recency). The selected sort, optional Project filter, query, archive filter, and root-only shape are bound into the cursor. The WebUI active-separated view also binds its active/inactive filter shape; current-process activity membership is a live observation, not a cursor snapshot. Child execution and transcript pages likewise use deterministic opaque cursors for their own stable order. A cursor from another query shape is invalid rather than reinterpreted as an offset.
 
 The summary projection exposes metadata and configuration versions, selected resource IDs, continuation state, and current-process activity without exposing a storage contract. The detail projection adds deferred requests and available actions. Transcript entries are bounded typed presentation values derived from the selected `HarnessState`; they are not serialized Pydantic AI messages and do not authorize continuation.
 

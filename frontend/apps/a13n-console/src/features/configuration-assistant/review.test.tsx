@@ -101,7 +101,7 @@ it("applies the frozen review and current-target diff, retaining the key after a
   const dialog = within(
     screen.getByRole("dialog", { name: "Apply reviewed draft" }),
   );
-  expect(dialog.getByText('"Current behavior"')).toBeTruthy();
+  expect(dialog.getByText("Current behavior")).toBeTruthy();
   expect(
     (
       dialog.getByRole("button", {
@@ -197,7 +197,9 @@ it("keeps the same draft editable after application and shows its retained recei
   http.GET.mockImplementation(async (path: string) => ({
     data: path.endsWith("/applications")
       ? { items: [receipt], next_cursor: null }
-      : continued,
+      : path.endsWith("/agents/{agent}")
+        ? { id: "agt_test", key: "customer-support", name: "Support" }
+        : continued,
     response: new Response(null, { headers: { ETag: '"v3"' } }),
   }));
   http.POST.mockResolvedValue({ data: receipt });
@@ -206,7 +208,30 @@ it("keeps the same draft editable after application and shows its retained recei
   );
   await screen.findByRole("heading", { name: "Configuration draft · v3" });
   expect(screen.getByRole("button", { name: "Edit draft" })).toBeTruthy();
+  expect(screen.getByText("Application status")).toBeTruthy();
+  const agentLink = await screen.findByRole("link", {
+    name: "Open agent · v8",
+  });
+  expect(agentLink.getAttribute("href")).toBe(
+    "/workspace/test/agents/customer-support",
+  );
+  await user.click(screen.getByRole("button", { name: "Application history" }));
+  await waitFor(() =>
+    expect(
+      screen.getAllByRole("link", { name: "Open agent · v8" }),
+    ).toHaveLength(2),
+  );
+  for (const link of screen.getAllByRole("link", { name: "Open agent · v8" })) {
+    expect(link.getAttribute("href")).toBe(
+      "/workspace/test/agents/customer-support",
+    );
+  }
+  await user.click(screen.getByRole("button", { name: "Application history" }));
+  expect(screen.queryByText("arev_applied")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Technical details" }));
+  expect(screen.getByText("Agent revision ID")).toBeTruthy();
   expect(screen.getByText("arev_applied")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Draft details" }));
   expect(screen.getByText(draft.id)).toBeTruthy();
   expect(
     (

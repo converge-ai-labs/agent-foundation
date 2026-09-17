@@ -70,6 +70,15 @@ from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, Summary
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
+from a13n_harness_ui.model_authoring import (
+    ModelChoices,
+    ModelOptions,
+    ModelOptionsRequest,
+    ModelRecipe,
+    ModelRecipeRequest,
+)
+from a13n_harness_ui.model_catalog import ModelCatalogSnapshot
+from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.output_comment_models import (
     CommentEdit,
     CommentPage,
@@ -87,7 +96,8 @@ from a13n_harness_ui.page_presence import (
     PresenceFrame,
     PresenceReport,
 )
-from a13n_harness_ui.setup import EnvironmentReadiness, SetupModelOptions, SetupModelOptionsRequest, SetupStatus
+from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
+from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage.usage import ThreadUsageView
@@ -107,6 +117,8 @@ from a13n_harness_ui.surfaces import (
     RootOperationView,
     RootRunReceipt,
     RunModelOverrides,
+    SkillCatalogView,
+    SkillReference,
     SurfaceModel,
     TaskPage,
     ThreadActivityPage,
@@ -114,6 +126,7 @@ from a13n_harness_ui.surfaces import (
     ThreadConfigurationResolution,
     ThreadDetail,
     ThreadFocusSnapshot,
+    ThreadLookup,
     ThreadMetadataMutation,
     ThreadPage,
     ThreadSelectorCatalog,
@@ -170,9 +183,14 @@ class PromptRequest(SurfaceModel):
     prompt: str = Field(default="", max_length=256 * 1024)
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
     parts: tuple[str | InputAttachmentReference, ...] | None = Field(default=None, max_length=1024)
+    skill_references: tuple[SkillReference, ...] = Field(default=(), max_length=512)
+    # Presentation correlation only; never an admission idempotency key.
+    source_id: str | None = Field(default=None, pattern=r"^input[-_][0-9a-f]{32}$")
 
     @model_validator(mode="after")
     def validate_ordered_input(self) -> PromptRequest:
+        if self.source_id is not None and self.parts is None:
+            raise ValueError("source_id requires ordered parts.")
         if self.parts is not None:
             if self.prompt or self.attachment_ids:
                 raise ValueError("Use ordered parts or prompt/attachment_ids, not both.")
@@ -187,7 +205,8 @@ class PromptRequest(SurfaceModel):
             parts=tuple(
                 part if isinstance(part, str) else ComposerAttachmentReference(part.attachment_id)
                 for part in self.parts
-            )
+            ),
+            source_id=self.source_id,
         )
 
 
@@ -197,6 +216,7 @@ class SteerRequest(SurfaceModel):
 
 class SubmitRequest(PromptRequest):
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    thinking: ThinkingSelection | None = None
 
 
 class RootSteerRequest(PromptRequest):
@@ -441,7 +461,7 @@ def create_webui(
             "host_git_permission_denied",
         }:
             status = 403
-        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists"}:
+        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists", "thread_interaction_expired"}:
             status = 409
         elif code == "host_files_io_error":
             status = 500
@@ -474,6 +494,25 @@ def create_webui(
             status_code=200 if available else 503,
             headers={"Cache-Control": "no-store"},
         )
+
+    @server.get("/api/push/configuration", response_model=PushConfiguration)
+    async def push_configuration() -> PushConfiguration:
+        return await app().push_configuration()
+
+    @server.put(
+        "/api/push/subscription", response_model=PushSubscriptionView, openapi_extra=_body(PushSubscriptionInput)
+    )
+    async def subscribe_push(request: Request) -> PushSubscriptionView:
+        return await app().subscribe_push(await _document(request, PushSubscriptionInput))
+
+    @server.delete("/api/push/subscriptions/{subscription_id}", status_code=204)
+    async def unsubscribe_push(subscription_id: str) -> Response:
+        await app().unsubscribe_push(subscription_id)
+        return Response(status_code=204)
+
+    @server.post("/api/push/subscriptions/{subscription_id}/test", response_model=PushTestResult)
+    async def test_push(subscription_id: str) -> PushTestResult:
+        return await app().test_push(subscription_id)
 
     @server.get("/api/status", response_model=ListenerStatus)
     async def status() -> ListenerStatus:
@@ -821,11 +860,21 @@ def create_webui(
     async def setup(rediscover: bool = False) -> SetupStatus:
         return await app().setup_status(rediscover=rediscover)
 
-    @server.post(
-        "/api/setup/model-options", response_model=SetupModelOptions, openapi_extra=_body(SetupModelOptionsRequest)
-    )
-    async def model_options(request: Request) -> SetupModelOptions:
-        return await app().setup_model_options(await _document(request, SetupModelOptionsRequest))
+    @server.get("/api/models/choices", response_model=ModelChoices)
+    async def model_choices() -> ModelChoices:
+        return await app().model_choices()
+
+    @server.get("/api/models/catalog", response_model=ModelCatalogSnapshot)
+    async def model_catalog() -> ModelCatalogSnapshot:
+        return await app().model_catalog()
+
+    @server.post("/api/models/options", response_model=ModelOptions, openapi_extra=_body(ModelOptionsRequest))
+    async def model_options(request: Request) -> ModelOptions:
+        return await app().model_options(await _document(request, ModelOptionsRequest))
+
+    @server.post("/api/models/prepare", response_model=ModelRecipe, openapi_extra=_body(ModelRecipeRequest))
+    async def prepare_model(request: Request) -> ModelRecipe:
+        return await app().prepare_model(await _document(request, ModelRecipeRequest))
 
     @server.post("/api/setup/preview", response_model=SetupPreview, openapi_extra=_body(SetupSelection))
     async def preview(request: Request) -> SetupPreview:
@@ -948,6 +997,14 @@ def create_webui(
     )
     async def explain_creation(request: Request) -> ThreadConfigurationResolution:
         return await app().explain_thread_configuration(defaults=await _document(request, NewThreadDefaults))
+
+    @server.post("/api/threads/skills-preview", response_model=SkillCatalogView, openapi_extra=_body(NewThreadDefaults))
+    async def preview_skills(request: Request) -> SkillCatalogView:
+        return await app().skill_catalog(defaults=await _document(request, NewThreadDefaults))
+
+    @server.get("/api/threads/{thread_id}/skills", response_model=SkillCatalogView)
+    async def thread_skills(thread_id: str) -> SkillCatalogView:
+        return await app().skill_catalog(thread_id=thread_id)
 
     @server.get("/api/threads/{thread_id}/configuration", response_model=ThreadConfigurationInspection)
     async def inspect_configuration(thread_id: str) -> ThreadConfigurationInspection:
@@ -1080,12 +1137,19 @@ def create_webui(
     async def selectors() -> ThreadSelectorCatalog:
         return await app().thread_selectors()
 
+    @server.post("/api/threads/lookup", response_model=ThreadPage, openapi_extra=_body(ThreadLookup))
+    async def lookup_threads(request: Request) -> ThreadPage:
+        query = await _document(request, ThreadLookup)
+        return await app().lookup_threads(thread_ids=query.thread_ids)
+
     @server.get("/api/threads/activity", response_model=ThreadActivityPage)
     async def thread_activity(
         project_id: Annotated[str | None, Query(max_length=128)] = None,
         project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: Annotated[str | None, Query(max_length=512)] = None,
         include_archived: bool = False,
+        archived_only: bool = False,
+        include_active: bool = False,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadActivityPage:
@@ -1094,6 +1158,8 @@ def create_webui(
             project_scope=project_scope,
             query=query,
             include_archived=include_archived,
+            archived_only=archived_only,
+            include_active=include_active,
             cursor=cursor,
             limit=limit,
         )
@@ -1159,7 +1225,7 @@ def create_webui(
         query: Annotated[str | None, Query(max_length=500)] = None,
         project_id: str | None = None,
         include_archived: bool = False,
-        sort: Literal["updated", "activity"] = "updated",
+        sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadPage:
@@ -1186,6 +1252,10 @@ def create_webui(
         return await app().get_thread_transcript(
             thread_id=thread_id, expected_continuation_id=expected_continuation_id, cursor=cursor, limit=limit
         )
+
+    @server.post("/api/threads/{thread_id}/touch", response_model=ThreadSummary)
+    async def touch_thread(thread_id: str) -> ThreadSummary:
+        return await app().touch_thread(thread_id)
 
     @server.patch(
         "/api/threads/{thread_id}/metadata", response_model=ThreadSummary, openapi_extra=_body(ThreadMetadataMutation)
@@ -1256,7 +1326,9 @@ def create_webui(
                 thread_id=thread_id,
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
-                model_overrides=RunModelOverrides(model_id=document.model_id) if document.model_id else None,
+                model_overrides=RunModelOverrides(model_id=document.model_id, thinking=document.thinking),
+                skill_references=document.skill_references,
+                input_surface="webui",
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1280,7 +1352,10 @@ def create_webui(
         document = await _document(request, RootSteerRequest)
         try:
             return await app().steer_root_operation(
-                receipt_id=receipt_id, message=document.input(), attachment_ids=document.attachment_ids
+                receipt_id=receipt_id,
+                message=document.input(),
+                attachment_ids=document.attachment_ids,
+                skill_references=document.skill_references,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1384,6 +1459,19 @@ def create_webui(
 
     @server.get("/{path:path}", include_in_schema=False, response_model=None)
     async def static(path: str) -> FileResponse | JSONResponse:
+        install_assets = {
+            "manifest.webmanifest": "application/manifest+json",
+            "sw.js": "text/javascript",
+            "icons/icon-192.png": "image/png",
+            "icons/icon-512.png": "image/png",
+            "icons/icon-maskable-512.png": "image/png",
+            "icons/apple-touch-icon.png": "image/png",
+        }
+        if path in install_assets:
+            destination = static_root / path
+            if not destination.is_file():
+                return _error("not_found", "Asset not found.", 404)
+            return FileResponse(destination, media_type=install_assets[path], headers={"Cache-Control": "no-cache"})
         if path.startswith("assets/"):
             destination = (static_root / path).resolve()
             if destination.is_relative_to(static_root.resolve()) and destination.is_file():
@@ -1392,6 +1480,7 @@ def create_webui(
         segments = path.split("/")
         recognized = path in {
             "",
+            "new",
             "setup",
             "settings",
             "projects",
@@ -1399,7 +1488,9 @@ def create_webui(
             "settings/source",
             "settings/accounts",
             "settings/catalog",
-        } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))
+            "settings/models",
+            "settings/notifications",
+        } or (len(segments) == 2 and segments[0] in {"threads", "projects", "new"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)
         index = static_root / "index.html"

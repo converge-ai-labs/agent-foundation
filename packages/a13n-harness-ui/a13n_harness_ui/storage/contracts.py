@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.conversation import ConversationExcerpt
+from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
 
 from .objects import ObjectKind, ObjectRef
 
@@ -98,6 +99,15 @@ class ThreadConfigurationMutation(StoredContract):
         return self
 
 
+class ThreadCompletion(StoredContract):
+    """Latest successfully selected root result; independent of current operation state."""
+
+    version: int = Field(ge=1)
+    run_id: str = Field(min_length=1, max_length=80)
+    continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    completed_at: datetime
+
+
 class Thread(StoredContract):
     thread_id: str = Field(min_length=1, max_length=80)
     parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
@@ -107,10 +117,12 @@ class Thread(StoredContract):
     title: str | None = Field(default=None, max_length=512)
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     activity_at: datetime | None = None
+    touched_at: datetime | None = None
     archived: bool = False
     configuration: ThreadConfiguration
     initial_state: ObjectRef
     continuation: ObjectRef | None = None
+    completion: ThreadCompletion | None = None
 
     @field_validator("created_at", "updated_at")
     @classmethod
@@ -141,6 +153,10 @@ class StoredContinuation(StoredContract):
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     deferred_requests: DeferredToolRequests | None = None
     created_at: datetime
+
+    @property
+    def display_history(self) -> DisplayHistory | None:
+        return saved_display_history(self.harness_state)
 
     @field_validator("created_at")
     @classmethod
@@ -177,7 +193,8 @@ class CompactChildActivity(StoredContract):
 
 class CompactChildDisplay(StoredContract):
     activities: tuple[CompactChildActivity, ...] = Field(default=(), max_length=512)
-    final_answer: str | None = Field(default=None, max_length=64 * 1024)
+    # The latest completed answer is retained losslessly; transport reads are paged.
+    final_answer: str | None = None
 
 
 class StoredChildCheckpoint(StoredContract):

@@ -35,7 +35,11 @@ def install(config, role):
     async def put(self, key, source, **kwargs):
         metadata = kwargs.get("metadata") or {}
         facts = None
-        if kwargs.get("content_type") == RUN_STATE_CONTENT_TYPE and isinstance(source, bytes):
+        if (
+            key.endswith("/state.json")
+            and kwargs.get("content_type") == RUN_STATE_CONTENT_TYPE
+            and isinstance(source, bytes)
+        ):
             try:
                 kind = json.loads(source)["checkpoint_kind"]
             except (ValueError, KeyError):
@@ -163,48 +167,51 @@ def _install_attempt_faults(faults, options):
 
 
 def _install_queue_faults(faults):
-    from a13n_service.interactions import queue_handoff
+    from a13n_service.interactions.acceptance import RunAcceptanceService
     from a13n_service.storage import ObjectStoreUnavailable
 
-    rollback = ContextVar("live_queue_rollback", default=False)
+    pending = ContextVar("live_queue_commit", default=None)
+    original_initial = RunAcceptanceService._publish_initial
 
-    original_prepare = queue_handoff.CompletionQueueHandoffService.prepare_consumption
-
-    @wraps(original_prepare)
-    async def prepare(self, **kwargs):
-        commit = await original_prepare(self, **kwargs)
-        authority = kwargs["authority"]
-        facts = {"run_id": authority.run_id, "successor_run_id": kwargs["successor_run"].id}
-
-        async def committed():
-            await faults.reach("queue.before_commit", **facts)
-            ticket = await faults.take("queue.rollback", **facts)
+    @wraps(original_initial)
+    async def initial(self, run, state):
+        result = await original_initial(self, run, state)
+        if context := pending.get():
+            await faults.reach("queue.before_commit", **context["facts"])
+            ticket = await faults.take("queue.rollback", **context["facts"])
             if ticket is not None and ticket.rule.action != "unavailable":
                 raise ValueError("Queue transaction faults only permit immediate failure")
-            token = rollback.set(ticket is not None)
-            try:
-                result = await commit()
-            except ObjectStoreUnavailable:
-                if ticket is not None:
-                    # The exception has already rolled back the real SQL transaction.
-                    await faults.reach("queue.rolled_back", **facts)
-                    await ticket.apply()
-                raise
-            finally:
-                rollback.reset(token)
-            await faults.reach("queue.after_commit", **facts)
-            return result
-
-        return committed
-
-    queue_handoff.CompletionQueueHandoffService.prepare_consumption = prepare
-    original_consume = queue_handoff._consume_queue_head
-
-    @wraps(original_consume)
-    async def consume(*args, **kwargs):
-        result = await original_consume(*args, **kwargs)
-        if rollback.get():
-            raise ObjectStoreUnavailable("Injected failure after SQL queue consumption, before COMMIT")
+            context["ticket"] = ticket
         return result
 
-    queue_handoff._consume_queue_head = consume
+    RunAcceptanceService._publish_initial = initial
+    original_consume = RunAcceptanceService.consume_queued
+
+    @wraps(original_consume)
+    async def consume(self, **kwargs):
+        facts = {"run_id": kwargs["expected_current_run_id"], "successor_run_id": kwargs["run"].id}
+        context = {"facts": facts, "ticket": None}
+        token = pending.set(context)
+        original_hook = kwargs.get("transaction_hook")
+
+        async def transaction_hook(database, receipt):
+            if original_hook is not None:
+                await original_hook(database, receipt)
+            if context["ticket"] is not None:
+                raise ObjectStoreUnavailable("Injected failure after SQL queue consumption, before COMMIT")
+
+        try:
+            result = await original_consume(self, **{**kwargs, "transaction_hook": transaction_hook})
+        except ObjectStoreUnavailable:
+            if ticket := context["ticket"]:
+                # Acceptance has rolled back; fault I/O never runs inside SQL.
+                await faults.reach("queue.rolled_back", **facts)
+                await ticket.apply()
+            raise
+        else:
+            await faults.reach("queue.after_commit", **facts)
+            return result
+        finally:
+            pending.reset(token)
+
+    RunAcceptanceService.consume_queued = consume

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import type { RunEvent } from "@converge.ai/a13n";
+import type { RunEvent } from "../../service-client";
 import { applyExecution, type Execution } from "./execution";
 
 function event(

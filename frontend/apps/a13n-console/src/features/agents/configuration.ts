@@ -4,7 +4,6 @@ import {
   schemaErrors,
   validateAgentConfig,
 } from "../../shared/validation";
-import type { AgentSearchValue } from "../web/selection";
 
 export type AgentConfig = Schema["AgentConfig-Input"];
 const commonFields = new Set([
@@ -14,6 +13,7 @@ const commonFields = new Set([
   "instructions",
   "skills",
   "connection_tools",
+  "reviewer",
   "plugins",
   "secret_requirements",
 ]);
@@ -44,6 +44,7 @@ export function buildConfig(
     | "connection_tools"
     | "toolsets"
     | "memory"
+    | "reviewer"
   >,
   advanced: string,
 ): AgentConfig {
@@ -60,39 +61,4 @@ export function buildConfig(
   };
   if (!validateAgentConfig(value)) throw new Error(schemaErrors());
   return value;
-}
-
-export function searchSelection(config: AgentConfig): AgentSearchValue | null {
-  const web = config.toolsets?.web;
-  const search = web?.tools?.search;
-  return web?.enabled && search?.enabled
-    ? (search.config as AgentSearchValue)
-    : null;
-}
-
-export function withSearchSelection(
-  toolsets: AgentConfig["toolsets"],
-  search: AgentSearchValue | null,
-): AgentConfig["toolsets"] {
-  const current = toolsets?.web;
-  const tools = {
-    ...current?.tools,
-    search: {
-      enabled: search !== null,
-      permission: current?.tools?.search?.permission ?? "inherit",
-      config: search ?? current?.tools?.search?.config ?? {},
-    },
-  };
-  return {
-    ...toolsets,
-    web: {
-      enabled:
-        search !== null ||
-        Object.entries(tools).some(
-          ([key, value]) => key !== "search" && value.enabled,
-        ),
-      config: current?.config ?? {},
-      tools,
-    },
-  };
 }

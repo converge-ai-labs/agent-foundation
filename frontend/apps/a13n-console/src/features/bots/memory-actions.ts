@@ -1,4 +1,4 @@
-import { ApiError } from "@converge.ai/a13n";
+import type { RefObject } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 
 export function refreshMemory(cache: QueryClient, accountId: string) {
@@ -10,12 +10,8 @@ export function refreshMemory(cache: QueryClient, accountId: string) {
   });
 }
 
-export function unconfirmedWrite(error: unknown) {
-  return (
-    !(error instanceof ApiError) ||
-    error.status >= 500 ||
-    ["memory_write_unconfirmed", "memory_operation_pending"].includes(
-      error.code,
-    )
-  );
-}
+export type MemoryDialogControl = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  finalFocus: RefObject<HTMLButtonElement | null>;
+};

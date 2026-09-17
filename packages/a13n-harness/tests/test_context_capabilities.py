@@ -60,6 +60,7 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
     ModelContextRequestKind,
+    ModelInputEvent,
     _commit_projection,
     user_prompt_content,
 )
@@ -419,10 +420,11 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
             ModelResponse(parts=[TextPart("Previous answer")]),
         )
     )
+    events: list[HarnessEvent] = []
     async with executable.stream(
         "Initial current task", bindings=RunBindings.embedded(), previous_state=previous
     ) as run:
-        consumer = asyncio.create_task(_consume_run(run))
+        consumer = asyncio.create_task(_consume_run(run, events))
         await started.wait()
         await run.steer(("Do not deploy; follow this image", image))
         pending_state = await run.export_state()
@@ -452,6 +454,31 @@ async def test_handoff_replays_delivered_multimodal_steering_in_order() -> None:
     assert restored_images == [image]
     assert result.state is not None
     assert "Do not deploy; follow this image" in _user_text(list(result.state.message_history))
+    # Restoring history is not another input delivery, even when it retains steering.
+    fresh = [
+        content.content
+        for item in events
+        if isinstance(item.event, ModelInputEvent)
+        for content in item.event.content
+        if isinstance(content, TextContent) and (content.metadata or {}).get("display") is not False
+    ]
+    assert fresh == ["Initial current task"]
+    from pydantic_ai.messages import EnqueuedMessagesEvent
+
+    assert sum(isinstance(item.event, EnqueuedMessagesEvent) for item in events) == 1
+    restored = [
+        content
+        for message in result.state.message_history
+        if isinstance(message, ModelRequest)
+        for part in message.parts
+        if isinstance(part, UserPromptPart)
+        for content in user_prompt_content(part)
+        if isinstance(content, TextContent)
+    ]
+    summary = next(content for content in restored if "# Context Summary" in content.content)
+    assert summary.metadata["a13n.context"] == "handoff"
+    protocol = [content for content in restored if (content.metadata or {}).get("source_id") == "a13n.context.protocol"]
+    assert protocol and all(content.metadata["display"] is False for content in protocol)
 
 
 @pytest.mark.parametrize("tool_choice", [None, "auto", "none"])
@@ -762,7 +789,17 @@ async def test_compaction_retains_only_applied_inputs_from_the_current_logical_r
     )
     phase = "compact"
     calls.clear()
-    result = await executable.run("Next request", bindings=RunBindings.embedded(), previous_state=previous)
+    events: list[HarnessEvent] = []
+    async with executable.stream("Next request", bindings=RunBindings.embedded(), previous_state=previous) as run:
+        result = await _consume_run(run, events)
+    fresh = [
+        content.content
+        for item in events
+        if isinstance(item.event, ModelInputEvent)
+        for content in item.event.content
+        if isinstance(content, TextContent) and (content.metadata or {}).get("display") is not False
+    ]
+    assert fresh == ["Next request"]
 
     assert result.output_or_raise() == "done"
     assert len(calls) == 2
@@ -1087,10 +1124,13 @@ async def test_handoff_migrates_legacy_v1_state(kind: str) -> None:
         assert migrated == {"files": [], "operation_id": None, "summary": None}
 
 
-async def _consume_run(run: Any) -> Any:
+async def _consume_run(run: Any, events: list[HarnessEvent] | None = None) -> Any:
     result = None
     async for item in run:
-        if not isinstance(item, HarnessEvent):
+        if isinstance(item, HarnessEvent):
+            if events is not None:
+                events.append(item)
+        else:
             result = item.result
     assert result is not None
     return result

@@ -32,36 +32,7 @@ const status: Schema<"SetupStatus"> = {
   default_agent: null,
   default_project: null,
   environment_profile: "environment-native",
-  choices: {
-    defaults: {
-      environment_profile: "environment-native",
-      codex_model: "gpt-5.6-sol",
-      grok_model: "grok-4.6",
-      codex_thinking: "high",
-      codex_context_window: 350000,
-      shell_review: true,
-    },
-    session_affinity_presets: [
-      {
-        label: "LiteLLM",
-        header: "x-litellm-session-id",
-        description: "Enable session affinity on your gateway first.",
-      },
-    ],
-    subscription_models: {
-      codex: [{ value: "gpt-5.6-sol", label: "Release Codex model" }],
-      grok: [{ value: "grok-4.6", label: "Release Grok model" }],
-    },
-    api_providers: [
-      {
-        value: "openai-responses",
-        label: "OpenAI",
-        base_url: "https://api.openai.com/v1",
-        models: ["gpt-5.4"],
-        supports_session_affinity: true,
-      },
-    ],
-  },
+  defaults: { environment_profile: "environment-native", shell_review: true },
 };
 const json = (body: unknown, code = 200) =>
   new Response(JSON.stringify(body), {
@@ -69,8 +40,8 @@ const json = (body: unknown, code = 200) =>
     headers: { "Content-Type": "application/json" },
   });
 const files = {
-  "config.yaml": "defaults: {agent: agent-codex}\n",
-  "agents/codex.yaml": "id: agent-codex\n",
+  "config.yaml": "defaults: {agent: agent-primary}\n",
+  "agents/codex.yaml": "id: agent-primary\n",
 };
 let published = false;
 let created = false;
@@ -102,13 +73,57 @@ async function fetcher(request: Request): Promise<Response> {
     }
     return json(keyReferences.map((credential_ref) => ({ credential_ref })));
   }
-  if (path === "/api/setup/model-options")
+  if (path === "/api/models/choices")
     return json({
+      connections: [
+        {
+          id: "codex",
+          label: "Codex subscription",
+          provider: "openai-codex",
+          authentication: "codex_subscription",
+          models: [{ value: "gpt-5.6-sol", label: "Release Codex model" }],
+          default_model: "gpt-5.6-sol",
+        },
+        {
+          id: "openai-responses",
+          label: "OpenAI API",
+          provider: "openai-responses",
+          authentication: "api_key",
+          base_url: "https://api.openai.com/v1",
+          supports_base_url: true,
+          supports_session_affinity: true,
+          models: [{ value: "gpt-5.4", label: "GPT-5.4" }],
+          default_model: "gpt-5.4",
+        },
+      ],
+      session_affinity_presets: [
+        {
+          label: "LiteLLM",
+          header: "x-litellm-session-id",
+          description: "Enable session affinity on your gateway first.",
+        },
+      ],
+    });
+  if (path === "/api/models/catalog")
+    return json({ items: [], status: "unavailable" });
+  if (path === "/api/models/options")
+    return json({
+      name: body.model_id,
+      route: `${body.connection}:${body.model_id}`,
       presets: [
         { value: "high", label: "High", settings: { thinking: "high" } },
       ],
       context_window: 350000,
       known_context_window: null,
+      native_tools: [],
+    });
+  if (path === "/api/models/prepare")
+    return json({
+      route: `${body.connection === "codex" ? "openai-codex" : body.connection}:${body.model_id}`,
+      authentication: body.authentication ?? { kind: "codex_subscription" },
+      model_configuration: body.base_url ? { base_url: body.base_url } : {},
+      settings: { thinking: "high" },
+      model_characteristics: { context_window_tokens: 350000 },
     });
   if (path === "/api/setup/preview")
     return json({
@@ -134,7 +149,7 @@ async function fetcher(request: Request): Promise<Response> {
       ...status,
       needed: !published,
       fresh: !published,
-      default_agent: published ? "agent-codex" : null,
+      default_agent: published ? "agent-primary" : null,
     });
   if (path === "/api/threads" && request.method === "POST") {
     created = true;
@@ -147,7 +162,7 @@ async function fetcher(request: Request): Promise<Response> {
           thread: {
             thread_id: creationId,
             configuration: {
-              agent_source: { kind: "agent", id: "agent-codex" },
+              agent_source: { kind: "agent", id: "agent-primary" },
               environment_profile_id: "environment-native",
               project_id: null,
             },
@@ -216,7 +231,7 @@ async function continueStep() {
   fireEvent.click(screen.getByRole("button", { name: "Continue" }));
 }
 async function reviewConfiguration() {
-  await continueStep();
+  await chooseModel();
   await continueStep();
   fireEvent.click(screen.getByRole("button", { name: "Review configuration" }));
   await screen.findByText("Generated files (2)");
@@ -248,15 +263,9 @@ it.each(["_", "-"])(
   async (separator) => {
     const identity = `thread${separator}${"a".repeat(32)}`;
     saveWizardDraft(status.draft_scope!, {
-      version: 1,
+      version: 2,
       step: 0,
-      connection: "codex",
-      selection: status.choices!.defaults,
-      apiProvider: "openai-responses",
-      modelId: "gpt-5.4",
-      baseUrl: "https://api.openai.com/v1",
-      preset: "",
-      credential: "",
+      selection: { ...status.defaults!, default_agent: "agent-primary" },
       threadId: identity,
     });
     expect(readWizardDraft(status.draft_scope!)?.threadId).toBe(identity);
@@ -327,7 +336,7 @@ it("requires a successful explicit Sandbox preflight and never downgrades it", a
       });
   };
   mount();
-  await continueStep();
+  await chooseModel();
   await continueStep();
   fireEvent.click(screen.getByRole("button", { name: "Sandbox" }));
   fireEvent.click(screen.getByRole("button", { name: "Review configuration" }));
@@ -351,12 +360,12 @@ it("requires a successful explicit Sandbox preflight and never downgrades it", a
 
 it("retains nonsecret choices on refresh and dismissal, never the API key input", async () => {
   const view = mount();
-  fireEvent.click(screen.getByRole("button", { name: "API key" }));
+  await selectApi();
   fireEvent.change(await screen.findByLabelText("Provider API key"), {
     target: { value: "never-store-this-secret" },
   });
   await waitFor(() =>
-    expect(readWizardDraft(status.draft_scope!)?.connection).toBe("api_key"),
+    expect(readWizardDraft(status.draft_scope!)).toBeTruthy(),
   );
   expect(JSON.stringify(localStorage)).not.toContain("never-store-this-secret");
   view.unmount();
@@ -410,11 +419,11 @@ it("does not complete recovery into an existing conversation with different exec
   creationId = draft.threadId;
   saveWizardDraft(status.draft_scope!, {
     ...draft,
-    step: 2,
+    step: 1,
     pending: {
       selection: {
         ...draft.selection,
-        default_agent: "agent-codex",
+        default_agent: "agent-primary",
         environment_profile: "environment-sandbox",
       },
       files,
@@ -440,13 +449,12 @@ it("does not complete recovery into an existing conversation with different exec
 
 it("never persists credentials embedded in an endpoint, even before backend validation returns", async () => {
   mount();
-  fireEvent.click(screen.getByRole("button", { name: "API key" }));
+  await selectApi();
   fireEvent.change(await screen.findByLabelText("Provider API key"), {
     target: { value: "fake-test-key" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save API key" }));
-  await continueStep();
-  const input = await screen.findByLabelText("API base URL");
+  const input = await screen.findByLabelText("Base URL");
   for (const url of [
     "https://user:embedded-secret@example.com/v1",
     "https://example.com/v1?api_key=embedded-secret",
@@ -460,12 +468,21 @@ it("never persists credentials embedded in an endpoint, even before backend vali
 it("offers affinity presets and captures a custom replacement alongside the endpoint", async () => {
   mount();
   const user = userEvent.setup();
-  fireEvent.click(screen.getByRole("button", { name: "API key" }));
+  await selectApi();
   fireEvent.change(await screen.findByLabelText("Provider API key"), {
     target: { value: "test-key" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Save API key" }));
-  await continueStep();
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Use this model",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Use this model" }));
   const input = (await screen.findByLabelText(
     "Session affinity header",
   )) as HTMLInputElement;
@@ -475,15 +492,34 @@ it("offers affinity presets and captures a custom replacement alongside the endp
   );
   await user.click(await screen.findByRole("option", { name: /LiteLLM/ }));
   expect(input.value).toBe("x-litellm-session-id");
-  expect(
-    screen.getByText("Enable session affinity on your gateway first."),
-  ).toBeTruthy();
+
   fireEvent.change(input, { target: { value: "x-company-session" } });
   await continueStep();
-  const model = readWizardDraft(status.draft_scope!)?.selection.api_key_model;
+  const model = readWizardDraft(status.draft_scope!)?.selection.model;
   expect(model?.model_configuration).toEqual({
     base_url: "https://api.openai.com/v1",
     session_affinity_header: "x-company-session",
   });
   expect(model?.settings).not.toHaveProperty("extra_headers");
 });
+
+async function selectApi() {
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("combobox", { name: "Model connection" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "OpenAI API" }));
+}
+
+async function chooseModel() {
+  await waitFor(() =>
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Use this model",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Use this model" }));
+}

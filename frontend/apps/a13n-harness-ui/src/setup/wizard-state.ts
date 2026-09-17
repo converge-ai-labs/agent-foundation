@@ -1,19 +1,13 @@
+import type { ModelEditorDraft } from "../configuration/model-editor";
 import type { Schema } from "../transport/client";
 import { readPreference, writePreference } from "../shell/preferences";
 
 export type WizardDraft = {
-  version: 1;
+  version: 2;
   step: number;
-  connection: "codex" | "grok" | "api_key";
   selection: Schema<"SetupSelection">;
-  apiProvider: string;
-  modelId: string;
-  baseUrl: string;
-  sessionAffinityHeader?: string;
-  preset: string;
-  apiContext?: number;
-  credential: string;
   threadId: string;
+  modelDraft?: ModelEditorDraft;
   pending?: {
     selection: Schema<"SetupSelection">;
     files: Record<string, string>;
@@ -24,21 +18,13 @@ export function readWizardDraft(scope: string): WizardDraft | undefined {
   try {
     const value = JSON.parse(readPreference(key(scope), "null"));
     if (
-      value?.version === 1 &&
-      ["codex", "grok", "api_key"].includes(value.connection) &&
+      value?.version === 2 &&
       typeof value.selection === "object" &&
       value.selection &&
-      typeof value.apiProvider === "string" &&
-      typeof value.modelId === "string" &&
-      typeof value.baseUrl === "string" &&
-      (value.sessionAffinityHeader === undefined ||
-        typeof value.sessionAffinityHeader === "string") &&
-      typeof value.credential === "string" &&
-      typeof value.preset === "string" &&
       /^thread[-_][a-f0-9]{32}$/.test(value.threadId) &&
       Number.isInteger(value.step) &&
       value.step >= 0 &&
-      value.step <= 2
+      value.step <= 1
     )
       return value;
   } catch {
@@ -63,13 +49,28 @@ export function persistableBaseUrl(value: string) {
   }
 }
 export function saveWizardDraft(scope: string, draft: WizardDraft) {
-  // Invalid endpoint input may contain pasted credentials. Retain that input in
-  // memory only; the backend still owns endpoint validation before publication.
-  const stored = {
-    ...draft,
-    baseUrl: persistableBaseUrl(draft.baseUrl) ? draft.baseUrl : "",
-  };
+  // Only prepared recipes enter this draft. Never persist invalid endpoint input,
+  // and never sanitize an exact pending publication into a different intent.
+  for (const selection of [draft.selection, draft.pending?.selection]) {
+    const url = selection?.model?.model_configuration?.base_url;
+    if (
+      url !== undefined &&
+      (typeof url !== "string" || !persistableBaseUrl(url))
+    )
+      return false;
+  }
   try {
+    const stored = {
+      ...draft,
+      modelDraft: draft.modelDraft
+        ? {
+            ...draft.modelDraft,
+            baseUrl: persistableBaseUrl(draft.modelDraft.baseUrl)
+              ? draft.modelDraft.baseUrl
+              : "",
+          }
+        : undefined,
+    };
     localStorage.setItem(
       `a13n-harness-ui.${key(scope)}`,
       JSON.stringify(stored),

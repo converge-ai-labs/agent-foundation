@@ -14,6 +14,11 @@ from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from anyio import create_task_group, to_thread
 from pydantic_ai import prices
 
+from a13n_service.bots.connectivity.ingress import BotIngress
+from a13n_service.bots.connectivity.replies import ReplyObservations
+from a13n_service.bots.connectivity.service import BotService
+from a13n_service.bots.memory.behavior import ConversationMemory
+from a13n_service.bots.memory.verification import BotMemoryVerifier
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -21,8 +26,9 @@ from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.lifecycle import LifecycleWriter
-from a13n_service.memory.bots.verification import BotMemoryVerifier
+from a13n_service.memory.behaviors import MemoryBehaviors
 from a13n_service.memory.composition import build_memory_service
+from a13n_service.memory.ordinary import OrdinaryMemory
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
@@ -89,6 +95,7 @@ async def open_process_runtime(
                 else MemoryBackendCatalog(provider_catalogs.memory)
             )
             bot_verifier = None
+            memory_http = None
             if owns_control(settings.service.role) or owns_worker(settings.service.role):
                 memory_http = await stack.enter_async_context(
                     httpx2.AsyncClient(
@@ -115,10 +122,23 @@ async def open_process_runtime(
                     storage.sessions,
                     protector,
                     memory_catalog,
-                    bot_verifier=bot_verifier,
                 )
                 if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None,
+            )
+            memory_service = shared.memories or build_memory_service(
+                settings.memory,
+                storage.sessions,
+                protector,
+                memory_catalog,
+            )
+            shared = replace(
+                shared,
+                memory_behaviors=MemoryBehaviors(
+                    storage.sessions,
+                    default=OrdinaryMemory(memory_service),
+                    behaviors=(ConversationMemory(memory_service, bot_verifier),),
+                ),
             )
             agent_resources = build_agent_resources(
                 components,
@@ -164,6 +184,7 @@ async def open_process_runtime(
                     invocations=agent_resources.invocations,
                     configuration_resolver=build_agent_resolver(components, shared, agent_resources),
                     observability=observability,
+                    observations=ReplyObservations(storage.sessions),
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()
@@ -194,7 +215,9 @@ async def open_process_runtime(
                         assets.catalog,
                         InlineHookValidator(EndpointPolicy()),
                     )
-                input_acceptor = IngressInputAcceptor(storage.sessions, commands)
+                input_acceptor = IngressInputAcceptor(
+                    storage.sessions, commands, contributions={"slack": BotIngress(), "lark": BotIngress()}
+                )
             connectivity, connectivity_background = await build_connectivity_runtime(
                 settings,
                 storage,
@@ -208,6 +231,18 @@ async def open_process_runtime(
                 data_plane=owns_connectivity_data(settings.service.role),
                 memory_catalog=memory_catalog,
             )
+            bot_service = None
+            if connectivity is not None and connectivity.control is not None:
+                assert memory_http is not None
+                bot_service = BotService(
+                    storage.sessions,
+                    memory_http,
+                    settings.connectivity_endpoint_policy(),
+                    protector,
+                    public_origin=connectivity.control.public_origin,
+                    accounts=connectivity.control.accounts,
+                    timeout_seconds=settings.connectivity.total_timeout_seconds,
+                )
             runtime = ProcessRuntime(
                 settings=settings,
                 status=status,
@@ -218,6 +253,7 @@ async def open_process_runtime(
                 control=control,
                 worker=worker,
                 connectivity=connectivity,
+                bots=bot_service,
             )
             background_components = (*worker_background, *control_background, *connectivity_background)
             async with create_task_group() as background_tasks:

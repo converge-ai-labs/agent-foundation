@@ -38,9 +38,9 @@ Stop and delete have distinct retention/lifecycle intentions. A command receipt 
 
 The underlying [Environment SDK](../a13n-environment/index.md) owns Provider operations and non-destructive adapter close. Service adds durable ownership, scheduling, capacity, and target retention. A mount root or provider label alone does not establish isolation.
 
-### Author recipes and name instances
+### Author template configurations and name instances
 
-Console renders the selected Provider’s recipe fields from the same versioned schema used by Service. Common settings appear first; Advanced configuration and JSON retain the complete recipe. For E2B, enter an existing E2B template name or ID. Build software images and choose CPU/RAM in E2B; Service does not build or list upstream templates.
+Console renders the selected Provider’s template configuration fields from the same versioned schema used by Service. Common settings appear first; Advanced configuration and JSON retain the complete template configuration. For E2B, enter an existing E2B template name or ID. Build software images and choose CPU/RAM in E2B; Service does not build or list upstream templates.
 
 Instance creation accepts an optional `name`. If omitted, Service generates a readable label. Rename an instance with `PATCH /api/v1/environments/{environment_id}` and its current `If-Match` ETag. Names need not be unique and never change the target or generation; continue using IDs for references.
 
@@ -56,7 +56,7 @@ Standard Harness deferred approvals bind resolved paths, not backing generations
 
 ### Host-local placement
 
-Host-local Providers record `host_id` when configured. Docker also records `docker_host`, so an existing Provider keeps using the same daemon even when a worker's environment variables change. Run workers and maintenance must execute on that host with access to the same protected bootstrap storage. Register an existing target once and reuse its Environment ID; another Provider record does not create a separate owner for the target.
+Direct Local and Docker require `deployment.mode = "single_host"`. All participating Workers must share the same configured filesystem and Docker backend; Service does not route Runs by hostname. Docker records its `docker_host` endpoint. Managed Direct Local templates use their root as a base and allocate `environments/<env_id>` underneath it. Share an Environment ID to share its files; another Environment gets its own directory.
 
 Capacity reservations and idle retention belong to [worker maintenance](background-tasks.md#environment-capacity), not to the Provider constructor.
 

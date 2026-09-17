@@ -31,7 +31,7 @@ from .models import SkillRevisionRecord
 from .objects import SkillPackageStore, SkillPackageStoreError
 
 MAX_EFFECTIVE_SKILLS = 512
-_MATERIALIZATION_ROOT = "/environment/workspace/.a13n/skills/version-1"
+_MATERIALIZATION_DIRECTORY = ".a13n/skills/version-1"
 
 
 type SkillRuntimeErrorCode = Literal[
@@ -76,6 +76,7 @@ class SkillRuntimePreparer:
         workspace_id: str,
         locks: tuple[SkillRevisionLock, ...],
         fence: SkillAttemptFence | None = None,
+        working_directory: str = "/",
     ) -> PreparedSkillRuntime:
         selected_locks = _validate_locks(locks)
         if not selected_locks:
@@ -122,7 +123,7 @@ class SkillRuntimePreparer:
             locked_revisions.append(LockedSkillRevision(lock=lock, manifest=manifest))
         await _require_current(fence)
         catalog_digest = _catalog_digest(selected_locks)
-        root = f"{_MATERIALIZATION_ROOT}/{catalog_digest}"
+        root = f"/environment/workspace{working_directory.rstrip('/')}/{_MATERIALIZATION_DIRECTORY}/{catalog_digest}"
         source_id = f"service-skills-{catalog_digest[:24]}"
         plan = SkillMaterializationPlan(
             target_root=root,

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from anyio import CancelScope, to_thread
+from anyio import CancelScope
 from prompt_toolkit.application import Application
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
@@ -277,11 +277,14 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
             emit(f"Using existing {provider.title()} login. No new sign-in is needed.")
             return
         emit(account.diagnostic or f"{provider.title()} account requires: {account.action}.")
-        emit(f"Sign in outside this TUI: a13n-harness-ui login {provider}")
         action = await _choose(
             ask_user,
             f"Connect {provider.title()}",
             (
+                Choice("device", "Sign in with a device code", "Complete authorization in any browser"),
+                Choice(
+                    "browser", "Sign in through a local browser", "Browser must reach this Host's loopback callback"
+                ),
                 Choice("retry", "Check again", "After signing in externally or fixing the account store"),
                 Choice(
                     "later",
@@ -292,6 +295,42 @@ async def _ensure_account(app: HarnessUiApp, provider: str, ask_user: Ask, emit:
         )
         if action == "later":
             return
+        if action in {"device", "browser"}:
+            from a13n_harness_ui.model_accounts.login import LoginRequest
+
+            active = await app.active_login()
+            if active is not None and active.provider != provider:
+                emit("Another account login is active. Finish or cancel it on the surface that started it.")
+                continue
+            login = active or await app.start_login(
+                LoginRequest.model_validate({"provider": provider, "method": action})
+            )
+            try:
+                while login.state in {"starting", "waiting"}:
+                    emit(
+                        "\n".join(
+                            part
+                            for part in (
+                                f"Signing in to {provider.title()}. Ctrl+C cancels this login.",
+                                login.verification_url,
+                                f"Device code: {login.user_code}" if login.user_code else None,
+                                login.message,
+                                "Completed account writes are retained if setup is cancelled.",
+                            )
+                            if part
+                        )
+                    )
+                    await asyncio.sleep(0.5)
+                    login = await app.login_status(login.session_id)
+            except asyncio.CancelledError:
+                with CancelScope(shield=True):
+                    outcome = await app.cancel_login(login.session_id)
+                    emit("Account saved; setup cancelled." if outcome.state == "succeeded" else "Login cancelled.")
+                raise
+            if login.state != "succeeded":
+                emit(login.message or f"Login {login.state}. No automatic retry.")
+                # Keep the outcome visible before presenting another explicit action.
+                await _choose(ask_user, login.message or f"Login {login.state}", (Choice("continue", "Continue"),))
 
 
 async def run_setup(
@@ -364,15 +403,22 @@ async def run_setup(
                         answer = f"key:{reference}"
                     wizard.accept(answer)
                     answer = ""
+                    if question.key == "provider" and wizard.values["provider"] == "api":
+                        emit("Loading model suggestions and saved API-key references…")
+                        catalog = await app.model_catalog()
+                        wizard.catalog_models, wizard.catalog_status = catalog.items, catalog.status
+                        wizard.saved_credentials = tuple(key.credential_ref for key in await app.list_api_keys())
                     if question.key == "model" and wizard.values.get("provider") == "api":
-                        from a13n_harness_ui.model_presets import known_context_window
+                        from a13n_harness_ui.model_authoring import ModelOptionsRequest
 
-                        wizard.context_window_hint = await to_thread.run_sync(
-                            known_context_window,
-                            wizard.values["api_provider"],
-                            wizard.values["model"],
-                            wizard.values.get("base_url", ""),
+                        options = await app.model_options(
+                            ModelOptionsRequest(
+                                connection=wizard.connection_id,
+                                model_id=wizard.values["model"],
+                                base_url=wizard.values.get("base_url"),
+                            )
                         )
+                        wizard.context_window_hint = options.known_context_window
                     if question.key == "provider" and wizard.values["provider"] != "api":
                         await _ensure_account(app, wizard.values["provider"], ask_user, emit)
                         checked_provider = wizard.values["provider"]

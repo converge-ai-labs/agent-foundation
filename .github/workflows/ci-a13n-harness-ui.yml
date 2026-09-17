@@ -10,7 +10,7 @@ on:
       - "Makefile"
       - ".pre-commit-config.yaml"
       - "frontend/**"
-      - "sdk/typescript/**"
+      - "proto/a13n-service/**"
       - "packages/*/pyproject.toml"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-logging/**"
@@ -43,7 +43,7 @@ on:
       - "Makefile"
       - ".pre-commit-config.yaml"
       - "frontend/**"
-      - "sdk/typescript/**"
+      - "proto/a13n-service/**"
       - "packages/*/pyproject.toml"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-logging/**"
@@ -139,7 +139,7 @@ jobs:
               - 'frontend/*'
               - 'frontend/apps/a13n-console/**'
               - 'frontend/packages/**'
-              - 'sdk/typescript/**'
+              - 'proto/a13n-service/**'
               - 'scripts/tests/test_harness_ui_ci_workflow.py'
             distribution:
               - '.github/workflows/ci-a13n-harness-ui*.yml'
@@ -261,9 +261,9 @@ jobs:
 
       - name: Install and check frontend workspace
         run: |
-          make sdk-typescript-build
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend run format:check
+          pnpm --dir frontend --filter a13n-console run generate:check
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run check
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run test
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run build
@@ -272,7 +272,7 @@ jobs:
     name: UI distribution
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-24.04-8core
     timeout-minutes: 12
     steps:
       - name: Checkout
@@ -310,13 +310,19 @@ jobs:
       - name: Prepare bundled configuration Skill
         run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
 
-      - name: Check and build WebUI assets
+      - name: Install WebUI dependencies
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: Check WebUI
         run: |
-          pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend exec prettier --check apps/a13n-harness-ui
           pnpm --dir frontend --filter a13n-harness-ui-webui run check
-          pnpm --dir frontend --filter a13n-harness-ui-webui run test
-          pnpm --dir frontend --filter a13n-harness-ui-webui run build
+
+      - name: Test WebUI
+        run: /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test
+
+      - name: Build WebUI assets
+        run: pnpm --dir frontend --filter a13n-harness-ui-webui run build
 
       - name: Prepare bundled WebUI assets
         run: uv run --locked --no-sync python scripts/prepare-a13n-harness-ui-assets.py

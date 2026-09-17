@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Collection
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from a13n_service.connectivity.browser_urls import split_browser_url
 from a13n_service.database import MigrationConfig
@@ -24,9 +24,11 @@ from a13n_service.storage.config import (
 
 from .configuration.sections import (
     AssetsSettings,
+    ConfigurationAssistantSettings,
     ConnectivitySettings,
     ControlSettings,
     DatabaseSettings,
+    DeploymentSettings,
     EnvironmentsSettings,
     FilesystemSettings,
     GatewaySettings,
@@ -65,12 +67,14 @@ class Settings(Section):
     provider_plugins: ProviderPluginsSettings = Field(default_factory=ProviderPluginsSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
     subagents: SubagentsSettings = Field(default_factory=SubagentsSettings)
+    deployment: DeploymentSettings = Field(default_factory=DeploymentSettings)
     environments: EnvironmentsSettings = Field(default_factory=EnvironmentsSettings)
     pricing: PricingSettings = Field(default_factory=PricingSettings)
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     models: ModelsSettings = Field(default_factory=ModelsSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    configuration_assistant: ConfigurationAssistantSettings = Field(default_factory=ConfigurationAssistantSettings)
     webhooks: WebhooksSettings = Field(default_factory=WebhooksSettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     control: ControlSettings = Field(default_factory=ControlSettings)
@@ -85,6 +89,12 @@ class Settings(Section):
     filesystem: FilesystemSettings = Field(default_factory=FilesystemSettings)
     migration: MigrationSettings = Field(default_factory=MigrationSettings)
     logging: LoggingSettings = Field(default_factory=LoggingSettings)
+
+    @model_validator(mode="after")
+    def validate_deployment(self) -> Settings:
+        if self.deployment.mode == "distributed" and self.environments.local_providers:
+            raise ValueError("Local Environment Providers require deployment.mode=single_host")
+        return self
 
     def identity_configuration(self) -> IdentityConfiguration:
         return IdentityConfiguration(

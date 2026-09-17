@@ -28,8 +28,7 @@ preferences:
   - family: gpt-5.6-luna
     upstream_models: [gpt-5.6-luna, openai/gpt-5.6-luna]
     model_apis: [openai.responses, openai.chat_completions, openrouter.chat_completions]
-    settings: {openai_reasoning_effort: high}
-    required_thinking_effort: high
+    settings: {thinking: high}
   - family: deepseek-4.1-flash
     upstream_models: [deepseek-v4.1-flash, deepseek/deepseek-v4.1-flash]
     model_apis: [openai.chat_completions, openrouter.chat_completions]
@@ -37,4 +36,4 @@ preferences:
     upstream_models: [gemini-3.8-flash, google/gemini-3.8-flash]
     model_apis: [google.generate_content, openrouter.chat_completions]
 request_limit: 40
-total_tokens_limit: 200000
+total_tokens_limit: 2000000

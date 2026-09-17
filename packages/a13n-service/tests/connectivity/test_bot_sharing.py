@@ -1,22 +1,22 @@
-"""Continuing sharing uses durable join boundaries and explicit future enrollment."""
+"""Group visibility is one-way, installation-bounded, and immediately revocable."""
 
 import pytest
+from a13n_service.application_errors import ApplicationError
+from a13n_service.bots.connectivity.domain import BotCheck
+from a13n_service.bots.connectivity.models import BotCheckRecord
+from a13n_service.bots.memory.domain import ConfigureScope, CreateDocument, ScopeSettings, SearchDocuments
+from a13n_service.bots.memory.models import ScopeRecord
+from a13n_service.bots.memory.mutations import create, delete
 from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.accounts.targets import TargetConfig
-from a13n_service.connectivity.bots.domain import BotCheck
-from a13n_service.connectivity.bots.models import BotCheckRecord
-from a13n_service.connectivity.bots.observations import ConversationInfo, InstallationInfo
-from a13n_service.memory.bots.domain import ConfigureScope, CreateDocument, ReplaceSharingPolicy, SharingPolicyInput
-from a13n_service.memory.bots.models import ScopeRecord
-from a13n_service.memory.bots.mutations import create
-from a13n_service.memory.bots.sharing import list_policies, save_policy
+from a13n_service.connectivity.inspection import ConversationInfo, InstallationInfo
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from .conftest import ACCOUNT_ID, actor
 from .test_bot_memory import bot_memory as bot_memory
-from .test_bot_memory import sharing_groups
 
 pytestmark = pytest.mark.anyio
 
@@ -59,186 +59,208 @@ async def group(lab, targets, sessions, name, *, audience="private", member=True
     return await lab.service.configure_scope(actor(), ACCOUNT_ID, ConfigureScope(external_conversation_id=name))
 
 
-def replacement(policy, **changes):
-    body = policy.model_dump(include=set(SharingPolicyInput.model_fields))
-    body.update(changes)
-    return ReplaceSharingPolicy(**body, expected_version=policy.version)
+async def visibility(lab, scope, value):
+    return await lab.service.configure_scope(
+        actor(),
+        ACCOUNT_ID,
+        ConfigureScope(
+            external_conversation_id=scope.external_conversation_id,
+            expected_version=scope.version,
+            visibility=value,
+        ),
+    )
 
 
-async def test_future_enrollment_waits_for_opt_in_and_never_backfills_known_groups(
+async def test_visibility_includes_history_new_documents_and_future_groups_without_copying(
     bot_memory, target_service, connectivity_sessions
 ):
     lab = bot_memory
-    recipient = await sharing_groups(lab, target_service, connectivity_sessions)
-    policy = await save_policy(
-        lab.service, actor(), ACCOUNT_ID, SharingPolicyInput(name="Knowledge", scope_ids=(lab.scope_id, recipient.id))
+    source = await group(lab, target_service, connectivity_sessions, "product")
+    receiver = await group(lab, target_service, connectivity_sessions, "support")
+    old = await create(
+        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Historical decision", title="Old"), "old"
     )
-    known = await group(lab, target_service, connectivity_sessions, "known")
-    assert known.id not in (await list_policies(lab.service, actor(), ACCOUNT_ID)).items[0].scope_ids
-    policy = await save_policy(
-        lab.service, actor(), ACCOUNT_ID, replacement(policy, enroll_future_groups=True), policy.id
+    private = await create(
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        receiver.id,
+        CreateDocument(text="Private support", title="Private"),
+        "private",
     )
-    await lab.service.configure_scope(
-        actor(), ACCOUNT_ID, ConfigureScope(external_conversation_id="known", expected_version=known.version)
+    assert source.visibility == "group"
+    assert {x.id for x in (await lab.service.list(actor(), ACCOUNT_ID, receiver.id)).items} == {private.id}
+    source = await visibility(lab, source, "installation")
+    fresh = await create(
+        lab.service,
+        actor(),
+        ACCOUNT_ID,
+        source.id,
+        CreateDocument(text="Daily result", title="Daily", kind="daily"),
+        "new",
     )
-    fresh = await group(lab, target_service, connectivity_sessions, "future")
-    current = (await list_policies(lab.service, actor(), ACCOUNT_ID)).items[0]
-    assert fresh.id in current.scope_ids and known.id not in current.scope_ids
-    assert current.version == policy.version + 1
-    assert current.future_since == policy.future_since
-    assert next(p for p in current.participants if p.scope_id == fresh.id).joined_at >= policy.created_at
+    later = await group(lab, target_service, connectivity_sessions, "later")
+    for recipient in (receiver, later):
+        ids = {x.id for x in (await lab.service.index(actor(), ACCOUNT_ID, recipient.id)).entries}
+        assert {old.id, fresh.id} <= ids
+        assert {
+            x.id
+            for x in (
+                await lab.service.search(actor(), ACCOUNT_ID, recipient.id, SearchDocuments(query="decision"))
+            ).items
+        } >= {old.id, fresh.id}
+        doc = await lab.service.get(actor(), ACCOUNT_ID, recipient.id, old.id)
+        assert doc.shared and doc.owner_name == "product"
+        assert [x.kind for x in doc.access_reasons] == ["installation"]
+        with pytest.raises(ApplicationError):
+            await delete(lab.service, actor(), ACCOUNT_ID, recipient.id, old.id)
+    assert private.id not in {x.id for x in (await lab.service.index(actor(), ACCOUNT_ID, source.id)).entries}
+    assert len(lab.records) == 3, "Visibility never creates Provider copies"
+    assert not (await lab.service.list(actor(), ACCOUNT_ID, later.id, include_shared=False)).items
+    source = await visibility(lab, source, "group")
+    assert not (await lab.service.index(actor(), ACCOUNT_ID, later.id)).entries
+    assert not (await lab.service.search(actor(), ACCOUNT_ID, later.id, SearchDocuments(query="decision"))).items
+    before = len(lab.calls)
+    with pytest.raises(ApplicationError) as error:
+        await lab.service.get(actor(), ACCOUNT_ID, later.id, old.id)
+    assert error.value.code == "memory_not_found" and len(lab.calls) == before
+    assert (await lab.service.get(actor(), ACCOUNT_ID, source.id, old.id)).text == "Historical decision"
+
+
+@pytest.mark.parametrize("audience", ["direct", "unknown"])
+async def test_only_verified_groups_can_open_memory(bot_memory, target_service, connectivity_sessions, audience):
+    scope = await group(bot_memory, target_service, connectivity_sessions, "restricted", audience=audience)
+    with pytest.raises(ApplicationError) as error:
+        await visibility(bot_memory, scope, "installation")
+    assert error.value.code == "memory_visibility_unavailable"
+    # A missing setting on older persisted scopes remains private.
+    assert ScopeSettings.model_validate({"enabled": True}).visibility == "group"
 
 
 @pytest.mark.parametrize(
-    "audience,member,active",
-    [("direct", True, True), ("unknown", True, True), ("private", False, True), ("private", True, False)],
+    "change", ["source_disabled", "receiver_disabled", "source_direct", "receiver_direct", "target_removed"]
 )
-async def test_ineligible_groups_do_not_auto_enroll(
-    bot_memory, target_service, connectivity_sessions, audience, member, active
-):
+async def test_ineligible_groups_cannot_share(bot_memory, target_service, connectivity_sessions, change):
     lab = bot_memory
-    recipient = await sharing_groups(lab, target_service, connectivity_sessions)
-    policy = await save_policy(
-        lab.service,
-        actor(),
-        ACCOUNT_ID,
-        SharingPolicyInput(name="Knowledge", scope_ids=(lab.scope_id, recipient.id), enroll_future_groups=True),
+    source = await group(lab, target_service, connectivity_sessions, "product")
+    receiver = await group(lab, target_service, connectivity_sessions, "support")
+    source = await visibility(lab, source, "installation")
+    doc = await create(
+        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Decision", title="Decision"), "seed"
     )
-    created = await group(
-        lab, target_service, connectivity_sessions, "candidate", audience=audience, member=member, active=active
-    )
-    current = (await list_policies(lab.service, actor(), ACCOUNT_ID)).items[0]
-    assert created.id not in current.scope_ids and current.version == policy.version
+    assert doc.id in (await lab.service.index(actor(), ACCOUNT_ID, receiver.id)).text
+    async with transaction(connectivity_sessions) as session:
+        row = await session.get(ScopeRecord, source.id if change.startswith("source") else receiver.id)
+        if change.endswith("disabled"):
+            row.settings_json = {**row.settings_json, "enabled": False}
+        elif change.endswith("direct"):
+            row.audience = "direct"
+        else:
+            target = await session.scalar(
+                select(AccountTargetRecord).where(
+                    AccountTargetRecord.account_id == ACCOUNT_ID, AccountTargetRecord.external_target_id == "support"
+                )
+            )
+            await session.delete(target)
+    assert not (await lab.service.index(actor(), ACCOUNT_ID, receiver.id)).entries
+    with pytest.raises(ApplicationError):
+        await lab.service.get(actor(), ACCOUNT_ID, receiver.id, doc.id)
 
 
-async def test_later_join_cutoff_and_manual_removal_survive_group_reconfiguration(
+async def test_visibility_change_is_versioned_and_audited(bot_memory, target_service, connectivity_sessions):
+    from a13n_service.iam.models import SecurityAuditRecord
+
+    lab = bot_memory
+    scope = await group(lab, target_service, connectivity_sessions, "product")
+    updated = await visibility(lab, scope, "installation")
+    assert updated.version == scope.version + 1
+    with pytest.raises(ApplicationError) as error:
+        await visibility(lab, scope, "group")
+    assert error.value.code == "version_conflict"
+    async with transaction(connectivity_sessions) as session:
+        audits = list(
+            await session.scalars(select(SecurityAuditRecord).where(SecurityAuditRecord.resource_id == scope.id))
+        )
+        assert any(a.details.get("visibility") == "installation" for a in audits)
+
+
+async def test_removed_sharing_commands_are_not_exposed():
+    from a13n_service.bots.memory.router import router
+
+    assert not any("publications" in route.path or "sharing-policies" in route.path for route in router.routes)
+
+
+@pytest.mark.parametrize("boundary", ["account_id", "provider_id", "organization_id", "workspace_id"])
+async def test_visibility_never_crosses_installation_or_storage_boundaries(
+    bot_memory, target_service, connectivity_sessions, boundary
+):
+    from a13n_service.bots.memory.models import DocumentRecord
+    from a13n_service.bots.memory.queries import visible_documents
+
+    lab = bot_memory
+    source = await group(lab, target_service, connectivity_sessions, "product")
+    receiver = await group(lab, target_service, connectivity_sessions, "support")
+    await visibility(lab, source, "installation")
+    doc = await create(
+        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Decision", title="Decision"), "seed"
+    )
+    async with transaction(connectivity_sessions) as session:
+        row = await session.get(ScopeRecord, receiver.id)
+        # Project the receiving context under a different trusted boundary. No mutation
+        # is persisted; the query must exclude the same active source in every case.
+        values = {column.key: getattr(row, column.key) for column in ScopeRecord.__table__.columns}
+        values[boundary] = "unrelated_boundary"
+        isolated = ScopeRecord(**values)
+        assert not list(
+            await session.scalars(
+                select(DocumentRecord.id).where(DocumentRecord.id == doc.id, visible_documents(isolated))
+            )
+        )
+
+
+async def test_legacy_publication_is_never_exposed_and_source_delete_cleans_it_up(
     bot_memory, target_service, connectivity_sessions
 ):
-    lab = bot_memory
-    recipient = await sharing_groups(lab, target_service, connectivity_sessions)
-    await save_policy(
-        lab.service,
-        actor(),
-        ACCOUNT_ID,
-        SharingPolicyInput(name="Knowledge", scope_ids=(lab.scope_id, recipient.id), enroll_future_groups=True),
+    from a13n_service.bots.memory.models import (
+        DocumentRecord,
+        PublicationRecipientRecord,
+        SharingParticipantRecord,
+        SharingPolicyRecord,
     )
-    earlier = await create(
-        lab.service,
-        actor(),
-        ACCOUNT_ID,
-        lab.scope_id,
-        CreateDocument(text="Before join", title="Before"),
-        "before-join",
-    )
-    joined = await group(lab, target_service, connectivity_sessions, "future")
-    fresh = await create(
-        lab.service, actor(), ACCOUNT_ID, lab.scope_id, CreateDocument(text="After join", title="After"), "after-join"
-    )
-    visible = await lab.service.list(actor(), ACCOUNT_ID, joined.id)
-    assert {d.id for d in visible.items} == {fresh.id}
-    assert earlier.id not in {d.id for d in visible.items}
-    policy = (await list_policies(lab.service, actor(), ACCOUNT_ID)).items[0]
-    policy = await save_policy(
-        lab.service, actor(), ACCOUNT_ID, replacement(policy, scope_ids=(lab.scope_id, recipient.id)), policy.id
-    )
-    await lab.service.configure_scope(
-        actor(),
-        ACCOUNT_ID,
-        ConfigureScope(external_conversation_id="future", expected_version=joined.version, enabled=False),
-    )
-    await lab.service.configure_scope(
-        actor(), ACCOUNT_ID, ConfigureScope(external_conversation_id="future", expected_version=joined.version + 1)
-    )
-    current = (await list_policies(lab.service, actor(), ACCOUNT_ID)).items[0]
-    assert joined.id not in current.scope_ids and current.version == policy.version
-    assert not (await lab.service.list(actor(), ACCOUNT_ID, joined.id)).items
-
-
-async def test_disable_remains_possible_when_a_participant_becomes_unknown(
-    bot_memory, target_service, connectivity_sessions
-):
-    lab = bot_memory
-    recipient = await sharing_groups(lab, target_service, connectivity_sessions)
-    policy = await save_policy(
-        lab.service, actor(), ACCOUNT_ID, SharingPolicyInput(name="Knowledge", scope_ids=(lab.scope_id, recipient.id))
-    )
-    async with transaction(connectivity_sessions) as session:
-        await session.execute(update(ScopeRecord).where(ScopeRecord.id == recipient.id).values(audience="unknown"))
-    stopped = await save_policy(lab.service, actor(), ACCOUNT_ID, replacement(policy, enabled=False), policy.id)
-    assert not stopped.enabled
-
-
-async def test_reactivation_starts_a_new_save_boundary_and_reports_it(
-    bot_memory, target_service, connectivity_sessions
-):
-    lab = bot_memory
-    recipient = await sharing_groups(lab, target_service, connectivity_sessions)
-    policy = await save_policy(
-        lab.service, actor(), ACCOUNT_ID, SharingPolicyInput(name="Knowledge", scope_ids=(lab.scope_id, recipient.id))
-    )
-    stopped = await save_policy(lab.service, actor(), ACCOUNT_ID, replacement(policy, enabled=False), policy.id)
-    paused = await create(
-        lab.service, actor(), ACCOUNT_ID, lab.scope_id, CreateDocument(text="During pause", title="Pause"), "paused"
-    )
-    resumed = await save_policy(lab.service, actor(), ACCOUNT_ID, replacement(stopped, enabled=True), policy.id)
-    assert resumed.future_since > policy.future_since
-    assert all(p.joined_at == resumed.future_since for p in resumed.participants)
-    assert paused.id not in {d.id for d in (await lab.service.list(actor(), ACCOUNT_ID, recipient.id)).items}
-    async with transaction(connectivity_sessions) as session:
-        scopes = await session.scalars(select(ScopeRecord).where(ScopeRecord.id.in_(resumed.scope_ids)))
-        assert len(list(scopes)) == 2
-
-
-async def test_rollout_marks_existing_scopes_as_known_without_enrolling_them(
-    bot_memory, target_service, connectivity_sessions, service_database
-):
-    import anyio
-    from a13n_service.database.migration import DatabaseMigrator
 
     lab = bot_memory
-    async with transaction(connectivity_sessions) as session:
-        prior = await session.get(ScopeRecord, lab.scope_id)
-        assert not prior.sharing_initialized
-    migrator = DatabaseMigrator(service_database)
-    await anyio.to_thread.run_sync(migrator.downgrade, "fa5bed0a37f2")
-    await anyio.to_thread.run_sync(migrator.upgrade)
-    async with transaction(connectivity_sessions) as session:
-        prior = await session.get(ScopeRecord, lab.scope_id)
-        assert prior.sharing_initialized
-    await target_service.create(
-        actor=actor(),
-        account_id=ACCOUNT_ID,
-        idempotency_key="after-rollout",
-        request=TargetConfig(target_kind="conversation", external_target_id="after-rollout"),
+    source = await group(lab, target_service, connectivity_sessions, "product")
+    receiver = await group(lab, target_service, connectivity_sessions, "support")
+    doc = await create(
+        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Original", title="Original"), "original"
     )
-    created = await lab.service.configure_scope(
-        actor(), ACCOUNT_ID, ConfigureScope(external_conversation_id="after-rollout")
+    legacy = await create(
+        lab.service, actor(), ACCOUNT_ID, source.id, CreateDocument(text="Legacy copy", title="Legacy"), "legacy"
     )
     async with transaction(connectivity_sessions) as session:
-        later = await session.get(ScopeRecord, created.id)
-        assert not later.sharing_initialized
-
-
-async def test_verification_alone_does_not_enroll_until_configuration_is_saved(
-    bot_memory, target_service, connectivity_sessions
-):
-    lab = bot_memory
-    recipient = await sharing_groups(lab, target_service, connectivity_sessions)
-    await save_policy(
-        lab.service,
-        actor(),
-        ACCOUNT_ID,
-        SharingPolicyInput(name="Knowledge", scope_ids=(lab.scope_id, recipient.id), enroll_future_groups=True),
-    )
-    candidate = await group(lab, target_service, connectivity_sessions, "unverified", member=False)
-    async with transaction(connectivity_sessions) as session:
-        record = await session.get(BotCheckRecord, (ACCOUNT_ID, "unverified"))
-        checked = BotCheck.model_validate(record.result_json)
-        record.result_json = checked.model_copy(
-            update={"conversation": checked.conversation.model_copy(update={"is_member": True})}
-        ).model_dump(mode="json")
-    assert candidate.id not in (await list_policies(lab.service, actor(), ACCOUNT_ID)).items[0].scope_ids
-    await lab.service.configure_scope(
-        actor(), ACCOUNT_ID, ConfigureScope(external_conversation_id="unverified", expected_version=candidate.version)
-    )
-    assert candidate.id in (await list_policies(lab.service, actor(), ACCOUNT_ID)).items[0].scope_ids
+        copy = await session.get(DocumentRecord, legacy.id)
+        copy.publication_source_id = doc.id
+        session.add(PublicationRecipientRecord(document_id=legacy.id, scope_id=receiver.id))
+        session.add(
+            SharingPolicyRecord(
+                id="mpol_legacy",
+                account_id=ACCOUNT_ID,
+                provider_id=source.provider_id,
+                name="Legacy",
+                kinds_json=["long_term"],
+                include_history=True,
+                enabled=True,
+                created_at=utc_now(),
+                future_since=utc_now(),
+            )
+        )
+        await session.flush()
+        for scope in (source, receiver):
+            session.add(SharingParticipantRecord(policy_id="mpol_legacy", scope_id=scope.id, joined_at=utc_now()))
+    assert not (await lab.service.index(actor(), ACCOUNT_ID, receiver.id)).entries
+    await visibility(lab, source, "installation")
+    assert {x.id for x in (await lab.service.index(actor(), ACCOUNT_ID, receiver.id)).entries} == {doc.id}
+    assert {x.id for x in (await lab.service.index(actor(), ACCOUNT_ID, source.id)).entries} == {doc.id}
+    await delete(lab.service, actor(), ACCOUNT_ID, source.id, doc.id)
+    assert not lab.records
+    assert not (await lab.service.index(actor(), ACCOUNT_ID, receiver.id)).entries

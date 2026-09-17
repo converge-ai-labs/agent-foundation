@@ -19,7 +19,7 @@ export default defineConfig({
         extends: true,
         test: {
           name: "unit",
-          include: ["src/**/*.test.ts"],
+          include: ["src/**/*.test.ts", "src/service-client/**/*.test.mjs"],
           environment: "node",
         },
       },

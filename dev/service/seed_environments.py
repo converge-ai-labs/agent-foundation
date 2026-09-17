@@ -1,11 +1,10 @@
-"""Environment recipes, access modes, unused instances, and preparation failure."""
+"""Environment template configurations, access modes, and unused instances."""
 
 from pathlib import Path
 
 from a13n_service.settings import Settings
 
 from .seed_client import Client
-from .seed_journeys import run
 
 
 async def local_provider(client: Client, base: str) -> dict:
@@ -41,7 +40,9 @@ async def local_workspace(client: Client, base: str, provider_id: str, root: Pat
     environment = await client.request(
         "POST", base + "/environments", expected=201, json={"template_id": template["id"]}
     )
-    return {"environment_id": environment["id"], "template_id": template["id"], "root": str(root)}
+    directory = root / "environments" / environment["id"]
+    directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+    return {"environment_id": environment["id"], "template_id": template["id"], "root": str(directory)}
 
 
 async def environments(client: Client, base: str, catalog: dict, settings: Settings) -> dict:
@@ -50,14 +51,10 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
     for name, access in (
         ("Read-only reference files", "read_only"),
         ("Writable draft files", "read_write"),
-        ("Archived recipe", "full"),
-        ("Missing local directory", "full"),
+        ("Archived template_config", "full"),
     ):
         root = settings.filesystem.root / name.lower().replace(" ", "-")
-        if name != "Missing local directory":
-            root.mkdir(parents=True, mode=0o700)
-            (root / "README.md").write_text("# Fictional local workspace\nNo customer content.\n")
-        recipe = {
+        template_config = {
             "provider_id": provider["id"],
             "access": access,
             "preparation": "on_run",
@@ -71,36 +68,27 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
             "POST",
             base + "/environment-templates",
             expected=201,
-            json={"name": name, "description": "Public local fixture for Environment views", **recipe},
+            json={"name": name, "description": "Public local fixture for Environment views", **template_config},
         )
         scenarios["template_" + name.lower().replace(" ", "_")] = template["id"]
-        if name == "Archived recipe":
+        if name == "Archived template_config":
             path = f"/api/v1/environment-templates/{template['id']}"
             await client.request("PATCH", path, headers=await client.etag(path), json={"archived": True})
             continue
         instance = await client.request(
             "POST", base + "/environments", expected=201, json={"template_id": template["id"]}
         )
-        scenarios["environment_" + access if name != "Missing local directory" else "environment_missing_directory"] = (
-            instance["id"]
-        )
+        directory = root / "environments" / instance["id"]
+        directory.mkdir(parents=True, mode=0o700, exist_ok=True)
+        (directory / "README.md").write_text("# Fictional local workspace\nNo customer content.\n")
+        scenarios["environment_" + access] = instance["id"]
         if name == "Read-only reference files":
             await client.request(
                 "POST",
                 f"/api/v1/environment-templates/{template['id']}/revisions",
                 expected=201,
-                json={**recipe, "expected_version": template["version"], "preparation": "on_use"},
+                json={**template_config, "expected_version": template["version"], "preparation": "on_use"},
             )
-        elif name == "Missing local directory":
-            failed = await run(
-                client,
-                base,
-                catalog["agents"][3],
-                "Review a missing fictional local directory.",
-                environment_id=instance["id"],
-                expected="failed",
-            )
-            scenarios["environment_preparation_failure"] = failed["id"]
     disabled = await client.request(
         "POST",
         base + "/environment-providers",

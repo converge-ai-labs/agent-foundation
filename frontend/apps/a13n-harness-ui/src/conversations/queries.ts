@@ -2,11 +2,12 @@ import { useEffect, useRef } from "react";
 import {
   useInfiniteQuery,
   useQuery,
+  useQueryClient,
   type Query,
   type QueryClient,
 } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
-import { result } from "../transport/client";
+import { result, type Schema } from "../transport/client";
 
 const pendingRefreshes = new WeakSet<Query>();
 
@@ -47,19 +48,32 @@ export function useThreads(
     scope = "all",
     enabled = true,
     limit = 30,
+    archivedOnly = false,
+    includeActive = false,
   }: {
     scope?: "all" | "projectless" | "unavailable";
     enabled?: boolean;
     limit?: number;
+    archivedOnly?: boolean;
+    includeActive?: boolean;
   } = {},
 ) {
   const { client } = useTransport();
   const list = useInfiniteQuery({
-    queryKey: ["threads", query, projectId, archived, scope, limit],
+    queryKey: [
+      "threads",
+      query,
+      projectId,
+      archived,
+      scope,
+      limit,
+      archivedOnly,
+      includeActive,
+    ],
     enabled,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) =>
-      result(
+    queryFn: async ({ pageParam, signal }) => ({
+      ...(await result(
         client.GET("/api/threads/activity", {
           params: {
             query: {
@@ -67,13 +81,18 @@ export function useThreads(
               project_id: projectId,
               project_scope: scope,
               include_archived: archived,
+              archived_only: archivedOnly,
+              include_active: includeActive,
               cursor: pageParam,
               limit,
             },
           },
           signal,
         }),
-      ),
+      )),
+      // Pagination observes only its new page, not the rows already loaded.
+      observedAt: Date.now(),
+    }),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   // Archive toggles replace a query, not the visible list. Retain only the same
@@ -83,7 +102,14 @@ export function useThreads(
     identity: string;
     data: typeof list.data;
   }>(undefined);
-  const identity = JSON.stringify([query, projectId, scope, limit]);
+  const identity = JSON.stringify([
+    query,
+    projectId,
+    scope,
+    limit,
+    archivedOnly,
+    includeActive,
+  ]);
   useEffect(() => {
     if (list.isSuccess)
       previous.current = { client, identity, data: list.data };
@@ -100,15 +126,60 @@ export function useThreads(
       ...data,
       pages: data.pages.map((page) => ({
         ...page,
-        rows: archived
-          ? page.rows
-          : page.rows.filter((row) => !row.thread.archived),
+        rows: archivedOnly
+          ? page.rows.filter((row) => row.thread.archived)
+          : archived
+            ? page.rows
+            : page.rows.filter((row) => !row.thread.archived),
       })),
     },
     isPreviousData: !list.data && !!retained,
     hasNextPage: !!list.data && list.hasNextPage,
   };
 }
+export function useOperation(threadId: string, receipt?: string | null) {
+  const { client } = useTransport();
+  return useQuery({
+    queryKey: ["thread", threadId, "operation", receipt],
+    enabled: !!receipt,
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt! } },
+          signal,
+        }),
+      ),
+  });
+}
+// The focused prefix already carries the first detail and exact operation.
+// Bootstrap only an empty cache: later HTTP observations remain authoritative,
+// and a replay must not roll an existing page back to its snapshot cutover.
+export function seedThreadSnapshot(
+  client: QueryClient,
+  threadId: string,
+  snapshot: Schema<"ThreadFocusSnapshot">,
+) {
+  if (snapshot.thread.thread.thread_id !== threadId) return;
+  const key = ["thread", threadId, "detail"];
+  if (client.getQueryData(key)) return;
+  // Cancel before publishing so a slower initial GET cannot overwrite the prefix.
+  void client.cancelQueries({ queryKey: key, exact: true });
+  client.setQueryData(key, snapshot.thread);
+  const operation = snapshot.root_operation;
+  if (operation) {
+    const operationKey = [
+      "thread",
+      threadId,
+      "operation",
+      operation.receipt.receipt_id,
+    ];
+    if (!client.getQueryData(operationKey)) {
+      void client.cancelQueries({ queryKey: operationKey, exact: true });
+      client.setQueryData(operationKey, operation);
+    }
+  }
+}
+
 export function useThread(threadId: string) {
   const { client } = useTransport();
   return useQuery({
@@ -129,6 +200,7 @@ export function useHistory(
   enabled: boolean,
 ) {
   const { client } = useTransport();
+  const queries = useQueryClient();
   const query = useInfiniteQuery({
     queryKey: ["thread", threadId, "history", continuation],
     enabled,
@@ -157,17 +229,26 @@ export function useHistory(
   useEffect(() => {
     if (query.isSuccess) previous.current = { threadId, data: query.data };
   }, [threadId, query.data, query.isSuccess]);
+  // A newly opened page can reuse history warmed by the workbench even while a
+  // newer continuation is loading. Keep its original identity, never relabel it.
+  const cached =
+    !query.data && previous.current?.threadId !== threadId
+      ? queries
+          .getQueryCache()
+          .findAll({ queryKey: ["thread", threadId, "history"] })
+          .filter((candidate) => candidate.state.data !== undefined)
+          .sort((a, b) => b.state.dataUpdatedAt - a.state.dataUpdatedAt)[0]
+      : undefined;
+  const retained =
+    previous.current?.threadId === threadId
+      ? previous.current.data
+      : cached
+        ? queries.getQueryData<NonNullable<typeof query.data>>(cached.queryKey)
+        : undefined;
   return {
     ...query,
-    data:
-      query.data ??
-      (previous.current?.threadId === threadId
-        ? previous.current.data
-        : undefined),
+    data: query.data ?? retained,
     hasNextPage: !!query.data && query.hasNextPage,
-    isPreviousHistory:
-      !query.data &&
-      previous.current?.threadId === threadId &&
-      !!previous.current.data,
+    isPreviousHistory: !query.data && !!retained,
   };
 }

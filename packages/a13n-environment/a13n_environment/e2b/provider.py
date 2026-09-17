@@ -8,6 +8,8 @@ from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
+from .._guest_files import GuestFiles
+from .._guest_ports import GuestPorts
 from ..errors import EnvironmentProviderErrorCategory as Category
 from ..management import Environment
 from ..models import (
@@ -25,8 +27,6 @@ from ..operations import EnvironmentOperations
 from .commands import GuestCommands
 from .configuration import PROVIDER_KEY, E2BProviderConfiguration, E2BProviderStateData
 from .errors import provider_error, sdk_errors
-from .files import E2BFiles
-from .ports import E2BPorts
 from .processes import E2BProcesses
 from .runtime import E2BProviderRuntime
 
@@ -169,7 +169,7 @@ class E2BEnvironment(Environment):
         commands = GuestCommands(sandbox, self._configuration)
         commands.generation = "generation-" + hashlib.sha256(sandbox.sandbox_id.encode()).hexdigest()[:24]
         commands.mount_id = mount_id
-        files = E2BFiles(commands)
+        files = GuestFiles(commands)
         await files.stat("/")
         processes = self._processes
         if processes is not None:
@@ -186,7 +186,7 @@ class E2BEnvironment(Environment):
             files=files,
             shell=processes if not self._configuration.read_only else None,
             processes=processes if not self._configuration.read_only else None,
-            ports=E2BPorts(commands),
+            ports=GuestPorts(commands),
         )
         self._descriptor = descriptor(self._configuration, commands.generation, sandbox.sandbox_id)
         self._availability = EnvironmentAvailability(

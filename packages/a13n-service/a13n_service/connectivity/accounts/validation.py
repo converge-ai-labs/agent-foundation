@@ -1,6 +1,5 @@
 """Configuration-time authority for the four inbound override categories."""
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,8 +16,6 @@ from a13n_service.iam import (
     authorize_workspace,
 )
 from a13n_service.iam.resource_scope import visible_workspace
-from a13n_service.memory.models import MemoryProviderRecord
-from a13n_service.memory.resources import require_document_support
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 
 from .reception import InputBatchingPolicy, InputOverride, Reception
@@ -91,26 +88,7 @@ async def validate_reception(
     actor: AuthenticatedActor,
     workspace_id: str,
     reception: Reception,
-    *,
-    memory_catalog: MemoryBackendCatalog | None = None,
 ) -> AuthenticatedActor | None:
-    if reception.memory is not None:
-        access = await authorize_workspace(
-            session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.memory_provider_read
-        )
-        provider = await session.get(MemoryProviderRecord, reception.memory.provider_id)
-        if (
-            provider is None
-            or not provider.enabled
-            or provider.organization_id != access.organization_id
-            or provider.workspace_id not in (None, workspace_id)
-        ):
-            raise NativeError(
-                "invalid_memory_provider",
-                "The selected Memory Provider is unavailable.",
-                category=ErrorCategory.invalid_request,
-            )
-        require_document_support(provider.type, memory_catalog)
     if reception.default_agent_id is not None:
         await authorize_agent(
             session,

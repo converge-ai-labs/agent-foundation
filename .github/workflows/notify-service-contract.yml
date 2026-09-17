@@ -1,0 +1,75 @@
+name: Notify SDK contract consumers
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'proto/a13n-service/**'
+      - 'spec/api-conventions.md'
+      - 'spec/a13n-service/**'
+      - 'packages/a13n-service/**'
+      - 'packages/a13n-stream-protocol/**'
+      - 'packages/a13n-harness/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'scripts/export-a13n-service-openapi.py'
+      - '.github/workflows/notify-service-contract.yml'
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Complete Service main-line SHA to notify or retry
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notify-service-contract
+  queue: max
+
+jobs:
+  notify:
+    if: github.ref == 'refs/heads/main' && vars.SERVICE_CONTRACT_APP_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repository: [a13n-sdk-python, a13n-sdk-go, a13n-sdk-rust, a13n-sdk-typescript]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Validate immutable source on main
+        id: source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha || github.sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo 'A full Service SHA is required' >&2; exit 1; }
+          [[ $(git rev-parse "$SOURCE_SHA^{commit}") == "$SOURCE_SHA" ]]
+          git merge-base --is-ancestor "$SOURCE_SHA" origin/main
+          echo "sha=$SOURCE_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Target-scoped dispatch token
+        uses: actions/create-github-app-token@v3
+        id: dispatch-token
+        with:
+          client-id: ${{ vars.SERVICE_CONTRACT_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SERVICE_CONTRACT_APP_PRIVATE_KEY }}
+          owner: converge-ai-labs
+          repositories: ${{ matrix.repository }}
+          permission-contents: write
+
+      - name: Notify the independent SDK, without building or publishing it
+        env:
+          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+          TARGET_REPOSITORY: ${{ matrix.repository }}
+          SOURCE_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          jq -n --arg sha "$SOURCE_SHA" '{
+            event_type: "service-contract-updated",
+            client_payload: {repository: "converge-ai-labs/agent-foundation", commit: $sha}
+          }' | gh api --method POST "repos/converge-ai-labs/$TARGET_REPOSITORY/dispatches" --input -

@@ -8,6 +8,8 @@
   },
   "scripts": {
     "build": "vite build",
+    "generate": "node generate-service-client.mjs",
+    "generate:check": "node generate-service-client.mjs --check",
     "check": "pnpm run typecheck",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "dev": "vite",
@@ -20,12 +22,13 @@
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
     "jsdom": "^29.1.1",
+    "openapi-typescript": "7.13.0",
     "typescript": "^5.9.3",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
   },
   "dependencies": {
-    "@converge.ai/a13n": "link:../../../sdk/typescript",
+    "openapi-fetch": "0.17.0",
     "@daypicker/react": "^10.0.1",
     "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-query": "^5.102.8",
@@ -33,6 +36,7 @@
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
     "decimal.js-light": "^2.5.1",
+    "diff": "8.0.4",
     "fflate": "^0.8.3",
     "i18next": "^25.0.0",
     "react": "^19.2.8",

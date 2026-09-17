@@ -1,4 +1,4 @@
-import { createClient, type Client } from "@converge.ai/a13n";
+import { createClient, type Client } from "../service-client";
 import {
   MutationCache,
   QueryCache,

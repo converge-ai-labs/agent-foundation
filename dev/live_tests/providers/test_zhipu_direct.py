@@ -52,9 +52,7 @@ async def official_zhipu(request):
 async def test_official_provider_discovery_and_model_test(official_zhipu):
     # BigModel currently omits the free Flash model from its /models catalog.
     # Manual model IDs must remain usable without requiring catalog membership.
-    await direct_model.check_provider_discovery_and_model_test(
-        official_zhipu, require_catalog_entry=official_zhipu[1]["upstream_model"] != "glm-4.7-flash"
-    )
+    await direct_model.check_provider_connection_and_model_test(official_zhipu)
 
 
 async def test_official_stream_usage_and_continuation(official_zhipu):

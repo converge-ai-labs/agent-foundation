@@ -19,7 +19,7 @@ from .conftest import WORKSPACE_ID, actor
 
 def test_local_types_require_explicit_oss_deployment_configuration():
     assert not LOCAL_PROVIDER_TYPES.intersection(build_environment_catalog(Settings(), Components()))
-    configured = Settings(environments={"local_providers": {"a13n.docker": {"host_id": "worker"}}})
+    configured = Settings(environments={"local_providers": {"a13n.docker": {}}})
     catalog = build_environment_catalog(configured, Components())
     assert "a13n.docker" in catalog and "a13n.direct-local" not in catalog
     with pytest.raises(ValueError, match="local_providers"):
@@ -31,7 +31,7 @@ def test_local_types_require_explicit_oss_deployment_configuration():
 @pytest.mark.anyio
 async def test_startup_publishes_one_read_only_organization_provider(environment_sessions, protector):
     catalog = build_environment_provider_catalog(builtin_keys=("a13n.docker",))
-    configuration = {"a13n.docker": {"host_id": "worker", "docker_host": "unix:///run/docker.sock"}}
+    configuration = {"a13n.docker": {"docker_host": "unix:///run/docker.sock"}}
     async with create_task_group() as tasks:
         for _ in range(2):
             tasks.start_soon(synchronize_local_providers, environment_sessions, catalog, configuration)
@@ -57,13 +57,15 @@ async def test_startup_publishes_one_read_only_organization_provider(environment
 async def test_reconfiguration_preserves_old_identity_and_disables_removed_backend(environment_sessions, protector):
     catalog = build_environment_provider_catalog(builtin_keys=("a13n.docker",))
     service = EnvironmentService(environment_sessions, catalog, protector)
-    first = {"a13n.docker": {"host_id": "first-host"}}
+    first = {"a13n.docker": {"docker_host": "unix:///first/docker.sock"}}
     await synchronize_local_providers(environment_sessions, catalog, first)
     original = (await service.list_providers(actor=actor(), workspace_id=WORKSPACE_ID)).items[0]
     await synchronize_local_providers(environment_sessions, catalog, first)
     assert (await service.get_provider(actor=actor(), resource_id=original.id)) == original
 
-    await synchronize_local_providers(environment_sessions, catalog, {"a13n.docker": {"host_id": "second-host"}})
+    await synchronize_local_providers(
+        environment_sessions, catalog, {"a13n.docker": {"docker_host": "unix:///second/docker.sock"}}
+    )
     providers = (await service.list_providers(actor=actor(), workspace_id=WORKSPACE_ID)).items
     assert len(providers) == 2
     assert sum(provider.enabled for provider in providers) == 1
@@ -104,3 +106,17 @@ async def test_deployment_provider_cannot_be_edited_even_by_organization_admin(e
             if_match=resource_etag(provider.id, provider.updated_at),
         )
     assert (await service.get_provider(actor=actor(), resource_id=provider.id)) == provider
+
+
+def test_distributed_deployment_rejects_local_providers():
+    with pytest.raises(ValueError, match="single_host"):
+        Settings(deployment={"mode": "distributed"}, environments={"local_providers": {"a13n.docker": {}}})
+    catalog = build_environment_catalog(Settings(deployment={"mode": "distributed"}), Components())
+    assert "a13n.e2b" in catalog
+
+
+def test_service_rejects_local_envd():
+    with pytest.raises(ValueError):
+        Settings(environments={"local_providers": {"a13n.local-envd": {}}})
+    with pytest.raises(ValueError, match="Local Envd"):
+        Settings(environments={"provider_builtins": ["a13n.local-envd"]})

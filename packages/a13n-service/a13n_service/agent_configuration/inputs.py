@@ -174,6 +174,9 @@ class ConfigurationInputs:
                 if is_fork
                 else initialize_completed_continuation_state(seed, parent)
             )
+        # Ordinary configuration input adopts the current deployed budget, even
+        # when its conversation history comes from a lower-budget Run.
+        state = state.model_copy(update={"usage_limits": seed.usage_limits})
         run = self._policy.create(
             now=self._clock(),
             id=run_id,

@@ -654,3 +654,7 @@ Adding a new Service callback requires an owning lifecycle boundary, exact input
 18. `RunControlGate` is private lock and local state inside `RunAttemptControl`, not a callable component or authority; it performs no I/O and calls neither Harness nor the driver.
 19. Harness/Pydantic owns each raw `RunContext` and `AgentContext`; the mandatory Capability only borrows it, a driver-owned `HarnessHookBoundary` wraps it for one awaited hook, and no Service object retains it after boundary exit.
 20. Inbox incorporation is recorded synchronously before history replacement; the next complete checkpoint merges those records with its possibly compacted continuation and prior receipts, independently of event-listener or driver progress.
+
+## Execution Memory Composition
+
+Memory preparation and per-node construction use the [application-neutral Memory contract](42-memory.md#execution-memory-selection). Worker consumes an explicit disabled result or a Harness Memory capability uniformly for root and child Agents. It does not inspect Bot identity, construct conversation subjects, or fall back after preparation errors. Ordinary automatic recall and immutable document index-first navigation are supplied by their selected behaviors through existing Harness capabilities.

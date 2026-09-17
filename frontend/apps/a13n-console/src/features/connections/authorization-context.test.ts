@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import type { Client } from "@converge.ai/a13n";
+import type { Client } from "../../service-client";
 import type { Schema } from "../../shared/api";
 import {
   clearAuthorization,

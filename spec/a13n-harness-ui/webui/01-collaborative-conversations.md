@@ -8,6 +8,8 @@ Pair prompting means multiple participants editing the same prompt, not submitti
 
 Collaboration is scoped to one running server instance. Opening the same data root in several independent App processes does not create a distributed collaboration server or share their current operation receipts.
 
+The current browser does not expose comment controls or load discussions. The retained App/API comment contract and stored records remain unchanged; historical captured references remain readable.
+
 ## Shared Values and Authority
 
 | Value                | Meaning                                                                      | Authority and lifetime                                                       |
@@ -66,6 +68,10 @@ The browser distinguishes local unsynchronized changes, synchronized editing sta
 
 Send is a frontend action: it captures the current authored order and selected attachments and calls the existing root submission API. The HTTP boundary accepts ordered text/Thread-reference parts, while retaining the legacy prompt-plus-trailing-IDs form; combining nonempty legacy content with ordered parts is rejected. The App resolves references through its ordinary composer owner, not a new runtime protocol. The immutable submitted input does not change when participants continue editing. The App's one-active-root-operation rule remains in force. Document versions are synchronization metadata, not a separate server-side submission, deduplication, or recovery protocol.
 
+Ordered submission accepts an optional `source_id` in the canonical `input_` plus 32 lowercase hexadecimal shape (also accepting the legacy `input-` spelling). It requires ordered parts and propagates unchanged into input presentation metadata. This is correlation only: not an idempotency key, receipt, authority, or permission to retry. Each Send or Steer allocates its own identity even when steering the same receipt repeatedly.
+
+The initiating tab immediately displays a private input preview before synchronization, creation, or upload finishes. This preview never enters the shared CRDT. Preparing, accepted, rejected, and unknown observations remain distinct. Exact source identity merges local, streamed, and saved input into one displayed message; equal text or filenames do not establish identity. Only authoritative saved input retires its private preview. Other participants observe ordinary accepted input, not this tab's pending preview.
+
 Successful submission does not discard edits outside the captured snapshot. A client can retain an exact CRDT replica for the captured input, delete its visible text and selections only after a positive submission acknowledgement, then merge that deletion update into its current replica. Clearing by current text offsets or replacing the live document with an empty value is not equivalent: it can erase uncaptured edits. The server owns no Send-version registry. A rejected submission retains editable content. Preparing the next prompt during a Run is editing, not acceptance into a durable execution queue. The UI distinguishes explicit steering of the current Run from an ordinary next prompt.
 
 Submission rejection, acceptance, and an unknown outcome are different observations. A lost response does not trigger an automatic retry. The browser shows available operation evidence and leaves an unresolved outcome explicit. Neither CRDT synchronization nor root admission promises exactly-once submission or external effects. Editing state never authorizes automatic execution.
@@ -85,7 +91,7 @@ Attachments use the existing Thread-scoped input identity and limits. Draft/cont
 
 A Thread SSE update or reset does not reset the composer, clear published comments, or change the participant's page. A draft update does not append an assistant message or alter saved history. The frontend keeps these state owners independent of component rerendering. There is no global ordering or transaction across SSE, interactive delivery, and HTTP acknowledgements; submission and comment publication use their own explicit completion boundaries.
 
-After a page reload, the browser reestablishes presence, reloads saved comments and history, and rejoins an available draft independently. A draft incarnation change is not a comment reset. A presence snapshot is not proof that all Thread events or comments have been received.
+After a page reload, the browser reestablishes presence, reloads saved history, and rejoins an available draft independently. Comment reads remain disabled in the current browser. A draft incarnation change is not a comment reset. A presence snapshot is not proof that all Thread events or comments have been received.
 
 ## Shared Execution and Decisions
 

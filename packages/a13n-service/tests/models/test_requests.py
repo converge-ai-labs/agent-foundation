@@ -431,18 +431,17 @@ async def test_openrouter_unknown_vendor_prefix_preserves_explicit_thinking(stre
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("profile", "thinking", "code"),
+    ("profile", "thinking"),
     [
-        (ModelProfile(supports_thinking=False), "high", "model_thinking_unsupported"),
+        (ModelProfile(supports_thinking=False), "high"),
         (
             ModelProfile(supports_thinking=True, thinking_always_enabled=True),
             False,
-            "model_thinking_always_enabled",
         ),
     ],
 )
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_explicit_unified_thinking_is_not_silently_dropped(profile, thinking, code, streaming, monkeypatch):
+async def test_native_profile_owns_unsupported_thinking_behavior(profile, thinking, streaming, monkeypatch):
     native = TestModel(profile=profile)
     close = AsyncMock(return_value=None)
     monkeypatch.setattr(TestModel, "__aexit__", close)
@@ -458,11 +457,30 @@ async def test_explicit_unified_thinking_is_not_silently_dropped(profile, thinki
         provider_resolver=resolver,
         model_factory=factory,
     )
-    with pytest.raises(ModelResolutionError) as invalid:
-        await _request(model, streaming=streaming, settings={"thinking": thinking})
+    await _request(model, streaming=streaming, settings={"thinking": thinking})
     close.assert_awaited_once()
-    assert invalid.value.code == code
+    assert native.last_model_request_parameters.thinking is None
     resolver.resolve.assert_awaited_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("thinking", [True, False, "high"])
+async def test_native_unknown_model_ignores_thinking(streaming, thinking):
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return _reply(streaming)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = await _live_model(client, upstream_model="local-scripted")
+        settings = {"thinking": thinking, "max_tokens": 512}
+        await _request(model, streaming=streaming, settings=settings)
+
+    assert len(sent) == 1
+    assert "reasoning_effort" not in sent[0]
+    assert settings == {"thinking": thinking, "max_tokens": 512}
 
 
 @pytest.mark.anyio
@@ -505,7 +523,7 @@ async def test_bedrock_effective_thinking_reaches_native_effort_request_fields()
     )
     settings = effective_settings(
         "bedrock.converse",
-        {"bedrock_additional_model_requests_fields": {"output_config": {}, "unrelated": "preserved"}},
+        {"thinking": "low", "bedrock_additional_model_requests_fields": {"unrelated": "preserved"}},
         {"thinking": "high"},
     )
     with pytest.raises(CapturedRequest):
@@ -518,7 +536,7 @@ async def test_bedrock_effective_thinking_reaches_native_effort_request_fields()
 
 
 @pytest.mark.anyio
-async def test_anthropic_partial_effort_override_preserves_native_thinking_on_wire():
+async def test_anthropic_unified_thinking_reaches_native_effort_on_wire():
     sent = []
 
     def handler(request):
@@ -527,8 +545,8 @@ async def test_anthropic_partial_effort_override_preserves_native_thinking_on_wi
 
     settings = effective_settings(
         "anthropic.messages",
-        {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "low"},
-        {"anthropic_effort": "high"},
+        {"thinking": "low"},
+        {"thinking": "high"},
     )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         native = AnthropicModel(
@@ -555,7 +573,7 @@ async def test_responses_unified_effort_and_preserved_summary_both_reach_wire():
 
     settings = effective_settings(
         "openai.responses",
-        {"extra_body": {"reasoning": {"effort": "low", "summary": "detailed"}}},
+        {"thinking": "low", "openai_reasoning_summary": "detailed"},
         {"thinking": "high"},
     )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:

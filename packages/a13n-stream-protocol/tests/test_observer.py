@@ -386,6 +386,27 @@ def test_reasoning_tool_and_tool_result_use_standard_agui_events() -> None:
     assert tool_result[0].content == '{"found":1}'
 
 
+def test_native_tool_media_is_a_tool_result_not_user_input_or_binary_transport() -> None:
+    from pydantic_ai.messages import BinaryContent
+
+    image = BinaryContent(data=b"\x89PNG\r\n\x1a\n" + b"x" * (2 * 1024 * 1024), media_type="image/png")
+    native = FunctionToolResultEvent(
+        ToolReturnPart(tool_name="view", tool_call_id="call-image", content="The image/png file is attached."),
+        content=[image],
+    )
+    assert native.event_kind == "function_tool_result"
+    events = HarnessAguiObserver().observe(_event(0, native))
+    assert len(events) == 1
+    result = events[0]
+    assert isinstance(result, ToolCallResultEvent)
+    assert result.role == "tool"
+    assert result.tool_call_id == "call-image"
+    assert result.message_id == "call-image:result"
+    assert result.content == "The image/png file is attached."
+    assert len(result.model_dump_json()) < 512
+    assert native.content == [image]  # Native model content is untouched.
+
+
 def test_complete_tool_arguments_use_tool_call_args_event() -> None:
     observer = HarnessAguiObserver()
 

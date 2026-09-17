@@ -11,6 +11,7 @@ on:
       - "deploy/containers/a13n-service/Dockerfile"
       - "deploy/containers/a13n-service/service.toml"
       - "deploy/containers/sandbox/Dockerfile"
+      - "deploy/containers/docker-environment/Dockerfile"
       - "LICENSE"
       - "crates/a13n-envd/**"
       - "packages/a13n-envd-client/pyproject.toml"
@@ -74,6 +75,10 @@ jobs:
               - 'pyproject.toml'
               - 'scripts/docker-entrypoint.sh'
               - 'uv.lock'
+            docker_environment:
+              - ".github/workflows/ci-containers.yml"
+              - "deploy/containers/docker-environment/Dockerfile"
+              - "Makefile"
             sandbox:
               - '.dockerignore'
               - '.github/workflows/ci-containers.yml'
@@ -87,6 +92,7 @@ jobs:
         id: matrix
         env:
           A13N_SERVICE_CHANGED: ${{ steps.filter.outputs.service }}
+          DOCKER_ENVIRONMENT_CHANGED: ${{ steps.filter.outputs.docker_environment }}
           SANDBOX_CHANGED: ${{ steps.filter.outputs.sandbox }}
         run: |
           python - <<'PY'
@@ -107,6 +113,13 @@ jobs:
                   "runner": "ubuntu-24.04-8core",
                   "build_target": "image-sandbox",
                   "check_target": "image-check-sandbox",
+              })
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["DOCKER_ENVIRONMENT_CHANGED"] == "true":
+              images.append({
+                  "name": "a13n-docker-environment",
+                  "runner": "ubuntu-latest",
+                  "build_target": "image-docker-environment",
+                  "check_target": "image-check-docker-environment",
               })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")

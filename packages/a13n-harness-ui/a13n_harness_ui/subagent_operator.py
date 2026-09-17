@@ -127,7 +127,6 @@ _JSON_ADAPTER = TypeAdapter(JsonValue)
 _MAX_WAIT_SECONDS = 180.0
 _DEFAULT_WAIT_SECONDS = 30.0
 _MAX_ACTIVITY_TEXT = 32 * 1024
-_MAX_FINAL_ANSWER = 64 * 1024
 _MAX_DISPLAY_ACTIVITIES = 512
 _MAX_TOOL_VALUE_TEXT = 8 * 1024
 _MAX_FAILURE_CODE = 256
@@ -1827,7 +1826,7 @@ def _with_completion(display: CompactChildDisplay, *, output: object) -> Compact
     activities = list(display.activities)
     final_answer = display.final_answer
     if isinstance(output, str) and output:
-        final_answer = output[:_MAX_FINAL_ANSWER]
+        final_answer = output
         if not (activities and activities[-1].kind == "text" and activities[-1].text == output):
             activities.append(CompactChildActivity(kind="text", text=output[:_MAX_ACTIVITY_TEXT]))
     activities.append(CompactChildActivity(kind="completion"))

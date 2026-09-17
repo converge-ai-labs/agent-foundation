@@ -1,8 +1,17 @@
+import { Button } from "a13n-ui";
+import {
+  ArrowRightIcon,
+  ChatCircleDotsIcon,
+  BrainIcon,
+} from "@phosphor-icons/react";
+import { botAccount } from "./account";
+import { useAgent } from "../agents/queries";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { StateBadge, Timestamp } from "../../shared/feedback";
+import { EventConnection } from "./event-connection";
 import { BotChecks } from "./checks";
 import { LatestBotTest } from "./test-observation";
 import { conditions, stages } from "./summary-labels";
@@ -10,13 +19,15 @@ import {
   messagingPolicy,
   responseLabels,
   placementLabels,
+  automaticPlacementHint,
 } from "../application-accounts/messaging-fields";
 import styles from "./bots.module.css";
 
 export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
   const { t } = useTranslation(),
     { basePath, can } = useWorkspace(),
-    account = summary.account;
+    account = botAccount(summary);
+  const agent = useAgent(account.default_agent_id ?? undefined);
   const admin = can("application_account.manage"),
     policy = messagingPolicy(account.provider_policy);
   const settings = `${basePath}/bots/${account.id}/settings`,
@@ -126,10 +137,15 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
       )}
       <div className={styles.overview}>
         <section>
-          <h2>{t("Reception")}</h2>
-          <StateBadge
-            state={account.receive_enabled ? "enabled" : "disabled"}
-          />
+          <header className={styles.overviewCardHeader}>
+            <h2>
+              <ChatCircleDotsIcon aria-hidden="true" />
+              {t("Message responses")}
+            </h2>
+            <StateBadge
+              state={account.receive_enabled ? "enabled" : "disabled"}
+            />
+          </header>
           <p>
             {t(
               account.reception_scope === "configured_targets"
@@ -138,70 +154,121 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
             )}
           </p>
           <dl className={styles.overviewFacts}>
-            <dt>{t("Default agent")}</dt>
-            <dd>
-              {account.default_agent_id ? (
-                <Link to={`${basePath}/agents/${account.default_agent_id}`}>
-                  {account.default_agent_id}
+            <div>
+              <dt>{t("Default agent")}</dt>
+              <dd>
+                {!account.default_agent_id ? (
+                  t("Not configured")
+                ) : agent.data && !agent.error ? (
+                  <Link
+                    className={styles.factLink}
+                    to={`${basePath}/agents/${agent.data.key}`}
+                  >
+                    {agent.data.name}
+                    <ArrowRightIcon aria-hidden="true" />
+                  </Link>
+                ) : (
+                  t(agent.isPending ? "Loading…" : "Agent unavailable")
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("When to respond")}</dt>
+              <dd>
+                <span className={styles.factValue}>
+                  {policy
+                    ? t(responseLabels[policy.interaction_mode])
+                    : t("Not configured")}
+                </span>
+              </dd>
+            </div>
+            <div>
+              <dt>{t("Reply placement")}</dt>
+              <dd>
+                <span className={styles.factValue}>
+                  {policy
+                    ? t(placementLabels[policy.reply_mode])
+                    : t("Not configured")}
+                </span>
+                {policy?.reply_mode === "auto" && (
+                  <small className={styles.factHint}>
+                    {t(automaticPlacementHint)}
+                  </small>
+                )}
+              </dd>
+            </div>
+            <div>
+              <dt>{t("Configured conversations")}</dt>
+              <dd>
+                <Link className={styles.factLink} to={groups}>
+                  {summary.configured_target_count}
+                  <ArrowRightIcon aria-hidden="true" />
                 </Link>
-              ) : (
-                t("Not configured")
-              )}
-            </dd>
-            <dt>{t("When to respond")}</dt>
-            <dd>
-              {policy
-                ? t(responseLabels[policy.interaction_mode])
-                : t("Not configured")}
-            </dd>
-            <dt>{t("Reply placement")}</dt>
-            <dd>
-              {policy
-                ? t(placementLabels[policy.reply_mode])
-                : t("Not configured")}
-            </dd>
-            <dt>{t("Configured conversations")}</dt>
-            <dd>
-              <Link to={groups}>{summary.configured_target_count}</Link>
-            </dd>
+              </dd>
+            </div>
           </dl>
         </section>
         <section>
-          <h2>{t("Conversation memory")}</h2>
+          <header className={styles.overviewCardHeader}>
+            <h2>
+              <BrainIcon aria-hidden="true" />
+              {t("Group memory")}
+            </h2>
+          </header>
           <p>
             {t(
               account.memory
-                ? "Groups keep separate memory unless you explicitly share it."
+                ? "Default memory behavior for this bot. Each group controls who can read its memory."
                 : "Memory is not configured. Your bot can still participate in conversations.",
             )}
           </p>
           {account.memory && (
             <dl className={styles.overviewFacts}>
-              <dt>{t("Use memory during conversations")}</dt>
-              <dd>{t(account.memory.use_memory ? "Enabled" : "Disabled")}</dd>
-              <dt>{t("Allow explicit save and forget requests")}</dt>
-              <dd>
-                {t(account.memory.save_on_request ? "Enabled" : "Disabled")}
-              </dd>
+              <div>
+                <dt>{t("Use memory during conversations")}</dt>
+                <dd>
+                  <StateBadge
+                    state={account.memory.use_memory ? "enabled" : "disabled"}
+                  />
+                </dd>
+              </div>
+              <div>
+                <dt>{t("Allow explicit save and forget requests")}</dt>
+                <dd>
+                  <StateBadge
+                    state={
+                      account.memory.save_on_request ? "enabled" : "disabled"
+                    }
+                  />
+                </dd>
+              </div>
             </dl>
           )}
-          <p>
-            {t("Memory management is available to workspace administrators.")}
-          </p>
-          {admin && (
-            <Link to={`${basePath}/bots/${account.id}/memory`}>
-              {t("Manage memory")}
-            </Link>
-          )}
+          <footer className={styles.overviewCardFooter}>
+            <p>
+              {t("Memory management is available to workspace administrators.")}
+            </p>
+            {admin && (
+              <Button
+                variant="outline"
+                render={<Link to={`${basePath}/bots/${account.id}/memory`} />}
+              >
+                {t("Manage memory")}
+                <ArrowRightIcon aria-hidden="true" />
+              </Button>
+            )}
+          </footer>
         </section>
       </div>
-      <BotChecks account={account} />
+      {account.provider_config.event_transport === "websocket" && (
+        <div className={styles.eventConnection}>
+          <EventConnection account={account} />
+        </div>
+      )}
+      <BotChecks account={account} showAccountLink />
       <div className={styles.overviewTest}>
         <LatestBotTest account={account} />
       </div>
-      <Link to={`${basePath}/application-accounts/${account.id}`}>
-        {t("View application account")}
-      </Link>
     </>
   );
 }

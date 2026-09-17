@@ -17,12 +17,14 @@ import {
   DraftLinks,
 } from "./sources";
 import type { ResourceKind } from "./documents";
+import { InstallSettings } from "../shell/install";
 import styles from "../shell/workbench.module.css";
 
 const sections = [
   { path: "/settings", label: "General" },
   { path: "/settings/notifications", label: "Notifications" },
-  { path: "/settings/agents", label: "Agents & models" },
+  { path: "/settings/agents", label: "Agents" },
+  { path: "/settings/models", label: "Models" },
   { path: "/settings/capabilities", label: "Capabilities" },
   { path: "/settings/environments", label: "Environments" },
   { path: "/projects", label: "Projects" },
@@ -42,13 +44,15 @@ export function SettingsLayout() {
       ? "/settings"
       : source?.resource_kind === "project"
         ? "/projects"
-        : source?.resource_kind === "agent" || source?.resource_kind === "model"
-          ? "/settings/agents"
-          : source?.resource_kind === "environment_profile"
-            ? "/settings/environments"
-            : source?.resource_kind === "mcp_server"
-              ? "/settings/connections"
-              : "/settings/resources";
+        : source?.resource_kind === "model"
+          ? "/settings/models"
+          : source?.resource_kind === "agent"
+            ? "/settings/agents"
+            : source?.resource_kind === "environment_profile"
+              ? "/settings/environments"
+              : source?.resource_kind === "mcp_server"
+                ? "/settings/connections"
+                : "/settings/resources";
   return (
     <div className={styles.settings}>
       <nav
@@ -104,6 +108,7 @@ export function GeneralSettings() {
           <Link to="/setup">Start setup</Link>
         </Panel>
       )}
+      <InstallSettings />
       <details className={styles.details}>
         <summary>Setup & diagnostics</summary>
         <Link to="/setup">Guided setup and environment checks</Link>

@@ -83,7 +83,7 @@ def effective_agent_config(*, assets_enabled: bool = False) -> EffectiveAgentCon
         model_id=MODEL_ID,
         model_key=MODEL_KEY,
         upstream_model="gpt-5.6-terra",
-        base_model="openai:gpt-5.6-terra",
+        catalog_ref={"provider": "openai", "model": "gpt-5.6-terra"},
         model_api="openai.responses",
     )
     candidate = EffectiveAgentConfig(

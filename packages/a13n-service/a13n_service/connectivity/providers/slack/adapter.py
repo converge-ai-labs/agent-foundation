@@ -8,6 +8,7 @@ import json
 import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter, ValidationError
 
@@ -50,6 +51,7 @@ class _StrictModel(BaseModel):
 
 
 class SlackAccountConfig(_StrictModel):
+    event_transport: Literal["http", "websocket"] = "http"
     api_app_id: str = Field(min_length=1, max_length=128)
     team_id: str = Field(min_length=1, max_length=128)
     enterprise_id: str | None = Field(default=None, min_length=1, max_length=128)
@@ -57,7 +59,8 @@ class SlackAccountConfig(_StrictModel):
 
 
 class SlackAccountCredentials(_StrictModel):
-    signing_secret: SecretStr = Field(min_length=1, max_length=512)
+    app_token: SecretStr | None = Field(default=None, min_length=1, max_length=4096)
+    signing_secret: SecretStr | None = Field(default=None, min_length=1, max_length=512)
     bot_token: SecretStr = Field(min_length=1, max_length=4096)
 
 
@@ -125,29 +128,12 @@ class SlackIngressAdapter:
     ) -> ProviderRequestDecision:
         del account_id
         config = SlackAccountConfig.model_validate(account_config)
+        if config.event_transport != "http":
+            return ProviderCompleteDecision(response=ProviderHttpResponse(status_code=404, body=b"", headers={}))
         secret = _required_string(credentials, "signing_secret")
         _authenticate(request, secret=secret, received_at=received_at)
         payload = _parse_object(request.body)
-        _verify_installation(payload, config)
-        payload_type = payload.get("type")
-        if payload_type == "url_verification":
-            challenge = payload.get("challenge")
-            if not isinstance(challenge, str) or not 1 <= len(challenge) <= 4096:
-                raise _request_error(400, "invalid_payload")
-            return ProviderCompleteDecision(response=_json_response(200, {"challenge": challenge}))
-        if payload_type != "event_callback":
-            return ProviderCompleteDecision(response=_acknowledgement())
-        event_id = payload.get("event_id")
-        event = payload.get("event")
-        if not isinstance(event_id, str) or not event_id or not isinstance(event, dict):
-            raise _request_error(400, "invalid_payload")
-        try:
-            normalized = _normalize_event(event_id, event, config, received_at)
-        except ValidationError as error:
-            raise _request_error(400, "invalid_payload") from error
-        if normalized is None:
-            return ProviderCompleteDecision(response=_acknowledgement())
-        return ProviderEventDecision(event=normalized)
+        return normalize_payload(payload, config, received_at)
 
     def reception_defaults(
         self,
@@ -364,3 +350,28 @@ def _json_response(status_code: int, body: JsonObject) -> ProviderHttpResponse:
 def _require_version(value: str) -> None:
     if value != _CONFIG_VERSION:
         raise ValueError("unsupported Slack configuration version")
+
+
+def normalize_payload(
+    payload: JsonObject, config: SlackAccountConfig, received_at: datetime
+) -> ProviderRequestDecision:
+    _verify_installation(payload, config)
+    payload_type = payload.get("type")
+    if payload_type == "url_verification":
+        challenge = payload.get("challenge")
+        if not isinstance(challenge, str) or not 1 <= len(challenge) <= 4096:
+            raise _request_error(400, "invalid_payload")
+        return ProviderCompleteDecision(response=_json_response(200, {"challenge": challenge}))
+    if payload_type != "event_callback":
+        return ProviderCompleteDecision(response=_acknowledgement())
+    event_id = payload.get("event_id")
+    event = payload.get("event")
+    if not isinstance(event_id, str) or not event_id or not isinstance(event, dict):
+        raise _request_error(400, "invalid_payload")
+    try:
+        normalized = _normalize_event(event_id, event, config, received_at)
+    except ValidationError as error:
+        raise _request_error(400, "invalid_payload") from error
+    if normalized is None:
+        return ProviderCompleteDecision(response=_acknowledgement())
+    return ProviderEventDecision(event=normalized)

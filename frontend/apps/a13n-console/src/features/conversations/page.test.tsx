@@ -10,7 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router";
-import { createClient, type Client } from "@converge.ai/a13n";
+import { createClient, type Client } from "../../service-client";
 import { ConversationsPage } from "./page";
 
 let client: Client;

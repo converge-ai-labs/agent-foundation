@@ -8,7 +8,6 @@ import { BrandIcon } from "a13n-ui";
 
 const localIcons = {
   "a13n.direct-local": DesktopIcon,
-  "a13n.local-envd": TerminalWindowIcon,
   "a13n.http-envd": GlobeIcon,
   "a13n.websocket-envd": ArrowsLeftRightIcon,
 };

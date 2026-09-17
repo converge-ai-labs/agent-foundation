@@ -1,4 +1,4 @@
-import { ApiError, type Client } from "@converge.ai/a13n";
+import { ApiError, type Client } from "../../service-client";
 import { allPages, data, workspaceHeaders } from "../../shared/api";
 import type { AgentConfig } from "./configuration";
 

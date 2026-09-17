@@ -225,8 +225,9 @@ class _Reader:
 class _Writer(EnvironmentInputWriter):
     writes: list[tuple[str, bytes]] = field(default_factory=list)
 
-    async def replace(self, path: str, chunks: AsyncIterable[bytes]) -> None:
+    async def replace(self, path: str, chunks: AsyncIterable[bytes]) -> str:
         self.writes.append((path, b"".join([chunk async for chunk in chunks])))
+        return path
 
 
 def _recording_adapter(
@@ -284,7 +285,7 @@ async def test_mapper_preserves_order_and_materializes_only_environment_delivery
     content, structured = seen[0]
     assert content[0] == "look"
     assert isinstance(content[1], NativeBinaryContent) and content[1].data == b"data"
-    assert content[2] == "/workspace/.a13n/inputs/run_1234567890abcdef/content-2"
+    assert content[2] == ".a13n/inputs/run_1234567890abcdef/content-2"
     assert structured == {"purpose": "review"}
     assert writer.writes == [(content[2], b"data")]
     assert len(reader.sources) == 2

@@ -7,9 +7,8 @@ import {
   QueryClientProvider,
   focusManager,
 } from "@tanstack/react-query";
-import { ApiError } from "@converge.ai/a13n";
-import { WebProviderEditor, WebProviderTest } from "./editor";
-import { AgentSearchSelection } from "./selection";
+import { ApiError } from "../../service-client";
+import { WebProviderEditor } from "./editor";
 
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -128,9 +127,11 @@ it("keeps the existing credential write-only and sends If-Match for edits", asyn
   await user.click(screen.getByRole("button", { name: "Edit" }));
   expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
   await user.type(screen.getByRole("textbox", { name: "Name" }), " renamed");
+  await user.click(screen.getByRole("switch", { name: "Enabled" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
   expect(http.PATCH.mock.calls[0][1].body).not.toHaveProperty("credential");
+  expect(http.PATCH.mock.calls[0][1].body.enabled).toBe(false);
   expect(http.PATCH.mock.calls[0][1].params.header).toEqual({
     "If-Match": '"v1"',
   });
@@ -152,52 +153,6 @@ it("reconciles an uncertain create before allowing another attempt", async () =>
     http.GET.mock.calls.some(([path]) => path.endsWith("web-providers")),
   ).toBe(true);
   expect(http.POST).toHaveBeenCalledOnce();
-});
-
-it("tests only on explicit click and never automatically repeats an uncertain test", async () => {
-  const user = userEvent.setup();
-  setup(<WebProviderTest scope={scope} providerId={provider.id} />);
-  http.POST.mockRejectedValue(new TypeError("Network unavailable"));
-  expect(http.POST).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Check connection" }));
-  await screen.findByRole("alert");
-  expect(http.POST).toHaveBeenCalledOnce();
-  expect(http.POST.mock.calls[0][1].body).toBeUndefined();
-});
-
-it("opens centralized provider setup without changing the agent draft and refreshes choices on return", async () => {
-  const draft = {
-    provider_id: provider.id,
-    max_results: 7,
-    allow_domains: ["example.com"],
-  };
-  const changed = vi.fn();
-  const user = userEvent.setup();
-  setup(<AgentSearchSelection value={draft} onChange={changed} />);
-  await user.click(
-    screen.getByRole("button", { name: /Configure web search/ }),
-  );
-  const link = screen.getByRole("link", { name: "Manage Web Providers" });
-  expect(link.getAttribute("href")).toBe(
-    "/workspace/research/settings?section=providers&category=search",
-  );
-  expect(link.getAttribute("target")).toBe("_blank");
-  expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
-  expect(changed).not.toHaveBeenCalled();
-  expect(http.POST).not.toHaveBeenCalled();
-  await waitFor(() => expect(http.GET).toHaveBeenCalledOnce());
-  focusManager.setFocused(false);
-  focusManager.setFocused(true);
-  await waitFor(() => expect(http.GET).toHaveBeenCalledTimes(2));
-  expect(
-    screen.getByRole("spinbutton", { name: "Maximum results" }),
-  ).toHaveProperty("value", "7");
-  expect(
-    screen.getByRole("textbox", { name: "Include domains" }),
-  ).toHaveProperty("value", "example.com");
-  expect(changed).not.toHaveBeenCalled();
-  focusManager.setFocused(undefined);
 });
 
 it("retains the provider draft across a stale ETag and requires loading the current version before resubmitting", async () => {

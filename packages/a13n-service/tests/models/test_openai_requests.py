@@ -201,7 +201,7 @@ async def test_base_model_profile_preserves_relay_identity_endpoint_and_thinking
         model_id="mdl_1234567890abcdef",
         model_key="relay",
         upstream_model="my-gpt-5-5",
-        base_model="openai:gpt-5.5",
+        catalog_ref={"provider": "openai", "model": "gpt-5.5"},
         model_api="openai.responses",
     )
 
@@ -260,7 +260,7 @@ async def test_openai_base_profile_routes_thinking_through_explicit_chat_overrid
         model_id="mdl_1234567890abcdef",
         model_key="relay-chat",
         upstream_model="my-gpt-5",
-        base_model="openai:gpt-5",
+        catalog_ref={"provider": "openai", "model": "gpt-5"},
         model_api="openai.chat_completions",
     )
 
@@ -298,7 +298,7 @@ async def test_deepseek_base_profile_survives_openai_relay_agent_lifecycle(strea
         model_id="mdl_1234567890abcdef",
         model_key="relay-deepseek",
         upstream_model="my-deepseek-reasoner",
-        base_model="deepseek:deepseek-reasoner",
+        catalog_ref={"provider": "deepseek", "model": "deepseek-reasoner"},
         model_api="openai.chat_completions",
     )
 

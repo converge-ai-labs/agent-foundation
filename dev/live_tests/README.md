@@ -191,7 +191,7 @@ If a configured local proxy returns non-global DNS addresses, narrowly allow onl
 
 ## Manual correctness suites
 
-The other seven reviewed suites contain 490 distinct cases and remain available through `make live-test-ci`; `smoke` is a 34-case subset, not additional coverage. The full parameter matrices remain available through the ordinary live-test opt-ins below. These other suites run serially, using either infrastructure mode. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup. Independent invocations, shards and Core smoke pytest workers each own their lab resources.
+The other seven reviewed suites contain 451 distinct cases and remain available through `make live-test-ci`; `smoke` is a 34-case subset, not additional coverage. The full parameter matrices remain available through the ordinary live-test opt-ins below. These other suites run serially, using either infrastructure mode. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup. Independent invocations, shards and Core smoke pytest workers each own their lab resources.
 
 | Suite                 | Selected cases | Coverage                                                                                                                                                                                                                               |
 | --------------------- | -------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -200,10 +200,10 @@ The other seven reviewed suites contain 490 distinct cases and remain available 
 | `control`             |             63 | Cases 45–50: acceptance, waiting, concurrency, branches, queue and inbox boundaries                                                                                                                                                    |
 | `fork-queue`          |             49 | Cases 51–56, including both case-54 files: child results, Steer/queue races and Fork independence                                                                                                                                      |
 | `run-faults`          |             59 | Cases 37–42: persistence, control receipts, budgets/drain, acceptance/queue faults, current authority and dependency failures                                                                                                          |
-| `environment-native`  |            112 | Local/Docker/envd files, lifecycle, transport failures, bootstrap boundaries and real ENOSPC                                                                                                                                           |
-| `environment-service` |             65 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                                                              |
+| `environment-native`  |             81 | Local/Docker/envd files, lifecycle, transport failures, native exec and real ENOSPC                                                                                                                                                    |
+| `environment-service` |             57 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                                                              |
 
-The reviewed suites use scripted local model endpoints and local MCP/Connector fixtures. Depending on the selection, labs start real Control/Worker processes and use real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Five selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
+The reviewed suites use scripted local model endpoints and local MCP/Connector fixtures. Depending on the selection, labs start real Control/Worker processes and use real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
 
 The reduced combinations preserve these representative boundaries:
 
@@ -213,7 +213,7 @@ The reduced combinations preserve these representative boundaries:
 - Lost successor replies: Continue before/after commit plus committed Fork, Retry, Feedback and waiting Continue (6). Async-child delivery retains running, approval-waiting, completed and cancelled parents (4).
 - Model streams: one truncated, malformed or timeout failure plus repeated truncation that exhausts recovery (4); explicit 429 recovery and exhausted 503 rejection (2). PostgreSQL, Redis and S3 outage/recovery tests remain.
 - Environment sharing: first preparation with both `on_run`/`on_use` for direct-local and Docker (4); Docker cancellation/crash, Worker crash with HTTP Envd and cancellation with WebSocket Envd (4). Tools/access, template and lifecycle conformance still exercise all four non-cloud Service backends. Both principal-disable and role-revocation tests check the request-11 IAM refresh boundary and the other Worker's independent authority.
-- Native file failures: every missing-file operation and wrong-type operation remains represented, distributed across backends instead of their full Cartesian products (10 and 8). Traversal, symlink escape, read-only denial, real OS permissions and aborted writes retain every backend. Docker bootstrap corruption covers all four operations and four corruption kinds in four representative pairs.
+- Native file failures: every missing-file operation and wrong-type operation remains represented, distributed across backends instead of their full Cartesian products (10 and 8). Traversal, symlink escape, read-only denial, real OS permissions and aborted writes retain every backend. Native Docker covers bounded output, cancellation, initialization failure, external mounts, lost containers and real ENOSPC.
 
 Lab setup calls the committed migrations and identity seeding directly with explicit lab settings, using one database engine for both identities. Core resource provisioning also runs directly through Control HTTP. Control and Worker remain separate processes; setup no longer starts bootstrap or provisioning interpreters. The manual `init`, `bootstrap`, and `setup` commands use the same helpers. Function-scoped fault labs own fresh databases, buckets, fault relays and Service processes. `--basetemp` creates missing parent directories before pytest starts. The local Composio Host supplies its HTTPS peer through trusted composition while provider requests retain the production empty configuration schema; Docker file evidence is read as the container user through Docker, independently of Harness tools.
 
@@ -233,7 +233,7 @@ make live-test-ci suite=environment-native
 make live-test-ci suite=environment-service
 ```
 
-The manual entry point ignores ambient Service/AWS/live-account/telemetry settings and pytest selection overrides. It does not load `.env`. `A13N_ENVD_TEST_BINARY`, `LIVE_TEST_SANDBOX_IMAGE`, `LIVE_TEST_FILE_RESOURCE_IMAGE` and `LIVE_TEST_DOCKER_RESOURCE_IMAGE` can select explicit local build artifacts. An additional `-k` expression only narrows the reviewed selection; it cannot re-enable E2B. `--junitxml` and `--basetemp` accept explicit output paths. On Linux, install Bubblewrap and enable unprivileged user namespaces before running Local Envd cases; native isolation remains enabled.
+The manual entry point ignores ambient Service/AWS/live-account/telemetry settings and pytest selection overrides. It does not load `.env`. `A13N_ENVD_TEST_BINARY`, `LIVE_TEST_SANDBOX_IMAGE`, `LIVE_TEST_FILE_RESOURCE_IMAGE` and `LIVE_TEST_DOCKER_IMAGE` can select explicit local build artifacts. An additional `-k` expression only narrows the reviewed selection; it cannot re-enable E2B. `--junitxml` and `--basetemp` accept explicit output paths. On Linux, install Bubblewrap and enable unprivileged user namespaces before running Local Envd cases; native isolation remains enabled.
 
 Use `--junitxml` for a local result report. Process and daemon logs remain in the fixture-owned lab directories for inspection. Collection/support results do not establish live success; inspect the journey results and durations separately.
 
@@ -647,7 +647,7 @@ These tests do not exercise external model inference quality, hosted OAuth user 
 
 ## Five-backend Environment matrix
 
-`environment/test_28_environment_backends.py` adds 15 separately selected journeys for `a13n.local-envd`, `a13n.docker`, `a13n.e2b`, `a13n.http-envd`, and `a13n.websocket-envd`. Each backend runs tools/access, template/preparation, and lifecycle/continuity journeys. The access journey checks read-only, read-write, and full ceilings, actual file/Shell results, and forged tool calls whose prohibited filesystem effects must remain absent. The existing case 22 continues to cover explicit no-environment selection.
+`environment/test_28_environment_backends.py` adds separately selected journeys for `a13n.docker`, `a13n.e2b`, `a13n.http-envd`, and `a13n.websocket-envd`. Each backend runs tools/access, template/preparation, and lifecycle/continuity journeys. The access journey checks read-only, read-write, and full ceilings, actual file/Shell results, and forged tool calls whose prohibited filesystem effects must remain absent. The existing case 22 continues to cover explicit no-environment selection.
 
 | Backend        | Template and preparation                                               | Lifecycle                                                                                                          |
 | -------------- | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
@@ -788,19 +788,13 @@ Expectations follow each provider's semantics:
 - Read-only EIP mutations are unadvertised and return unsupported; Direct Local returns denied. Both reject before consuming streamed input.
 - Wrong-type errors use each provider's defined error family, while every case checks that neither source nor destination was changed.
 
-`environment/test_44_environment_lifecycle.py` adds 21 real-backend cases: closed file facets, fresh scopes, close racing successful/cancelled preparation, Docker stop/start, metadata recovery without waking a target, managed versus external target loss, and lost create/stop/delete responses reconciled against the real Docker engine. Direct Local and Local Envd start a fresh generation over the retained workspace; closing a remote adapter leaves its external daemon alive. Docker stop/start does not assert E2B's process-memory preservation. E2B-specific TTL renewal remains in the dedicated cloud suite.
+`environment/test_44_environment_lifecycle.py` checks closed file facets, fresh scopes and close racing successful or cancelled preparation for Direct Local and local/remote Envd. Direct Local and Local Envd start a fresh generation over the retained workspace; closing a remote adapter leaves its external daemon alive.
 
-`environment/test_50_local_docker_lifecycle.py` adds 23 native lifecycle cases:
+`environment/test_50_local_lifecycle.py` checks inert entry, concurrent preparation, root replacement, local process cleanup, failed daemon startup and externally killed Local Envd daemons. Native Docker has its own suite below.
 
-| Provider     | Cases | Observable contract                                                                                                                                                                                                                                                                                                                                            |
-| ------------ | ----: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Direct Local |     4 | Inert entry and unused close; one preparation under concurrent callers; missing roots are not created; root replacement changes identity; close terminates a live parent/child process tree and fences retained output                                                                                                                                         |
-| Local Envd   |     8 | The same local boundaries; cancellation/error after actual daemon launch cleans private resources; externally killed idle or active daemon cleans its child tree, fences process/output references and permits a fresh generation                                                                                                                              |
-| Docker       |    11 | Inert and concurrent preparation; failed/cancelled readiness preserves the exact created target; forged container identity and ambiguous real metadata cannot redirect ownership; repeated destruction through fresh adapters preserves bind data and other containers; close/rebind preserves process/stdin/output while stop/start changes native generation |
+`environment/test_51_docker_service_lifecycle.py` exercises real Docker, PostgreSQL, Redis, Control and Worker processes: active-use protection followed by idle stop/delete; concurrent Runs sharing one container; Worker death after native creation but before state publication; and stop/delete publication racing new Run use. A successor Worker recovers the same unpublished container. A stopped container is reused; a deleted one is replaced with a new backing generation and empty private workspace.
 
-`environment/test_51_docker_service_lifecycle.py` adds five Service cases over real Docker, PostgreSQL, Redis, Control and Worker processes: active-use protection followed by idle stop/delete without waking or resetting the idle clock; concurrent access to an exclusively admitted EIP Session; Worker death after native creation but before state publication; and stop/delete publication racing new Run use. The successor Worker must recover the same unpublished container and backing generation. A stopped container is reused; a deleted one is replaced with one new backing generation.
-
-E2B permits concurrent SDK attachments; Docker HTTP EIP admits one Session. Docker contention must preserve the current owner and unique container, report unavailability to the competing tool call, and allow reuse after owner close. It does not assert that two independent Runs can simultaneously operate one Docker daemon. Shared retention and crash scenarios live in `environment/lifecycle_cases.py` with native identity/state observations supplied by each provider fixture.
+E2B and native Docker allow concurrent attachments. Shared retention and crash scenarios live in `environment/lifecycle_cases.py`, with native identity/state observations supplied by each Provider fixture. Docker close releases local observation resources without terminating container processes.
 
 Local Envd close after an external SIGKILL reports `provider_cleanup_failed` when clean EIP closure cannot be confirmed; the test independently checks process exit, private-directory removal, workspace preservation and successful fresh preparation. Closed EIP process and port facets must expose public Environment errors rather than leaking client Session exceptions.
 
@@ -808,11 +802,11 @@ Build the current native daemon and sandbox image, then opt in:
 
 ```sh
 make rust-build
-make image-sandbox SANDBOX_IMAGE=a13n-sandbox:file-tests
+make image-sandbox image-docker-environment SANDBOX_IMAGE=a13n-sandbox:file-tests
 LIVE_TEST_SANDBOX_IMAGE=a13n-sandbox:file-tests uv run --locked python -m pytest \
   dev/live_tests/environment/test_42_environment_files.py \
   dev/live_tests/environment/test_44_environment_lifecycle.py \
-  dev/live_tests/environment/test_50_local_docker_lifecycle.py \
+  dev/live_tests/environment/test_50_local_lifecycle.py \
   dev/live_tests/environment/test_51_docker_service_lifecycle.py --live-environments
 ```
 
@@ -831,59 +825,9 @@ uv run --locked python -m pytest dev/live_tests/environment/test_43_environment_
 
 `environment/test_52_remote_envd_failures.py` adds six real HTTP/reverse-WebSocket cases: clean close/rebind retains a native process, stdin and byte-offset output; SIGKILL/restart fences old process and output identities while retaining files; and cutting an owned TCP proxy after a command changes native state returns an error without replaying that command. Reverse WebSocket reconnects with the same daemon generation and permits process rebind. An abandoned HTTP Session remains exclusively admitted, so a fresh adapter must reject takeover until the external operator restarts the daemon.
 
-`environment/test_53_docker_boundaries.py` adds 21 real Docker cases. Missing bootstrap directories/credentials and corrupt manifests/configuration are exercised against prepare, reconcile, stop and destroy. Each rejects the operation without changing the exact running target, then recovers after the fixture restores its material. Four Engine transport-loss cases distinguish unknown reachability from absence. The final case destroys and recreates a container over the same external named volume and independently verifies its retained contents. Docker Desktop bind inspection translates its VM `/host_mnt` prefix back to the macOS Host path; volume identity remains the exact external volume name.
+`environment/test_53_native_docker.py` exercises the native Engine Provider with the Envd-free image: file operations, bounded output and stdin, targeted process controls, background survival, stop/resume, and replacement after confirmed container loss. `make image-docker-environment docker-provider-live-test` builds and runs these checks. `A13N_TEST_DOCKER_IMAGE` selects a different prerequisite-compatible image for direct pytest invocation. The old Docker EIP bootstrap and named-volume tests were replaced along with that implementation.
 
-`environment/test_54_docker_storage.py` adds full Docker Provider ENOSPC over a fixture-owned 1 MiB tmpfs named volume. Its create/replace/append failures, native errno 28, unchanged file hashes, staging cleanup and successful retry are checked through the production Provider plus independent native evidence. Build its image target and run both storage suites:
-
-```sh
-docker build -f dev/live_tests/environment/file_resources.Dockerfile \
-  --build-arg SANDBOX_IMAGE=a13n-sandbox:file-tests \
-  --target docker-sandbox -t a13n-file-resources:docker .
-uv run --locked python -m pytest dev/live_tests/environment/test_43_environment_storage.py \
-  dev/live_tests/environment/test_54_docker_storage.py --live-environments
-```
-
-`LIVE_TEST_DOCKER_RESOURCE_IMAGE` overrides the Docker Provider fixture image. The Local Envd storage container permits nested user/PID namespaces and proc mounts with fixture-only unconfined seccomp/AppArmor and empty masked/read-only system path lists. The native Local Envd isolation requirement remains enabled.
-
-`environment/test_55_remote_envd_service_failures.py` runs four corresponding remote faults through real Control, Worker, PostgreSQL, Redis and Harness tool calls. It cuts the carrier or kills the external daemon only after observing the command's native effect, checks a typed tool error and failed Run when cleanup cannot be confirmed, then verifies a fresh Run against the same registered Environment. The side effect occurs once, workspace files remain, and Service does not stop an externally owned daemon. Reverse WebSocket recovery waits for an actual new carrier after bounded daemon backoff.
-
-```sh
-LIVE_TEST_SANDBOX_IMAGE=a13n-sandbox:file-tests uv run --locked python -m pytest \
-  dev/live_tests/environment/test_52_remote_envd_failures.py \
-  dev/live_tests/environment/test_53_docker_boundaries.py \
-  dev/live_tests/environment/test_55_remote_envd_service_failures.py --live-environments
-```
-
-### Multiple Workers sharing one Environment
-
-Cases 56–60 start two independent Worker processes and verify their distinct persisted Worker IDs for each assigned Run. PostgreSQL, Redis, object storage, Harness execution and native targets remain real. Lifecycle barriers pause outside database transactions; authenticated observation routes only read fixture-owned records. Crashes use process-group SIGKILL, and resurrection cases use SIGSTOP/SIGCONT across an actual lease expiry.
-
-| Suite                                                    | Applicable cases | Coverage                                                                                                                                                                                                                                     |
-| -------------------------------------------------------- | ---------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `environment/test_56_environment_worker_sharing.py`      |               26 | Sequential reuse, both preparation modes racing for first use, concurrent scopes versus exclusive Sessions, cancellation/crash isolation, six consecutive handoffs                                                                           |
-| `environment/test_57_environment_worker_lifecycle.py`    |               21 | Two maintainers racing with new use; create-before-effect, native-created and committed crash boundaries; stale publication and stale stop dispatch; renewal beyond native expiry; simultaneous resume/rebuild; stopped-target capacity      |
-| `environment/test_58_environment_worker_policy.py`       |                8 | Shared active capacity, last-slot admission, aggregate approval waiting and idle time, Provider disable, access ceilings on previously writable Workers, Host affinity, Run-local process/stdin/output references, unrelated-target progress |
-| `environment/test_59_environment_worker_dependencies.py` |                3 | One-Worker and simultaneous database partitions without native replay, then current HTTP Envd credential rotation on both Workers                                                                                                            |
-| `environment/test_60_environment_worker_authority.py`    |                4 | Current service-account status/role, historical Environment selection after Thread-default changes, concurrent native atomic renames                                                                                                         |
-
-The sharing matrix covers Direct Local, Local Envd, Docker, E2B, HTTP Envd and reverse-WebSocket Envd. Ten combinations are inapplicable: externally registered daemons have no managed first-create operation, and single-Session providers cannot exercise two concurrently admitted users. Docker additionally has no native TTL renewal. These eleven combinations are explicitly skipped; missing E2B configuration produces separate, explicit skips.
-
-Docker and HTTP Envd contenders must respect exclusive Session ownership. Reverse-WebSocket rendezvous is process-local: the wrong Worker must fail without stealing the connection, and the owning Worker remains usable. Host-affinity coverage supplies a different Host identity to one owned process; it does not pretend to run on a second physical machine. Access tests use the public frozen Environment ceiling and current IAM grants; no unsupported per-request access override is added. Shared file tests assert native atomic rename outcomes, not application-level transaction isolation. Six handoff cycles are a bounded resource-release regression, not an indefinite soak test.
-
-The stale-stop regression reproduces an owner resuming after another Worker has stopped and resumed the target for a new active Run. Execution must reject that obsolete or expired lease before dispatch, as well as fence stale publication. This does not turn database fencing into cancellation of an external call that was already dispatched.
-
-Build the Rust daemon and sandbox image as above, configure E2B in the private provider file, then run:
-
-```sh
-LIVE_TEST_SANDBOX_IMAGE=a13n-sandbox:file-tests uv run --locked python -m pytest \
-  dev/live_tests/environment/test_56_environment_worker_sharing.py \
-  dev/live_tests/environment/test_57_environment_worker_lifecycle.py \
-  dev/live_tests/environment/test_58_environment_worker_policy.py \
-  dev/live_tests/environment/test_59_environment_worker_dependencies.py \
-  dev/live_tests/environment/test_60_environment_worker_authority.py --live-environments
-```
-
-Use `-k docker`, `-k e2b`, or another provider name to select matrix cases. Dependency and authority suites have provider-independent names and should be run explicitly when using those filters. Exact owned labels/metadata drive Docker/E2B cleanup, including unpublished native targets; no shared infrastructure or unrelated target is stopped.
+The Local Envd storage tests still use the isolated `file_resources.Dockerfile` worker image and a bounded tmpfs. Native Docker does not expose a template named-volume option.
 
 ## Native SSE and Hosted AG-UI protocol contracts
 

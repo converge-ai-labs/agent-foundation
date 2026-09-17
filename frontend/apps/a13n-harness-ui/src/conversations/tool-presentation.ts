@@ -347,6 +347,60 @@ export function describeTool(tool: ToolView) {
   };
 }
 
+export function questionReceipt(tool: ToolView) {
+  if (tool.name !== "ask_user_question" || tool.resultOmitted) return;
+  const info = describeTool(tool);
+  if (info.phase !== "Result received") return;
+  const { answers, response } = info.result;
+  if (!record(answers)) return;
+  const questions = Array.isArray(info.args.questions)
+    ? info.args.questions.filter(record)
+    : [];
+  const items: {
+    title: string;
+    question: string;
+    values: { label: string; description?: string }[];
+  }[] = [];
+  for (const [question, answer] of Object.entries(answers)) {
+    const values = typeof answer === "string" ? [answer] : answer;
+    if (
+      !Array.isArray(values) ||
+      !values.length ||
+      !values.every(
+        (value): value is string => typeof value === "string" && !!value.trim(),
+      )
+    )
+      return;
+    const original = questions.find((item) => item.question === question);
+    const options = Array.isArray(original?.options)
+      ? original.options.filter(record)
+      : [];
+    items.push({
+      title: text(original?.header) || question,
+      question,
+      values: values.map((label) => ({
+        label,
+        description: text(
+          options.find((option) => option.label === label)?.description,
+        ),
+      })),
+    });
+  }
+  const order = (question: string) => {
+    const index = questions.findIndex((item) => item.question === question);
+    return index < 0 ? questions.length : index;
+  };
+  items.sort((left, right) => order(left.question) - order(right.question));
+  if (typeof response === "string" && response.trim())
+    items.push({
+      title: "Response",
+      question: "",
+      values: [{ label: response }],
+    });
+  if (!items.length) return;
+  return { items, questions };
+}
+
 /** Pair only loaded, visible calls with their following result; page-edge results remain visible. */
 export function savedTools(entries: Schema<"TranscriptEntry">[]) {
   type Part = Schema<"TranscriptPart">;
@@ -532,15 +586,16 @@ export function activitySummary(tools: ToolView[]) {
     const searches = tools.length - reads;
     title = `${pending ? "Exploring" : "Explored"} ${[reads && count(files || reads, "file"), searches && count(searches, "lookup")].filter(Boolean).join(" · ")}`;
   }
+  const notices = issues.filter((info) => info.phase !== "Failed");
   return {
     title,
     issue: issues.length > 0,
     status: [
       pending ? `${pending} running` : "",
-      issues.length === 1
-        ? issues[0].phase
-        : issues.length
-          ? `${issues.length} need attention`
+      notices.length === 1
+        ? notices[0].phase
+        : notices.length
+          ? `${notices.length} need attention`
           : "",
     ]
       .filter(Boolean)

@@ -14,6 +14,7 @@ import {
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
+import { AgentLink } from "../agents/link";
 import { runPath } from "../conversations/api";
 import styles from "./bots.module.css";
 import { BotReplies } from "./replies";
@@ -122,7 +123,10 @@ function ConversationList({
                     },
                   ]
                 : []),
-              { label: t("Agent"), render: (item) => item.agent_id },
+              {
+                label: t("Agent"),
+                render: (item) => <AgentLink agentId={item.agent_id} />,
+              },
               {
                 label: t("Run status"),
                 render: (item) => <StateBadge state={item.run_status} />,

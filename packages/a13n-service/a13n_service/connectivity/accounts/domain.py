@@ -8,7 +8,6 @@ from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
 from a13n_service.connectivity.domain import AdapterKey, ConfigVersion, DisplayName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
-from a13n_service.memory.bots.domain import MemorySettings
 
 from .reception import InputBatchingPolicy, Reception, ReceptionScope
 
@@ -71,7 +70,6 @@ class UpdateAccountRequest(StrictModel):
     expected_version: int = Field(ge=1)
     name: DisplayName | None = None
     provider_config: JsonObject | None = None
-    memory: MemorySettings | None = None
     reception_scope: ReceptionScope | None = None
     receive_enabled: bool | None = None
     default_agent_id: str | None = None
@@ -94,3 +92,11 @@ class ReplaceAccountCredentialsRequest(AccountCommandRequest):
     credentials: dict[str, SecretStr] = Field(
         min_length=1, max_length=16, repr=False, json_schema_extra={"writeOnly": True}
     )
+
+
+class EventConnectionStatus(StrictModel):
+    transport: Literal["http", "websocket"]
+    state: Literal["http", "disabled", "connecting", "connected", "reconnecting", "disconnected"]
+    observed_at: datetime | None = None
+    last_event_at: datetime | None = None
+    error_code: str | None = None

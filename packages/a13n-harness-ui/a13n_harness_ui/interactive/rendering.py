@@ -168,6 +168,7 @@ class Status:
             f"ctx {context}",
             f"cache {self.cache_rate_text}",
             cost,
+            f"{'think' if compact else 'Thinking'} {self.thinking}",
             self.model.split(":")[-1],
             _elapsed_text(elapsed),
         ]
@@ -1106,13 +1107,7 @@ class StreamRenderer:
                         self.append(source, display=False)
                     return
                 if event.get("event_kind") == "capability":
-                    if not child or detailed:
-                        self.finish()
-                        self.append(f"[Event · {name}]\n")
-                        self.append(
-                            json.dumps(event, ensure_ascii=False, indent=2) + "\n",
-                            collapsed_lines=self.status.max_tool_result_lines,
-                        )
+                    # Only explicitly handled capabilities produce conversation content.
                     return
                 mutation = event.get("payload")
                 if isinstance(mutation, dict):

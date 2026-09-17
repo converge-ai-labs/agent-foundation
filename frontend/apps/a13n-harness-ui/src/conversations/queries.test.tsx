@@ -4,8 +4,8 @@ import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 import { TransportContext } from "../transport/context";
-import type { Transport } from "../transport/client";
-import { useHistory } from "./queries";
+import type { Schema, Transport } from "../transport/client";
+import { seedThreadSnapshot, useHistory } from "./queries";
 
 afterEach(cleanup);
 it("retains successful history and its identity across replacement loading and error, never across Threads", async () => {
@@ -61,4 +61,76 @@ it("retains successful history and its identity across replacement loading and e
   expect(hook.result.current.data).toBeUndefined();
   hook.unmount();
   queryClient.clear();
+});
+
+it("uses warmed history on first mount while a newer continuation loads", () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  queryClient.setQueryData(["thread", "one", "history", "C0"], {
+    pages: [{ continuation_id: "C0", entries: [], next_cursor: null }],
+    pageParams: [undefined],
+  });
+  const transport = {
+    client: { GET: vi.fn(() => new Promise(() => {})) },
+  } as unknown as Transport;
+  const hook = renderHook(() => useHistory("one", "C1", true), {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={queryClient}>
+        <TransportContext value={transport}>{children}</TransportContext>
+      </QueryClientProvider>
+    ),
+  });
+  expect(hook.result.current.data?.pages[0].continuation_id).toBe("C0");
+  expect(hook.result.current.isPreviousHistory).toBe(true);
+  expect(hook.result.current.hasNextPage).toBe(false);
+  hook.unmount();
+  queryClient.clear();
+});
+
+it("bootstraps initial detail and operation from a snapshot and fences a slower initial HTTP read", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const key = ["thread", "one", "detail"];
+  let resolve!: (value: unknown) => void;
+  let signal!: AbortSignal;
+  const read = client
+    .fetchQuery({
+      queryKey: key,
+      queryFn: (context) => {
+        signal = context.signal;
+        return new Promise((done) => {
+          resolve = done;
+        });
+      },
+    })
+    .catch(() => undefined);
+  const snapshot = {
+    thread: {
+      thread: { thread_id: "one", root_activity: { state: "running" } },
+    },
+    root_operation: {
+      receipt: { receipt_id: "receipt-one" },
+      status: "running",
+    },
+  } as Schema<"ThreadFocusSnapshot">;
+  seedThreadSnapshot(client, "one", snapshot);
+  expect(signal.aborted).toBe(true);
+  expect(client.getQueryData(key)).toEqual(snapshot.thread);
+  expect(
+    client.getQueryData(["thread", "one", "operation", "receipt-one"]),
+  ).toEqual(snapshot.root_operation);
+  resolve({
+    thread: { thread_id: "one", root_activity: { state: "inactive" } },
+  });
+  await read;
+  expect(client.getQueryData(key)).toEqual(snapshot.thread);
+  const current = { thread: { thread_id: "one", title: "Newer observation" } };
+  client.setQueryData(key, current);
+  seedThreadSnapshot(client, "one", snapshot);
+  expect(client.getQueryData(key)).toEqual(current);
+  seedThreadSnapshot(client, "other", snapshot);
+  expect(client.getQueryData(["thread", "other", "detail"])).toBeUndefined();
+  client.clear();
 });

@@ -14,6 +14,7 @@ from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.outbox import OutboxClaim, claim_outbox
 from a13n_service.interactions.models import SessionRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
+from a13n_service.lifecycle.projections import public_lifecycle_payload
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.temporal import assume_utc
 
@@ -147,7 +148,7 @@ async def load_webhook_delivery(
             run_attempt_id=event.run_attempt_id,
             harness_run_id=harness_run_id,
             occurred_at=assume_utc(event.occurred_at),
-            payload=event.payload,
+            payload=public_lifecycle_payload(event.event_type, event.payload),
         )
     except ValidationError as error:
         raise WebhookMaterialError("webhook_source_invalid") from error

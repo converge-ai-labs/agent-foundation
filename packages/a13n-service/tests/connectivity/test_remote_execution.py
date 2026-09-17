@@ -60,7 +60,11 @@ async def test_recovery_admission_checks_current_connections_without_opening_cli
 ):
     runtime, server = remote_runtime
     selection = ConnectionRunSelection(
-        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+        kind="mcp",
+        model_alias="conn_notion",
+        authorization_generation=1,
+        connection_id=MCP_CONNECTION_ID,
+        tools=("search",),
     )
     selected = FrozenRunConnectivity((selection,))
     scope = AttemptToolScope(
@@ -104,7 +108,11 @@ async def test_selected_remote_tool_uses_call_guard_and_revocation_stops_dispatc
             raise ValueError("test_lease_revoked")
 
     selection = ConnectionRunSelection(
-        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+        kind="mcp",
+        model_alias="conn_notion",
+        authorization_generation=1,
+        connection_id=MCP_CONNECTION_ID,
+        tools=("search",),
     )
     async with runtime._mcp(
         selection,
@@ -138,7 +146,11 @@ async def test_replacement_discovers_changed_tool_and_missing_explicit_name_fail
         pass
 
     selection = ConnectionRunSelection(
-        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+        kind="mcp",
+        model_alias="conn_notion",
+        authorization_generation=1,
+        connection_id=MCP_CONNECTION_ID,
+        tools=("search",),
     )
     async with runtime._mcp(
         selection,
@@ -236,7 +248,11 @@ async def test_replacement_during_authorization_blocks_stale_headers(
         pass
 
     selection = ConnectionRunSelection(
-        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+        kind="mcp",
+        model_alias="conn_notion",
+        authorization_generation=1,
+        connection_id=MCP_CONNECTION_ID,
+        tools=("search",),
     )
     with pytest.raises(ValueError, match="mcp_connection_changed"):
         async with runtime._mcp(

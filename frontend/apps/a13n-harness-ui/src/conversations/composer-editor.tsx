@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef } from "react";
-import { EditorView, keymap, placeholder } from "@codemirror/view";
-import { Compartment } from "@codemirror/state";
-import { defaultKeymap } from "@codemirror/commands";
+import { EditorView, keymap } from "@codemirror/view";
+import { Compartment, Prec } from "@codemirror/state";
+import {
+  autocompletion,
+  completionKeymap,
+  acceptCompletion,
+  closeCompletion,
+  completionStatus,
+} from "@codemirror/autocomplete";
+import { skillCompletion, type LoadSkills } from "./skill-references";
+import { defaultKeymap, insertNewline } from "@codemirror/commands";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -23,6 +31,8 @@ export function ComposerEditor({
   editor,
   autoFocus = false,
   local = false,
+  loadSkills,
+  skillContext,
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -32,13 +42,18 @@ export function ComposerEditor({
   editor?: { current: EditorView | null };
   autoFocus?: boolean;
   local?: boolean;
+  loadSkills?: LoadSkills;
+  skillContext?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const attributes = useRef(new Compartment());
+  const skills = useRef(new Compartment());
+  const load = useRef(loadSkills);
+  load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
   const description = local
-    ? "Private to this tab until you send. Files upload on Send. Reloading discards this draft. Enter for a new line; Ctrl or Command plus Enter to send."
-    : "Shared with this conversation. Drafts do not survive server restarts. Enter for a new line; Ctrl or Command plus Enter to send.";
+    ? "Private to this tab until you send. Files upload on Send. Reloading discards this draft. Enter to send; Shift+Enter for a new line."
+    : "Shared with this conversation. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
   const contentAttributes = useMemo(
     () =>
       EditorView.contentAttributes.of({
@@ -142,15 +157,23 @@ export function ComposerEditor({
           ? [composerAttachments(draft, () => attachmentContext.current!)]
           : []),
         attributes.current.of(initialAttributes.current),
-        placeholder("What would you like to work on?"),
+        skills.current.of([]),
         keymap.of([
-          {
-            key: "Mod-Enter",
-            run: (editor) => {
-              if (!editor.composing) send.current();
+          ...["Enter", "Mod-Enter"].map((key) => ({
+            key,
+            run: (editor: EditorView) => {
+              // Background completion checks run even for ordinary typing.
+              // Only visible candidates may consume Enter instead of sending.
+              if (
+                key === "Enter" &&
+                completionStatus(editor.state) === "active"
+              )
+                return true;
+              if (!editor.compositionStarted) send.current();
               return true;
             },
-          },
+          })),
+          { key: "Shift-Enter", run: insertNewline },
           ...yUndoManagerKeymap,
           ...defaultKeymap,
         ]),
@@ -159,16 +182,17 @@ export function ComposerEditor({
           "&": {
             backgroundColor: "transparent",
             color: "var(--a13n-text)",
-            fontSize: "14px",
+            fontSize: "var(--composer-font-size, 14px)",
+            height: "var(--composer-editor-height, 88px)",
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "76px",
-            padding: "14px 2px 8px",
+            minHeight: "var(--composer-content-height, 64px)",
+            padding: "8px 2px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {
-            maxHeight: "240px",
+            height: "100%",
             overflow: "auto",
             fontFamily: "inherit",
           },
@@ -206,7 +230,6 @@ export function ComposerEditor({
     if (editor) editor.current = view;
     window.addEventListener("blur", clearCursor);
     document.addEventListener("visibilitychange", clearCursor);
-    if (autoFocus) view.focus();
     let scheduled = false;
     const unsubscribe = draft.subscribe(() => {
       if (scheduled) return;
@@ -240,6 +263,9 @@ export function ComposerEditor({
     };
   }, [draft, doc, editor]);
   useEffect(() => {
+    if (autoFocus) currentView.current?.focus();
+  }, [autoFocus, draft, doc, editor]);
+  useEffect(() => {
     currentView.current?.dispatch({
       effects: attributes.current.reconfigure(contentAttributes),
     });
@@ -247,6 +273,72 @@ export function ComposerEditor({
   useEffect(() => {
     editor?.current?.dispatch({ effects: refreshAttachments.of(null) });
   }, [attachments, editor]);
+  useEffect(() => {
+    const view = currentView.current;
+    if (!view) return;
+    closeCompletion(view);
+    view.dispatch({
+      effects: skills.current.reconfigure(
+        loadSkills
+          ? [
+              autocompletion({
+                override: [skillCompletion(() => load.current!())],
+                defaultKeymap: false,
+                icons: false,
+                aboveCursor: true,
+              }),
+              Prec.highest(
+                keymap.of([
+                  ...completionKeymap,
+                  { key: "Tab", run: acceptCompletion },
+                ]),
+              ),
+              EditorView.theme({
+                ".cm-tooltip-autocomplete": {
+                  backgroundColor: "var(--a13n-surface)",
+                  color: "var(--a13n-text)",
+                  border: "1px solid var(--a13n-border)",
+                  borderRadius: "8px",
+                  maxWidth: "min(560px, calc(100vw - 32px))",
+                  overflow: "hidden",
+                },
+                ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+                  fontFamily: "var(--a13n-font)",
+                  fontSize: "13px",
+                  maxHeight: "240px",
+                },
+                ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+                  padding: "6px 10px",
+                  lineHeight: "1.5",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                },
+                ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]":
+                  {
+                    backgroundColor: "var(--a13n-canvas)",
+                    color: "var(--a13n-text)",
+                  },
+                ".cm-tooltip-autocomplete .cm-completionLabel": {
+                  display: "block",
+                  fontWeight: "500",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                },
+                ".cm-tooltip-autocomplete .cm-completionDetail": {
+                  display: "block",
+                  margin: "2px 0 0",
+                  fontSize: "12px",
+                  color: "var(--a13n-secondary)",
+                  fontStyle: "normal",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                },
+              }),
+            ]
+          : [],
+      ),
+    });
+  }, [draft, doc, editor, skillContext, !!loadSkills]);
   useEffect(() => {
     report.current({ name: profile.display_name, color: profile.color });
   }, [profile]);

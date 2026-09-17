@@ -30,7 +30,7 @@ A release may include reviewed, human-written notes at:
 .github/release-notes/<component>/<version>.md
 ```
 
-Supported component keys are `a13n-harness`, `a13n-harness-ui`, `a13n-logging`, `a13n-service`, `a13n-envd`, `a13n-service-cli`, `a13n-python`, `a13n-go`, `a13n-rust`, and `a13n-typescript`. Versions use canonical stable `X.Y.Z` or RC `X.Y.Z-rc.N` syntax, so RC notes use a path such as `.github/release-notes/a13n-service/1.2.3-rc.1.md`.
+Supported component keys are `a13n-harness`, `a13n-harness-ui`, `a13n-logging`, `a13n-service`, and `a13n-envd`. Versions use canonical stable `X.Y.Z` or RC `X.Y.Z-rc.N` syntax, so RC notes use a path such as `.github/release-notes/a13n-service/1.2.3-rc.1.md`.
 
 Directories for earlier release channels are immutable historical records. New notes use only the canonical component keys above.
 

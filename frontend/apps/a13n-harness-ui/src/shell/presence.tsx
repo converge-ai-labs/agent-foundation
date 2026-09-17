@@ -3,9 +3,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "react-router";
 import { useSources, useTransport } from "../transport/context";
 import { watchSummary } from "../transport/events";
-import { refreshThreadLists } from "../conversations/queries";
+import { refreshThread, scheduleRefresh } from "../conversations/refresh";
 import type { Schema } from "../transport/client";
 import { useNotifications } from "./notifications";
+import { useResults } from "../conversations/results";
 
 export type Profile = { display_name: string; color: string };
 export function pageFocus(
@@ -62,6 +63,7 @@ export function useLiveWorkbench(
   const transport = useTransport();
   const queries = useQueryClient();
   const notify = useNotifications()?.receive;
+  const { tracker: results } = useResults();
   const location = useLocation();
   const sources = useSources();
   const sourcePath = new URLSearchParams(location.search).get("path");
@@ -101,42 +103,63 @@ export function useLiveWorkbench(
       transport,
       (event) => {
         if (event) notify?.(event);
+        if (!event || event.kind === "configuration") results?.invalidate();
+        else if (["thread", "root_operation"].includes(event.kind))
+          results?.invalidate(
+            event.root_thread_id ?? event.thread_id ?? undefined,
+          );
         if (event?.kind === "comment")
           void queries.invalidateQueries({
             queryKey: event.root_thread_id
               ? ["comments", event.root_thread_id]
               : ["comments"],
           });
-        else {
-          void refreshThreadLists(queries);
-          void queries.invalidateQueries({
-            predicate: (query) => {
-              const [kind, threadId] = query.queryKey;
-              if (kind === "threads") return false;
-              if (!event) return true;
-              // Execution changes do not invalidate settings, native files or
-              // unrelated conversations. Open/reset still reconcile everything.
-              if (
-                ["thread", "root_operation", "child_execution"].includes(
-                  event.kind,
-                )
-              )
-                return (
-                  kind === "thread" &&
-                  (!event.root_thread_id ||
-                    threadId === event.root_thread_id ||
-                    threadId === event.thread_id)
-                );
-              return kind !== "native";
-            },
-          });
+        else if (
+          event &&
+          ["thread", "root_operation", "child_execution"].includes(event.kind)
+        ) {
+          const id = event.root_thread_id ?? event.thread_id;
+          if (id) {
+            refreshThread(
+              queries,
+              id,
+              event.kind === "child_execution"
+                ? "children"
+                : event.kind === "thread"
+                  ? "checkpoint"
+                  : "lifecycle",
+            );
+          } else
+            scheduleRefresh(queries, (query) =>
+              ["thread", "threads"].includes(String(query.queryKey[0])),
+            );
+        } else {
+          // Open/reset reconcile all observations. Configuration changes do not
+          // invalidate native files, and routine execution never reaches here.
+          scheduleRefresh(
+            queries,
+            (query) => !event || query.queryKey[0] !== "native",
+          );
         }
       },
       setSummary,
     );
     summarySubscription.current = close;
     return close;
-  }, [transport, queries, notify]);
+  }, [transport, queries, notify, results]);
+
+  useEffect(() => {
+    if (summary === "Live") return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") {
+        results?.invalidate();
+        scheduleRefresh(queries, (query) =>
+          ["thread", "threads"].includes(String(query.queryKey[0])),
+        );
+      }
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [summary, queries, results]);
 
   useEffect(() => {
     if (!enabled) {

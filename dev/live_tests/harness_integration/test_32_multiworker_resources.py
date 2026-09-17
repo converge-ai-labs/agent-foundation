@@ -114,14 +114,14 @@ async def test_multiworker_environment_disable_blocks_write(multiworker):
     journey = multiworker
     live = journey.live
     # Environment provider eligibility is live; a model's already selected write cannot bypass disablement.
-    template, recipe, root = await journey.environment_template(preparation="on_use")
+    template, template_config, root = await journey.environment_template(preparation="on_use")
     case = await journey.case(
         gate_at=0,
         steps=[{"tool": "write", "arguments": {"file_path": "/workspace/forbidden.txt", "content": "UNAUTHORIZED"}}],
     )
     receipt = await journey.start(case, environment={"template_id": template["id"]})
     await journey.ready(case, receipt["run_id"])
-    await journey.patch("/api/v1/environment-providers/" + recipe["provider_id"], {"enabled": False})
+    await journey.patch("/api/v1/environment-providers/" + template_config["provider_id"], {"enabled": False})
     await live.release(case)
     await live.finish(receipt["run_id"])
     assert last_tool_result(journey.observations(case)[-1]) == {
@@ -133,7 +133,7 @@ async def test_multiworker_environment_disable_blocks_write(multiworker):
 async def test_multiworker_template_revision_survives_recovery(multiworker):
     journey = multiworker
     live, lab = journey.live, journey.lab
-    template, recipe, root = await journey.environment_template(preparation="on_use")
+    template, template_config, root = await journey.environment_template(preparation="on_use")
     (root / "proof.txt").write_text("TEMPLATE_OLD")
     shared = await journey.post(journey.base + "/environments", {"template_id": template["id"]})
     cases = [
@@ -155,8 +155,8 @@ async def test_multiworker_template_revision_survives_recovery(multiworker):
     revision = await journey.post(
         "/api/v1/environment-templates/" + template["id"] + "/revisions",
         {
-            **recipe,
-            "configuration": {**recipe["configuration"], "root": {"path": str(other)}},
+            **template_config,
+            "configuration": {**template_config["configuration"], "root": {"path": str(other)}},
             "expected_version": template["version"],
         },
     )

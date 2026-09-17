@@ -1,4 +1,5 @@
-import { Button } from "a13n-ui";
+import { Button, Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
+import { CaretRightIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +10,7 @@ import { data, type Schema } from "../../shared/api";
 import { CopyButton } from "../../shared/copy";
 import { Empty, ErrorNotice, Loading, Page } from "../../shared/feedback";
 import { AccountForm } from "../application-accounts/form";
+import { EventConnection } from "./event-connection";
 import { BotPilot } from "./pilot";
 import { PilotTest } from "./pilot-test";
 import { BotChecks } from "./checks";
@@ -43,6 +45,7 @@ function ConnectFlow() {
   const [search, setSearch] = useSearchParams();
   const accountId = search.get("account") ?? "";
   const [platform, setPlatform] = useState<"slack" | "lark" | null>(null);
+  const [accountMode, setAccountMode] = useState("existing");
   const [pilotGeneration, setPilotGeneration] = useState(0);
   const account = useQuery({
     queryKey: ["application-accounts", workspace.id, accountId],
@@ -120,21 +123,46 @@ function ConnectFlow() {
         <div className={styles.content}>
           {!accountId && !platform && (
             <>
-              <h2>{t("Choose your platform")}</h2>
-              <p>
-                {t(
-                  "Use one account for each Slack workspace or Feishu installation.",
-                )}
-              </p>
-              <div className={styles.platforms}>
-                <Button variant="outline" onClick={() => setPlatform("slack")}>
-                  Slack
-                </Button>
-                <Button variant="outline" onClick={() => setPlatform("lark")}>
-                  {t("Feishu")}
-                </Button>
-              </div>
-              <ExistingAccounts />
+              <h2>{t("Choose an account")}</h2>
+              <Tabs
+                value={accountMode}
+                onValueChange={(value) => setAccountMode(String(value))}
+              >
+                <TabsList
+                  className={styles.accountModes}
+                  aria-label={t("Account source")}
+                >
+                  <TabsTab value="existing">
+                    {t("Use an existing account")}
+                  </TabsTab>
+                  <TabsTab value="new">{t("Create a new account")}</TabsTab>
+                </TabsList>
+                <TabsPanel value="existing" className={styles.modeContent}>
+                  {accountMode === "existing" && <ExistingAccounts />}
+                </TabsPanel>
+                <TabsPanel value="new" className={styles.modeContent}>
+                  <p>{t("Choose the platform for your new account.")}</p>
+                  <div className={styles.platforms}>
+                    <Button
+                      variant="outline"
+                      onClick={() => setPlatform("slack")}
+                    >
+                      Slack <CaretRightIcon aria-hidden="true" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setPlatform("lark")}
+                    >
+                      {t("Feishu")} <CaretRightIcon aria-hidden="true" />
+                    </Button>
+                  </div>
+                  <p>
+                    {t(
+                      "Use one account for each Slack workspace or Feishu installation.",
+                    )}
+                  </p>
+                </TabsPanel>
+              </Tabs>
             </>
           )}
           {!accountId && platform && (
@@ -147,7 +175,9 @@ function ConnectFlow() {
               </p>
               <p>
                 {t(
-                  "Enter the installation identifiers from your app settings. They are verified in the next step; entering an ID does not prove access.",
+                  platform === "lark"
+                    ? "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving."
+                    : "Enter the installation identifiers from your app settings. They are verified in the next step; entering an ID does not prove access.",
                 )}
               </p>
               <AccountForm
@@ -244,16 +274,14 @@ function ExistingAccounts() {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
-  const [show, setShow] = useState(false);
   const query = useQuery({
     queryKey: ["bot-setup-existing", workspace.id],
-    enabled: show,
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace}/application-accounts", {
+        .GET("/api/v1/workspaces/{workspace}/bots", {
           params: {
             path: { workspace: workspace.id },
-            query: { bots_only: true, limit: 20 },
+            query: { limit: 20 },
           },
           signal,
         })
@@ -261,41 +289,59 @@ function ExistingAccounts() {
   });
   return (
     <section>
-      <Button
-        variant="ghost"
-        onClick={() => setShow(!show)}
-        aria-expanded={show}
-      >
-        {t("Use an existing account")}
-      </Button>
-      {show && (
-        <>
-          <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-          {query.isPending ? (
-            <Loading />
-          ) : (
-            <ul className={styles.existing}>
-              {query.data?.items.map((item) => (
-                <li key={item.id}>
-                  <Link to={`${basePath}/bots/${item.id}`}>{item.name}</Link>
-                  <small>
-                    {item.provider_key === "slack" ? "Slack" : t("Feishu")}
-                  </small>
-                </li>
-              ))}
-            </ul>
+      <p>{t("Select an account already connected to this workspace.")}</p>
+      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      {query.isPending ? (
+        <Loading />
+      ) : (
+        <ul className={styles.existing}>
+          {query.data?.items.map(({ account: item }) => {
+            const organization =
+              item.provider_config[
+                item.provider_key === "slack" ? "team_id" : "tenant_key"
+              ];
+            return (
+              <li key={item.id}>
+                <Link to={`${basePath}/bots/${item.id}`}>
+                  <span>
+                    <strong>{item.name}</strong>
+                    <small>
+                      {item.provider_key === "slack" ? "Slack" : t("Feishu")}
+                      {typeof organization === "string" &&
+                        organization &&
+                        ` · ${organization}`}
+                    </small>
+                  </span>
+                  <CaretRightIcon aria-hidden="true" />
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {query.data?.items.length === 0 && (
+        <p>
+          {t(
+            "No existing accounts. Choose Create a new account to get started.",
           )}
-          {query.data?.items.length === 0 && <p>{t("No bots connected")}</p>}
-          {query.data?.next_cursor && (
-            <Link to={`${basePath}/bots`}>{t("View all bots")}</Link>
-          )}
-        </>
+        </p>
+      )}
+      {query.data?.next_cursor && (
+        <Link to={`${basePath}/bots`}>{t("View all bots")}</Link>
       )}
     </section>
   );
 }
 
 function CallbackSetup({ account }: { account: Schema["Account"] }) {
+  return account.provider_config.event_transport === "websocket" ? (
+    <EventConnection account={account} />
+  ) : (
+    <HttpCallbackSetup account={account} />
+  );
+}
+
+function HttpCallbackSetup({ account }: { account: Schema["Account"] }) {
   const client = useClient(),
     { t } = useTranslation();
   const query = useQuery({

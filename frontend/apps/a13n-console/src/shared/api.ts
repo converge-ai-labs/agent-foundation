@@ -1,4 +1,4 @@
-import { ApiError, data, type components } from "@converge.ai/a13n";
+import { ApiError, data, type components } from "../service-client";
 export { data };
 export type Schema = components["schemas"];
 export function representation<T>(result: { data?: T; response: Response }) {

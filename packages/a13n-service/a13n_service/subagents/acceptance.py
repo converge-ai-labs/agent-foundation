@@ -32,6 +32,7 @@ from a13n_service.interactions.objects import (
     StaleStateWriter,
     StoredRunState,
 )
+from a13n_service.interactions.ports.memory import ExecutionBindings
 from a13n_service.interactions.records import thread_record
 from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.labels import merge_labels
@@ -70,6 +71,7 @@ class ChildRunAcceptanceService:
         payloads: RunPayloadStore,
         *,
         lifecycle: LifecycleWriter,
+        bindings: ExecutionBindings,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
@@ -77,6 +79,7 @@ class ChildRunAcceptanceService:
         self._payloads = payloads
         self._clock = clock
         self._lifecycle = lifecycle
+        self._bindings = bindings
 
     async def accept(
         self,
@@ -156,6 +159,7 @@ class ChildRunAcceptanceService:
                     workspace_id=session.workspace_id,
                     intent=ExplicitEnvironment(choice),
                 )
+                await self._bindings.finalize(database, child_run, source_run_id=parent.id)
                 await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
@@ -305,6 +309,7 @@ class ChildRunAcceptanceService:
                     workspace_id=session.workspace_id,
                     intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
                 )
+                await self._bindings.finalize(database, prepared.run, source_run_id=source_run.id)
                 await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)

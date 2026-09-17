@@ -2,14 +2,8 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
 
-/** The returned path is synthetic test data, never the repository cwd. */
-export function startNativeApp() {
-  return startApp("--native");
-}
-export function startSetupApp() {
-  return startApp("--setup");
-}
-async function startApp(mode: "--native" | "--setup") {
+/** Each suite owns an isolated App; returned paths are synthetic test data. */
+export async function startApp(...args: string[]) {
   const server = spawn(
     "uv",
     [
@@ -20,7 +14,7 @@ async function startApp(mode: "--native" | "--setup") {
       "--no-default-groups",
       "python",
       "tests/protocol_server.py",
-      mode,
+      ...args,
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );
@@ -43,7 +37,7 @@ async function startApp(mode: "--native" | "--setup") {
     const address = await new Promise<{ origin: string; native_root: string }>(
       (resolve, reject) => {
         const timer = setTimeout(
-          () => reject(new Error(`Native App startup timed out: ${stderr}`)),
+          () => reject(new Error(`Test App startup timed out: ${stderr}`)),
           30000,
         );
         server.once("error", (error) => {
@@ -52,7 +46,7 @@ async function startApp(mode: "--native" | "--setup") {
         });
         server.once("exit", (code) => {
           clearTimeout(timer);
-          reject(new Error(`Native App exited (${code}): ${stderr}`));
+          reject(new Error(`Test App exited (${code}): ${stderr}`));
         });
         lines.on("line", (line) => {
           if (line.startsWith("{")) {

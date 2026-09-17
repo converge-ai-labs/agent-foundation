@@ -468,6 +468,7 @@ class _UsageActiveCapability(UsageCapability):
                 usage = deepcopy(response.usage)
                 usage.cost = None
                 value = ModelCostInput(
+                    selected_model_id=request_context.model_id,
                     model_name=response.model_name,
                     provider_name=response.provider_name,
                     provider_url=_safe_provider_url(response.provider_url),

@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from collections import OrderedDict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -22,6 +23,7 @@ from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, BUILTIN_SKILLS_SOURCE_ID
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.errors import AppStateError, ThreadError
+from a13n_harness_ui.model_thinking import describe_thinking
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import LocalStore, StoredContinuation
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
@@ -149,6 +151,8 @@ class TerminalProjectionService:
         project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
+        archived_only: bool = False,
+        include_active: bool = False,
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadActivityPage:
@@ -157,21 +161,48 @@ class TerminalProjectionService:
             raise ThreadError("Choose a Project or a Project scope.", code="thread_page_invalid")
         unavailable = None
         if project_scope == "unavailable":
-            recency = await self._store.threads.project_recency(include_archived=include_archived)
+            recency = await self._store.threads.project_recency(include_archived=include_archived or archived_only)
             unavailable = tuple(sorted(set(recency) - source.projects.keys()))
+        active_ids = await self._root_runs.active_thread_ids() if include_active else ()
+        active_threads = []
+        if include_active and active_ids:
+            active_cursor = None
+            while True:
+                active_page = await self._threads.list_threads(
+                    query=query,
+                    project_id=project_id,
+                    projectless=project_scope == "projectless",
+                    project_ids=unavailable,
+                    include_archived=include_archived,
+                    archived_only=archived_only,
+                    sort="touched",
+                    active_only=True,
+                    active_thread_ids=active_ids,
+                    cursor=active_cursor,
+                    limit=100,
+                )
+                active_threads.extend(active_page.threads)
+                active_cursor = active_page.next_cursor
+                if active_cursor is None:
+                    break
         page = await self._threads.list_threads(
             query=query,
             project_id=project_id,
             projectless=project_scope == "projectless",
             project_ids=unavailable,
             include_archived=include_archived,
+            archived_only=archived_only,
+            sort="touched",
+            active_only=False if include_active else None,
+            active_thread_ids=active_ids,
             cursor=cursor,
             limit=limit,
         )
-        thread_ids = tuple(item.thread_id for item in page.threads)
+        threads = (*active_threads, *page.threads)
+        thread_ids = tuple(item.thread_id for item in threads)
         latest = await self._root_runs.latest_many(thread_ids)
         counts, running = await self._store.child_executions.status_counts_for_roots(thread_ids)
-        active_ids = await self._children.active_execution_ids()
+        active_child_ids = await self._children.active_execution_ids()
         references = await self._store.threads.continuation_references(thread_ids)
         pending: dict[str, PendingDecisionSummary] = {}
         retained_activity: dict[str, ActivitySummary] = {}
@@ -185,7 +216,7 @@ class TerminalProjectionService:
                 retained_activity[thread_id] = activity
 
         rows: list[ThreadActivityView] = []
-        for thread in page.threads:
+        for thread in threads:
             project = (
                 source.projects.get(thread.configuration.project_id)
                 if thread.configuration.project_id is not None
@@ -203,7 +234,7 @@ class TerminalProjectionService:
             )
             status_counts = counts.get(thread.thread_id, {})
             running_ids = running.get(thread.thread_id, ())
-            active = sum(1 for execution_id in running_ids if execution_id in active_ids)
+            active = sum(1 for execution_id in running_ids if execution_id in active_child_ids)
             child_counts = ChildStatusCounts(
                 running=status_counts.get("running", 0),
                 succeeded=status_counts.get("succeeded", 0),
@@ -246,8 +277,9 @@ class TerminalProjectionService:
             )
         return ThreadActivityPage(
             project_id=project_id,
-            rows=tuple(rows),
-            total=page.total,
+            active_rows=tuple(rows[: len(active_threads)]),
+            rows=tuple(rows[len(active_threads) :]),
+            total=page.total + len(active_threads),
             next_cursor=page.next_cursor,
         )
 
@@ -406,7 +438,13 @@ class TerminalProjectionService:
                     metadata=_json_mapping(requests.metadata.get(request.tool_call_id)),
                 )
             )
-        return DecisionBatchView(continuation_id=continuation_id, requests=tuple(projected))
+        expires_at = await self._root_runs.interaction_expiry(thread_id, continuation_id)
+        return DecisionBatchView(
+            continuation_id=continuation_id,
+            requests=tuple(projected),
+            expires_at=expires_at,
+            server_time=datetime.now(UTC) if expires_at is not None else None,
+        )
 
     async def selectors(self, environments: tuple[EnvironmentProfileSummary, ...]) -> ThreadSelectorCatalog:
         source = await self._required_configuration()
@@ -425,7 +463,12 @@ class TerminalProjectionService:
                 for item in sorted(source.agents.values(), key=lambda item: (item.name.casefold(), item.id))
             ),
             models=tuple(
-                ModelSummary(model_id=item.id, name=item.name, route=item.route)
+                ModelSummary(
+                    model_id=item.id,
+                    name=item.name,
+                    route=item.route,
+                    thinking=describe_thinking(item.route, item.settings),
+                )
                 for item in sorted(source.models.values(), key=lambda item: (item.name.casefold(), item.id))
             ),
             environments=environments,

@@ -14,7 +14,8 @@
   position: fixed;
   inset-inline-end: 20px;
   bottom: 20px;
-  z-index: 90;
+  /* A permission reminder must never cover a modal's controls. */
+  z-index: 40;
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -74,5 +75,14 @@
     margin: 8px 12px max(12px, env(safe-area-inset-bottom));
     padding: 12px;
     box-shadow: none;
+  }
+}
+
+@media (max-width: 700px) {
+  .frame {
+    position: fixed;
+    inset: var(--visible-top, 0px) 0 auto;
+    height: var(--visible-height, 100dvh);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }

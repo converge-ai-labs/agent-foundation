@@ -52,43 +52,80 @@ it("mounts the actual CodeMirror binding and retains remote updates without repl
   await waitFor(() => expect(textbox.textContent).toContain("Hello world"));
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(textbox);
   fireEvent.keyDown(textbox, { key: "Enter" });
-  expect(submit).not.toHaveBeenCalled();
-  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
   expect(submit).toHaveBeenCalledTimes(1);
+  expect(draft.doc.getText("text").toString()).toBe("Hello world");
+  fireEvent.keyDown(textbox, { key: "Enter", shiftKey: true });
+  expect(submit).toHaveBeenCalledTimes(1);
+  expect(draft.doc.getText("text").toString()).toContain("\n");
+  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
+  expect(submit).toHaveBeenCalledTimes(2);
 });
-it("renders relative collaborator positions without sending them as CRDT roots", async () => {
-  const draft = new ThreadDraft();
-  draft.doc.getText("text").insert(0, "Shared");
+it("does not submit Enter while an IME is composing", () => {
+  const submit = vi.fn();
   render(
     <ComposerEditor
-      draft={draft}
+      draft={new ThreadDraft()}
       profile={{ display_name: "Alice", color: "#2563eb" }}
       presence={() => {}}
-      submit={() => {}}
+      submit={submit}
     />,
   );
-  act(() => {
-    draft.participants = {
-      "participant-two": {
-        name: "Bob",
-        color: "#112233",
-        anchor: encode(
-          Y.encodeRelativePosition(
-            Y.createRelativePositionFromTypeIndex(draft.doc.getText("text"), 0),
-          ),
-        ),
-        head: encode(
-          Y.encodeRelativePosition(
-            Y.createRelativePositionFromTypeIndex(draft.doc.getText("text"), 3),
-          ),
-        ),
-      },
-    };
-    draft.notify();
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  fireEvent.compositionStart(textbox);
+  fireEvent.keyDown(textbox, { key: "Enter", isComposing: true, keyCode: 229 });
+  fireEvent.keyDown(textbox, {
+    key: "Enter",
+    ctrlKey: true,
+    isComposing: true,
   });
-  await screen.findByText("Bob");
-  expect([...draft.doc.share.keys()].sort()).toEqual(["attachments", "text"]);
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.compositionEnd(textbox);
 });
+it.each(["", "Shared"])(
+  "renders relative collaborator positions in %j without placeholder text or extra CRDT roots",
+  async (text) => {
+    const draft = new ThreadDraft();
+    draft.doc.getText("text").insert(0, text);
+    render(
+      <ComposerEditor
+        draft={draft}
+        profile={{ display_name: "Alice", color: "#2563eb" }}
+        presence={() => {}}
+        submit={() => {}}
+      />,
+    );
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    expect(textbox.textContent).toBe(text);
+    act(() => {
+      draft.participants = {
+        "participant-two": {
+          name: "Bob",
+          color: "#112233",
+          anchor: encode(
+            Y.encodeRelativePosition(
+              Y.createRelativePositionFromTypeIndex(
+                draft.doc.getText("text"),
+                0,
+              ),
+            ),
+          ),
+          head: encode(
+            Y.encodeRelativePosition(
+              Y.createRelativePositionFromTypeIndex(
+                draft.doc.getText("text"),
+                Math.min(3, text.length),
+              ),
+            ),
+          ),
+        },
+      };
+      draft.notify();
+    });
+    await screen.findByText("Bob");
+    expect(textbox.querySelector(".cm-placeholder")).toBeNull();
+    expect([...draft.doc.share.keys()].sort()).toEqual(["attachments", "text"]);
+  },
+);
 
 function inlineEditor() {
   const draft = new ThreadDraft();
@@ -428,4 +465,173 @@ it("changes draft-lifetime guidance without remounting the editor on Thread crea
   expect(editor.getAttribute("aria-description")).toContain(
     "Shared with this conversation",
   );
+});
+
+it("completes dollar skills without sending, and retains the editor across catalog context changes", async () => {
+  const { startCompletion } = await import("@codemirror/autocomplete");
+  const draft = new ThreadDraft();
+  const editor = { current: null as EditorView | null };
+  const submit = vi.fn();
+  const loadSkills = vi.fn(async () => ({
+    catalog_id: "a".repeat(64),
+    context_kind: "draft" as const,
+    items: [
+      {
+        item_id: "b".repeat(64),
+        name: "review",
+        description: "Review carefully",
+        source_id: "project",
+        logical_path: ".agents/skills/review",
+      },
+    ],
+  }));
+  const props = {
+    draft,
+    editor,
+    submit,
+    loadSkills,
+    profile: { display_name: "Alice", color: "#2563eb" },
+    presence: vi.fn(),
+  };
+  const view = render(<ComposerEditor {...props} skillContext="first" />);
+  const original = editor.current;
+  act(() => {
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "Use $rev" },
+      selection: { anchor: 8 },
+    });
+    editor.current!.focus();
+    startCompletion(editor.current!);
+  });
+  await screen.findByRole("option", { name: /\$review/ });
+  expect(screen.getByText("Review carefully")).toBeTruthy();
+  // CodeMirror suppresses accidental acceptance immediately after opening.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  fireEvent.keyDown(textbox, { key: "Enter" });
+  expect(submit).not.toHaveBeenCalled();
+  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+  fireEvent.keyDown(textbox, { key: "Enter" });
+  expect(submit).toHaveBeenCalledOnce();
+  view.rerender(<ComposerEditor {...props} skillContext="second" />);
+  expect(editor.current).toBe(original);
+  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+  act(() => {
+    draft.replacement = {
+      draft_id: "replacement",
+      participant_id: "participant-one",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(new Y.Doc())),
+    };
+    draft.joinReplacement(false);
+  });
+  view.rerender(<ComposerEditor {...props} skillContext="second" />);
+  expect(editor.current).not.toBe(original);
+  act(() => {
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "$rev" },
+      selection: { anchor: 4 },
+    });
+    editor.current!.focus();
+    startCompletion(editor.current!);
+  });
+  await screen.findByRole("option", { name: /\$review/ });
+});
+
+it("sends immediately after ordinary typing even while completion checks are pending", async () => {
+  const { completionStatus } = await import("@codemirror/autocomplete");
+  const editor = { current: null as EditorView | null };
+  const submit = vi.fn();
+  const loadSkills = vi.fn();
+  render(
+    <ComposerEditor
+      draft={new ThreadDraft()}
+      editor={editor}
+      submit={submit}
+      loadSkills={loadSkills}
+      profile={{ display_name: "Test", color: "#000000" }}
+      presence={() => {}}
+    />,
+  );
+  act(() => {
+    editor.current!.focus();
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "Hello" },
+      selection: { anchor: 5 },
+      userEvent: "input.type",
+    });
+    expect(completionStatus(editor.current!.state)).toBe("pending");
+    fireEvent.keyDown(editor.current!.contentDOM, { key: "Enter" });
+  });
+  expect(submit).toHaveBeenCalledOnce();
+  expect(loadSkills).not.toHaveBeenCalled();
+});
+
+it("does not swallow Enter during a skill lookup without visible candidates", async () => {
+  const { startCompletion, completionStatus } =
+    await import("@codemirror/autocomplete");
+  const editor = { current: null as EditorView | null };
+  const submit = vi.fn();
+  const loadSkills = vi.fn(() => new Promise<never>(() => {}));
+  render(
+    <ComposerEditor
+      draft={new ThreadDraft()}
+      editor={editor}
+      submit={submit}
+      loadSkills={loadSkills}
+      profile={{ display_name: "Test", color: "#000000" }}
+      presence={() => {}}
+    />,
+  );
+  act(() => {
+    editor.current!.focus();
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "$rev" },
+      selection: { anchor: 4 },
+    });
+    startCompletion(editor.current!);
+  });
+  await waitFor(() => expect(loadSkills).toHaveBeenCalledOnce());
+  expect(completionStatus(editor.current!.state)).toBe("pending");
+  expect(screen.queryByRole("listbox")).toBeNull();
+  fireEvent.keyDown(editor.current!.contentDOM, { key: "Enter" });
+  expect(submit).toHaveBeenCalledOnce();
+});
+
+it("focuses when the initial page becomes ready without rebuilding or reclaiming focus on refresh", () => {
+  const editor = { current: null as EditorView | null };
+  const props = {
+    draft: new ThreadDraft(),
+    editor,
+    submit: vi.fn(),
+    presence: vi.fn(),
+    profile: { display_name: "Test", color: "#000000" },
+  };
+  const view = render(
+    <>
+      <input aria-label="Other field" />
+      <ComposerEditor {...props} />
+    </>,
+  );
+  const original = editor.current;
+  const other = screen.getByRole("textbox", { name: "Other field" });
+  act(() => other.focus());
+  view.rerender(
+    <>
+      <input aria-label="Other field" />
+      <ComposerEditor {...props} autoFocus />
+    </>,
+  );
+  expect(document.activeElement).toBe(editor.current!.contentDOM);
+  act(() => other.focus());
+  view.rerender(
+    <>
+      <input aria-label="Other field" />
+      <ComposerEditor {...props} autoFocus />
+    </>,
+  );
+  expect(document.activeElement).toBe(other);
+  expect(editor.current).toBe(original);
 });

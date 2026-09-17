@@ -91,9 +91,9 @@ Row activation opens detail. An incomplete setup shows a resume action. Empty st
 
 The wizard has five stages: **Platform and account → Connect → Verify → Agent and reception → Test**.
 
-1. Select Slack or Feishu. Reuse an eligible existing Account or connect a new application. An Account already represented in Bots opens its existing page rather than creating a duplicate.
+1. Choose between equally prominent Use an existing account and Create a new account options. The existing-account option shows selectable Accounts; the new-account option shows a compact Slack or Feishu platform selection. An Account already represented in Bots opens its existing page rather than creating a duplicate.
 2. Follow the provider-specific instructions below. Required credentials use write-only fields. Provider identity is resolved or verified by trusted API responses and authenticated events where possible; manual identifiers are an advanced fallback, not trusted proof of identity.
-3. Save the Account with reception disabled. Display its exact HTTP event endpoint, explain how to configure provider verification, and track verification independently from saving credentials. Challenge validation works before production reception is enabled.
+3. Save the Account with reception disabled. For HTTP display its exact event endpoint; for long connections display platform instructions and poll the current event connection status. Track provider identity verification independently from saving credentials and transport connectivity. Challenge validation works before production reception is enabled.
 4. Select an existing same-Workspace Agent and an eligible execution Service Account. Explain that the latter controls the permissions under which incoming messages execute. No browser login or external sender supplies Service authority. New Agent creation is a linked flow that preserves the non-secret wizard draft.
 5. Configure one pilot channel/chat, explicitly activate reception, and ask the user to send the displayed test message. The UI explains that this invokes an Agent and may consume model usage. Prepare a uniquely marked test without sending a message, then observe authenticated event receipt, Run/Steer acceptance, and an actual provider-confirmed reply containing that marker separately. Refresh reads observations only; a lost preparation acknowledgement retries the same command, and expired or stale tests require a newly prepared message. Ending or closing the wizard does not cancel accepted work.
 
@@ -103,7 +103,7 @@ Credentials are cleared after submission or dismissal, never written to browser 
 
 ### 4.3 Slack onboarding
 
-Provide an application manifest template and a link to Slack's developer console. The deployer creates the application in their own development Workspace, enables the necessary Bot scopes and supported events, and installs it in the intended Workspace. The wizard accepts the Bot token and signing secret, verifies the App/team/Bot identity, and supplies the event request URL.
+Provide an application manifest template and a link to Slack's developer console. The deployer creates the application in their own development Workspace, enables the necessary Bot scopes and supported events, and installs it in the intended Workspace. The wizard accepts the Bot token plus the signing secret for HTTP, or an app-level token with `connections:write` for Socket Mode. It verifies the App/team/Bot identity and displays either the HTTP request URL or Socket Mode connection status. Socket Mode is app-wide; installations of the same App use the same app-level token.
 
 Explain invitations into pilot channels and the additional permissions needed for selected interaction modes. Increased scopes require the deployer to complete the upstream authorization step. The wizard does not promise to bypass Workspace administrator approval. This is customer-owned application setup, not our own multi-tenant OAuth installation service.
 
@@ -111,21 +111,21 @@ Explain invitations into pilot channels and the additional permissions needed fo
 
 Guide the deployer through creating an enterprise custom application, enabling Bot capability, configuring message permissions and event subscriptions, and publishing an application version with the correct availability range.
 
-The current implementation path uses HTTP events. The wizard supplies the request URL and handles verification-token and optional encryption-key configuration alongside the App credentials. It validates App, tenant, and Bot identity. It explains that searching for the Bot and adding it through group settings can fail when the application has not been published or the operator is outside its availability range.
+The wizard offers HTTP events and WebSocket long connections. HTTP shows the request URL and asks for App ID, App Secret, Verification Token, and an optional Encrypt Key. Long connections ask only for App ID and App Secret, explain the corresponding Feishu event subscription setting, and show live transport status. It does not ask the operator for Tenant Key or Bot Open Id. Before creating the Account, Service queries the official Feishu APIs with the supplied App credentials and derives both identifiers. Failed discovery creates no Account. The saved Account still contains the complete immutable identity, and the Verify stage displays the verified application and enterprise for confirmation. It explains that searching for the Bot and adding it through group settings can fail when the application has not been published or the operator is outside its availability range.
 
-Do not display a long-connection option until a corresponding Service transport is implemented and validated. No Feishu store application credentials or app-ticket lifecycle are implied by accepting custom-app credentials.
+Existing Accounts retain HTTP until explicitly changed. Changing transport preserves Bot and memory identity; the operator updates transport credentials before switching. A connected transport does not replace the end-to-end setup test. No Feishu store application credentials or app-ticket lifecycle are implied by accepting custom-app credentials.
 
 ### 4.5 Bot detail
 
 The heading shows local name, platform, external installation identity, administrative availability, and time-stamped setup observations. Tabs are **Overview, Channels / Group chats, Conversations, Memory, Settings**.
 
-- Overview shows default Agent, reception mode, incomplete setup steps, and recent failures with specific recovery actions.
+- Overview groups information under **Message responses**, **Group memory**, and **Platform connection status**. It shows the default Agent by name with a detail link; loading and unavailable names have explicit states rather than exposing an opaque ID as the label. Message responses summarizes admission and reply behavior; Group memory summarizes Bot defaults and points to per-group visibility; Platform connection status identifies the last verified external installation and app activation, without claiming message delivery or Agent execution succeeded. Incomplete setup steps and recent failures retain specific recovery actions.
 - Channels / Group chats shows exact targets and their Agent and response policies. Provider discovery is advisory and bounded by permissions. Manual ID entry remains available when discovery is unavailable; missing search results are not proof that a private conversation does not exist.
 - Conversations filters the existing Session/Thread views by trusted Account/target bindings. It creates no new transcript store and grants no additional history access.
-- Memory embeds the Bot Memory contract's three-pane conversation/storage selection, `_index.md` topic navigation, and version-aware document browser, with date/type filters and separate sharing settings. Authorized knowledge/procedure revisions and event corrections follow the shared document model; published copies remain immutable. TOC and index links open bounded authorized content on demand. Availability distinguishes sandbox-bound storage, configured persistent storage, missing/lost targets, and empty collections. The derived index has no ordinary document mutation actions.
+- Memory embeds the Bot Memory contract's three-pane conversation/storage selection, `_index.md` topic navigation, and version-aware document browser, with date/type filters and group visibility settings. Authorized knowledge/procedure revisions follow the shared document model; event corrections originate in conversations. TOC and index links open bounded authorized content on demand. Availability distinguishes sandbox-bound storage, configured persistent storage, missing/lost targets, and empty collections. The derived index has no ordinary document mutation actions.
 - Settings shows inherited Account defaults, reception scope, and links to write-only credential maintenance. Account availability is edited through the canonical Account operation.
 
-The [Memory frontend specification](bot-memory.md#8-frontend-and-request-behavior) defines the three-pane browser and receiving-group view. [Selected-record sharing](bot-memory.md#5-sharing-selected-records) and [group-sharing settings](bot-memory.md#6-continuing-sharing-between-groups) define their corresponding interactions. All reuse the same Bot shell.
+The [Memory frontend specification](bot-memory.md#8-frontend-and-request-behavior) defines the three-pane browser and receiving-group view. [Group visibility](bot-memory.md#5-group-visibility) and [visibility configuration](bot-memory.md#6-visibility-configuration) define their corresponding interactions. All reuse the same Bot shell.
 
 ### 4.6 Channel or group-chat detail
 
@@ -183,7 +183,7 @@ Account and credential changes retain Workspace Admin authority. Target configur
 
 Bots supplies trusted Account identity, external tenant, exact conversation, conversation kind, Thread/Run source, execution principal, and current reception eligibility. Memory determines the permitted read/write scopes and never accepts model-selected raw scope IDs.
 
-The Bot Memory contract owns group-local document memory, bounded `_index.md` navigation, semantic/procedural revisions, append-only events, on-demand section reading, selected-version publication, and continuing sharing. Sharing grants retrieval rather than chat-send authority or permission to edit another group's content. Published copies and committed revisions remain immutable; derived navigation changes with admitted content and access.
+The Bot Memory contract owns group-local document memory, bounded `_index.md` navigation, semantic/procedural revisions, append-only events, and on-demand section reading. Each group chooses **Only this group** or **All connected groups**. Opening a group grants eligible groups in the same Bot installation read access to its existing and future current documents; it creates no copies and does not open other groups' memory. Shared readers cannot revise or delete another group's content, inspect its history/diffs, or use private source links. Cross-Account and direct-conversation sharing are excluded. Committed revisions remain immutable; derived navigation follows admitted content and current visibility.
 
 Memory follows the exact conversation across target Agent changes, while availability follows its explicit storage binding. Execution uses trusted conversation memory without unioning ordinary Agent/User memories. Account settings select current-Environment filesystem memory by default or an explicit Provider; credentials stay on their owning Environment/Provider resources. [Account-owned selection](bot-memory.md#account-owned-memory-selection) and [Service Memory](../a13n-service/42-memory.md) own root/child/recovery bindings. Backend capability declarations and validation determine available history, metadata, and traversal rather than the presence of a file-looking UI.
 
@@ -221,3 +221,7 @@ Memory management is owned by [Bot Memory](bot-memory.md). Backend content and c
 - [Messaging Reception](../a13n-service/40-connectivity/02-messaging-ingress.md)
 - [Console](console.md)
 - [Bot Memory](bot-memory.md)
+
+## Memory Settings API Boundary
+
+Console reads and updates the [Bot-owned settings resource](../a13n-service/42-memory.md#bot-memory-configuration), using its `expected_version` independently of Account version. Bot summaries supply separate Account and Memory settings projections. Existing-account selection uses the Bot collection endpoint. Generic Application Account forms neither read nor write memory configuration. This changes API ownership without changing the administrator-only management boundary or document browsing behavior.

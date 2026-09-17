@@ -4,8 +4,9 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from a13n_environment import EnvironmentError, EnvironmentState
-from a13n_environment.docker._errors import conflict_failure, missing_failure
+from a13n_environment import EnvironmentError, EnvironmentProviderError, EnvironmentState
+from a13n_environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
 from a13n_service.environments.domain import CreateManagedEnvironmentRequest, EnvironmentCommandRequest
 from a13n_service.environments.identity import target_identity
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
@@ -106,7 +107,12 @@ async def test_undispatched_failure_preserves_only_an_earlier_unknown_operation(
 
     class InvalidTarget(Target):
         async def _stop(self):
-            raise conflict_failure("Rejected before dispatch")
+            raise EnvironmentProviderError(
+                "Rejected before dispatch",
+                code="provider_conflict",
+                category=Category.CONFLICT,
+                certainty=Certainty.NOT_DISPATCHED,
+            )
 
     async def construct(operation):
         if failure_at == "construction":
@@ -386,7 +392,9 @@ async def test_publication_cancellation_is_not_replaced_by_the_provider_error(
 
     class MissingTarget(Target):
         async def _stop(self):
-            raise missing_failure("Target is missing")
+            raise EnvironmentProviderError(
+                "Target is missing", code="provider_missing", category=Category.MISSING, certainty=Certainty.KNOWN
+            )
 
     async def construct(operation):
         return MissingTarget(operation.state, events)

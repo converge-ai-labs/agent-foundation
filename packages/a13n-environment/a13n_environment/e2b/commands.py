@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import base64
 import itertools
 import json
 import shlex
+from collections.abc import AsyncIterator
 from importlib.resources import files
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, BinaryIO, Literal
 
 from pydantic import JsonValue, TypeAdapter
 
+from .._guest_commands import file_helper_source
 from ..models import EnvironmentError, EnvironmentOperationReceipt
 from .configuration import E2BProviderConfiguration
 from .errors import sdk_errors
@@ -30,14 +31,9 @@ class GuestCommands:
         self.closed = False
         self._operations = itertools.count(1)
         self._sources = {
-            name: files(__package__).joinpath("guest", f"{name}.py").read_text() for name in ("files", "ports")
+            "files": file_helper_source(),
+            "ports": files(__package__).joinpath("guest", "ports.py").read_text(),
         }
-        for module, names in (
-            ("_file_patterns", "PathPattern, PatternError, content_pattern"),
-            ("_file_search", "search_text_file"),
-        ):
-            source = files("a13n_environment").joinpath(f"{module}.py").read_text()
-            self._sources["files"] = self._sources["files"].replace(f"from ...{module} import {names}", source)
 
     def command(self, module: Literal["files", "ports"], arguments: dict[str, JsonValue]) -> str:
         if self.closed:
@@ -99,6 +95,27 @@ class GuestCommands:
     async def port(self, port: int) -> dict[str, JsonValue]:
         return await self._execute("ports", {"port": port}, mutation=False)
 
+    async def read_stream(self, path: str) -> AsyncIterator[bytes]:
+        with sdk_errors():
+            reader = await self.sandbox.files.read(
+                path,
+                format="stream",
+                user=self.configuration.user,
+                request_timeout=self.configuration.request_timeout_seconds,
+            )
+            async with reader:
+                async for chunk in reader:
+                    yield chunk
+
+    async def write_stream(self, path: str, source: BinaryIO) -> None:
+        with sdk_errors(mutation=True):
+            await self.sandbox.files.write(
+                path,
+                source,
+                user=self.configuration.user,
+                request_timeout=self.configuration.request_timeout_seconds,
+            )
+
     def receipt(self) -> EnvironmentOperationReceipt:
         return EnvironmentOperationReceipt(
             mount_id=self.mount_id,
@@ -107,13 +124,3 @@ class GuestCommands:
             stage="completed",
             outcome="succeeded",
         )
-
-
-def decoded_bytes(value: dict[str, JsonValue]) -> bytes:
-    data = value.get("data")
-    if not isinstance(data, str):
-        raise EnvironmentError("E2B returned invalid bytes.", code="environment_provider_failure")
-    try:
-        return base64.b64decode(data, validate=True)
-    except ValueError:
-        raise EnvironmentError("E2B returned invalid bytes.", code="environment_provider_failure") from None

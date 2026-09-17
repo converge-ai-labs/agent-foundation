@@ -15,18 +15,23 @@ import { useSelectors, useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
-import { Composer, useDraft } from "./composer";
+import { Composer, submitContinuation, useDraft } from "./composer";
 import { ComposerStatus } from "./composer-status";
 import { ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
-import { Discussion } from "./comments";
+import { RootFailureNotice } from "./failure-notice";
 import { refreshThreadLists, useHistory, useThread } from "./queries";
-import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
-import { LiveOutput, SavedEntry } from "./transcript";
-import { savedToolGroups } from "./tool-presentation";
+import { showFocusedOutput } from "./stream";
+import { useLiveThread } from "./live-threads";
+import { LiveConnectionNotice } from "./live-connection";
+import { ConversationTranscript, RecoveryNotice } from "./transcript";
+import { inputSource } from "./local-input";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
+import { savedResultVisible } from "./result-visibility";
+import { ConversationOpening, useInitialReady } from "./opening";
 
 export function ConversationPage(props: {
   profile: Profile;
@@ -47,6 +52,12 @@ function Conversation({
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(threadId);
+  const results = useResults();
+  const tracker = results.tracker;
+  useEffect(() => {
+    if (detail.data)
+      void tracker?.follow(detail.data.thread, detail.dataUpdatedAt);
+  }, [detail.data, detail.dataUpdatedAt, tracker]);
   const selectors = useSelectors();
   const agentSelection = useMutation({
     mutationFn: async (agentId: string) => {
@@ -63,6 +74,8 @@ function Conversation({
       );
     },
     onSuccess: (updated) => {
+      draft.thinking = null;
+      draft.notify();
       queries.setQueryData<Schema<"ThreadDetail">>(
         ["thread", threadId, "detail"],
         (current) => {
@@ -97,9 +110,22 @@ function Conversation({
     detail.data?.continuation_id,
     !!detail.data,
   );
-  const [display] = useState(() => new FocusDisplay());
-  const [connection, setConnection] = useState("Connecting");
-  const [revision, setRevision] = useState(0);
+  const { display, connection, reconnections, revision } =
+    useLiveThread(threadId);
+  const [showAvailable, setShowAvailable] = useState(false);
+  const pageReady = useInitialReady(
+    showAvailable ||
+      detail.isError ||
+      !!detail.data?.thread.parent_thread_id ||
+      (!!detail.data &&
+        (!!history.data || history.isError) &&
+        !selectors.isPending &&
+        (display.ready || reconnections > 0) &&
+        (detail.data.thread.archived ||
+          draft.status === "Connected" ||
+          !!draft.replacement ||
+          !!draft.error)),
+  );
   const rename = dialog === "rename";
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
@@ -113,10 +139,61 @@ function Conversation({
     if (rename) setTitle(detail.data?.thread.title ?? "");
   }, [rename, detail.data?.thread.title]);
   const [message, setMessage] = useState("");
-  const [referenceAdded, setReferenceAdded] = useState(0);
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
+  const scrollFrame = useRef<number | null>(null);
+  const stopScrolling = useCallback(() => {
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+    scrollFrame.current = null;
+  }, []);
+  const scrollToLatest = useCallback(
+    (instant = false) => {
+      const element = reader.current;
+      if (!element) return;
+      if (
+        instant ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        stopScrolling();
+        element.scrollTop = element.scrollHeight;
+        return;
+      }
+      if (scrollFrame.current !== null) return;
+      let previous = performance.now();
+      const step = (now: number) => {
+        if (!follow.current) {
+          scrollFrame.current = null;
+          return;
+        }
+        const target = Math.max(0, element.scrollHeight - element.clientHeight);
+        const distance = target - element.scrollTop;
+        if (Math.abs(distance) < 1) {
+          element.scrollTop = target;
+          scrollFrame.current = null;
+          return;
+        }
+        // Some browsers quantize scrollTop to whole pixels. Keep progressing
+        // near the target instead of scheduling frames forever below one pixel.
+        element.scrollTop +=
+          Math.sign(distance) *
+          Math.max(
+            1,
+            Math.abs(distance) *
+              (1 - Math.exp(-Math.min(now - previous, 64) / 65)),
+          );
+        previous = now;
+        scrollFrame.current = requestAnimationFrame(step);
+      };
+      scrollFrame.current = requestAnimationFrame(step);
+    },
+    [stopScrolling],
+  );
+  useEffect(() => stopScrolling, [stopScrolling]);
+  const interruptScroll = () => {
+    stopScrolling();
+    follow.current = false;
+  };
   const olderAnchor = useRef<{ height: number; top: number } | null>(null);
   const [newOutput, setNewOutput] = useState(false);
   const reconcile = useCallback(() => {
@@ -124,35 +201,6 @@ function Conversation({
     void refreshThreadLists(queries);
     void queries.invalidateQueries({ queryKey: ["child-saved-output"] });
   }, [queries, threadId]);
-  useEffect(() => {
-    let paint: ReturnType<typeof setTimeout> | undefined;
-    let refresh: ReturnType<typeof setTimeout> | undefined;
-    const close = watchThread(
-      transport,
-      threadId,
-      display,
-      () => {
-        if (!paint)
-          paint = setTimeout(() => {
-            paint = undefined;
-            setRevision((value) => value + 1);
-          }, 50);
-      },
-      setConnection,
-      () => {
-        if (!refresh)
-          refresh = setTimeout(() => {
-            refresh = undefined;
-            reconcile();
-          }, 150);
-      },
-    );
-    return () => {
-      close();
-      clearTimeout(paint);
-      clearTimeout(refresh);
-    };
-  }, [transport, threadId, display, reconcile]);
   const entries = useMemo(
     () =>
       history.data?.pages
@@ -161,8 +209,76 @@ function Conversation({
         .flatMap((page) => page.entries) ?? [],
     [history.data],
   );
-  const toolGroups = useMemo(() => savedToolGroups(entries), [entries]);
+  useEffect(() => {
+    const saved = new Set(
+      entries.flatMap((entry) => entry.parts.map(inputSource)),
+    );
+    const retained = draft.localInputs.filter((input) => !saved.has(input.id));
+    if (retained.length !== draft.localInputs.length) {
+      draft.localInputs = retained;
+      draft.notify();
+    }
+  }, [entries, draft]);
+  const latestLocalInput = draft.localInputs.at(-1)?.id;
+  const previousLocalInput = useRef(latestLocalInput);
+  useLayoutEffect(() => {
+    if (latestLocalInput && latestLocalInput !== previousLocalInput.current) {
+      follow.current = true;
+      setNewOutput(false);
+      scrollToLatest(true);
+    }
+    previousLocalInput.current = latestLocalInput;
+  }, [latestLocalInput, scrollToLatest]);
   const continuation = history.data?.pages[0]?.continuation_id;
+  const completionVersion =
+    history.isPreviousHistory || history.isError
+      ? 0
+      : (history.data?.pages[0]?.completion_version ?? 0);
+  const acknowledged = results.followed.get(threadId);
+  useEffect(() => {
+    if (
+      !pageReady ||
+      !tracker ||
+      !completionVersion ||
+      acknowledged === undefined ||
+      acknowledged >= completionVersion
+    )
+      return;
+    const element = reader.current;
+    if (!element) return;
+    const check = () => {
+      if (!olderAnchor.current && savedResultVisible(element))
+        void tracker.acknowledge(threadId, completionVersion);
+    };
+    // The effect runs after transcript commit; the frame observes layout and the
+    // actual scroll position, never the optimistic follow/smooth-scroll flag.
+    const frame = requestAnimationFrame(check);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(check);
+    observer?.observe(element);
+    if (element.firstElementChild) observer?.observe(element.firstElementChild);
+    element.addEventListener("scroll", check);
+    window.addEventListener("focus", check);
+    window.addEventListener("resize", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      element.removeEventListener("scroll", check);
+      window.removeEventListener("focus", check);
+      window.removeEventListener("resize", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [
+    pageReady,
+    tracker,
+    threadId,
+    completionVersion,
+    acknowledged,
+    history.data,
+  ]);
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   useEffect(() => {
@@ -182,14 +298,15 @@ function Conversation({
       : undefined);
   // Advance only after the replacement history query arrives. SSE completion alone
   // is not evidence that continuation was saved.
+  const presentation = display.presentationFor(continuation);
   const showLive = showFocusedOutput(
-    display,
+    presentation,
     continuation,
     operation?.run_id,
     history.isPreviousHistory,
   );
-  const liveBlocks = display.blocksAfter(continuation);
-  const visibleContent = `${continuation}:${entries.length}:${
+  const liveBlocks = presentation.blocksAfter(continuation);
+  const visibleContent = `${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
     showLive
       ? liveBlocks
           .filter((block) => !block.diagnostic)
@@ -203,7 +320,7 @@ function Conversation({
   const lastContent = useRef("");
   useLayoutEffect(() => {
     const element = reader.current;
-    if (!element || !history.data) return;
+    if (!pageReady || !element || !history.data) return;
     const restored = !!restoreScroll.current;
     if (restoreScroll.current) {
       try {
@@ -223,20 +340,54 @@ function Conversation({
         element.scrollHeight -
         olderAnchor.current.height;
       olderAnchor.current = null;
-    } else if (follow.current) element.scrollTop = element.scrollHeight;
-    else if (
+    } else if (follow.current) {
+      // Streaming commits and late layout use one bottom-follow policy. Only
+      // an explicit New output action animates; resize must not fight that RAF.
+      if (scrollFrame.current === null) scrollToLatest(true);
+    } else if (
       !restored &&
       !olderAnchor.current &&
       lastContent.current !== visibleContent
     )
       setNewOutput(true);
     lastContent.current = visibleContent;
-  }, [revision, visibleContent, history.data, history.isFetchingNextPage]);
+  }, [
+    pageReady,
+    revision,
+    visibleContent,
+    history.data,
+    history.isFetchingNextPage,
+    scrollToLatest,
+  ]);
+  useEffect(() => {
+    const element = reader.current;
+    const content = element?.firstElementChild;
+    if (
+      !pageReady ||
+      !element ||
+      !content ||
+      typeof ResizeObserver === "undefined"
+    )
+      return;
+    const observer = new ResizeObserver(() => {
+      // Both late content and a growing composer can move the actual bottom.
+      if (
+        follow.current &&
+        !olderAnchor.current &&
+        scrollFrame.current === null
+      )
+        scrollToLatest(true);
+    });
+    observer.observe(element);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [pageReady, scrollToLatest]);
   useEffect(() => {
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
     // Short/context-only pages need no scroll gesture to fill the viewport.
     if (
+      pageReady &&
       element &&
       element.clientHeight > 0 &&
       element.scrollTop < 160 &&
@@ -252,6 +403,7 @@ function Conversation({
       void history.fetchNextPage();
     }
   }, [
+    pageReady,
     history.data,
     history.hasNextPage,
     history.isFetching,
@@ -260,6 +412,7 @@ function Conversation({
   ]);
   useLayoutEffect(() => {
     const element = reader.current;
+    if (!pageReady) return;
     return () => {
       if (element)
         writePreference(
@@ -267,9 +420,9 @@ function Conversation({
           JSON.stringify({ top: element.scrollTop, follow: follow.current }),
         );
     };
-  }, [threadId, !!detail.data]);
+  }, [threadId, pageReady]);
   useEffect(() => {
-    if (detail.data && !detail.data.thread.archived)
+    if (detail.data && !detail.data.thread?.archived)
       writePreference("last-thread", threadId);
   }, [threadId, detail.data]);
   const metadata = useMutation({
@@ -289,16 +442,8 @@ function Conversation({
     },
     onError: reconcile,
   });
-  if (!detail.data)
-    return (
-      <div>
-        <ErrorNotice error={detail.error} retry={() => void detail.refetch()} />
-        {!detail.error && <p role="status">Loading conversation…</p>}
-        <Link to="/">Return to workbench</Link>
-      </div>
-    );
-  const thread = detail.data.thread;
-  if (thread.parent_thread_id)
+  const thread = detail.data?.thread;
+  if (thread?.parent_thread_id)
     return (
       <div>
         <h1>Child conversation</h1>
@@ -312,21 +457,18 @@ function Conversation({
       </div>
     );
   return (
-    <Discussion
-      threadId={threadId}
-      profile={profile}
-      listOpen={dialog === "comments"}
-      closeList={closeDialog}
-      onReferenceAdded={() => setReferenceAdded((value) => value + 1)}
+    <ConversationOpening
+      ready={pageReady}
+      label="Opening conversation…"
+      onContinue={() => setShowAvailable(true)}
     >
       <div className={styles.page}>
-        {connection !== "Live" && connection !== "Connecting" && (
-          <div className={styles.activityBar}>
-            <small role="status">{connection}</small>
-          </div>
-        )}
+        <LiveConnectionNotice
+          connection={connection}
+          reconnections={reconnections}
+        />
 
-        {thread.archived && (
+        {thread?.archived && (
           <div className={styles.warning}>
             <p>This conversation is archived. Its history remains available.</p>
             <Button
@@ -350,11 +492,26 @@ function Conversation({
         <div
           ref={reader}
           className={styles.reading}
+          onWheel={(event) => {
+            if (event.deltaY < 0) interruptScroll();
+          }}
+          onTouchStart={interruptScroll}
+          onPointerDown={interruptScroll}
+          onKeyDown={(event) => {
+            if (["ArrowUp", "PageUp", "Home"].includes(event.key))
+              interruptScroll();
+          }}
           onScroll={() => {
+            if (!pageReady) return;
             const element = reader.current!;
-            follow.current =
-              element.scrollHeight - element.scrollTop - element.clientHeight <
-              64;
+            // Layout-driven scroll events must not detach an active follower.
+            // After a user gesture, resume only at the actual bottom.
+            if (scrollFrame.current === null && !follow.current)
+              follow.current =
+                element.scrollHeight -
+                  element.scrollTop -
+                  element.clientHeight <=
+                1;
             if (follow.current) setNewOutput(false);
             if (
               element.scrollTop < 160 &&
@@ -391,43 +548,53 @@ function Conversation({
                 Retry earlier messages
               </Button>
             )}
-            {entries.map((entry, index) => (
-              <div
-                key={`${continuation}:${entry.position}`}
-                data-presence-anchor={`entry:${continuation}:${entry.position}`}
-              >
-                <SavedEntry
-                  entry={entry}
-                  continuation={
-                    index > 0 &&
-                    !entries[index - 1].parts.some(
-                      (part) => part.kind === "user" || part.kind === "media",
-                    ) &&
-                    !entry.parts.some(
-                      (part) => part.kind === "user" || part.kind === "media",
-                    )
-                  }
-                  toolGroups={toolGroups}
-                  threadId={threadId}
-                />
-              </div>
-            ))}
-            {showLive && (
-              <LiveOutput
-                blocks={liveBlocks}
-                gap={display.gap}
-                threadId={threadId}
-              />
-            )}
-            {!!detail.data.deferred_requests?.length && (
+            <ConversationTranscript
+              entries={entries}
+              blocks={showLive ? liveBlocks : []}
+              localInputs={draft.localInputs}
+              continuation={continuation}
+              gap={showLive && display.gap}
+              threadId={threadId}
+            />
+            <RootFailureNotice
+              threadId={threadId}
+              receipt={receipt}
+              display={display}
+              retry={
+                thread?.archived
+                  ? undefined
+                  : () => {
+                      void submitContinuation(
+                        draft,
+                        transport,
+                        threadId,
+                        tracker ? () => tracker.beforeRun(threadId) : undefined,
+                      ).finally(reconcile);
+                    }
+              }
+              retryDisabled={
+                !detail.data?.available_actions?.includes("run") ||
+                thread?.root_activity.state !== "inactive" ||
+                agentSelection.isPending ||
+                agentSelection.isError ||
+                detail.isError ||
+                draft.submission.kind === "pending" ||
+                draft.submission.kind === "unknown" ||
+                (draft.submission.kind === "accepted" &&
+                  draft.submission.receipt !== receipt)
+              }
+            />
+            <RecoveryNotice recovery={display.recovery} />
+            {!!detail.data?.deferred_requests?.length && (
               <Decisions
                 threadId={threadId}
-                continuation={detail.data.continuation_id}
+                continuation={detail.data?.continuation_id}
                 reconcile={reconcile}
               />
             )}
             {!entries.length &&
-              thread.root_activity.state === "inactive" &&
+              !draft.localInputs.length &&
+              thread?.root_activity.state === "inactive" &&
               !showLive &&
               !history.isPending &&
               !history.error && (
@@ -441,9 +608,10 @@ function Conversation({
               )}
           </div>
         </div>
-        {history.isPending && !history.data && (
-          <p role="status">Loading saved history…</p>
-        )}
+        {history.isPending &&
+          !history.data &&
+          !draft.localInputs.length &&
+          !showLive && <p role="status">Loading saved history…</p>}
         {newOutput && (
           <Button
             className={styles.newOutput}
@@ -451,24 +619,27 @@ function Conversation({
             onClick={() => {
               follow.current = true;
               setNewOutput(false);
-              reader.current?.scrollTo({ top: reader.current.scrollHeight });
+              scrollToLatest();
             }}
           >
             <ArrowDown />
             New output
           </Button>
         )}
-        <WorkInspector
-          threadId={threadId}
-          continuation={detail.data.continuation_id}
-          display={display}
-          live={showLive}
-          reconcile={reconcile}
-        />
-        {!thread.archived && (
+        {detail.data && (
+          <WorkInspector
+            threadId={threadId}
+            continuation={detail.data?.continuation_id}
+            display={display}
+            live={showLive}
+            connected={connection === "Live"}
+            reconcile={reconcile}
+          />
+        )}
+        {!thread?.archived && (
           <ErrorNotice error={agentSelection.error || selectors.error} />
         )}
-        {!thread.archived && (agentSelection.isError || detail.isError) && (
+        {!thread?.archived && (agentSelection.isError || detail.isError) && (
           <Button
             variant="ghost"
             disabled={detail.isFetching}
@@ -480,25 +651,37 @@ function Conversation({
             Refresh agent selection before sending
           </Button>
         )}
-        {!thread.archived && (
+        {!thread?.archived && (
           <Composer
-            referenceAdded={referenceAdded}
-            autoFocus={search.get("compose") === "1"}
+            autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
-            activity={thread.root_activity}
+            activity={thread?.root_activity ?? { state: "inactive" }}
             canRun={
               !agentSelection.isPending &&
               !agentSelection.isError &&
               !detail.isError &&
-              (detail.data.available_actions?.includes("run") ?? false)
+              (detail.data?.available_actions?.includes("run") ?? false)
+            }
+            unavailableReason={
+              agentSelection.isPending
+                ? "Updating conversation settings…"
+                : !detail.data
+                  ? "Loading conversation…"
+                  : undefined
             }
             modelId={draft.modelId}
             controls={
               <ThreadRunChoices
                 catalog={selectors.data}
-                agentId={thread.configuration.agent_source.id}
+                agentId={thread?.configuration.agent_source.id ?? ""}
                 modelId={draft.modelId}
+                thinking={draft.thinking}
+                onThinkingChange={(value) => {
+                  draft.thinking = value;
+                  draft.notify();
+                }}
                 disabled={
+                  !thread ||
                   agentSelection.isPending ||
                   detail.isFetching ||
                   draft.submission.kind === "pending" ||
@@ -507,6 +690,7 @@ function Conversation({
                 onAgentChange={(value) => agentSelection.mutate(value)}
                 onModelChange={(value) => {
                   draft.modelId = value;
+                  draft.thinking = null;
                   draft.notify();
                 }}
               />
@@ -516,7 +700,7 @@ function Conversation({
             reconcile={reconcile}
           />
         )}
-        {!thread.archived && (
+        {thread && !thread.archived && (
           <ComposerStatus
             threadId={threadId}
             receipt={receipt}
@@ -576,7 +760,11 @@ function Conversation({
               onChange={(value) => setTitle(value.slice(0, 512))}
             />
             <ErrorNotice error={metadata.error} />
-            <Button type="submit" loading={metadata.isPending}>
+            <Button
+              type="submit"
+              loading={metadata.isPending}
+              disabled={!thread}
+            >
               Save title
             </Button>
           </form>
@@ -591,11 +779,11 @@ function Conversation({
           <ConversationDetails
             threadId={threadId}
             receipt={receipt}
-            continuation={detail.data.continuation_id}
+            continuation={detail.data?.continuation_id}
             reconcile={reconcile}
           />
-          {!thread.archived &&
-            detail.data.available_actions?.includes("archive") && (
+          {!thread?.archived &&
+            detail.data?.available_actions?.includes("archive") && (
               <Button
                 variant="outline"
                 loading={metadata.isPending}
@@ -606,6 +794,6 @@ function Conversation({
             )}
         </ModalFrame>
       </div>
-    </Discussion>
+    </ConversationOpening>
   );
 }

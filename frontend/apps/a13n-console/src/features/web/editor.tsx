@@ -7,12 +7,18 @@ import {
   useResourceEditorState,
   type ResourceEditorControl,
 } from "../../shared/resource-modal";
-import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, ReadOnlyField, ModalFrame } from "a13n-ui";
+import {
+  Button,
+  FormField,
+  Input,
+  ReadOnlyField,
+  ModalFrame,
+  Switch,
+} from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -30,11 +36,9 @@ export function WebProviderEditor({
   controlledOpen,
   onClose,
   finalFocus,
-  extra,
   readOnly = false,
 }: ResourceEditorControl & {
   readOnly?: boolean;
-  extra?: React.ReactNode;
   scope: WebProviderScope;
   providerId?: string;
   onSaved?: (provider: Schema["WebProvider"]) => void;
@@ -114,13 +118,11 @@ export function WebProviderEditor({
                   </ReadOnlyField>
                 </div>
               )}
-              {extra}
             </div>
           ) : (
             <WebProviderForm
               scope={scope}
               onCancel={() => setOpen(false)}
-              extra={extra}
               resource={providerId ? resource.data : undefined}
               definitions={definitions.data.items}
               onSaved={(provider) => {
@@ -140,11 +142,9 @@ export function WebProviderForm({
   definitions,
   onSaved,
   onCancel,
-  extra,
 }: {
   scope: WebProviderScope;
   onCancel?: () => void;
-  extra?: React.ReactNode;
   resource?: { value: Schema["WebProvider"]; etag?: string };
   definitions: Schema["WebProviderDefinition"][];
   onSaved: (provider: Schema["WebProvider"]) => void;
@@ -243,17 +243,30 @@ export function WebProviderForm({
       }}
     >
       <FormSection>
-        <FormField
-          label={t("Name")}
-          labelAction={original && <ResourceReference id={original.value.id} />}
-        >
-          <Input
-            required
-            maxLength={128}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </FormField>
+        <div className={original ? "grid gap-4 sm:grid-cols-2" : ""}>
+          <FormField
+            label={t("Name")}
+            labelAction={
+              original && <ResourceReference id={original.value.id} />
+            }
+          >
+            <Input
+              required
+              maxLength={128}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </FormField>
+          {original && (
+            <FormField label={t("Enabled")}>
+              <Switch
+                checked={enabled}
+                onCheckedChange={setEnabled}
+                className="my-1.5"
+              />
+            </FormField>
+          )}
+        </div>
       </FormSection>
       <FormSection title={t("Connection")}>
         <ProviderTypeField
@@ -294,13 +307,7 @@ export function WebProviderForm({
             onChange={(event) => setCredential(event.target.value)}
           />
         </FormField>
-        {extra}
       </FormSection>
-      {original && (
-        <FormSection>
-          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        </FormSection>
-      )}
       <ErrorNotice error={reloadError ?? save.error ?? reconcileError} />
       {conflict && (
         <Button
@@ -370,49 +377,5 @@ export function WebProviderForm({
         pending={save.isPending || reconciling || !!reconcileError}
       />
     </form>
-  );
-}
-
-export function WebProviderTest({
-  scope,
-  providerId,
-  disabled = false,
-}: {
-  scope: WebProviderScope;
-  providerId: string;
-  disabled?: boolean;
-}) {
-  const client = useClient(),
-    { t } = useTranslation();
-  const test = useMutation({
-    retry: false,
-    mutationFn: () => webProviderApi(client, scope).testProvider(providerId),
-  });
-  return (
-    <div>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          disabled={disabled || test.isPending}
-          onClick={() => test.mutate()}
-          title={t("Sends one test search and may consume provider quota.")}
-        >
-          {t(test.isPending ? "Testing…" : "Check connection")}
-        </Button>
-        <span className="text-xs text-muted-foreground">
-          {t("May consume quota or incur cost.")}
-        </span>
-      </div>
-      {test.data && (
-        <p role="status">
-          {test.data.success
-            ? t("Test succeeded. This does not save the agent.")
-            : t("Test failed: {{code}}", { code: test.data.code })}
-        </p>
-      )}
-      <ErrorNotice error={test.error} />
-    </div>
   );
 }

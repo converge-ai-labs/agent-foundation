@@ -27,11 +27,13 @@ from pydantic_ai.settings import ModelSettings
 
 @dataclass
 class LocalProviderResolver:
-    """Supply only this process's explicit credential to the real discovery adapter."""
+    """Supply only this process's explicit credential to the connection probe."""
 
     provider: RuntimeProvider
 
-    async def resolve_provider(self, *, provider_id: str, organization_id: str, workspace_id: str) -> RuntimeProvider:
+    async def resolve_provider(
+        self, *, provider_id: str, organization_id: str, workspace_id: str | None
+    ) -> RuntimeProvider:
         return self.provider
 
 
@@ -57,39 +59,25 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
     )
     walkthrough = args.command == "walkthrough"
     if walkthrough:
-        pause("Next: fetch the OpenRouter model catalog through the Model module.")
-    if args.command in {"walkthrough", "discover"}:
-        print("\n[2] Discover models: GET /api/v1/models", flush=True)
+        pause("Next: probe the OpenRouter connection through the Model module.")
+    if args.command in {"walkthrough", "test"}:
+        print("\n[2] Test Provider connection", flush=True)
         async with asyncio.timeout(60):
-            catalog = await operations.discover(provider_id="local", organization_id="local", workspace_id="local")
-        print(
-            f"Discovered {len(catalog.items)} models; catalog access does not prove inference authorization.",
-            flush=True,
-        )
-        for item in catalog.items:
-            print(f"  {item.upstream_model}\t{item.display_name or ''}")
-        if args.command == "discover":
+            await operations.test(provider_id="local", organization_id="local", workspace_id="local")
+        print("Connection probe succeeded; this does not prove inference authorization.", flush=True)
+        if args.command == "test":
             return
 
-    model_id = args.model or input("\nEnter the full model ID to test (vendor/model from the catalog): ").strip()
+    model_id = args.model or input("\nEnter the full OpenRouter model ID to test (vendor/model): ").strip()
     snapshot = ModelExecutionSnapshot(
         model_id="mdl_1234567890abcdef", model_key="local-smoke", upstream_model=model_id, model_api=model_api
     )
     if not model_id.strip():
         raise ValueError("Model ID must not be empty")
     if args.command != "call":
-        async with asyncio.timeout(60):
-            description = await operations.describe(
-                provider_id="local",
-                organization_id="local",
-                workspace_id="local",
-                provider_type=provider.type,
-                upstream_model=model_id,
-                model_api=model_api,
-            )
-        print("\n[3] Model module description (capability information is advisory)", flush=True)
-        show(description.model_dump(mode="json", exclude={"settings_schema"}))
-        properties = cast(dict[str, object], description.settings_schema.get("properties", {}))
+        print("\n[3] Local Model API settings (not upstream capability discovery)", flush=True)
+        show({"upstream_model": model_id, "model_api": model_api})
+        properties = cast(dict[str, object], definition.settings_schemas[model_api].get("properties", {}))
         print("Available settings:", ", ".join(sorted(properties)))
         if args.command == "describe":
             return
@@ -127,7 +115,7 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "command", nargs="?", default="walkthrough", choices=("walkthrough", "discover", "describe", "call")
+        "command", nargs="?", default="walkthrough", choices=("walkthrough", "test", "describe", "call")
     )
     parser.add_argument("--model", help="Full OpenRouter upstream model ID; required for describe/call")
     parser.add_argument(

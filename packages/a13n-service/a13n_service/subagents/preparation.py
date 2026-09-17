@@ -375,7 +375,6 @@ def _child_run(
         effective_agent_config_digest=child_effective_config.content_digest,
         model_execution_observation=child_effective_config.resolved_model.execution.observation(),
         connection_selections=connection_selections,
-        bot_memory=parent_run.bot_memory,
         priority=parent_run.priority,
         queue_name=parent_run.queue_name,
         execution_budget=execution_budget,

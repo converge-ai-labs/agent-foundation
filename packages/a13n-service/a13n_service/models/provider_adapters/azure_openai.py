@@ -10,13 +10,12 @@ from pydantic import StringConstraints, model_validator
 from pydantic_ai.providers.azure import AzureProvider
 
 from .base import (
-    ModelListRequest,
+    ConnectionProbeRequest,
     ProviderIntegration,
     join_url,
     require_credential,
     require_endpoint,
 )
-from .openai_provider import openai_style_discovery
 from .types import ProviderConfiguration, RuntimeProvider
 
 
@@ -65,8 +64,8 @@ def _build_provider(
     return AzureProvider(openai_client=cast(AsyncAzureOpenAI, client))
 
 
-def _request(provider: RuntimeProvider) -> ModelListRequest:
-    return ModelListRequest(
+def _request(provider: RuntimeProvider) -> ConnectionProbeRequest:
+    return ConnectionProbeRequest(
         url=join_url(require_endpoint(provider), "models"),
         headers=(
             {"api-key": require_credential(provider)}
@@ -116,6 +115,5 @@ INTEGRATION = ProviderIntegration(
     endpoint=_endpoint,
     endpoint_configuration_field="resource_endpoint",
     reserved_headers=("authorization", "api-key"),
-    model_discovery=openai_style_discovery(_request),
-    model_profile=AzureProvider.model_profile,
+    connection_probe=_request,
 )

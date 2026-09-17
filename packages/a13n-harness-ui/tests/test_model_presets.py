@@ -149,7 +149,7 @@ def test_api_wizard_backtracking_drops_incompatible_settings_and_endpoints() -> 
         "api",
         "anthropic",
         "https://example.com",
-        "off",
+        "new",
         "env:TEST_KEY",
         "claude-sonnet-4-5",
         "interleaved",
@@ -173,9 +173,9 @@ async def test_api_setup_then_repeated_add_never_replaces_agents_or_defaults(tmp
             "api",
             "openai-responses",
             "https://example.com/v1",
-            "off",
+            "new",
             "fixture-secret",
-            "gpt-5",
+            "gpt-5.4",
             "high",
             "",
             "full-control",
@@ -198,7 +198,7 @@ async def test_api_setup_then_repeated_add_never_replaces_agents_or_defaults(tmp
         original = {p: p.read_bytes() for p in tmp_path.rglob("*.yaml")}
         for endpoint in ("https://example.net/v1", "https://example.org/v1"):
             answers.extend(
-                ["new", "api", "openai-responses", endpoint, "off", "env:TEST_KEY", "gpt-5", "low", "128k", "Coding"]
+                ["new", "api", "openai-responses", endpoint, "new", "env:TEST_KEY", "gpt-5.4", "low", "128k", "Coding"]
             )
             assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append, add_agent=True), "\n".join(output)
         source = await app.current_configuration()
@@ -222,7 +222,7 @@ async def test_api_setup_then_repeated_add_never_replaces_agents_or_defaults(tmp
 
 @pytest.mark.anyio
 async def test_cancel_after_hidden_key_save_does_not_publish_configuration(tmp_path: Path) -> None:
-    answers = deque(["api", "anthropic", "https://api.anthropic.com", "off", "fixture-key"])
+    answers = deque(["api", "anthropic", "https://api.anthropic.com", "new", "fixture-key"])
 
     async def ask(question, selection):
         if question.key == "tools":
@@ -544,7 +544,7 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
         "api",
         provider.route,
         *(("",) if provider.transport != "xai" else ()),
-        *(("off",) if provider.supports_session_affinity else ()),
+        "new",
         "env:TEST_KEY",
     ):
         wizard.accept(value)
@@ -563,7 +563,7 @@ def test_provider_model_suggestions_accept_numeric_default_and_custom_case(provi
 @pytest.mark.parametrize("hint,expected", [(None, 350000), (1000000, 350000), (128000, 128000)])
 def test_api_context_defaults_manual_override_and_model_change(hint, expected) -> None:
     wizard = SetupWizard()
-    for value in ("api", "openai-chat", "", "off", "env:TEST_KEY", "custom-model", "default"):
+    for value in ("api", "openai-chat", "", "new", "env:TEST_KEY", "custom-model", "default"):
         wizard.accept(value)
     wizard.context_window_hint = hint
     assert wizard.question.key == "context"
@@ -579,8 +579,9 @@ def test_api_context_defaults_manual_override_and_model_change(hint, expected) -
     wizard.accept("100k")
     assert wizard.question.key == "environment"  # No native tools for Chat Completions.
     wizard.accept("full-control")
-    characteristics = wizard.selection("/tmp")["api_key_model"]["model_characteristics"]
+    characteristics = wizard.selection("/tmp")["model"]["model_characteristics"]
     assert characteristics == {
+        "capabilities": [],
         "context_window_tokens": 100000,
         "proactive_context_management_threshold": 0.65,
         "compact_threshold": 0.90,
@@ -593,14 +594,18 @@ def test_api_context_defaults_manual_override_and_model_change(hint, expected) -
 
 
 def test_bundled_context_catalog_and_programmatic_default_use_harness_owner() -> None:
-    from a13n_harness_ui.configuration.setup import SetupApiKeyModel
+    from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
     from a13n_harness_ui.model_presets import known_context_window
 
     assert known_context_window("anthropic", "claude-haiku-4-5", "https://api.anthropic.com") == 200000
     assert known_context_window("openai-chat", "gpt-5.6-sol", "https://api.openai.com/v1") == 1050000
     assert known_context_window("openai-chat", "not-a-known-model", "https://localhost:8000") is None
-    selection = SetupApiKeyModel(
-        route="openai-chat:custom", authentication=ApiKeyAuthentication(kind="api_key", env="TEST_KEY")
+    selection = prepare_model(
+        ModelRecipeRequest(
+            connection="openai-chat",
+            model_id="custom",
+            authentication=ApiKeyAuthentication(kind="api_key", env="TEST_KEY"),
+        )
     )
     assert selection.model_characteristics.context_window_tokens == 350000
     assert selection.model_characteristics.summary_reminder_tokens == 227500
@@ -639,7 +644,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
     from a13n_harness_ui.composition.models import ResolvedRunComposition
 
     # Advanced only to omit children; all connection/context defaults remain ordinary setup defaults.
-    answers = deque(["api", provider, "", "off", "env:TEST_KEY", model_id, "", "none", "", "", "full-control"])
+    answers = deque(["api", provider, "", "off", "new", "env:TEST_KEY", model_id, "", "none", "", "", "full-control"])
 
     async def ask(question, selection):
         if question.key in {"tools", "review"}:
@@ -721,7 +726,7 @@ def test_starter_tools_follow_transport_not_brand(route, authentication, base_ur
 
 @pytest.mark.parametrize("header", ["x-litellm-session-id", "X-Company-Session", "off"])
 def test_affinity_preset_and_custom_name_survive_cli_backtracking_and_publication(header):
-    wizard = SetupWizard(add_model=True)
+    wizard = SetupWizard(add_model=True, advanced=True)
     for answer in ("api", "openai-chat", "https://gateway.example/v1"):
         wizard.accept(answer)
     assert wizard.question.key == "session_affinity_header"
@@ -731,9 +736,9 @@ def test_affinity_preset_and_custom_name_survive_cli_backtracking_and_publicatio
     assert wizard.question.default == header.lower()
     assert wizard.selection_prompt() is not None
     wizard.accept("")
-    for answer in ("env:TEST_KEY", "example-model", "default", "350k", "Gateway model"):
+    for answer in ("new", "env:TEST_KEY", "example-model", "default", "350k", "Gateway model"):
         wizard.accept(answer)
-    configuration = wizard.selection("/tmp")["api_key_model"]["model_configuration"]
+    configuration = wizard.selection("/tmp")["model"]["model_configuration"]
     assert configuration == {
         "base_url": "https://gateway.example/v1",
         **({"session_affinity_header": header.lower()} if header != "off" else {}),

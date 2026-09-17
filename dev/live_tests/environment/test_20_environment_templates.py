@@ -1,4 +1,4 @@
-"""Case 20: versioned recipes, preparation timing and simultaneous first file use."""
+"""Case 20: versioned template configurations, preparation timing and simultaneous first file use."""
 
 import pytest
 
@@ -9,16 +9,19 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("preparation", ["on_run", "on_use"])
 async def test_template_version_and_preparation_reach_harness(management, preparation):
-    template, recipe, root = await management.environment_template(preparation=preparation)
+    template, template_config, root = await management.environment_template(preparation=preparation)
     second_root = management.lab.root / "second-template-target"
     second_root.mkdir()
-    revised = {**recipe, "configuration": {**recipe["configuration"], "root": {"path": str(second_root)}}}
+    revised = {
+        **template_config,
+        "configuration": {**template_config["configuration"], "root": {"path": str(second_root)}},
+    }
     await assert_template_preparation(
         management,
         template,
         revised,
         preparation=preparation,
-        initial_access=recipe["access"],
+        initial_access=template_config["access"],
         roots=(root, second_root),
     )
 

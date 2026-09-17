@@ -28,14 +28,14 @@ from .conftest import WORKSPACE_ID, actor
 pytestmark = pytest.mark.anyio
 
 
-async def create_recipe(service, path, *, preparation="on_run"):
+async def create_template_config(service, path, *, preparation="on_run"):
     provider = await service.create_provider(
         actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Local")
     )
     template = await service.create_template(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        idempotency_key="recipe",
+        idempotency_key="template_config",
         request=CreateTemplateRequest(
             name="Workspace",
             provider_id=provider.id,
@@ -49,7 +49,7 @@ async def create_recipe(service, path, *, preparation="on_run"):
 
 async def test_template_allocation_is_inert_and_revision_is_frozen(environment_service, environment_sessions, tmp_path):
     root = tmp_path / "absent"
-    provider, template = await create_recipe(environment_service, root)
+    provider, template = await create_template_config(environment_service, root)
     selection = CreateManagedEnvironmentRequest(template_id=template.id)
     environment = await environment_service.create_environment(
         actor=actor(), workspace_id=WORKSPACE_ID, request=selection, idempotency_key="allocate"
@@ -88,7 +88,7 @@ async def test_template_allocation_is_inert_and_revision_is_frozen(environment_s
 async def test_empty_thread_allocates_only_metadata_and_distinguishes_null(
     environment_service, environment_sessions, tmp_path
 ):
-    _, template = await create_recipe(environment_service, tmp_path / "absent", preparation="on_use")
+    _, template = await create_template_config(environment_service, tmp_path / "absent", preparation="on_use")
     body = CreateThreadRequest(environment=NewEnvironmentSelection(template_id=template.id))
     thread = await allocate_thread(
         environment_sessions, actor=actor(), workspace_id=WORKSPACE_ID, body=body, idempotency_key="thread"
@@ -119,7 +119,7 @@ async def test_empty_thread_allocates_only_metadata_and_distinguishes_null(
 
 
 async def test_provider_disable_blocks_new_allocation(environment_service, tmp_path):
-    provider, template = await create_recipe(environment_service, tmp_path)
+    provider, template = await create_template_config(environment_service, tmp_path)
     await environment_service.update_provider(
         actor=actor(),
         provider_id=provider.id,
@@ -135,22 +135,21 @@ async def test_provider_disable_blocks_new_allocation(environment_service, tmp_p
         )
 
 
-async def test_local_provider_rejects_destructive_retention(environment_service, tmp_path):
+async def test_local_provider_accepts_managed_retention(environment_service, tmp_path):
     provider = await environment_service.create_provider(
         actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Local")
     )
-    with pytest.raises(EnvironmentManagementError, match="support stop"):
-        await environment_service.create_template(
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            idempotency_key="unsupported",
-            request=CreateTemplateRequest(
-                name="Bad",
-                provider_id=provider.id,
-                configuration={"root": {"path": str(tmp_path)}},
-                retention={"idle": {"stop_after": 10, "delete_after": None}},
-            ),
-        )
+    await environment_service.create_template(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="unsupported",
+        request=CreateTemplateRequest(
+            name="Managed local",
+            provider_id=provider.id,
+            configuration={"root": {"path": str(tmp_path)}},
+            retention={"idle": {"stop_after": 10, "delete_after": 20}},
+        ),
+    )
 
 
 async def test_stop_never_resets_deletion_deadline():
@@ -282,7 +281,7 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
 
 
 async def test_collection_cursors_cannot_cross_resource_scope(environment_service, tmp_path):
-    await create_recipe(environment_service, tmp_path)
+    await create_template_config(environment_service, tmp_path)
     await environment_service.create_provider(
         actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Second")
     )
@@ -337,3 +336,50 @@ def test_request_identity_canonicalizes_objects_but_preserves_semantics():
     changed = first.model_copy(update={"configuration": {"steps": [1, 2]}})
     reversed_steps = first.model_copy(update={"configuration": {"steps": [2, 1]}})
     assert request_identity("key", changed) != request_identity("key", reversed_steps)
+
+
+@pytest.mark.parametrize("provider_type", ["a13n.direct-local", "a13n.docker"])
+async def test_child_sharing_and_dedicated_provider_contract(
+    environment_service, environment_sessions, tmp_path, provider_type
+):
+    from unittest.mock import Mock
+
+    from a13n_service.agents.domain import ChildEnvironmentPolicy
+    from a13n_service.environments.authoring import authorize_template
+    from a13n_service.interactions.environment_selection import child_environment_choice
+
+    provider = await environment_service.create_provider(
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type=provider_type, name="Child")
+    )
+    template = await environment_service.create_template(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="child-template",
+        request=CreateTemplateRequest(
+            name="Child",
+            provider_id=provider.id,
+            configuration={"root": {"path": str(tmp_path)}} if provider_type == "a13n.direct-local" else {},
+            retention={"idle": {"stop_after": None, "delete_after": None}},
+        ),
+    )
+    parent = Mock(environment_id="env_parent1234567890")
+    policy = ChildEnvironmentPolicy(mode="dedicated", template_revision_id=template.current_revision_id)
+    async with short_session(environment_sessions) as session:
+        shared = await child_environment_choice(session, parent=parent, policy=ChildEnvironmentPolicy())
+        assert shared.environment_id == parent.environment_id
+        assert (
+            await child_environment_choice(session, parent=parent, policy=ChildEnvironmentPolicy(mode="none")) is None
+        )
+        if provider_type == "a13n.direct-local":
+            with pytest.raises(EnvironmentManagementError, match="dedicated"):
+                await authorize_template(
+                    session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.current_revision_id
+                )
+            with pytest.raises(EnvironmentManagementError, match="dedicated"):
+                await child_environment_choice(session, parent=parent, policy=policy)
+        else:
+            await authorize_template(
+                session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.current_revision_id
+            )
+            dedicated = await child_environment_choice(session, parent=parent, policy=policy)
+            assert dedicated == NewEnvironmentSelection(template_id=template.id, version=1)

@@ -1,15 +1,15 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
-from a13n_service.models.base_models import BaseModelReference
-from a13n_service.models.domain import ModelDeclarations
+from a13n_service.models.catalog import DEFAULT_RELEASED_SINCE
+from a13n_service.models.domain import ModelCatalogCollection
 from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service import ModelService
@@ -26,17 +26,8 @@ USER_ID = "usr_1234567890abcdef"
 
 
 class StubModelCatalog:
-    def __init__(self) -> None:
-        self.results: dict[tuple[str, str], ModelDeclarations] = {}
-
-    async def declarations(
-        self,
-        provider_type: str,
-        provider_configuration: Mapping[str, object],
-        reference: BaseModelReference,
-    ) -> ModelDeclarations:
-        del provider_configuration
-        return self.results.get((provider_type, reference.base_model), ModelDeclarations())
+    async def models(self) -> ModelCatalogCollection:
+        return ModelCatalogCollection(status="ready", released_since=DEFAULT_RELEASED_SINCE)
 
 
 @pytest.fixture

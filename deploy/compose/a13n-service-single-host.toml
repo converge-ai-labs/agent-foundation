@@ -1,0 +1,28 @@
+[deployment]
+mode = "single_host"
+
+[service]
+host = "0.0.0.0"
+
+[database]
+url = "postgresql+psycopg://a13n_service:a13n_service@postgres:5432/a13n_service"
+
+[redis]
+url = "redis://redis:6379/0"
+
+[objects]
+local_root = "/app/var/objects"
+
+[filesystem]
+root = "/app/var/files"
+
+[migration]
+auto_migrate = true
+
+[logging]
+format = "json"
+
+[environments.local_providers."a13n.direct-local"]
+
+[environments.local_providers."a13n.docker"]
+docker_host = "unix:///run/a13n-docker/docker.sock"

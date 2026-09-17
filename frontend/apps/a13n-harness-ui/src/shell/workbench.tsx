@@ -1,3 +1,4 @@
+import { ModelsPage } from "../configuration/models";
 import { useEffect, useRef, useState } from "react";
 import {
   Link,
@@ -10,6 +11,7 @@ import {
 } from "react-router";
 import {
   Button,
+  Logo,
   Wordmark,
   ChoiceField,
   ModalFrame,
@@ -17,7 +19,15 @@ import {
   SheetPopup,
   SheetTitle,
 } from "a13n-ui";
-import { House, Moon, Sun, List, Users, Gear } from "@phosphor-icons/react";
+import {
+  Archive,
+  House,
+  Moon,
+  Sun,
+  List,
+  Users,
+  Gear,
+} from "@phosphor-icons/react";
 import { useSetup, useSources, useStatus } from "../transport/context";
 import type { Schema } from "../transport/client";
 import { AccountsPage } from "../setup/accounts";
@@ -35,10 +45,13 @@ import { ErrorNotice, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
 import styles from "./workbench.module.css";
+import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
 import { ConversationPage } from "../conversations/conversation";
 import { NewConversationPage } from "../conversations/new-conversation";
 import { NativeWorkspace } from "../native/workspace";
+import { ResultsProvider, useResults } from "../conversations/results";
+import { LiveThreadsProvider } from "../conversations/live-threads";
 
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
@@ -62,7 +75,21 @@ const profileColors = [
   ),
 }));
 
-export function Workbench({
+export function Workbench(props: {
+  status: Schema<"ListenerStatus">;
+  forget: () => void;
+  unauthorized: () => void;
+}) {
+  return (
+    <ResultsProvider>
+      <LiveThreadsProvider>
+        <WorkbenchContent {...props} />
+      </LiveThreadsProvider>
+    </ResultsProvider>
+  );
+}
+
+function WorkbenchContent({
   status: initialStatus,
   forget,
   unauthorized,
@@ -71,6 +98,7 @@ export function Workbench({
   forget: () => void;
   unauthorized: () => void;
 }) {
+  const results = useResults();
   const setup = useSetup();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
@@ -129,6 +157,7 @@ export function Workbench({
   const updateProfile = (next: Profile) => setProfile(next);
   const links = [
     { to: "/", label: "Home", icon: House },
+    { to: "/archived", label: "Archived", icon: Archive },
     { to: "/settings", label: "Settings", icon: Gear },
   ];
   const themeToggle = (
@@ -193,9 +222,9 @@ export function Workbench({
       </a>
       <aside className={styles.sidebar} aria-label="Workbench navigation">
         <header className={styles.sidebarHeader}>
-          <Link to="/" className={styles.brand}>
-            <Wordmark className={styles.brandMark} />
-            <span>Harness UI</span>
+          <Link to="/" className={styles.brand} aria-label="Harness UI home">
+            <Logo alt="" width={28} height={28} />
+            <Wordmark />
           </Link>
           {themeToggle}
         </header>
@@ -219,6 +248,18 @@ export function Workbench({
       <div className={styles.workspace}>
         <main id="main-content" className={styles.main}>
           {disconnected && <ConnectionNotice retry={live.retrySummary} />}
+          {(results.storageError || results.lookupError) && (
+            <div role="alert" className={styles.notice}>
+              <p>{results.storageError || results.lookupError}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void results.tracker?.refresh()}
+              >
+                Retry new-result tracking
+              </Button>
+            </div>
+          )}
           {status.access === "dangerous_bypass" && (
             <div className={styles.notice}>
               Instance authentication is disabled by the server's explicit
@@ -290,7 +331,7 @@ export function Workbench({
                 }
               />
               <Route
-                path="/new/:draftId"
+                path="/new/:draftId?"
                 element={
                   <NewConversationPage
                     profile={profile}
@@ -307,6 +348,7 @@ export function Workbench({
                   />
                 }
               />
+              <Route path="/archived" element={<ArchivedPage />} />
               <Route element={<SettingsLayout />}>
                 <Route path="/setup" element={<SetupPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />
@@ -316,12 +358,13 @@ export function Workbench({
                   path="/settings/notifications"
                   element={<NotificationSettings />}
                 />
+                <Route path="/settings/models" element={<ModelsPage />} />
                 <Route
                   path="/settings/agents"
                   element={
                     <SourcesPage
-                      kinds={["agent", "model"]}
-                      title="Agents & models"
+                      kinds={["agent"]}
+                      title="Agents"
                       description="Configure how your agents work and which models they use."
                     />
                   }

@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
@@ -7,6 +8,7 @@ import {
   CircleNotch,
   WarningCircleIcon,
   Archive,
+  ArrowCounterClockwise,
   DotsThree,
   PencilSimple,
   ShareNetwork,
@@ -16,12 +18,15 @@ import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
-import { newConversationPath } from "./new-conversation";
+import { ComposerDrafts } from "./composer";
+import { conversationTitle } from "./local-input";
+import { NewConversationDrafts, newConversationPath } from "./new-conversation";
 import {
   ParticipantAvatars,
   threadParticipants,
 } from "../shell/participant-avatars";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
 
 function threadState(row: ActivityRow) {
   if (row.pending_decision) return "Needs your answer";
@@ -54,14 +59,24 @@ type ActivityRow = Pick<Schema<"ThreadActivityView">, "thread"> &
 export function ThreadRow({
   row,
   presence,
+  showRestore = false,
 }: {
   row: ActivityRow;
   presence: Schema<"PresenceFrame"> | null;
+  showRestore?: boolean;
 }) {
+  const { tracker: results } = useResults();
+  const unread = results?.isUnread(row.thread.thread_id);
   const navigate = useNavigate();
   const location = useLocation();
   const transport = useTransport();
   const queries = useQueryClient();
+  const newDrafts = useContext(NewConversationDrafts);
+  const composers = useContext(ComposerDrafts);
+  const title = conversationTitle(
+    row.thread,
+    composers.get(row.thread.thread_id)?.localInputs,
+  );
   const archive = useMutation({
     mutationFn: () =>
       result(
@@ -74,6 +89,7 @@ export function ThreadRow({
         }),
       ),
     onSuccess: () => {
+      if (!row.thread.archived) newDrafts.detachArchived(row.thread.thread_id);
       if (
         !row.thread.archived &&
         location.pathname ===
@@ -99,34 +115,41 @@ export function ThreadRow({
         >
           <ThreadStateIcon row={row} />
           <span>
-            <strong
-              title={
-                row.thread.title ||
-                row.thread.excerpt?.first_input ||
-                "Untitled conversation"
-              }
-            >
-              {row.thread.title ||
-                row.thread.excerpt?.first_input ||
-                "Untitled conversation"}
-            </strong>
+            <strong title={title}>{title}</strong>
             {threadState(row) && <small>{threadState(row)}</small>}
           </span>
+          {unread && (
+            <span
+              className={styles.resultDot}
+              role="img"
+              aria-label="New result"
+              title="New result"
+            />
+          )}
         </NavLink>
         <ParticipantAvatars
           participants={threadParticipants(presence, row.thread.thread_id)}
           ownId={presence?.participant_id}
-          threadTitle={
-            row.thread.title ||
-            row.thread.excerpt?.first_input ||
-            "Untitled conversation"
-          }
+          threadTitle={title}
         />
+        {showRestore && row.thread.archived && (
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={archive.isPending}
+            disabled={row.thread.root_activity.state !== "inactive"}
+            onClick={() => archive.mutate()}
+            aria-label={`Restore ${title}`}
+          >
+            <ArrowCounterClockwise />
+            Restore
+          </Button>
+        )}
         <Menu>
           <MenuTrigger
             render={<Button variant="ghost" size="icon-sm" />}
             className={styles.threadActions}
-            aria-label={`Actions for ${row.thread.title || "Untitled conversation"}`}
+            aria-label={`Actions for ${title}`}
           >
             <DotsThree />
           </MenuTrigger>
@@ -135,7 +158,6 @@ export function ThreadRow({
               [
                 ["rename", "Rename conversation", PencilSimple],
                 ["share", "Share conversation", ShareNetwork],
-                ["comments", "Comments", ChatCircle],
                 ["details", "Conversation details", SlidersHorizontal],
               ] as const
             ).map(([action, label, Icon]) => (

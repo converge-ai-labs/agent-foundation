@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -23,7 +25,6 @@ from a13n_service.connectivity.native_management import (
 )
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction
 from a13n_service.ids import new_object_id
-from a13n_service.memory.bots.lifecycle import invalidate_conversation
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -44,12 +45,14 @@ class AccountTargetService:
         batch_max_events: int,
         batch_max_wait_seconds: float,
         clock: Clock = utc_now,
+        target_deleted: Callable[[AsyncSession, str, str], Awaitable[None]] | None = None,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
         self._batch_max_events = batch_max_events
         self._batch_max_wait_ms = round(batch_max_wait_seconds * 1000)
         self._clock = clock
+        self._target_deleted = target_deleted
 
     async def create(
         self, *, actor: AuthenticatedActor, account_id: str, idempotency_key: str, request: TargetConfig
@@ -203,7 +206,8 @@ class AccountTargetService:
             record = await require_target(session, account_id, target_id, lock=True)
             require_version(record.version, expected_version)
             if record.target_kind == "conversation":
-                await invalidate_conversation(session, account_id, record.external_target_id)
+                if self._target_deleted is not None:
+                    await self._target_deleted(session, account_id, record.external_target_id)
             session.add(
                 audit(
                     actor,

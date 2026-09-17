@@ -1,0 +1,76 @@
+import type { Schema } from "../transport/client";
+import type { InputPart } from "./input-content";
+import type { OrderedInputPart } from "./inline-attachments";
+
+export type LocalInput = {
+  id: string;
+  action: "send" | "steer";
+  parts: InputPart[];
+  state: "preparing" | "pending" | "accepted" | "rejected" | "unknown";
+};
+
+export function inputSource(part: InputPart): string | undefined {
+  return typeof part.metadata?.source_id === "string"
+    ? part.metadata.source_id
+    : undefined;
+}
+
+export function previewInput(
+  id: string,
+  parts: OrderedInputPart[],
+  attachments: Map<string, Schema<"ThreadAttachment">> = new Map(),
+): InputPart[] {
+  return parts.map((part, index) => ({
+    kind: "user",
+    text:
+      typeof part === "string"
+        ? part
+        : attachments.has(part.attachment_id)
+          ? ""
+          : "[Attachment]",
+    metadata: {
+      source_id: id,
+      harness_ui: {
+        composer: { index },
+        ...(typeof part !== "string" && attachments.has(part.attachment_id)
+          ? { attachment: attachments.get(part.attachment_id) }
+          : {}),
+      },
+    },
+  }));
+}
+
+// A private display fallback, never a metadata write or evidence of saved input.
+export function conversationTitle(
+  thread: Schema<"ThreadSummary"> | undefined,
+  localInputs: readonly LocalInput[] = [],
+) {
+  const first = localInputs.find(
+    (input) => input.action === "send" && input.state !== "rejected",
+  );
+  return (
+    thread?.title ||
+    thread?.excerpt?.first_input ||
+    first?.parts
+      .map((part) => part.text ?? "")
+      .join(" ")
+      .trim()
+      .slice(0, 160) ||
+    "Untitled conversation"
+  );
+}
+
+export function inputStatus(input?: LocalInput) {
+  switch (input?.state) {
+    case "preparing":
+      return "Preparing message…";
+    case "pending":
+      return "Sending…";
+    case "rejected":
+      return "Not sent · input retained";
+    case "unknown":
+      return "Outcome unknown · review before sending again";
+    default:
+      return undefined;
+  }
+}

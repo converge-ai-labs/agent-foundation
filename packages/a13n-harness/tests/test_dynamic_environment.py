@@ -1167,6 +1167,7 @@ async def test_view_attaches_common_environment_media_natively(tmp_path: Path) -
     assert len(binaries) == 1
     assert binaries[0].data == b"\x89PNG"
     assert binaries[0].media_type == "image/png"
+    assert binaries[0].vendor_metadata == {"display": False}
 
 
 async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native_media(

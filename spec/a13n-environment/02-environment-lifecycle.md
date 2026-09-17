@@ -62,6 +62,8 @@ One fresh object serves one independent Run or one bounded Host lifecycle operat
 
 `create_environment(configuration, state, runtime)` validates configuration/state codecs and constructs the object without filesystem, subprocess or network I/O. Runtime collaborators include current credentials, transport factories and any Host preparation coordination. These values stay process-local.
 
+The descriptor declares a default absolute `working_directory` (`/` unless the Provider specifies another path). Harness mounts use this default when the host supplies no explicit working directory; native Docker declares `/workspace`. This does not change the descriptor’s mount roots or grant additional file access.
+
 `enter()` validates and binds ephemeral Run/Thread/mount correlation and local operation scope. It does not connect a second time when the object is already prepared, and it does not force an unprepared lazy object to prepare. Before preparation, the object exposes a validated configured descriptor and bounded unprepared availability; a live descriptor can only narrow the advertised capabilities. Unsupported or incompatible live identity fails before dispatch.
 
 ### Preparation

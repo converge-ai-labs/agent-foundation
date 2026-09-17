@@ -12,11 +12,10 @@ from pydantic import JsonValue
 
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
 from a13n_harness_ui.model_presets import (
-    API_MODEL_SUGGESTIONS,
     API_PROVIDER_BY_ROUTE,
     API_PROVIDERS,
+    SettingsPreset,
     known_model_capabilities,
-    settings_presets,
     validate_base_url,
 )
 from a13n_harness_ui.tool_presets import NATIVE_TOOLS_DOCS, selected_tool_capabilities, tool_choices
@@ -25,20 +24,7 @@ from .selection import Choice, Selection, resolve_choice
 
 if TYPE_CHECKING:
     from a13n_harness_ui.configuration.models import ModelResource
-
-
-@dataclass(frozen=True, slots=True)
-class ContextPreset:
-    name: str
-    tokens: int
-    explanation: str
-
-
-CONTEXT_PRESETS = (
-    ContextPreset("standard", 272000, "Codex catalog default; conservative working budget."),
-    ContextPreset("balanced", 350000, "Recommended for repository work."),
-    ContextPreset("extended", 872000, "Catalog maximum, not an entitlement guarantee; higher latency and cost."),
-)
+    from a13n_harness_ui.model_catalog import CatalogModel
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,6 +52,7 @@ _QUESTIONS = (
         "off",
         allow_custom=True,
     ),
+    Question("credential_source", "Choose API authentication", "new"),
     Question(
         "credential",
         "API key (hidden), or env:VARIABLE / key:credential-id.\n"
@@ -73,7 +60,7 @@ _QUESTIONS = (
         "",
         password=True,
     ),
-    Question("model", "Choose a model", "gpt-5.6-sol", ("gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra")),
+    Question("model", "Choose a model", ""),
     Question("preset", "Choose model settings (editable in the saved YAML)", ""),
     Question("fast", "Codex service tier (saved with this Model)", "on", ("on", "off")),
     Question(
@@ -86,7 +73,6 @@ _QUESTIONS = (
         "context",
         "Working context budget (does not change provider limits)",
         "balanced",
-        tuple(p.name for p in CONTEXT_PRESETS),
     ),
     Question("thinking", "Reasoning effort", "high", ("low", "medium", "high", "xhigh")),
     Question("tools", "Choose native Agent tools (Space toggles; Enter confirms; none keeps Host web only)", ""),
@@ -136,9 +122,28 @@ class SetupWizard:
     suggested_name: str = ""
     existing_agent_ids: frozenset[str] = frozenset()
     context_window_hint: int | None = None
+    catalog_models: tuple[CatalogModel, ...] = ()
+    catalog_status: str = "bundled"
+    saved_credentials: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         self._skip_irrelevant()
+
+    @property
+    def connection_id(self) -> str:
+        provider = self.values.get("provider", self.default_provider)
+        return (
+            self.values.get("api_provider", "openai-responses")
+            if provider == "api"
+            else "grok-subscription"
+            if provider == "grok"
+            else "codex"
+        )
+
+    def presets(self) -> tuple[SettingsPreset, ...]:
+        from a13n_harness_ui.model_authoring import authoring_presets, model_connection
+
+        return authoring_presets(model_connection(self.connection_id), self.values.get("model", ""))
 
     @property
     def existing_model_id(self) -> str | None:
@@ -168,6 +173,8 @@ class SetupWizard:
 
     @property
     def question(self) -> Question | None:
+        from a13n_harness_ui.model_authoring import CODEX_CONTEXT_CHOICES, model_connection
+
         if self.index >= len(_QUESTIONS):
             return None
         question = _QUESTIONS[self.index]
@@ -192,10 +199,20 @@ class SetupWizard:
             provider = API_PROVIDER_BY_ROUTE[self.values.get("api_provider", "openai-responses")]
             if question.key == "base_url":
                 default = self.values.get("base_url", provider.base_url)
+            elif question.key == "credential_source":
+                choices = ("new", *(f"key:{ref}" for ref in self.saved_credentials), f"env:{provider.credential_env}")
+                return replace(question, default=self.values.get("credential_source", "new"), choices=choices)
             elif question.key == "credential":
-                default = self.values.get("credential", f"env:{provider.credential_env}")
+                default = self.values.get("credential", "")
             elif question.key == "model":
-                suggestions = API_MODEL_SUGGESTIONS[provider.route]
+                suggestions = tuple(
+                    dict.fromkeys(
+                        (
+                            *(item.value for item in model_connection(provider.route).models),
+                            *(item.model_id for item in self.catalog_models if item.connection == provider.route),
+                        )
+                    )
+                )
                 selected = self.values.get("model", suggestions[0])
                 choices = suggestions if selected in suggestions else (selected, *suggestions)
                 return Question(
@@ -220,16 +237,27 @@ class SetupWizard:
                     self.values.get("context", str(recommended)),
                 )
             elif question.key == "preset":
-                presets = settings_presets(provider.route, self.values.get("model", ""))
+                presets = self.presets()
                 return Question(
                     "preset", question.text, self.values.get("preset", presets[0].key), tuple(p.key for p in presets)
                 )
-        if question.key == "model" and self.values.get("provider") == "grok":
+        if question.key == "context":
+            return replace(question, default=default, choices=tuple(p.label.lower() for p in CODEX_CONTEXT_CHOICES))
+        if question.key == "thinking":
+            presets = self.presets()
+            return replace(
+                question, default=self.values.get("thinking", presets[0].key), choices=tuple(p.key for p in presets)
+            )
+        if question.key == "model":
+            connection = model_connection(self.connection_id)
+            selected = self.values.get("model", connection.default_model)
+            choices = tuple(item.value for item in connection.models)
             return Question(
                 "model",
-                "Choose a model",
-                self.values.get("model", "grok-4.6"),
-                ("grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"),
+                "Choose a subscription model or enter its ID",
+                selected,
+                choices if selected in choices else (selected, *choices),
+                allow_custom=True,
             )
         if question.key == "environment" and (self.add_agent or self.add_model):
             return Question(
@@ -280,11 +308,7 @@ class SetupWizard:
                 if self.existing_model_id is not None:
                     hint += f"\nUse existing Model: {self.existing_model_id}. Its settings stay unchanged."
                 elif self.values["provider"] == "api":
-                    preset = next(
-                        p
-                        for p in settings_presets(self.values["api_provider"], self.values["model"])
-                        if p.key == self.values["preset"]
-                    )
+                    preset = next(p for p in self.presets() if p.key == self.values["preset"])
                     endpoint = self.values.get("base_url", "xAI SDK default (gRPC)")
                     hint += f"\n{self.values['api_provider']}:{self.values['model']}\nEndpoint: {endpoint}\nSettings: {json.dumps(preset.settings, sort_keys=True)}"
                     hint += f"\n{preset.output_limit_label}. Saved as editable settings; not adjusted during a run."
@@ -335,9 +359,17 @@ class SetupWizard:
                     "Custom endpoints may impose different limits."
                 )
             return hint
+        if question.key == "model" and self.values.get("provider") == "api":
+            return (
+                "Public directory suggestions; account access is not checked. Type any model ID."
+                if self.catalog_status == "ready"
+                else "Directory unavailable or cached. Bundled suggestions and manual model IDs remain available."
+            )
         return "Esc goes back; Ctrl+C cancels."
 
     def selection_prompt(self) -> Selection | None:
+        from a13n_harness_ui.model_authoring import CODEX_CONTEXT_CHOICES, model_connection
+
         question = self.question
         if question is None or not question.choices:
             return None
@@ -362,6 +394,18 @@ class SetupWizard:
                 (
                     *self.model_choices,
                     Choice("new", "Create a new model", "Configure a provider, credentials and settings"),
+                ),
+                cursor=question.choices.index(question.default),
+            )
+        if question.key == "credential_source":
+            return Selection(
+                tuple(
+                    Choice(
+                        value,
+                        "Save a new API key" if value == "new" else value,
+                        "Saved separately from Models" if value == "new" else "Reuse without reading the secret",
+                    )
+                    for value in question.choices
                 ),
                 cursor=question.choices.index(question.default),
             )
@@ -408,13 +452,11 @@ class SetupWizard:
             )
         if question.key == "preset":
             return Selection(
-                tuple(
-                    Choice(p.key, p.label, f"{p.description} · {p.output_limit_label}")
-                    for p in settings_presets(self.values["api_provider"], self.values["model"])
-                ),
+                tuple(Choice(p.key, p.label, f"{p.description} · {p.output_limit_label}") for p in self.presets()),
                 cursor=question.choices.index(question.default),
             )
         labels = {
+            **{item.value: item.label for item in model_connection(self.connection_id).models},
             "codex": "Codex subscription",
             "grok": "Grok subscription",
             "api": "API key",
@@ -422,12 +464,6 @@ class SetupWizard:
             "sandbox": "Sandbox",
             "all": "Include all defaults",
             "none": "Do not include defaults",
-            "gpt-6-astra": "GPT-6 Astra",
-            "gpt-5.6-sol": "GPT-5.6 Sol",
-            "gpt-5.6-terra": "GPT-5.6 Terra",
-            "grok-4.6": "Grok 4.6",
-            "grok-4.5": "Grok 4.5",
-            "grok-4.20-0309-reasoning": "Grok 4.20 Reasoning",
         }
         descriptions = {
             **self.provider_descriptions,
@@ -442,7 +478,10 @@ class SetupWizard:
             "sandbox": "Isolated execution; prerequisites checked before saving",
             "all": "Package-owned roles; choose individual names later in subagents.include",
             "none": "Keep only explicitly configured children",
-            **{preset.name: f"{preset.tokens:,} tokens — {preset.explanation}" for preset in CONTEXT_PRESETS},
+            **{
+                preset.label.lower(): f"{preset.value:,} tokens — {preset.description}"
+                for preset in CODEX_CONTEXT_CHOICES
+            },
         }
         return Selection(
             tuple(Choice(value, labels.get(value, value), descriptions.get(value, "")) for value in question.choices),
@@ -509,9 +548,9 @@ class SetupWizard:
             selected = ",".join(stores)
         if question.key in {"mcp_id", "advisor_model"} and (not selected or any(char.isspace() for char in selected)):
             raise ValueError("Enter a non-empty provider identifier without whitespace.")
-        if question.key == "model" and self.values.get("provider") == "api":
-            if not selected or len(selected) > 480 or any(c.isspace() for c in selected) or ":" in selected:
-                raise ValueError("Enter a model ID without whitespace or a provider prefix.")
+        if question.key == "model":
+            if not selected or len(selected) > 480 or any(c.isspace() for c in selected):
+                raise ValueError("Enter a model ID without whitespace.")
         agent_route = (
             f"{self.values.get('api_provider', '')}:{selected}"
             if question.key == "model" and not self.add_model
@@ -549,6 +588,11 @@ class SetupWizard:
                 self.values.pop(key, None)
         if question.key == "model" and self.values.get("model") != selected:
             self.values.pop("preset", None)
+            self.values.pop("thinking", None)
+        if question.key == "credential_source":
+            self.values.pop("credential", None)
+            if selected != "new":
+                self.values["credential"] = selected
         self.values[question.key] = selected
         self.history.append(self.index)
         self.index += 1
@@ -562,7 +606,7 @@ class SetupWizard:
         """One visibility rule for navigation and progress, including conditional resource steps."""
         provider = self.values.get("provider", self.default_provider)
         if (
-            key in {"subagents", "context", "thinking", "review", "instructions"}
+            key in {"subagents", "context", "thinking", "review", "instructions", "session_affinity_header"}
             and not self.advanced
             and not (key == "context" and provider == "api")
         ):
@@ -574,6 +618,7 @@ class SetupWizard:
             "api_provider",
             "base_url",
             "session_affinity_header",
+            "credential_source",
             "credential",
             "model",
             "preset",
@@ -606,16 +651,27 @@ class SetupWizard:
             return False
         if key == "fast" and provider != "codex":
             return False
-        if key in {"api_provider", "base_url", "session_affinity_header", "credential", "preset"} and provider != "api":
+        if key == "credential" and self.values.get("credential_source") != "new":
+            return False
+        if (
+            key in {"api_provider", "base_url", "session_affinity_header", "credential_source", "credential", "preset"}
+            and provider != "api"
+        ):
             return False
         if (key == "context" and provider not in {"codex", "api"}) or (key == "thinking" and provider != "codex"):
             return False
         return True
 
     def selection(self, directory: str) -> dict[str, object]:
+        from a13n_harness_ui.model_authoring import (
+            CODEX_CONTEXT_CHOICES,
+            ModelRecipeRequest,
+            model_connection,
+            prepare_model,
+        )
+
         provider = self.values.get("provider", "existing")
         result: dict[str, object] = {
-            "providers": [provider] if provider in {"codex", "grok"} else [],
             "default_agent": f"agent-{provider if provider != 'api' else 'api-key'}",
             "environment_profile": "environment-native"
             if self.values.get("environment", self.default_environment) == "full-control"
@@ -662,41 +718,47 @@ class SetupWizard:
         if self.existing_model_id is not None:
             result["existing_model_id"] = self.existing_model_id
             return result
-        if provider == "grok":
-            result["grok_model"] = self.values.get("model", "grok-4.6")
-        if provider == "codex":
-            result.update(
-                codex_model=self.values.get("model", "gpt-5.6-sol"),
-                codex_thinking=self.values.get("thinking", "high"),
-                codex_service_tier="priority" if self.values.get("fast", "on") == "on" else "default",
-                codex_context_window=next(
-                    p.tokens for p in CONTEXT_PRESETS if p.name == self.values.get("context", "balanced")
-                ),
-                proactive_context_management_threshold=0.65,
-                compact_threshold=0.90,
-            )
+        connection = model_connection(self.connection_id)
+        request: dict[str, object] = {
+            "connection": connection.id,
+            "model_id": self.values.get("model", connection.default_model),
+        }
         if provider == "api":
             kind, _, name = self.values["credential"].partition(":")
-            result["api_key_model"] = {
-                "route": f"{self.values['api_provider']}:{self.values['model']}",
-                "authentication": {"kind": "api_key", "env" if kind == "env" else "credential_ref": name},
-                "model_configuration": {
-                    **({"base_url": self.values["base_url"]} if "base_url" in self.values else {}),
-                    **(
-                        {"session_affinity_header": self.values["session_affinity_header"]}
-                        if self.values.get("session_affinity_header", "off") != "off"
-                        else {}
-                    ),
-                },
-                "model_characteristics": {
-                    "context_window_tokens": int(self.values["context"]),
-                    "proactive_context_management_threshold": 0.65,
-                    "compact_threshold": 0.90,
-                },
-                "settings": next(
-                    p.settings
-                    for p in settings_presets(self.values["api_provider"], self.values["model"])
-                    if p.key == self.values["preset"]
-                ),
-            }
+            request.update(
+                authentication={"kind": "api_key", "env" if kind == "env" else "credential_ref": name},
+                base_url=self.values.get("base_url", ""),
+                preset=self.values.get("preset"),
+                model_configuration={"session_affinity_header": self.values["session_affinity_header"]}
+                if self.values.get("session_affinity_header", "off") != "off"
+                else {},
+            )
+        elif provider == "codex":
+            request["preset"] = self.values.get("thinking", self.presets()[0].key)
+        recipe = prepare_model(ModelRecipeRequest.model_validate(request))
+        if provider == "codex":
+            recipe = recipe.model_copy(
+                update={
+                    "settings": {
+                        **recipe.settings,
+                        "openai_service_tier": "priority" if self.values.get("fast", "on") == "on" else "default",
+                    }
+                }
+            )
+        if recipe.model_characteristics is not None and provider in {"api", "codex"}:
+            context = (
+                int(self.values["context"])
+                if provider == "api"
+                else next(
+                    p.value for p in CODEX_CONTEXT_CHOICES if p.label.lower() == self.values.get("context", "balanced")
+                )
+            )
+            recipe = recipe.model_copy(
+                update={
+                    "model_characteristics": recipe.model_characteristics.model_copy(
+                        update={"context_window_tokens": context}
+                    )
+                }
+            )
+        result["model"] = recipe.model_dump(mode="json")
         return result

@@ -1,10 +1,12 @@
+import { PlugsConnectedIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
+import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import styles from "./bots.module.css";
 
 const checkErrors: Record<string, string> = {
@@ -26,13 +28,15 @@ const checkErrors: Record<string, string> = {
 export function BotChecks({
   account,
   conversationId,
+  showAccountLink = false,
 }: {
   account: Schema["Account"];
   conversationId?: string;
+  showAccountLink?: boolean;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
-    { can, workspace } = useWorkspace(),
+    { can, workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
   const key = [
     "bot-check",
@@ -86,18 +90,27 @@ export function BotChecks({
   return (
     <section
       className={styles.checkSection}
-      aria-label={t("Provider verification")}
+      aria-label={t(
+        conversationId
+          ? "Group connection check"
+          : "Platform connection status",
+      )}
     >
       <div className={styles.memoryHeading}>
         <div>
-          <h2>
+          <h2 className={styles.sectionTitle}>
+            <PlugsConnectedIcon aria-hidden="true" />
             {t(
-              conversationId ? "Conversation access" : "Provider verification",
+              conversationId
+                ? "Group connection check"
+                : "Platform connection status",
             )}
           </h2>
           <p>
             {t(
-              "Checks the app identity and permissions without sending a message.",
+              conversationId
+                ? "Checks whether the bot can access this conversation. No message is sent."
+                : "Checks the bot identity, connected workspace or enterprise, and whether the app is enabled. No message is sent.",
             )}
           </p>
         </div>
@@ -139,58 +152,87 @@ export function BotChecks({
             </p>
           )}
           {identity && (
-            <dl>
-              <dt>
-                {t(
-                  account.provider_key === "slack"
-                    ? "Slack workspace"
-                    : "Feishu enterprise",
-                )}
-              </dt>
-              <dd>
-                {identity.organization_name}{" "}
-                <code>{identity.organization_id}</code>
-              </dd>
-              <dt>{t("Bot identity")}</dt>
-              <dd>
-                {identity.bot_name} <code>{identity.bot_id}</code>
-              </dd>
-              <dt>{t("Provider activation")}</dt>
-              <dd>{t(identity.enabled ? "Active" : "Inactive")}</dd>
+            <dl className={styles.overviewFacts}>
+              <div>
+                <dt>
+                  {t(
+                    account.provider_key === "slack"
+                      ? "Slack workspace"
+                      : "Feishu enterprise",
+                  )}
+                </dt>
+                <dd>
+                  <strong>{identity.organization_name}</strong>
+                  <code>{identity.organization_id}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>{t("Bot account")}</dt>
+                <dd>
+                  {showAccountLink ? (
+                    <Link
+                      className={styles.factLink}
+                      to={`${basePath}/application-accounts/${account.id}`}
+                      title={t("View application account")}
+                    >
+                      <strong>{identity.bot_name}</strong>
+                      <ArrowRightIcon aria-hidden="true" />
+                    </Link>
+                  ) : (
+                    <strong>{identity.bot_name}</strong>
+                  )}{" "}
+                  <code>{identity.bot_id}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>{t("App status")}</dt>
+                <dd>
+                  <StateBadge
+                    state={identity.enabled ? "active" : "inactive"}
+                    label={t(identity.enabled ? "Active" : "Inactive")}
+                  />
+                </dd>
+              </div>
             </dl>
           )}
           {conversation && (
-            <dl>
-              <dt>{t("Conversation")}</dt>
-              <dd>
-                {conversation.name} <code>{conversation.id}</code>
-              </dd>
-              <dt>{t("Bot membership")}</dt>
-              <dd>
-                {t(
-                  conversation.is_member === true
-                    ? "Joined"
-                    : conversation.is_member === false
-                      ? "Not a member"
-                      : "Unknown",
-                )}
-              </dd>
-              <dt>{t("Visibility")}</dt>
-              <dd>
-                {t(
-                  {
-                    public: "Public",
-                    private: "Private",
-                    direct: "Direct conversation",
-                    unknown: "Unknown",
-                  }[conversation.audience],
-                )}
-              </dd>
+            <dl className={styles.overviewFacts}>
+              <div>
+                <dt>{t("Conversation")}</dt>
+                <dd>
+                  {conversation.name} <code>{conversation.id}</code>
+                </dd>
+              </div>
+              <div>
+                <dt>{t("Bot membership")}</dt>
+                <dd>
+                  {t(
+                    conversation.is_member === true
+                      ? "Joined"
+                      : conversation.is_member === false
+                        ? "Not a member"
+                        : "Unknown",
+                  )}
+                </dd>
+              </div>
+              <div>
+                <dt>{t("Visibility")}</dt>
+                <dd>
+                  {t(
+                    {
+                      public: "Public",
+                      private: "Private",
+                      direct: "Direct conversation",
+                      unknown: "Unknown",
+                    }[conversation.audience],
+                  )}
+                </dd>
+              </div>
             </dl>
           )}
           <p>
             {t(
-              "This is a dated provider check. Event reception, agent execution, and reply delivery are checked separately.",
+              "This result reflects the last check. It does not confirm that messages reach the bot, the agent runs, or replies are delivered.",
             )}
           </p>
         </div>

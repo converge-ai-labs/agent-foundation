@@ -68,3 +68,54 @@ async def test_retained_review_accepts_transcript_text_and_preserves_truncation(
     assert review.value == part.value
     assert review.truncated is part.text_truncated
     assert review.omitted is part.value_omitted
+
+
+def test_owned_context_summaries_are_not_authored_user_messages() -> None:
+    from a13n_harness_ui.thread_projection import _message_entry
+    from pydantic_ai.messages import ModelRequest, ModelResponse, TextPart, UserPromptPart
+
+    # Existing saved handoffs are recognized by producer metadata, never headings.
+    entry = _message_entry(
+        0,
+        ModelRequest(
+            parts=[UserPromptPart("# Context Summary\n\n**Saved context**"), UserPromptPart("Internal restoration")],
+            metadata={"a13n.context": "handoff"},
+        ),
+    )
+    assert entry.parts[0].metadata.model_extra["a13n.context"] == "handoff"
+    assert not entry.parts[1].metadata.display
+    compact = _message_entry(1, ModelResponse(parts=[TextPart("**Compacted**")], metadata={"keep": "compact"}))
+    assert compact.parts[0].metadata.model_extra["a13n.context"] == "compaction"
+    authored = _message_entry(2, ModelRequest(parts=[UserPromptPart("# Context Summary\n\nMy own words")]))
+    assert authored.parts[0].metadata.display
+    assert not authored.parts[0].metadata.model_extra
+
+
+def test_tool_attachment_visibility_survives_history_roundtrip_without_hiding_user_media() -> None:
+    from a13n_harness_ui.thread_projection import _message_entry
+    from pydantic_ai.messages import BinaryContent, ModelMessagesTypeAdapter, ModelRequest, UserPromptPart
+
+    messages = ModelMessagesTypeAdapter.validate_json(
+        ModelMessagesTypeAdapter.dump_json(
+            [
+                ModelRequest(
+                    parts=[
+                        ToolReturnPart(tool_name="view", tool_call_id="call-image", content="Image attached."),
+                        UserPromptPart(
+                            [BinaryContent(data=b"\x89PNG", media_type="image/png", vendor_metadata={"display": False})]
+                        ),
+                        # Even in a mixed request, genuine user/steering media stays visible.
+                        UserPromptPart([BinaryContent(data=b"\x89PNG", media_type="image/png")]),
+                    ]
+                )
+            ]
+        )
+    )
+    entry = _message_entry(0, messages[0])
+    tool, attachment, authored = entry.parts
+    assert tool.kind == "tool_result"
+    assert tool.value == "Image attached."
+    assert attachment.kind == "media"
+    assert not attachment.metadata.display
+    assert authored.kind == "media"
+    assert authored.metadata.display

@@ -8,7 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { TraceDetail } from "./detail";

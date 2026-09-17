@@ -6,6 +6,9 @@ import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./terminal.module.css";
+import { usePanelSize } from "./panel-size";
+
+export type TerminalRequest = { cwd: string; projectId: string };
 
 const TerminalScreen = lazy(() => import("./terminal-screen"));
 export function TerminalPanel({
@@ -18,6 +21,9 @@ export function TerminalPanel({
   onActive,
   collapse,
   unauthorized,
+  request,
+  threadId,
+  openFile,
 }: {
   visible: boolean;
   directory: string;
@@ -28,6 +34,9 @@ export function TerminalPanel({
   onActive?: (id: string) => void;
   collapse: () => void;
   unauthorized: () => void;
+  request?: TerminalRequest;
+  threadId?: string;
+  openFile?: (path: string, line?: number) => void;
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
@@ -43,7 +52,14 @@ export function TerminalPanel({
   const [pending, setPending] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [height, setHeight] = useState(35);
+  const [height, setHeight] = usePanelSize(
+    "a13n.native.terminal-height",
+    35,
+    20,
+    70,
+  );
+  const [visited, setVisited] = useState<string[]>([]);
+  const handledRequest = useRef<TerminalRequest | undefined>(undefined);
   const created = useRef<string | null>(null);
   const resizeStart = useRef<{
     y: number;
@@ -58,6 +74,20 @@ export function TerminalPanel({
     ) ?? [];
   const active = projectSessions.find((item) => item.terminal_id === selected);
   const activeId = active?.terminal_id ?? "";
+  const retained = [
+    ...visited.filter(
+      (id) =>
+        id !== activeId &&
+        projectSessions.some((item) => item.terminal_id === id),
+    ),
+    ...(activeId ? [activeId] : []),
+  ].slice(-3);
+  useEffect(() => {
+    if (activeId)
+      setVisited((items) =>
+        [...items.filter((id) => id !== activeId), activeId].slice(-3),
+      );
+  }, [activeId]);
   useEffect(() => {
     onActive?.(visible ? activeId : "");
   }, [activeId, visible, onActive]);
@@ -66,15 +96,15 @@ export function TerminalPanel({
     setAttempted(false);
     setClosing(null);
   }, [projectId]);
-  const create = async () => {
-    if (pending || attempted || !directory || !projectId) return;
+  const create = async (cwd = directory) => {
+    if (pending || attempted || !cwd || !projectId) return;
     setAttempted(true);
     setPending(true);
     setError(null);
     try {
       const value = await result(
         client.POST("/api/host/terminals", {
-          body: { cwd: directory, project_id: projectId },
+          body: { cwd, project_id: projectId },
         }),
       );
       created.current = value.terminal_id;
@@ -100,14 +130,34 @@ export function TerminalPanel({
       refresh();
     }
   };
+  useEffect(() => {
+    if (
+      !request ||
+      handledRequest.current === request ||
+      request.projectId !== projectId
+    )
+      return;
+    handledRequest.current = request;
+    if (pending || attempted) {
+      setError(
+        new Error(
+          "A terminal action is unresolved. Inspect its outcome before opening another terminal.",
+        ),
+      );
+      return;
+    }
+    void create(request.cwd);
+  }, [request, projectId]);
   const close = async () => {
     if (!closing) return;
     setAttempted(true);
     setPending(true);
     try {
-      await client.DELETE("/api/host/terminals/{terminal_id}", {
-        params: { path: { terminal_id: closing.terminal_id } },
-      });
+      await result(
+        client.DELETE("/api/host/terminals/{terminal_id}", {
+          params: { path: { terminal_id: closing.terminal_id } },
+        }),
+      );
       if (selected === closing.terminal_id) select("");
       setClosing(null);
       setAttempted(false);
@@ -262,19 +312,6 @@ export function TerminalPanel({
               </Button>
             )}
           </div>
-          <Suspense fallback={<p>Loading terminal…</p>}>
-            <TerminalScreen
-              key={selected}
-              id={selected}
-              visible={visible}
-              claimCreated={() => {
-                if (created.current !== selected) return false;
-                created.current = null;
-                return true;
-              }}
-              unauthorized={unauthorized}
-            />
-          </Suspense>
         </>
       ) : (
         <div className={styles.empty}>
@@ -294,6 +331,28 @@ export function TerminalPanel({
           </p>
         </div>
       )}
+      {retained.map((id) => (
+        <div
+          key={id}
+          className={styles.retainedScreen}
+          hidden={!visible || id !== activeId}
+        >
+          <Suspense fallback={<p>Loading terminal…</p>}>
+            <TerminalScreen
+              id={id}
+              visible={visible && id === activeId}
+              threadId={threadId}
+              openFile={openFile}
+              claimCreated={() => {
+                if (created.current !== id) return false;
+                created.current = null;
+                return true;
+              }}
+              unauthorized={unauthorized}
+            />
+          </Suspense>
+        </div>
+      ))}
       <ErrorNotice error={error} />
       {attempted && error != null && !closing && (
         <p role="status">

@@ -134,6 +134,9 @@ async def test_role_lifespan_installs_only_owned_connectivity_components(
         connectivity_data = connectivity.data if connectivity is not None else None
         assert (connectivity_control is not None) is serves_control
         assert (connectivity_data is not None) is serves_connectivity
+        if connectivity_data is not None:
+            assert connectivity_data.event_connections is not None
+            assert not connectivity_data.event_connections.is_draining()
         assert (runtime.worker is not None) is serves_worker
 
 

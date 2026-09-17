@@ -11,7 +11,7 @@ import {
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { ArrowRightIcon, ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";

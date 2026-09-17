@@ -1,4 +1,4 @@
-"""Checkout lifecycle locking and foreground process-group supervision."""
+"""Checkout lifecycle locking and application process-group supervision."""
 
 from __future__ import annotations
 
@@ -12,6 +12,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
+
+BACKGROUND_STATE = "applications.pid"
 
 
 @contextmanager
@@ -41,6 +43,65 @@ def inherited_lifecycle_lock(fd: int) -> Iterator[None]:
         raise ValueError("Invalid inherited local-development lifecycle lock") from None
     try:
         yield
+    finally:
+        os.close(fd)
+
+
+@contextmanager
+def background_applications(root: Path) -> Iterator[None]:
+    """Record one detached application supervisor while holding its ownership lock."""
+    directory = root / "var/dev"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / BACKGROUND_STATE
+    fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise ValueError("Detached development applications are already running") from None
+        os.set_inheritable(fd, False)
+        os.ftruncate(fd, 0)
+        os.write(fd, f"{os.getpid()}\n".encode())
+        os.fsync(fd)
+        try:
+            yield
+        finally:
+            os.ftruncate(fd, 0)
+    finally:
+        os.close(fd)
+
+
+def stop_background_applications(root: Path, *, timeout: float = 15) -> bool:
+    """Stop the detached supervisor identified by its held ownership lock."""
+    path = root / "var/dev" / BACKGROUND_STATE
+    try:
+        fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+    except FileNotFoundError:
+        return False
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            pass
+        else:
+            return False
+        pid_text = os.pread(fd, 32, 0).decode().strip()
+        if not pid_text.isdecimal() or int(pid_text) <= 1:
+            raise RuntimeError("Detached development application state is invalid")
+        pid = int(pid_text)
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            return False
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                time.sleep(0.05)
+                continue
+            return True
+        raise RuntimeError("Timed out stopping detached development applications")
     finally:
         os.close(fd)
 

@@ -1162,6 +1162,7 @@ class CliShell:
         self.status.notices.clear()
         await self._activate_decisions()
         self.registry.set_skills(await backend.skill_catalog())
+        self.registry.thinking_choices = tuple((item.value, item.description) for item in backend.thinking_choices())
         if backend.thread_id is not None:
             self.renderer.tasks.restore(await backend.app.thread_tasks(thread_id=backend.thread_id))
             await self._load_notes()
@@ -1344,6 +1345,9 @@ class CliShell:
                     await self._activate_decisions()
                     if self.backend is not None and not self.closing:
                         self.registry.set_skills(await self.backend.skill_catalog())
+                        self.registry.thinking_choices = tuple(
+                            (item.value, item.description) for item in self.backend.thinking_choices()
+                        )
                         if self.backend.thread_id is not None:
                             self.renderer.tasks.restore(
                                 await self.backend.app.thread_tasks(thread_id=self.backend.thread_id)

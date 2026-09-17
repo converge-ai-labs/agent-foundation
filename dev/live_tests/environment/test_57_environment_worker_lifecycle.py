@@ -68,8 +68,7 @@ async def coordinated(lifecycle_lab):
                 else:
                     for identity in pool.identities:
                         for target in await pool.targets(identity):
-                            await pool.engine.stop_container(target.container_id, timeout_seconds=1)
-                            await pool.engine.remove_container(target.container_id)
+                            await pool.remove(target.container_id)
                         assert not await pool.targets(identity)
                     await pool.engine.close()
 

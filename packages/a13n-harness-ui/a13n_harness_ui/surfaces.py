@@ -12,9 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
+from a13n_harness_ui.model_thinking import ThinkingControl, ThinkingSelection
 from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
+from a13n_harness_ui.storage.contracts import ThreadCompletion
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
 _MAX_DEFERRED_RESPONSE_BYTES = 1024 * 1024
@@ -30,7 +32,7 @@ class RunModelOverrides(SurfaceModel):
     """Per-operation choices; never rewrite resources or sticky Thread heads."""
 
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
-    thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
+    thinking: ThinkingSelection | None = None
     service_tier: Literal["auto", "default", "flex", "priority"] | None = None
 
 
@@ -40,6 +42,7 @@ class ContextUsageView(SurfaceModel):
     context_window: int | None = None
     model_id: str | None = None
     thinking: str | bool | None = None
+    thinking_summary: str | None = None
 
 
 class AgentSourceView(SurfaceModel):
@@ -120,10 +123,12 @@ class ThreadSummary(SurfaceModel):
     title: str | None = Field(default=None, max_length=512)
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     activity_at: datetime | None = None
+    touched_at: datetime | None = None
     archived: bool
     configuration: ThreadConfigurationView
     continuation_state: Literal["initial", "selected"]
     root_activity: RootActivityView
+    completion: ThreadCompletion | None = None
 
     @field_validator("created_at", "updated_at")
     @classmethod
@@ -131,6 +136,10 @@ class ThreadSummary(SurfaceModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Thread timestamps must include a UTC offset")
         return value.astimezone(UTC)
+
+
+class ThreadLookup(SurfaceModel):
+    thread_ids: tuple[Annotated[str, Field(min_length=1, max_length=80)], ...] = Field(min_length=1, max_length=100)
 
 
 class ThreadPage(SurfaceModel):
@@ -177,11 +186,11 @@ class ThreadDetail(SurfaceModel):
 
 
 class AppliedEditView(SurfaceModel):
-    """Observed edit content, or an explicit omission when retention bounds were reached."""
+    """Observed edit content; nullable fields retain compatibility with older omitted previews."""
 
     file_path: str
-    before: str | None = Field(default=None, max_length=64 * 1024)
-    after: str | None = Field(default=None, max_length=64 * 1024)
+    before: str | None = None
+    after: str | None = None
     omitted: bool = False
 
 
@@ -201,7 +210,7 @@ class TranscriptPart(SurfaceModel):
         "media",
         "other",
     ]
-    text: str | None = Field(default=None, max_length=64 * 1024)
+    text: str | None = None
     tool_name: str | None = Field(default=None, max_length=128)
     tool_call_id: str | None = Field(default=None, max_length=256)
     outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
@@ -209,6 +218,13 @@ class TranscriptPart(SurfaceModel):
     applied_edit: AppliedEditView | None = None
     value: JsonValue | None = None
     value_omitted: bool = False
+
+    @model_validator(mode="after")
+    def _bounded_ordinary_text(self) -> Self:
+        context = (self.metadata.model_extra or {}).get("a13n.context")
+        if self.text is not None and len(self.text) > 64 * 1024 and context not in ("handoff", "compaction"):
+            raise ValueError("Ordinary transcript text must not exceed 65536 characters")
+        return self
 
 
 class TranscriptEntry(SurfaceModel):
@@ -228,6 +244,7 @@ class TranscriptEntry(SurfaceModel):
 
 
 class TranscriptPage(SurfaceModel):
+    completion_version: int = Field(default=0, ge=0)
     continuation_id: str | None = Field(default=None, pattern=r"^(?:initial:)?[0-9a-f]{64}$")
     entries: tuple[TranscriptEntry, ...]
     total: int = Field(ge=0)
@@ -582,6 +599,7 @@ class ThreadActivityView(SurfaceModel):
 class ThreadActivityPage(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     rows: tuple[ThreadActivityView, ...]
+    active_rows: tuple[ThreadActivityView, ...] = ()
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
 
@@ -605,6 +623,7 @@ class ModelSummary(SurfaceModel):
     model_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     route: str = Field(min_length=1)
+    thinking: ThinkingControl | None = None
 
 
 class ThreadSelectorCatalog(SurfaceModel):
@@ -749,6 +768,8 @@ type DecisionRequestView = Annotated[
 class DecisionBatchView(SurfaceModel):
     continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     requests: tuple[DecisionRequestView, ...] = Field(min_length=1, max_length=256)
+    expires_at: datetime | None = None
+    server_time: datetime | None = None
 
 
 class QuestionResponse(SurfaceModel):

@@ -14,11 +14,12 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
-from a13n_service.connectivity.bots.setup_tests import record_test_admission, record_test_ignored, test_marker
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.management import canonical_json
 from a13n_service.connectivity.native_management import require_adapter
+from a13n_service.connectivity.transports.configuration import connection_key
+from a13n_service.connectivity.transports.leases import ConnectionClaim, require_claim
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
@@ -27,6 +28,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .admission_domain import BatchConfiguration
 from .admission_models import AgentThreadBindingRecord, IngressAdmissionRecord, IngressBatchRecord
+from .contributions import IngressObservations
 from .provider import (
     AdmissionReceipt,
     DurableAdmissionReceipt,
@@ -34,6 +36,7 @@ from .provider import (
     IrrelevantAdmissionReceipt,
     ProviderHttpResponse,
     ProviderRequest,
+    ProviderRequestDecision,
     ProviderRequestError,
 )
 from .routing import EligibleRouting, IrrelevantRouting, resolve_routing
@@ -65,6 +68,7 @@ class IngressEventService:
         batch_max_bytes: int,
         dedup_horizon_seconds: int,
         clock: Clock = utc_now,
+        observations: IngressObservations | None = None,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
@@ -77,6 +81,7 @@ class IngressEventService:
         self._batch_max_bytes = batch_max_bytes
         self._dedup_horizon_seconds = dedup_horizon_seconds
         self._clock = clock
+        self._observations = observations
 
     async def receive(self, *, account_id: str, request: ProviderRequest) -> ProviderHttpResponse:
         snapshot, adapter, credentials = await self._load_runtime(account_id)
@@ -105,6 +110,38 @@ class IngressEventService:
             return adapter.failure_response(error.code)
         return adapter.acknowledge(receipt)
 
+    async def receive_socket(
+        self, *, snapshot: AccountSnapshot, decision: ProviderRequestDecision, claim: ConnectionClaim
+    ) -> None:
+        """Admit authenticated app-socket events; success permits a provider ACK."""
+        if (
+            snapshot.provider_config.get("event_transport") != "websocket"
+            or connection_key(snapshot.provider_key, snapshot.provider_config) != claim.key
+        ):
+            raise NativeError(
+                "connection_scope_mismatch",
+                "Event connection does not own this account.",
+                category=ErrorCategory.forbidden,
+            )
+        adapter = require_adapter(self._adapters, snapshot.provider_key, snapshot.provider_config_version)
+        if decision.kind == "event":
+            await self._admit(
+                snapshot=snapshot,
+                adapter=adapter,
+                event=decision.event,
+                request_digest=hashlib.sha256(
+                    canonical_json(decision.event.model_dump(mode="json", exclude={"received_at"})).encode()
+                ).hexdigest(),
+                claim=claim,
+            )
+        else:
+            async with transaction(self._sessions) as session:
+                await require_claim(session, claim)
+
+    async def load_socket_account(self, account_id: str) -> tuple[AccountSnapshot, JsonObject]:
+        snapshot, _, credentials = await self._load_runtime(account_id)
+        return snapshot, credentials
+
     async def _load_runtime(self, account_id: str) -> tuple[AccountSnapshot, IngressAdapter, JsonObject]:
         async with short_session(self._sessions) as session:
             account = await require_account(session, account_id)
@@ -132,11 +169,19 @@ class IngressEventService:
         return snapshot, adapter, credentials
 
     async def _admit(
-        self, *, snapshot: AccountSnapshot, adapter: IngressAdapter, event: InboundEvent, request_digest: str
+        self,
+        *,
+        snapshot: AccountSnapshot,
+        adapter: IngressAdapter,
+        event: InboundEvent,
+        request_digest: str,
+        claim: ConnectionClaim | None = None,
     ) -> AdmissionReceipt:
         now = self._clock()
         identity = hashlib.sha256(event.external_event_id.encode()).hexdigest()
         async with transaction(self._sessions) as session:
+            if claim is not None:
+                await require_claim(session, claim)
             # The existing Workspace capacity row also serializes same-event first
             # admission. No session or lock spans provider authentication or I/O.
             workspace = await session.scalar(
@@ -145,7 +190,11 @@ class IngressEventService:
             if workspace is None or workspace.deleted_at is not None:
                 raise NativeError("workspace_unavailable", "Workspace is unavailable.", category=ErrorCategory.conflict)
             account = await require_account(session, snapshot.id, lock=True)
-            if account.version != snapshot.version or account.credential_generation != snapshot.credential_generation:
+            if (
+                account.status != "active"
+                or account.version != snapshot.version
+                or account.credential_generation != snapshot.credential_generation
+            ):
                 raise NativeError(
                     "account_changed", "Account changed during authentication.", category=ErrorCategory.unavailable
                 )
@@ -157,7 +206,10 @@ class IngressEventService:
                 )
             )
             if duplicate is not None:
-                if duplicate.request_digest != request_digest:
+                same_message = snapshot.provider_key in {"slack", "lark"} and {
+                    key: value for key, value in duplicate.event_json.items() if key != "received_at"
+                } == event.model_dump(mode="json", exclude={"external_event_id", "received_at"})
+                if duplicate.request_digest != request_digest and not same_message:
                     raise NativeError(
                         "delivery_identity_conflict",
                         "Delivery identity was reused with different content.",
@@ -166,9 +218,9 @@ class IngressEventService:
                 return await _receipt(session, duplicate, duplicate=True)
             routing = await resolve_routing(session, adapter=adapter, account=account, event=event)
             if isinstance(routing, IrrelevantRouting):
-                if test_marker(event.text) is not None:
+                if self._observations is not None:
                     kind, identifier = adapter.event_target(event)
-                    await record_test_ignored(
+                    await self._observations.ignored(
                         session,
                         account=account,
                         event=event,
@@ -220,16 +272,17 @@ class IngressEventService:
             )
             session.add(record)
             await session.flush()
-            await record_test_admission(
-                session,
-                account=account,
-                configuration=routing.configuration,
-                event=event,
-                admission_id=record.id,
-                batch_id=batch.id,
-                binding_id=binding.id,
-                now=now,
-            )
+            if self._observations is not None:
+                await self._observations.admitted(
+                    session,
+                    account=account,
+                    configuration=routing.configuration,
+                    event=event,
+                    admission_id=record.id,
+                    batch_id=batch.id,
+                    binding_id=binding.id,
+                    now=now,
+                )
             return DurableAdmissionReceipt(admission_id=record.id, status="pending", duplicate=False)
 
     async def _require_capacity(self, session: AsyncSession, account: AccountRecord, size: int) -> None:

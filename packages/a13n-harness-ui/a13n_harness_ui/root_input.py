@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 from dataclasses import dataclass, replace
+from typing import Literal
 
 from a13n_harness.environment.models import EnvironmentAction
 from a13n_harness.environment.providers import BoundEnvironment
@@ -17,6 +18,33 @@ from a13n_harness_ui.thread_files import (
     AttachmentUpload,
     ThreadFiles,
 )
+
+_SURFACE_HINTS = {
+    "webui": (
+        "This input was submitted through Harness UI WebUI.\n"
+        "For the response to this input, the interface supports Markdown and renders fenced mermaid blocks "
+        "as static diagrams. Use them when helpful. Mermaid configuration directives, image assets, and "
+        "interactive callbacks are not supported. Follow the user's explicit output-format preferences."
+    ),
+    "tui": (
+        "This input was submitted through Harness UI TUI.\n"
+        "For the response to this input, the interface supports terminal Markdown but displays Mermaid blocks "
+        "as source text rather than diagrams. Prefer prose or simple ASCII diagrams for inline explanations "
+        "unless the user requests Mermaid. This does not restrict formats written to files."
+    ),
+}
+
+
+def append_surface_hint(prompt: RunInputValue, surface: Literal["tui", "webui"]) -> RunInputValue:
+    """Append a fixed presentation hint after authored input has been validated."""
+    parts = (prompt,) if isinstance(prompt, str) else tuple(prompt)
+    return (
+        *parts,
+        TextContent(
+            '<surface-context source="a13n-harness-ui">\n' + _SURFACE_HINTS[surface] + "\n</surface-context>",
+            metadata={"display": False, "source_id": "a13n-harness-ui.surface"},
+        ),
+    )
 
 
 def detach_input(prompt: RunInputValue) -> RunInputValue:

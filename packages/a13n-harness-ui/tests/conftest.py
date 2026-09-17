@@ -23,6 +23,16 @@ def no_background_price_downloads(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(prices, "update_in_background", nullcontext)
 
 
+@pytest.fixture(autouse=True)
+def no_model_directory_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    from a13n_harness_ui import model_catalog
+
+    async def bundled():
+        return model_catalog.bundled_models()
+
+    monkeypatch.setattr(model_catalog, "fetch_directory", bundled)
+
+
 @pytest.fixture
 def anyio_backend() -> str:
     return "asyncio"

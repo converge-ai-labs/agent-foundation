@@ -226,7 +226,8 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     wizard.accept("")
     wizard.accept("")
     wizard.accept("off")
-    wizard.accept("key:work")
+    wizard.accept("new")
+    wizard.accept("key:key-work")
     wizard.accept("gpt-5.6-sol")
     wizard.accept("high")
     wizard.accept("all")
@@ -238,12 +239,12 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     assert wizard.question is None
     selection = wizard.selection("/workspace")
     assert selection["instructions"] == "Keep replies concise"
-    assert selection["providers"] == []
-    assert selection["api_key_model"] == {
+    assert selection["model"] == {
         "route": "openai-responses:gpt-5.6-sol",
-        "authentication": {"kind": "api_key", "credential_ref": "work"},
+        "authentication": {"kind": "api_key", "credential_ref": "key-work", "env": None},
         "model_configuration": {"base_url": "https://api.openai.com/v1"},
         "model_characteristics": {
+            "capabilities": ["image_understanding"],
             "context_window_tokens": 350000,
             "proactive_context_management_threshold": 0.65,
             "compact_threshold": 0.90,
@@ -275,6 +276,9 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -
 
         async def skill_catalog(self):
             return None
+
+        def thinking_choices(self):
+            return ()
 
         async def initialize(self):
             ready.set()

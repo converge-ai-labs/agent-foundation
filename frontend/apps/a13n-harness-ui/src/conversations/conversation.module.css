@@ -1,7 +1,7 @@
 .navigation {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-height: 0;
   flex: 1;
 }
@@ -9,8 +9,34 @@
   font-size: 12px;
 }
 .navigationFilters {
-  display: grid;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.navigationFilters > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.scopePopup {
+  width: 240px;
+}
+.activeFilter {
+  color: var(--a13n-text);
+  background: var(--a13n-hover);
+}
+.navigationHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  padding-inline: 8px 2px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.navigationHeading > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .threadGroups {
   flex: 1;
@@ -35,19 +61,14 @@
     opacity: 1;
   }
 }
-.refreshingGroup {
-  align-self: center;
-  font-size: 10px;
-  color: var(--a13n-secondary);
-}
 .groupHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  margin-top: 12px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
+  margin-top: 6px;
+  color: var(--a13n-text-supporting);
+  font-size: 13px;
 }
 .groupHeading:not(:has(.projectDrag)) {
   padding-inline-start: 22px;
@@ -109,10 +130,6 @@
 }
 .groupThreads {
   margin-inline-start: 22px;
-}
-.pinnedThread {
-  border-bottom: 1px solid var(--a13n-border);
-  margin-bottom: 4px;
 }
 .srOnly {
   position: absolute;
@@ -208,11 +225,37 @@
   font-size: 11px;
   margin-top: 2px;
 }
+.resultDot {
+  width: 7px;
+  height: 7px;
+  flex: 0 0 7px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--info-foreground);
+}
+.resultCount {
+  flex-shrink: 0;
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--info-foreground) 12%, transparent);
+  color: var(--info-foreground);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
 .threadWaiting {
   color: var(--warning-foreground);
 }
 .threadRunning {
   color: var(--info-foreground);
+  animation: threadSpin 1.4s linear infinite;
+  transform-origin: center;
+}
+@keyframes threadSpin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .threadFailed {
   color: var(--destructive-foreground);
@@ -221,12 +264,6 @@
   display: block;
   color: var(--a13n-secondary);
   padding: 5px 8px;
-}
-.archiveFilter {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--a13n-secondary);
 }
 .form {
   display: grid;
@@ -240,12 +277,22 @@
   font-size: 13px;
 }
 .page {
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
   height: 100%;
 }
 .activityBar {
+  position: absolute;
+  top: 0;
+  right: 8px;
+  z-index: 2;
+  max-width: calc(100% - 16px);
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--a13n-surface);
+  pointer-events: none;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -292,40 +339,11 @@
   color: var(--a13n-secondary);
   margin-bottom: 8px;
 }
-.markdown {
-  font-size: 14px;
-  line-height: 1.7;
-  overflow-wrap: anywhere;
+.inputStatus {
+  display: inline;
+  font-size: 11px;
+  margin-inline-start: 8px;
 }
-.markdown p {
-  margin: 0 0 12px;
-}
-.userMessage .markdown > :last-child {
-  margin-bottom: 0;
-}
-.markdown ul,
-.markdown ol {
-  padding-left: 24px;
-}
-.markdown li {
-  margin: 4px 0;
-}
-.markdown h1,
-.markdown h2,
-.markdown h3 {
-  font-weight: 500;
-  margin: 20px 0 12px;
-}
-.markdown h1 {
-  font-size: 22px;
-}
-.markdown h2 {
-  font-size: 18px;
-}
-.markdown h3 {
-  font-size: 16px;
-}
-.markdown pre,
 .code {
   font-family: var(--a13n-mono);
   font-size: 12px;
@@ -338,29 +356,23 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.markdown code {
-  font-family: var(--a13n-mono);
-  font-size: 12px;
+.reasoning {
+  margin: 16px 0;
+  color: var(--a13n-text-supporting);
 }
-.markdown table {
-  display: block;
-  overflow: auto;
-  border-collapse: collapse;
+.reasoning > div + div {
+  margin-top: 12px;
 }
-.markdown td,
-.markdown th {
-  border: 1px solid var(--a13n-border);
-  padding: 6px 10px;
-  text-align: left;
-}
-.markdown a {
-  text-decoration: underline;
-}
-.markdown blockquote {
-  border-left: 2px solid var(--a13n-border);
-  margin-left: 0;
-  padding-left: 16px;
+.reasoning > summary {
+  width: fit-content;
+  margin-bottom: 10px;
   color: var(--a13n-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.reasoning > summary:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 3px;
 }
 .activity {
   padding: 8px 10px;
@@ -448,6 +460,9 @@
 .composer:focus-within {
   border-color: var(--ring);
 }
+.moreConversations {
+  font-weight: 400;
+}
 .composerConnection {
   margin: 4px 4px 0;
   font-size: 12px;
@@ -461,6 +476,15 @@
 .composerContext {
   font-size: 12px;
   color: var(--a13n-secondary);
+}
+.mobileOptionsButton {
+  display: none;
+}
+.composerOptions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
 }
 .composerActions {
   display: flex;
@@ -508,6 +532,22 @@
 }
 .attachments small {
   color: var(--a13n-secondary);
+}
+.composerStatus {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 6px 0;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.composerStatus p {
+  flex: 1 1 220px;
+  margin: 0;
+}
+.composerStatus [role="alert"] {
+  color: var(--a13n-text);
 }
 .warning {
   font-size: 13px;
@@ -569,7 +609,59 @@
     width: 100%;
   }
   .composer {
-    padding: 10px;
+    --composer-editor-height: 42px;
+    --composer-content-height: 26px;
+    --composer-font-size: 16px;
+    position: relative;
+    padding: 6px;
+    border-radius: 24px;
+    box-shadow: 0 3px 16px #0000000a;
+  }
+  .composerBody {
+    position: relative;
+  }
+  .composerEditor {
+    padding-inline: 38px 78px;
+    min-width: 0;
+  }
+  .composer .attachButton {
+    position: absolute;
+    left: 2px;
+    top: 5px;
+  }
+  .composer .sendButton {
+    position: absolute;
+    right: 1px;
+    top: 2px;
+  }
+  .composer .mobileOptionsButton {
+    display: inline-flex;
+    position: absolute;
+    right: 39px;
+    top: 5px;
+  }
+  .composer .secondaryStop {
+    position: absolute;
+    right: 39px;
+    top: 2px;
+  }
+  .composerBody[data-stop-secondary="true"] .mobileOptionsButton {
+    right: 77px;
+  }
+  .composerBody[data-stop-secondary="true"] .composerEditor {
+    padding-inline-end: 116px;
+  }
+  .composer .composerOptions {
+    display: none;
+  }
+  .composer .composerOptions[data-open="true"] {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 8px;
+  }
+  .composer .composerActions,
+  .composer .composerActions > div {
+    display: contents;
   }
   .composerContext {
     display: none;
@@ -962,21 +1054,15 @@
 .attachmentThumbnail {
   width: 36px;
   height: 36px;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 4px;
   flex-shrink: 0;
 }
 .attachmentThumbnail[hidden] {
   display: none;
 }
-.attachmentPreview {
-  display: block;
-  max-width: 100%;
-  max-height: 65dvh;
-  object-fit: contain;
-  margin: 12px auto;
-}
 .inputText {
+  font-size: 15px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.8;
@@ -984,31 +1070,54 @@
 .inputAttachment {
   display: inline-block;
   vertical-align: middle;
-  max-width: 100%;
+  max-width: calc(100% - 8px);
   margin: 3px 4px;
   border: 1px solid var(--a13n-border);
   border-radius: 8px;
   background: var(--a13n-surface);
   font-size: 12px;
 }
-.inputAttachment > summary {
+.inputAttachment > details > summary {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 4px 8px;
   cursor: pointer;
   list-style: none;
 }
-.inputAttachment > summary::-webkit-details-marker {
+.inputAttachment > details > summary::-webkit-details-marker {
   display: none;
 }
-.inputAttachment > summary::after {
+.inputAttachment > details > summary::after {
   content: "+";
   color: var(--a13n-secondary);
   margin-left: 8px;
 }
-.inputAttachment[open] > summary::after {
+.inputAttachment > details[open] > summary::after {
   content: "−";
+}
+.imageAttachment {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  max-width: min(280px, 100%);
+  color: var(--a13n-text);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: zoom-in;
+  text-align: start;
+}
+.imageAttachment:hover {
+  background: var(--a13n-hover);
+}
+.imageAttachment:focus-visible {
+  outline: 1px solid var(--ring);
+}
+.imageAttachment .attachmentThumbnail {
+  width: 36px;
+  height: 36px;
 }
 .inputAttachment strong {
   font-weight: 500;
@@ -1025,7 +1134,7 @@
 .inputAttachmentDetails small {
   color: var(--a13n-secondary);
 }
-.inputAttachment[open] .attachmentThumbnail {
+.inputAttachment > details[open] .attachmentThumbnail {
   width: 96px;
   height: 72px;
   object-fit: contain;
@@ -1083,4 +1192,113 @@
 }
 .commentConflict small {
   color: var(--a13n-secondary);
+}
+
+.recoveryNotice {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 12px 0;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.recoveryNotice > svg {
+  flex-shrink: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .threadRunning {
+    animation: none;
+  }
+}
+.failureNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin-block: 14px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  font-size: 13px;
+  background: var(--muted);
+}
+.failureNotice > svg {
+  flex: 0 0 18px;
+  margin-top: 2px;
+  color: var(--warning-foreground);
+}
+.failureNotice > div {
+  min-width: 0;
+}
+.failureNotice p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.failureNotice details {
+  margin-top: 8px;
+  color: var(--a13n-secondary);
+}
+.failureNotice pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+}
+
+.contextActivity {
+  --context-accent: #6476b5;
+  border: 1px solid color-mix(in srgb, var(--context-accent) 24%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--context-accent) 7%, var(--a13n-surface));
+  padding: 10px 14px;
+  margin-block: 10px;
+  min-width: 0;
+}
+.contextActivity[data-kind="compaction"] {
+  --context-accent: #43928a;
+}
+.contextActivity > summary {
+  color: var(--a13n-text-supporting);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.contextActivity > summary::marker {
+  color: var(--context-accent);
+}
+.contextActivity[open] > summary {
+  margin-bottom: 12px;
+}
+.contextStatus {
+  margin-left: 12px;
+  color: var(--a13n-text-supporting);
+  font-size: 12px;
+  font-weight: 400;
+}
+.contextPreview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+  color: var(--a13n-text-supporting);
+  font-weight: 400;
+  line-height: 1.5;
+}
+.contextActivity[open] .contextPreview {
+  display: none;
+}
+.contextActivity > summary:focus-visible {
+  outline: 2px solid var(--context-accent);
+  outline-offset: 4px;
+  border-radius: 2px;
+}
+
+.childAnswer {
+  min-width: 0;
+}
+.childAnswer > header {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  margin-block: 12px;
 }

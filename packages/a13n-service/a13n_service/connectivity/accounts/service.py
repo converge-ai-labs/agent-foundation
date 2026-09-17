@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
 from pydantic import SecretStr
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -25,6 +25,9 @@ from a13n_service.connectivity.native_management import (
     require_limit,
     require_version,
 )
+from a13n_service.connectivity.transports.configuration import connection_key
+from a13n_service.connectivity.transports.configuration import validate_credentials as validate_transport_credentials
+from a13n_service.connectivity.transports.models import EventConnectionRecord
 from a13n_service.digests import digest_request
 from a13n_service.iam.authorization import (
     AuthenticatedActor,
@@ -33,7 +36,7 @@ from a13n_service.iam.authorization import (
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage import transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .domain import (
     Account,
@@ -41,6 +44,7 @@ from .domain import (
     AccountProviderDefinitionCollection,
     AccountStatus,
     CreateAccountRequest,
+    EventConnectionStatus,
     ReplaceAccountCredentialsRequest,
     UpdateAccountRequest,
 )
@@ -57,12 +61,10 @@ class AccountService:
         adapters: AdapterResolver[AccountAdapter],
         protector: SecretProtector,
         *,
-        memory_catalog: MemoryBackendCatalog | None = None,
         batch_max_events: int = 100,
         batch_max_wait_seconds: float = 300,
         clock: Clock = utc_now,
     ) -> None:
-        self._memory_catalog = memory_catalog
         self._sessions = sessions
         self._adapters = adapters
         self._protector = protector
@@ -96,11 +98,10 @@ class AccountService:
         try:
             async with transaction(self._sessions) as session:
                 workspace = await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
-                if request.memory is not None:
-                    await authorize(session, actor, workspace_id, WorkspaceAction.bot_memory_share)
                 adapter = require_adapter(self._adapters, request.provider_key, request.provider_config_version)
                 config = _validate_config(adapter, request.provider_config, request.provider_config_version)
                 credentials = _validate_credentials(adapter, request.credentials, request.provider_config_version)
+                validate_transport_credentials(request.provider_key, config, credentials)
                 request_fingerprint = fingerprint(request, credentials=credentials)
                 replay = await replay_command(
                     session,
@@ -115,7 +116,7 @@ class AccountService:
                 if replay is not None:
                     return replay.restore(Account)
                 reception = _parse_reception(request.model_dump(include=set(Reception.model_fields)))
-                await validate_reception(session, actor, workspace_id, reception, memory_catalog=self._memory_catalog)
+                await validate_reception(session, actor, workspace_id, reception)
                 validate_batching(
                     reception.input_batching,
                     max_events=self._batch_max_events,
@@ -127,7 +128,6 @@ class AccountService:
                     else None
                 )
                 record = AccountRecord(
-                    memory_json=reception.memory.model_dump(mode="json") if reception.memory else None,
                     reception_scope=reception.reception_scope.value,
                     receive_enabled=reception.receive_enabled,
                     default_agent_id=reception.default_agent_id,
@@ -194,12 +194,9 @@ class AccountService:
         workspace_id: str,
         limit: int,
         cursor: str | None,
-        bots_only: bool = False,
     ) -> AccountCollection:
         require_limit(limit)
         scope = {"workspace_id": workspace_id, "actor": actor.principal.model_dump(mode="json")}
-        if bots_only:
-            scope["bots_only"] = True
         try:
             position = decode_cursor(cursor, scope=scope, id_prefix="acct") if cursor is not None else None
         except CursorError as error:
@@ -213,8 +210,6 @@ class AccountService:
                 AccountRecord.workspace_id == workspace_id,
                 AccountRecord.deleted_at.is_(None),
             )
-            if bots_only:
-                query = query.where(AccountRecord.provider_key.in_(("slack", "lark")))
             if position is not None:
                 query = query.where(
                     or_(
@@ -243,6 +238,32 @@ class AccountService:
             await authorize(session, actor, record.workspace_id, WorkspaceAction.application_account_read)
             return record.to_resource()
 
+    async def event_connection(self, *, actor: AuthenticatedActor, account_id: str) -> EventConnectionStatus:
+        async with transaction(self._sessions) as session:
+            account = await require_account(session, account_id)
+            await authorize(session, actor, account.workspace_id, WorkspaceAction.application_account_read)
+            websocket = account.provider_config_json.get("event_transport") == "websocket"
+            transport = "websocket" if websocket else "http"
+            if account.status != "active":
+                return EventConnectionStatus(transport=transport, state="disabled")
+            if not websocket:
+                return EventConnectionStatus(transport="http", state="http")
+            record = await session.get(
+                EventConnectionRecord, connection_key(account.provider_key, account.provider_config_json)
+            )
+            if record is None or record.account_versions.get(account.id) != account.version:
+                return EventConnectionStatus(transport="websocket", state="connecting")
+            state = record.state if assume_utc(record.lease_expires_at) > self._clock() else "disconnected"
+            return EventConnectionStatus.model_validate(
+                {
+                    "transport": "websocket",
+                    "state": state,
+                    "observed_at": record.observed_at,
+                    "last_event_at": record.last_event_at,
+                    "error_code": record.error_code,
+                }
+            )
+
     async def update_account(
         self,
         *,
@@ -265,8 +286,6 @@ class AccountService:
         record = await require_account(session, account_id, lock=True)
         await authorize(session, actor, record.workspace_id, WorkspaceAction.application_account_manage)
         require_version(record.version, request.expected_version)
-        if "memory" in request.model_fields_set:
-            await authorize(session, actor, record.workspace_id, WorkspaceAction.bot_memory_share)
         adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
         config = record.provider_config_json
         if request.provider_config is not None:
@@ -280,6 +299,10 @@ class AccountService:
                     "Application Account identity cannot be changed.",
                     category=ErrorCategory.conflict,
                 )
+        if request.provider_config is not None:
+            validate_transport_credentials(
+                record.provider_key, config, json.loads(record.credential_snapshot().decrypt(self._protector))
+            )
         if request.name is not None:
             record.name = request.name
             record.normalized_name = request.name.casefold()
@@ -289,13 +312,12 @@ class AccountService:
                 **request.model_dump(include=set(Reception.model_fields), exclude_unset=True),
             }
         )
-        await validate_reception(session, actor, record.workspace_id, reception, memory_catalog=self._memory_catalog)
+        await validate_reception(session, actor, record.workspace_id, reception)
         validate_batching(
             reception.input_batching,
             max_events=self._batch_max_events,
             max_interval_ms=self._batch_max_interval_ms,
         )
-        record.memory_json = reception.memory.model_dump(mode="json") if reception.memory else None
         record.reception_scope = reception.reception_scope.value
         record.receive_enabled = reception.receive_enabled
         record.default_agent_id = reception.default_agent_id
@@ -356,6 +378,7 @@ class AccountService:
             require_version(record.version, request.expected_version)
             adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
             credentials = _validate_credentials(adapter, request.credentials, record.provider_config_version)
+            validate_transport_credentials(record.provider_key, record.provider_config_json, credentials)
             record.replace_credential(canonical_json(credentials), self._protector)
 
             record.version += 1

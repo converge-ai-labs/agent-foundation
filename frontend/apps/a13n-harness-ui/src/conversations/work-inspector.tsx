@@ -17,6 +17,7 @@ import {
   ListChecks,
   Notebook,
   UsersThree,
+  Terminal,
   X,
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
@@ -25,6 +26,7 @@ import { ErrorNotice } from "../shell/ui";
 import { MessageText } from "./message-text";
 import { Children, useChildExecutions } from "./details";
 import type { FocusDisplay } from "./stream";
+import { Processes } from "./processes";
 import styles from "./work-inspector.module.css";
 
 type Task = Schema<"TaskView">;
@@ -149,16 +151,20 @@ export function WorkInspector({
   continuation,
   display,
   live,
+  connected = true,
   reconcile,
 }: {
   threadId: string;
   continuation?: string | null;
   display: FocusDisplay;
   live: boolean;
+  connected?: boolean;
   reconcile: () => void;
 }) {
   const { client } = useTransport();
-  const [tab, setTab] = useState<"tasks" | "notes" | "children" | null>(null);
+  const [tab, setTab] = useState<
+    "tasks" | "notes" | "children" | "processes" | null
+  >(null);
   const saved = useQuery({
     queryKey: ["thread", threadId, "tasks", continuation],
     queryFn: ({ signal }) =>
@@ -184,16 +190,29 @@ export function WorkInspector({
   const tasks = orderedTasks(page?.tasks ?? []);
   const active = tasks.find((task) => task.status === "in_progress");
   const complete = tasks.filter((task) => task.status === "completed").length;
-  const labels = { tasks: "Tasks", notes: "Notes", children: "Subagents" };
+  const processes = display.processes.background;
+  const running = processes.filter((item) => item.phase === "running").length;
+  const incomplete =
+    !connected ||
+    display.gap ||
+    [...display.children.values()].some((child) => child.display.gap);
+  const labels = {
+    tasks: "Tasks",
+    notes: "Notes",
+    children: "Subagents",
+    processes: "Processes",
+  };
   return (
     <div className={styles.strip} aria-label="Work inspection">
-      {(["tasks", "notes", "children"] as const).map((key) => {
+      {(["tasks", "notes", "children", "processes"] as const).map((key) => {
         const Icon =
           key === "tasks"
             ? ListChecks
             : key === "notes"
               ? Notebook
-              : UsersThree;
+              : key === "children"
+                ? UsersThree
+                : Terminal;
         return (
           <Popover
             key={key}
@@ -209,6 +228,12 @@ export function WorkInspector({
               {key === "children" && !!children.data?.pages[0].total && (
                 <span className={styles.count}>
                   {children.data.pages[0].total}
+                </span>
+              )}
+              {key === "processes" && running > 0 && (
+                <span className={styles.count}>
+                  {running}
+                  {incomplete || display.processes.omitted ? "+" : ""}
                 </span>
               )}
               {key === "tasks" && !!tasks.length && (
@@ -238,7 +263,9 @@ export function WorkInspector({
                   ? "Current task state. Expand a task to inspect ownership and dependencies."
                   : key === "children"
                     ? "Inspect subordinate executions without leaving this conversation."
-                    : "Working context retained with this conversation."}
+                    : key === "processes"
+                      ? "Last observed background processes from this conversation and its subagents. Not a host process inventory."
+                      : "Working context retained with this conversation."}
               </PopoverDescription>
               {key === "tasks" && (
                 <>
@@ -251,6 +278,13 @@ export function WorkInspector({
                   )}
                   <TaskList page={page} />
                 </>
+              )}
+              {key === "processes" && tab === key && (
+                <Processes
+                  observations={processes}
+                  omitted={display.processes.omitted}
+                  incomplete={incomplete}
+                />
               )}
               {key === "notes" && tab === key && (
                 <SavedNotes threadId={threadId} continuation={continuation} />

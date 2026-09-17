@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -32,8 +33,9 @@ const account = {
   version: 3,
   workspace_id: "ws_test",
   provider_key: "slack",
+  memoryVersion: 1,
   memory: { provider_id: "mp_test", timezone: "UTC" },
-} as Schema["Account"];
+} as BotAccount;
 const target = {
   id: "tgt_test",
   account_id: account.id,
@@ -46,6 +48,7 @@ const scope = {
   provider_id: "mp_test",
   external_conversation_id: "C1",
   name: "Support",
+  audience: "private",
   version: 3,
   enabled: false,
   use_memory: true,
@@ -136,7 +139,7 @@ it("does not fetch memory or its directory for a viewer", () => {
 it("configures only this target and preserves existing toggles and the draft version", async () => {
   const cache = setup();
   await userEvent.click(
-    await screen.findByRole("button", { name: "Configure group" }),
+    await screen.findByRole("button", { name: "Group memory settings" }),
   );
   await waitFor(() =>
     expect(
@@ -152,9 +155,29 @@ it("configures only this target and preserves existing toggles and the draft ver
   ).toBe("false");
   expect(
     screen
-      .getByRole("switch", { name: "Allow explicit save and forget requests" })
+      .getByRole("switch", {
+        name: "Allow saving or deleting memory through chat",
+      })
       .getAttribute("aria-checked"),
   ).toBe("false");
+  const readToggle = screen.getByRole("switch", {
+    name: "Refer to memory when answering",
+  });
+  const writeToggle = screen.getByRole("switch", {
+    name: "Allow saving or deleting memory through chat",
+  });
+  expect(readToggle.getAttribute("aria-disabled") === "true").toBe(true);
+  expect(writeToggle.getAttribute("aria-disabled") === "true").toBe(true);
+  await userEvent.click(
+    screen.getByRole("switch", { name: "Enable group memory" }),
+  );
+  expect(readToggle.getAttribute("aria-disabled") === "true").toBe(false);
+  expect(writeToggle.getAttribute("aria-disabled") === "true").toBe(false);
+  expect(readToggle.getAttribute("aria-checked")).toBe("true");
+  expect(writeToggle.getAttribute("aria-checked")).toBe("false");
+  await userEvent.click(
+    screen.getByRole("switch", { name: "Enable group memory" }),
+  );
   cache.setQueryData(
     ["bot-memory-configure-options", account.id, "mp_test", target.id],
     { targets: [target], scopes: [{ ...scope, version: 99 }] },
@@ -164,6 +187,7 @@ it("configures only this target and preserves existing toggles and the draft ver
   expect(state.http.POST.mock.calls[0][1].body).toEqual({
     external_conversation_id: "C1",
     expected_version: 3,
+    visibility: "group",
     enabled: false,
     use_memory: true,
     save_on_request: false,
@@ -172,4 +196,58 @@ it("configures only this target and preserves existing toggles and the draft ver
   expect(
     state.http.GET.mock.calls.some(([path]) => path.endsWith("/targets")),
   ).toBe(false);
+});
+
+it("saves one-way visibility with the current scope version and preserves the private default", async () => {
+  setup();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Group memory settings" }),
+  );
+  const choice = await screen.findByRole("combobox", {
+    name: "Who can read this group's memory?",
+  });
+  expect(choice.textContent).toContain("Only this group");
+  expect(
+    screen.queryByText(/Limited to groups connected to this bot/),
+  ).toBeNull();
+  expect(
+    state.http.GET.mock.calls.some(([path]) => path.includes("/bot/checks")),
+  ).toBe(false);
+  await userEvent.click(choice);
+  await userEvent.click(
+    await screen.findByRole("option", {
+      name: "All connected channels in this Slack workspace",
+    }),
+  );
+  expect(
+    screen.getByText(/Limited to groups connected to this bot/),
+  ).toBeTruthy();
+  expect(screen.getByText(/Their private memory stays private/)).toBeTruthy();
+  expect(screen.getByText(/This includes historical memory/)).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.http.POST).toHaveBeenCalledOnce());
+  expect(state.http.POST.mock.calls[0][1].body).toMatchObject({
+    visibility: "installation",
+    expected_version: 3,
+    external_conversation_id: "C1",
+  });
+});
+
+it("canceling visibility changes does not save a grant", async () => {
+  setup();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Group memory settings" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("combobox", {
+      name: "Who can read this group's memory?",
+    }),
+  );
+  await userEvent.click(
+    await screen.findByRole("option", {
+      name: "All connected channels in this Slack workspace",
+    }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(state.http.POST).not.toHaveBeenCalled();
 });

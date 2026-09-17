@@ -38,11 +38,11 @@ A document has one stable opaque ID, an immutable owning scope and kind, a logic
 
 Paths and headings support navigation, while IDs support durable references. Moving a document preserves its ID. References returned by read/search include the document ID and exact version; section locators also bind the content digest. A path that now denotes another document cannot satisfy a stale ID/version reference. Changing ownership or kind creates a new document with an explicit relationship rather than silently reclassifying the original.
 
-Semantic and procedural documents can advance to a new revision after an expected-version check. Prior revisions remain readable under current authorization until explicit retention or deletion removes them. Episodic bodies remain append-only: a correction has its own identity and event attribution. Published copies are immutable and follow the Host's publication contract. A revision is not a new document for future-only sharing eligibility.
+Semantic and procedural documents can advance to a new revision after an expected-version check. Prior revisions remain readable under current authorization until explicit retention or deletion removes them. Episodic bodies remain append-only: a correction has its own identity and event attribution. Shared read access never authorizes revising another scope's documents.
 
 Sources identify exact authorized evidence, such as a Thread/Run/message, an external document version, or another memory revision. Evidence references grant no access by themselves. Memory does not automatically copy all conversations, tool results, or external documents into a second raw archive. Optional snapshots require the Host's retention authority. A missing or deleted source remains unavailable; the system does not invent replacement evidence.
 
-Provider-managed metadata sufficient to reconstruct document identity, versions, paths, and provenance is stored with the document corpus. Files use a versioned, validated metadata envelope; the Agent supplies content fields, while trusted code supplies identity, versions, ownership bindings, and save times. Host authorization, publication audiences, and operation eligibility never derive from editable file metadata. Body text is stored exactly as accepted, without provider-side inference.
+Provider-managed metadata sufficient to reconstruct document identity, versions, paths, and provenance is stored with the document corpus. Files use a versioned, validated metadata envelope; the Agent supplies content fields, while trusted code supplies identity, versions, ownership bindings, and save times. Host authorization, sharing visibility, and operation eligibility never derive from editable file metadata. Body text is stored exactly as accepted, without provider-side inference.
 
 ## Filesystem Layout and Navigation
 
@@ -135,7 +135,7 @@ Timeout or disconnection after possible publication is `memory_write_unconfirmed
 
 External file changes invalidate digest-bound TOC/search caches and are reported explicitly. A changed document cannot be served as a previously committed revision. Valid external edits can be admitted through the same validation and revision workflow; malformed or identity/authority-changing edits remain unavailable until reconciled. Reindexing does not silently bless an out-of-band rewrite as trusted history. Backup/restore includes the corpus and commit metadata; authorization and sharing state are backed up by their Host owner.
 
-Deletion removes the document, its retained revisions, and content-bearing change details from subsequent authorized retrieval and follows explicit physical cleanup/retention rules. A tombstone or audit record must not become another body archive. Publication withdrawal and already-delivered context follow the Host's separate completion rules.
+Deletion removes the document, its retained revisions, and content-bearing change details from subsequent authorized retrieval and follows explicit physical cleanup/retention rules. A tombstone or audit record must not become another body archive. Revocation of shared access and already-delivered context follow the Host's separate completion rules.
 
 ## Change Records and Diffs
 
@@ -156,7 +156,7 @@ Deterministic code computes the diff from the exact accepted predecessor and suc
 
 Complete revisions remain the historical content authority; reads and recovery do not replay a patch chain. Record and diff formats carry independent schema/format versions rather than another document version counter. Size and computation budgets are bounded before mutation; an oversized change is rejected rather than committed with a silently truncated diff. Detail reads use the document read-byte ceiling with explicit continuation bound to the exact change and record digest. A backend advertises `supports_changes` only when it preserves the complete change, commit, and retention contract; native revision support alone does not establish it.
 
-Change records belong to the memory corpus and share its storage lifetime, backup, and restore requirements. The Host supplies bounded change-list and detail access for management; change payloads do not enter ordinary indexes, search, recall, or a new model tool. Reading a diff requires current authority over both represented versions and its protected source metadata. Publication or continuing-sharing grants do not automatically grant access to the source's change records. File metadata never authenticates an actor or restores authority, and file-backed history is not a tamper-proof audit store.
+Change records belong to the memory corpus and share its storage lifetime, backup, and restore requirements. The Host supplies bounded change-list and detail access for management; change payloads do not enter ordinary indexes, search, recall, or a new model tool. Reading a diff requires current authority over both represented versions and its protected source metadata. Shared-content grants do not automatically grant access to the source's revision history or change records. File metadata never authenticates an actor or restores authority, and file-backed history is not a tamper-proof audit store.
 
 Content-bearing records, including explanations and removed lines, follow the corresponding memory retention and erasure policy. Logical deletion immediately blocks their content reads; physical cleanup removes the document's revisions and content-bearing change records, including pending copies and derived diff caches. Remaining operation evidence contains only permitted non-content identifiers, times, action, and outcome. Multi-document cleanup removes only the affected document's payloads and preserves other documents' records and required recovery evidence. Retention deletion is distinct from rewriting a historical change. Missing or erased details are reported as unavailable or removed, never as an empty diff or reconstructed from another retained audit copy.
 
@@ -171,9 +171,9 @@ The host-authorized `MemoryDocumentStore` exposes index, search, read, TOC, crea
 | `memory_toc(reference, version)`                                 | Markdown heading tree and section locators bound to one revision/digest                                |
 | `memory_read(reference, version, section, start, length)`        | Read an exact revision section or bounded range, with explicit continuation and source location        |
 | `memory_add(kind, title, description, text, sources, ...)`       | Create validated memory in the Host-fixed scope; identity and request key are not model arguments      |
-| `memory_revise(reference, expected_version, text, sources, ...)` | Create the next semantic/procedural revision; reject episodic or published-copy rewrites               |
+| `memory_revise(reference, expected_version, text, sources, ...)` | Create the next semantic/procedural revision; reject episodic rewrites                                 |
 | `memory_history(reference, cursor)`                              | Bounded authorized revision metadata; read a selected version separately                               |
-| `memory_forget(reference)`                                       | Confirmed authorized deletion with the Host's publication and retention rules                          |
+| `memory_forget(reference)`                                       | Confirmed authorized deletion with the Host's visibility and retention rules                           |
 
 `memory_index` provides tree navigation without a second `memory_tree` tool. `memory_read` includes section reads without a separate `memory_read_section`. Validation, commit, and reindexing are backend operations, not model-visible shell or administrative tools. There is no separate model-facing frontmatter editor, generic `memory_write(plan)`, or requirement to call `memory_propose` before every explicit save. Pending candidates and corpus maintenance are managed by the organization workflow and Host interfaces.
 
@@ -187,7 +187,7 @@ Search/TOC caches bind store identity, document ID/version/digest, and access co
 
 ## Compatibility and Verification
 
-New documents use the three-kind contract. Historical `daily`/`long_term` labels are not automatically interpreted as semantic types. An explicit import/classification operation retains original labels and provenance; unclassified legacy content is not silently discarded or admitted by a new type-based sharing rule. Existing references continue to identify their original data. The `MEMORY.md` presentation name is replaced by `_index.md`; any accepted legacy entry link resolves only to the same authorized derived index, never to an editable body.
+New documents use the three-kind contract. Historical `daily`/`long_term` labels are not automatically interpreted as semantic types. An explicit import/classification operation retains original labels and provenance; unclassified legacy content is not silently discarded or given a new audience by classification. Existing references continue to identify their original data. The `MEMORY.md` presentation name is replaced by `_index.md`; any accepted legacy entry link resolves only to the same authorized derived index, never to an editable body.
 
 Verification covers:
 
@@ -198,7 +198,7 @@ Verification covers:
 - exact body and metadata diffs, one change per committed mutation despite retries, rejected writes without successful change records, and no visible version without its required record;
 - bounded change reads, denied source-history access through sharing, external-edit attribution, and erasure of diffs without removing another document's history;
 - AST headings, repeated headings, code fences, Chinese search, oversized sections, exact continuation, and stale locators;
-- authorized navigation/search/source expansion, revoked access, shared publications pinned to revisions, and legacy classification;
+- authorized navigation/search/source expansion, revoked access, current-version shared reads without source-history access, and legacy classification;
 - index removal/rebuild without losing corpus data, plus answer evidence coverage, retrieved bytes/tokens, tool calls, latency, and organization fidelity on representative tasks.
 
 Formatting, schema validation, and lower retrieval cost do not establish memory quality. Evaluation compares a raw-history baseline, lexical document retrieval, and navigation plus lexical/section retrieval using the same tasks and authorization boundary. Optional vectors must justify their effect on evidence completeness and answer correctness.

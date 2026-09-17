@@ -436,7 +436,7 @@ class EnvironmentRunService:
                     item.alias: EnvironmentMount(
                         environment=item.environment,
                         access=item.permission_ceiling,
-                        working_directory="/tmp" if item.alias == "thread-files" else "/",
+                        working_directory="/tmp" if item.alias == "thread-files" else None,
                         mount_path=item.mount_path,
                     )
                     for item in mounts

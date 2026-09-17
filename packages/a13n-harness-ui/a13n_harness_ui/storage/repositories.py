@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import and_, func, or_, select, true
+from sqlalchemy import and_, case, func, or_, select, true, update
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
@@ -22,6 +22,7 @@ from .contracts import (
     ResourceIndexEntry,
     SafeFailure,
     Thread,
+    ThreadCompletion,
     ThreadConfiguration,
 )
 from .database import DatabaseSessions, short_session, transaction
@@ -203,6 +204,7 @@ class ThreadRepository:
                 archived=False,
                 created_at=now,
                 updated_at=now,
+                touched_at=now,
                 initial_state_schema_version=initial_state.object_schema_version,
                 initial_state_digest=initial_state.logical_digest,
                 continuation_schema_version=None,
@@ -213,6 +215,21 @@ class ThreadRepository:
             session.add(_configuration_record(thread_id, configuration))
             await session.flush()
             return _thread_value(record, configuration)
+
+    async def touch(self, thread_id: str, *, touched_at: datetime | None = None) -> None:
+        """Advance navigation recency without changing content or metadata versions."""
+
+        now = _utc(touched_at)
+        current = func.coalesce(ThreadRecord.touched_at, ThreadRecord.created_at)
+        async with transaction(self._sessions) as session:
+            touched = await session.scalar(
+                update(ThreadRecord)
+                .where(ThreadRecord.thread_id == thread_id)
+                .values(touched_at=case((current < now, now), else_=current))
+                .returning(ThreadRecord.thread_id)
+            )
+            if touched is None:
+                raise StoreIntegrityError("Thread does not exist.", code="thread_missing")
 
     async def get(self, thread_id: str) -> Thread | None:
         async with short_session(self._sessions) as session:
@@ -232,8 +249,11 @@ class ThreadRepository:
         include_children: bool = False,
         projectless: bool = False,
         include_archived: bool = False,
+        archived_only: bool = False,
         project_ids: tuple[str, ...] | None = None,
-        sort: Literal["updated", "activity"] = "updated",
+        sort: Literal["updated", "activity", "touched"] = "updated",
+        thread_ids: tuple[str, ...] | None = None,
+        exclude_thread_ids: tuple[str, ...] = (),
         before: tuple[datetime, str] | None = None,
         limit: int = 20,
     ) -> tuple[tuple[Thread, ...], int]:
@@ -243,11 +263,11 @@ class ThreadRepository:
             raise ValueError("Thread page cursor is invalid")
         if sum((project_id is not None, project_ids is not None, projectless)) > 1:
             raise ValueError("Choose only one Project filter")
-        order_time = (
-            ThreadRecord.updated_at
-            if sort == "updated"
-            else func.coalesce(ThreadRecord.activity_at, ThreadRecord.created_at)
-        )
+        order_time = {
+            "updated": ThreadRecord.updated_at,
+            "activity": func.coalesce(ThreadRecord.activity_at, ThreadRecord.created_at),
+            "touched": func.coalesce(ThreadRecord.touched_at, ThreadRecord.created_at),
+        }[sort]
         async with short_session(self._sessions) as session:
             statement = select(ThreadRecord)
             count_statement = select(func.count()).select_from(ThreadRecord)
@@ -261,6 +281,10 @@ class ThreadRepository:
                     ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
                 )
             predicates = []
+            if thread_ids is not None:
+                predicates.append(ThreadRecord.thread_id.in_(thread_ids))
+            if exclude_thread_ids:
+                predicates.append(ThreadRecord.thread_id.not_in(exclude_thread_ids))
             if project_id is not None:
                 predicates.append(ThreadConfigurationRecord.project_id == project_id)
             if project_ids is not None:
@@ -269,7 +293,9 @@ class ThreadRepository:
                 predicates.append(ThreadConfigurationRecord.project_id.is_(None))
             if not include_children:
                 predicates.append(ThreadRecord.parent_thread_id.is_(None))
-            if not include_archived:
+            if archived_only:
+                predicates.append(ThreadRecord.archived.is_(True))
+            elif not include_archived:
                 predicates.append(ThreadRecord.archived.is_(False))
             normalized = None if query is None else query.strip().casefold()
             if normalized:
@@ -403,6 +429,7 @@ class ThreadRepository:
         thread_id: str,
         expected: ObjectRef | None,
         replacement: ObjectRef,
+        completed_run_id: str | None = None,
         excerpt: ConversationExcerpt | None = None,
         activity_changed: bool = True,
         updated_at: datetime | None = None,
@@ -423,6 +450,14 @@ class ThreadRepository:
                 )
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
+            if completed_run_id is not None:
+                if record.parent_thread_id is not None:
+                    raise ValueError("Only root Threads have completion markers")
+                if record.completion_run_id != completed_run_id:
+                    record.completion_version += 1
+                    record.completion_run_id = completed_run_id
+                    record.completion_digest = replacement.logical_digest
+                    record.completed_at = now
             if excerpt is not None:
                 record.first_input = excerpt.first_input
                 record.latest_input = excerpt.latest_input
@@ -816,7 +851,19 @@ def _search_text(record: ThreadRecord) -> str:
 
 
 def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> Thread:
+    completion = None
+    if record.completion_version:
+        assert record.completion_run_id is not None
+        assert record.completion_digest is not None
+        assert record.completed_at is not None
+        completion = ThreadCompletion(
+            version=record.completion_version,
+            run_id=record.completion_run_id,
+            continuation_id=record.completion_digest,
+            completed_at=record.completed_at,
+        )
     return Thread(
+        completion=completion,
         thread_id=record.thread_id,
         parent_thread_id=record.parent_thread_id,
         created_at=record.created_at,
@@ -832,6 +879,7 @@ def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> T
             }
         ),
         activity_at=record.activity_at,
+        touched_at=record.touched_at,
         archived=record.archived,
         configuration=configuration,
         initial_state=ObjectRef(

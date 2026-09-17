@@ -22,6 +22,7 @@ from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.http import cookie_free_jar
+from a13n_service.connectivity.native_actions import NativeObservationFactory
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.capacity import CapacityLimits
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
@@ -62,6 +63,7 @@ async def build_worker_runtime(
     invocations: AgentInvocationResolver,
     observability: ObservabilityRuntime | None = None,
     configuration_resolver: AgentResolver | None = None,
+    observations: NativeObservationFactory | None = None,
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
 
@@ -139,6 +141,7 @@ async def build_worker_runtime(
         endpoint_policy,
         http,
         clients.credentials,
+        observations=observations,
     )
 
     skills = SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store)

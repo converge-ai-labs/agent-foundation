@@ -81,6 +81,10 @@ class LifecycleEvent:
 
 Entity and correlation fields are typed, organization-scoped references. A Run event requires `run_id`; an attempt event requires `run_id` and `run_attempt_id`. Optional Session and Thread fields are query correlations only. `payload` is bounded, versioned, redacted JSON and never contains credentials, arbitrary provider bodies, complete message history, or a Run state object.
 
+Public lifecycle reads omit `projection_lease_owner`. Projection state, retry counts, timing, and safe failure observations remain available for diagnostics. Worker actors retain `actor_type="worker"` with a null `actor_id`; their process-instance identity and payload `worker_id` stay internal. Public Attempt IDs, Harness Run correlation, and Worker build identity remain available for diagnostics.
+
+Event queries, Native SSE, retained Item reads, and lifecycle Webhook delivery apply the same disclosure boundary to both new and previously retained data. An object-backed Run output exposes only `digest_sha256`, `size_bytes`, `content_type`, and `schema_version` metadata in its output reference; its `object_key` remains internal. These projections do not recursively redact user-authored output fields with matching names. Durable lifecycle facts and retained replay objects keep their original internal references and integrity metadata; public reads do not rewrite them.
+
 Fact columns through `created_at` are immutable. Projection columns may change as the event is mirrored to Redis but cannot change the fact or authorize a state transition.
 
 An event that requires live projection starts `pending`. An event with no configured live projection starts `projected` with `projected_at=created_at`; this means “no projection work remains.”

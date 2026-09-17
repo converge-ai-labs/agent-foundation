@@ -12,7 +12,7 @@ import { ConnectorProviders } from "../connectors/providers";
 
 const components = {
   models: Providers,
-  search: WebProviders,
+  web: WebProviders,
   memory: MemoryProviders,
   environments: EnvironmentProviders,
   connectors: ConnectorProviders,

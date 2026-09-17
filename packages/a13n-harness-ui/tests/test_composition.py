@@ -501,6 +501,14 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
     assert "a13n.dynamic-environment" in reconstructed.definition_capability_ids
     assert reconstructed.executable.definition.model_recovery.enabled
     assert reconstructed.executable.definition.model_recovery.max_attempts == 5
+    from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
+    from pydantic_ai.messages import TextContent
+
+    prompt = reconstructed.executable.definition.model_recovery.continuation_prompt
+    assert len(prompt) == 1
+    assert isinstance(prompt[0], TextContent)
+    assert prompt[0].content == DEFAULT_RECOVERY_PROMPT
+    assert prompt[0].metadata == {"display": False, "source_id": "a13n-harness-ui.model-recovery"}
     for child in reconstructed.executable.subagents.values():
         assert child.definition.definition_id != reconstructed.executable.definition.definition_id
         assert child.definition.model_recovery == reconstructed.executable.definition.model_recovery
@@ -1029,8 +1037,11 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
     original = resolver.resolve_run(source, _selection())
+    # Service-tier support does not imply thinking support (deepseek-chat is
+    # non-reasoning). Unsupported explicit thinking is tested separately.
+    thinking = None if route == "deepseek:deepseek-chat" else "low"
     composition = resolver.resolve_run(
-        source, _selection(), model_overrides=RunModelOverrides(service_tier=tier, thinking="low")
+        source, _selection(), model_overrides=RunModelOverrides(service_tier=tier, thinking=thinking)
     )
     assert composition.root.model.route == route
     if tier is None:
@@ -1039,7 +1050,7 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
         assert composition.root.model.settings["service_tier"] == tier
         if tier_key != "service_tier":
             assert tier_key not in composition.root.model.settings
-    assert composition.root.model.settings["thinking"] == "low"
+    assert composition.root.model.settings.get("thinking") == thinking
     assert composition.root.model.settings["max_tokens"] == 32768
     assert composition.root.children[0].definition.model == composition.root.model
     assert composition.root.children[1].definition.model == original.root.children[1].definition.model

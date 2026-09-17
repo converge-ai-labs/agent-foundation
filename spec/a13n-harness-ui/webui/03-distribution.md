@@ -12,6 +12,14 @@ Compiled assets and their hash manifest are included in the `a13n-harness-ui` wh
 
 The browser's API use follows the Python adapter's public contract. A checked-in OpenAPI snapshot detects contract drift; it is not a separately authored server schema. Browser navigation paths support direct load and refresh. Unknown API routes and missing assets remain failures rather than browser-HTML fallbacks, under [HTTP delivery](../05-runtime-subagents-and-surfaces.md#http-adapter-contract).
 
+## Browser Installation
+
+The bundled WebUI is an online-only installable web app. Its same-origin manifest supplies a stable root identity and launch URL, standalone display mode, and bundled icons. Installation does not capture a Thread URL or access-key fragment. Manifest and icon requests are public static delivery, contain no instance data, and revalidate rather than using the immutable hashed-asset policy. Missing installation resources remain errors, not HTML fallbacks.
+
+General settings offers installation when the browser supplies an install prompt and otherwise explains platform installation entry points. Prompts require an explicit user action; dismissal and failure do not cause automatic retries. An accepted prompt is not reported as completed installation without the browser's installation event. Installation availability depends on the browser and a secure origin (HTTPS or a loopback exception).
+
+The installed window uses the existing authentication, navigation, and observation paths. Installation neither starts nor bundles the Python backend. The server must remain reachable. A separately opted-in notification-only Service Worker enables [closed-page Web Push](04-workbench-interaction.md#task-notifications). Its root-scoped `/sw.js` is public static delivery with revalidation, never an immutable hashed asset or HTML fallback. It contains no credentials, fetch interception, offline cache, or queued mutations. Installation alone does not opt into push or guarantee background execution. Browser installation and worker updates do not change draft or Run persistence and do not force page reloads.
+
 ## Docker Development Image
 
 The image belongs to Harness UI's distribution boundary and contains the installed application and compiled browser assets. It starts the foreground WebUI server, includes a shell, Git, and development tooling, and runs as a non-root OS user. It does not require a13n Service, Redis, a separate collaboration service, privileged mode, or a mounted Docker socket.

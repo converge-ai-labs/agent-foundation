@@ -70,13 +70,16 @@ async def test_project_pages_are_independent_and_cursors_bind_scope(tmp_path: Pa
         assert invalid.status_code == 400
         assert (await client.get("/api/threads/activity", params={"project_scope": "unknown"})).status_code == 422
 
-        # A metadata update becomes the newest row; presentation never changes configuration.
+        # Metadata changes retain position; only an explicit touch moves the row.
         oldest = groups["project-first"][0]
         renamed = await client.patch(
             f"/api/threads/{oldest['thread_id']}/metadata",
             json={"expected_version": oldest["metadata_version"], "patch": {"title": "Recently updated"}},
         )
         assert renamed.status_code == 200, renamed.text
+        recent = (await client.get("/api/threads/activity", params={"project_id": "project-first"})).json()
+        assert recent["rows"][0]["thread"]["thread_id"] == groups["project-first"][-1]["thread_id"]
+        assert (await client.post(f"/api/threads/{oldest['thread_id']}/touch")).status_code == 200
         recent = (await client.get("/api/threads/activity", params={"project_id": "project-first"})).json()
         assert recent["rows"][0]["thread"]["thread_id"] == oldest["thread_id"]
         assert recent["rows"][0]["thread"]["configuration"] == oldest["configuration"]

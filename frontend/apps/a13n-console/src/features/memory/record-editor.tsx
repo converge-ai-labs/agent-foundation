@@ -1,4 +1,4 @@
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Alert,

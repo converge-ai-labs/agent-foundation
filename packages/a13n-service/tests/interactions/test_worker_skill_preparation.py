@@ -29,12 +29,13 @@ from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import select
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 from tests.skills.test_runtime import DEPLOY_REVISION_ID, DEPLOY_SKILL_ID, _add_skill, _package
 
 from . import test_attempt_execution as acceptance
 from . import worker_helpers
 from .conftest import NOW, ORGANIZATION_ID, WORKSPACE_ID
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 
 pytestmark = pytest.mark.anyio
 
@@ -46,7 +47,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
     # Concurrent Environment leases require PostgreSQL row locks, as in lifecycle tests.
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    await recipe(interaction_sessions, workspace, preparation)
+    await template_config(interaction_sessions, workspace, preparation)
     package = _package("deploy", "Deploy safely.", (("scripts/deploy.sh", b"#!/bin/sh\n"),))
     packages = SkillPackageStore(interaction_object_store)
     await packages.publish(organization_id=ORGANIZATION_ID, workspace_id=WORKSPACE_ID, package=package)
@@ -91,6 +92,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
         states,
         RunPayloadStore(interaction_object_store),
         InlineHookValidator(EndpointPolicy()),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     ).accept_new_thread(
@@ -151,7 +153,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
     async def respond(messages, _info):
         assert both_staged.is_set()
         assert len(materializers) == 2
-        root = workspace / Path(arrivals[0][2]).parent.parent.relative_to("/")
+        root = workspace / "environments" / environment_id / Path(arrivals[0][2]).parent.parent.relative_to("/")
         completion = json.loads((root / ".a13n-service-complete.json").read_bytes())
         assert completion["packages"] == [lock.model_dump(mode="json")]
         for item in package.files:

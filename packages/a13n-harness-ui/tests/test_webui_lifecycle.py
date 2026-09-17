@@ -344,3 +344,32 @@ async def test_error_diagnostics_do_not_log_dynamic_messages_or_arbitrary_route_
     assert "private" not in caplog.text
     # The response body remains available to its authenticated caller, unmodified.
     assert b"private-secret" in messages[-1]["body"]
+
+
+@pytest.mark.parametrize("separator", ["_", "-"])
+def test_ordered_prompt_preserves_presentation_source_identity(separator: str) -> None:
+    from a13n_harness_ui.app import ComposerInput
+    from a13n_harness_ui.webui import PromptRequest
+
+    source_id = f"input{separator}{'a' * 32}"
+    request = PromptRequest(parts=("hello",), source_id=source_id)
+    captured = request.input()
+    assert isinstance(captured, ComposerInput)
+    assert captured.source_id == source_id
+    assert PromptRequest(prompt="legacy").input() == "legacy"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"prompt": "legacy", "source_id": "input_" + "a" * 32},
+        {"parts": ["hello"], "source_id": "not-an-input-id"},
+        {"parts": ["hello"], "source_id": "input_" + "A" * 32},
+    ],
+)
+def test_prompt_rejects_invalid_presentation_identity(values: dict[str, object]) -> None:
+    from a13n_harness_ui.webui import PromptRequest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        PromptRequest.model_validate(values)

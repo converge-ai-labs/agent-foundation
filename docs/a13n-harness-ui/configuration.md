@@ -183,16 +183,16 @@ Display defaults are read at startup. `--display` and live `/mode` override the 
 
 ### Built-in tools and subagents
 
-| Field                               | Default | Meaning                                                                                               |
-| ----------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
-| `tools.enable_ask_user_question`    | `true`  | Include native `ask_user_question` in newly resolved Runs                                             |
-| `tools.interaction_timeout_seconds` | `120`   | Positive finite seconds for each terminal question, approval, or external result; not model execution |
-| `tools.enable_codeact`              | `true`  | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                       |
-| `subagents.include`                 | `[]`    | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                      |
+| Field                               | Default | Meaning                                                                                                     |
+| ----------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`    | `true`  | Include native `ask_user_question` in newly resolved Runs                                                   |
+| `tools.interaction_timeout_seconds` | `120`   | Positive finite seconds per terminal interaction or complete WebUI root decision batch; not model execution |
+| `tools.enable_codeact`              | `true`  | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                             |
+| `subagents.include`                 | `[]`    | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                            |
 
 Setup writes all three `tools` fields explicitly into the selected root YAML (by default `~/.a13n-harness-ui/a13n-harness-ui.yaml`), filling omitted fields with these defaults and preserving existing values.
 
-Global disabled tool switches take precedence over explicit Agent capability selections. Tool allowlists still apply. The terminal question timeout does not choose an answer or approve a command; [decision handling](everyday-use.md#approvals-and-questions) explains recovery.
+Global disabled tool switches take precedence over explicit Agent capability selections. Tool allowlists still apply. Interaction expiry never chooses an answer or approves a command. See [terminal decision handling](everyday-use.md#approvals-and-questions) and [WebUI timeouts](webui.md#questions-and-approval-timeouts) for their separate waiting and recovery lifecycles.
 
 For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, for example, `[explorer]`. Advanced setup offers all or none; normal setup uses its starter inclusion. Definitions remain package-owned; inclusion does not write `subagents/*.md`. [Built-in subagents](agents-and-subagents.md#built-in-subagents) explains inheritance and name conflicts.
 
@@ -212,7 +212,7 @@ For a new Thread, selection precedence is explicit creation/launch choices, sele
 | Contents of selected Model/Agent/extension resources                          | A newly captured Run uses the accepted resources                                                 | An active or already captured composition is not rebuilt                                           |
 | Tool switches and built-in subagent inclusion                                 | Newly resolved Run composition                                                                   | Existing Run tool/child contracts                                                                  |
 | `input.long_text_threshold_chars`                                             | Captured for a root Run, including its later steering input                                      | The active Run's input policy                                                                      |
-| `tools.interaction_timeout_seconds`                                           | Read when a terminal decision interaction is created                                             | It does not change model execution or expire pending decisions outside the active CLI              |
+| `tools.interaction_timeout_seconds`                                           | Read when a terminal interaction opens; captured at Run admission for WebUI batch deadlines      | Existing timers, model execution, and unanswered checkpoints retained across App restart           |
 | MCP literal-bearing source files                                              | New captures use new sources; an older capture verifies its source before client construction    | Already constructed clients retain their Run-local values; changed old sources can fail validation |
 | Skill content                                                                 | Catalog preparation uses the Run's current source set; files are read through Environment access | Catalog membership is Run-frozen, but file bytes are not copied into immutable composition         |
 

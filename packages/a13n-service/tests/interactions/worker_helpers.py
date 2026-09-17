@@ -17,6 +17,7 @@ from anyio import CapacityLimiter
 from fakeredis.aioredis import FakeRedis
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 
 async def prepare_permissions(sessions, run, context, *, agent_ids=frozenset()):
@@ -95,6 +96,7 @@ async def worker_runtime(
             StorageResources(Mock(), sessions, redis, objects, path, CapacityLimiter(4)),
             test_lifecycle_writer(),
             SecretProtector(key=b"k" * 32, encryption_key_id="test"),
+            memory_behaviors=ordinary_memory(sessions),
         )
         runtime, background = await build_worker_runtime(
             settings,

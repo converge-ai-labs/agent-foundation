@@ -54,19 +54,28 @@ def authenticate_and_normalize(
         _verify_signature(request, encrypt_key=encrypt_key, received_at=received_at)
     outer = _parse_object(request.body)
     payload = _decrypt_envelope(outer, encrypt_key=encrypt_key)
+    # URL verification uses a top-level envelope, even for schema 2.0 subscriptions.
+    if payload.get("type") == "url_verification":
+        if not _same(payload.get("token"), verification_token):
+            raise _request_error(401, "invalid_verification_token")
+        return _challenge_response(payload)
     header = _object(payload.get("header"))
     if payload.get("schema") != "2.0" or header is None:
         raise _request_error(400, "invalid_payload")
     if not _same(header.get("token"), verification_token):
         raise _request_error(401, "invalid_verification_token")
+    return normalize_payload(payload, identity=identity, received_at=received_at)
+
+
+def normalize_payload(payload: JsonObject, *, identity: LarkIdentity, received_at: datetime) -> ProviderRequestDecision:
+    header = _object(payload.get("header"))
+    if payload.get("schema") != "2.0" or header is None:
+        raise _request_error(400, "invalid_payload")
     if header.get("app_id") != identity.app_id or header.get("tenant_key") != identity.tenant_key:
         raise _request_error(404, "ingress_not_found")
     event_type = header.get("event_type")
     if event_type == "url_verification":
-        challenge = payload.get("challenge")
-        if not isinstance(challenge, str) or not 1 <= len(challenge) <= 4096:
-            raise _request_error(400, "invalid_payload")
-        return ProviderCompleteDecision(response=_json_response({"challenge": challenge}))
+        return _challenge_response(payload)
     if event_type != _MESSAGE_EVENT:
         return ProviderCompleteDecision(response=lark_acknowledgement())
     event_id = header.get("event_id")
@@ -80,6 +89,13 @@ def authenticate_and_normalize(
     if normalized is None:
         return ProviderCompleteDecision(response=lark_acknowledgement())
     return ProviderEventDecision(event=normalized)
+
+
+def _challenge_response(payload: JsonObject) -> ProviderCompleteDecision:
+    challenge = payload.get("challenge")
+    if not isinstance(challenge, str) or not 1 <= len(challenge) <= 4096:
+        raise _request_error(400, "invalid_payload")
+    return ProviderCompleteDecision(response=_json_response({"challenge": challenge}))
 
 
 def lark_acknowledgement() -> ProviderHttpResponse:

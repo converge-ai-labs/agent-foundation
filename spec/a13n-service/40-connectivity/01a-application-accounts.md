@@ -52,7 +52,7 @@ An Account owns encrypted credential material under the shared [credential prote
 
 The versioned `reception_scope` selects `all_accessible` (legacy default) or `configured_targets`. In configured-target mode, an event without an exact enabled target is acknowledged as irrelevant before durable input admission. Disabled targets never fall through. New Bot wizard Accounts explicitly use configured-target mode; existing Accounts and clients omitting the field retain all-accessible behavior. Changing this setting affects new admission, not already acknowledged batches.
 
-Account creation starts no Agent. Reception is embedded Account configuration, with no separate Ingress identity or Agent allowlist. Supported transport settings and credentials use the provider-owned Account schema.
+Account creation starts no Agent. Selecting a persistent event transport starts an authenticated connection even while reception is disabled; transport ownership and acknowledgements follow the [built-in adapter contract](07-built-in-ingress-adapters.md#persistent-event-connections). Reception is embedded Account configuration, with no separate Ingress identity or Agent allowlist. Supported transport settings and credentials use the provider-owned Account schema.
 
 Account defaults select input execution authority and the default Agent. Exact targets select an optional Agent and narrow override. Changing defaults preserves `(account_id, external_ref.kind, external_ref.id)` Thread correlation. Each ordinary Run uses current configuration; an active or selected waiting Run receives only Steer.
 
@@ -89,6 +89,8 @@ Slack and Lark send actions accept the selected destination ID and provider-spec
 `GET /api/v1/workspaces/{workspace}/application-account-provider-types` lists only distribution-registered Account adapters and configuration versions. Each entry exposes the provider-owned configuration, write-only credential, and reception-policy JSON schemas plus supported target kinds. This authorized metadata read performs no external I/O, returns no configured identity or credential, and does not grant account management permission. The same typed provider models own form metadata and request validation.
 
 Account management uses `/api/v1/workspaces/{workspace}/application-accounts` for create/list and `/api/v1/application-accounts/{account_id}` for get/update/delete. Credential replacement uses `PUT .../credentials`; administrative commands use `POST .../enable` and `POST .../disable`. Creation and commands follow shared idempotency rules; mutations require exact version preconditions. Responses contain safe metadata only.
+
+`POST /api/v1/workspaces/{workspace}/bots/feishu/installation` performs read-only installation discovery before Account creation. It accepts `app_id` and write-only `app_secret`, requires current Workspace Account-management authority before and after bounded provider I/O, and contacts only the official Feishu origin. It returns the verified application, enterprise, and Bot identifiers and names using `InstallationInfo`. Inactive applications, rejected credentials, missing permissions, malformed responses, and timeouts fail without creating an Account or persisting credentials. This observation does not enable reception or replace subsequent installation and pilot checks. The Console uses the derived identifiers in the canonical idempotent Account creation request; uncertain creation retries retain the same resolved identity and request rather than discovering a different installation.
 
 Exact object management uses the Account `/targets` child collection. Workspace Builders can manage targets within their current Agent and capability authority. Account management and credentials require Workspace Admin. Possession of an Account or target ID grants no authority.
 
@@ -156,3 +158,11 @@ Checks run outside database transactions with a bounded total deadline. Before s
 4. Account disablement blocks dispatch; reception closure alone does not revoke accepted replies.
 5. Account use, action allowlists, and target authority are separately validated.
 6. Recovery never replaces a missing or disabled account with another account.
+
+## Application-owned Memory Settings
+
+Bot Memory settings use the [Bot-owned versioned settings API](../42-memory.md#bot-memory-configuration). They are not Account fields or generic Account mutation inputs. Bot summary carries the separate `memory_settings` projection. Bot-only listing uses the Bot collection, not a `bots_only` parameter on common Account listing. Setup-test staleness and reply correlation include the independent memory-settings version.
+
+## Event Connection Observation
+
+`GET /api/v1/application-accounts/{account_id}/event-connection` requires Account read permission. It returns `transport` (`http` or `websocket`), `state` (`http`, `disabled`, `connecting`, `connected`, `reconnecting`, or `disconnected`), optional `observed_at`, `last_event_at`, and a bounded `error_code`. It exposes no token, socket URL, owner identity, or other installation. A missing or superseded connection observation is `connecting`; an expired lease is `disconnected`. `http` reports configuration only, not callback reachability. `connected` reports a current transport observation, not Agent execution, event subscription correctness, or successful replies. Changing Account configuration invalidates prior connection observations.

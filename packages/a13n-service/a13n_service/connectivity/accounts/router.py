@@ -21,6 +21,7 @@ from .domain import (
     AccountProviderDefinitionCollection,
     AccountStatus,
     CreateAccountRequest,
+    EventConnectionStatus,
     ReplaceAccountCredentialsRequest,
     UpdateAccountRequest,
 )
@@ -83,14 +84,12 @@ async def list_accounts(
     workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
-    bots_only: bool = False,
 ) -> AccountCollection:
     return await _service(request).list_accounts(
         actor=actor,
         workspace_id=workspace_id,
         limit=limit,
         cursor=cursor,
-        bots_only=bots_only,
     )
 
 
@@ -161,3 +160,8 @@ async def delete_account(
 ) -> Response:
     await _service(request).delete_account(actor=actor, account_id=account_id, expected_version=expected_version)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/application-accounts/{account_id}/event-connection", response_model=EventConnectionStatus)
+async def event_connection(request: Request, actor: Actor, account_id: str) -> EventConnectionStatus:
+    return await _service(request).event_connection(actor=actor, account_id=account_id)

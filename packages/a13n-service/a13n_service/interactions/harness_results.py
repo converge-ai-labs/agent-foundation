@@ -9,7 +9,8 @@ from typing import Protocol
 
 import rfc8785
 from a13n_harness import HarnessRunResult, HarnessState, SafeFailure
-from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME
+from a13n_harness.tools import APPROVAL_PRESENTATION_KEY, ApprovalPresentation
+from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME, AskUserQuestionRequest
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_core import PydanticSerializationError, to_jsonable_python
@@ -187,6 +188,13 @@ class StoredHarnessOutcomeAdapter:
                         else PendingCallKind.client_tool
                     ),
                     tool_name=request.tool_name,
+                    presentation=(
+                        AskUserQuestionRequest.model_validate(request.args_as_dict()).model_dump(
+                            mode="json", by_alias=True
+                        )
+                        if request.tool_name == ASK_USER_QUESTION_TOOL_NAME
+                        else None
+                    ),
                 )
                 for request in requests.calls
             ),
@@ -195,6 +203,7 @@ class StoredHarnessOutcomeAdapter:
                     call_id=request.tool_call_id,
                     kind=PendingCallKind.approval,
                     tool_name=request.tool_name,
+                    presentation=_approval_presentation(requests, request.tool_call_id),
                 )
                 for request in requests.approvals
             ),
@@ -216,6 +225,19 @@ class StoredHarnessOutcomeAdapter:
             wait_reason=wait_reason,
             pending=RunPendingSummary(calls=calls),
         )
+
+
+def _approval_presentation(requests: DeferredToolRequests, call_id: str) -> JsonObject | None:
+    metadata = requests.metadata.get(call_id)
+    if not isinstance(metadata, dict) or APPROVAL_PRESENTATION_KEY not in metadata:
+        return None
+    try:
+        return ApprovalPresentation.model_validate(metadata[APPROVAL_PRESENTATION_KEY]).model_dump(
+            mode="json",
+            exclude_none=True,
+        )
+    except ValidationError as error:
+        raise HarnessOutcomeProjectionError("Harness approval presentation is invalid") from error
 
 
 def _encode_json_value(

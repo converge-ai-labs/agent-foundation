@@ -9,13 +9,21 @@ import {
 } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import { Paperclip, Plus, ArrowUp, Stop, X } from "@phosphor-icons/react";
+import {
+  Paperclip,
+  Plus,
+  ArrowUp,
+  Stop,
+  X,
+  DotsThree,
+} from "@phosphor-icons/react";
 import type { EditorView } from "@codemirror/view";
 import {
   attachmentSelections,
   attachmentToken,
   isReadyAttachment,
 } from "./inline-attachments";
+import { ImagePreview } from "./image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { useTransport } from "../transport/context";
 import {
@@ -28,8 +36,50 @@ import type { Profile } from "../shell/presence";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
+import { useStopOperation } from "./stop-operation";
+import { skillReferences, type LoadSkills } from "./skill-references";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
 import { commentReference, CommentReferenceContent } from "./comment-reference";
+import { previewInput, type LocalInput } from "./local-input";
+import type { OrderedInputPart } from "./inline-attachments";
+
+function beginInput(
+  draft: ThreadDraft,
+  action: "send" | "steer",
+  attachments: Map<string, Schema<"ThreadAttachment">>,
+  preset?: string,
+): LocalInput {
+  const text = preset ?? draft.doc.getText("text").toString();
+  const parts: OrderedInputPart[] = [];
+  let offset = 0;
+  for (const selection of preset === undefined
+    ? attachmentSelections(draft.doc)
+    : []) {
+    const start = selection.from ?? text.length;
+    if (start > offset) parts.push(text.slice(offset, start));
+    offset = selection.to ?? text.length;
+    parts.push(
+      isReadyAttachment(selection.id)
+        ? { attachment_id: selection.id }
+        : `[${draft.uploads.get(selection.key)?.file.name ?? "Attachment"}]`,
+    );
+  }
+  if (offset < text.length) parts.push(text.slice(offset));
+  const id = `input_${crypto.randomUUID().replaceAll("-", "")}`;
+  const input: LocalInput = {
+    id,
+    action,
+    parts: previewInput(id, parts, attachments),
+    state: "preparing",
+  };
+  draft.localInputs = [
+    ...draft.localInputs.filter((item) => item.state !== "rejected"),
+    input,
+  ];
+  draft.notify();
+  return input;
+}
 
 export const ComposerDrafts = createContext(new Map<string, ThreadDraft>());
 export function useDraft(threadId: string) {
@@ -89,23 +139,49 @@ export async function submitDraft(
   action: "send" | "steer",
   receipt?: string,
   modelId?: string,
+  localInput?: LocalInput,
+  attachments = new Map<string, Schema<"ThreadAttachment">>(),
+  loadSkills?: LoadSkills,
+  signal?: AbortSignal,
+  preset?: string,
+  prepare?: () => Promise<void>,
 ) {
   if (
     draft.submission.kind === "pending" ||
     draft.submission.kind === "unknown"
   )
     return;
-  let captured: DraftCapture;
+  const thinking = draft.thinking;
+  // Own the shared submission state before any asynchronous preparation so
+  // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
+  draft.submission = { kind: "pending", action };
+  const input = localInput ?? beginInput(draft, action, attachments, preset);
+  draft.notify();
+  let captured: DraftCapture | undefined;
+  let parts: OrderedInputPart[];
+  let references: Schema<"SkillReference">[] = [];
   try {
-    captured = draft.capture();
+    if (prepare) await prepare();
+    signal?.throwIfAborted();
+    if (preset === undefined) {
+      captured = draft.capture();
+      parts = captured.parts;
+      if (loadSkills && /(?:^|\s)\$\S+/.test(captured.input.prompt))
+        references = skillReferences(parts, await loadSkills());
+    } else parts = [preset];
+    signal?.throwIfAborted();
   } catch (error) {
+    input.state = "rejected";
     draft.submission = {
       kind: "rejected",
       message: error instanceof Error ? error.message : "Cannot capture input.",
     };
+    captured?.doc.destroy();
     draft.notify();
     return;
   }
+  input.parts = previewInput(input.id, parts, attachments);
+  input.state = "pending";
   draft.submission = { kind: "pending", action };
   draft.notify();
   try {
@@ -115,8 +191,11 @@ export async function submitDraft(
         transport.client.POST("/api/threads/{thread_id}/submit", {
           params: { path: { thread_id: threadId } },
           body: {
-            parts: captured.parts,
+            parts,
+            source_id: input.id,
+            ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
+            ...(thinking != null ? { thinking } : {}),
           },
         }),
       );
@@ -132,7 +211,11 @@ export async function submitDraft(
       const accepted = await result(
         transport.client.POST("/api/operations/{receipt_id}/steer", {
           params: { path: { receipt_id: receipt } },
-          body: { parts: captured.parts },
+          body: {
+            parts,
+            source_id: input.id,
+            ...(references.length ? { skill_references: references } : {}),
+          },
         }),
       );
       if (accepted.receipt_id !== receipt)
@@ -146,14 +229,12 @@ export async function submitDraft(
         );
       acceptedReceipt = receipt;
     }
-    draft.clear(captured);
+    input.state = "accepted";
+    if (captured) draft.clear(captured);
     draft.submission = {
       kind: "accepted",
+      action,
       receipt: acceptedReceipt,
-      message:
-        action === "send"
-          ? "Input accepted. Execution may still be preparing."
-          : "Instruction accepted by the current operation.",
     };
   } catch (error) {
     // A definite application rejection differs from a lost response/proxy failure.
@@ -162,8 +243,10 @@ export async function submitDraft(
       error.status >= 400 &&
       error.status < 500
     ) {
+      input.state = "rejected";
       draft.submission = { kind: "rejected", message: error.message };
     } else {
+      input.state = "unknown";
       draft.submission = {
         kind: "unknown",
         action,
@@ -173,15 +256,39 @@ export async function submitDraft(
       };
     }
   } finally {
-    captured.doc.destroy();
+    captured?.doc.destroy();
     draft.notify();
   }
+  return true;
+}
+
+export function submitContinuation(
+  draft: ThreadDraft,
+  transport: Transport,
+  threadId: string,
+  prepare?: () => Promise<void>,
+) {
+  return submitDraft(
+    draft,
+    transport,
+    threadId,
+    "send",
+    undefined,
+    draft.modelId,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "Continue completing the previous task.",
+    prepare,
+  );
 }
 
 export function Composer({
   referenceAdded = 0,
   autoFocus = false,
   local = false,
+  skillDefaults,
   prepareThread,
   onPreparing,
   onSubmitted,
@@ -191,6 +298,7 @@ export function Composer({
   threadId,
   activity,
   canRun,
+  unavailableReason,
   profile,
   unauthorized,
   reconcile,
@@ -198,12 +306,14 @@ export function Composer({
   threadId: string;
   activity: Schema<"RootActivityView">;
   canRun: boolean;
+  unavailableReason?: string;
   profile: Profile;
   unauthorized: () => void;
   reconcile: () => void;
   referenceAdded?: number;
   autoFocus?: boolean;
   local?: boolean;
+  skillDefaults?: Schema<"NewThreadDefaults">;
   prepareThread?: () => Promise<void>;
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
@@ -212,6 +322,7 @@ export function Composer({
   modelId?: string;
 }) {
   const draft = useDraft(threadId);
+  const { tracker: results } = useResults();
   const [preparing, setPreparing] = useState(false);
   const preparation = useRef<AbortController | null>(null);
   useEffect(() => () => preparation.current?.abort(), [threadId]);
@@ -220,6 +331,20 @@ export function Composer({
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
   const upload = useRef<HTMLInputElement>(null);
   const editor = useRef<EditorView | null>(null);
+  const sendButton = useRef<HTMLButtonElement>(null);
+  const restoreEditorFocus = useRef(false);
+  useEffect(() => {
+    if (preparing || !restoreEditorFocus.current) return;
+    restoreEditorFocus.current = false;
+    // Inert preparation can blur the editor. Restore only our own focus, never
+    // steal it from another field or a page the user opened while waiting.
+    if (
+      document.activeElement === document.body ||
+      document.activeElement === sendButton.current
+    )
+      editor.current?.focus();
+  }, [preparing]);
+  const [mobileOptions, setMobileOptions] = useState(false);
   useEffect(() => {
     if (!referenceAdded) return;
     const frame = requestAnimationFrame(() => {
@@ -236,14 +361,38 @@ export function Composer({
   const previewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => previewRequest.current?.abort(), [transport, threadId]);
   const [error, setError] = useState("");
+  const skillContext = JSON.stringify([
+    local,
+    skillDefaults,
+    activity.receipt_id,
+  ]);
+  const loadSkills: LoadSkills = () =>
+    queries.fetchQuery({
+      queryKey: ["thread", threadId, "skills", skillContext],
+      queryFn: ({ signal }) =>
+        local
+          ? result(
+              transport.client.POST("/api/threads/skills-preview", {
+                body: skillDefaults ?? {},
+                signal,
+              }),
+            )
+          : result(
+              transport.client.GET("/api/threads/{thread_id}/skills", {
+                params: { path: { thread_id: threadId } },
+                signal,
+              }),
+            ),
+      staleTime: 10000,
+    });
   const [syncDelayed, setSyncDelayed] = useState(false);
   const synchronized = draft.synchronized;
   useEffect(() => {
     setSyncDelayed(false);
-    if (synchronized || draft.status !== "Connected") return;
+    if (synchronized || local) return;
     const timer = setTimeout(() => setSyncDelayed(true), 700);
     return () => clearTimeout(timer);
-  }, [synchronized, draft.status]);
+  }, [synchronized, draft.status, local]);
   const [preview, setPreview] = useState<{
     name: string;
     text: string;
@@ -300,93 +449,134 @@ export function Composer({
   );
   const hasInput = !!(input.prompt.trim() || selections.length);
   const valid = hasInput && !missing;
-  const [stopping, setStopping] = useState(false);
+  const cancellation = useStopOperation(threadId, draft, activity, reconcile);
+  const { stopping, canStop } = cancellation;
+  const stop = () => {
+    if (!canStop) return;
+    // Stop remains available while Steer is synchronizing. Abort unsubmitted
+    // preparation, without pretending to undo any request already admitted.
+    preparation.current?.abort(
+      new Error("Submission preparation stopped. Your input is retained."),
+    );
+    return cancellation.stop();
+  };
+  const stopLabel = cancellation.retryable
+    ? "Retry Stop"
+    : stopping
+      ? "Stopping"
+      : "Stop";
+  const ready =
+    local ||
+    (draft.status === "Connected" && !draft.replacement && !draft.error);
   const canSteer =
+    !cancellation.request &&
     busy &&
-    draft.synchronized &&
+    ready &&
     !preparing &&
     !pending &&
     !unknown &&
     valid &&
     !!activity.available_actions?.includes("steer");
   const stopAction = busy && !hasInput;
-  const canStop =
-    stopAction &&
-    !!activity.receipt_id &&
-    !!activity.available_actions?.includes("cancel") &&
-    !stopping &&
-    !preparing &&
-    !pending;
-  const stop = async () => {
-    if (!canStop || !activity.receipt_id) return;
-    setStopping(true);
-    setError("");
-    try {
-      await result(
-        transport.client.POST("/api/operations/{receipt_id}/cancel", {
-          params: { path: { receipt_id: activity.receipt_id } },
-        }),
-      );
-    } catch (failure) {
-      setError(
-        failure instanceof Error
-          ? failure.message
-          : "Could not confirm Stop. Refresh the operation before retrying.",
-      );
-    } finally {
-      setStopping(false);
-      reconcile();
-    }
-  };
   const canSend =
-    canRun &&
-    !busy &&
-    (local || draft.synchronized) &&
+    canRun && !busy && ready && !preparing && !pending && !unknown && valid;
+  const blockedReason =
+    hasInput &&
     !preparing &&
     !pending &&
     !unknown &&
-    valid;
+    !cancellation.request &&
+    !draft.error &&
+    !draft.replacement
+      ? missing
+        ? uploading
+          ? "Waiting for attachments…"
+          : "Resolve unavailable attachments before sending."
+        : !ready
+          ? "Waiting for the shared draft connection…"
+          : !busy && !canRun
+            ? (unavailableReason ??
+              "Refresh conversation status before sending.")
+            : busy && !canSteer
+              ? "This operation cannot accept another message yet."
+              : undefined
+      : undefined;
   const submit = async (action: "send" | "steer") => {
-    if (action === "send" && !canSend) return;
+    if (action === "send" ? !canSend : !canSteer) return;
     if (
-      action === "steer" &&
-      (!draft.synchronized ||
-        pending ||
-        unknown ||
-        !valid ||
-        !activity.available_actions?.includes("steer"))
+      preparation.current ||
+      draft.submission.kind === "pending" ||
+      draft.submission.kind === "unknown"
     )
       return;
-    if (preparation.current) return;
     const controller = new AbortController();
     preparation.current = controller;
+    restoreEditorFocus.current =
+      !!editor.current?.hasFocus ||
+      document.activeElement === sendButton.current;
+    const attachmentMetadata = () =>
+      new Map(
+        attachmentSelections(draft.doc).flatMap(({ id }) => {
+          const item = queries.getQueryData<Schema<"ThreadAttachment">>([
+            "thread",
+            threadId,
+            "attachment",
+            id,
+          ]);
+          return item && id ? [[id, item] as const] : [];
+        }),
+      );
+    const metadata = attachmentMetadata();
+    const localInput = beginInput(draft, action, metadata);
     try {
-      if (prepareThread) {
-        setPreparing(true);
-        onPreparing?.(true);
-        setError("");
-        await prepareThread();
-        controller.signal.throwIfAborted();
-        await Promise.all(
-          attachmentSelections(draft.doc).flatMap(({ key }) => {
-            const item = draft.uploads.get(key);
-            return item?.status === "staged" ? [uploadOne(key, item.file)] : [];
-          }),
-        );
-        await waitForSynchronization(draft, controller.signal);
-      }
-      controller.signal.throwIfAborted();
-      await submitDraft(
+      setPreparing(true);
+      onPreparing?.(true);
+      setError("");
+      const submitted = await submitDraft(
         draft,
         transport,
         threadId,
         action,
         activity.receipt_id ?? undefined,
         modelId,
+        localInput,
+        metadata,
+        loadSkills,
+        controller.signal,
+        undefined,
+        prepareThread || results || !draft.synchronized
+          ? async () => {
+              if (prepareThread) {
+                await prepareThread();
+                controller.signal.throwIfAborted();
+                await Promise.all(
+                  attachmentSelections(draft.doc).flatMap(({ key }) => {
+                    const item = draft.uploads.get(key);
+                    return item?.status === "staged"
+                      ? [uploadOne(key, item.file)]
+                      : [];
+                  }),
+                );
+              }
+              if (results) await results.beforeRun(threadId);
+              // Explicit Send/Steer waits for the complete shared snapshot while
+              // retaining ownership against other submission entry points.
+              if (!draft.synchronized)
+                await waitForSynchronization(draft, controller.signal);
+              controller.signal.throwIfAborted();
+              for (const [id, attachment] of attachmentMetadata())
+                metadata.set(id, attachment);
+            }
+          : undefined,
       );
       reconcile();
-      if (!controller.signal.aborted) await onSubmitted?.();
+      if (submitted && !controller.signal.aborted) await onSubmitted?.();
     } catch (failure) {
+      // A failed follow-up observation cannot undo an admission receipt.
+      if (localInput.state === "preparing") {
+        localInput.state = "rejected";
+        draft.notify();
+      }
       if (!controller.signal.aborted)
         setError(
           failure instanceof Error
@@ -545,16 +735,13 @@ export function Composer({
           Comment added to your message. Review it below, then send when ready.
         </p>
       )}
-      {!local &&
-        !synchronized &&
-        !draft.replacement &&
-        (draft.status !== "Connected" || syncDelayed) && (
-          <p role="status" className={styles.composerConnection}>
-            {draft.status === "Connected"
-              ? "Syncing edits…"
-              : `${draft.status} · your edits are still in this tab`}
-          </p>
-        )}
+      {!local && !synchronized && !draft.replacement && syncDelayed && (
+        <p role="status" className={styles.composerConnection}>
+          {draft.status === "Connected"
+            ? "Syncing edits…"
+            : `${draft.status} · your edits are still in this tab`}
+        </p>
+      )}
       {draft.replacement && (
         <div role="alert" className={styles.warning}>
           <p>
@@ -577,185 +764,269 @@ export function Composer({
           />
         </div>
       )}
-      <div inert={preparing}>
-        <ComposerEditor
-          autoFocus={autoFocus}
-          local={local}
-          draft={draft}
-          profile={profile}
-          presence={(value) => connection.current?.presence(value)}
-          submit={() => void submit(busy ? "steer" : "send")}
-          editor={editor}
-          attachments={{
-            transport,
-            threadId,
-            metadata: new Map(
-              attachments.flatMap((item) =>
-                item.data
-                  ? [[item.data.attachment_id, item.data] as const]
-                  : [],
-              ),
-            ),
-            preview: (id, attachment) => void showAttachment(id, attachment),
-            upload: (files, at) => void uploadFiles(files, at),
-            retry: (key) => {
-              const item = draft.uploads.get(key);
-              if (
-                !local &&
-                (item?.status === "failed" || item?.status === "staged")
-              )
-                void uploadOne(key, item.file);
-              else if (!item)
+      <div
+        className={styles.composerBody}
+        data-stop-secondary={busy && hasInput}
+      >
+        <div inert={preparing} className={styles.composerEditor}>
+          <ComposerEditor
+            autoFocus={autoFocus}
+            local={local}
+            skillContext={skillContext}
+            loadSkills={async () => {
+              try {
+                return await loadSkills();
+              } catch (failure) {
                 setError(
-                  "This upload is unavailable in this tab. Remove it and attach the file again.",
+                  failure instanceof Error
+                    ? `Could not load skills: ${failure.message}`
+                    : "Could not load skills. Type $ again to retry.",
                 );
-            },
-          }}
-        />
-      </div>
-      {selections.some((selection) => selection.from === undefined) && (
-        <ul className={styles.attachments}>
-          {selections.map(({ key, id, from }, index) =>
-            from !== undefined ? null : (
-              <li key={key}>
-                <button
-                  type="button"
-                  onClick={() =>
-                    id && void showAttachment(id, attachments[index].data)
-                  }
-                >
-                  {attachments[index].data && (
-                    <AttachmentThumbnail
-                      threadId={threadId}
-                      attachment={attachments[index].data}
-                    />
-                  )}
-                  <Paperclip /> {attachments[index].data?.name ?? id}
-                  {attachments[index].data?.source && (
-                    <small>
-                      Captured{" "}
-                      {"comment_id" in attachments[index].data.source
-                        ? "comment reference"
-                        : "repository_path" in attachments[index].data.source
-                          ? "diff"
-                          : "file"}
-                    </small>
-                  )}
-                </button>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`Remove ${attachments[index].data?.name ?? id}`}
-                  onClick={() => draft.removeAttachment(key)}
-                >
-                  <X />
-                </Button>
-                {attachments[index].error && (
-                  <span role="alert">
-                    Attachment unavailable; remove it or refresh access.
-                  </span>
-                )}
-              </li>
-            ),
-          )}
-        </ul>
-      )}
-      {(error || draft.error) && (
-        <p role="alert" className={styles.warning}>
-          {error || draft.error}
-        </p>
-      )}
-      {(draft.submission.kind === "rejected" || unknown) && (
-        <div role="alert" className={styles.warning}>
-          <p>{"message" in draft.submission && draft.submission.message}</p>
-          {unknown &&
-            "receipt" in draft.submission &&
-            draft.submission.receipt && (
-              <details>
-                <summary>Submission details</summary>
-                <small>Operation: {draft.submission.receipt}</small>
-              </details>
-            )}
-          {unknown && (
-            <>
-              <Button variant="outline" onClick={reconcile}>
-                Refresh operation and history
-              </Button>
-              <ConfirmAction
-                trigger={
-                  <Button variant="ghost">I reviewed the outcome</Button>
-                }
-                title="Enable a new submission?"
-                description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
-                confirmLabel="Enable submission"
-                onConfirm={() => {
-                  draft.submission = { kind: "idle" };
-                  draft.notify();
-                }}
-              />
-            </>
-          )}
-        </div>
-      )}
-      <div className={styles.composerActions}>
-        <div>
-          <input
-            ref={upload}
-            type="file"
-            multiple
-            hidden
-            onChange={(event) =>
-              void uploadFiles(Array.from(event.target.files ?? []))
-            }
+                throw failure;
+              }
+            }}
+            draft={draft}
+            profile={profile}
+            presence={(value) => connection.current?.presence(value)}
+            submit={() => void submit(busy ? "steer" : "send")}
+            editor={editor}
+            attachments={{
+              transport,
+              threadId,
+              metadata: new Map(
+                attachments.flatMap((item) =>
+                  item.data
+                    ? [[item.data.attachment_id, item.data] as const]
+                    : [],
+                ),
+              ),
+              preview: (id, attachment) => void showAttachment(id, attachment),
+              upload: (files, at) => void uploadFiles(files, at),
+              retry: (key) => {
+                const item = draft.uploads.get(key);
+                if (
+                  !local &&
+                  (item?.status === "failed" || item?.status === "staged")
+                )
+                  void uploadOne(key, item.file);
+                else if (!item)
+                  setError(
+                    "This upload is unavailable in this tab. Remove it and attach the file again.",
+                  );
+              },
+            }}
           />
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Attach files"
-            title="Attach files · you can also paste or drop files"
-            loading={uploading}
-            disabled={preparing}
-            onClick={() => upload.current?.click()}
-          >
-            <Plus />
-          </Button>
-          {leadingControls}
         </div>
-        <div>
-          {controls}
-          <Button
-            size="icon"
-            className={styles.sendButton}
-            aria-label={
-              preparing
-                ? "Preparing"
-                : pending
-                  ? "Submitting"
-                  : stopAction
-                    ? "Stop"
-                    : busy
-                      ? "Steer"
-                      : "Send"
-            }
-            title={
-              stopAction
-                ? "Stop this operation"
-                : busy
-                  ? "Steer current operation · Ctrl/⌘+Enter"
-                  : "Send message · Ctrl/⌘+Enter"
-            }
-            disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
-            loading={pending || preparing || stopping}
-            onClick={() =>
-              stopAction ? void stop() : void submit(busy ? "steer" : "send")
-            }
-          >
-            {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
-          </Button>
+        {selections.some((selection) => selection.from === undefined) && (
+          <ul className={styles.attachments}>
+            {selections.map(({ key, id, from }, index) =>
+              from !== undefined ? null : (
+                <li key={key}>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      id && void showAttachment(id, attachments[index].data)
+                    }
+                  >
+                    {attachments[index].data && (
+                      <AttachmentThumbnail
+                        threadId={threadId}
+                        attachment={attachments[index].data}
+                      />
+                    )}
+                    <Paperclip /> {attachments[index].data?.name ?? id}
+                    {attachments[index].data?.source && (
+                      <small>
+                        Captured{" "}
+                        {"comment_id" in attachments[index].data.source
+                          ? "comment reference"
+                          : "repository_path" in attachments[index].data.source
+                            ? "diff"
+                            : "file"}
+                      </small>
+                    )}
+                  </button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`Remove ${attachments[index].data?.name ?? id}`}
+                    onClick={() => draft.removeAttachment(key)}
+                  >
+                    <X />
+                  </Button>
+                  {attachments[index].error && (
+                    <span role="alert">
+                      Attachment unavailable; remove it or refresh access.
+                    </span>
+                  )}
+                </li>
+              ),
+            )}
+          </ul>
+        )}
+        {blockedReason && (
+          <p role="status" className={styles.composerConnection}>
+            {blockedReason}
+          </p>
+        )}
+        {cancellation.request && (
+          <div className={styles.composerStatus}>
+            <p
+              role={
+                cancellation.observationFailed ||
+                ["uncertain", "rejected"].includes(cancellation.request.phase)
+                  ? "alert"
+                  : "status"
+              }
+            >
+              {cancellation.request.message}
+              {cancellation.observationFailed &&
+                " Current status is unavailable; stopping is not yet confirmed."}
+            </p>
+            <Button variant="ghost" size="sm" onClick={cancellation.refresh}>
+              Refresh stop status
+            </Button>
+          </div>
+        )}
+        {(error || draft.error) && (
+          <p role="alert" className={styles.warning}>
+            {error || draft.error}
+          </p>
+        )}
+        {(draft.submission.kind === "rejected" || unknown) && (
+          <div role="alert" className={styles.warning}>
+            <p>{"message" in draft.submission && draft.submission.message}</p>
+            {unknown &&
+              "receipt" in draft.submission &&
+              draft.submission.receipt && (
+                <details>
+                  <summary>Submission details</summary>
+                  <small>Operation: {draft.submission.receipt}</small>
+                </details>
+              )}
+            {unknown && (
+              <>
+                <Button variant="outline" onClick={reconcile}>
+                  Refresh operation and history
+                </Button>
+                <ConfirmAction
+                  trigger={
+                    <Button variant="ghost">I reviewed the outcome</Button>
+                  }
+                  title="Enable a new submission?"
+                  description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
+                  confirmLabel="Enable submission"
+                  onConfirm={() => {
+                    draft.submission = { kind: "idle" };
+                    draft.notify();
+                  }}
+                />
+              </>
+            )}
+          </div>
+        )}
+        <div className={styles.composerActions}>
+          <div>
+            <input
+              ref={upload}
+              type="file"
+              multiple
+              hidden
+              onChange={(event) =>
+                void uploadFiles(Array.from(event.target.files ?? []))
+              }
+            />
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={styles.attachButton}
+              aria-label="Attach files"
+              title="Attach files · you can also paste or drop files"
+              loading={uploading}
+              disabled={preparing}
+              onClick={() => upload.current?.click()}
+            >
+              <Plus />
+            </Button>
+            <div className={styles.composerOptions} data-open={mobileOptions}>
+              {leadingControls}
+            </div>
+          </div>
+          <div>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className={styles.mobileOptionsButton}
+              aria-label="Composer options"
+              aria-expanded={mobileOptions}
+              onClick={() => setMobileOptions(!mobileOptions)}
+            >
+              <DotsThree />
+            </Button>
+            <div className={styles.composerOptions} data-open={mobileOptions}>
+              {controls}
+            </div>
+            {busy && hasInput && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className={styles.secondaryStop}
+                aria-label={stopLabel}
+                title={
+                  cancellation.request?.message ??
+                  "Stop this operation without discarding your draft"
+                }
+                disabled={!canStop}
+                loading={stopping}
+                onClick={() => void stop()}
+              >
+                <Stop weight="fill" />
+              </Button>
+            )}
+            <Button
+              ref={sendButton}
+              size="icon"
+              className={styles.sendButton}
+              aria-label={
+                stopAction
+                  ? stopLabel
+                  : pending
+                    ? "Submitting"
+                    : preparing
+                      ? "Preparing"
+                      : busy
+                        ? "Steer"
+                        : "Send"
+              }
+              title={
+                (stopAction ? cancellation.request?.message : undefined) ??
+                blockedReason ??
+                (stopAction
+                  ? "Stop this operation"
+                  : busy
+                    ? "Steer current operation · Enter"
+                    : "Send message · Enter")
+              }
+              disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
+              loading={stopAction ? stopping : pending || preparing}
+              onClick={() =>
+                stopAction ? void stop() : void submit(busy ? "steer" : "send")
+              }
+            >
+              {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
+            </Button>
+          </div>
         </div>
       </div>
+      {preview?.image && preview.url && (
+        <ImagePreview
+          src={preview.url}
+          name={preview.name}
+          close={() => setPreview(null)}
+        />
+      )}
       <ModalFrame
-        open={!!preview}
+        open={!!preview && !preview.image}
         onOpenChange={(open) => {
           if (!open) {
             previewRequest.current?.abort();
@@ -795,12 +1066,6 @@ export function Composer({
         )}
         {comment && preview ? (
           <CommentReferenceContent source={comment} text={preview.text} />
-        ) : preview?.image && preview.url ? (
-          <img
-            className={styles.attachmentPreview}
-            src={preview.url}
-            alt={preview.name}
-          />
         ) : (
           <pre className={styles.code}>{preview?.text}</pre>
         )}
