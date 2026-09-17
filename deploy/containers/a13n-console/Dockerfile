@@ -1,9 +1,21 @@
 # syntax=docker/dockerfile:1
 FROM node:24-bookworm-slim AS builder
 WORKDIR /src/frontend
-COPY frontend/ ./
-RUN npm install --global "$(node -p 'require("./package.json").packageManager')" \
-    && pnpm install --frozen-lockfile
+COPY frontend/package.json ./
+RUN --mount=type=cache,id=a13n-console-npm,target=/root/.npm \
+    npm install --global --no-audit --no-fund "$(node -p 'require("./package.json").packageManager')"
+
+# Only these workspace packages are needed by Console. Keep source changes out
+# of the dependency layer and retain downloaded packages when manifests change.
+COPY frontend/pnpm-lock.yaml frontend/pnpm-workspace.yaml ./
+COPY frontend/apps/a13n-console/package.json ./apps/a13n-console/package.json
+COPY frontend/packages/a13n-ui/package.json ./packages/a13n-ui/package.json
+RUN --mount=type=cache,id=a13n-console-pnpm,target=/pnpm/store \
+    pnpm install --frozen-lockfile --store-dir=/pnpm/store --reporter=append-only
+
+COPY frontend/tsconfig.base.json ./
+COPY frontend/apps/a13n-console/ ./apps/a13n-console/
+COPY frontend/packages/a13n-ui/ ./packages/a13n-ui/
 COPY proto/a13n-service/openapi.json /src/proto/a13n-service/openapi.json
 RUN pnpm --filter a13n-console build
 

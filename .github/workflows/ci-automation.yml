@@ -16,6 +16,8 @@ on:
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
       - "scripts/prepare_harness_ui_image.py"
+      - "scripts/k8s_local.py"
+      - "scripts/tests/test_k8s_local.py"
       - "scripts/tests/test_image_workflows.py"
       - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
@@ -44,6 +46,8 @@ on:
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
       - "scripts/prepare_harness_ui_image.py"
+      - "scripts/k8s_local.py"
+      - "scripts/tests/test_k8s_local.py"
       - "scripts/tests/test_image_workflows.py"
       - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
@@ -121,6 +125,7 @@ jobs:
           scripts/release_version.py
           scripts/run_python_tests.py
           scripts/prepare_harness_ui_image.py
+          scripts/k8s_local.py
 
       - name: Set up Node.js for workflow tests
         uses: actions/setup-node@v6
@@ -137,6 +142,7 @@ jobs:
           scripts/tests/test_local_validation.py
           scripts/tests/test_image_workflows.py
           scripts/tests/test_prepare_harness_ui_image.py
+          scripts/tests/test_k8s_local.py
           scripts/tests/test_harness_ui_release_workflow.py
           scripts/tests/test_envd_ci_workflow.py
           scripts/tests/test_service_contract_notification.py

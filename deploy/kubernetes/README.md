@@ -64,6 +64,28 @@ Adding Redis does not remove the local single-process constraint: the local obje
 
 ## Local installation with Console
 
+### One-command startup
+
+With Docker running and `python3`, kind, kubectl and Helm installed, run from the repository root:
+
+```sh
+make k8s-up
+```
+
+The launcher creates or reuses the `a13n-local` kind cluster, checks its loopback port mapping, prepares Secrets, builds and imports both images, and waits for the Helm release in `a13n-dev`. Each build uses a new local image tag so deployments pick up rebuilt images. This command owns the local profile; use the manual Helm workflow below for customized deployments. All checkouts on the same machine share this named cluster and port, rather than receiving isolated deployments.
+
+On a fresh installation it generates a random PostgreSQL password and a 32-byte encryption key, saves `service.env` and `postgres.env` under `~/.config/a13n-local` with mode `600`, and creates the corresponding Kubernetes Secrets. Set `K8S_ADMIN_EMAIL=you@example.com make k8s-up` to choose the first administrator email; the default is `admin@example.com`. `K8S_STATE_DIR` may select another protected directory outside the checkout. Existing local files and cluster Secrets are reused and must agree; the launcher refuses invalid keys, conflicting credentials, or new credential generation when PVCs already exist. Existing cluster Secrets can restore missing local files. Changing the email option does not change an existing administrator.
+
+After successful startup, the terminal prints the Console login URL and any newly emitted single-use administrator invitation from the current Service Pod. Open the invitation and choose a password; there is no default administrator password. Completed initialization is preserved on subsequent starts. If a previous failed startup created the invitation, or its link expired or was lost, explicitly replace the pending invitation with:
+
+```sh
+make k8s-admin-link
+```
+
+This invalidates the previous invitation and prints its replacement (or sends it through configured SMTP). It cannot reopen completed initialization. Keep invitation links private. No credentials or initialization tokens are written into repository files or Helm values. The launcher does not delete clusters, PVCs or existing Secrets. `make k8s-check` runs offline launcher tests and local Chart lint without building images or changing a cluster.
+
+### Manual startup
+
 This recipe creates a kind cluster using Docker Desktop's running Docker Engine. It does not require Docker Desktop's built-in Kubernetes cluster. The included `kind-local.yaml` maps host `127.0.0.1:8080` to node port `30080`; `values-local.yaml` exposes the Console on that NodePort and configures the same public origin. No foreground port-forward or host Vite process is required.
 
 Run from the repository root. Install kind if needed (`brew install kind`); Helm and kubectl must also be installed. On first use:
@@ -83,7 +105,9 @@ docker build -f deploy/containers/a13n-console/Dockerfile -t a13n-console:local 
 kind load docker-image a13n-service:local a13n-console:local --name a13n-local
 ```
 
-The Console image builds the frontend with Node.js 24 and the workspace-pinned pnpm version. Runtime uses non-root Nginx with a read-only root filesystem and writable `/tmp`. It serves SPA browser routes, returns 404 for missing assets, and forwards API errors without substituting HTML. WebSockets and unbuffered SSE share the browser origin. Proxy access logs exclude query strings. Uploads have a 128 MiB proxy ceiling; Service retains its own limits.
+The Console image builds the frontend with Node.js 24 and the workspace-pinned pnpm version. It installs only the root, Console and shared UI workspace dependencies before copying source files, so source-only changes reuse the dependency layer. BuildKit caches npm and pnpm downloads across dependency changes; the first build still needs registry access. Host `node_modules` and frontend `dist` directories are excluded from the build context. Add `--progress=plain` to `docker build` to retain detailed installation logs when diagnosing slow downloads.
+
+Runtime uses non-root Nginx with a read-only root filesystem and writable `/tmp`. It serves SPA browser routes, returns 404 for missing assets, and forwards API errors without substituting HTML. WebSockets and unbuffered SSE share the browser origin. Proxy access logs exclude query strings. Uploads have a 128 MiB proxy ceiling; Service retains its own limits.
 
 Prepare the two protected files described above, then create the Secrets in this cluster on first installation:
 

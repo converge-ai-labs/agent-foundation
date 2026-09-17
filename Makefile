@@ -90,6 +90,17 @@ examples-check-all: examples-check examples-test examples-smoke examples-build #
 setup: ## Prepare this checkout's stores, shared Langfuse and Service schema
 	@$(SERVICE_DEV) setup
 
+.PHONY: k8s-up k8s-admin-link k8s-check
+k8s-up: ## Build and start local kind Kubernetes, preserving credentials and printing initial admin link
+	@python3 scripts/k8s_local.py up
+
+k8s-admin-link: ## Replace a lost pending administrator invitation in local kind Kubernetes
+	@python3 scripts/k8s_local.py admin-link
+
+k8s-check: ## Test local Kubernetes launcher without building images or changing a cluster
+	@uv run --locked python -m pytest scripts/tests/test_k8s_local.py
+	@helm lint deploy/kubernetes/a13n-service -f deploy/kubernetes/values-local.yaml --strict
+
 .PHONY: dev
 dev: ## Prepare and start this checkout's Service, scripted model and Console in the background
 	@$(SERVICE_DEV) dev

@@ -40,6 +40,9 @@ data:
     format = "json"
     [connectivity]
     public_origin = {{ .Values.publicOrigin | toJson }}
+    {{- if and (eq .Values.profile "local") (hasPrefix "http://" .Values.publicOrigin) }}
+    http_origins = [{{ .Values.publicOrigin | toJson }}]
+    {{- end }}
     [iam]
     public_origin = {{ .Values.publicOrigin | toJson }}
     {{- with .Values.extraConfig }}

@@ -11,8 +11,9 @@ site
 dist
 build
 target
-node_modules
-*.tsbuildinfo
+**/node_modules
+frontend/**/dist
+**/*.tsbuildinfo
 .wrangler
 local-reference
 discussion
