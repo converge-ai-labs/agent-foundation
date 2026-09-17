@@ -6,7 +6,9 @@ import httpx2
 import pytest
 from a13n_service.api import install_api_conventions
 from a13n_service.environments.router import router
+from a13n_service.environments.websocket.coordination import DEFAULT_LIMITS
 from a13n_service.iam import PrincipalRef
+from anyio import create_task_group, sleep
 from fastapi import FastAPI, Request
 
 from tests.environments.websocket.conftest import relay_redis as relay_redis
@@ -22,7 +24,6 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture
 async def mount_api(mount_run, process_runtime_factory, interaction_sessions):
     service, coordination, run, _, environment = mount_run
-    await _connect(coordination, environment.id)
     app = FastAPI()
     install_api_conventions(app)
     app.include_router(router)
@@ -35,11 +36,30 @@ async def mount_api(mount_run, process_runtime_factory, interaction_sessions):
     )
     app.state.runtime = runtime
     async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://test") as client:
-        yield client, app, runtime, f"/api/v1/runs/{run.id}/environment-mounts", environment.id
+        # Construct the HTTP app before starting the short-lived online lease.
+        connection = await _connect(coordination, environment.id)
+
+        async def keep_online():
+            while True:
+                await sleep(coordination.limits.lease_ms / 3000)
+                observed = await coordination.renew(connection)
+                assert observed.value.connection == connection and observed.value.status == "online"
+
+        try:
+            async with create_task_group() as tasks:
+                tasks.start_soon(keep_online)
+                try:
+                    yield client, app, runtime, f"/api/v1/runs/{run.id}/environment-mounts", environment.id
+                finally:
+                    tasks.cancel_scope.cancel()
+        finally:
+            await coordination.retire(connection)
 
 
 async def test_mount_http_receipt_replay_conflict_and_ordered_pagination(mount_api):
     client, _, _, path, environment_id = mount_api
+    # An online fixture must survive the original connection lease.
+    await sleep(DEFAULT_LIMITS.lease_ms / 1000 + 0.1)
     first = {"name": "computer", "environment_id": environment_id, "access": "read_only"}
     response = await client.post(path, json=first, headers={"Idempotency-Key": "first"})
     assert response.status_code == 201, response.text
