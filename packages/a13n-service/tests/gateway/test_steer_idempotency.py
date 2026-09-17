@@ -274,7 +274,7 @@ async def test_migration_roundtrip_preserves_live_replay(steer_case, service_dat
     migrator = DatabaseMigrator(service_database)
     engine = sessions.kw["bind"]
     await engine.dispose()
-    await anyio.to_thread.run_sync(migrator.downgrade, "e9d8ec98fb26")
+    await anyio.to_thread.run_sync(migrator.downgrade, "469419a1470b")
     async with short_session(sessions) as database:
         evidence = (
             await database.execute(
@@ -308,7 +308,7 @@ async def test_migration_rejects_broken_live_evidence(steer_case, service_databa
     migrator = DatabaseMigrator(service_database)
     engine = sessions.kw["bind"]
     await engine.dispose()
-    await anyio.to_thread.run_sync(migrator.downgrade, "e9d8ec98fb26")
+    await anyio.to_thread.run_sync(migrator.downgrade, "469419a1470b")
     async with transaction(sessions) as database:
         await database.execute(
             text("UPDATE idempotency_evidence SET result_ref = 'missing' WHERE operation = 'run.steer'")

@@ -1,7 +1,7 @@
 """store steer idempotency in thread inbox.
 
 Revision ID: e0bca206450c
-Revises: e9d8ec98fb26
+Revises: 469419a1470b
 Create Date: 2026-09-17 13:58:10.742479+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "e0bca206450c"
-down_revision: str | Sequence[str] | None = "e9d8ec98fb26"
+down_revision: str | Sequence[str] | None = "469419a1470b"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
