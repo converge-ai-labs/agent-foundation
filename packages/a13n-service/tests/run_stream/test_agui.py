@@ -16,7 +16,9 @@ from a13n_service.run_stream import (
     deterministic_run_stream_event_id,
 )
 from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
-from a13n_service.run_stream.replay import project_retained_items
+from a13n_service.run_stream.display_model import RunDisplaySnapshot
+from a13n_service.run_stream.display_projection import project_display
+from a13n_service.run_stream.redis import run_stream_key_digest_sha256
 from pydantic_ai.messages import (
     AgentStreamEvent,
     FunctionToolResultEvent,
@@ -358,7 +360,16 @@ async def test_parent_and_inline_children_keep_separate_tool_items(redis_client:
         )
     await projector.close()
     page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=100)
-    retained = project_retained_items(page.items)
+    retained = project_display(
+        RunDisplaySnapshot(
+            version=1,
+            run_id=RUN_ID,
+            thread_id=THREAD_ID,
+            cursor=None,
+            stream_key_digest_sha256=run_stream_key_digest_sha256(ORGANIZATION_ID, RUN_ID),
+        ),
+        page.items,
+    ).items
     assert len(retained) == 3
     assert sorted(item.state for item in retained) == ["completed", "completed", "failed"]
     starts = [entry.event for entry in page.items if entry.event.event_type == "agui.tool_call_start"]

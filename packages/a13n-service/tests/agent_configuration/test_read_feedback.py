@@ -9,6 +9,7 @@ import pytest
 from a13n_service.agent_configuration import runtime
 from a13n_service.agent_configuration.runtime import ConfigurationCapability
 from a13n_service.application_errors import ApplicationError, ErrorCategory
+from a13n_service.gateway.queries import ItemCollection
 from pydantic_ai import ModelRetry
 
 
@@ -75,7 +76,15 @@ async def test_run_read_includes_safe_failure_or_null(capability, failure):
         input_text=None,
         output_text=None,
     )
-    capability._queries.items.return_value = SimpleNamespace(model_dump=lambda **_: {"items": [], "next_cursor": None})
+    capability._queries.items.return_value = ItemCollection(
+        items=(),
+        next_cursor=None,
+        snapshot_version=1,
+        projection_cursor="1-0",
+        complete=True,
+        incomplete_reason=None,
+        finalized=True,
+    )
     result = await capability.read_interaction_run(None, run_id="run")
     if failure:
         assert result["failure"]["code"] == "agent_run_failed"
@@ -83,3 +92,19 @@ async def test_run_read_includes_safe_failure_or_null(capability, failure):
         assert "private-secret" not in json.dumps(result)
     else:
         assert result["failure"] is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("complete,finalized", [(False, False), (False, True), (True, False)])
+async def test_run_read_does_not_expose_unsettled_or_incomplete_display(capability, complete, finalized):
+    capability._queries.items.return_value = ItemCollection(
+        items=(),
+        next_cursor=None,
+        snapshot_version=1,
+        projection_cursor="1-0",
+        complete=complete,
+        incomplete_reason=None if complete else "source_discontinuity",
+        finalized=finalized,
+    )
+    with pytest.raises(ModelRetry, match="not yet complete and finalized"):
+        await capability.read_interaction_run(None, run_id="run")

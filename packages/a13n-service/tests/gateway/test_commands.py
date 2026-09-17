@@ -35,7 +35,7 @@ from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.state import CompletedOutcomeCandidate, InboxReceipt
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import func, select
@@ -858,7 +858,7 @@ async def test_feedback_advances_waiting_run_and_replays_semantically_equivalent
         run_id=source.run_id,
     )
 
-    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(interaction_object_store))
+    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunDisplayStore(interaction_object_store))
     waiting_resource = await queries.get_run(actor=_actor(), run_id=source.run_id)
     public_digest = waiting_resource.model_dump(mode="json")["sealed_state_digest_sha256"]
     assert public_digest == digest

@@ -22,7 +22,7 @@ from a13n_service.interactions.objects import RunPayloadStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.subagents import AsyncSubagentResultMaterializer, AsyncSubagentResultPublisher
 from anyio import fail_after, sleep
@@ -54,7 +54,7 @@ async def test_completed_recovery_rechecks_input_after_runtime_preparation(
         context, states, initial, _completed_state(initial.envelope, context.run_attempt_id, context.attempt_number)
     )
     await _fail_child(sessions, child_id)
-    replays = RunReplayStore(interaction_object_store)
+    replays = RunDisplayStore(interaction_object_store)
     entry = await AsyncSubagentResultPublisher(sessions, replays, clock=lambda: now).publish(
         organization_id=ORGANIZATION_ID, child_run_id=child_id
     )

@@ -11,7 +11,7 @@ from typing import Literal
 
 from a13n_harness.model_context import user_prompt_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
-from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, Field, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -30,6 +30,7 @@ from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
+from a13n_harness_ui.conversation import excerpt_text, input_excerpt
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.output_comment_models import RootOutputLocation, SavedOutputTarget
 from a13n_harness_ui.storage import (
@@ -52,8 +53,10 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSummary,
     TranscriptEntry,
+    TranscriptInputPage,
     TranscriptPage,
     TranscriptPart,
+    TranscriptTurn,
 )
 from a13n_harness_ui.tool_evidence import applied_edit
 
@@ -88,6 +91,13 @@ class _TranscriptCursor(SurfaceModel):
     thread_id: str
     continuation_id: str
     position: int
+    direction: Literal["earlier", "later"] = "earlier"
+
+
+class _InputCursor(SurfaceModel):
+    thread_id: str
+    continuation_id: str
+    position: int = Field(ge=0)
 
 
 class ThreadProjectionService:
@@ -247,17 +257,25 @@ class ThreadProjectionService:
         expected_continuation_id: str | None = None,
         cursor: str | None = None,
         limit: int = 50,
+        turn_id: str | None = None,
     ) -> TranscriptPage:
         if not 1 <= limit <= 100:
             raise ThreadError("Transcript page is outside supported bounds.", code="thread_history_page_invalid")
         thread = await self._required_thread(thread_id)
-        history, continuation_id = await self._history(thread)
+        history, continuation_id, completed = await self._history(thread)
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError(
                 "The selected Thread continuation changed before transcript projection.",
                 code="thread_history_continuation_changed",
             )
+        turns = _transcript_turns(history, completed)
         upper_bound = len(history)
+        if turn_id is not None and cursor is None:
+            selected_turn = next((turn for turn in turns if turn.turn_id == turn_id), None)
+            if selected_turn is None:
+                raise ThreadError("Input is not in the selected history.", code="thread_history_input_missing")
+            upper_bound = selected_turn.end_position
+        position = max(0, upper_bound - limit)
         if cursor is not None:
             decoded = _decode_cursor(cursor, _TranscriptCursor, code="thread_history_cursor_invalid")
             if decoded.thread_id != thread_id or decoded.continuation_id != continuation_id:
@@ -265,12 +283,16 @@ class ThreadProjectionService:
                     "Transcript cursor belongs to another continuation.",
                     code="thread_history_cursor_mismatch",
                 )
-            upper_bound = decoded.position
-        if upper_bound > len(history):
+            if decoded.direction == "later":
+                position = decoded.position
+                upper_bound = min(len(history), position + limit)
+            else:
+                upper_bound = decoded.position
+                position = max(0, upper_bound - limit)
+        if upper_bound > len(history) or position > len(history) or upper_bound < 0:
             raise ThreadError(
                 "Transcript cursor is outside the selected history.", code="thread_history_cursor_invalid"
             )
-        position = max(0, upper_bound - limit)
         # Display history survives context replacement; execution still loads only HarnessState.
         selected = history[position:upper_bound]
         entries = tuple(
@@ -285,12 +307,64 @@ class ThreadProjectionService:
                     position=position,
                 )
             )
+        visible_turns = tuple(
+            turn for turn in turns if turn.input_position < upper_bound and turn.end_position > position
+        )
+        boundaries = sorted(
+            {
+                boundary
+                for turn in visible_turns
+                for boundary in (turn.input_position, turn.final_position)
+                if boundary is not None and not position <= boundary < upper_bound
+            }
+        )
         return TranscriptPage(
+            turns=visible_turns,
+            boundary_entries=tuple(_message_entry(index, history[index], thread=thread) for index in boundaries),
+            newer_cursor=_encode_cursor(
+                _TranscriptCursor(
+                    thread_id=thread_id, continuation_id=continuation_id, position=upper_bound, direction="later"
+                )
+            )
+            if upper_bound < len(history)
+            else None,
             completion_version=0 if thread.completion is None else thread.completion.version,
             continuation_id=continuation_id,
             entries=entries,
             total=len(history),
             next_cursor=next_cursor,
+        )
+
+    async def transcript_inputs(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> TranscriptInputPage:
+        if not 1 <= limit <= 100:
+            raise ThreadError("Input page is outside supported bounds.", code="thread_history_page_invalid")
+        thread = await self._required_thread(thread_id)
+        history, continuation_id, completed = await self._history(thread)
+        if expected_continuation_id is not None and expected_continuation_id != continuation_id:
+            raise ThreadError("History changed before input projection.", code="thread_history_continuation_changed")
+        position = 0
+        if cursor:
+            decoded = _decode_cursor(cursor, _InputCursor, code="thread_history_cursor_invalid")
+            if decoded.thread_id != thread_id or decoded.continuation_id != continuation_id:
+                raise ThreadError("Input cursor belongs to another history.", code="thread_history_cursor_mismatch")
+            position = decoded.position
+        turns = _transcript_turns(history, completed)
+        if position > len(turns):
+            raise ThreadError("Input cursor is outside history.", code="thread_history_cursor_invalid")
+        end = min(len(turns), position + limit)
+        return TranscriptInputPage(
+            continuation_id=continuation_id,
+            turns=turns[position:end],
+            next_cursor=_encode_cursor(_InputCursor(thread_id=thread_id, continuation_id=continuation_id, position=end))
+            if end < len(turns)
+            else None,
         )
 
     async def transcript_entry(
@@ -301,7 +375,7 @@ class ThreadProjectionService:
         position: int,
     ) -> TranscriptEntry:
         thread = await self._required_thread(thread_id)
-        history, continuation_id = await self._history(thread)
+        history, continuation_id, _completed = await self._history(thread)
         if continuation_id != expected_continuation_id:
             raise ThreadError(
                 "The selected Thread continuation changed before transcript projection.",
@@ -400,7 +474,8 @@ class ThreadProjectionService:
             thinking_summary=summarize_thinking(model.route, model.settings),
         )
 
-    async def _history(self, thread: Thread) -> tuple[tuple[ModelMessage, ...], str]:
+    async def _history(self, thread: Thread) -> tuple[tuple[ModelMessage, ...], str, tuple[int, ...]]:
+        completed: tuple[int, ...] = ()
         if thread.continuation is None:
             stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
             state = stored.harness_state
@@ -414,13 +489,69 @@ class ThreadProjectionService:
                 if (display := stored_continuation.display_history) is not None
                 else state.message_history
             )
+            if display is not None:
+                completed = display.completed_responses
             continuation_id = thread.continuation.logical_digest
         if state.thread_id != thread.thread_id:
             raise ThreadError(
                 "The selected Thread state belongs to another Thread.",
                 code="thread_continuation_incompatible",
             )
-        return history, continuation_id
+        return history, continuation_id, completed
+
+
+def _transcript_turns(
+    history: tuple[ModelMessage, ...],
+    completed: tuple[int, ...] = (),
+) -> tuple[TranscriptTurn, ...]:
+    """Project input boundaries from retained native metadata, never text matching."""
+    inputs: list[tuple[int, str, str]] = []
+    for position, message in enumerate(history):
+        metadata = message.metadata or {}
+        if not isinstance(message, ModelRequest) or "a13n.steering-run" in metadata or metadata.get("a13n.context"):
+            continue
+        content = [
+            item for part in message.parts if isinstance(part, UserPromptPart) for item in user_prompt_content(part)
+        ]
+        preview = input_excerpt(content)
+        if not preview:
+            continue
+        source = next(
+            (
+                projected[1].source_id
+                for item in content
+                if (projected := project_input_content(item)) is not None
+                and projected[1].display
+                and projected[1].source_id
+            ),
+            None,
+        )
+        inputs.append((position, source or f"entry:{position}", excerpt_text(preview, 512)))
+    turns: list[TranscriptTurn] = []
+    completed_set = set(completed)
+    for index, (position, identity, preview) in enumerate(inputs):
+        end = inputs[index + 1][0] if index + 1 < len(inputs) else len(history)
+        # Completion is recorded only by successful saved execution. A later
+        # resume/checkpoint makes an old result provisional, not a completed turn.
+        final_position = end - 1 if end - 1 in completed_set else None
+        messages = history[position:end]
+        turns.append(
+            TranscriptTurn(
+                turn_id=identity,
+                input_position=position,
+                end_position=end,
+                final_position=final_position,
+                preview=preview,
+                timestamp=history[position].timestamp,
+                tool_count=sum(
+                    isinstance(part, (ToolCallPart, NativeToolCallPart))
+                    for message in messages
+                    for part in message.parts
+                ),
+                steering_count=sum("a13n.steering-run" in (message.metadata or {}) for message in messages),
+            )
+        )
+    return tuple(turns)
 
 
 def _configuration(value: ThreadConfiguration) -> ThreadConfigurationView:

@@ -1,5 +1,5 @@
 import { memo, useMemo, useState } from "react";
-import { ArrowClockwise } from "@phosphor-icons/react";
+import { ArrowClockwise, CaretDown, CaretRight } from "@phosphor-icons/react";
 import { ToolActivity } from "./tool-call";
 import {
   activityKind,
@@ -23,7 +23,12 @@ function systemNotice(metadata?: Record<string, unknown> | null) {
   );
 }
 
-type Row = { id: string; anchor?: string } & (
+type Row = {
+  id: string;
+  anchor?: string;
+  position?: number;
+  readingAnchor?: string;
+} & (
   | { kind: "input"; parts: InputPart[]; status?: string }
   | { kind: "thinking"; segments: { id: string; text: string }[] }
   | { kind: "tools"; tools: ToolView[] }
@@ -121,6 +126,10 @@ function savedRows(
             (part.value_omitted ? "\nContent omitted by the server." : ""),
         });
     });
+    for (let index = start; index < rows.length; index++) {
+      rows[index].position = entry.position;
+      rows[index].readingAnchor = `saved:${entry.position}:${index - start}`;
+    }
     if (rows.length > start && continuation)
       rows[start].anchor = `entry:${continuation}:${entry.position}`;
   }
@@ -250,6 +259,9 @@ function Rows({
     <div
       key={row.id}
       data-presence-anchor={row.anchor}
+      data-reading-anchor={
+        row.kind === "input" ? row.id : (row.readingAnchor ?? row.id)
+      }
       data-message-id={row.kind === "input" ? row.id : undefined}
     >
       {row.kind === "input" ? (
@@ -324,7 +336,13 @@ export function ConversationTranscript({
   continuation,
   threadId,
   gap = false,
+  turns = [],
+  loadEarlier,
+  loadingEarlier = false,
 }: {
+  turns?: Schema<"TranscriptTurn">[];
+  loadEarlier?: () => void;
+  loadingEarlier?: boolean;
   entries: Schema<"TranscriptEntry">[];
   blocks: DisplayBlock[];
   localInputs: LocalInput[];
@@ -370,9 +388,177 @@ export function ConversationTranscript({
   }
   return (
     <>
-      <Rows rows={rows} threadId={threadId} />
+      <TurnRows
+        rows={rows}
+        entries={entries}
+        turns={turns}
+        localInputs={localInputs}
+        threadId={threadId}
+        loadEarlier={loadEarlier}
+        loadingEarlier={loadingEarlier}
+      />
       {gap && <GapNotice />}
     </>
+  );
+}
+
+function TurnRows({
+  rows,
+  entries,
+  turns,
+  localInputs,
+  threadId,
+  loadEarlier,
+  loadingEarlier,
+}: {
+  rows: Row[];
+  entries: Schema<"TranscriptEntry">[];
+  turns: Schema<"TranscriptTurn">[];
+  localInputs: LocalInput[];
+  threadId: string;
+  loadEarlier?: () => void;
+  loadingEarlier: boolean;
+}) {
+  const groups: { id: string; turn?: Schema<"TranscriptTurn">; rows: Row[] }[] =
+    [];
+  for (const row of rows) {
+    const turn =
+      row.position === undefined
+        ? undefined
+        : turns.find(
+            (candidate) =>
+              row.position! >= candidate.input_position &&
+              row.position! < candidate.end_position,
+          );
+    const local =
+      row.kind === "input"
+        ? localInputs.find(
+            (input) =>
+              `input:${input.id}` === row.id && input.action === "send",
+          )
+        : undefined;
+    const id = turn?.turn_id ?? local?.id ?? groups.at(-1)?.id ?? "ungrouped";
+    if (groups.at(-1)?.id !== id) groups.push({ id, turn, rows: [] });
+    groups.at(-1)!.rows.push(row);
+  }
+  return groups.map((group) =>
+    group.id === "ungrouped" ? (
+      <Rows key={group.id} rows={group.rows} threadId={threadId} />
+    ) : (
+      <Turn
+        key={group.id}
+        {...group}
+        threadId={threadId}
+        missing={
+          !!group.turn &&
+          entries.filter(
+            (entry) =>
+              entry.position >= group.turn!.input_position &&
+              entry.position < group.turn!.end_position,
+          ).length <
+            group.turn.end_position - group.turn.input_position
+        }
+        loadEarlier={loadEarlier}
+        loadingEarlier={loadingEarlier}
+      />
+    ),
+  );
+}
+
+function Turn({
+  id,
+  turn,
+  rows,
+  threadId,
+  missing,
+  loadEarlier,
+  loadingEarlier,
+}: {
+  id: string;
+  turn?: Schema<"TranscriptTurn">;
+  rows: Row[];
+  threadId: string;
+  missing: boolean;
+  loadEarlier?: () => void;
+  loadingEarlier: boolean;
+}) {
+  const [expanded, setExpanded] = useState<boolean>();
+  const complete =
+    turn?.final_position != null &&
+    rows.every((row) => row.position !== undefined);
+  const input = rows.filter(
+    (row) =>
+      row.kind === "input" &&
+      (turn ? row.position === turn.input_position : row.id === `input:${id}`),
+  );
+  const final = complete
+    ? rows.filter(
+        (row) =>
+          row.kind === "assistant" && row.position === turn.final_position,
+      )
+    : [];
+  const process = rows.filter(
+    (row) => !input.includes(row) && !final.includes(row),
+  );
+  const open = expanded ?? !complete;
+  return (
+    <section
+      data-turn-id={id}
+      data-incomplete-turn={missing ? "" : undefined}
+      className={styles.turn}
+      tabIndex={-1}
+    >
+      <Rows rows={input} threadId={threadId} />
+      {(process.length > 0 || missing) && (
+        <div className={styles.execution}>
+          <button
+            type="button"
+            aria-expanded={open}
+            className={styles.executionToggle}
+            onClick={() => setExpanded(!open)}
+          >
+            {open ? (
+              <CaretDown aria-hidden="true" />
+            ) : (
+              <CaretRight aria-hidden="true" />
+            )}
+            Execution details
+            {!!turn?.tool_count && (
+              <span>
+                {" "}
+                · {turn.tool_count}{" "}
+                {turn.tool_count === 1 ? "tool call" : "tool calls"}
+              </span>
+            )}
+            {!!turn?.steering_count && (
+              <span>
+                {" "}
+                · {turn.steering_count}{" "}
+                {turn.steering_count === 1
+                  ? "steering message"
+                  : "steering messages"}
+              </span>
+            )}
+          </button>
+          <div hidden={!open} className={styles.executionContent}>
+            {missing && (
+              <button
+                type="button"
+                className={styles.executionToggle}
+                onClick={loadEarlier}
+                disabled={!loadEarlier || loadingEarlier}
+              >
+                {loadingEarlier
+                  ? "Loading earlier steps…"
+                  : "Load earlier steps"}
+              </button>
+            )}
+            <Rows rows={process} threadId={threadId} continuation />
+          </div>
+        </div>
+      )}
+      <Rows rows={final} threadId={threadId} continuation />
+    </section>
   );
 }
 

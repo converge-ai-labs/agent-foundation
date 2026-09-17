@@ -4,7 +4,7 @@ from a13n_service.interactions.inbox import RedisThreadControlSignals
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.process.runtime import SharedRuntime
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.settings import Settings
 from a13n_service.subagents.cancellation import ChildCancellationReconciler
 from a13n_service.subagents.maintenance import SubagentMaintenance
@@ -13,7 +13,7 @@ from a13n_service.subagents.successors import AsyncSubagentSuccessorReconciler
 
 
 def build_subagent_maintenance(
-    settings: Settings, shared: SharedRuntime, replay: RunReplayStore
+    settings: Settings, shared: SharedRuntime, display: RunDisplayStore
 ) -> SubagentMaintenance:
     if shared.memory_behaviors is None:
         raise RuntimeError("Execution memory behavior composition is required")
@@ -24,11 +24,11 @@ def build_subagent_maintenance(
     )
     return SubagentMaintenance(
         ChildCancellationReconciler(sessions, outcomes),
-        AsyncSubagentResultPublisher(sessions, replay, signals=signals),
+        AsyncSubagentResultPublisher(sessions, display, signals=signals),
         AsyncSubagentSuccessorReconciler(
             sessions,
             RunStateStore(shared.storage.objects),
-            replay,
+            display,
             bindings=shared.memory_behaviors,
             lifecycle=shared.lifecycle,
             signals=signals,

@@ -31,7 +31,7 @@ if TYPE_CHECKING:
     from a13n_service.models.provider_service import ModelProviderService
     from a13n_service.models.service import ModelService
     from a13n_service.observability import ObservabilityRuntime
-    from a13n_service.run_stream import RedisRunStream, RunReplayStore
+    from a13n_service.run_stream import RedisRunStream, RunDisplayStore
     from a13n_service.secrets import SecretProtector
     from a13n_service.settings import Settings
     from a13n_service.skills.catalog import SkillCatalogService
@@ -91,7 +91,7 @@ class WorkerRuntime:
     environment_maintenance: EnvironmentMaintenanceLoop
     environments: EnvironmentLifecycle
     run_stream: RedisRunStream
-    run_replay: RunReplayStore
+    run_display: RunDisplayStore
     execution_loop: WorkerExecutionLoop | None = None
 
 

@@ -56,7 +56,6 @@ from a13n_service.lifecycle import LifecycleEvent
 from a13n_service.run_stream import (
     CompleteRunStream,
     RedisRunStream,
-    RunReplayStore,
     RunStreamEntry,
     RunStreamError,
     RunStreamReplayGap,
@@ -211,7 +210,6 @@ class HostedAguiService:
         sessions: async_sessionmaker[AsyncSession],
         commands: InteractionCommands,
         stream: RedisRunStream,
-        replay: RunReplayStore,
         hosted_replay: HostedAguiReplayStore,
         *,
         page_size: int,
@@ -224,7 +222,6 @@ class HostedAguiService:
         self._sessions = sessions
         self._commands = commands
         self._stream = stream
-        self._replay = replay
         self._hosted_replay = hosted_replay
         self._page_size = page_size
         self._poll_interval_seconds = poll_interval_seconds
@@ -568,8 +565,15 @@ class HostedAguiService:
                 entries = page.items
                 closed = page.closed and (page.next_stream_id == page.high_watermark or not page.items)
             except RunStreamReplayGap:
-                retained = await self._retained_entries(binding)
-                if retained is None:
+                try:
+                    archived = await self._sealed_replay(binding)
+                except HostedAguiReplayError:
+                    archived = None
+                if archived is not None:
+                    for item in archived.events:
+                        if item.ordinal >= ordinal and item.ordinal > attachment.after_ordinal:
+                            yield _sse(binding, item.ordinal, item.event)
+                else:
                     gap = {
                         "type": "CUSTOM",
                         "name": "a13n.service.replay_gap",
@@ -577,9 +581,7 @@ class HostedAguiService:
                     }
                     if ordinal > attachment.after_ordinal:
                         yield _sse(binding, ordinal, gap)
-                    return
-                entries = tuple(item for item in retained if _after(item.stream_id, native_cursor))
-                closed = True
+                return
             for entry in entries:
                 native_cursor = entry.stream_id
                 projected = _project_event(entry, external_run_id=binding.external_run_id)
@@ -681,17 +683,13 @@ class HostedAguiService:
         waiting: bool,
     ) -> tuple[RunStreamEntry, ...]:
         try:
-            retained = await self._replay.read(binding.organization_id, binding.run_id)
-            entries = tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
-        except (ObjectNotFound, RunStreamError):
-            try:
-                if waiting:
-                    entries = await self._stream.untrimmed_entries(binding.organization_id, binding.run_id)
-                else:
-                    source = await self._stream.complete_source(binding.organization_id, binding.run_id)
-                    entries = source.entries
-            except RunStreamError as error:
-                raise HostedAguiReplayUnavailable("The complete Native presentation source is unavailable") from error
+            if waiting:
+                entries = await self._stream.untrimmed_entries(binding.organization_id, binding.run_id)
+            else:
+                source = await self._stream.complete_source(binding.organization_id, binding.run_id)
+                entries = source.entries
+        except RunStreamError as error:
+            raise HostedAguiReplayUnavailable("The complete Native presentation source is unavailable") from error
         if not entries:
             raise HostedAguiReplayUnavailable("The complete Native presentation source is unavailable")
         return entries
@@ -915,24 +913,13 @@ class HostedAguiService:
                 cursor = page.items[-1].stream_id
                 if page.closed and cursor == page.high_watermark:
                     break
-        except RunStreamReplayGap:
-            try:
-                retained = await self._replay.read(organization_id, run_id)
-            except RunStreamError as error:
-                raise HostedAguiError(
-                    "agui_history_unavailable",
-                    "The retained AG-UI message history is unavailable.",
-                    category=ErrorCategory.conflict,
-                ) from error
-            return tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
+        except RunStreamReplayGap as error:
+            raise HostedAguiError(
+                "agui_history_unavailable",
+                "The retained AG-UI message history is unavailable.",
+                category=ErrorCategory.conflict,
+            ) from error
         return tuple(values)
-
-    async def _retained_entries(self, binding: HostedAguiBinding) -> tuple[RunStreamEntry, ...] | None:
-        try:
-            retained = await self._replay.read(binding.organization_id, binding.run_id)
-        except RunStreamError:
-            return None
-        return tuple(RunStreamEntry(item.stream_id, item.event) for item in retained.events)
 
     async def _load_thread_binding(
         self, *, actor: AuthenticatedActor, agent_id: str, external_thread_id: str
@@ -1577,14 +1564,6 @@ def _resume_ordinal(binding: HostedAguiBinding, cursor: str | None) -> int:
 def _sse(binding: HostedAguiBinding, ordinal: int, event: dict[str, Any]) -> bytes:
     data = json.dumps(_standard_event(event), separators=(",", ":"), ensure_ascii=False)
     return f"id: {_cursor(binding, ordinal)}\ndata: {data}\n\n".encode()
-
-
-def _after(value: str, cursor: str | None) -> bool:
-    if cursor is None:
-        return True
-    left = tuple(int(item) for item in value.split("-", maxsplit=1))
-    right = tuple(int(item) for item in cursor.split("-", maxsplit=1))
-    return left > right
 
 
 __all__ = [

@@ -15,10 +15,11 @@ from a13n_service.interactions.domain import Run, RunInputKind, RunPayloadObject
 from a13n_service.interactions.models import RunRecord
 from a13n_service.run_stream import (
     RetainedItem,
-    RunReplaySnapshot,
-    RunReplayStore,
+    RunDisplaySnapshot,
+    RunDisplayStore,
     RunStreamError,
 )
+from a13n_service.storage import ObjectStoreError
 
 from .domain import (
     MAX_INLINE_ASYNC_RESULT_BYTES,
@@ -197,7 +198,7 @@ def validate_async_subagent_result_authority(
 
 
 async def load_async_subagent_terminal_item(
-    replays: RunReplayStore,
+    displays: RunDisplayStore,
     *,
     organization_id: str,
     child: Run,
@@ -211,32 +212,29 @@ async def load_async_subagent_terminal_item(
             raise AsyncSubagentResultError("async result selects an Item for a non-object child outcome")
         return None
     try:
-        snapshot = await replays.read(
+        snapshot = await displays.read(
             organization_id,
             child.id,
             expected_thread_id=child.thread_id,
         )
-    except RunStreamError as error:
+    except (RunStreamError, ObjectStoreError) as error:
         raise AsyncSubagentResultItemUnavailable("authorized terminal result Item is unavailable") from error
-    return _select_terminal_item(snapshot, expected_item_id=expected_item_id)
+    return _select_terminal_item(snapshot.snapshot, expected_item_id=expected_item_id)
 
 
 def _select_terminal_item(
-    snapshot: RunReplaySnapshot,
+    snapshot: RunDisplaySnapshot,
     *,
     expected_item_id: str | None,
 ) -> RetainedItem:
-    terminal_events = tuple(
-        retained.event for retained in snapshot.events if retained.event.event_type == "run.completed"
-    )
-    if len(terminal_events) != 1 or terminal_events[0].item_id is None:
-        raise AsyncSubagentResultError("retained replay has no completed terminal result Item")
-    item_id = terminal_events[0].item_id
-    if expected_item_id is not None and item_id != expected_item_id:
-        raise AsyncSubagentResultError("async result Item does not match the retained terminal event")
-    item = next((candidate for candidate in snapshot.items if candidate.id == item_id), None)
-    if item is None:
+    if not snapshot.complete or not snapshot.finalized:
+        raise AsyncSubagentResultItemUnavailable("terminal display snapshot is not complete and finalized")
+    outputs = tuple(item for item in snapshot.items if item.kind == "run_output" and item.state == "completed")
+    if len(outputs) != 1:
         raise AsyncSubagentResultItemUnavailable("retained terminal result Item is unavailable")
+    item = outputs[0]
+    if expected_item_id is not None and item.id != expected_item_id:
+        raise AsyncSubagentResultError("async result Item does not match the retained terminal Item")
     return item
 
 

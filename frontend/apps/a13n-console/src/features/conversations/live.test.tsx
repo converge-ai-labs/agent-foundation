@@ -46,7 +46,17 @@ vi.mock("../../layout/workspace", () => ({
 
 function response(request: Request) {
   const path = new URL(request.url).pathname;
-  if (path.endsWith("/items") || path.endsWith("/pending-actions"))
+  if (path.endsWith("/items"))
+    return Response.json({
+      items: [],
+      next_cursor: null,
+      snapshot_version: version,
+      projection_cursor: null,
+      complete: true,
+      incomplete_reason: null,
+      finalized: status === "completed",
+    });
+  if (path.endsWith("/pending-actions"))
     return Response.json({ items: [], next_cursor: null });
   if (path.includes("/threads/"))
     return Response.json({
@@ -107,6 +117,17 @@ function Live() {
       </output>
       <output data-testid="gap">{String(live.gap)}</output>
       <button onClick={live.reconnect}>Reconnect</button>
+      {live.hasEarlier && (
+        <button
+          disabled={live.loadingEarlier}
+          onClick={() => void live.loadEarlier()}
+        >
+          Earlier
+        </button>
+      )}
+      <output data-testid="earlier-error">
+        {live.earlierError ? "failed" : ""}
+      </output>
     </>
   );
 }
@@ -315,8 +336,7 @@ it("reconciles replay gaps and deduplicates retained content before resuming del
         null,
       );
     }
-    expect(options?.after).toBeUndefined();
-    yield event("1-0", "Hello");
+    expect(options?.after).toBe("1-0");
     yield event("2-0", " world");
     await new Promise<void>((resolve) =>
       options?.signal?.addEventListener("abort", () => resolve(), {
@@ -331,21 +351,19 @@ it("reconciles replay gaps and deduplicates retained content before resuming del
           {
             id: "item_one",
             kind: "text_message",
-            state: "streaming",
+            state: "in_progress",
             parent_item_id: null,
             first_stream_id: "1-0",
             last_stream_id: "1-0",
-            content: {
-              events: [
-                {
-                  event_type: "agui.text_message_content",
-                  payload: { delta: "Hello" },
-                },
-              ],
-            },
+            content: { text: "Hello" },
           },
         ],
         next_cursor: null,
+        snapshot_version: 2,
+        projection_cursor: "1-0",
+        complete: true,
+        incomplete_reason: null,
+        finalized: false,
       });
     return response(request);
   };
@@ -358,4 +376,265 @@ it("reconciles replay gaps and deduplicates retained content before resuming del
   expect(
     cache.getQueryData(conversationKeys("workspace").pending("run_one")),
   ).toBeDefined();
+});
+
+it("shows incomplete finalized history without opening a raw stream", async () => {
+  status = "completed";
+  read = async (request) => {
+    if (new URL(request.url).pathname.endsWith("/items"))
+      return Response.json({
+        items: [],
+        next_cursor: null,
+        snapshot_version: 2,
+        projection_cursor: "1-0",
+        complete: false,
+        incomplete_reason: "source_discontinuity",
+        finalized: true,
+      });
+    return response(request);
+  };
+  render(<View />);
+  await waitFor(() =>
+    expect(screen.getByTestId("live").textContent).toBe("closed"),
+  );
+  expect(screen.getByTestId("gap").textContent).toBe("true");
+  expect(client.streamRun).not.toHaveBeenCalled();
+});
+
+it("waits for display finalization after a terminal Run observation", async () => {
+  let snapshots = 0;
+  read = async (request) => {
+    if (new URL(request.url).pathname.endsWith("/items"))
+      return Response.json({
+        items: [],
+        next_cursor: null,
+        snapshot_version: ++snapshots,
+        projection_cursor: "1-0",
+        complete: true,
+        incomplete_reason: null,
+        finalized: snapshots >= 3,
+      });
+    return response(request);
+  };
+  client.streamRun = vi.fn(async function* () {
+    status = "completed";
+    const terminal = event("2-0", "");
+    terminal.event.event_type = "run.completed";
+    terminal.event.item_id = null;
+    yield terminal;
+  });
+  render(<View />);
+  await waitFor(() =>
+    expect(screen.getByTestId("live").textContent).toBe("closed"),
+  );
+  expect(snapshots).toBe(3);
+  expect(client.streamRun).toHaveBeenCalledTimes(2);
+});
+
+function displayItem(id: string, text: string, first: string, last = first) {
+  return {
+    id,
+    kind: "text_message",
+    state: "in_progress",
+    parent_item_id: null,
+    first_stream_id: first,
+    last_stream_id: last,
+    content: { text },
+  };
+}
+function displayPage(
+  items: ReturnType<typeof displayItem>[],
+  next: string | null,
+  cursor = "3-0",
+  finalized = false,
+) {
+  return Response.json({
+    items,
+    next_cursor: next,
+    snapshot_version: Number(cursor.split("-")[0]),
+    projection_cursor: cursor,
+    complete: true,
+    incomplete_reason: null,
+    finalized,
+  });
+}
+
+it("loads older messages only on request and retries failures without discarding the current page", async () => {
+  status = "completed";
+  let fail = true;
+  read = async (request) => {
+    const url = new URL(request.url);
+    if (!url.pathname.endsWith("/items")) return response(request);
+    expect(url.searchParams.get("order")).toBe("desc");
+    expect(url.searchParams.get("limit")).toBe("50");
+    if (url.searchParams.get("cursor")) {
+      expect(url.searchParams.get("cursor")).toBe("older");
+      if (fail)
+        return Response.json(
+          { error: { code: "items_unavailable", message: "Retry" } },
+          { status: 409 },
+        );
+      return displayPage(
+        [displayItem("old", "old-", "1-0")],
+        null,
+        "4-0",
+        true,
+      );
+    }
+    return displayPage(
+      [
+        displayItem("new", "new", "3-0"),
+        displayItem("middle", "middle-", "2-0"),
+      ],
+      "older",
+      "3-0",
+      true,
+    );
+  };
+  render(<View />);
+  await waitFor(() =>
+    expect(screen.getByTestId("live").textContent).toBe("closed"),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("items").textContent).toBe("middle-new"),
+  );
+  expect(pathRequests("/items")).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("earlier-error").textContent).toBe("failed"),
+  );
+  await waitFor(() =>
+    expect(screen.getByTestId("items").textContent).toBe("middle-new"),
+  );
+  fail = false;
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("items").textContent).toBe("old-middle-new"),
+  );
+  expect(screen.queryByRole("button", { name: "Earlier" })).toBeNull();
+  expect(pathRequests("/items")).toHaveLength(3);
+  expect(client.streamRun).not.toHaveBeenCalled();
+});
+
+it("merges older pages without advancing the live cursor or duplicating covered deltas", async () => {
+  let release!: () => void;
+  const proceed = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let attachments = 0;
+  client.streamRun = vi.fn(async function* (_id, options) {
+    if (attachments++ === 0) {
+      expect(options?.after).toBe("3-0");
+      await proceed;
+      const old = event("5-0", "duplicate");
+      old.event.item_id = "old";
+      yield old;
+      const recent = event("6-0", "!");
+      recent.event.item_id = "new";
+      yield recent;
+    } else {
+      expect(options?.after).toBe("6-0");
+      await new Promise<void>((resolve) =>
+        options?.signal?.addEventListener("abort", () => resolve(), {
+          once: true,
+        }),
+      );
+    }
+  });
+  read = async (request) => {
+    const url = new URL(request.url);
+    if (!url.pathname.endsWith("/items")) return response(request);
+    if (url.searchParams.has("cursor"))
+      return displayPage(
+        [displayItem("old", "full-old-", "1-0", "10-0")],
+        null,
+        "10-0",
+      );
+    return displayPage([displayItem("new", "new", "3-0")], "older");
+  };
+  render(<View />);
+  await waitFor(() => expect(client.streamRun).toHaveBeenCalledTimes(1));
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() =>
+    expect(screen.getByTestId("items").textContent).toBe("full-old-new"),
+  );
+  expect(client.streamRun).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    release();
+  });
+  await waitFor(() => expect(client.streamRun).toHaveBeenCalledTimes(2));
+  expect(screen.getByTestId("items").textContent).toBe("full-old-new!");
+});
+
+it("hides unloaded Item fragments while admitting new Items from the live stream", async () => {
+  client.streamRun = vi.fn(async function* (_id, options) {
+    const hidden = event("4-0", "orphaned suffix");
+    hidden.event.item_id = "old";
+    yield hidden;
+    const start = event("5-0", "");
+    start.event.item_id = "fresh";
+    start.event.event_type = "agui.text_message_start";
+    yield start;
+    const content = event("6-0", "fresh");
+    content.event.item_id = "fresh";
+    yield content;
+    await new Promise<void>((resolve) =>
+      options?.signal?.addEventListener("abort", () => resolve(), {
+        once: true,
+      }),
+    );
+  });
+  read = async (request) => {
+    if (new URL(request.url).pathname.endsWith("/items"))
+      return displayPage([displayItem("new", "new-", "3-0")], "older");
+    return response(request);
+  };
+  render(<View />);
+  await waitFor(() =>
+    expect(screen.getByTestId("items").textContent).toBe("new-fresh"),
+  );
+  expect(pathRequests("/items")).toHaveLength(1);
+});
+
+it("cancels an in-flight earlier page when reconnecting to a new window", async () => {
+  status = "completed";
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let oldRequest: Request | undefined;
+  read = async (request) => {
+    const url = new URL(request.url);
+    if (!url.pathname.endsWith("/items")) return response(request);
+    if (url.searchParams.has("cursor")) {
+      oldRequest = request;
+      await pending;
+      return displayPage(
+        [displayItem("old", "obsolete", "1-0")],
+        null,
+        "3-0",
+        true,
+      );
+    }
+    return displayPage(
+      [displayItem("new", "new", "3-0")],
+      "older",
+      "3-0",
+      true,
+    );
+  };
+  render(<View />);
+  await waitFor(() =>
+    expect(screen.getByTestId("live").textContent).toBe("closed"),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  await waitFor(() => expect(oldRequest).toBeDefined());
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  await waitFor(() => expect(oldRequest!.signal.aborted).toBe(true));
+  await act(async () => {
+    release();
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("items").textContent).toBe("new"),
+  );
 });

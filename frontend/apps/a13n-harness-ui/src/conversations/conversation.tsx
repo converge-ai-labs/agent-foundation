@@ -28,6 +28,12 @@ import { useLiveThread } from "./live-threads";
 import { LiveConnectionNotice } from "./live-connection";
 import { ConversationTranscript, RecoveryNotice } from "./transcript";
 import { inputSource } from "./local-input";
+import { InputNavigation } from "./input-navigation";
+import {
+  captureReadingAnchor,
+  restoreReadingAnchor,
+  type ReadingAnchor,
+} from "./reading-anchor";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { savedResultVisible } from "./result-visibility";
@@ -106,10 +112,13 @@ function Conversation({
       { replace: true },
     );
   const draft = useDraft(threadId);
+  const [selectedTurn, setSelectedTurn] = useState<string>();
+  const pendingJump = useRef<string | undefined>(undefined);
   const history = useHistory(
     threadId,
     detail.data?.continuation_id,
     !!detail.data,
+    selectedTurn,
   );
   const { display, connection, reconnections, revision } =
     useLiveThread(threadId);
@@ -143,6 +152,7 @@ function Conversation({
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
+  const readingAnchor = useRef<ReadingAnchor | undefined>(undefined);
   const scrollFrame = useRef<number | null>(null);
   const stopScrolling = useCallback(() => {
     if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
@@ -194,22 +204,78 @@ function Conversation({
   const interruptScroll = () => {
     stopScrolling();
     follow.current = false;
+    if (reader.current)
+      readingAnchor.current = captureReadingAnchor(reader.current);
   };
   const olderAnchor = useRef<{ height: number; top: number } | null>(null);
   const [newOutput, setNewOutput] = useState(false);
+  const backToLatest = () => {
+    pendingJump.current = undefined;
+    olderAnchor.current = null;
+    readingAnchor.current = undefined;
+    setSelectedTurn(undefined);
+    follow.current = true;
+    setNewOutput(false);
+    scrollToLatest();
+  };
   const reconcile = useCallback(() => {
     void queries.invalidateQueries({ queryKey: ["thread", threadId] });
     void refreshThreadLists(queries);
     void queries.invalidateQueries({ queryKey: ["child-saved-output"] });
   }, [queries, threadId]);
-  const entries = useMemo(
-    () =>
-      history.data?.pages
-        .slice()
-        .reverse()
-        .flatMap((page) => page.entries) ?? [],
-    [history.data],
+  const entries = useMemo(() => {
+    const byPosition = new Map<number, Schema<"TranscriptEntry">>();
+    for (const page of history.data?.pages ?? [])
+      for (const entry of [...(page.boundary_entries ?? []), ...page.entries])
+        byPosition.set(entry.position, entry);
+    return [...byPosition.values()].sort((a, b) => a.position - b.position);
+  }, [history.data]);
+  const turns = useMemo(() => {
+    const byId = new Map<string, Schema<"TranscriptTurn">>();
+    for (const page of history.data?.pages ?? [])
+      for (const turn of page.turns ?? []) byId.set(turn.turn_id, turn);
+    return [...byId.values()].sort(
+      (a, b) => a.input_position - b.input_position,
+    );
+  }, [history.data]);
+  const hasLater = !!history.data?.pages[0]?.newer_cursor;
+  const findTurn = useCallback(
+    (id: string) =>
+      [
+        ...(reader.current?.querySelectorAll<HTMLElement>("[data-turn-id]") ??
+          []),
+      ].find((element) => element.dataset.turnId === id),
+    [],
   );
+  const jumpToInput = (id: string) => {
+    interruptScroll();
+    const target = findTurn(id);
+    pendingJump.current = id;
+    if (!target) setSelectedTurn(id);
+    else {
+      const element = reader.current!;
+      element.scrollTop +=
+        target.getBoundingClientRect().top -
+        element.getBoundingClientRect().top -
+        16;
+      target.focus({ preventScroll: true });
+      readingAnchor.current = captureReadingAnchor(element);
+      pendingJump.current = undefined;
+    }
+  };
+  useLayoutEffect(() => {
+    if (!pendingJump.current || history.isPreviousHistory) return;
+    const target = findTurn(pendingJump.current);
+    const element = reader.current;
+    if (!target || !element) return;
+    element.scrollTop +=
+      target.getBoundingClientRect().top -
+      element.getBoundingClientRect().top -
+      16;
+    target.focus({ preventScroll: true });
+    readingAnchor.current = captureReadingAnchor(element);
+    pendingJump.current = undefined;
+  }, [entries, history.isPreviousHistory, findTurn]);
   useEffect(() => {
     const saved = new Set(
       entries.flatMap((entry) => entry.parts.map(inputSource)),
@@ -224,6 +290,8 @@ function Conversation({
   const previousLocalInput = useRef(latestLocalInput);
   useLayoutEffect(() => {
     if (latestLocalInput && latestLocalInput !== previousLocalInput.current) {
+      setSelectedTurn(undefined);
+      pendingJump.current = undefined;
       follow.current = true;
       setNewOutput(false);
       scrollToLatest(true);
@@ -238,6 +306,7 @@ function Conversation({
   const acknowledged = results.followed.get(threadId);
   useEffect(() => {
     if (
+      hasLater ||
       !pageReady ||
       !tracker ||
       !completionVersion ||
@@ -278,6 +347,7 @@ function Conversation({
     threadId,
     completionVersion,
     acknowledged,
+    hasLater,
     history.data,
   ]);
   const operation = detail.data?.thread.root_activity;
@@ -300,12 +370,14 @@ function Conversation({
   // Advance only after the replacement history query arrives. SSE completion alone
   // is not evidence that continuation was saved.
   const presentation = display.presentationFor(continuation);
-  const showLive = showFocusedOutput(
-    presentation,
-    continuation,
-    operation?.run_id,
-    history.isPreviousHistory,
-  );
+  const showLive =
+    !hasLater &&
+    showFocusedOutput(
+      presentation,
+      continuation,
+      operation?.run_id,
+      history.isPreviousHistory,
+    );
   const liveBlocks = presentation.blocksAfter(continuation);
   const visibleContent = `${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
     showLive
@@ -335,6 +407,13 @@ function Conversation({
       }
       restoreScroll.current = "";
     }
+    if (
+      !follow.current &&
+      !olderAnchor.current &&
+      !restored &&
+      !pendingJump.current
+    )
+      restoreReadingAnchor(element, readingAnchor.current);
     if (olderAnchor.current && !history.isFetchingNextPage) {
       element.scrollTop =
         olderAnchor.current.top +
@@ -351,6 +430,7 @@ function Conversation({
       lastContent.current !== visibleContent
     )
       setNewOutput(true);
+    readingAnchor.current = captureReadingAnchor(element);
     lastContent.current = visibleContent;
   }, [
     pageReady,
@@ -378,6 +458,9 @@ function Conversation({
         scrollFrame.current === null
       )
         scrollToLatest(true);
+      else if (!follow.current && !olderAnchor.current && !pendingJump.current)
+        restoreReadingAnchor(element, readingAnchor.current);
+      readingAnchor.current = captureReadingAnchor(element);
     });
     observer.observe(element);
     observer.observe(content);
@@ -387,11 +470,13 @@ function Conversation({
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
     // Short/context-only pages need no scroll gesture to fill the viewport.
+    // Missing turn details are loaded explicitly, not drained while collapsed.
     if (
       pageReady &&
       element &&
       element.clientHeight > 0 &&
       element.scrollTop < 160 &&
+      !element.querySelector("[data-incomplete-turn]") &&
       history.hasNextPage &&
       !history.isFetching &&
       !history.isFetchNextPageError &&
@@ -490,123 +575,162 @@ function Conversation({
           error={detail.error || history.error || metadata.error}
           retry={reconcile}
         />
-        <div
-          ref={reader}
-          className={styles.reading}
-          onWheel={(event) => {
-            if (event.deltaY < 0) interruptScroll();
-          }}
-          onTouchStart={interruptScroll}
-          onPointerDown={interruptScroll}
-          onKeyDown={(event) => {
-            if (["ArrowUp", "PageUp", "Home"].includes(event.key))
-              interruptScroll();
-          }}
-          onScroll={() => {
-            if (!pageReady) return;
-            const element = reader.current!;
-            // Layout-driven scroll events must not detach an active follower.
-            // After a user gesture, resume only at the actual bottom.
-            if (scrollFrame.current === null && !follow.current)
-              follow.current =
-                element.scrollHeight -
-                  element.scrollTop -
-                  element.clientHeight <=
-                1;
-            if (follow.current) setNewOutput(false);
-            if (
-              element.scrollTop < 160 &&
-              history.hasNextPage &&
-              !history.isFetching &&
-              !history.isFetchNextPageError &&
-              !olderAnchor.current
-            ) {
-              olderAnchor.current = {
-                height: element.scrollHeight,
-                top: element.scrollTop,
-              };
-              void history.fetchNextPage();
-            }
-          }}
-        >
-          <div className={styles.transcript}>
-            {history.isFetchingNextPage && (
-              <small role="status">Loading earlier messages…</small>
-            )}
-            {history.isFetchNextPageError && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  const element = reader.current;
-                  if (element)
-                    olderAnchor.current = {
-                      height: element.scrollHeight,
-                      top: element.scrollTop,
-                    };
-                  void history.fetchNextPage();
-                }}
-              >
-                Retry earlier messages
-              </Button>
-            )}
-            <ConversationTranscript
-              entries={entries}
-              blocks={showLive ? liveBlocks : []}
-              localInputs={draft.localInputs}
-              continuation={continuation}
-              gap={showLive && display.gap}
-              threadId={threadId}
-            />
-            <RootFailureNotice
-              threadId={threadId}
-              receipt={receipt}
-              display={display}
-              retry={
-                thread?.archived
-                  ? undefined
-                  : () => {
-                      void submitContinuation(
-                        draft,
-                        transport,
-                        threadId,
-                        tracker ? () => tracker.beforeRun(threadId) : undefined,
-                      ).finally(reconcile);
-                    }
+        <div className={styles.readerFrame}>
+          <InputNavigation
+            threadId={threadId}
+            continuation={continuation}
+            localInputs={draft.localInputs}
+            reader={reader}
+            revision={visibleContent}
+            onSelect={jumpToInput}
+          />
+          <div
+            ref={reader}
+            className={styles.reading}
+            onWheel={(event) => {
+              if (event.deltaY < 0) interruptScroll();
+            }}
+            onTouchStart={interruptScroll}
+            onPointerDown={interruptScroll}
+            onKeyDown={(event) => {
+              if (["ArrowUp", "PageUp", "Home"].includes(event.key))
+                interruptScroll();
+            }}
+            onScroll={() => {
+              if (!pageReady) return;
+              const element = reader.current!;
+              // Layout-driven scroll events must not detach an active follower.
+              // After a user gesture, resume only at the actual bottom.
+              if (scrollFrame.current === null && !follow.current)
+                follow.current =
+                  !hasLater &&
+                  element.scrollHeight -
+                    element.scrollTop -
+                    element.clientHeight <=
+                    1;
+              if (follow.current) setNewOutput(false);
+              readingAnchor.current = captureReadingAnchor(element);
+              if (
+                element.scrollTop < 160 &&
+                !element.querySelector("[data-incomplete-turn]") &&
+                history.hasNextPage &&
+                !history.isFetching &&
+                !history.isFetchNextPageError &&
+                !olderAnchor.current
+              ) {
+                olderAnchor.current = {
+                  height: element.scrollHeight,
+                  top: element.scrollTop,
+                };
+                void history.fetchNextPage();
               }
-              retryDisabled={
-                !detail.data?.available_actions?.includes("run") ||
-                thread?.root_activity.state !== "inactive" ||
-                agentSelection.isPending ||
-                agentSelection.isError ||
-                detail.isError ||
-                draft.submission.kind === "pending" ||
-                draft.submission.kind === "unknown" ||
-                (draft.submission.kind === "accepted" &&
-                  draft.submission.receipt !== receipt)
-              }
-            />
-            <RecoveryNotice recovery={display.recovery} />
-            {!!detail.data?.deferred_requests?.length && (
-              <Decisions
+            }}
+          >
+            <div className={styles.transcript}>
+              {history.isFetchingNextPage && (
+                <small role="status">Loading earlier messages…</small>
+              )}
+              {history.isFetchNextPageError && (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    const element = reader.current;
+                    if (element)
+                      olderAnchor.current = {
+                        height: element.scrollHeight,
+                        top: element.scrollTop,
+                      };
+                    void history.fetchNextPage();
+                  }}
+                >
+                  Retry earlier messages
+                </Button>
+              )}
+              <ConversationTranscript
+                entries={entries}
+                blocks={showLive ? liveBlocks : []}
+                localInputs={hasLater ? [] : draft.localInputs}
+                turns={turns}
+                loadEarlier={
+                  history.hasNextPage
+                    ? () => {
+                        interruptScroll();
+                        void history.fetchNextPage();
+                      }
+                    : undefined
+                }
+                loadingEarlier={history.isFetchingNextPage}
+                continuation={continuation}
+                gap={showLive && display.gap}
                 threadId={threadId}
-                continuation={detail.data?.continuation_id}
-                reconcile={reconcile}
               />
-            )}
-            {!entries.length &&
-              !draft.localInputs.length &&
-              thread?.root_activity.state === "inactive" &&
-              !showLive &&
-              !history.isPending &&
-              !history.error && (
-                <div className={styles.empty}>
-                  <h2>Start something together.</h2>
-                  <p>
-                    Write a prompt below. People on this conversation can edit
-                    the same input.
-                  </p>
+              {hasLater && (
+                <div className={styles.historyActions}>
+                  <Button
+                    variant="ghost"
+                    loading={history.isFetchingPreviousPage}
+                    onClick={() => void history.fetchPreviousPage()}
+                  >
+                    Load later messages
+                  </Button>
+                  <Button variant="ghost" onClick={backToLatest}>
+                    Back to latest
+                  </Button>
                 </div>
               )}
+              <RootFailureNotice
+                threadId={threadId}
+                receipt={receipt}
+                display={display}
+                retry={
+                  thread?.archived
+                    ? undefined
+                    : () => {
+                        void submitContinuation(
+                          draft,
+                          transport,
+                          threadId,
+                          tracker
+                            ? () => tracker.beforeRun(threadId)
+                            : undefined,
+                        ).finally(reconcile);
+                      }
+                }
+                retryDisabled={
+                  !detail.data?.available_actions?.includes("run") ||
+                  thread?.root_activity.state !== "inactive" ||
+                  agentSelection.isPending ||
+                  agentSelection.isError ||
+                  detail.isError ||
+                  draft.submission.kind === "pending" ||
+                  draft.submission.kind === "unknown" ||
+                  (draft.submission.kind === "accepted" &&
+                    draft.submission.receipt !== receipt)
+                }
+              />
+              <RecoveryNotice recovery={display.recovery} />
+              {!!detail.data?.deferred_requests?.length && (
+                <Decisions
+                  threadId={threadId}
+                  continuation={detail.data?.continuation_id}
+                  reconcile={reconcile}
+                />
+              )}
+              {!entries.length &&
+                !draft.localInputs.length &&
+                thread?.root_activity.state === "inactive" &&
+                !showLive &&
+                !history.isPending &&
+                !history.error && (
+                  <div className={styles.empty}>
+                    <h2>Start something together.</h2>
+                    <p>
+                      Write a prompt below. People on this conversation can edit
+                      the same input.
+                    </p>
+                  </div>
+                )}
+            </div>
           </div>
         </div>
         {history.isPending &&
@@ -617,11 +741,7 @@ function Conversation({
           <Button
             className={styles.newOutput}
             variant="outline"
-            onClick={() => {
-              follow.current = true;
-              setNewOutput(false);
-              scrollToLatest();
-            }}
+            onClick={backToLatest}
           >
             <ArrowDown />
             New output

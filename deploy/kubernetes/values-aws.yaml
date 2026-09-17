@@ -1,0 +1,44 @@
+# Replace every REPLACE_* value; external infrastructure must already exist.
+profile: distributed
+roles:
+  control:
+    replicaCount: 2
+  worker:
+    replicaCount: 2
+  connectivity:
+    replicaCount: 2
+environmentName: aws
+image:
+  repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/a13n-service
+  tag: REPLACE_IMMUTABLE_TAG
+publicOrigin: https://agents.example.com
+objects:
+  bucket: REPLACE_S3_BUCKET
+  region: us-east-1
+persistence:
+  existingClaim: a13n-files
+ingress:
+  enabled: false # Enable after the controller, certificate and DNS are prepared.
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: REPLACE_ACM_CERTIFICATE_ARN
+    alb.ingress.kubernetes.io/healthcheck-path: /readyz
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=3600
+# Associate this release's ServiceAccount with an IAM role through EKS Pod Identity
+# or IRSA. The role must permit the Service object-store operations on the bucket.
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+console:
+  replicaCount: 2
+  image:
+    repository: REPLACE_ACCOUNT.dkr.ecr.us-east-1.amazonaws.com/a13n-console
+    tag: REPLACE_IMMUTABLE_TAG

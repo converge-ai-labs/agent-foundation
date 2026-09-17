@@ -50,44 +50,14 @@ class RunStreamEvent(_StrictModel):
         return self
 
 
-class RetainedRunStreamEvent(_StrictModel):
-    stream_id: RedisStreamId
-    event: RunStreamEvent
-
-
 class RetainedItem(_StrictModel):
     id: ItemId
     kind: str = Field(min_length=1, max_length=64)
-    state: Literal["completed", "interrupted", "failed"]
+    state: Literal["in_progress", "completed", "interrupted", "failed"]
     parent_item_id: ItemId | None = None
     first_stream_id: RedisStreamId
     last_stream_id: RedisStreamId
     content: JsonValue
-
-
-class RunReplaySnapshot(_StrictModel):
-    schema_version: Literal["1"] = "1"
-    run_id: ResourceId
-    thread_id: ResourceId
-    stream_key_digest_sha256: Annotated[str, StringConstraints(pattern=r"^[a-f0-9]{64}$")]
-    first_stream_id: RedisStreamId
-    last_stream_id: RedisStreamId
-    closed_at: UtcDateTime
-    source_run_attempt_ids: tuple[ResourceId, ...]
-    events: tuple[RetainedRunStreamEvent, ...]
-    items: tuple[RetainedItem, ...]
-
-    @model_validator(mode="after")
-    def validate_complete_source(self) -> RunReplaySnapshot:
-        if not self.events:
-            raise ValueError("retained replay requires at least one event")
-        if self.first_stream_id != self.events[0].stream_id or self.last_stream_id != self.events[-1].stream_id:
-            raise ValueError("retained replay boundaries do not match its events")
-        if any(event.event.run_id != self.run_id or event.event.thread_id != self.thread_id for event in self.events):
-            raise ValueError("retained replay contains an event from another Run")
-        if len(set(self.source_run_attempt_ids)) != len(self.source_run_attempt_ids):
-            raise ValueError("retained replay attempt identities must be unique")
-        return self
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +74,9 @@ class RunStreamPage:
     high_watermark: str | None
     closed: bool
     trimmed: bool
+    closed_at: datetime | None = None
+    pending_events: int = 0
+    pending_bytes: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +108,10 @@ class PublicationContinuityLost(PublicationUnavailable):
 
 class PublicationPending(PublicationUnavailable):
     """A different unfinished publication must be resolved before this operation."""
+
+
+class PublicationBackpressure(PublicationUnavailable):
+    """Unpersisted presentation reached the configured admission bound."""
 
 
 RecoveryReason = Literal["lease_expired", "retry_after_failure", "planned_handoff", "pending_input"]
@@ -177,8 +154,6 @@ __all__ = [
     "CompleteRunStream",
     "RetainedItem",
     "RetainedReplayUnavailable",
-    "RetainedRunStreamEvent",
-    "RunReplaySnapshot",
     "RunStreamClosed",
     "RunStreamEntry",
     "RunStreamError",

@@ -12,7 +12,12 @@ from a13n_service.run_stream import (
     RunStreamReplayGap,
     deterministic_run_stream_event_id,
 )
-from a13n_service.run_stream.domain import PublicationPending, PublicationRejected, PublicationUnavailable
+from a13n_service.run_stream.domain import (
+    PublicationBackpressure,
+    PublicationPending,
+    PublicationRejected,
+    PublicationUnavailable,
+)
 from redis.asyncio import Redis
 from tests.run_stream.support import activate_stream, opening_event, publication_failure
 
@@ -73,8 +78,14 @@ async def test_trim_reports_explicit_replay_gap_and_blocks_snapshot(redis_client
     third = await stream.append(ORGANIZATION_ID, _event(3), attempt_number=1)
     await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
 
+    before = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    assert len(before.items) == 5 and not before.trimmed
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=third, finalized=True)
     with pytest.raises(RunStreamReplayGap) as captured:
-        await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=first, limit=10)
+        await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    # A cursor at the last removed entry still has a continuous suffix.
+    suffix = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=first, limit=10)
+    assert [entry.stream_id for entry in suffix.items] == [second, third]
     assert captured.value.retained_floor == second
     assert captured.value.high_watermark == third
     with pytest.raises(RetainedReplayUnavailable, match="trimmed"):
@@ -219,6 +230,7 @@ async def test_trimmed_event_keeps_active_deduplication_evidence(redis_client: R
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
     second = await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=second, finalized=False)
     assert await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1) == first
     page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=second, limit=10)
     assert not page.items and page.high_watermark == second
@@ -261,7 +273,8 @@ async def test_partial_activation_blocks_all_admission_until_exact_retry(
     )
     events_key, metadata_key = _keys(ORGANIZATION_ID, RUN_ID)
     rows = await redis_client.xrange(events_key)
-    assert len(rows) == 1 and rows[0][0].decode() == result.recovery_stream_id
+    assert len(rows) == 4 and rows[-1][0].decode() == result.recovery_stream_id
+    assert await redis_client.hget(metadata_key, "pending_events") == b"4"
     assert await redis_client.hget(metadata_key, "pending") is None
 
 
@@ -335,3 +348,90 @@ async def test_retirement_rejects_foreign_metadata_without_mutating_keys(redis_c
     assert await redis_client.hgetall(metadata) == before
     assert await redis_client.xrange(events) == rows
     assert await redis_client.ttl(events) == await redis_client.ttl(metadata) == -1
+
+
+async def test_backpressure_releases_only_after_durable_acknowledgement(redis_client: Redis) -> None:
+    stream = RedisRunStream(redis_client, max_events=1, max_pending_events=3, backpressure_timeout_seconds=0)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
+    with pytest.raises(PublicationBackpressure):
+        await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
+    # Deduplicated retries consume no backlog and a rejected write leaves no barrier.
+    assert await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1) == first
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
+    assert len(page.items) == 3 and not page.trimmed
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=first, finalized=False)
+    second = await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=first, limit=10)
+    assert page.next_stream_id == second
+
+
+async def test_close_waits_for_final_display_before_expiry(redis_client: Redis) -> None:
+    from a13n_service.run_stream.redis import _keys
+
+    stream = RedisRunStream(redis_client, closed_ttl_seconds=60)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
+    keys = _keys(ORGANIZATION_ID, RUN_ID)
+    assert all([await redis_client.ttl(key) == -1 for key in keys])
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=opening.leased_stream_id, finalized=True)
+    assert all([0 < await redis_client.ttl(key) <= 60 for key in keys])
+
+
+async def test_acknowledgement_never_trims_beyond_durable_cursor(redis_client: Redis) -> None:
+    stream = RedisRunStream(redis_client, max_events=1)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
+    second = await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=first, finalized=False)
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=opening.leased_stream_id, finalized=False)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=first, limit=10)
+    assert page.retained_floor == first and page.next_stream_id == second
+    with pytest.raises(PublicationUnavailable):
+        await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=second, finalized=True)
+    with pytest.raises(PublicationUnavailable):
+        await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor="9999999999999999-0", finalized=False)
+
+
+async def test_byte_bound_and_partial_acknowledgement_recovery(redis_client: Redis) -> None:
+    from a13n_service.run_stream.redis import _SCRIPT, _keys
+
+    stream = RedisRunStream(redis_client, max_events=1, max_pending_bytes=4096, backpressure_timeout_seconds=0)
+    await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
+    with pytest.raises(PublicationBackpressure):
+        await stream.append(
+            ORGANIZATION_ID, _event(2).model_copy(update={"payload": {"text": "x" * 4096}}), attempt_number=1
+        )
+    marker = "    redis.call('HSET', metadata, 'durable_cursor', cursor,"
+    stream._script = redis_client.register_script(
+        _SCRIPT.replace(marker, "    error('injected failure after trim')\n" + marker)
+    )
+    with pytest.raises(PublicationUnavailable):
+        await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=first, finalized=False)
+    stream._script = redis_client.register_script(_SCRIPT)
+    with pytest.raises(PublicationPending):
+        await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=first, finalized=False)
+    await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=first, finalized=False)
+    _, metadata = _keys(ORGANIZATION_ID, RUN_ID)
+    assert await redis_client.hget(metadata, "pending_bytes") == b"0"
+    assert await redis_client.hget(metadata, "pending_events") == b"0"
+    await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
+
+
+async def test_backpressured_publisher_resumes_after_consumer_progress(redis_client: Redis) -> None:
+    from anyio import create_task_group, sleep
+
+    stream = RedisRunStream(redis_client, max_pending_events=2, backpressure_timeout_seconds=1)
+    opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
+
+    async def acknowledge() -> None:
+        await sleep(0.1)
+        await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=opening.leased_stream_id, finalized=False)
+
+    async with create_task_group() as group:
+        group.start_soon(acknowledge)
+        cursor = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
+    page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=opening.leased_stream_id, limit=10)
+    assert page.next_stream_id == cursor

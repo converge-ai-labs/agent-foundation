@@ -14,7 +14,7 @@ from a13n_service.interactions.models import RunRecord
 from a13n_service.skills.models import SkillRevisionRecord, SkillUploadRecord
 
 _RUN = re.compile(
-    r"organizations/([^/]+)/runs/([^/]+)/(?:state\.json|replay/version-1\.json|payloads/[^/]+/[0-9a-f]{64}\.json)"
+    r"organizations/([^/]+)/runs/([^/]+)/(?:state\.json|display_messages\.json|payloads/[^/]+/[0-9a-f]{64}\.json)"
 )
 _AGUI = re.compile(r"organizations/([^/]+)/gateway/hosted-agui/([^/]+)/replay/version-1\.json")
 _ASSET = re.compile(r"organizations/([^/]+)/workspaces/([^/]+)/assets/version-1/([^/]+)/content")

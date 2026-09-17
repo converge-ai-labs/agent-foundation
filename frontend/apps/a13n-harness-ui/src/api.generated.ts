@@ -1155,6 +1155,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/inputs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Transcript Inputs */
+        get: operations["transcript_inputs_api_threads__thread_id__inputs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/touch": {
         parameters: {
             query?: never;
@@ -4195,6 +4212,15 @@ export interface components {
             /** Parts */
             parts: components["schemas"]["TranscriptPart"][];
         };
+        /** TranscriptInputPage */
+        TranscriptInputPage: {
+            /** Continuation Id */
+            continuation_id: string;
+            /** Turns */
+            turns: components["schemas"]["TranscriptTurn"][];
+            /** Next Cursor */
+            next_cursor?: string | null;
+        };
         /** TranscriptPage */
         TranscriptPage: {
             /**
@@ -4210,6 +4236,18 @@ export interface components {
             total: number;
             /** Next Cursor */
             next_cursor?: string | null;
+            /** Newer Cursor */
+            newer_cursor?: string | null;
+            /**
+             * Turns
+             * @default []
+             */
+            turns?: components["schemas"]["TranscriptTurn"][];
+            /**
+             * Boundary Entries
+             * @default []
+             */
+            boundary_entries?: components["schemas"]["TranscriptEntry"][];
         };
         /** TranscriptPart */
         TranscriptPart: {
@@ -4242,6 +4280,34 @@ export interface components {
              * @default false
              */
             value_omitted?: boolean;
+        };
+        /**
+         * TranscriptTurn
+         * @description One ordinary input and its execution, including steering and resumes.
+         */
+        TranscriptTurn: {
+            /** Turn Id */
+            turn_id: string;
+            /** Input Position */
+            input_position: number;
+            /** End Position */
+            end_position: number;
+            /** Final Position */
+            final_position?: number | null;
+            /** Preview */
+            preview: string;
+            /** Timestamp */
+            timestamp?: string | null;
+            /**
+             * Tool Count
+             * @default 0
+             */
+            tool_count?: number;
+            /**
+             * Steering Count
+             * @default 0
+             */
+            steering_count?: number;
         };
         /** UsageTotals */
         UsageTotals: {
@@ -7345,6 +7411,7 @@ export interface operations {
                 expected_continuation_id?: string | null;
                 cursor?: string | null;
                 limit?: number;
+                turn_id?: string | null;
             };
             header?: never;
             path: {
@@ -7361,6 +7428,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TranscriptPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transcript_inputs_api_threads__thread_id__inputs_get: {
+        parameters: {
+            query?: {
+                expected_continuation_id?: string | null;
+                cursor?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TranscriptInputPage"];
                 };
             };
             /** @description Validation Error */

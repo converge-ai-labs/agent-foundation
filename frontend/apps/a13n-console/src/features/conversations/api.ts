@@ -1,3 +1,4 @@
+import { readDisplay } from "./display";
 import type { Client, paths } from "../../service-client";
 import { ApiError } from "../../service-client";
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
@@ -91,24 +92,8 @@ export function conversationQueries(client: Client, workspaceId: string) {
     items: (run_id: string) =>
       queryOptions({
         queryKey: keys.items(run_id),
-        queryFn: async ({ signal }) => {
-          try {
-            const items = await allPages((cursor) =>
-              client.http
-                .GET("/api/v1/runs/{run_id}/items", {
-                  params: { path: { run_id }, query: { cursor, limit: 100 } },
-                  headers,
-                  signal,
-                })
-                .then(data),
-            );
-            return { available: true, items };
-          } catch (error) {
-            if (error instanceof ApiError && error.code === "items_unavailable")
-              return { available: false, items: [] };
-            throw error;
-          }
-        },
+        queryFn: ({ signal }) =>
+          readDisplay(client, workspaceId, run_id, signal),
       }),
     lineage: (run_id: string) =>
       queryOptions({

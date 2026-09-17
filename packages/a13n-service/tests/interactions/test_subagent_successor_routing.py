@@ -15,7 +15,7 @@ from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.objects import RunPayloadStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.queue import QueuedSubmissionStore
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     AsyncSubagentResultPublisher,
@@ -47,7 +47,7 @@ async def test_unbound_result_rebinds_to_a_current_active_run_and_signals_it(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_1717171717171717",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -60,7 +60,7 @@ async def test_unbound_result_rebinds_to_a_current_active_run_and_signals_it(
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         bindings=ordinary_memory(interaction_sessions),
         signals=signals,
         clock=lambda: NOW + timedelta(seconds=6),
@@ -107,7 +107,7 @@ async def test_queued_submission_keeps_precedence_over_unbound_result(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_cccccccccccccccc",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -115,7 +115,7 @@ async def test_queued_submission_keeps_precedence_over_unbound_result(
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=6),
         lifecycle=test_lifecycle_writer(),
@@ -153,7 +153,7 @@ async def test_waiting_parent_retains_result_without_creating_successor(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_dddddddddddddddd",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -162,7 +162,7 @@ async def test_waiting_parent_retains_result_without_creating_successor(
     reconciler = AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         bindings=ordinary_memory(interaction_sessions),
         lifecycle=test_lifecycle_writer(),
     )
@@ -188,7 +188,7 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_1515151515151515",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -247,7 +247,7 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         bindings=ordinary_memory(interaction_sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_1616161616161616",
         clock=lambda: NOW + timedelta(seconds=8),
@@ -283,7 +283,7 @@ async def test_automatic_successor_reauthorizes_origin_principal_before_commit(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_eeeeeeeeeeeeeeee",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -298,7 +298,7 @@ async def test_automatic_successor_reauthorizes_origin_principal_before_commit(
         await AsyncSubagentSuccessorReconciler(
             interaction_sessions,
             states,
-            RunReplayStore(interaction_object_store),
+            RunDisplayStore(interaction_object_store),
             bindings=ordinary_memory(interaction_sessions),
             run_id_factory=lambda _organization, _entry, _parent: "run_eeeeeeeeeeeeeeee",
             clock=lambda: NOW + timedelta(seconds=6),
@@ -331,7 +331,7 @@ async def test_automatic_successor_reauthorizes_child_result_before_commit(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_ffffffffffffffff",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -364,7 +364,7 @@ async def test_automatic_successor_reauthorizes_child_result_before_commit(
         await AsyncSubagentSuccessorReconciler(
             interaction_sessions,
             states,
-            RunReplayStore(interaction_object_store),
+            RunDisplayStore(interaction_object_store),
             bindings=ordinary_memory(interaction_sessions),
             run_id_factory=lambda _organization, _entry, _parent: "run_ffffffffffffffff",
             clock=lambda: NOW + timedelta(seconds=6),

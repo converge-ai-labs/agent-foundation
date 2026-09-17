@@ -216,14 +216,26 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `runs`
 
-| Setting                          | Environment variable                         | Type / choices | Constraints and default                            |
-| -------------------------------- | -------------------------------------------- | -------------- | -------------------------------------------------- |
-| `runs.stream_max_events`         | `A13N_SERVICE_RUN_STREAM_MAX_EVENTS`         | integer        | minimum=1; maximum=100000; default=4096            |
-| `runs.stream_max_event_bytes`    | `A13N_SERVICE_RUN_STREAM_MAX_EVENT_BYTES`    | integer        | minimum=1024; maximum=16777216; default=327680     |
-| `runs.stream_closed_ttl_seconds` | `A13N_SERVICE_RUN_STREAM_CLOSED_TTL_SECONDS` | integer        | minimum=60; maximum=31536000; default=86400        |
-| `runs.replay_max_events`         | `A13N_SERVICE_RUN_REPLAY_MAX_EVENTS`         | integer        | minimum=1; maximum=100000; default=4096            |
-| `runs.replay_max_items`          | `A13N_SERVICE_RUN_REPLAY_MAX_ITEMS`          | integer        | minimum=1; maximum=100000; default=2048            |
-| `runs.replay_max_bytes`          | `A13N_SERVICE_RUN_REPLAY_MAX_BYTES`          | integer        | minimum=1024; maximum=1073741824; default=16777216 |
+| Setting                                    | Environment variable                                   | Type / choices | Constraints and default                            |
+| ------------------------------------------ | ------------------------------------------------------ | -------------- | -------------------------------------------------- |
+| `runs.stream_max_events`                   | `A13N_SERVICE_RUN_STREAM_MAX_EVENTS`                   | integer        | minimum=1; maximum=100000; default=4096            |
+| `runs.stream_max_event_bytes`              | `A13N_SERVICE_RUN_STREAM_MAX_EVENT_BYTES`              | integer        | minimum=1024; maximum=16777216; default=327680     |
+| `runs.stream_closed_ttl_seconds`           | `A13N_SERVICE_RUN_STREAM_CLOSED_TTL_SECONDS`           | integer        | minimum=60; maximum=31536000; default=86400        |
+| `runs.hosted_archive_max_events`           | `A13N_SERVICE_RUN_HOSTED_ARCHIVE_MAX_EVENTS`           | integer        | minimum=1; maximum=100000; default=4096            |
+| `runs.display_max_items`                   | `A13N_SERVICE_RUN_DISPLAY_MAX_ITEMS`                   | integer        | minimum=1; maximum=100000; default=2048            |
+| `runs.display_max_bytes`                   | `A13N_SERVICE_RUN_DISPLAY_MAX_BYTES`                   | integer        | minimum=1024; maximum=1073741824; default=16777216 |
+| `runs.hosted_archive_max_bytes`            | `A13N_SERVICE_RUN_HOSTED_ARCHIVE_MAX_BYTES`            | integer        | minimum=1024; maximum=1073741824; default=16777216 |
+| `runs.stream_max_pending_events`           | `A13N_SERVICE_RUN_STREAM_MAX_PENDING_EVENTS`           | integer        | minimum=1; maximum=1000000; default=16384          |
+| `runs.stream_max_pending_bytes`            | `A13N_SERVICE_RUN_STREAM_MAX_PENDING_BYTES`            | integer        | minimum=1024; maximum=1073741824; default=33554432 |
+| `runs.stream_backpressure_timeout_seconds` | `A13N_SERVICE_RUN_STREAM_BACKPRESSURE_TIMEOUT_SECONDS` | number         | maximum=300; exclusiveMinimum=0; default=5         |
+| `runs.display_concurrency`                 | `A13N_SERVICE_RUN_DISPLAY_CONCURRENCY`                 | integer        | minimum=1; maximum=128; default=4                  |
+| `runs.display_candidate_batch_size`        | `A13N_SERVICE_RUN_DISPLAY_CANDIDATE_BATCH_SIZE`        | integer        | minimum=1; maximum=1000; default=32                |
+| `runs.display_event_batch_size`            | `A13N_SERVICE_RUN_DISPLAY_EVENT_BATCH_SIZE`            | integer        | minimum=1; maximum=1000; default=64                |
+| `runs.display_flush_events`                | `A13N_SERVICE_RUN_DISPLAY_FLUSH_EVENTS`                | integer        | minimum=1; maximum=100000; default=256             |
+| `runs.display_flush_bytes`                 | `A13N_SERVICE_RUN_DISPLAY_FLUSH_BYTES`                 | integer        | minimum=1024; maximum=67108864; default=1048576    |
+| `runs.display_flush_interval_seconds`      | `A13N_SERVICE_RUN_DISPLAY_FLUSH_INTERVAL_SECONDS`      | number         | maximum=60; exclusiveMinimum=0; default=1          |
+| `runs.display_poll_interval_seconds`       | `A13N_SERVICE_RUN_DISPLAY_POLL_INTERVAL_SECONDS`       | number         | maximum=60; exclusiveMinimum=0; default=0.25       |
+| `runs.display_operation_timeout_seconds`   | `A13N_SERVICE_RUN_DISPLAY_OPERATION_TIMEOUT_SECONDS`   | number         | maximum=300; exclusiveMinimum=0; default=10        |
 
 ## `gateway`
 

@@ -131,6 +131,7 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSelectorCatalog,
     ThreadSummary,
+    TranscriptInputPage,
     TranscriptPage,
 )
 from a13n_harness_ui.thread_files import (
@@ -1249,9 +1250,28 @@ def create_webui(
         expected_continuation_id: str | None = None,
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        turn_id: str | None = None,
     ) -> TranscriptPage:
         return await app().get_thread_transcript(
-            thread_id=thread_id, expected_continuation_id=expected_continuation_id, cursor=cursor, limit=limit
+            thread_id=thread_id,
+            expected_continuation_id=expected_continuation_id,
+            cursor=cursor,
+            limit=limit,
+            turn_id=turn_id,
+        )
+
+    @server.get("/api/threads/{thread_id}/inputs", response_model=TranscriptInputPage)
+    async def transcript_inputs(
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+        cursor: str | None = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    ) -> TranscriptInputPage:
+        return await app().get_thread_inputs(
+            thread_id=thread_id,
+            expected_continuation_id=expected_continuation_id,
+            cursor=cursor,
+            limit=limit,
         )
 
     @server.post("/api/threads/{thread_id}/touch", response_model=ThreadSummary)

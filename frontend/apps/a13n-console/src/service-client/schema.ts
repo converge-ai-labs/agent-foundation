@@ -7458,10 +7458,20 @@ export interface components {
     };
     /** ItemCollection */
     ItemCollection: {
+      /** Complete */
+      complete: boolean;
+      /** Finalized */
+      finalized: boolean;
+      /** Incomplete Reason */
+      incomplete_reason: string | null;
       /** Items */
       items: components["schemas"]["ItemResource"][];
       /** Next Cursor */
       next_cursor: string | null;
+      /** Projection Cursor */
+      projection_cursor: string | null;
+      /** Snapshot Version */
+      snapshot_version: number;
     };
     /** ItemResource */
     ItemResource: {
@@ -19256,6 +19266,7 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        order?: "asc" | "desc";
       };
       header?: never;
       path: {

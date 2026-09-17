@@ -1211,3 +1211,141 @@ it.each([false, true])(
     expect(historyRequests).toHaveLength(1);
   },
 );
+
+it("loads missing turn details only on request instead of draining folded history", async () => {
+  const requests: string[] = [];
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    requests.push(url.search);
+    return json({
+      continuation_id: "initial:one",
+      entries: [
+        {
+          position: 100,
+          message_kind: "response",
+          parts: [{ kind: "assistant", text: "Short final" }],
+        },
+      ],
+      boundary_entries: [
+        {
+          position: 0,
+          message_kind: "request",
+          parts: [{ kind: "user", text: "Long task" }],
+        },
+      ],
+      turns: [
+        {
+          turn_id: "long",
+          input_position: 0,
+          end_position: 101,
+          final_position: 100,
+          preview: "Long task",
+          tool_count: 50,
+          steering_count: 0,
+        },
+      ],
+      next_cursor: url.searchParams.has("cursor") ? null : "older",
+    });
+  });
+  const view = mount(`/threads/${id}`);
+  const reader = view.container.querySelector(
+    '[class*="reading"]',
+  )! as HTMLElement;
+  Object.defineProperties(reader, {
+    clientHeight: { get: () => 600 },
+    scrollHeight: { get: () => 300 },
+    scrollTop: { get: () => 0, set: () => {} },
+  });
+  const toggle = await screen.findByRole("button", {
+    name: /Execution details/,
+  });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.scroll(reader);
+  await act(async () => {});
+  expect(requests).toHaveLength(1);
+  fireEvent.click(toggle);
+  fireEvent.click(screen.getByRole("button", { name: "Load earlier steps" }));
+  await waitFor(() => expect(requests).toHaveLength(2));
+  expect(requests[1]).toContain("cursor=older");
+});
+
+it("returns to the latest window when New output is clicked from a historical input", async () => {
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    const turn = (old: boolean) => ({
+      turn_id: old ? "old" : "latest",
+      input_position: old ? 0 : 10,
+      end_position: old ? 2 : 12,
+      final_position: old ? 1 : 11,
+      preview: old ? "Earlier task" : "Latest task",
+      tool_count: 0,
+      steering_count: 0,
+    });
+    if (url.pathname.endsWith("/inputs"))
+      return json({
+        continuation_id: "initial:one",
+        turns: [turn(true), turn(false)],
+      });
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    const old = url.searchParams.get("turn_id") === "old";
+    return json({
+      continuation_id: "initial:one",
+      entries: [
+        {
+          position: old ? 0 : 10,
+          message_kind: "request",
+          parts: [{ kind: "user", text: old ? "Earlier task" : "Latest task" }],
+        },
+        {
+          position: old ? 1 : 11,
+          message_kind: "response",
+          parts: [
+            {
+              kind: "assistant",
+              text: old ? "Earlier answer" : "Latest answer",
+            },
+          ],
+        },
+      ],
+      turns: [turn(old)],
+      newer_cursor: old ? "later" : null,
+    });
+  });
+  mount(`/threads/${id}`);
+  await screen.findByText("Latest answer");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Input 1: Earlier task" }),
+  );
+  await screen.findByText("Earlier answer");
+  expect(screen.queryByText("Latest answer")).toBeNull();
+  // A refreshed checkpoint adds output while this historical window is open.
+  await act(async () => {
+    queries.setQueriesData<{ pages: Schema<"TranscriptPage">[] }>(
+      { queryKey: ["thread", id, "history", null, "old"] },
+      (current) =>
+        current && {
+          ...current,
+          pages: current.pages.map((page) => ({
+            ...page,
+            entries: [
+              ...page.entries,
+              {
+                position: 2,
+                message_kind: "response",
+                parts: [
+                  { kind: "assistant", text: "Additional checkpoint output" },
+                ],
+              },
+            ],
+          })),
+        },
+    );
+  });
+  fireEvent.click(await screen.findByRole("button", { name: "New output" }));
+  await screen.findByText("Latest answer");
+  expect(screen.queryByText("Earlier answer")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Back to latest" })).toBeNull();
+});

@@ -11,15 +11,16 @@ from a13n_service.gateway.native_streaming import NativeRunStreamService, Native
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.http_errors import application_error_status
 from a13n_service.run_stream import (
-    CompleteRunStream,
     RedisRunStream,
-    RunReplayStore,
+    RunDisplayStore,
     RunStreamEvent,
     RunStreamReplayGap,
     deterministic_item_id,
     deterministic_run_stream_event_id,
     run_stream_key_digest_sha256,
 )
+from a13n_service.run_stream.display_model import RunDisplaySnapshot
+from a13n_service.run_stream.display_projection import project_display
 from a13n_service.storage.config import RedisMemoryConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.redis import open_redis
@@ -33,15 +34,15 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def native_replay(tmp_path) -> RunReplayStore:
+async def native_replay(tmp_path) -> RunDisplayStore:
     objects = await LocalObjectStore.create(tmp_path / "objects")
-    return RunReplayStore(objects)
+    return RunDisplayStore(objects)
 
 
 @pytest.fixture
 async def native_stream_service(
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
-    native_replay: RunReplayStore,
+    native_replay: RunDisplayStore,
 ) -> AsyncIterator[tuple[NativeRunStreamService, RedisRunStream]]:
     await seed_run_and_secret(lifecycle_interaction_sessions)
     await seed_hook_actor_access(lifecycle_interaction_sessions)
@@ -51,7 +52,6 @@ async def native_stream_service(
         service = NativeRunStreamService(
             lifecycle_interaction_sessions,
             stream,
-            native_replay,
             page_size=100,
             poll_interval_seconds=0.001,
             heartbeat_interval_seconds=1,
@@ -181,9 +181,9 @@ async def test_native_recovery_uses_source_cursor_and_is_not_repeated_after_boun
 
 
 @pytest.mark.parametrize("retained", [False, True])
-async def test_legacy_live_and_retained_events_and_items_hide_internal_fields(
+async def test_live_events_and_display_items_hide_internal_fields(
     native_stream_service,
-    native_replay: RunReplayStore,
+    native_replay: RunDisplayStore,
     lifecycle_interaction_sessions,
     monkeypatch: pytest.MonkeyPatch,
     retained: bool,
@@ -233,15 +233,18 @@ async def test_legacy_live_and_retained_events_and_items_hide_internal_fields(
         positions.append(await stream.append_lifecycle(ORGANIZATION_ID, source))
     await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW + timedelta(seconds=20))
     page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=100)
-    await native_replay.publish(
-        ORGANIZATION_ID,
-        RUN_ID,
-        CompleteRunStream(
-            entries=page.items,
-            closed_at=NOW + timedelta(seconds=20),
+    snapshot = project_display(
+        RunDisplaySnapshot(
+            version=1,
+            run_id=RUN_ID,
+            thread_id=THREAD_ID,
+            cursor=None,
             stream_key_digest_sha256=run_stream_key_digest_sha256(ORGANIZATION_ID, RUN_ID),
         ),
-    )
+        page.items,
+        closed_at=NOW + timedelta(seconds=20),
+    ).model_copy(update={"version": 1})
+    await native_replay.publish(ORGANIZATION_ID, snapshot, previous=None)
     if retained:
         monkeypatch.setattr(
             stream,
@@ -253,24 +256,29 @@ async def test_legacy_live_and_retained_events_and_items_hide_internal_fields(
                 )
             ),
         )
-    attachment = await service.attach(
-        actor=hook_actor(),
-        run_id=RUN_ID,
-        after_stream_id=opening.leased_stream_id,
-    )
-    frames = [frame.decode() async for frame in service.events(attachment)]
-    assert len(frames) == 2
-    assert all("wrk_private" not in frame and "object_key" not in frame for frame in frames)
-    assert frames[0].startswith(f"id: {positions[0]}\nevent: run_attempt.failed\n")
-    payloads = [json.loads(frame.split("data: ", 1)[1])["payload"] for frame in frames]
-    assert payloads[0]["data"] == {"worker_build_id": "build-1"}
-    assert payloads[1]["content"]["size_bytes"] == 256
-    assert payloads[1]["actor_id"] is None
+    if retained:
+        with pytest.raises(NativeStreamError) as captured:
+            await service.attach(actor=hook_actor(), run_id=RUN_ID, after_stream_id=opening.leased_stream_id)
+        assert captured.value.code == "run_stream_replay_gap"
+    else:
+        attachment = await service.attach(
+            actor=hook_actor(),
+            run_id=RUN_ID,
+            after_stream_id=opening.leased_stream_id,
+        )
+        frames = [frame.decode() async for frame in service.events(attachment)]
+        assert len(frames) == 2
+        assert all("wrk_private" not in frame and "object_key" not in frame for frame in frames)
+        assert frames[0].startswith(f"id: {positions[0]}\nevent: run_attempt.failed\n")
+        payloads = [json.loads(frame.split("data: ", 1)[1])["payload"] for frame in frames]
+        assert payloads[0]["data"] == {"worker_build_id": "build-1"}
+        assert payloads[1]["content"]["size_bytes"] == 256
+        assert payloads[1]["actor_id"] is None
 
     queries = NativeInteractionQueries(lifecycle_interaction_sessions, native_replay)
     items = await queries.items(actor=hook_actor(), run_id=RUN_ID, limit=50, cursor=None)
     assert len(items.items) == 1
     assert items.items[0].content == {key: value for key, value in reference.items() if key != "object_key"}
-    # Public reads do not rewrite immutable replay or break its integrity checks.
-    snapshot = await native_replay.read(ORGANIZATION_ID, RUN_ID)
+    # Public reads do not rewrite the durable display or expose its private reference.
+    snapshot = (await native_replay.read(ORGANIZATION_ID, RUN_ID, expected_thread_id=THREAD_ID)).snapshot
     assert snapshot.items[0].content == reference

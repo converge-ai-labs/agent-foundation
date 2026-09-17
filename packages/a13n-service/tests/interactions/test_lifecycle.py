@@ -34,14 +34,14 @@ from a13n_service.run_stream import (
     CompleteRunStream,
     LifecycleRunStreamProjector,
     RedisRunStream,
-    RetainedReplayUnavailable,
-    RunReplaySnapshot,
-    RunReplayStore,
+    RunDisplayStore,
     RunStreamEvent,
     RunStreamReplayGap,
     deterministic_item_id,
     deterministic_run_stream_event_id,
 )
+from a13n_service.run_stream.display_candidates import DisplayCandidate, DisplayCandidates
+from a13n_service.run_stream.display_consumer import RunDisplayConsumer
 from a13n_service.storage import ObjectStore, short_session, transaction
 from redis.asyncio import Redis
 from sqlalchemy import delete, select
@@ -94,16 +94,6 @@ class _FailingAppendRunStream(RedisRunStream):
 class _FailingAppendAndMarkerRunStream(_FailingAppendRunStream):
     async def mark_lifecycle_incomplete(self, organization_id: str, run_id: str) -> None:
         raise RuntimeError("persistent marker failure")
-
-
-class _FailingRunReplayStore(RunReplayStore):
-    async def publish(
-        self,
-        organization_id: str,
-        run_id: str,
-        source: CompleteRunStream,
-    ) -> RunReplaySnapshot:
-        raise RuntimeError("persistent object-store failure")
 
 
 def _draft(**changes: object) -> LifecycleEventDraft:
@@ -307,7 +297,7 @@ async def test_rolls_back_lifecycle_fact_with_owning_mutation(
 
 
 @pytest.mark.parametrize("outcome", ["completed", "waiting", "failed", "cancelled"])
-async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
+async def test_projects_lifecycle_in_order_and_finalizes_display(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
@@ -327,7 +317,7 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
         )
 
     stream = RedisRunStream(redis_client)
-    replay = RunReplayStore(interaction_object_store)
+    replay = RunDisplayStore(interaction_object_store)
     terminal_projections: list[tuple[LifecycleEvent, CompleteRunStream]] = []
 
     async def project_terminal(event: LifecycleEvent, source: CompleteRunStream) -> None:
@@ -336,7 +326,6 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
         stream,
-        replay,
         worker_id="projection-worker-1",
         terminal_projection=project_terminal,
         clock=lambda: NOW,
@@ -349,10 +338,15 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
     assert await projector.project_once(limit=16) == 1
 
     terminal_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
-    snapshot = await replay.read(ORGANIZATION_ID, RUN_ID)
+    stored = await RunDisplayConsumer(DisplayCandidates(interaction_sessions), stream, replay).consume_run(
+        DisplayCandidate(ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    )
+    assert stored is not None
+    snapshot = stored.snapshot
     assert terminal_page.closed
     assert tuple(entry.event.event_type for entry in terminal_page.items) == ("run.accepted", f"run.{outcome}")
-    assert tuple(entry.event.event_type for entry in snapshot.events) == ("run.accepted", f"run.{outcome}")
+    assert snapshot.finalized and snapshot.complete
+    assert snapshot.cursor == terminal_page.high_watermark
     assert len(terminal_projections) == 1
     projected_event, projected_source = terminal_projections[0]
     assert projected_event.id == terminal.id
@@ -367,7 +361,7 @@ async def test_projects_lifecycle_in_order_and_publishes_terminal_replay(
 
 @pytest.mark.parametrize("outcome", ["completed", "waiting", "failed", "cancelled"])
 @pytest.mark.parametrize("close_failure", ["before", "receipts", "retention"])
-async def test_terminal_projection_interrupts_open_items_before_stream_close(
+async def test_display_finalization_interrupts_open_items_after_stream_close(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
@@ -377,7 +371,7 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
     await _seed_run(interaction_sessions)
     async with transaction(interaction_sessions) as database:
         await append_lifecycle_event(database, _draft(mutation_id="mut_1111111111111111"))
-        terminal = await append_lifecycle_event(
+        await append_lifecycle_event(
             database,
             _draft(
                 event_type=f"run.{outcome}",
@@ -387,11 +381,10 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
             ),
         )
     stream = _FailOnceCloseRunStream(redis_client) if close_failure == "before" else RedisRunStream(redis_client)
-    replay = RunReplayStore(interaction_object_store)
+    replay = RunDisplayStore(interaction_object_store)
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
         stream,
-        replay,
         worker_id="projection-worker-1",
         retry_after=timedelta(0),
         clock=lambda: NOW,
@@ -432,25 +425,25 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
     else:
         failed_page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
         assert not failed_page.closed
-        assert failed_page.items[-1].event.event_type == "item.interrupted"
+        assert failed_page.items[-1].event.event_type == f"run.{outcome}"
     assert await projector.project_once() == 1
 
     page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
-    snapshot = await replay.read(ORGANIZATION_ID, RUN_ID)
-    interrupted = page.items[-1]
+    stored = await RunDisplayConsumer(DisplayCandidates(interaction_sessions), stream, replay).consume_run(
+        DisplayCandidate(ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    )
+    assert stored is not None
+    snapshot = stored.snapshot
     assert page.closed
     assert tuple(entry.event.event_type for entry in page.items) == (
         "run.accepted",
         "run_attempt.leased",
         "agui.text_message_start",
         f"run.{outcome}",
-        "item.interrupted",
     )
-    assert interrupted.event.lifecycle_event_id == terminal.id
-    assert interrupted.event.payload["first_stream_id"] == first_item_stream_id
-    assert interrupted.event.payload["last_content_stream_id"] == first_item_stream_id
     assert snapshot.items[0].state == "interrupted"
-    assert snapshot.items[0].last_stream_id == interrupted.stream_id
+    assert snapshot.items[0].first_stream_id == first_item_stream_id
+    assert snapshot.finalized and snapshot.complete
 
 
 @pytest.mark.parametrize("claim_limit", [1, 16])
@@ -476,7 +469,6 @@ async def test_background_projector_drains_successive_claim_batches(
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
         stream,
-        RunReplayStore(interaction_object_store),
         worker_id="projection-worker-1",
         # Pending facts in one Run must drain without waiting for the idle timer,
         # even though ordering permits only one claim per Run in each sweep.
@@ -556,7 +548,6 @@ async def test_projection_failure_retries_then_abandons_without_mutating_fact(
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
         stream,
-        RunReplayStore(interaction_object_store),
         worker_id="projection-worker-1",
         retry_after=timedelta(seconds=1),
         max_attempts=2,
@@ -590,11 +581,10 @@ async def test_abandoned_projection_prevents_complete_snapshot_from_later_termin
     async with transaction(interaction_sessions) as database:
         await append_lifecycle_event(database, _draft(mutation_id="mut_4141414141414141"))
     failed_stream = _FailingAppendRunStream(redis_client)
-    replay = RunReplayStore(interaction_object_store)
+    replay = RunDisplayStore(interaction_object_store)
     failed_projector = LifecycleRunStreamProjector(
         interaction_sessions,
         failed_stream,
-        replay,
         worker_id="projection-worker-1",
         max_attempts=1,
         clock=lambda: NOW,
@@ -616,7 +606,6 @@ async def test_abandoned_projection_prevents_complete_snapshot_from_later_termin
     terminal_projector = LifecycleRunStreamProjector(
         interaction_sessions,
         stream,
-        replay,
         worker_id="projection-worker-2",
         max_attempts=1,
         clock=lambda: NOW,
@@ -625,8 +614,10 @@ async def test_abandoned_projection_prevents_complete_snapshot_from_later_termin
 
     with pytest.raises(RunStreamReplayGap):
         await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
-    with pytest.raises(RetainedReplayUnavailable):
-        await replay.read(ORGANIZATION_ID, RUN_ID)
+    stored = await RunDisplayConsumer(DisplayCandidates(interaction_sessions), stream, replay).consume_run(
+        DisplayCandidate(ORGANIZATION_ID, RUN_ID, THREAD_ID)
+    )
+    assert stored is not None and stored.snapshot.finalized and not stored.snapshot.complete
     async with short_session(interaction_sessions) as database:
         states = tuple(
             await database.scalars(select(LifecycleEventRecord.projection_state).order_by(LifecycleEventRecord.seq))
@@ -645,7 +636,6 @@ async def test_projection_abandons_after_bounded_retries_when_gap_marker_is_unav
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
         _FailingAppendAndMarkerRunStream(redis_client),
-        RunReplayStore(interaction_object_store),
         worker_id="projection-worker-1",
         retry_after=timedelta(0),
         max_attempts=1,
@@ -660,7 +650,7 @@ async def test_projection_abandons_after_bounded_retries_when_gap_marker_is_unav
         assert (record.projection_state, record.projection_attempts) == ("abandoned", 1)
 
 
-async def test_replay_publication_failure_preserves_complete_live_source(
+async def test_optional_archive_failure_does_not_block_display_finalization(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
@@ -678,12 +668,16 @@ async def test_replay_publication_failure_preserves_complete_live_source(
             ),
         )
     stream = RedisRunStream(redis_client)
+
+    async def fail_archive(event: LifecycleEvent, source: CompleteRunStream) -> None:
+        raise RuntimeError("persistent archive failure")
+
     projector = LifecycleRunStreamProjector(
         interaction_sessions,
         stream,
-        _FailingRunReplayStore(interaction_object_store),
         worker_id="projection-worker-1",
         max_attempts=1,
+        terminal_projection=fail_archive,
         clock=lambda: NOW,
     )
 
@@ -693,11 +687,56 @@ async def test_replay_publication_failure_preserves_complete_live_source(
     page = await stream.read(ORGANIZATION_ID, RUN_ID, after_stream_id=None, limit=10)
     assert page.closed
     assert tuple(entry.event.event_type for entry in page.items) == ("run.accepted", "run.completed")
-    with pytest.raises(RetainedReplayUnavailable):
-        await RunReplayStore(interaction_object_store).read(ORGANIZATION_ID, RUN_ID)
+    stored = await RunDisplayConsumer(
+        DisplayCandidates(interaction_sessions), stream, RunDisplayStore(interaction_object_store)
+    ).consume_run(DisplayCandidate(ORGANIZATION_ID, RUN_ID, THREAD_ID))
+    assert stored is not None and stored.snapshot.finalized and stored.snapshot.complete
     async with short_session(interaction_sessions) as database:
         record = await database.get(LifecycleEventRecord, terminal.seq)
         assert record is not None
-        assert record.projection_state == "abandoned"
-        assert record.projection_error_json is not None
-        assert record.projection_error_json["code"] == "run_replay_publication_failed"
+        assert record.projection_state == "projected"
+        assert record.projection_error_json is None
+
+
+async def test_slow_optional_archive_does_not_hold_display_finalization(
+    interaction_sessions,
+    interaction_object_store,
+    redis_client,
+):
+    await _seed_run(interaction_sessions)
+    async with transaction(interaction_sessions) as database:
+        await append_lifecycle_event(database, _draft(mutation_id="mut_6161616161616161"))
+        await append_lifecycle_event(
+            database,
+            _draft(
+                event_type="run.completed",
+                mutation_id="mut_6262626262626262",
+                entity_version=2,
+                payload={"status": "completed"},
+            ),
+        )
+    entered = anyio.Event()
+    release = anyio.Event()
+
+    async def archive(event: LifecycleEvent, source: CompleteRunStream) -> None:
+        entered.set()
+        await release.wait()
+
+    stream = RedisRunStream(redis_client)
+    projector = LifecycleRunStreamProjector(
+        interaction_sessions,
+        stream,
+        worker_id="archive-worker",
+        terminal_projection=archive,
+        clock=lambda: NOW,
+    )
+    assert await projector.project_once() == 1
+    async with anyio.create_task_group() as tasks:
+        tasks.start_soon(projector.project_once)
+        with anyio.fail_after(5):
+            await entered.wait()
+            stored = await RunDisplayConsumer(
+                DisplayCandidates(interaction_sessions), stream, RunDisplayStore(interaction_object_store)
+            ).consume_run(DisplayCandidate(ORGANIZATION_ID, RUN_ID, THREAD_ID))
+            assert stored is not None and stored.snapshot.complete and stored.snapshot.finalized
+        release.set()

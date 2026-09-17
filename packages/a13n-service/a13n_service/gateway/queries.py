@@ -29,7 +29,7 @@ from a13n_service.labels import Labels, label_predicates
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.projections import public_output_reference
 from a13n_service.lifecycle.reconciliation import load_owning_run
-from a13n_service.run_stream import RetainedReplayUnavailable, RunReplayIntegrityError, RunReplayStore
+from a13n_service.run_stream import RetainedItem, RunDisplayStore, RunStreamError
 from a13n_service.storage import ObjectStoreError, short_session
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
@@ -170,14 +170,19 @@ class PendingActionCollection(_Resource):
 class ItemCollection(_Resource):
     items: tuple[ItemResource, ...]
     next_cursor: str | None
+    snapshot_version: int
+    projection_cursor: str | None
+    complete: bool
+    incomplete_reason: str | None
+    finalized: bool
 
 
 class NativeInteractionQueries:
     """Read safe interaction projections with current IAM authority."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], replay: RunReplayStore) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], display: RunDisplayStore) -> None:
         self._sessions = sessions
-        self._replay = replay
+        self._display = display
 
     async def list_sessions(
         self,
@@ -511,9 +516,10 @@ class NativeInteractionQueries:
         run_id: str,
         limit: int,
         cursor: str | None,
+        order: Literal["asc", "desc"] = "asc",
     ) -> ItemCollection:
-        scope = _scope(actor, "items", run_id)
-        offset = _offset_cursor(cursor, scope=scope, kind="items")
+        scope = {**_scope(actor, "items", run_id), "order": order}
+        offset, expected_version = _item_cursor(cursor, scope=scope) if order == "asc" else (0, None)
         async with short_session(self._sessions) as database:
             run = await _load_run(database, actor=actor, run_id=run_id)
             await _authorize_agent(
@@ -526,21 +532,37 @@ class NativeInteractionQueries:
             )
             organization_id = run.organization_id
         try:
-            snapshot = await self._replay.read(organization_id, run_id)
-        except (ObjectStoreError, RetainedReplayUnavailable, RunReplayIntegrityError) as error:
+            snapshot = (await self._display.read(organization_id, run_id, expected_thread_id=run.thread_id)).snapshot
+        except (ObjectStoreError, RunStreamError) as error:
             raise NativeQueryError(
                 "items_unavailable",
                 "Retained Items are unavailable for this Run.",
                 category=ErrorCategory.conflict,
             ) from error
-        values = snapshot.items[offset : offset + limit + 1]
-        page = values[:limit]
-        next_cursor = (
-            encode_collection_cursor({"offset": offset + limit}, scope=scope, kind="items")
-            if len(values) > limit
-            else None
-        )
+        if expected_version is not None and expected_version != snapshot.version:
+            raise NativeQueryError(
+                "items_snapshot_changed",
+                "The display snapshot changed; restart Item pagination.",
+                category=ErrorCategory.conflict,
+            )
+        if order == "desc":
+            page, next_cursor = _earlier_items(snapshot.items, cursor=cursor, limit=limit, scope=scope)
+        else:
+            values = snapshot.items[offset : offset + limit + 1]
+            page = values[:limit]
+            next_cursor = (
+                encode_collection_cursor(
+                    {"offset": offset + limit, "version": snapshot.version}, scope=scope, kind="items"
+                )
+                if len(values) > limit
+                else None
+            )
         return ItemCollection(
+            snapshot_version=snapshot.version,
+            projection_cursor=snapshot.cursor,
+            complete=snapshot.complete,
+            incomplete_reason=snapshot.incomplete_reason,
+            finalized=snapshot.finalized,
             items=tuple(
                 ItemResource.model_validate(
                     {
@@ -777,15 +799,46 @@ def _cursor_boundary(cursor: str | None, *, scope: dict[str, object], kind: str)
         ) from error
 
 
-def _offset_cursor(cursor: str | None, *, scope: dict[str, object], kind: str) -> int:
+def _earlier_items(
+    items: tuple[RetainedItem, ...], *, cursor: str | None, limit: int, scope: dict[str, object]
+) -> tuple[tuple[RetainedItem, ...], str | None]:
+    end = len(items)
+    if cursor is not None:
+        try:
+            boundary = decode_collection_cursor(cursor, scope=scope, kind="items")["before"]
+            if not isinstance(boundary, str):
+                raise ValueError
+            end = next(index for index, item in enumerate(items) if item.id == boundary)
+        except (
+            InvalidCollectionCursorError,
+            CollectionCursorMismatchError,
+            KeyError,
+            ValueError,
+            StopIteration,
+        ) as error:
+            raise NativeQueryError(
+                "invalid_cursor", "The Item boundary is invalid.", category=ErrorCategory.invalid_request
+            ) from error
+    start = max(0, end - limit)
+    page = tuple(reversed(items[start:end]))
+    next_cursor = (
+        encode_collection_cursor({"before": items[start].id}, scope=scope, kind="items") if start > 0 else None
+    )
+    return page, next_cursor
+
+
+def _item_cursor(cursor: str | None, *, scope: dict[str, object]) -> tuple[int, int | None]:
     if cursor is None:
-        return 0
+        return 0, None
     try:
-        payload = decode_collection_cursor(cursor, scope=scope, kind=kind)
+        payload = decode_collection_cursor(cursor, scope=scope, kind="items")
         offset = payload["offset"]
-        if not isinstance(offset, int) or offset < 0:
+        if type(offset) is not int or offset < 0:
             raise ValueError
-        return offset
+        version = payload["version"]
+        if type(version) is not int or version < 1:
+            raise ValueError
+        return offset, version
     except (InvalidCollectionCursorError, CollectionCursorMismatchError, KeyError, ValueError) as error:
         raise NativeQueryError(
             "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request

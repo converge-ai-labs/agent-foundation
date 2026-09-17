@@ -47,6 +47,7 @@ export function PresentedItems({
         return (
           <DisclosureSection
             key={item.id}
+            data-message-id={item.id}
             className={styles.tool}
             title={
               <span className={styles.disclosureTitle}>
@@ -57,7 +58,7 @@ export function PresentedItems({
                 <span className={styles.toolState}>
                   {item.state === "completed" ? (
                     <CheckIcon size={13} aria-label={t("Completed")} />
-                  ) : item.state === "streaming" &&
+                  ) : item.state === "in_progress" &&
                     ["running", "queued"].includes(runState ?? "running") ? (
                     <CircleNotchIcon
                       size={13}
@@ -67,7 +68,7 @@ export function PresentedItems({
                   ) : (
                     <StateBadge
                       state={
-                        item.state === "streaming"
+                        item.state === "in_progress"
                           ? ["waiting", "failed", "cancelled"].includes(
                               runState ?? "",
                             )
@@ -90,6 +91,7 @@ export function PresentedItems({
         return (
           <DisclosureSection
             key={item.id}
+            data-message-id={item.id}
             className={styles.reasoning}
             title={
               <span className={styles.disclosureTitle}>
@@ -109,6 +111,7 @@ export function PresentedItems({
         return (
           <DisclosureSection
             key={item.id}
+            data-message-id={item.id}
             className={styles.tool}
             title={
               <>
@@ -120,11 +123,16 @@ export function PresentedItems({
           </DisclosureSection>
         );
       return (
-        <article key={item.id} className={styles.message} data-role={item.role}>
+        <article
+          key={item.id}
+          data-message-id={item.id}
+          className={styles.message}
+          data-role={item.role}
+        >
           <MarkdownContent
             text={
               item.text ||
-              (item.state === "streaming"
+              (item.state === "in_progress"
                 ? t("Thinking…")
                 : t("No text content"))
             }

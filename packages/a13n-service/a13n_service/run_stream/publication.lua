@@ -64,7 +64,7 @@ if operation == 'read' then
             summary[#summary + 1] = value
         end
     end
-    for _, name in ipairs({'organization_id', 'run_id', 'closed_at', 'trimmed', 'incomplete'}) do include(name) end
+    for _, name in ipairs({'organization_id', 'run_id', 'closed_at', 'trimmed', 'trimmed_through', 'incomplete', 'pending_events', 'pending_bytes'}) do include(name) end
     for _, row in ipairs(rows) do
         for index = 1, #row[2], 2 do
             if row[2][index] == 'body' then
@@ -89,6 +89,52 @@ local function compare_fences(left, right)
     if left == right then return 0 end
     return left < right and -1 or 1
 end
+local function compare_ids(left, right)
+    local lm, ls = string.match(left, '^(%d+)%-(%d+)$')
+    local rm, rs = string.match(right, '^(%d+)%-(%d+)$')
+    local millis = compare_fences(lm, rm)
+    return millis == 0 and compare_fences(ls, rs) or millis
+end
+
+-- A verified object checkpoint is the only authority for retention. Repeating
+-- this operation after a lost response or a partial trim is idempotent.
+if operation == 'acknowledge_display' then
+    if pending and pending ~= request.digest then refuse('PENDING') end
+    local cursor = request.cursor
+    local durable = field('durable_cursor') or '0-0'
+    local tail = field('last_id')
+    if not tail or tail == '' or compare_ids(cursor, tail) > 0 then refuse('CONTINUITY') end
+    if compare_ids(cursor, durable) < 0 then return {'ok'} end
+    if request.finalized and (not field('closed_at') or cursor ~= tail) then refuse('CONTINUITY') end
+    redis.call('HSET', metadata, 'pending', request.digest)
+    local suffix = redis.call('XRANGE', stream, '(' .. cursor, '+')
+    local bytes = 0
+    for _, row in ipairs(suffix) do
+        for index = 1, #row[2], 2 do
+            if row[2][index] == 'body' then bytes = bytes + #row[2][index + 1] end
+        end
+    end
+    local retained = redis.call('XREVRANGE', stream, '+', '-', 'COUNT', request.max_events)
+    local cutoff = retained[#retained][1]
+    if compare_ids(cursor, cutoff) < 0 then cutoff = cursor end
+    local removed = redis.call('XREVRANGE', stream, '(' .. cutoff, '-', 'COUNT', 1)
+    if #removed > 0 then
+        redis.call('HSET', metadata, 'trimmed', '1', 'trimmed_through', removed[1][1])
+        redis.call('XTRIM', stream, 'MINID', cutoff)
+    end
+    redis.call('HSET', metadata, 'durable_cursor', cursor,
+        'pending_events', #suffix, 'pending_bytes', bytes, 'length', redis.call('XLEN', stream))
+    if request.finalized then
+        local deadline = field('retention_deadline') or
+            tostring(tonumber(redis.call('TIME')[1]) + request.closed_ttl_seconds)
+        redis.call('HSET', metadata, 'retention_deadline', deadline)
+        redis.call('EXPIREAT', stream, deadline)
+        redis.call('EXPIREAT', metadata, deadline)
+    end
+    redis.call('HDEL', metadata, 'pending')
+    return {'ok'}
+end
+
 local function active()
     return field('fence') == request.fence and field('attempt_id') == request.attempt_id
 end
@@ -183,6 +229,24 @@ if closed and not (operation == 'incomplete' and not request.attempt_owned) and 
 end
 if (operation == 'append' or operation == 'activate' or operation == 'complete') and field('incomplete') == '1' then refuse('CONTINUITY') end
 
+-- Admission is checked before installing a retry barrier. A consumer can
+-- therefore relieve pressure while the publisher waits, without losing events.
+local added_events, added_bytes = 0, 0
+local committed_tail = field('last_id')
+if not committed_tail or committed_tail == '' then committed_tail = '0-0' end
+for _, event in ipairs(events) do
+    local previous = existing[event.id]
+    if not previous or compare_ids(previous.id, committed_tail) > 0 then
+        added_events = added_events + 1
+        added_bytes = added_bytes + #event.body
+    end
+end
+local pending_events = tonumber(field('pending_events') or '0') + added_events
+local pending_bytes = tonumber(field('pending_bytes') or '0') + added_bytes
+if not pending and (pending_events > request.max_pending_events or pending_bytes > request.max_pending_bytes) then
+    refuse('BACKPRESSURE')
+end
+
 -- Install the barrier before any event, fence, completion, or retention change.
 -- A failed write leaves this exact operation retryable and every other writer
 -- and reader closed. Only finishing this batch removes the barrier.
@@ -218,20 +282,15 @@ elseif operation == 'incomplete' then
 elseif operation == 'close' then
     update('closed_at', request.closed_at)
 end
--- Commit event receipts and publication state together before trimming. These
--- same receipts recover every completed batch, including already trimmed events.
-redis.call('HSET', metadata, unpack(updates))
-local length = redis.call('XLEN', stream)
-if length > request.max_events then
-    redis.call('HSET', metadata, 'trimmed', '1')
-    redis.call('XTRIM', stream, 'MAXLEN', request.max_events)
-end
+-- Commit receipts, tail and backlog together; replaying an uncertain write
+-- never counts its events twice. No append can trim unpersisted presentation.
 local tail = redis.call('XREVRANGE', stream, '+', '-', 'COUNT', 1)
-redis.call('HSET', metadata, 'last_id', #tail == 0 and '' or tail[1][1], 'length', redis.call('XLEN', stream))
-if operation == 'close' then
-    redis.call('EXPIRE', stream, request.closed_ttl_seconds)
-    redis.call('EXPIRE', metadata, request.closed_ttl_seconds)
-elseif not closed then
+update('last_id', #tail == 0 and '' or tail[1][1])
+update('length', redis.call('XLEN', stream))
+update('pending_events', pending_events)
+update('pending_bytes', pending_bytes)
+redis.call('HSET', metadata, unpack(updates))
+if not closed then
     redis.call('PERSIST', stream)
     redis.call('PERSIST', metadata)
 end

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.control_domain import ThreadInboxEntry
 from a13n_service.interactions.models import RunRecord, SessionRecord
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session
 
 from .result_payload import (
@@ -27,15 +27,15 @@ class AsyncSubagentResultMaterializer:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        replays: RunReplayStore,
+        displays: RunDisplayStore,
     ) -> None:
         self._sessions = sessions
-        self._replays = replays
+        self._displays = displays
 
     async def __call__(self, entry: ThreadInboxEntry) -> str:
         authority = await self._read_authorized(entry)
         terminal_item = await load_async_subagent_terminal_item(
-            self._replays,
+            self._displays,
             organization_id=entry.organization_id,
             child=authority.child,
             expected_item_id=authority.payload.terminal_result_item_id,

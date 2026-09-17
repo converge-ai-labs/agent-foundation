@@ -20,6 +20,12 @@ The status contract has `api_version: "1"`, package/build information, App statu
 
 Authentication and Host/Origin validation apply at the listener boundary. Use a header-capable HTTP/fetch client. Do not put access keys in API query strings or logs, or confuse model-provider credentials managed under `/api/auth/*` with the listener key. The deliberate dangerous-bypass mode is not a production authentication mechanism.
 
+## Conversation input navigation
+
+`GET /api/threads/{thread_id}/inputs` returns a continuation-bound, paginated directory of ordinary input turns, excluding steering and hidden system input. Each turn carries its stable input identity, bounded preview, input position, exclusive end position, and an optional recorded final-response position. `limit` is 1–100; follow `next_cursor` to read the directory without transferring tool output.
+
+`GET /api/threads/{thread_id}/transcript` accepts an optional `turn_id` for its initial page. `next_cursor` reads earlier messages and `newer_cursor` reads later messages. Both cursors and `expected_continuation_id` remain bound to the observed history. Refresh after a continuation mismatch; never combine positions from different heads. A page also includes the intersecting `turns` and any `boundary_entries` outside its ordinary page range needed to show the original input and final answer. Deduplicate entries by position. Missing intermediate entries are still paginated history, not evidence that a turn had no process output. A final position comes from successful saved execution, not from the last assistant text or a live text-end event.
+
 ## Native terminal
 
 On Linux/macOS, native computer sharing includes a real interactive terminal. Check `features.host_terminal`; Windows returns false and `host_terminal_unavailable`, not a noninteractive substitute. A missing shell is also unavailable. Disabling sharing returns `host_terminal_disabled`. Create with `POST /api/host/terminals` and JSON such as `{"cwd":"/work","rows":24,"columns":80}`. An optional `project_id` must identify an accepted Project. The returned `terminal_id` belongs to this App lifetime; it is not a Thread or Run ID. `cwd` records the initial native directory and never follows later browser navigation.

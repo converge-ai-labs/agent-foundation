@@ -237,6 +237,7 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSelectorCatalog,
     ThreadSummary,
+    TranscriptInputPage,
     TranscriptPage,
 )
 from a13n_harness_ui.terminal_projection import TerminalProjectionService
@@ -1211,9 +1212,27 @@ class HarnessUiApp:
         expected_continuation_id: str | None = None,
         cursor: str | None = None,
         limit: int = 50,
+        turn_id: str | None = None,
     ) -> TranscriptPage:
         async with self._operation():
             return await self._projections.transcript(
+                thread_id=thread_id,
+                expected_continuation_id=expected_continuation_id,
+                cursor=cursor,
+                limit=limit,
+                turn_id=turn_id,
+            )
+
+    async def get_thread_inputs(
+        self,
+        *,
+        thread_id: str,
+        expected_continuation_id: str | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> TranscriptInputPage:
+        async with self._operation():
+            return await self._projections.transcript_inputs(
                 thread_id=thread_id,
                 expected_continuation_id=expected_continuation_id,
                 cursor=cursor,

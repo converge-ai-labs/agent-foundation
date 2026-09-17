@@ -1,3 +1,4 @@
+import { EarlierMessages } from "./earlier-messages";
 import { Button, DisclosureSection } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -89,7 +90,8 @@ export function RunContent({
       setFollowing(follow);
     };
     const observer = new ResizeObserver(() => {
-      if (follow) viewport.scrollTop = viewport.scrollHeight;
+      if (follow && !viewport.dataset.loadingEarlier)
+        viewport.scrollTop = viewport.scrollHeight;
     });
     observer.observe(content);
     viewport.addEventListener("scroll", onScroll, { passive: true });
@@ -184,9 +186,13 @@ export function RunContent({
       <ErrorToast error={interrupt.error ?? retry.error} />
       {live.gap && (
         <p role="status" className={styles.notice}>
-          {t(
-            "Live replay had a gap. Available retained items have been reconciled; some live-only output may be unavailable.",
-          )}
+          {live.incomplete
+            ? t(
+                "Saved message history is incomplete. Some output is unavailable.",
+              )
+            : t(
+                "Live replay resumed from saved messages. Earlier raw events may be unavailable.",
+              )}
         </p>
       )}
       {live.state === "disconnected" && (
@@ -196,13 +202,14 @@ export function RunContent({
         />
       )}
       <div className={styles.transcript} ref={transcript}>
-        <HistoryTranscript runId={runId} />
+        {!live.hasEarlier && <HistoryTranscript runId={runId} />}
         <article className={styles.inputMessage}>
           <strong>
             {t(run.input_kind === "feedback" ? "Feedback" : "Input")}
           </strong>
           <InputContent input={run.input} fallback={run.input_text} />
         </article>
+        <EarlierMessages {...live} />
         <PresentedItems
           items={live.items}
           runState={run.status}

@@ -1,6 +1,8 @@
+import { useEarlierMessages } from "./earlier";
+import { EarlierMessages } from "./earlier-messages";
 import { Button } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { useTranslation } from "react-i18next";
@@ -17,13 +19,14 @@ import { conversationQueries, runPath } from "./api";
 import styles from "./conversations.module.css";
 import { InputContent, PresentedItems } from "./items";
 import { MarkdownContent } from "../../shared/markdown";
-import { mergeRetainedItems } from "./projection";
+import { compareCursors, mergeRetainedItems } from "./projection";
+import type { Schema } from "../../shared/api";
 
 export function HistoryTranscript({ runId }: { runId: string }) {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
-    [limit, setLimit] = useState(10);
+    [limit, setLimit] = useState(0);
   const lineage = useQuery(
     conversationQueries(client, workspace.id).lineage(runId),
   );
@@ -37,7 +40,7 @@ export function HistoryTranscript({ runId }: { runId: string }) {
         <Button
           size="sm"
           variant="outline"
-          onClick={() => setLimit((value) => value + 10)}
+          onClick={() => setLimit((value) => value + 1)}
           type="button"
         >
           {t("Load earlier messages")}
@@ -60,11 +63,27 @@ function HistoricalRun({ runId }: { runId: string }) {
   const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
   const agent = useAgent(runQuery.data?.agent_id);
   const retained = useQuery({ ...queries.items(runId), staleTime: 60_000 });
+  const [older, setOlder] = useState<Schema["ItemResource"][]>([]);
+  const initialized = useRef(false);
+  const earlier = useEarlierMessages(runId, (page) =>
+    setOlder((items) => [...page.items, ...items]),
+  );
+  const { resetEarlier } = earlier;
+  useEffect(() => {
+    if (retained.data?.available && !initialized.current) {
+      initialized.current = true;
+      resetEarlier(retained.data.next_cursor);
+    }
+  }, [retained.data, resetEarlier]);
   const items = useMemo(
-    () => [
-      ...mergeRetainedItems(new Map(), retained.data?.items ?? []).values(),
-    ],
-    [retained.data],
+    () =>
+      [
+        ...mergeRetainedItems(
+          mergeRetainedItems(new Map(), older),
+          retained.data?.items ?? [],
+        ).values(),
+      ].sort((a, b) => compareCursors(a.firstCursor, b.firstCursor)),
+    [retained.data, older],
   );
   const reload = () => {
     void runQuery.refetch();
@@ -92,6 +111,7 @@ function HistoricalRun({ runId }: { runId: string }) {
         </strong>
         <InputContent input={run.input} fallback={run.input_text} />
       </article>
+      <EarlierMessages {...earlier} />
       <PresentedItems
         items={items}
         runState={run.status}

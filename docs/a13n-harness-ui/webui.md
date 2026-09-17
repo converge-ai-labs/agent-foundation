@@ -22,6 +22,12 @@ The Context / Cost / Cache / Time row shows **Fast On**, **Off**, or **Default**
 
 Controls use the connection's native semantics: OpenAI API and Codex subscription priority processing, reviewed direct Anthropic Fast speed, or reviewed Gemini API priority processing. Unsupported or unreviewed connections show a disabled control with a reason. Claude subscription, Grok subscription, Vertex provisioned throughput, and arbitrary compatible gateways are not assumed to have the same Fast capability. Custom endpoint support and account entitlement remain the provider's responsibility; there is no automatic paid probe or fallback.
 
+## Navigate conversation inputs
+
+The slim rail at the left of Chat has one mark per ordinary input. Hover or focus a mark to preview the input, then select it to jump back. Steering messages remain part of their original turn rather than adding marks. On narrow screens, use **Inputs** to open the same directory. The directory includes saved inputs beyond the currently loaded messages; selecting one loads that history window. **Load later messages** and **Back to latest** return toward newer work without resubmitting anything.
+
+After a turn completes and its result is saved, **Execution details** collapses the intermediate output, including reasoning, tools, progress messages, and steering. The original input and final answer stay visible. Expand the disclosure to inspect the process; **Load earlier steps** fetches any process history not yet loaded. Running, failed, cancelled, and older turns without a recorded final boundary remain expanded by default. Pending questions and approvals remain actionable outside the disclosure. Navigation and expansion are personal display choices, not changes to the Agent's context or another participant's view.
+
 ## Questions and approval timeouts
 
 New pending root questions, approvals, and external-result requests share one server-owned response window per batch, controlled by `tools.interaction_timeout_seconds` (default **120 seconds**). The workbench displays the remaining time. Submit the complete form before it expires; partial selections and typed but unsubmitted answers are not sent to the Agent.
