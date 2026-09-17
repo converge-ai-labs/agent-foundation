@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.digests import digest_request
+from a13n_service.environments.websocket.admission import OnlineAdmission, OnlineEvidence
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
@@ -36,7 +38,7 @@ from a13n_service.interactions.ports.memory import ExecutionBindings
 from a13n_service.interactions.records import thread_record
 from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.labels import merge_labels
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .authorization import ChildRunAuthorizationError, authorize_parent_child_action
@@ -72,9 +74,11 @@ class ChildRunAcceptanceService:
         *,
         lifecycle: LifecycleWriter,
         bindings: ExecutionBindings,
+        coordination: ConnectionCoordination | None = None,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
+        self._online = OnlineAdmission(sessions, coordination)
         self._states = states
         self._payloads = payloads
         self._clock = clock
@@ -115,55 +119,59 @@ class ChildRunAcceptanceService:
                 prepared.run.input_object,
             )
         await self._publish_initial(prepared)
+
+        async def accept(database: AsyncSession, online: OnlineEvidence) -> None:
+            parent, _, parent_thread = await lock_attempt_authority(
+                database,
+                authority,
+                assume_utc(self._clock()),
+                lock_inbox_origins=True,
+            )
+            session = await _require_session(database, parent)
+            parent_resource = parent.to_resource()
+            await _reauthorize(
+                database,
+                parent=parent_resource,
+                child=prepared.run,
+                child_definition_id=prepared.child_definition_id,
+                workspace_id=session.workspace_id,
+            )
+            _validate_new_child_parent(
+                prepared,
+                parent_resource,
+                parent_thread.to_resource(),
+                parent_state.envelope,
+                authority,
+            )
+            edge = next(
+                edge
+                for edge in parent_state.envelope.effective_agent_config.resolved_subagents
+                if edge.name == prepared.relationship.subagent_name
+            )
+            choice = await child_environment_choice(database, parent=parent_resource, policy=edge.environment)
+            inherited_labels = merge_labels(session.labels)
+            child_run = (
+                prepared.run.model_copy(update={"environment_access": parent.environment_access})
+                if edge.environment.mode == "shared"
+                else prepared.run
+            ).model_copy(update={"labels": inherited_labels})
+            database.add(thread_record(prepared.thread.model_copy(update={"labels": inherited_labels})))
+            child_record = await add_run_with_environment(
+                database,
+                online=online,
+                run=child_run,
+                state=prepared.state,
+                workspace_id=session.workspace_id,
+                intent=ExplicitEnvironment(choice),
+            )
+            await self._bindings.finalize(database, child_run, source_run_id=parent.id)
+            await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
+            database.add(
+                child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
+            )
+
         try:
-            async with transaction(self._sessions) as database:
-                parent, _, parent_thread = await lock_attempt_authority(
-                    database,
-                    authority,
-                    assume_utc(self._clock()),
-                    lock_inbox_origins=True,
-                )
-                session = await _require_session(database, parent)
-                parent_resource = parent.to_resource()
-                await _reauthorize(
-                    database,
-                    parent=parent_resource,
-                    child=prepared.run,
-                    child_definition_id=prepared.child_definition_id,
-                    workspace_id=session.workspace_id,
-                )
-                _validate_new_child_parent(
-                    prepared,
-                    parent_resource,
-                    parent_thread.to_resource(),
-                    parent_state.envelope,
-                    authority,
-                )
-                edge = next(
-                    edge
-                    for edge in parent_state.envelope.effective_agent_config.resolved_subagents
-                    if edge.name == prepared.relationship.subagent_name
-                )
-                choice = await child_environment_choice(database, parent=parent_resource, policy=edge.environment)
-                inherited_labels = merge_labels(session.labels)
-                child_run = (
-                    prepared.run.model_copy(update={"environment_access": parent.environment_access})
-                    if edge.environment.mode == "shared"
-                    else prepared.run
-                ).model_copy(update={"labels": inherited_labels})
-                database.add(thread_record(prepared.thread.model_copy(update={"labels": inherited_labels})))
-                child_record = await add_run_with_environment(
-                    database,
-                    run=child_run,
-                    state=prepared.state,
-                    workspace_id=session.workspace_id,
-                    intent=ExplicitEnvironment(choice),
-                )
-                await self._bindings.finalize(database, child_run, source_run_id=parent.id)
-                await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
-                database.add(
-                    child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
-                )
+            await self._online.commit(accept)
         except IntegrityError as error:
             raise ChildRunAcceptanceError(
                 "child_run_acceptance_conflict",
@@ -226,98 +234,102 @@ class ChildRunAcceptanceService:
                 prepared.run.input_object,
             )
         await self._publish_initial(prepared)
+
+        async def accept(database: AsyncSession, online: OnlineEvidence) -> None:
+            parent, _, parent_thread = await lock_attempt_authority(
+                database,
+                authority,
+                assume_utc(self._clock()),
+                lock_inbox_origins=True,
+            )
+            session = await _require_session(database, parent)
+            parent_resource = parent.to_resource()
+            await _reauthorize(
+                database,
+                parent=parent_resource,
+                child=prepared.run,
+                child_definition_id=prepared.child_definition_id,
+                workspace_id=session.workspace_id,
+            )
+            _validate_parent_authority(
+                run=prepared.run,
+                child_state=prepared.state,
+                relationship=prepared.relationship,
+                parent=parent_resource,
+                parent_thread=parent_thread.to_resource(),
+                parent_state=parent_state.envelope,
+                authority=authority,
+            )
+            child_thread = await database.scalar(
+                select(ThreadRecord)
+                .where(
+                    ThreadRecord.organization_id == prepared.run.organization_id,
+                    ThreadRecord.id == prepared.run.thread_id,
+                )
+                .with_for_update()
+            )
+            source_run = await database.scalar(
+                select(RunRecord)
+                .where(
+                    RunRecord.organization_id == prepared.run.organization_id,
+                    RunRecord.id == prepared.resumed_from_child_run_id,
+                )
+                .with_for_update()
+            )
+            source_relationship = await database.scalar(
+                select(ChildRunRelationshipRecord)
+                .where(
+                    ChildRunRelationshipRecord.organization_id == prepared.run.organization_id,
+                    ChildRunRelationshipRecord.id == prepared.resumed_from_relationship_id,
+                )
+                .with_for_update()
+            )
+            source_parent_run = await database.scalar(
+                select(RunRecord)
+                .where(
+                    RunRecord.organization_id == prepared.run.organization_id,
+                    RunRecord.id == prepared.source_parent_run_id,
+                )
+                .with_for_update()
+            )
+            _validate_locked_resume_source(
+                prepared,
+                current_parent=parent_resource,
+                child_thread=child_thread,
+                source_run=source_run,
+                source_relationship=source_relationship,
+                source_parent_run=source_parent_run,
+                source_state=source_state,
+            )
+            assert source_run is not None and source_parent_run is not None
+            await _reauthorize_resume_source(
+                database,
+                parent=parent_resource,
+                source_parent=source_parent_run.to_resource(),
+                source_child=source_run.to_resource(),
+                workspace_id=session.workspace_id,
+            )
+            assert child_thread is not None
+            child_record = await add_run_with_environment(
+                database,
+                online=online,
+                run=prepared.run.model_copy(update={"labels": merge_labels(source_run.labels)}),
+                state=prepared.state,
+                workspace_id=session.workspace_id,
+                intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
+            )
+            await self._bindings.finalize(database, prepared.run, source_run_id=source_run.id)
+            await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
+            database.add(
+                child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
+            )
+            child_thread.version += 1
+            child_thread.current_run_id = prepared.run.id
+            child_thread.updated_at = assume_utc(self._clock())
+            await database.flush()
+
         try:
-            async with transaction(self._sessions) as database:
-                parent, _, parent_thread = await lock_attempt_authority(
-                    database,
-                    authority,
-                    assume_utc(self._clock()),
-                    lock_inbox_origins=True,
-                )
-                session = await _require_session(database, parent)
-                parent_resource = parent.to_resource()
-                await _reauthorize(
-                    database,
-                    parent=parent_resource,
-                    child=prepared.run,
-                    child_definition_id=prepared.child_definition_id,
-                    workspace_id=session.workspace_id,
-                )
-                _validate_parent_authority(
-                    run=prepared.run,
-                    child_state=prepared.state,
-                    relationship=prepared.relationship,
-                    parent=parent_resource,
-                    parent_thread=parent_thread.to_resource(),
-                    parent_state=parent_state.envelope,
-                    authority=authority,
-                )
-                child_thread = await database.scalar(
-                    select(ThreadRecord)
-                    .where(
-                        ThreadRecord.organization_id == prepared.run.organization_id,
-                        ThreadRecord.id == prepared.run.thread_id,
-                    )
-                    .with_for_update()
-                )
-                source_run = await database.scalar(
-                    select(RunRecord)
-                    .where(
-                        RunRecord.organization_id == prepared.run.organization_id,
-                        RunRecord.id == prepared.resumed_from_child_run_id,
-                    )
-                    .with_for_update()
-                )
-                source_relationship = await database.scalar(
-                    select(ChildRunRelationshipRecord)
-                    .where(
-                        ChildRunRelationshipRecord.organization_id == prepared.run.organization_id,
-                        ChildRunRelationshipRecord.id == prepared.resumed_from_relationship_id,
-                    )
-                    .with_for_update()
-                )
-                source_parent_run = await database.scalar(
-                    select(RunRecord)
-                    .where(
-                        RunRecord.organization_id == prepared.run.organization_id,
-                        RunRecord.id == prepared.source_parent_run_id,
-                    )
-                    .with_for_update()
-                )
-                _validate_locked_resume_source(
-                    prepared,
-                    current_parent=parent_resource,
-                    child_thread=child_thread,
-                    source_run=source_run,
-                    source_relationship=source_relationship,
-                    source_parent_run=source_parent_run,
-                    source_state=source_state,
-                )
-                assert source_run is not None and source_parent_run is not None
-                await _reauthorize_resume_source(
-                    database,
-                    parent=parent_resource,
-                    source_parent=source_parent_run.to_resource(),
-                    source_child=source_run.to_resource(),
-                    workspace_id=session.workspace_id,
-                )
-                assert child_thread is not None
-                child_record = await add_run_with_environment(
-                    database,
-                    run=prepared.run.model_copy(update={"labels": merge_labels(source_run.labels)}),
-                    state=prepared.state,
-                    workspace_id=session.workspace_id,
-                    intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
-                )
-                await self._bindings.finalize(database, prepared.run, source_run_id=source_run.id)
-                await self._lifecycle.append_accepted_run_lifecycle(database, child_record)
-                database.add(
-                    child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
-                )
-                child_thread.version += 1
-                child_thread.current_run_id = prepared.run.id
-                child_thread.updated_at = assume_utc(self._clock())
-                await database.flush()
+            await self._online.commit(accept)
         except IntegrityError as error:
             raise ChildRunAcceptanceError(
                 "child_run_resume_conflict",

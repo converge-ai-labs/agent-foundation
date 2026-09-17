@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, Request, Response, WebSocket
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.request_runtime import get_control_runtime, get_process_runtime
 
-from .service import ClientConnectionStatus, ClientConnectionTicket, connection_dependency_unavailable
+from ..errors import connection_dependency_unavailable
+from .service import ClientConnectionStatus, ClientConnectionTicket
 
 router = APIRouter()
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]

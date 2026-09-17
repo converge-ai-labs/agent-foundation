@@ -33,6 +33,7 @@ from tests.hooks.support import hook_actor
 
 from .test_attempt_execution import _authority
 from .test_websocket_use_authorization import admitted_use as admitted_use
+from .test_websocket_use_authorization import client_environment as client_environment
 from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio

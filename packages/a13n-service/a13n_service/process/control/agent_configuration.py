@@ -13,6 +13,7 @@ from a13n_service.agent_configuration.system_agent import SystemConfigurationAge
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.command_preparation import CommandInput
@@ -54,6 +55,7 @@ def build_configuration_service(
                 hooks,
                 lifecycle=shared.lifecycle,
                 bindings=shared.memory_behaviors,
+                coordination=ConnectionCoordination(shared.storage.redis),
             ),
             states,
             CommandInput(sessions, assets, EndpointPolicy()),

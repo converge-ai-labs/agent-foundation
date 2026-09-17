@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.environments.errors import invalid_environment
-from a13n_service.environments.models import EnvironmentRecord
+from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentRecord
 from a13n_service.environments.usage import lock_run_environments
+from a13n_service.environments.websocket.admission import OnlineEvidence
 from a13n_service.interactions.domain import Run, RunInputKind
 from a13n_service.interactions.input import (
     AcceptedBinaryContent,
@@ -31,6 +33,7 @@ async def add_run_with_environment(
     state: RunCheckpoint,
     workspace_id: str,
     intent: EnvironmentIntent,
+    online: OnlineEvidence,
 ) -> RunRecord:
     keys = [run_state_key(run.organization_id, run.id)]
     if run.input_object is not None:
@@ -81,6 +84,11 @@ async def add_run_with_environment(
         )
         if environment is None:
             raise invalid_environment("Run references an unavailable Environment")
+        provider = await database.get(EnvironmentProviderRecord, environment.provider_id)
+        if provider is None or not provider.enabled:
+            raise invalid_environment("Environment Provider is unavailable")
+        if provider.type == WEBSOCKET_PROVIDER_KEY:
+            online.require(run.organization_id, environment.id)
     database.add(record)
     if thread is not None:
         thread.default_environment_id = run.environment_id

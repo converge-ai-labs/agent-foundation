@@ -3,6 +3,7 @@
 from a13n_harness.capabilities import SubagentCapability, SubagentOperatorContext
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.interactions.domain import Run
 from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.lifecycle import LifecycleWriter
@@ -29,10 +30,13 @@ class ServiceSubagents:
         *,
         lifecycle: LifecycleWriter,
         bindings: ExecutionBindings,
+        coordination: ConnectionCoordination | None = None,
     ) -> None:
         self._sessions = sessions
         self._admission = ChildRunAdmissionPreparer(sessions, states)
-        self._acceptance = ChildRunAcceptanceService(sessions, states, payloads, lifecycle=lifecycle, bindings=bindings)
+        self._acceptance = ChildRunAcceptanceService(
+            sessions, states, payloads, lifecycle=lifecycle, bindings=bindings, coordination=coordination
+        )
         self._inbox = inbox
         self._outcomes = outcomes
 

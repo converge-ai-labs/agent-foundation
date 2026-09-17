@@ -3,6 +3,7 @@
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.commands import InteractionCommands
@@ -35,6 +36,7 @@ def build_input_commands(
             inline_hooks,
             lifecycle=shared.lifecycle,
             bindings=shared.memory_behaviors,
+            coordination=ConnectionCoordination(shared.storage.redis),
         ),
         states,
         assets,

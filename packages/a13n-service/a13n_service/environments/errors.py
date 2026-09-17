@@ -27,3 +27,11 @@ def is_target_identity_conflict(error: BaseException) -> bool:
         "uq_environments_provider_target" in message
         or "unique constraint failed: environments.target_identity" in message
     )
+
+
+def connection_dependency_unavailable() -> EnvironmentManagementError:
+    return EnvironmentManagementError(
+        "environment_coordination_unavailable",
+        "Client Environment connection coordination is unavailable.",
+        category=ErrorCategory.unavailable,
+    )

@@ -15,6 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError
 from a13n_service.background import Sweep
+from a13n_service.environments.websocket.admission import OnlineAdmission, OnlineEvidence
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance_validation import validate_prepared_run
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, ThreadInboxEntry
@@ -83,12 +85,14 @@ class AsyncSubagentSuccessorReconciler:
         *,
         lifecycle: LifecycleWriter,
         bindings: ExecutionBindings,
+        coordination: ConnectionCoordination | None = None,
         signals: ThreadControlSignalPublisher | None = None,
         run_id_factory: Callable[[str, str, str], str] | None = None,
         clock: Clock = utc_now,
     ) -> None:
         self._after_thread_id = ""
         self._sessions = sessions
+        self._online = OnlineAdmission(sessions, coordination)
         self._states = states
         self._replays = replays
         self._signals = signals
@@ -272,69 +276,72 @@ class AsyncSubagentSuccessorReconciler:
         terminal_item: RetainedItem | None,
         now: datetime,
     ) -> AsyncSubagentSuccessorReceipt:
+        async def accept(database: AsyncSession, online: OnlineEvidence) -> AsyncSubagentSuccessorReceipt:
+            selected = await lock_and_route_async_result(
+                database,
+                organization_id=organization_id,
+                thread_id=thread_id,
+                now=now,
+            )
+            if isinstance(selected, AsyncSubagentSuccessorReceipt):
+                return selected
+            child_run_id = await _validate_final_selection(
+                database,
+                selected,
+                prepared,
+                parent_state,
+                initial_state,
+                terminal_item,
+            )
+            session = await _authorize_successor(
+                database,
+                selected,
+                child_run_id=child_run_id,
+            )
+            successor_record = await add_run_with_environment(
+                database,
+                online=online,
+                run=prepared.run.model_copy(update={"labels": merge_labels(selected.thread.labels)}),
+                state=prepared.state,
+                workspace_id=session.workspace_id,
+                intent=RetainedRunEnvironment(selected.selected_parent.id, selected.selected_parent.thread_id),
+            )
+            await database.flush()
+            await self._bindings.finalize(
+                database, successor_record.to_resource(), source_run_id=selected.selected_parent.id
+            )
+            await self._lifecycle.append_accepted_run_lifecycle(database, successor_record)
+            consume_async_result_for_successor(
+                selected.thread,
+                selected.entry,
+                successor_run_id=prepared.run.id,
+                state_digest_sha256=initial_state.digest_sha256,
+                now=now,
+            )
+            bind_locked_unbound_async_entries(
+                selected.later_entries,
+                target_run_id=prepared.run.id,
+            )
+            selected.thread.version += 1
+            selected.thread.current_run_id = prepared.run.id
+            selected.thread.head_run_id = selected.selected_parent.id
+            selected.thread.updated_at = now
+            await database.flush()
+            return AsyncSubagentSuccessorReceipt(
+                thread_id=thread_id,
+                outcome="run_accepted",
+                inbox_entry_id=selected.entry.id,
+                successor=RunAcceptanceReceipt(
+                    session_id=selected.thread.session_id,
+                    thread_id=thread_id,
+                    thread_version=selected.thread.version,
+                    run_id=prepared.run.id,
+                    run_version=prepared.run.version,
+                ),
+            )
+
         try:
-            async with transaction(self._sessions) as database:
-                selected = await lock_and_route_async_result(
-                    database,
-                    organization_id=organization_id,
-                    thread_id=thread_id,
-                    now=now,
-                )
-                if isinstance(selected, AsyncSubagentSuccessorReceipt):
-                    return selected
-                child_run_id = await _validate_final_selection(
-                    database,
-                    selected,
-                    prepared,
-                    parent_state,
-                    initial_state,
-                    terminal_item,
-                )
-                session = await _authorize_successor(
-                    database,
-                    selected,
-                    child_run_id=child_run_id,
-                )
-                successor_record = await add_run_with_environment(
-                    database,
-                    run=prepared.run.model_copy(update={"labels": merge_labels(selected.thread.labels)}),
-                    state=prepared.state,
-                    workspace_id=session.workspace_id,
-                    intent=RetainedRunEnvironment(selected.selected_parent.id, selected.selected_parent.thread_id),
-                )
-                await database.flush()
-                await self._bindings.finalize(
-                    database, successor_record.to_resource(), source_run_id=selected.selected_parent.id
-                )
-                await self._lifecycle.append_accepted_run_lifecycle(database, successor_record)
-                consume_async_result_for_successor(
-                    selected.thread,
-                    selected.entry,
-                    successor_run_id=prepared.run.id,
-                    state_digest_sha256=initial_state.digest_sha256,
-                    now=now,
-                )
-                bind_locked_unbound_async_entries(
-                    selected.later_entries,
-                    target_run_id=prepared.run.id,
-                )
-                selected.thread.version += 1
-                selected.thread.current_run_id = prepared.run.id
-                selected.thread.head_run_id = selected.selected_parent.id
-                selected.thread.updated_at = now
-                await database.flush()
-                return AsyncSubagentSuccessorReceipt(
-                    thread_id=thread_id,
-                    outcome="run_accepted",
-                    inbox_entry_id=selected.entry.id,
-                    successor=RunAcceptanceReceipt(
-                        session_id=selected.thread.session_id,
-                        thread_id=thread_id,
-                        thread_version=selected.thread.version,
-                        run_id=prepared.run.id,
-                        run_version=prepared.run.version,
-                    ),
-                )
+            return await self._online.commit(accept)
         except IntegrityError as error:
             raise AsyncSubagentSuccessorError(
                 "automatic result successor lost a concurrent relational mutation"

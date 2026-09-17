@@ -1,5 +1,6 @@
 """Control-owned maintenance of durable subagent lifecycles."""
 
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.interactions.inbox import RedisThreadControlSignals
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
@@ -30,6 +31,7 @@ def build_subagent_maintenance(
             RunStateStore(shared.storage.objects),
             replay,
             bindings=shared.memory_behaviors,
+            coordination=ConnectionCoordination(shared.storage.redis),
             lifecycle=shared.lifecycle,
             signals=signals,
         ),

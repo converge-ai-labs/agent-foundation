@@ -9,6 +9,7 @@ from a13n_harness import SafeFailure
 from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import ExistingEnvironmentSelection
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions.acceptance import RunAcceptanceService
@@ -709,6 +710,8 @@ async def _accept_root(
     execution_deadline_at: datetime | None = None,
     environment_id: str | None = None,
     environment_access: Literal["read_only", "read_write", "full"] = "full",
+    coordination: ConnectionCoordination | None = None,
+    idempotency_key: str | None = None,
 ) -> tuple[RunStateStore, Run, RunCheckpoint]:
     config = config or effective_agent_config()
     seed = RunStateSeed(
@@ -747,6 +750,7 @@ async def _accept_root(
         handoffs_completed=0,
         usage_charged=RunUsage(),
         request_fingerprint="1" * 64,
+        idempotency_key=idempotency_key,
         status=RunStatus.accepted,
         input_kind=RunInputKind.agent_input,
         input={"schema_version": "1", "content": [{"type": "text", "text": "hello"}]},
@@ -762,6 +766,7 @@ async def _accept_root(
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
         bindings=ordinary_memory(sessions),
+        coordination=coordination,
     ).accept_new_thread(
         session=Session(
             id=SESSION_ID,

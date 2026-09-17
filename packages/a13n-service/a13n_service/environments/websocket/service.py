@@ -9,12 +9,11 @@ from urllib.parse import quote, urlsplit
 
 from pydantic import Field
 
-from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import ObjectId
 
 from ..domain import DomainModel
-from ..errors import EnvironmentManagementError
+from ..errors import connection_dependency_unavailable
 from .coordination import ConfirmedObservation, ConnectionCoordination, CoordinationError
 from .resources import ConnectionResources
 
@@ -31,14 +30,6 @@ class ClientConnectionStatus(DomainModel):
     connection_id: ObjectId | None
     observed_at: datetime
     error: Literal["environment_unavailable", "environment_initialization_failed", "control_draining"] | None
-
-
-def connection_dependency_unavailable() -> EnvironmentManagementError:
-    return EnvironmentManagementError(
-        "environment_coordination_unavailable",
-        "Client Environment connection coordination is unavailable.",
-        category=ErrorCategory.unavailable,
-    )
 
 
 def websocket_origin(value: str) -> str:

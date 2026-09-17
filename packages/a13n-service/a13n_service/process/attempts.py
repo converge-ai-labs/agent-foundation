@@ -19,6 +19,7 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
@@ -114,6 +115,7 @@ class WorkerAttempts:
             outcomes,
             lifecycle=shared.lifecycle,
             bindings=shared.memory_behaviors,
+            coordination=ConnectionCoordination(shared.storage.redis),
         )
 
     async def run(

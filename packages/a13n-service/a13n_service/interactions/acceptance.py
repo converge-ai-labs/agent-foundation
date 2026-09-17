@@ -4,12 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Mapping
 
-from pydantic import ValidationError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.environments.errors import EnvironmentManagementError
+from a13n_service.environments.websocket.admission import OnlineAdmission, OnlineEvidence
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
@@ -25,13 +27,18 @@ from a13n_service.labels import merge_labels
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .acceptance_validation import validate_new_thread, validate_prepared_run, validate_queued_run_input
+from .acceptance_validation import (
+    validate_inherited_execution,
+    validate_new_thread,
+    validate_prepared_run,
+    validate_queued_run_input,
+    validate_retry_copy,
+    validate_waiting_input,
+)
 from .control_domain import (
     QueuedSubmissionConsumptionReceipt,
     QueuedSubmissionFailure,
     RunAcceptanceReceipt,
-    WaitingRunContinueInput,
-    WaitingRunFeedback,
 )
 from .control_models import QueuedSubmissionRecord
 from .domain import (
@@ -50,7 +57,6 @@ from .inbox_persistence import (
     bind_unbound_async_entries,
     bind_waiting_entries,
 )
-from .inheritance import inherited_run_fields
 from .inline_hooks import InlineHookAcceptance
 from .input import AcceptedAgentInput
 from .lifecycle import LifecycleWriter
@@ -72,11 +78,13 @@ class RunAcceptanceService:
         *,
         lifecycle: LifecycleWriter,
         bindings: ExecutionBindings,
+        coordination: ConnectionCoordination | None = None,
         clock: Clock | None = None,
     ) -> None:
         self._lifecycle = lifecycle
         self._bindings = bindings
         self._sessions = sessions
+        self._online = OnlineAdmission(sessions, coordination)
         self._states = states
         self._payloads = payloads
         self._inline_hooks = InlineHookAcceptance(sessions, inline_hooks)
@@ -112,63 +120,68 @@ class RunAcceptanceService:
         await self._inline_hooks.validate_destination(hook_subscription)
         await self._verify_input_payload(run)
         await self._publish_initial(run, state)
+
+        async def accept(database: AsyncSession, online: OnlineEvidence) -> RunAcceptanceReceipt:
+            if final_validator is not None:
+                await final_validator(database)
+            if session is None:
+                session_record_value = await require_session(database, run)
+                workspace_id = session_record_value.workspace_id
+                session_labels = session_record_value.labels
+            else:
+                database.add(session_record(session))
+                workspace_id = session.workspace_id
+                session_labels = session.labels
+            await self._inline_hooks.authorize(
+                database,
+                run=run,
+                workspace_id=workspace_id,
+                subscription=hook_subscription,
+            )
+            if thread.origin_kind is not ThreadOriginKind.new:
+                await _require_origin(database, thread, run)
+            if thread.origin_kind is ThreadOriginKind.fork:
+                assert thread.origin_thread_id is not None
+                label_parent = await _lock_thread_by_id(
+                    database,
+                    organization_id=thread.organization_id,
+                    thread_id=thread.origin_thread_id,
+                )
+                parent_labels = label_parent.labels
+            else:
+                parent_labels = session_labels
+            accepted_thread_labels = _accepted_labels(parent_labels, thread_label_overrides)
+            accepted_run = run.model_copy(
+                update={"labels": _accepted_labels(accepted_thread_labels, run_label_overrides)}
+            )
+            accepted_thread = thread.model_copy(update={"labels": accepted_thread_labels})
+            database.add(thread_record(accepted_thread))
+            run_record_value = await add_run_with_environment(
+                database,
+                online=online,
+                run=accepted_run,
+                state=state,
+                workspace_id=workspace_id,
+                intent=environment,
+            )
+            hook_subscription_id = await self._inline_hooks.create(
+                database,
+                run=run_record_value,
+                workspace_id=workspace_id,
+                subscription=hook_subscription,
+                now=self._clock(),
+            )
+            await self._lifecycle.append_accepted_run_lifecycle(database, run_record_value)
+            receipt = _receipt(thread, run, hook_subscription_id=hook_subscription_id)
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
+            await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
+            return receipt
+
         try:
-            async with transaction(self._sessions) as database:
-                if final_validator is not None:
-                    await final_validator(database)
-                if session is None:
-                    session_record_value = await require_session(database, run)
-                    workspace_id = session_record_value.workspace_id
-                    session_labels = session_record_value.labels
-                else:
-                    database.add(session_record(session))
-                    workspace_id = session.workspace_id
-                    session_labels = session.labels
-                await self._inline_hooks.authorize(
-                    database,
-                    run=run,
-                    workspace_id=workspace_id,
-                    subscription=hook_subscription,
-                )
-                if thread.origin_kind is not ThreadOriginKind.new:
-                    await _require_origin(database, thread, run)
-                if thread.origin_kind is ThreadOriginKind.fork:
-                    assert thread.origin_thread_id is not None
-                    label_parent = await _lock_thread_by_id(
-                        database,
-                        organization_id=thread.organization_id,
-                        thread_id=thread.origin_thread_id,
-                    )
-                    parent_labels = label_parent.labels
-                else:
-                    parent_labels = session_labels
-                accepted_thread_labels = _accepted_labels(parent_labels, thread_label_overrides)
-                accepted_run = run.model_copy(
-                    update={"labels": _accepted_labels(accepted_thread_labels, run_label_overrides)}
-                )
-                accepted_thread = thread.model_copy(update={"labels": accepted_thread_labels})
-                database.add(thread_record(accepted_thread))
-                run_record_value = await add_run_with_environment(
-                    database,
-                    run=accepted_run,
-                    state=state,
-                    workspace_id=workspace_id,
-                    intent=environment,
-                )
-                hook_subscription_id = await self._inline_hooks.create(
-                    database,
-                    run=run_record_value,
-                    workspace_id=workspace_id,
-                    subscription=hook_subscription,
-                    now=self._clock(),
-                )
-                await self._lifecycle.append_accepted_run_lifecycle(database, run_record_value)
-                receipt = _receipt(thread, run, hook_subscription_id=hook_subscription_id)
-                if transaction_hook is not None:
-                    await transaction_hook(database, receipt)
-                await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
-        except IntegrityError as error:
-            return await self._reconcile_conflict(run, state, error, accepted_thread_version=1)
+            receipt = await self._online.commit(accept)
+        except (IntegrityError, EnvironmentManagementError, RunAcceptanceError) as error:
+            return await self._reconcile_acceptance_error(run, state, error, accepted_thread_version=1)
         return receipt
 
     async def advance_thread(
@@ -204,99 +217,102 @@ class RunAcceptanceService:
         candidate_payload = await self._verify_input_payload(run)
         await self._verify_retry_payload(run, candidate_payload)
         await self._publish_initial(run, state)
-        try:
-            async with transaction(self._sessions) as database:
-                if final_validator is not None:
-                    await final_validator(database)
-                thread = await _lock_thread(database, run)
-                _require_thread_precondition(
-                    thread,
-                    expected_version=expected_thread_version,
-                    expected_current_run_id=expected_current_run_id,
-                    expected_head_run_id=expected_head_run_id,
-                )
-                current = (
-                    await _load_run(database, run.organization_id, thread.current_run_id)
-                    if thread.current_run_id
-                    else None
-                )
-                if current is not None and current.status in {RunStatus.accepted.value, RunStatus.running.value}:
-                    raise RunAcceptanceError("thread_busy", "Thread already has active Run work")
-                await validate_advancement(
-                    database,
-                    thread,
-                    current,
-                    run,
-                    candidate_payload=candidate_payload,
-                    next_head_run_id=next_head_run_id,
-                )
-                session_record_value = await require_session(database, run)
-                parent_labels = (
-                    (await _load_run(database, run.organization_id, label_source_run_id)).labels
-                    if label_source_run_id is not None
-                    else thread.labels
-                )
-                accepted_run = run.model_copy(update={"labels": _accepted_labels(parent_labels, label_overrides)})
-                await self._inline_hooks.authorize(
-                    database,
-                    run=accepted_run,
-                    workspace_id=session_record_value.workspace_id,
-                    subscription=hook_subscription,
-                    source_run_id=hook_source_run_id,
-                    actor=hook_actor,
-                )
-                run_record_value = await add_run_with_environment(
-                    database,
-                    run=accepted_run,
-                    state=state,
-                    workspace_id=session_record_value.workspace_id,
-                    intent=environment,
-                )
-                if run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
-                    await database.flush()
-                    assert run.parent_run_id is not None
-                    await bind_waiting_entries(
-                        database,
-                        thread=thread,
-                        source_waiting_run_id=run.parent_run_id,
-                        target_run_id=run.id,
-                        now=self._clock(),
-                    )
-                elif thread.head_run_id is not None and thread.head_run_id != next_head_run_id:
-                    prior_head = await _load_run(database, run.organization_id, thread.head_run_id)
-                    if prior_head.status == RunStatus.waiting.value:
-                        await abandon_waiting_entries(
-                            database,
-                            thread=thread,
-                            source_waiting_run_id=prior_head.id,
-                            now=self._clock(),
-                        )
-                thread.version += 1
-                thread.current_run_id = run.id
-                thread.head_run_id = next_head_run_id
-                thread.updated_at = self._clock()
+
+        async def accept(database: AsyncSession, online: OnlineEvidence) -> RunAcceptanceReceipt:
+            if final_validator is not None:
+                await final_validator(database)
+            thread = await _lock_thread(database, run)
+            _require_thread_precondition(
+                thread,
+                expected_version=expected_thread_version,
+                expected_current_run_id=expected_current_run_id,
+                expected_head_run_id=expected_head_run_id,
+            )
+            current = (
+                await _load_run(database, run.organization_id, thread.current_run_id) if thread.current_run_id else None
+            )
+            if current is not None and current.status in {RunStatus.accepted.value, RunStatus.running.value}:
+                raise RunAcceptanceError("thread_busy", "Thread already has active Run work")
+            await validate_advancement(
+                database,
+                thread,
+                current,
+                run,
+                candidate_payload=candidate_payload,
+                next_head_run_id=next_head_run_id,
+            )
+            session_record_value = await require_session(database, run)
+            parent_labels = (
+                (await _load_run(database, run.organization_id, label_source_run_id)).labels
+                if label_source_run_id is not None
+                else thread.labels
+            )
+            accepted_run = run.model_copy(update={"labels": _accepted_labels(parent_labels, label_overrides)})
+            await self._inline_hooks.authorize(
+                database,
+                run=accepted_run,
+                workspace_id=session_record_value.workspace_id,
+                subscription=hook_subscription,
+                source_run_id=hook_source_run_id,
+                actor=hook_actor,
+            )
+            run_record_value = await add_run_with_environment(
+                database,
+                online=online,
+                run=accepted_run,
+                state=state,
+                workspace_id=session_record_value.workspace_id,
+                intent=environment,
+            )
+            if run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
                 await database.flush()
-                hook_subscription_id = await self._inline_hooks.create(
+                assert run.parent_run_id is not None
+                await bind_waiting_entries(
                     database,
-                    run=run_record_value,
-                    workspace_id=session_record_value.workspace_id,
-                    subscription=hook_subscription,
+                    thread=thread,
+                    source_waiting_run_id=run.parent_run_id,
+                    target_run_id=run.id,
                     now=self._clock(),
                 )
-                await self._lifecycle.append_accepted_run_lifecycle(database, run_record_value)
-                receipt = RunAcceptanceReceipt(
-                    session_id=thread.session_id,
-                    thread_id=thread.id,
-                    thread_version=thread.version,
-                    run_id=run.id,
-                    run_version=run.version,
-                    hook_subscription_id=hook_subscription_id,
-                )
-                if transaction_hook is not None:
-                    await transaction_hook(database, receipt)
-                await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
-        except IntegrityError as error:
-            return await self._reconcile_conflict(
+            elif thread.head_run_id is not None and thread.head_run_id != next_head_run_id:
+                prior_head = await _load_run(database, run.organization_id, thread.head_run_id)
+                if prior_head.status == RunStatus.waiting.value:
+                    await abandon_waiting_entries(
+                        database,
+                        thread=thread,
+                        source_waiting_run_id=prior_head.id,
+                        now=self._clock(),
+                    )
+            thread.version += 1
+            thread.current_run_id = run.id
+            thread.head_run_id = next_head_run_id
+            thread.updated_at = self._clock()
+            await database.flush()
+            hook_subscription_id = await self._inline_hooks.create(
+                database,
+                run=run_record_value,
+                workspace_id=session_record_value.workspace_id,
+                subscription=hook_subscription,
+                now=self._clock(),
+            )
+            await self._lifecycle.append_accepted_run_lifecycle(database, run_record_value)
+            receipt = RunAcceptanceReceipt(
+                session_id=thread.session_id,
+                thread_id=thread.id,
+                thread_version=thread.version,
+                run_id=run.id,
+                run_version=run.version,
+                hook_subscription_id=hook_subscription_id,
+            )
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
+            await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
+            return receipt
+
+        try:
+            receipt = await self._online.commit(accept)
+        except (IntegrityError, EnvironmentManagementError, RunAcceptanceError) as error:
+            return await self._reconcile_acceptance_error(
                 run,
                 state,
                 error,
@@ -347,102 +363,107 @@ class RunAcceptanceService:
         validate_queued_run_input(run, candidate_payload, accepted_input)
         await self._publish_initial(run, state)
         now = self._clock()
+
+        async def accept(database: AsyncSession, online: OnlineEvidence) -> QueuedSubmissionConsumptionReceipt:
+            if final_validator is not None:
+                await final_validator(database)
+            thread = await _lock_thread(database, run)
+            _require_thread_precondition(
+                thread,
+                expected_version=expected_thread_version,
+                expected_current_run_id=expected_current_run_id,
+                expected_head_run_id=expected_head_run_id,
+            )
+            if thread.queue_version != expected_queue_version:
+                raise RunAcceptanceError("queue_version_conflict", "Thread queue version changed")
+            current = await _load_run(database, run.organization_id, thread.current_run_id)
+            await _require_queue_drain_state(database, thread, current)
+            await validate_advancement(
+                database,
+                thread,
+                current,
+                run,
+                candidate_payload=candidate_payload,
+                next_head_run_id=next_head_run_id,
+            )
+            session_record_value = await require_session(database, run)
+            accepted_run = run.model_copy(update={"labels": _accepted_labels(thread.labels, label_overrides)})
+            choice = await queued_environment_choice(database, queued_submission_id)
+            run_record_value = await add_run_with_environment(
+                database,
+                online=online,
+                run=accepted_run,
+                state=state,
+                workspace_id=session_record_value.workspace_id,
+                intent=requested_environment(choice, default=EnvironmentDefault.thread),
+            )
+            await database.flush()
+            await bind_unbound_async_entries(
+                database,
+                thread=thread,
+                target_run_id=run.id,
+                now=now,
+            )
+            try:
+                consumed = await consume_first_submission(
+                    database,
+                    organization_id=run.organization_id,
+                    thread_id=thread.id,
+                    queued_submission_id=queued_submission_id,
+                    submission_digest_sha256=submission_digest_sha256,
+                    authority_principal=run.authority_principal,
+                    consumed_run_id=run.id,
+                    now=now,
+                )
+            except QueueConsumptionConflict as error:
+                raise RunAcceptanceError(
+                    "queue_consumption_conflict",
+                    "Queued submission changed before Run acceptance",
+                ) from error
+            thread.version += 1
+            thread.queue_version += 1
+            thread.current_run_id = run.id
+            thread.head_run_id = next_head_run_id
+            thread.updated_at = now
+            await database.flush()
+            queued_hook = consumed.to_resource().submission.hook_subscription
+            await self._inline_hooks.authorize(
+                database,
+                run=run,
+                workspace_id=session_record_value.workspace_id,
+                subscription=queued_hook,
+            )
+            hook_subscription_id = await self._inline_hooks.create(
+                database,
+                run=run_record_value,
+                workspace_id=session_record_value.workspace_id,
+                subscription=queued_hook,
+                now=now,
+            )
+            await self._lifecycle.append_accepted_run_lifecycle(database, run_record_value)
+            if consumed.consumed_run_id != run.id:
+                raise RuntimeError("queue consumption lost its accepted Run correlation")
+            receipt = QueuedSubmissionConsumptionReceipt(
+                outcome="run_accepted",
+                queued_submission=consumed.to_resource(),
+                queue_version=thread.queue_version,
+                run=RunAcceptanceReceipt(
+                    session_id=thread.session_id,
+                    thread_id=thread.id,
+                    thread_version=thread.version,
+                    run_id=run.id,
+                    run_version=run.version,
+                    hook_subscription_id=hook_subscription_id,
+                ),
+            )
+            if transaction_hook is not None:
+                await transaction_hook(database, receipt)
+            await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
+            return receipt
+
         try:
-            async with transaction(self._sessions) as database:
-                if final_validator is not None:
-                    await final_validator(database)
-                thread = await _lock_thread(database, run)
-                _require_thread_precondition(
-                    thread,
-                    expected_version=expected_thread_version,
-                    expected_current_run_id=expected_current_run_id,
-                    expected_head_run_id=expected_head_run_id,
-                )
-                if thread.queue_version != expected_queue_version:
-                    raise RunAcceptanceError("queue_version_conflict", "Thread queue version changed")
-                current = await _load_run(database, run.organization_id, thread.current_run_id)
-                await _require_queue_drain_state(database, thread, current)
-                await validate_advancement(
-                    database,
-                    thread,
-                    current,
-                    run,
-                    candidate_payload=candidate_payload,
-                    next_head_run_id=next_head_run_id,
-                )
-                session_record_value = await require_session(database, run)
-                accepted_run = run.model_copy(update={"labels": _accepted_labels(thread.labels, label_overrides)})
-                choice = await queued_environment_choice(database, queued_submission_id)
-                run_record_value = await add_run_with_environment(
-                    database,
-                    run=accepted_run,
-                    state=state,
-                    workspace_id=session_record_value.workspace_id,
-                    intent=requested_environment(choice, default=EnvironmentDefault.thread),
-                )
-                await database.flush()
-                await bind_unbound_async_entries(
-                    database,
-                    thread=thread,
-                    target_run_id=run.id,
-                    now=now,
-                )
-                try:
-                    consumed = await consume_first_submission(
-                        database,
-                        organization_id=run.organization_id,
-                        thread_id=thread.id,
-                        queued_submission_id=queued_submission_id,
-                        submission_digest_sha256=submission_digest_sha256,
-                        authority_principal=run.authority_principal,
-                        consumed_run_id=run.id,
-                        now=now,
-                    )
-                except QueueConsumptionConflict as error:
-                    raise RunAcceptanceError(
-                        "queue_consumption_conflict",
-                        "Queued submission changed before Run acceptance",
-                    ) from error
-                thread.version += 1
-                thread.queue_version += 1
-                thread.current_run_id = run.id
-                thread.head_run_id = next_head_run_id
-                thread.updated_at = now
-                await database.flush()
-                queued_hook = consumed.to_resource().submission.hook_subscription
-                await self._inline_hooks.authorize(
-                    database,
-                    run=run,
-                    workspace_id=session_record_value.workspace_id,
-                    subscription=queued_hook,
-                )
-                hook_subscription_id = await self._inline_hooks.create(
-                    database,
-                    run=run_record_value,
-                    workspace_id=session_record_value.workspace_id,
-                    subscription=queued_hook,
-                    now=now,
-                )
-                await self._lifecycle.append_accepted_run_lifecycle(database, run_record_value)
-                if consumed.consumed_run_id != run.id:
-                    raise RuntimeError("queue consumption lost its accepted Run correlation")
-                receipt = QueuedSubmissionConsumptionReceipt(
-                    outcome="run_accepted",
-                    queued_submission=consumed.to_resource(),
-                    queue_version=thread.queue_version,
-                    run=RunAcceptanceReceipt(
-                        session_id=thread.session_id,
-                        thread_id=thread.id,
-                        thread_version=thread.version,
-                        run_id=run.id,
-                        run_version=run.version,
-                        hook_subscription_id=hook_subscription_id,
-                    ),
-                )
-                if transaction_hook is not None:
-                    await transaction_hook(database, receipt)
-                await self._bindings.finalize(database, accepted_run, source_run_id=binding_source(run))
-        except IntegrityError as error:
+            receipt = await self._online.commit(accept)
+        except (IntegrityError, EnvironmentManagementError, RunAcceptanceError) as error:
             replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
             if replay is not None:
                 queued = await self._validate_queue_replay(
@@ -456,6 +477,8 @@ class RunAcceptanceService:
                     queue_version=expected_queue_version + 1,
                     run=replay,
                 )
+            if not isinstance(error, IntegrityError):
+                raise
             raise RunAcceptanceError(
                 "run_acceptance_conflict", "Queue consumption lost a concurrent mutation"
             ) from error
@@ -585,17 +608,19 @@ class RunAcceptanceService:
         ):
             raise RunAcceptanceError("run_retry_invalid", "Retry must copy the terminal Run's exact accepted input")
 
-    async def _reconcile_conflict(
+    async def _reconcile_acceptance_error(
         self,
         run: Run,
         state: RunCheckpoint,
-        error: IntegrityError,
+        error: IntegrityError | EnvironmentManagementError | RunAcceptanceError,
         *,
         accepted_thread_version: int,
     ) -> RunAcceptanceReceipt:
         replay = await self._load_replay(run, state, accepted_thread_version=accepted_thread_version)
         if replay is not None:
             return replay
+        if not isinstance(error, IntegrityError):
+            raise error
         raise RunAcceptanceError("run_acceptance_conflict", "Run acceptance lost a concurrent mutation") from error
 
     async def _require_inline_hook_replay(
@@ -809,7 +834,7 @@ def _validate_retry_advancement(current: RunRecord, run: Run) -> None:
         RunStatus.cancelled.value,
     }:
         raise RunAcceptanceError("run_retry_conflict", "Retry source is not the current failed or cancelled Run")
-    _validate_retry_copy(current.to_resource(), run)
+    validate_retry_copy(current.to_resource(), run)
 
 
 def _validate_root_advancement(thread: ThreadRecord, current: RunRecord, run: Run) -> None:
@@ -837,8 +862,8 @@ async def _validate_parent_advancement(
     if parent.thread_id != thread.id or parent.status != expected_status:
         raise RunAcceptanceError("run_lineage_invalid", "Continuation parent is not an eligible same-Thread state")
     if expected_status == RunStatus.waiting.value:
-        _validate_inherited_execution(parent.to_resource(), run)
-        _validate_waiting_input(parent, run, candidate_payload)
+        validate_inherited_execution(parent.to_resource(), run)
+        validate_waiting_input(parent, run, candidate_payload)
 
 
 async def _validate_selected_head(
@@ -850,69 +875,6 @@ async def _validate_selected_head(
     head = await _load_run(database, organization_id, head_run_id)
     if head.thread_id != thread.id or head.status not in {RunStatus.waiting.value, RunStatus.completed.value}:
         raise RunAcceptanceError("thread_head_invalid", "Selected Thread head is not a sealed continuation state")
-
-
-def _validate_retry_copy(source: Run, candidate: Run) -> None:
-    _validate_inherited_execution(source, candidate)
-    object_backed = source.input_object is not None
-    immutable_intent = (
-        source.parent_run_id,
-        source.lineage_kind,
-        source.input_kind,
-        object_backed,
-        source.input_text,
-        None if object_backed else source.input,
-    )
-    candidate_intent = (
-        candidate.parent_run_id,
-        candidate.lineage_kind,
-        candidate.input_kind,
-        candidate.input_object is not None,
-        candidate.input_text,
-        None if object_backed else candidate.input,
-    )
-    if candidate_intent != immutable_intent:
-        raise RunAcceptanceError("run_retry_invalid", "Retry must copy the terminal Run's exact accepted intent")
-
-
-def _validate_inherited_execution(source: Run, candidate: Run) -> None:
-    if inherited_run_fields(candidate) != inherited_run_fields(source):
-        raise RunAcceptanceError(
-            "run_inherited_authority_invalid",
-            "Run must preserve its source's accepted execution authority",
-        )
-
-
-def _validate_waiting_input(
-    parent: RunRecord,
-    candidate: Run,
-    payload: RunPayloadEnvelope | None,
-) -> None:
-    raw = candidate.input if payload is None else payload.payload
-    try:
-        if candidate.input_kind is RunInputKind.waiting_feedback:
-            accepted = WaitingRunFeedback.model_validate(raw)
-        elif candidate.input_kind is RunInputKind.waiting_continue:
-            accepted = WaitingRunContinueInput.model_validate(raw)
-        else:
-            raise RunAcceptanceError(
-                "run_input_invalid",
-                "Waiting continuation requires feedback or composite Continue input",
-            )
-    except ValidationError as error:
-        raise RunAcceptanceError("run_input_invalid", "Waiting continuation input is invalid") from error
-    if accepted.waiting_run_id != parent.id or accepted.sealed_state_digest_sha256 != parent.sealed_state_digest_sha256:
-        raise RunAcceptanceError("run_waiting_state_conflict", "Waiting continuation state changed")
-    pending = parent.to_resource().pending
-    if pending is None:
-        raise RunAcceptanceError("run_waiting_state_invalid", "Waiting Run has no pending summary")
-    expected = tuple((call.call_id, call.kind) for call in pending.calls)
-    actual = tuple((resolution.call_id, resolution.kind) for resolution in accepted.resolutions)
-    if actual != expected:
-        raise RunAcceptanceError(
-            "run_feedback_invalid",
-            "Waiting continuation does not exactly cover the frozen pending set",
-        )
 
 
 async def _load_run(database: AsyncSession, organization_id: str, run_id: str | None) -> RunRecord:

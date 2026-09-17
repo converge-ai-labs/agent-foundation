@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 from dataclasses import dataclass, replace
 
@@ -10,6 +11,7 @@ from a13n_service.environments.domain import CreateProviderRequest, RegisterEnvi
 from a13n_service.environments.models import EnvironmentProviderRecord
 from a13n_service.environments.service import EnvironmentService
 from a13n_service.environments.websocket.authority import ConnectionIdentity, UseIdentity
+from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.environments.websocket.use_authorization import ClientUseAuthorization
 from a13n_service.interactions.domain import Run
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
@@ -17,6 +19,7 @@ from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
+from tests.environments.websocket.conftest import relay_redis as relay_redis
 from tests.hooks.support import hook_actor, seed_hook_actor_access
 from tests.lifecycle_support import test_lifecycle_writer
 
@@ -36,7 +39,7 @@ class AdmittedUse:
 
 
 @pytest.fixture
-async def admitted_use(request, interaction_sessions, interaction_object_store):
+async def client_environment(interaction_sessions):
     await seed_hook_actor_access(interaction_sessions)
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
     service = EnvironmentService(
@@ -59,12 +62,31 @@ async def admitted_use(request, interaction_sessions, interaction_object_store):
             ),
         ),
     )
+    return service, provider, environment
+
+
+@pytest.fixture
+async def admitted_use(request, interaction_sessions, interaction_object_store, client_environment, relay_redis):
+    service, provider, environment = client_environment
+    coordination = ConnectionCoordination(relay_redis)
+    ticket = await coordination.issue(ORGANIZATION_ID, environment.id)
+    candidate = await coordination.admit(
+        ORGANIZATION_ID, environment.id, ticket=ticket.secret, owner_instance_id="test-control"
+    )
+    assert candidate.value.connection is not None
+    connection = candidate.value.connection
+    await asyncio.sleep(coordination.limits.lease_ms / 1000 + 0.02)
+    await coordination.promote(connection)
+    await coordination.online(connection)
     _, run, _ = await _accept_root(
         interaction_sessions,
         interaction_object_store,
         environment_id=environment.id,
         environment_access=getattr(request, "param", "read_only"),
+        coordination=coordination,
     )
+    await coordination.retire(connection)
+    await coordination.acknowledge(connection)
     claim = await AttemptScheduler(interaction_sessions, clock=utc_now, lifecycle=test_lifecycle_writer()).claim(
         run.id, _worker()
     )
