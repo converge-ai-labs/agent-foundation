@@ -512,3 +512,7 @@ Keeping attempts as immutable audit rows increases relational retention but pres
 22. A claim requires a pre-reserved bounded local execution slot and starts exactly one process-local `RunAttemptExecutor` async task; it never creates another OS thread or a durable Execution resource.
 23. The execution slot remains owned until the [executor's bounded structured cleanup](14-harness-runtime-integration.md#runattempt-executor-lifetime) finishes.
 24. Same-Run Attempt transitions preserve acquired Environment use; Run sealing releases it atomically with retention updates under [Environment Management](29-environment-management.md#retention-policy).
+
+## Live Environment Associations
+
+[WebSocket Environments and Live Run Mounts](29a-websocket-environments-and-live-mounts.md) owns accepted additional Run mounts. Claim and takeover reload these associations independently from the fixed primary Environment and immutable Agent configuration. Current-Attempt loading observations never survive as another Attempt's readiness or use authority. Before resumed model/tool dispatch, the successor reconstructs fresh operation proxies and reauthorizes accepted mounts; a missing mount state can be reconstructed from the Environment record, but an old checkpoint cannot invent an association. Environment usage and cleanup cover all acquired primary and additional mounts. Ordinary checkpoint and uncertain-tool recovery rules remain unchanged.

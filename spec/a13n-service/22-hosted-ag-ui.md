@@ -190,6 +190,8 @@ Service retains a Hosted AG-UI projection with stable event identities and a bou
 
 Retained delivery is one immutable snapshot per Hosted binding at `organizations/{organization_id}/gateway/hosted-agui/{binding_id}/replay/version-1.json`. It uses the [compressed JSON codec](03-storage.md#compressed-json-objects), with `schema-version=1`, `binding-id`, and `run-id` added to the shared encoding metadata. Reads validate the snapshot schema and binding and Run identity within configured event and decoded-byte limits.
 
+This optional exact-delivery snapshot requires complete original source history and is independent of the continuously saved Native display snapshot. Normal display projection does not wait for Hosted snapshot publication, and merged Items cannot recreate original Hosted events or delivery cursors. Cursor-protected raw trimming can make this exact-delivery snapshot unavailable while Native Item history remains readable; Hosted clients use the explicit gap and authorized current-resource reconciliation below.
+
 Publication is create-only. On conflict, the publisher validates the existing snapshot and accepts it only if its decoded value equals the intended delivery. Missing, invalid, or oversized snapshots cannot supply replay and follow the gap behavior below.
 
 Live and retained source projection preserve recovery event identity and relative position under Hosted delivery cursors. Reconnect includes the boundary only when it follows the supplied cursor; a cursor past it never causes a fresh recovery event. A missing or trimmed boundary follows the same explicit gap rules as other missing source history, rather than being silently omitted from purportedly complete replay.

@@ -142,6 +142,12 @@ The read returns safe identity, the immutable accepted-against Run, current targ
 
 After the relational commit, the control process best-effort appends one business-payload-free reconcile signal to the Thread control Stream. Failure or unknown outcome of that Redis write neither rolls back the accepted inbox entry nor creates an outbox record solely for retrying the signal. The process records bounded diagnostics and readiness follows the shared Redis dependency contract.
 
+## Environment Mount Reconciliation
+
+[WebSocket Environments and Live Run Mounts](29a-websocket-environments-and-live-mounts.md) reuses the Thread control Stream and existing Attempt watcher/boundary reconciliation for accepted additional environments. A signal requests a relational reread; it contains no Environment authority or operation payload. The watcher rereads accepted mount associations but never mutates Harness. At the model boundary, the Worker compares accepted association identities with its locally installed mounts and reconciles missing or unavailable entries. The mandatory root model-request boundary applies prepared candidates before tool/schema and context assembly. An initially empty Run can load its first mount without restarting.
+
+Run mount associations and application observations retain their own relational contract; they are not steer inbox entries and do not consume Thread input FIFO sequence numbers or synthesize user messages. Dropped signals are recovered by the mandatory boundary reread. Environment operation requests/results use separate bounded relay Streams, never this control Stream or its acknowledgement semantics.
+
 ## Unified FIFO Delivery and State Commitment
 
 The current `RunAttemptExecutor` reconciles all eligible `pending` entries bound to its Run in ascending `delivery_sequence`. A later entry never bypasses an earlier eligible one because of kind, Redis arrival, payload location, or adapter readiness. Before moving to a later sequence, the executor must consume the earlier entry or commit its kind-owned `suppressed`, `expired`, `discarded`, or `superseded` disposition.

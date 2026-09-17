@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Service owns durable lifecycle publication, optional retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Run authority. [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Run-scoped Redis Stream, Redis replay cursors, retained Items, and the immutable `RunReplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and the authority boundary between those records and telemetry. [Observability](38-observability.md) owns trace topology, content and scope policy, OTLP export, backend ownership, and hot-backend mapping.
+Service owns durable lifecycle publication, continuous retained interaction projection, raw usage ingestion, large-content selection, and external delivery without turning transport or telemetry into Run authority. [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) owns the lifecycle-event schema, the stable Run-scoped Redis Stream, Redis replay cursors, retained Items, and the incrementally persisted `RunDisplaySnapshot`. This document owns usage attribution, external destination delivery, large content, and the authority boundary between those records and telemetry. [Observability](38-observability.md) owns trace topology, content and scope policy, OTLP export, backend ownership, and hot-backend mapping.
 
 [Service Hook Notifications](26-hook-notifications.md) owns the public Hook-name registry, durable subscription matching, external channel eligibility, and Webhook flow. Hook routing reuses the records and delivery envelope defined here rather than creating another event log or transport authority. Native Run SSE, lifecycle reads, and best-effort notifications remain owned by [Native Streaming and Notifications](21-native-streaming-and-notifications.md).
 
@@ -15,7 +15,7 @@ Harness observations follow the accepted Agent Stream Protocol path. Service con
 | Harness source event | Process-local public observation from one Harness Run           | Harness observation only                            |
 | AG-UI event          | `HarnessAguiObserver` conversion after optional Host processing | Presentation observation only                       |
 | Run Stream entry     | Bounded Run-scoped live or lifecycle projection in Redis        | Transport and bounded replay only                   |
-| Item                 | User-visible semantic unit within a Run                         | Retained projection in `RunReplaySnapshot`          |
+| Item                 | User-visible semantic unit within a Run                         | Retained projection in `RunDisplaySnapshot`         |
 | Lifecycle event      | Fact that a Service resource transition committed               | Relational audit and publication fact               |
 | Native notification  | Lightweight subscribed resource wake-up                         | Best-effort delivery only                           |
 | UsageRecord          | Immutable incurred-usage fact                                   | Durable usage attribution after validated ingestion |
@@ -36,9 +36,11 @@ flowchart LR
             Publisher[Bounded Run Stream publisher]
             Harness --> Driver --> Observer --> Processor --> Publisher
         end
+        Display[Continuous display projector]
     end
 
     Redis[Run-scoped Redis Stream]
+    Snapshot[Display snapshot and committed cursor]
 
     subgraph Control[Control role]
         Subscriber[Authorized source reader]
@@ -49,6 +51,9 @@ flowchart LR
     end
 
     Publisher --> Redis --> Subscriber
+    Redis --> Display --> Snapshot
+    Snapshot --> Subscriber
+    Snapshot -. confirmed trim boundary .-> Redis
 ```
 
 One observer belongs to one Harness Run. The current executor root runs one `HarnessDriver`, which is the sole Harness-stream consumer and drives that observer; `LeaseMonitor` and `ControlWatcher` never consume Harness events. The Service visibility processor applies authorization, redaction, and stable Item projection policy without changing upstream event meaning. Credentials, private state, arbitrary logs, and unbounded content never enter the Run Stream.
@@ -63,7 +68,7 @@ Redis Stream entry IDs are bounded live replay cursors, not product authority. S
 
 The [Protocol Gateway](15-protocol-gateway.md) owns each public wire projection. Native Run SSE preserves the Run Stream cursor; Hosted AG-UI assigns its own retained delivery cursor; A2A exposes current Task state rather than a Native cursor. The best-effort Native notification WebSocket carries only wake-up metadata and has no retained delivery source. None of these projections changes the source event or Item.
 
-Bounded queues and explicit overflow handling prevent a slow client from blocking Harness work. When the retained Redis prefix is unavailable, control returns the explicit replay-gap semantics defined by the stream owner. Once a Run seals with a complete, nonempty stream within the retention bounds, Service publishes its immutable `RunReplaySnapshot`; reconnect and retained reads use the snapshot rather than reconstructing presentation from relational rows, object listings, telemetry, or Harness state. An incomplete, trimmed, empty, or oversized stream reports retained replay as unavailable.
+Bounded queues and explicit overflow handling prevent a slow client from blocking Harness work. When the retained Redis prefix is unavailable, control returns the explicit replay-gap semantics defined by the stream owner. A Worker display projector continuously merges events and atomically persists Items, resumable merge state, and its cursor. Redis may trim only durably covered events; storage stalls apply bounded persistence backpressure independently of slow clients. Item reads use the verified display snapshot during execution and after finalization. Safely trimmed raw history can cause an exact-replay gap while complete display history remains available. Missing, incomplete, or oversized projection is explicit and is never reconstructed from relational rows, object listings, telemetry, or Harness state.
 
 ## Lifecycle Publication and External Destinations
 
@@ -148,7 +153,7 @@ Large model, tool, command, file, or child outputs use object storage only after
 
 An explicitly published [Asset](32-asset-management.md) is the distinct exception: its accepted publication creates an independent immutable `asset_id`, and Run output or an Item can retain the resulting `AssetRef`. Automatic spill, output compaction, replay retention, command capture, or object staging never upgrades content into an Asset. Asset deletion and retention remain independent from the referencing Run or Item.
 
-For example, a command result that exceeds the inline Item limit is staged as an object and selected before the immutable Run replay snapshot references it. An unselected upload is a cleanup candidate. A selected missing object produces an explicit content-read failure; Service does not reinterpret it as a missing Item or use it as continuation state.
+For example, a command result that exceeds the inline Item limit is staged as an object and selected before a committed display snapshot references it. An unselected upload is a cleanup candidate. A selected missing object produces an explicit content-read failure; Service does not reinterpret it as a missing Item or use it as continuation state.
 
 ## Observability
 
@@ -158,21 +163,21 @@ Telemetry is best effort. Its loss cannot erase durable audit, lifecycle, retain
 
 ## Failure Semantics
 
-| Failure                                            | Outcome                                                                                            |
-| -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Run Stream append outcome is unknown               | Reconcile by stable event identity; never infer Run commitment from Redis                          |
-| Redis retention no longer covers requested cursor  | Return the explicit replay gap or immutable Run snapshot according to the owning stream contract   |
-| Subscriber or client buffer overflows              | End the affected attachment explicitly; Harness work and Run authority continue                    |
-| Replay snapshot publication fails                  | Sealed Run remains authoritative; retry deterministic create-only publication                      |
-| Webhook delivery exhausts retries                  | Destination record is dead-lettered; source remains authoritative                                  |
-| Webhook events arrive out of resource order        | Receiver persists the delivery and reconciles the resource-scoped lifecycle API before applying it |
-| Client disconnects                                 | Run continues according to durable state                                                           |
-| Usage report repeats or overlaps terminal snapshot | `record_id` deduplication prevents double counting                                                 |
-| Stale RunAttempt supplies valid late usage         | Usage is attributed and retained without lifecycle mutation                                        |
-| Yielded Run cleanup reaches its protocol observer  | No public terminal AG-UI event is fabricated; the running Run Stream remains open                  |
-| Same usage identity has different content          | Ingestion fails closed and emits a security diagnostic                                             |
-| Object upload and owning-record commit diverge     | Cleanup or an explicit content-read failure preserves owning-record authority                      |
-| Harness pricing is disabled, declined, or fails    | Raw usage remains durable and ordinary Service operation is unaffected                             |
+| Failure                                            | Outcome                                                                                              |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Run Stream append outcome is unknown               | Reconcile by stable event identity; never infer Run commitment from Redis                            |
+| Redis retention no longer covers requested cursor  | Return an exact-replay gap when no raw source covers it; recover display through the snapshot cursor |
+| Subscriber or client buffer overflows              | End the affected attachment explicitly; Harness work and Run authority continue                      |
+| Replay snapshot publication fails                  | Sealed Run remains authoritative; retry deterministic create-only publication                        |
+| Webhook delivery exhausts retries                  | Destination record is dead-lettered; source remains authoritative                                    |
+| Webhook events arrive out of resource order        | Receiver persists the delivery and reconciles the resource-scoped lifecycle API before applying it   |
+| Client disconnects                                 | Run continues according to durable state                                                             |
+| Usage report repeats or overlaps terminal snapshot | `record_id` deduplication prevents double counting                                                   |
+| Stale RunAttempt supplies valid late usage         | Usage is attributed and retained without lifecycle mutation                                          |
+| Yielded Run cleanup reaches its protocol observer  | No public terminal AG-UI event is fabricated; the running Run Stream remains open                    |
+| Same usage identity has different content          | Ingestion fails closed and emits a security diagnostic                                               |
+| Object upload and owning-record commit diverge     | Cleanup or an explicit content-read failure preserves owning-record authority                        |
+| Harness pricing is disabled, declined, or fails    | Raw usage remains durable and ordinary Service operation is unaffected                               |
 
 ## Invariants
 

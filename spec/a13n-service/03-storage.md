@@ -116,7 +116,7 @@ The protocol reports provider-neutral not-found, conflict, invalid-request, and 
 
 ### Compressed JSON Objects
 
-Run checkpoints, Run replay snapshots, and Hosted AG-UI replay snapshots share one codec in their domain storage interfaces. These interfaces serialize and validate typed values; `ObjectStore` reads and writes the resulting bytes on either backend.
+Run checkpoints, Run display snapshots, legacy Run replay snapshots, and Hosted AG-UI replay snapshots share one codec in their domain storage interfaces. These interfaces serialize and validate typed values; `ObjectStore` reads and writes the resulting bytes on either backend.
 
 The format is UTF-8 RFC 8785 canonical JSON compressed with Zstandard level 1 into one standard frame, with checksum and decoded content size, without a dictionary or internal multithreaded compression. Required metadata is `storage-encoding=rfc8785-zstd-v1` and `digest-sha256`; the content type is `application/zstd`. Each domain owns its key, identity metadata, and schema. The encoding version is independent of domain schema versions. Readers reject missing or unsupported encoding markers; writers always use this format.
 

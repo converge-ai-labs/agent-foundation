@@ -32,6 +32,7 @@ The Harness owns code-first Agent construction, a neutral package-local official
 | [18-codeact.md](18-codeact.md)                                                           | Restricted inline and file-backed CodeAct orchestration, typed tool eligibility, sandbox lifecycle, and nested dispatch          |
 | [19-observation-model.md](19-observation-model.md)                                       | OpenTelemetry signals, trace levels, metrics, correlation, information boundary, Host profiles, and export-failure semantics     |
 | [20-async-components-and-lifecycle.md](20-async-components-and-lifecycle.md)             | Async subagent admission, observation, parent closure, wake, restart, loss, retention, and Host shutdown                         |
+| [21-document-memory.md](21-document-memory.md)                                           | Document types, revisions and change diffs, extraction/organization, navigation/tools, and file-only Environment-backed memory   |
 
 ## Reading Paths
 
@@ -54,6 +55,10 @@ Read `07`, `08`, `13`, and `15`, then the [Environment Provider specifications](
 ### Implement Hosting or Persistence
 
 Read `10`, `12`, `13`, `14`, and `20`, then the a13n Service catalog. A Host owns all async-child lifecycle authority. Shell references and observations are Run-local; cleanup releases them without blanket termination. Provider state owns native process recovery. See `08` for the independent process and output completion boundaries.
+
+### Integrate Document Memory
+
+Read `21`, the memory boundary in `09`, and Environment file access in `08`. Hosted integrations also read Service `42` for storage bindings, authorization, organization completion, change-query metadata, and publication semantics. Native record adapters retain their contract in `09`.
 
 ### Integrate Observation
 

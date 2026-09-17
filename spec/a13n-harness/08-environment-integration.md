@@ -8,7 +8,7 @@ The Environment package owns the only shared lifecycle entities: `EnvironmentPro
 
 Every independent Harness Run receives fresh Environment instances. Harness enters them before Agent input production and closes them after the terminal Run fence. `close()` releases local adapter resources and never destroys a Docker container, E2B sandbox, Host workspace, or other backing target. Inline child execution borrows the parent Run's entered facade; an async child is an independent Run and receives fresh adapters from its Host.
 
-`DynamicEnvironmentCapability` is the optional model adapter. It derives a fixed standard Toolset from the effective actions of the selected mounts, projects bounded current mount context, and exposes only operations permitted by both Harness access ceilings and provider descriptors. Environment lifecycle administration never becomes a model tool.
+`DynamicEnvironmentCapability` is the optional model adapter. It derives the standard Toolset vocabulary from the effective actions of the selected mounts, refreshing available tools and schemas at model-request boundaries, projects bounded current mount context, and exposes only operations permitted by both Harness access ceilings and provider descriptors. Environment lifecycle administration never becomes a model tool.
 
 Each Toolset owns the mapping from its tool arguments to canonical authorization resources, declared with the tool registration. File tools resolve all affected paths, including both endpoints of every copy or move; shell tools resolve command bindings and their own process references. The Environment layer owns current route selection, readiness, permission checks, and execution-local operation scopes without interpreting tool identifiers or argument schemas. Resource resolution projects metadata; it does not retain an authorization-time selection or install a historical mount-publication fence. Dynamic model context only projects Environment changes and does not mediate Toolset resource resolution. These resource semantics apply to Environment-backed Toolsets independently of the dynamic capability. Direct FileOperator and generic file-scope callers retain their existing behavior, and explicit resource-resolver and execution-guard callbacks remain supported overrides.
 
@@ -106,6 +106,12 @@ Validation of a complete initial mount set precedes ownership transfer. The same
 | Async subagent admission, lifecycle, cleanup, wake               | [Async Subagent Lifecycle](20-async-components-and-lifecycle.md) |
 
 Provider denial always narrows Harness access. Mount names, mount IDs, paths, process references, cursors, and saved state are selectors or observations, not bearer credentials.
+
+## Memory File Access
+
+[Document Memory](21-document-memory.md#storage-binding-and-environment-lifetime) borrows a root-confined file facade from the selected Environment. It reuses readiness, current action ceilings, backing identity, and execution guards; it does not re-enter or independently close the same adapter. Default memory uses the current default Environment, while an explicit Host binding can supply another target. Memory receives no shell, process, port, or output facet, and uses no shell commands to implement memory operations. Disabling the generic file Toolset alone does not remove the underlying file operations authorized for memory.
+
+This is a capability boundary, not an OS isolation claim: other tools with access to the same target may still read or change its files. Memory detects out-of-band changes under its owning revision contract. Environment `close()` does not erase memory; backing-target destruction can. A recreated target does not restore its predecessor's corpus. File operations alone do not promise memory transactions or cross-process write coordination.
 
 ## Identity and Core Values
 
@@ -216,9 +222,15 @@ Mutations are linearizable:
 
 Mount and replacement preparation binds the fresh Environment scope before commit without forcing target I/O for a lazy object. Preparation failure leaves the published snapshot unchanged and closes the candidate. Commit publishes one new snapshot and one `EnvironmentChange`; the retired adapter closes after its operation leases drain.
 
-Dynamic mutations are Run-local. They do not discover a Provider, persist desired mounts, mutate Host Thread association, invoke `destroy()`, or change another Run. A durable desired-mount change is a separate Host operation applied before constructing a later Run.
+Dynamic mutations are Run-local. They do not discover a Provider, persist desired mounts, mutate Host Thread association, invoke `destroy()`, or change another Run. A durable desired-mount change is a separate Host operation. A Host may reconcile that accepted change into this Run through the controller at a model-request boundary, or supply it before constructing a later Run; Harness owns neither persistence nor authorization of the durable association.
 
 Mutation after the terminal fence fails. A caller that needs an initial mount must supply it before Run entry rather than racing input production.
+
+### Host Changes at Model-Request Boundaries
+
+A Host that supports live additions installs its trusted integration and `DynamicEnvironmentCapability` before execution, including when the bound facade starts empty. At a boundary after the complete active tool batch has settled and before the next root model request is assembled, the integration prepares authorized candidates and applies them through the existing Run-local controller. Published routes, effective standard Toolset schemas and trusted Environment context are projected from the same resulting snapshot for that request. Preparation failure preserves existing mounts and does not advertise the failed candidate as usable. Disabled capabilities remain disabled.
+
+A model request or tool batch already in flight keeps its existing inputs and captured operation scopes. A late Host update waits for the next eligible boundary; nested model calls and compaction are not independent mount-application boundaries. A Run that finishes first need not apply a pending addition. A Host records its own application acknowledgement only after local publication and fences that observation to its current execution owner; neither Harness entry nor a transport notification proves that publication. Durable mount associations, tickets, Worker fences and pending Host work remain outside `HarnessState`.
 
 ## Routing and Operation Fencing
 

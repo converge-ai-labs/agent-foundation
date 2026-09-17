@@ -45,7 +45,7 @@ data: <one-line JSON RunStreamEvent>
 
 ```
 
-`id` is the Redis Stream entry ID retained in the Run replay snapshot. `event` equals the bounded `event_type` carried by `data`. `data` is the complete versioned `RunStreamEvent` owned by the persistence contract. JSON is encoded on one UTF-8 line; clients ignore unknown additive object fields but do not guess unknown required schema versions.
+`id` is the original Redis Stream entry ID. Display snapshots retain a coverage cursor but do not retain every SSE entry. `event` equals the bounded `event_type` carried by `data`. `data` is the complete versioned `RunStreamEvent` owned by the persistence contract. JSON is encoded on one UTF-8 line; clients ignore unknown additive object fields but do not guess unknown required schema versions.
 
 The service sends SSE comments as heartbeats. A heartbeat carries no `id`, does not advance replay, and is not a Run observation. The server can close a healthy connection at its configured maximum lifetime; clients reconnect with the last applied event ID.
 
@@ -53,9 +53,11 @@ The service sends SSE comments as heartbeats. A heartbeat carries no `id`, does 
 
 The attachment establishes one high watermark after authorization, returns the authorized retained or live entries through that watermark in order, and then subscribes after the same boundary. An entry is neither skipped nor delivered twice by the replay-to-live cutover. Duplicate delivery after a client loses an acknowledgement remains possible, so clients deduplicate by cursor or stable event identity.
 
-If `Last-Event-ID` is covered by the live Redis prefix or complete immutable snapshot, replay continues from that source. If the requested prefix is no longer available and no complete snapshot bridges it, the route returns `409 run_stream_replay_gap` before opening SSE when the gap is known during attachment. A gap discovered after the response starts emits one terminal `a13n.service.replay_gap` event without a replay-advancing `id` and closes the attachment. Its bounded data identifies the Run, requested cursor, available floor, and current high watermark; it contains no missing content.
+If `Last-Event-ID` is covered by retained raw Redis history or a valid legacy immutable replay snapshot, replay continues from that source. A predecessor at the safely trimmed boundary is valid when its following suffix is available. A merged display snapshot cannot serve exact SSE replay. If the requested prefix is no longer available and no retained raw source bridges it, the route returns `409 run_stream_replay_gap` before opening SSE when the gap is known during attachment. A gap discovered after the response starts emits one terminal `a13n.service.replay_gap` event without a replay-advancing `id` and closes the attachment. Its bounded data identifies the Run, requested cursor, available floor, and current high watermark; it contains no missing content.
 
-The client reconciles a gap through current Run, Item, and pending-action reads. It never treats the first surviving stream event as complete history.
+The client reconciles a gap through current Run, Item, and pending-action reads. It loads one consistent display snapshot through the Item collection, replaces the covered local Item projection, and attaches after the returned `projection_cursor`. It does not append a snapshot over already applied deltas or reset to the beginning. A finalized snapshot needs no live attachment. If the cursor ages out during pagination or attachment, bounded recovery reloads a newer snapshot; repeated failure exposes a live gap and the actual display coverage without an unbounded reconnect loop. Missing snapshots produce explicit Item unavailability, not a successful reconciliation notice. Original execution observations remain unavailable when only merged Items survive.
+
+The client never treats the first surviving stream event as complete history. Display cursor recovery is not exact replay of the missing original events. Run terminal status alone does not prove display finalization; clients can observe projection lag independently.
 
 A sealed Run stream closes after its final retained observation is delivered. The terminal stream observation reports a projection of the authoritative sealed Run outcome; closing the connection alone does not prove completion.
 
@@ -198,15 +200,15 @@ Authentication failure known before upgrade returns the ordinary HTTP `401` and 
 
 ## Failure Semantics
 
-| Failure                                    | Client action                                                  | Run consequence |
-| ------------------------------------------ | -------------------------------------------------------------- | --------------- |
-| SSE cursor is outside retained history     | Read current resources and reattach from an available boundary | None            |
-| SSE delivery disconnects                   | Reconnect with last fully applied event ID                     | None            |
-| Workspace lifecycle cursor expires         | Reconcile current resources and restart at returned floor      | None            |
-| Resource lifecycle predecessor expires     | Rebootstrap current resource state at the returned boundary    | None            |
-| Notification connection drops or overflows | Reconnect, resubscribe, and reconcile                          | None            |
-| Subscription authorization is revoked      | Subscription is denied or removed; safe error/close follows    | None            |
-| Service drains                             | Reconnect to another ready replica                             | None            |
+| Failure                                    | Client action                                                          | Run consequence |
+| ------------------------------------------ | ---------------------------------------------------------------------- | --------------- |
+| SSE cursor is outside retained history     | Load a consistent Item snapshot and attach after its projection cursor | None            |
+| SSE delivery disconnects                   | Reconnect with last fully applied event ID                             | None            |
+| Workspace lifecycle cursor expires         | Reconcile current resources and restart at returned floor              | None            |
+| Resource lifecycle predecessor expires     | Rebootstrap current resource state at the returned boundary            | None            |
+| Notification connection drops or overflows | Reconnect, resubscribe, and reconcile                                  | None            |
+| Subscription authorization is revoked      | Subscription is denied or removed; safe error/close follows            | None            |
+| Service drains                             | Reconnect to another ready replica                                     | None            |
 
 ## Compatibility and Invariants
 

@@ -4,7 +4,7 @@
 
 Harness UI exposes Harness file Skills as an Agent-selected Capability without creating a second managed Skill resource. A selected `skills` Capability discovers ordinary `SKILL.md` directories through the current Run's entered Environment. Project-local, user-local, and installed [Content Plugin](01b-content-plugin-repositories.md) Skill files are directly editable through their owning Environment mounts. Release-owned Skills and their bundled documentation are read-only package resources. Skills do not become Harness UI desired resources or SQLite rows.
 
-The [Harness Skills contract](../a13n-harness/09-context-and-memory.md#skills) owns Skill document parsing, catalog freezing, selection, model-facing routing, and read observation. Harness UI owns only the Host source set, Environment routing, user Skill root exposure, and immutable source configuration captured for a Run.
+The [Harness Skills contract](../a13n-harness/09-context-and-memory.md#skills-and-discovery) owns Skill document parsing, catalog freezing, selection, model-facing routing, and read observation. Harness UI owns only the Host source set, Environment routing, user Skill root exposure, and immutable source configuration captured for a Run.
 
 ## Boundaries
 
