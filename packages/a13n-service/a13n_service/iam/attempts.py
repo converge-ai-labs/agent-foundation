@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.environments.authorization import EnvironmentAuthorization, read_environment_authorization
+from a13n_service.environments.mount_models import RunEnvironmentMountRecord
 from a13n_service.storage import short_session
 
 from .authorization import PrincipalPermissions, WorkspaceAction, read_principal_permissions
@@ -49,7 +50,7 @@ class AttemptAuthorization:
         self._sessions: async_sessionmaker[AsyncSession] | None = None
         self._scope: _ExecutionScope | None = None
         self._snapshot: PrincipalPermissions | None = None
-        self._environment: EnvironmentAuthorization | None = None
+        self._environments: dict[str, EnvironmentAuthorization] = {}
         self._failure: str | None = None
         self._model_requests = 0
         self._requests_since_refresh = 0
@@ -68,17 +69,46 @@ class AttemptAuthorization:
             raise AttemptAuthorizationError(self._failure)
 
     def require_environment(self, environment_id: str) -> None:
-        """Check the fixed binding and latest permissions without database I/O."""
+        """Check an admitted binding and latest permissions without database I/O."""
+        self._require_environment(self._environments.get(environment_id))
+
+    def _require_environment(self, environment: EnvironmentAuthorization | None) -> None:
         snapshot = self.snapshot
-        scope, environment = self._scope, self._environment
+        scope = self._scope
         assert scope is not None
-        if environment is None or environment.environment_id != environment_id:
+        if environment is None:
             raise AuthorizationError("environment_not_found", concealed=True)
         if not environment.enabled:
             raise AuthorizationError("environment_provider_unavailable", concealed=True)
         required = {WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}
         if not required.issubset(snapshot.for_agent(scope.root_agent_id)):
             raise AuthorizationError("permission_denied", concealed=True)
+
+    async def admit_environment(self, *, name: str, environment_id: str) -> None:
+        """Admit an immutable accepted addition before preparing its runtime adapter."""
+        async with self._lock:
+            self.raise_if_failed()
+            scope, sessions = self._scope, self._sessions
+            if scope is None or sessions is None:
+                raise AttemptAuthorizationError("attempt_authorization_unprepared")
+            await self._refresh()
+            async with short_session(sessions) as session:
+                mount = await session.get(RunEnvironmentMountRecord, (scope.run_id, name))
+                if mount is None or (mount.organization_id, mount.workspace_id, mount.environment_id) != (
+                    scope.organization_id,
+                    scope.workspace_id,
+                    environment_id,
+                ):
+                    raise AuthorizationError("environment_not_found", concealed=True)
+                environment = await read_environment_authorization(
+                    session,
+                    environment_id=environment_id,
+                    organization_id=scope.organization_id,
+                    workspace_id=scope.workspace_id,
+                    previous=None,
+                )
+            self._require_environment(environment)
+            self._environments[environment_id] = environment
 
     async def initialize(
         self,
@@ -153,17 +183,19 @@ class AttemptAuthorization:
                         context=scope.configuration_context,
                         snapshot=snapshot,
                     )
-                environment = (
-                    await read_environment_authorization(
+                environment_ids = set(self._environments)
+                if scope.environment_id is not None:
+                    environment_ids.add(scope.environment_id)
+                environments = {
+                    environment_id: await read_environment_authorization(
                         session,
-                        environment_id=scope.environment_id,
+                        environment_id=environment_id,
                         organization_id=scope.organization_id,
                         workspace_id=scope.workspace_id,
-                        previous=self._environment,
+                        previous=self._environments.get(environment_id),
                     )
-                    if scope.environment_id is not None
-                    else None
-                )
+                    for environment_id in sorted(environment_ids)
+                }
             if scope.configuration_context is None and WorkspaceAction.agent_invoke not in snapshot.for_agent(
                 scope.root_agent_id
             ):
@@ -175,7 +207,7 @@ class AttemptAuthorization:
             self._failure = "attempt_dependency_unavailable"
             raise AttemptAuthorizationError(self._failure) from error
         self._snapshot = snapshot
-        self._environment = environment
+        self._environments = environments
         self._requests_since_refresh = 0
         logger.info(
             "run_attempt_permissions_refreshed",
