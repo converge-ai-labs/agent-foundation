@@ -18,6 +18,7 @@ import httpx
 import psutil
 import pytest
 import uvicorn
+from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.webui import create_webui, run
 from a13n_harness_ui.webui_lifecycle import RequestLog, WebUIServer
 from anyio import Event, fail_after, sleep, sleep_forever
@@ -25,20 +26,20 @@ from starlette.routing import Route
 from starlette.websockets import WebSocket
 from websockets.sync.client import connect
 
-from .test_app import _write_configuration
+from .test_app import _settings, _write_configuration
 
 
 @pytest.mark.anyio
-async def test_realtime_shutdown_serializes_close_with_pending_channel_send() -> None:
+async def test_realtime_shutdown_serializes_close_with_pending_channel_send(tmp_path: Path) -> None:
     stopping, close_started, channel_started = Event(), Event(), Event()
     stopping.set()
     messages = []
     received = 0
 
     @asynccontextmanager
-    async def unopened_app():
-        raise AssertionError("This transport race does not open an App")
-        yield
+    async def opened_app():
+        async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
+            yield app
 
     async def receive():
         nonlocal received
@@ -65,10 +66,11 @@ async def test_realtime_shutdown_serializes_close_with_pending_channel_send() ->
             await channel_started.wait()
             await sleep(0)
 
-    server = create_webui(unopened_app, api_key=None, stopping=stopping)
+    server = create_webui(opened_app, api_key=None, stopping=stopping)
     endpoint = next(route.endpoint for route in server.routes if route.path == "/api/realtime/connect")
-    with fail_after(2):
-        await endpoint(WebSocket({"type": "websocket"}, receive, send))
+    async with server.router.lifespan_context(server):
+        with fail_after(2):
+            await endpoint(WebSocket({"type": "websocket"}, receive, send))
     assert [message["type"] for message in messages] == ["websocket.accept", "websocket.close"]
     assert messages[-1]["code"] == 1001
 
