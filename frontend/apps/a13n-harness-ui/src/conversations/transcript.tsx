@@ -8,6 +8,7 @@ import {
   type ToolView,
 } from "./tool-presentation";
 import { MessageText } from "./message-text";
+import { CopyMessage } from "./copy-message";
 import { ContextActivity } from "./context-activity";
 export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
@@ -250,11 +251,22 @@ function Rows({
   rows,
   threadId,
   continuation = false,
+  copyOutput = false,
 }: {
   rows: Row[];
   threadId?: string;
   continuation?: boolean;
+  copyOutput?: boolean;
 }) {
+  const output = copyOutput
+    ? rows.flatMap((row) =>
+        row.kind === "assistant" && !row.live ? [row] : [],
+      )
+    : [];
+  const copyText = output
+    .map((row) => row.text)
+    .filter(Boolean)
+    .join("\n\n");
   return groupRows(rows).map((row, index, all) => (
     <div
       key={row.id}
@@ -289,6 +301,12 @@ function Rows({
           <MessageText text={row.text} />
           {row.truncated && (
             <small>Saved preview truncated by the server.</small>
+          )}
+          {row === output.at(-1) && copyText.trim() && (
+            <CopyMessage
+              text={copyText}
+              truncated={output.some((part) => part.truncated)}
+            />
           )}
         </section>
       ) : row.kind === "context" ? (
@@ -564,7 +582,7 @@ function Turn({
           </div>
         </div>
       )}
-      <Rows rows={final} threadId={threadId} continuation />
+      <Rows rows={final} threadId={threadId} continuation copyOutput />
       <Rows rows={following} threadId={threadId} continuation />
     </section>
   );

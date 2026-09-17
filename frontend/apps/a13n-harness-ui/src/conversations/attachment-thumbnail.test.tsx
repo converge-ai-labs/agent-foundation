@@ -132,7 +132,9 @@ it("renders one thumbnail per authored occurrence and keeps hidden descriptions 
   expect(screen.getAllByText("photo.png")).toHaveLength(2);
   expect(screen.queryByText("hidden description")).toBeNull();
   const visible = [
-    ...view.container.querySelectorAll("header ~ span, header ~ div > button"),
+    ...view.container.querySelectorAll(
+      'header ~ span, header ~ div > button[aria-label^="Preview "]',
+    ),
   ].map((node) => node.textContent);
   expect(visible).toEqual(["before ", "photo.png", " between ", "photo.png"]);
 });
