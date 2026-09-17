@@ -82,6 +82,7 @@ async def worker_runtime(
     observability=None,
     environment_catalog=None,
     configuration_resolver=None,
+    redis=None,
 ):
     resources = Mock(spec=ExecutionResources)
     resources.native_model_factory = model_factory
@@ -91,7 +92,9 @@ async def worker_runtime(
     resources.model_provider_registry = Mock()
     resources.model_endpoint_policy = Mock()
     resources.model_http_client = Mock()
-    async with FakeRedis() as redis, AsyncExitStack() as stack:
+    async with AsyncExitStack() as stack:
+        if redis is None:
+            redis = await stack.enter_async_context(FakeRedis())
         shared = SharedRuntime(
             StorageResources(Mock(), sessions, redis, objects, path, CapacityLimiter(4)),
             test_lifecycle_writer(),

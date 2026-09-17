@@ -45,24 +45,21 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def client_runtime(admitted_use, interaction_sessions, relay_redis, redis_url, envd_binary, tmp_path):
-    case = admitted_use
-    environment_id = case.identity.connection.environment_id
-    attempt = await prepare_permissions(interaction_sessions, case.run, _authority(case.claim))
+async def native_client(client_environment, interaction_sessions, relay_redis, envd_binary, tmp_path):
+    environment_service, _, environment = client_environment
     service = ClientConnectionService(
-        ConnectionResources(case.service), ConnectionCoordination(relay_redis), public_origin="wss://service.example"
+        ConnectionResources(environment_service),
+        ConnectionCoordination(relay_redis),
+        public_origin="wss://service.example",
     )
     host = ClientConnectionHost(service, relay_redis, ClientUseAuthorization(interaction_sessions))
-    lifecycle = EnvironmentLifecycle(
-        interaction_sessions, case.service.catalog, case.service.protector, tmp_path / "service-files"
-    )
-    target = await service.resources.authorized(hook_actor(), environment_id)
-    ticket = await service.issue_ticket(hook_actor(), environment_id)
+    target = await service.resources.authorized(hook_actor(), environment.id)
+    ticket = await service.issue_ticket(hook_actor(), environment.id)
     app = FastAPI()
 
     @app.websocket("/connect")
     async def ingress(websocket: WebSocket):
-        await host.serve(websocket, environment_id)
+        await host.serve(websocket, environment.id)
 
     server = uvicorn.Server(uvicorn.Config(app, log_level="critical", lifespan="off", access_log=False))
     with socket.socket() as listener:
@@ -74,25 +71,38 @@ async def client_runtime(admitted_use, interaction_sessions, relay_redis, redis_
                 while not server.started:
                     assert not serving.done()
                     await asyncio.sleep(0.01)
-            async with open_redis(RedisServerConfig(url=redis_url, max_connections=1)) as reader:
-                connections = WorkerClientConnections(relay_redis, reader, attempt.worker_id)
-                await connections.prepare()
-                receiving = asyncio.create_task(connections.run())
-                async with daemon(envd_binary, tmp_path / "client", url, ticket.ticket, "native", expected_exit=1) as (
-                    process,
-                    workspace,
-                ):
-                    try:
-                        await online(service, target, ticket.connection_id)
-                        yield lifecycle, connections, attempt, workspace, service, target
-                    finally:
-                        await connections.close()
-                        await receiving
-                        await host.close()
-                        await asyncio.wait_for(process.wait(), 5)
+            async with daemon(envd_binary, tmp_path / "client", url, ticket.ticket, "native", expected_exit=1) as (
+                process,
+                workspace,
+            ):
+                try:
+                    await online(service, target, ticket.connection_id)
+                    yield service, target, workspace
+                finally:
+                    await host.close()
+                    await asyncio.wait_for(process.wait(), 5)
         finally:
             server.should_exit = True
             await asyncio.wait_for(serving, 5)
+
+
+@pytest.fixture
+async def client_runtime(admitted_use, native_client, interaction_sessions, relay_redis, redis_url, tmp_path):
+    case = admitted_use
+    service, target, workspace = native_client
+    attempt = await prepare_permissions(interaction_sessions, case.run, _authority(case.claim))
+    lifecycle = EnvironmentLifecycle(
+        interaction_sessions, case.service.catalog, case.service.protector, tmp_path / "service-files"
+    )
+    async with open_redis(RedisServerConfig(url=redis_url, max_connections=1)) as reader:
+        connections = WorkerClientConnections(relay_redis, reader, attempt.worker_id)
+        await connections.prepare()
+        receiving = asyncio.create_task(connections.run())
+        try:
+            yield lifecycle, connections, attempt, workspace, service, target
+        finally:
+            await connections.close()
+            await receiving
 
 
 @pytest.mark.parametrize("admitted_use", ["full"], indirect=True)
