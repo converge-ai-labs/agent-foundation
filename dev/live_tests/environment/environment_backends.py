@@ -18,27 +18,20 @@ from ..infrastructure.round_two_lab import free_origin, private_json
 from ..infrastructure.tcp_proxy import TCPProxy
 
 logger = logging.getLogger(__name__)
-BACKENDS = ("local-envd", "docker", "e2b", "http-envd", "websocket-envd")
+BACKENDS = ("docker", "e2b", "http-envd", "websocket-envd")
 REMOTE = {"http-envd", "websocket-envd"}
 RETENTION = {"idle": {"stop_after": None, "delete_after": None}}
 
 
-def recipe_configuration(kind, root, settings=None):
+def provider_configuration(kind, root, settings=None):
     root.mkdir(mode=0o700)
     shell = [{"profile_id": "default", "executable": "/bin/sh", "fixed_arguments": ["-c"]}]
     if kind == "direct-local":
         return {"root": {"path": str(root)}, "shell_profiles": shell}
-    if kind == "local-envd":
-        return {"workspace": {"path": str(root)}, "shell_profiles": shell}
     if kind == "docker":
-        root.chmod(0o777)
         return {
-            "image": os.environ.get("LIVE_TEST_SANDBOX_IMAGE", "a13n-sandbox:local"),
+            "image": os.environ.get("LIVE_TEST_DOCKER_IMAGE", "a13n-docker-environment:local"),
             "pull_policy": "never",
-            "mounts": [
-                {"mount_id": "workspace", "container_path": "/workspace", "source": {"kind": "bind", "path": str(root)}}
-            ],
-            "shell_profiles": shell,
         }
     if kind == "e2b":
         return {"template": settings.template, "timeout_seconds": 300}
@@ -49,38 +42,14 @@ def recipe_configuration(kind, root, settings=None):
 class BackendTarget:
     backend: EnvironmentBackend
     provider: dict
-    recipe: dict
+    template_config: dict
     root: Path
     state: dict | None
     process: asyncio.subprocess.Process | None
     proxy: TCPProxy | None = None
 
     async def read_text(self, path):
-        if self.backend.kind != "docker":
-            return await asyncio.to_thread((self.root / path).read_text)
-        # A daemon-created 0600 file belongs to the container user. Inspect it
-        # through Docker, independently of the Service/Harness file tools.
-        import docker
-
-        def read():
-            client = docker.from_env()
-            try:
-                containers = [
-                    container
-                    for container in client.containers.list()
-                    if any(
-                        mount.get("Source") == str(self.root) and mount.get("Destination") == "/workspace"
-                        for mount in container.attrs.get("Mounts", [])
-                    )
-                ]
-                assert len(containers) == 1, "Expected one owned container for this bind directory"
-                result = containers[0].exec_run(["cat", "/workspace/" + path])
-                assert result.exit_code == 0, result.output
-                return result.output.decode()
-            finally:
-                client.close()
-
-        return await asyncio.to_thread(read)
+        return await asyncio.to_thread((self.root / path).read_text)
 
     async def restart_daemon(self):
         await self.backend.lab.stop(self.process)
@@ -89,7 +58,7 @@ class BackendTarget:
     async def template(self, **overrides):
         return await self.backend.journey.post(
             self.backend.journey.base + "/environment-templates",
-            {"name": "Backend matrix " + uuid4().hex, **self.recipe, **overrides},
+            {"name": "Backend matrix " + uuid4().hex, **self.template_config, **overrides},
         )
 
     async def allocate(self, *, access="full", preparation="on_run"):
@@ -99,7 +68,11 @@ class BackendTarget:
         else:
             template = await self.template(access=access, preparation=preparation)
             body = {"template_id": template["id"]}
-        return await journey.post(journey.base + "/environments", body)
+        resource = await journey.post(journey.base + "/environments", body)
+        if self.backend.kind == "direct-local":
+            self.root = Path(self.template_config["configuration"]["root"]["path"]) / "environments" / resource["id"]
+            self.root.mkdir(parents=True, exist_ok=True)
+        return resource
 
 
 class EnvironmentBackend:
@@ -119,7 +92,7 @@ class EnvironmentBackend:
         directory = self.lab.root / native_id
         directory.mkdir(mode=0o700)
         root = directory / "workspace"
-        configuration = recipe_configuration(self.kind, root, self.settings)
+        configuration = provider_configuration(self.kind, root, self.settings)
         provider_body = {"name": "Backend matrix " + native_id, "type": "a13n." + self.kind, "configuration": {}}
         state, process, proxy, target = None, None, None, None
         stack = AsyncExitStack()
@@ -152,7 +125,7 @@ class EnvironmentBackend:
                     "state": {"daemon_environment_id": native_id},
                 }
             provider = await self.journey.post(self.journey.base + "/environment-providers", provider_body)
-            recipe = {
+            template_config = {
                 "provider_id": provider["id"],
                 "configuration": configuration,
                 "access": "full",
@@ -161,7 +134,7 @@ class EnvironmentBackend:
             }
             logger.info("Environment matrix backend=%s provider=%s", self.kind, provider["id"])
             try:
-                target = BackendTarget(self, provider, recipe, root, state, process, proxy)
+                target = BackendTarget(self, provider, template_config, root, state, process, proxy)
                 yield target
             finally:
                 with anyio.CancelScope(shield=True), anyio.fail_after(180):
@@ -177,8 +150,7 @@ class EnvironmentBackend:
     async def cleanup(self, provider_id):
         live = self.journey.live
         await live.cleanup()
-        # Local Envd owns only per-Run processes; remote Envd is connect-only.
-        # Their fixture process/temporary workspace cleanup belongs to the lab.
+        # Remote Envd is connect-only; the lab owns its process and directory.
         if self.kind not in {"docker", "e2b"}:
             return
         errors = []

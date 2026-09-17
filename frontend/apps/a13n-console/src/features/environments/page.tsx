@@ -17,7 +17,7 @@ export function EnvironmentsPage({
     instances: "Environment instances",
   };
   const descriptions = {
-    templates: "Reusable recipes for your agents' working environments.",
+    templates: "Reusable templates for your agents' working environments.",
     instances: "Inspect the environments your agents are using.",
   };
   return (

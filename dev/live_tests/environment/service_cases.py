@@ -18,7 +18,7 @@ def write(path, content):
 
 
 def listing():
-    return {"tool": "ls", "arguments": {"path": "/workspace"}}
+    return {"tool": "ls", "arguments": {"path": "."}}
 
 
 async def execute(journey, environment, steps, **options):
@@ -39,28 +39,26 @@ async def assert_managed_continuity(journey, environment, *, preserves_files, ro
     live = journey.live
     marker = "CONTINUITY_" + uuid4().hex
     if root is not None:
-        # Management also proves preparation preserves a preexisting caller-owned file.
+        # Seed the allocated Environment directory independently of Harness tools.
         (root / "proof.txt").write_text(marker)
-    first_use = view("/workspace/proof.txt") if root is not None else write("/workspace/proof.txt", marker)
+    first_use = view("proof.txt") if root is not None else write("proof.txt", marker)
     original, _ = await execute(journey, environment, [first_use])
     if root is not None:
         assert marker in original["output_text"]
     path = f"/api/v1/environments/{environment['id']}"
     before = await live.request("GET", path)
-    result, _ = await execute(journey, environment, [view("/workspace/proof.txt")])
+    result, _ = await execute(journey, environment, [view("proof.txt")])
     assert marker in result["output_text"] and result["environment_id"] == original["environment_id"]
     assert await live.run(original["id"]) == original
     stopped = await journey.environment_command(environment["id"], "stop")
     assert stopped["status"] == "stopped"
-    result, _ = await execute(journey, environment, [view("/workspace/proof.txt")])
+    result, _ = await execute(journey, environment, [view("proof.txt")])
     assert marker in result["output_text"]
     resumed = await live.request("GET", path)
     assert resumed["generation"] == before["generation"]
     deleted = await journey.environment_command(environment["id"], "delete")
     assert deleted["status"] == "deleted"
-    result, observed = await execute(
-        journey, environment, [view("/workspace/proof.txt") if preserves_files else listing()]
-    )
+    result, observed = await execute(journey, environment, [view("proof.txt") if preserves_files else listing()])
     rebuilt = await live.request("GET", path)
     assert rebuilt["id"] == before["id"]
     assert rebuilt["generation"] > before["generation"]
@@ -80,9 +78,6 @@ async def assert_template_preparation(journey, template, revised, *, preparation
     live = journey.live
     before_ids = {item["id"] for item in await live.collection(journey.base + "/environments")}
     proofs = ("TEMPLATE_ONE", "TEMPLATE_TWO") if roots is not None else (None, None)
-    if roots is not None:
-        for root, proof in zip(roots, proofs, strict=True):
-            (root / "proof.txt").write_text(proof)
     revision = await journey.post(
         f"/api/v1/environment-templates/{template['id']}/revisions",
         {**revised, "expected_version": template["version"]},
@@ -92,7 +87,7 @@ async def assert_template_preparation(journey, template, revised, *, preparation
         ({"template_id": template["id"], "version": 1}, template["current_revision_id"], initial_access, proofs[0]),
         ({"template_id": template["id"]}, revision["id"], revised["access"], proofs[1]),
     ):
-        first_use = view("/workspace/proof.txt") if proof is not None else listing()
+        first_use = view("proof.txt") if proof is not None else listing()
         case = await journey.case(gate_at=0, parallel_steps=[first_use, first_use])
         receipt = await journey.start(case, environment=selection)
         await journey.ready(case, receipt["run_id"])
@@ -100,6 +95,10 @@ async def assert_template_preparation(journey, template, revised, *, preparation
         path = f"/api/v1/environments/{run['environment_id']}"
         before = await live.request("GET", path)
         allocated.append(before["id"])
+        if roots is not None:
+            root = roots[len(allocated) - 1] / "environments" / before["id"]
+            root.mkdir(parents=True, exist_ok=True)
+            (root / "proof.txt").write_text(proof)
         assert before["template_revision_id"] == revision_id and before["access"] == access
         assert before["status"] == ("unprepared" if preparation == "on_use" else "running")
         assert before["generation"] == (0 if preparation == "on_use" else 1)
@@ -120,9 +119,7 @@ async def assert_template_preparation(journey, template, revised, *, preparation
         _, observed = await execute(journey, before, [listing()])
         assert_missing(observed[-1], "version.txt")
         marker = "VERSION_" + uuid4().hex
-        result, _ = await execute(
-            journey, before, [write("/workspace/version.txt", marker), view("/workspace/version.txt")]
-        )
+        result, _ = await execute(journey, before, [write("version.txt", marker), view("version.txt")])
         assert marker in result["output_text"]
     after_ids = {item["id"] for item in await live.collection(journey.base + "/environments")}
     assert len(set(allocated)) == 2 and after_ids - before_ids == set(allocated)
@@ -136,9 +133,9 @@ async def assert_access_policy(journey, environment, access, *, root=None, read_
     selection = environment if access != "none" else None
     steps = [] if access == "none" else [listing()]
     if access != "none" and root is not None:
-        steps.append(view("/workspace/proof.txt"))
+        steps.append(view("proof.txt"))
     if access in {"read_write", "full"}:
-        steps.extend([write("/workspace/output.txt", marker), view("/workspace/output.txt")])
+        steps.extend([write("output.txt", marker), view("output.txt")])
     if access == "full":
         source = "proof.txt" if root is not None else "output.txt"
         steps.extend(
@@ -147,11 +144,11 @@ async def assert_access_policy(journey, environment, access, *, root=None, read_
                     "tool": "shell_exec",
                     "arguments": {
                         "command": f"cat {source} > shell-copy.txt && cat shell-copy.txt",
-                        "cwd": "/workspace",
+                        "cwd": ".",
                         "yield_time_seconds": 5,
                     },
                 },
-                view("/workspace/shell-copy.txt"),
+                view("shell-copy.txt"),
             ]
         )
     result, observed = await execute(journey, selection, steps)
@@ -175,11 +172,11 @@ async def assert_access_policy(journey, environment, access, *, root=None, read_
             assert not (root / "shell-copy.txt").exists()
     if access != "full":
         forbidden = (
-            write("/workspace/forbidden.txt", "MUST_NOT_EXIST")
+            write("forbidden.txt", "MUST_NOT_EXIST")
             if access in {"none", "read_only"}
             else {
                 "tool": "shell_exec",
-                "arguments": {"command": "printf forbidden > forbidden.txt", "cwd": "/workspace"},
+                "arguments": {"command": "printf forbidden > forbidden.txt", "cwd": "."},
             }
         )
         denied, _ = await execute(

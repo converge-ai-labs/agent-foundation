@@ -6,7 +6,6 @@ credentials, lease tokens or native bootstrap material, and never mutates rows.
 
 import json
 import os
-import socket
 from functools import wraps
 from pathlib import Path
 
@@ -23,19 +22,12 @@ def install(config, role):
     root = Path(config["workspace_root"]).parent / "environment-workers"
     root.mkdir(mode=0o700, exist_ok=True)
     faults = Faults(root / "faults", role)
-    hostname = os.environ.get("LIVE_TEST_HOSTNAME")
-    if hostname:
-        # A distinct Host identity exercises the production affinity guards.
-        socket.gethostname = lambda: hostname
-
     original_init = WorkerExecutionLoop.__init__
 
     @wraps(original_init)
     def initialize(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
-        (root / f"worker-{os.getpid()}.json").write_text(
-            json.dumps({"pid": os.getpid(), "worker_id": self._worker_id, "host_id": socket.gethostname()})
-        )
+        (root / f"worker-{os.getpid()}.json").write_text(json.dumps({"pid": os.getpid(), "worker_id": self._worker_id}))
 
     WorkerExecutionLoop.__init__ = initialize
     original_claim = AttemptScheduler.claim
@@ -66,16 +58,19 @@ def install(config, role):
         with (root / f"events-{os.getpid()}.jsonl").open("a") as output:
             output.write(json.dumps({"point": point, **values}) + "\n")
 
-    original_acquire = EnvironmentLifecycle.acquire
+    def observe_acquisition(original):
+        @wraps(original)
+        async def acquire(self, *args, **kwargs):
+            operation = await original(self, *args, **kwargs)
+            if operation is not None:
+                record("environment.acquired", facts(operation))
+                await faults.reach("environment.acquired", **facts(operation))
+            return operation
 
-    @wraps(original_acquire)
-    async def acquire(self, *args, **kwargs):
-        operation = await original_acquire(self, *args, **kwargs)
-        record("environment.acquired", facts(operation))
-        await faults.reach("environment.acquired", **facts(operation))
-        return operation
+        return acquire
 
-    EnvironmentLifecycle.acquire = acquire
+    EnvironmentLifecycle.acquire_preparation = observe_acquisition(EnvironmentLifecycle.acquire_preparation)
+    EnvironmentLifecycle.acquire_maintenance = observe_acquisition(EnvironmentLifecycle.acquire_maintenance)
     original_execute = EnvironmentLifecycle.execute
 
     @wraps(original_execute)
@@ -87,11 +82,11 @@ def install(config, role):
     original_publish = EnvironmentLifecycle.publish
 
     @wraps(original_publish)
-    async def publish(self, operation, environment, **kwargs):
-        values = {**facts(operation), "success": kwargs.get("error") is None}
+    async def publish(self, operation, outcome):
+        values = {**facts(operation), "success": outcome.succeeded}
         await faults.reach("environment.before_publication", **values)
         try:
-            result = await original_publish(self, operation, environment, **kwargs)
+            result = await original_publish(self, operation, outcome)
         except Exception:
             record("environment.publication_rejected", values)
             raise

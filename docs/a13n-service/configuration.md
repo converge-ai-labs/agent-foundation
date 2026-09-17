@@ -88,14 +88,13 @@ Local backends are disabled by default. For a self-hosted OSS instance, enable t
 ```toml
 [environments.local_providers."a13n.direct-local"]
 
-[environments.local_providers."a13n.local-envd"]
 
 [environments.local_providers."a13n.docker"]
 ```
 
 Each empty table uses the backend's defaults, including the current hostname. Control automatically publishes an Organization Provider for each configured type; all Workspaces can select it when creating a template. There is no Add Provider step, and Console shows these Providers as deployment-managed and read-only. The setting is restricted to OSS identity composition.
 
-For separate Control and Worker hosts, set the backend's `host_id` to the Worker host and, for Docker, its `docker_host` explicitly. Workers must have the matching host placement and backend access. Local paths refer to that host; Direct Local is direct OS access, not an isolation boundary. See [host-local placement](resources.md#host-local-placement).
+Set `[deployment] mode = "single_host"` for local Providers (the default). Multiple Worker processes must share the same local resources. `mode = "distributed"` rejects local Providers; use remote Providers such as E2B. Local Envd is not offered by Service. Configure Docker's `docker_host` explicitly when using a dedicated DinD socket. Direct Local is direct OS access, not an isolation boundary.
 
 Restart Control after configuration changes. The same normalized configuration reuses its Provider ID. Removing or replacing a backend disables the old Provider and preserves existing template references; create or revise templates to select the replacement. Restoring a previous configuration re-enables its Provider. Keep the configuration consistent across Control replicas.
 

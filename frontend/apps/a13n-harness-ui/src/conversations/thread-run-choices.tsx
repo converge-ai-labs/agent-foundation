@@ -2,7 +2,6 @@ import { SearchPicker } from "a13n-ui";
 import { useEffect, useRef } from "react";
 import type { Schema } from "../transport/client";
 import { ModelPicker } from "./model-picker";
-import { ThinkingPicker } from "./thinking-picker";
 import styles from "./new-conversation.module.css";
 
 export function ThreadRunChoices({
@@ -46,16 +45,11 @@ export function ThreadRunChoices({
   }, [selectionKey, onThinkingChange]);
   return (
     <div className={styles.runChoices}>
-      <div className={styles.runChoice}>
-        <span>Agent</span>
+      <div className={styles.runChoice} title={agent?.name ?? agentId}>
         <SearchPicker
           label="Agent"
           popupClassName={styles.choicePopup}
-          placeholder={
-            defaultAgentId && agent
-              ? `Default · ${agent.name}`
-              : agentId || "Default agent"
-          }
+          placeholder={agent?.name ?? (agentId || "Default agent")}
           emptyMessage="No agents found."
           value={agentId}
           disabled={disabled || !catalog}
@@ -69,9 +63,10 @@ export function ThreadRunChoices({
                       {
                         value: "",
                         label:
-                          !agentId && agent
-                            ? `Default · ${agent.name}`
-                            : "Default agent",
+                          catalog?.agents.find(
+                            (item) => item.agent_id === defaultAgentId,
+                          )?.name ?? "Default agent",
+                        badge: "Default",
                         description: "Follow the project or app default.",
                       },
                     ]
@@ -81,6 +76,15 @@ export function ThreadRunChoices({
                   label: item.name,
                   description: item.agent_id,
                 })),
+                ...(agentId && !agent
+                  ? [
+                      {
+                        value: agentId,
+                        label: `${agentId} (unavailable)`,
+                        disabled: true,
+                      },
+                    ]
+                  : []),
               ],
             },
           ]}
@@ -92,14 +96,8 @@ export function ThreadRunChoices({
         value={modelId}
         disabled={disabled || !catalog}
         onChange={onModelChange}
-      />
-      <ThinkingPicker
-        model={catalog?.models?.find(
-          (item) => item.model_id === (modelId ?? agent?.model_id),
-        )}
-        value={thinking}
-        disabled={disabled || !catalog}
-        onChange={onThinkingChange}
+        thinking={thinking}
+        onThinkingChange={onThinkingChange}
       />
     </div>
   );

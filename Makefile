@@ -173,10 +173,9 @@ live-test-local: sync ## Run first-round HTTP journeys with owned Docker depende
 live-test-ci: sync ## Run reviewed live journeys (suite=smoke|core|functional|control|fork-queue|run-faults|environment-native|environment-service; LIVE_TEST_ARGS selects infrastructure)
 	@uv run --locked python -m dev.live_tests.ci $(suite) $(LIVE_TEST_ARGS)
 
-live-test-ci-environment-build: image-sandbox ## Build the native daemon and fixture images for the manual Environment matrices
+live-test-ci-environment-build: image-sandbox image-docker-environment ## Build the native daemon and fixture images for the manual Environment matrices
 	@cargo build --locked --package a13n-envd
 	@docker build -f dev/live_tests/environment/file_resources.Dockerfile --build-arg SANDBOX_IMAGE="$(SANDBOX_IMAGE)" --target worker -t a13n-file-resources:local .
-	@docker build -f dev/live_tests/environment/file_resources.Dockerfile --build-arg SANDBOX_IMAGE="$(SANDBOX_IMAGE)" --target docker-sandbox -t a13n-file-resources:docker .
 
 live-test-round-two: sync ## Run isolated HTTP fault/recovery journeys with Docker dependencies
 	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests --live-round-two -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
@@ -532,7 +531,7 @@ image-a13n-harness-ui: a13n-harness-ui-image-context ## Build the local packaged
 	@docker build -f deploy/containers/a13n-harness-ui/Dockerfile -t "$(A13N_HARNESS_UI_IMAGE)" dist/a13n-harness-ui-image
 
 .PHONY: images
-images: image-a13n-service image-sandbox image-a13n-harness-ui ## Build all local container images
+images: image-a13n-service image-sandbox image-docker-environment image-a13n-harness-ui ## Build all local container images
 
 .PHONY: image-check-a13n-harness-ui
 image-check-a13n-harness-ui: ## Check an existing UI image locally; not a CI or release prerequisite
@@ -611,3 +610,16 @@ dev-state-check: sync ## Validate local state tools and seed journeys in disposa
 .PHONY: db-migrate-core-verification
 db-migrate-core-verification: sync ## Generate the isolated Bot-free verification schema
 	@bash dev/service/db-migrate.sh "$(msg)" core-verification
+
+DOCKER_ENVIRONMENT_IMAGE ?= a13n-docker-environment:local
+.PHONY: image-docker-environment image-check-docker-environment
+image-docker-environment: ## Build the native Docker execution image without Envd
+	@docker build -f deploy/containers/docker-environment/Dockerfile -t "$(DOCKER_ENVIRONMENT_IMAGE)" deploy/containers/docker-environment
+
+image-check-docker-environment: ## Validate native Docker image prerequisites
+	@test "$$(docker image inspect --format '{{.Config.User}}' "$(DOCKER_ENVIRONMENT_IMAGE)")" = "sandbox"
+	@docker run --rm --entrypoint sh "$(DOCKER_ENVIRONMENT_IMAGE)" -c 'python3 --version && git --version && test -w /workspace && ! command -v a13n-envd'
+
+.PHONY: docker-provider-live-test
+docker-provider-live-test: ## Exercise native Docker against an explicitly selected real Engine
+	@A13N_TEST_DOCKER_IMAGE="$(DOCKER_ENVIRONMENT_IMAGE)" uv run --locked pytest dev/live_tests/environment/test_53_native_docker.py --live-environments

@@ -440,6 +440,22 @@
       "title": "DatabaseSettings",
       "type": "object"
     },
+    "DeploymentSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "single_host",
+          "enum": [
+            "single_host",
+            "distributed"
+          ],
+          "title": "Mode",
+          "type": "string"
+        }
+      },
+      "title": "DeploymentSettings",
+      "type": "object"
+    },
     "EnvironmentsSettings": {
       "additionalProperties": false,
       "properties": {
@@ -912,7 +928,6 @@
     "LocalProviderType": {
       "enum": [
         "a13n.direct-local",
-        "a13n.local-envd",
         "a13n.docker"
       ],
       "type": "string"
@@ -1805,6 +1820,9 @@
     },
     "subagents": {
       "$ref": "#/$defs/SubagentsSettings"
+    },
+    "deployment": {
+      "$ref": "#/$defs/DeploymentSettings"
     },
     "environments": {
       "$ref": "#/$defs/EnvironmentsSettings"

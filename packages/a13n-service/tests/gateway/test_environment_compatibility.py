@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from tests.gateway.test_commands import _actor, _commands, _complete_run, _Freezing, _frozen, _Preparation, _request
 from tests.interactions.conftest import AGENT_ID, NOW, WORKSPACE_ID
 from tests.interactions.test_acceptance import _inline_hooks
-from tests.interactions.test_environment_runtime import recipe
+from tests.interactions.test_environment_runtime import template_config
 
 pytestmark = pytest.mark.anyio
 
@@ -30,7 +30,7 @@ pytestmark = pytest.mark.anyio
 async def test_start_environment_choice_replays_without_duplicate_allocation(
     lifecycle_interaction_sessions, tmp_path, selection
 ):
-    _, template, _ = await recipe(lifecycle_interaction_sessions, tmp_path, "on_use")
+    _, template, _ = await template_config(lifecycle_interaction_sessions, tmp_path, "on_use")
     objects = await LocalObjectStore.create(tmp_path / "gateway-objects")
     commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
     request = _request()
@@ -64,7 +64,7 @@ async def test_start_environment_choice_replays_without_duplicate_allocation(
 async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_null_environment(
     lifecycle_interaction_sessions, tmp_path
 ):
-    service, _, _ = await recipe(lifecycle_interaction_sessions, tmp_path, "on_use")
+    service, _, _ = await template_config(lifecycle_interaction_sessions, tmp_path, "on_use")
     thread = await allocate_thread(
         service.sessions,
         actor=_actor(),
@@ -117,7 +117,7 @@ async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_nu
 async def test_explicit_null_successor_and_fork_preserve_environment_selection(
     lifecycle_interaction_sessions, tmp_path
 ):
-    await recipe(lifecycle_interaction_sessions, tmp_path, "on_use")
+    await template_config(lifecycle_interaction_sessions, tmp_path, "on_use")
     objects = await LocalObjectStore.create(tmp_path / "gateway-objects")
     commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
     source = await commands.runs.start(

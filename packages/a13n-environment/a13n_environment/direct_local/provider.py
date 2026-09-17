@@ -12,6 +12,7 @@ from uuid import uuid4
 from pydantic import BaseModel
 
 from .._local_identity import local_backing_identity
+from .._local_retention import LocalRetentionStore
 from ..errors import (
     EnvironmentProviderError,
     EnvironmentProviderErrorCategory,
@@ -19,7 +20,7 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..management import Environment, EnvironmentProvider, HostLocalProviderConfiguration
+from ..management import EmptyProviderConfiguration, Environment, EnvironmentProvider
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
@@ -33,7 +34,6 @@ from ..operations import EnvironmentOperations
 from .configuration import DirectLocalProviderConfiguration
 from .files import LocalFileOperator
 from .processes import LocalPortOperator, LocalProcessManager, LocalShell
-from .retention import LocalRetentionStore
 
 _PROVIDER_KEY = "a13n.direct-local"
 
@@ -70,7 +70,9 @@ class _DirectLocalPortPolicy:
 
 
 class DirectLocalEnvironmentProvider(EnvironmentProvider):
-    provider_configuration_model = HostLocalProviderConfiguration
+    provider_configuration_model = EmptyProviderConfiguration
+    supports_stop = True
+    supports_destroy = True
 
     @property
     def display_name(self) -> str:
@@ -265,6 +267,9 @@ class DirectLocalEnvironment(Environment):
         # These adapters own no durable daemon; their process-local resources
         # end with their owner. Workspace paths are externally retained.
         return "stopped"
+
+    async def _stop(self) -> None:
+        return None
 
     async def _destroy(self) -> None:
         return None

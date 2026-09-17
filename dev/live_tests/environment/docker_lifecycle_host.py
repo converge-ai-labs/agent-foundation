@@ -13,7 +13,7 @@ class LifecycleBarrierProvider(DockerEnvironmentProvider):
 
     def create_environment(self, **arguments):
         environment = super().create_environment(**arguments)
-        open_eip, stop, destroy = environment._open_eip, environment._stop, environment._destroy
+        prepare, stop, destroy = environment._prepare, environment._stop, environment._destroy
 
         async def barrier(action):
             state = environment.dump_state()
@@ -21,8 +21,8 @@ class LifecycleBarrierProvider(DockerEnvironmentProvider):
                 await native_effect_barrier(self.root, environment.environment_id, action, state.state["container_id"])
 
         async def open_after_create(*args, **kwargs):
+            await prepare(*args, **kwargs)
             await barrier("prepare")
-            await open_eip(*args, **kwargs)
 
         async def stop_before_publication():
             await stop()
@@ -32,7 +32,7 @@ class LifecycleBarrierProvider(DockerEnvironmentProvider):
             await destroy()
             await barrier("delete")
 
-        environment._open_eip = open_after_create
+        environment._prepare = open_after_create
         environment._stop = stop_before_publication
         environment._destroy = destroy_before_publication
         return environment

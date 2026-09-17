@@ -616,12 +616,14 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         assert await backend.execute(renderer, prompt="Do the task") == ""
         display = renderer.drain()
         assert "GLOBAL GUIDANCE" not in display
+        assert "surface-context" not in display
         assert "Repository rule" not in display
         sources = [block.source for block in renderer.transcript.blocks.values()]
         assert sum(source == "> Do the task" for source in sources) == 1, sources
         page = await app.get_thread_transcript(thread_id=backend.thread_id, limit=50)
         hidden = [part for entry in page.entries for part in entry.parts if not part.metadata.display]
         assert any("GLOBAL GUIDANCE" in (part.text or "") for part in hidden)
+        assert any("Harness UI TUI" in (part.text or "") for part in hidden)
         assert any("FINAL REPOSITORY RULE" in (part.text or "") for part in hidden)
         # A fresh adapter reads retained native metadata, not transient renderer state.
         resumed = SessionBackend(app, CliRequest(), cwd, Status())
@@ -629,6 +631,7 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         assert "GLOBAL GUIDANCE" not in await _retained_history(resumed)
         history = await _retained_history(backend)
         assert "Do the task" in history and "done" in history
+        assert "surface-context" not in history
         assert "GLOBAL GUIDANCE" not in history
         assert "Repository rule" not in history
         (path.parent / "AGENTS.md").unlink()
@@ -647,6 +650,8 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         if isinstance(part, UserPromptPart)
     )
     assert "GLOBAL GUIDANCE" in user_text
+    assert '<surface-context source="a13n-harness-ui">' in user_text
+    assert "Harness UI TUI" in user_text
     visible = str(seen[0])
     assert "Repository rule 0" in visible and "FINAL REPOSITORY RULE" in visible
     assert "DO NOT INJECT" not in visible

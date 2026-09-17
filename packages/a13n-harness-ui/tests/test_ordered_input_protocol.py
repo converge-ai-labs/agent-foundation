@@ -64,6 +64,8 @@ async def test_ordered_submit_steer_and_restart_keep_identity_and_native_content
             foreign = await api.post(f"/api/threads/{other}/submit", json={"parts": [{"attachment_id": identity}]})
             assert foreign.status_code == 400
             for body in (
+                {},
+                {"prompt": "  "},
                 {"parts": []},
                 {"parts": ["  "]},
                 {"prompt": "ambiguous", "parts": ["ordered"]},
@@ -127,6 +129,11 @@ async def test_ordered_submit_steer_and_restart_keep_identity_and_native_content
             assert {part["metadata"]["harness_ui"]["composer"]["index"] for part in submitted} == {1, 5}
             source_ids = {part["metadata"]["source_id"] for part in submitted}
             assert len(source_ids) == 2
+            hints = [part for part in parts if part["metadata"].get("source_id") == "a13n-harness-ui.surface"]
+            assert len(hints) == 1  # Ordinary submission only; neither steering input adds a hint.
+            assert hints[0]["metadata"]["display"] is False
+            assert '<surface-context source="a13n-harness-ui">' in hints[0]["text"]
+            assert "Harness UI WebUI" in hints[0]["text"]
             assert "changed after capture" not in str(transcript)
             assert "captured instruction" in str(transcript)
             data = await api.get(prefix + f"/attachments/{identity}")
@@ -139,6 +146,12 @@ async def test_ordered_submit_steer_and_restart_keep_identity_and_native_content
         if isinstance(part, UserPromptPart) and not isinstance(part.content, str)
         for item in part.content
     ]
+    assert any(
+        isinstance(item, TextContent)
+        and "Harness UI WebUI" in item.content
+        and (item.metadata or {}).get("display") is False
+        for item in contents
+    )
     native = [
         item.data if isinstance(item, BinaryContent) else item.content
         for item in contents

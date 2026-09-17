@@ -163,7 +163,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
           <Empty
             title={t("No environment templates")}
             description={t(
-              "Create a recipe, then choose it when starting a conversation.",
+              "Create a template, then choose it when starting a conversation.",
             )}
           />
         )

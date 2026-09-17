@@ -37,7 +37,7 @@ async def local_workers(policy_lab, request):
         A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE=str(options.get("active", 4)),
     )
     await lab.start_worker()
-    pair = await add_second_worker(lab, hostname=options.get("hostname"))
+    pair = await add_second_worker(lab)
     backend = EnvironmentBackend(lab, "direct-local", Path(REPOSITORY / "target/debug/a13n-envd"))
     try:
         async with backend.target() as target:
@@ -168,8 +168,8 @@ async def test_readonly_selection_does_not_gain_other_worker_capabilities(local_
         for worker in pair.workers:
             _, result = await pair.execute(worker, full, [shell("printf writable > writable")])
             assert result["ok"] is True
-    (target.root / "proof").write_text("READABLE")
     environment = await target.allocate(access="read_only")
+    (target.root / "proof").write_text("READABLE")
     for worker in pair.workers:
         _, result = await pair.execute(
             worker, environment, [{"tool": "view", "arguments": {"file_path": "/workspace/proof"}}]
@@ -183,23 +183,6 @@ async def test_readonly_selection_does_not_gain_other_worker_capabilities(local_
         assert has_tool(observation, "view") and not has_tool(observation, "shell_exec")
         assert not has_tool(observation, "write")
     assert not (target.root / "forbidden").exists() and (target.root / "proof").read_text() == "READABLE"
-
-
-@pytest.mark.parametrize("local_workers", [{"hostname": "another-live-worker-host"}], indirect=True)
-async def test_host_affinity_prevents_claim_on_wrong_host(local_workers):
-    _, target, pair = local_workers
-    environment = await target.allocate()
-    first, wrong = pair.workers
-    case = await pair.journey.case(steps=[shell("printf correct-host > host")])
-    async with pair.only(wrong):
-        receipt = await pair.journey.start(case, environment={"environment_id": environment["id"]})
-        await asyncio.sleep(2)
-        assert await pair.lab.attempts(receipt["run_id"]) == []
-        assert not (target.root / "host").exists()
-    await pair.journey.live.finish(receipt["run_id"])
-    events = pair.events(environment, point="environment.acquired")
-    assert events and {event["pid"] for event in events} == {first.pid}
-    assert (target.root / "host").read_text() == "correct-host"
 
 
 async def test_other_worker_cannot_use_live_process_handle_or_stdin(local_workers):

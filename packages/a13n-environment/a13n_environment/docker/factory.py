@@ -1,31 +1,25 @@
-"""Docker lifecycle provider."""
+"""Native Docker Provider; configuration never depends on a Worker hostname."""
 
 from __future__ import annotations
 
 import asyncio
 import os
-import socket
 
 from pydantic import BaseModel, Field
 
-from ..eip.binding import configured_descriptor
-from ..management import Environment, EnvironmentProvider, HostLocalProviderConfiguration, ProviderRuntimeContext
+from ..management import EmptyProviderConfiguration, Environment, EnvironmentProvider, ProviderRuntimeContext
 from ..models import EnvironmentDescriptor, EnvironmentState
-from .configuration import DockerProviderConfiguration, DockerProviderStateData, DockerTargetConfiguration
-from .runtime import DirectoryDockerBootstrapStore, DockerProviderRuntime, DockerSDKEngine
-
-_PROVIDER_KEY = "a13n.docker"
+from .configuration import DockerProviderConfiguration, DockerProviderStateData
+from .runtime import DockerProviderRuntime, DockerSDKEngine
 
 
-class DockerBackendConfiguration(HostLocalProviderConfiguration):
+class DockerBackendConfiguration(EmptyProviderConfiguration):
     docker_host: str = Field(
         default_factory=lambda: os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock"), min_length=1
     )
 
 
 class DockerEnvironmentProvider(EnvironmentProvider):
-    """Reusable inert Docker provider."""
-
     provider_configuration_model = DockerBackendConfiguration
     supports_stop = True
     supports_destroy = True
@@ -36,7 +30,7 @@ class DockerEnvironmentProvider(EnvironmentProvider):
 
     @property
     def key(self) -> str:
-        return _PROVIDER_KEY
+        return "a13n.docker"
 
     @property
     def configuration_models(self) -> dict[str, type[BaseModel]]:
@@ -47,31 +41,18 @@ class DockerEnvironmentProvider(EnvironmentProvider):
     ) -> DockerProviderRuntime:
         if not isinstance(configuration, DockerBackendConfiguration):
             raise TypeError("Docker requires DockerBackendConfiguration")
-        if configuration.host_id != socket.gethostname():
-            raise ValueError("Docker backend belongs to another host")
         engine = await asyncio.to_thread(DockerSDKEngine.connect, configuration.docker_host)
-        return DockerProviderRuntime(
-            engine=engine,
-            bootstrap_store=DirectoryDockerBootstrapStore(context.storage_root / "environment-bootstrap"),
-            managed=context.managed,
-            owns_engine=True,
-        )
+        return DockerProviderRuntime(engine, managed=context.managed, owns_engine=True)
 
     def describe_configuration(self, configuration: BaseModel) -> EnvironmentDescriptor:
+        from .provider import descriptor
+
         if not isinstance(configuration, DockerProviderConfiguration):
-            raise TypeError("Unexpected Provider recipe")
-        return configured_descriptor()
+            raise TypeError("Docker requires DockerProviderConfiguration")
+        return descriptor("unprepared", configuration)
 
     def target_identity(self, *, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
-        from .provider import decode_state
-
-        if state is None:
-            return None
-        data = DockerProviderStateData.model_validate(state.state)
-        target = DockerTargetConfiguration(**configuration.model_dump(), environment_id=data.environment_id)
-        validated = decode_state(state, target)
-        assert validated is not None
-        return validated.container_id
+        return None if state is None else DockerProviderStateData.model_validate(state.state).container_id
 
     def create_environment(
         self,
@@ -81,18 +62,8 @@ class DockerEnvironmentProvider(EnvironmentProvider):
         state: EnvironmentState | None,
         runtime: object | None = None,
     ) -> Environment:
-        from .provider import DockerEnvironment, decode_state
+        from .provider import DockerEnvironment
 
-        if not isinstance(configuration, DockerProviderConfiguration):
-            raise TypeError("Docker requires DockerProviderConfiguration")
-        if not isinstance(runtime, DockerProviderRuntime):
-            raise TypeError("Docker requires DockerProviderRuntime")
-        native_id = environment_id
-        if not runtime.managed and state is not None:
-            native_id = DockerProviderStateData.model_validate(state.state).environment_id
-        target = DockerTargetConfiguration(**configuration.model_dump(), environment_id=native_id)
-        state_data = decode_state(state, target)
-        return DockerEnvironment(target, state, state_data=state_data, runtime=runtime, environment_id=environment_id)
-
-
-__all__ = ["DockerEnvironmentProvider"]
+        if not isinstance(configuration, DockerProviderConfiguration) or not isinstance(runtime, DockerProviderRuntime):
+            raise TypeError("Docker requires typed configuration and runtime")
+        return DockerEnvironment(configuration, environment_id, state, runtime)

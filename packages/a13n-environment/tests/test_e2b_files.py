@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_environment import E2BProviderConfiguration, EnvironmentError
-from a13n_environment.e2b.files import E2BFiles
-from a13n_environment.e2b.guest import files
+from a13n_environment._guest import files
+from a13n_environment._guest_files import GuestFiles
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Guest filesystem helpers execute on POSIX sandboxes")
 
@@ -167,7 +167,7 @@ async def test_rejected_stage_creation_never_uploads_or_deletes_an_unowned_entry
         sandbox=SimpleNamespace(files=SimpleNamespace(write=upload)),
     )
     with pytest.raises(EnvironmentError) as caught:
-        await E2BFiles(commands).write_text("/target", "CHANGED", mode="replace")
+        await GuestFiles(commands).write_text("/target", "CHANGED", mode="replace")
     assert caught.value.code == code
     assert [call.args[0] for call in operations.await_args_list] == ["resolve", "stage"]
     upload.assert_not_awaited()

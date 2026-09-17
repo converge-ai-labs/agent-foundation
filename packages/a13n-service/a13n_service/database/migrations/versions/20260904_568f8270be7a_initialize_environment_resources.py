@@ -105,7 +105,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(length=72), nullable=True),
         sa.Column("provider_id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("recipe", sa.JSON(), nullable=False),
+        sa.Column("template_config", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("version >= 1", name=op.f("ck_environment_template_revisions_version_positive")),
         sa.ForeignKeyConstraint(
@@ -152,7 +152,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
             "(ownership = 'managed' AND template_revision_id IS NOT NULL) OR (ownership = 'external' AND template_revision_id IS NULL)",
-            name=op.f("ck_environments_ownership_recipe"),
+            name=op.f("ck_environments_ownership_template_config"),
         ),
         sa.CheckConstraint(
             "retention_condition IN ('active','idle')", name=op.f("ck_environments_retention_condition_valid")

@@ -20,7 +20,7 @@ import {
 import { ConversationTranscript } from "./transcript";
 import { ThreadDraft, encode, values } from "./draft";
 import { TransportContext } from "../transport/context";
-import type { Schema, Transport } from "../transport/client";
+import { ApiError, type Schema, type Transport } from "../transport/client";
 
 function MessageStream() {
   const draft = useDraft("thread-one");
@@ -680,4 +680,128 @@ it("owns continuation preparation and does not repeat an uncertain acknowledgeme
   await submitContinuation(draft, transport, "thread-one");
   expect(post).toHaveBeenCalledTimes(1);
   expect(values(draft.doc).prompt).toBe("Untouched");
+});
+
+it.each(["restore", "other-field", "rejected"])(
+  "keeps repeated sends responsive and handles preparation focus (%s)",
+  async (outcome) => {
+    const draft = new ThreadDraft();
+    vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+    draft.doc.getText("text").insert(0, "Follow up");
+    draft.receive({
+      draft_id: "draft",
+      participant_id: "person",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+    let release!: () => void;
+    const wait = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const post = vi.fn(async () => {
+      await wait;
+      if (outcome === "rejected") throw new ApiError("Conversation busy", 409);
+      return { data: { receipt_id: "receipt", thread_id: "thread-one" } };
+    });
+    const query = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={query}>
+        <TransportContext
+          value={{ client: { POST: post } } as unknown as Transport}
+        >
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <input aria-label="Other field" />
+            <MessageStream />
+            <Composer
+              threadId="thread-one"
+              activity={{ state: "inactive" }}
+              canRun
+              profile={{ display_name: "Test", color: "#000000" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    act(() => textbox.focus());
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    await screen.findByText("Sending…");
+    // jsdom does not implement inert's native blur, so simulate it explicitly.
+    act(() => textbox.blur());
+    const other = screen.getByRole("textbox", { name: "Other field" });
+    if (outcome === "other-field") act(() => other.focus());
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    expect(post).toHaveBeenCalledOnce();
+    await act(async () => release());
+    await waitFor(() =>
+      expect(draft.submission.kind).toBe(
+        outcome === "rejected" ? "rejected" : "accepted",
+      ),
+    );
+    expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(
+      textbox,
+    );
+    expect(document.activeElement).toBe(
+      outcome === "other-field" ? other : textbox,
+    );
+    expect(values(draft.doc).prompt).toBe(
+      outcome === "rejected" ? "Follow up" : "",
+    );
+    expect(screen.queryByText("Sending…")).toBeNull();
+    if (outcome === "rejected")
+      expect(screen.getByText("Not sent · input retained")).toBeTruthy();
+    cleanup();
+    query.clear();
+  },
+);
+
+it("explains unavailable send conditions without consuming the authored draft", () => {
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "Keep my input");
+  vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+  const post = vi.fn();
+  const query = new QueryClient();
+  const props = {
+    threadId: "thread-one",
+    activity: { state: "inactive" } as Schema<"RootActivityView">,
+    canRun: false,
+    unavailableReason: "Updating conversation settings…",
+    profile: { display_name: "Test", color: "#000000" },
+    unauthorized: () => {},
+    reconcile: () => {},
+  };
+  render(
+    <QueryClientProvider client={query}>
+      <TransportContext
+        value={{ client: { POST: post } } as unknown as Transport}
+      >
+        <ComposerDrafts value={new Map([["thread-one", draft]])}>
+          <Composer {...props} />
+        </ComposerDrafts>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  expect(
+    screen.getByText("Waiting for the shared draft connection…"),
+  ).toBeTruthy();
+  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  fireEvent.keyDown(editor, { key: "Enter" });
+  act(() =>
+    draft.receive({
+      draft_id: "draft",
+      participant_id: "person",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    }),
+  );
+  expect(screen.getByText("Updating conversation settings…")).toBeTruthy();
+  fireEvent.keyDown(editor, { key: "Enter" });
+  expect(post).not.toHaveBeenCalled();
+  expect(values(draft.doc).prompt).toBe("Keep my input");
+  cleanup();
+  query.clear();
 });

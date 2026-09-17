@@ -35,6 +35,7 @@ import { inputSource } from "./local-input";
 import styles from "./conversation.module.css";
 import { useResults } from "./results";
 import { savedResultVisible } from "./result-visibility";
+import { ConversationOpening, useInitialReady } from "./opening";
 
 export function ConversationPage(props: {
   profile: Profile;
@@ -116,7 +117,29 @@ function Conversation({
   const [display] = useState(() => new FocusDisplay());
   const [connection, setConnection] = useState("Connecting");
   const [reconnections, setReconnections] = useState(0);
+  const connected = connection === "Live";
+  const [connectionDelayed, setConnectionDelayed] = useState(false);
+  useEffect(() => {
+    setConnectionDelayed(false);
+    if (connected) return;
+    const timer = setTimeout(() => setConnectionDelayed(true), 700);
+    return () => clearTimeout(timer);
+  }, [connected]);
   const [revision, setRevision] = useState(0);
+  const [showAvailable, setShowAvailable] = useState(false);
+  const pageReady = useInitialReady(
+    showAvailable ||
+      detail.isError ||
+      !!detail.data?.thread.parent_thread_id ||
+      (!!detail.data &&
+        (!!history.data || history.isError) &&
+        !selectors.isPending &&
+        (display.ready || reconnections > 0) &&
+        (detail.data.thread.archived ||
+          draft.status === "Connected" ||
+          !!draft.replacement ||
+          !!draft.error)),
+  );
   const rename = dialog === "rename";
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
@@ -253,6 +276,7 @@ function Conversation({
   const acknowledged = results.followed.get(threadId);
   useEffect(() => {
     if (
+      !pageReady ||
       !tracker ||
       !completionVersion ||
       acknowledged === undefined ||
@@ -286,7 +310,14 @@ function Conversation({
       window.removeEventListener("resize", check);
       document.removeEventListener("visibilitychange", check);
     };
-  }, [tracker, threadId, completionVersion, acknowledged, history.data]);
+  }, [
+    pageReady,
+    tracker,
+    threadId,
+    completionVersion,
+    acknowledged,
+    history.data,
+  ]);
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   useEffect(() => {
@@ -328,7 +359,7 @@ function Conversation({
   const lastContent = useRef("");
   useLayoutEffect(() => {
     const element = reader.current;
-    if (!element || !history.data) return;
+    if (!pageReady || !element || !history.data) return;
     const restored = !!restoreScroll.current;
     if (restoreScroll.current) {
       try {
@@ -357,6 +388,7 @@ function Conversation({
       setNewOutput(true);
     lastContent.current = visibleContent;
   }, [
+    pageReady,
     revision,
     visibleContent,
     history.data,
@@ -366,7 +398,13 @@ function Conversation({
   useEffect(() => {
     const element = reader.current;
     const content = element?.firstElementChild;
-    if (!element || !content || typeof ResizeObserver === "undefined") return;
+    if (
+      !pageReady ||
+      !element ||
+      !content ||
+      typeof ResizeObserver === "undefined"
+    )
+      return;
     const observer = new ResizeObserver(() => {
       // Both late content and a growing composer can move the actual bottom.
       if (follow.current && !olderAnchor.current) scrollToLatest(true);
@@ -374,12 +412,13 @@ function Conversation({
     observer.observe(element);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [scrollToLatest]);
+  }, [pageReady, scrollToLatest]);
   useEffect(() => {
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
     // Short/context-only pages need no scroll gesture to fill the viewport.
     if (
+      pageReady &&
       element &&
       element.clientHeight > 0 &&
       element.scrollTop < 160 &&
@@ -395,6 +434,7 @@ function Conversation({
       void history.fetchNextPage();
     }
   }, [
+    pageReady,
     history.data,
     history.hasNextPage,
     history.isFetching,
@@ -403,6 +443,7 @@ function Conversation({
   ]);
   useLayoutEffect(() => {
     const element = reader.current;
+    if (!pageReady) return;
     return () => {
       if (element)
         writePreference(
@@ -410,7 +451,7 @@ function Conversation({
           JSON.stringify({ top: element.scrollTop, follow: follow.current }),
         );
     };
-  }, [threadId]);
+  }, [threadId, pageReady]);
   useEffect(() => {
     if (detail.data && !detail.data.thread?.archived)
       writePreference("last-thread", threadId);
@@ -447,15 +488,20 @@ function Conversation({
       </div>
     );
   return (
-    <>
+    <ConversationOpening
+      ready={pageReady}
+      label="Opening conversation…"
+      onContinue={() => setShowAvailable(true)}
+    >
       <div className={styles.page}>
-        {(reconnections > 0 ||
-          (connection !== "Live" && connection !== "Connecting")) && (
+        {!connected && connectionDelayed && (
           <div className={styles.activityBar}>
             <small role="status">
               {reconnections > 0
-                ? `${connection === "Live" ? "Live connection restored" : "Reconnecting live updates…"} · ${reconnections} ${reconnections === 1 ? "retry" : "retries"}`
-                : connection}
+                ? `Reconnecting live updates… · ${reconnections} ${reconnections === 1 ? "retry" : "retries"}`
+                : connection === "Connecting"
+                  ? "Connecting live updates…"
+                  : connection}
             </small>
           </div>
         )}
@@ -494,6 +540,7 @@ function Conversation({
               interruptScroll();
           }}
           onScroll={() => {
+            if (!pageReady) return;
             const element = reader.current!;
             // Layout-driven scroll events must not detach an active follower.
             // After a user gesture, resume only at the actual bottom.
@@ -644,7 +691,7 @@ function Conversation({
         )}
         {!thread?.archived && (
           <Composer
-            autoFocus={search.get("compose") === "1"}
+            autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
             activity={thread?.root_activity ?? { state: "inactive" }}
             canRun={
@@ -652,6 +699,13 @@ function Conversation({
               !agentSelection.isError &&
               !detail.isError &&
               (detail.data?.available_actions?.includes("run") ?? false)
+            }
+            unavailableReason={
+              agentSelection.isPending
+                ? "Updating conversation settings…"
+                : !detail.data
+                  ? "Loading conversation…"
+                  : undefined
             }
             modelId={draft.modelId}
             controls={
@@ -778,6 +832,6 @@ function Conversation({
             )}
         </ModalFrame>
       </div>
-    </>
+    </ConversationOpening>
   );
 }

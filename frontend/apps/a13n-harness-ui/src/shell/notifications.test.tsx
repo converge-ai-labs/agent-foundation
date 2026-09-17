@@ -16,7 +16,14 @@ import {
   NotificationsProvider,
   useNotifications,
 } from "./notifications";
-import type { Schema } from "../transport/client";
+import {
+  createTransport,
+  type Schema,
+  type Transport,
+} from "../transport/client";
+import { TransportContext } from "../transport/context";
+import * as push from "./push";
+import { writePreference } from "./preferences";
 
 let permission: NotificationPermission;
 let request: ReturnType<typeof vi.fn>;
@@ -85,17 +92,76 @@ function Controls() {
     </>
   );
 }
-function mount(path = "/threads/thread-1") {
+function mount(path = "/threads/thread-1", transport: Transport | null = null) {
   return render(
     <QueryClientProvider client={queries}>
-      <MemoryRouter initialEntries={[path]}>
-        <NotificationsProvider>
-          <Controls />
-        </NotificationsProvider>
-      </MemoryRouter>
+      <TransportContext.Provider value={transport}>
+        <MemoryRouter initialEntries={[path]}>
+          <NotificationsProvider>
+            <Controls />
+          </NotificationsProvider>
+        </MemoryRouter>
+      </TransportContext.Provider>
     </QueryClientProvider>,
   );
 }
+it("requires explicit background opt-in for granted permission and suppresses page-native duplicates", async () => {
+  permission = "granted";
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "supportsPush").mockReturnValue(true);
+  const enable = vi.spyOn(push, "enablePush").mockImplementation(async () => {
+    writePreference("notifications.push-subscription", "subscription-one");
+  });
+  const test = vi.spyOn(push, "testPush").mockResolvedValue();
+  vi.spyOn(push, "disablePush").mockImplementation(async () => {
+    writePreference("notifications.push-subscription", "");
+  });
+  mount("/threads/thread-1", transport);
+  expect(enable).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Enable background notifications" }),
+  );
+  await screen.findByText("Enabled on this device");
+  expect(enable).toHaveBeenCalledWith(transport, ["thread-1"]);
+  fireEvent.click(screen.getByText("Emit"));
+  expect(native).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send test notification" }),
+  );
+  await screen.findByText(/push service accepted the test/);
+  expect(test).toHaveBeenCalledWith(transport);
+  fireEvent.click(
+    screen.getByRole("switch", { name: "Enable browser notifications" }),
+  );
+  await screen.findByText("Not enabled");
+  expect(push.disablePush).toHaveBeenCalled();
+  transport.close();
+});
+
+it("schedules cleanup even when a first opt-in has not returned its subscription ID", async () => {
+  permission = "granted";
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.spyOn(push, "supportsPush").mockReturnValue(true);
+  let finish!: () => void;
+  vi.spyOn(push, "enablePush").mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const disable = vi.spyOn(push, "disablePush").mockResolvedValue();
+  mount("/threads/thread-1", transport);
+  fireEvent.click(
+    screen.getByRole("button", { name: "Enable background notifications" }),
+  );
+  fireEvent.click(
+    screen.getByRole("switch", { name: "Enable browser notifications" }),
+  );
+  expect(disable).toHaveBeenCalledWith(transport);
+  await act(async () => finish());
+  transport.close();
+});
+
 it("keeps a single permission prompt until explicit permission or disabling, without automatic browser requests", async () => {
   const first = mount();
   expect(screen.getAllByLabelText("Notification permission")).toHaveLength(1);
@@ -169,7 +235,7 @@ it("renders actual briefs, deduplicates replay, and opens the matching conversat
     "Task completed · UI polish",
     expect.objectContaining({
       body: event.notice!.brief,
-      tag: "epoch-1:receipt-1",
+      tag: "a13n-harness-ui.receipt-1",
     }),
   );
   expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
@@ -334,7 +400,9 @@ it("allows foreground test notifications without claiming delivery and reports a
     screen.getByRole("button", { name: "Send test notification" }),
   );
   expect(native).toHaveBeenCalledOnce();
-  expect(screen.getByText(/does not confirm/)).toBeTruthy();
+  expect(
+    screen.getByText(/Test requested from the browser/).textContent,
+  ).toContain("does not confirm");
   const notification = native.mock.results[0].value;
   act(() => notification.onshow());
   expect(screen.getByText(/browser reported/)).toBeTruthy();

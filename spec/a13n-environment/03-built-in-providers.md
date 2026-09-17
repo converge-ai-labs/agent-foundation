@@ -9,11 +9,11 @@
 | Native | `a13n.direct-local`   | Existing Host directory                     | Local OS file/process APIs   | Caller-owned directory                          |
 | Native | `a13n.e2b`            | Native E2B sandbox                          | E2B SDK and bounded commands | Sandbox create, pause/resume, renew and destroy |
 | Envd   | `a13n.local-envd`     | Local workspace and private daemon          | EIP over stdio               | Adapter-owned daemon; caller-owned workspace    |
-| Envd   | `a13n.docker`         | Local Docker container running envd         | EIP over HTTP                | Managed container; close preserves target       |
+| Native | `a13n.docker`         | Docker container                            | Docker Engine API            | Managed container; close preserves target       |
 | Envd   | `a13n.http-envd`      | External daemon at a configured origin      | EIP over HTTP(S)             | Connect-only                                    |
 | Envd   | `a13n.websocket-envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket  | Connect-only; Host-integrated SDK               |
 
-Docker Envd retains the serialized key `a13n.docker`. Local Envd serves CLI and local Agent use; Docker Envd supplies container-backed execution for single-node self-hosting. Multi-tenant authorization and allocation remain Host responsibilities. Remote Envd supports network-reachable environments through HTTP or outbound-only environments through reverse WebSocket. A connection Session is not a tenant boundary.
+Native Docker uses the key `a13n.docker`. Local Envd serves CLI and local Agent use; Docker supplies container-backed execution for single-host self-hosting. Multi-tenant authorization and allocation remain Host responsibilities. Remote Envd supports network-reachable environments through HTTP or outbound-only environments through reverse WebSocket. A connection Session is not a tenant boundary.
 
 Every built-in follows the same three-entity model: an inert `EnvironmentProvider`, a fresh process-local `Environment`, and optional `EnvironmentState`. Envd-backed Providers use EIP for Agent file, shell, process, output and port operations. Native Providers use their native backends without requiring envd. No Provider emulates an unsupported operation through a different backend.
 
@@ -29,7 +29,7 @@ Fresh Host runtime collaborators supply stable per-Environment creation/ownershi
 
 Each scoped Environment exposes a configured descriptor without target I/O; preparation validates the live descriptor before operations. Harness intersects its operation families with the Run-local access ceiling. Unsupported operations fail; no built-in emulates an operation through another backend.
 
-Stable environment identity is allocated by the Host per Environment and supplied through runtime collaborators, never frozen into a reusable template recipe. Providers may retain its non-secret target-ownership correlation in state/labels when needed to recover a dispatched creation.
+Stable environment identity is allocated by the Host per Environment and supplied through runtime collaborators, never frozen into a reusable template configuration. Providers may retain its non-secret target-ownership correlation in state/labels when needed to recover a dispatched creation.
 
 ## Direct Local
 
@@ -177,132 +177,42 @@ Because every independent Run creates a fresh daemon, Local Envd state does not 
 
 ## Docker
 
-### Configuration
+### Configuration and runtime
 
-`a13n.docker` configuration schema version `1` declares one envd container. Its conceptual shape includes:
+`a13n.docker` uses the Docker Engine SDK directly. No Envd executable, EIP connection, bootstrap credential, or control port exists in this Provider. A template describes an image and container creation options; the backend configuration supplies `docker_host`. Service offers Docker only in `deployment.mode = "single_host"`.
 
-```python
-class DockerImagePullPolicy(StrEnum):
-    IF_MISSING = "if_missing"
-    ALWAYS = "always"
-    NEVER = "never"
+Configuration schema version `1` includes:
 
+- `image`, `pull_policy` (`if_missing`, `always`, or `never`).
+- `environment` and optional `init_script`, executed only on a newly created container.
+- Optional `cpus` (CPU cores), `memory_mib`, and `pids_limit`.
+- `disable_network`, default false; true selects Docker's `none` network for initialization and commands alike. No ports are published.
+- `mounts`: existing absolute host `source`, absolute container `target`, and `read_only` (default true). Named volumes are not a template option. External mounts cannot replace `/workspace`, the root filesystem, or the Provider's private `/tmp/a13n` command metadata directory.
+- Advanced `user`, `shell`, `python`, stop grace, request timeout, file/query limits, output preview/capture limits, and concurrent observation limit.
 
-class DockerMountKind(StrEnum):
-    LAYER = "layer"
-    BIND = "bind"
-    VOLUME = "volume"
+`/workspace` belongs to the container writable layer. Each Environment owns a separate container. Explicit external host directories are shared only when templates name the same source. Docker resolves source paths in the Engine's filesystem namespace, which may differ from the Worker's namespace. Destruction never removes an external source.
 
+The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:latest`. Custom images supply Linux, Python 3.11 or later, the configured shell, and a configured user able to write `/workspace` and `/tmp`. Git-ignore queries additionally require Git. The Provider replaces the image's ENTRYPOINT/CMD, enables Docker init, and runs a Python waiting process. There is no guest operation server. File and port operations use bounded one-shot Python standard-library commands through Docker exec; file semantics share the native E2B helper.
 
-class DockerMountConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+A `DockerProviderRuntime` owns a `DockerSDKEngine` and declares whether target lifecycle is managed. Docker SDK I/O runs outside the event loop. The Engine client has a finite request timeout. Provider discovery and configuration validation are inert; runtime creation establishes the Engine client.
 
-    mount_id: str
-    container_path: PurePosixPath
-    kind: DockerMountKind = DockerMountKind.LAYER
-    source: str | Path | None = None
-    read_only: bool = False
+### Identity and lifecycle
 
+State contains the allocation's `environment_id`, exact `container_id`, and `configuration_fingerprint`. Canonical target identity is the container ID, with backend identity supplied by the Host. A separately registered external Environment may have a different Host identity while retaining the original allocation identity in state.
 
-class DockerProviderConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+Creation uses a deterministic name and ownership/configuration labels. After an interrupted create response, reconciliation finds that exact target and validates its labels without starting it. Foreign or incompatible targets are never adopted or destroyed. A connection failure is not evidence of absence.
 
-    image: str = "ghcr.io/converge-ai-labs/a13n-sandbox:latest"
-    pull_policy: DockerImagePullPolicy = DockerImagePullPolicy.IF_MISSING
-    mounts: tuple[DockerMountConfiguration, ...]
-    root_mount_id: str = "workspace"
-    trusted_executable_roots: tuple[PurePosixPath, ...] = ()
-    shell_profiles: tuple[EnvdShellProfile, ...]
-    nano_cpus: int | None = None
-    memory_bytes: int | None = None
-    pids_limit: int | None = None
-    stop_grace_seconds: int = 10
-    max_file_bytes: int = 16 * 1024 * 1024
-    max_output_preview_bytes: int = 64 * 1024
-    max_output_bytes_per_stream: int = 1024 * 1024 * 1024
-    max_spool_bytes: int = 64 * 1024 * 1024 * 1024
-```
+Preparation reuses and starts the retained managed container. Only authoritative absence permits replacement under the same logical Environment; the container ID advances generation evidence. Private files and processes from a removed container are lost. External targets are never recreated or implicitly started.
 
-The default configuration exposes writable `/workspace` from the container layer and one fixed Bash profile. Bind sources are existing absolute Host paths. Volume sources name existing external Docker volumes; schema version `1` does not create or own named volumes.
+New-container initialization must finish before readiness is published. A completion marker is written after initialization. A retained container without that marker fails preparation rather than automatically replaying a partially executed script. An explicit destruction followed by preparation creates a new container and runs initialization again.
 
-Container paths are absolute normalized POSIX paths and cannot overlap the fixed bootstrap or envd runtime trees. IDs, image references, paths, fixed arguments, and limits are bounded and validated. Docker v1 uses the ordinary bridge network and publishes one fixed EIP port to a Docker-assigned Host port bound only to `127.0.0.1`.
+`stop()` stops the container while preserving its writable filesystem. `destroy()` removes that validated container and its private filesystem. Missing-target deletion succeeds idempotently. `close()` disconnects observations and releases local clients and output storage, preserving the container and its background processes.
 
-The schema accepts no remote Engine endpoint, Docker socket, raw Docker mount, arbitrary command/entrypoint/environment, privileged mode, device, capability, network mode, public port publication, user override, or provider-created volume policy.
+### Commands and observations
 
-### Runtime and bootstrap
+Commands use native Docker exec, with a configured shell or explicit argv. The Provider supports stdin, separate stdout/stderr, bounded output, explicit process inspection, and targeted signaling. Signal controls verify the command's in-container PID generation before signaling its group; they do not stop the shared container. Process-tree cleanup is not promised. Per-command resource limits and network policies that the container cannot enforce are rejected explicitly; configure those bounds on the container.
 
-A fresh `DockerProviderRuntime` supplies:
-
-```python
-@dataclass(frozen=True, slots=True)
-class DockerProviderRuntime:
-    engine: DockerEngine
-    bootstrap_store: DockerBootstrapStore
-```
-
-`DockerEngine` is the typed async boundary for local-topology validation, image inspection/pull/resolution, container create/start/inspect/stop/remove, exact label queries, and loopback route inspection. Blocking Docker SDK work runs off the event loop through bounded worker threads and finite client timeouts.
-
-The runtime must prove that the Engine is local and that the Provider process can reach a `127.0.0.1` published port. An unprovable or remote topology fails before image resolution, bootstrap allocation, or container mutation.
-
-`DockerBootstrapStore` publishes protected Host-local bootstrap material atomically and supports exact create/recover/replace/remove by a bounded non-secret correlation. Material contains the Environment identity, configuration fingerprint, strict envd configuration, and current HTTP bearer credential. The built-in directory store keeps its Host root private to the owning account; individual allocation files can remain readable by the fixed non-root container user only because Docker bind-mounts the allocation below that private Host root. Returned process-local values can include an absolute Host directory accepted as a local-Engine bind source. Credentials never enter configuration, state, Docker labels, endpoint URLs, logs, traces, or model-visible values.
-
-The Provider uses no Docker archive, copy, exec, or logs API for bootstrap, repair, readiness, or Agent operations.
-
-### State
-
-Docker `EnvironmentState` uses `state_version="1"` with this provider payload:
-
-```python
-class DockerEnvironmentStateData(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    environment_id: str
-    container_id: str
-    image_id: str
-    bootstrap_correlation: str
-    configuration_fingerprint: str
-    create_correlation: str
-```
-
-`container_id` and `image_id` are immutable identities returned by the selected local Engine. State contains no endpoint, Host port, bind path, bearer credential, Docker client/container object, envd generation, descriptor, or Session.
-
-The Provider applies bounded labels for provider key, state version, Environment identity, configuration fingerprint, bootstrap correlation, and create correlation. Before adopting, starting, stopping, or removing a container, it validates the exact ID, resolved image, all labels, fixed command/bootstrap mount, configured mounts and limits, non-root launch contract, EIP publication, and bootstrap evidence. An ID match with incompatible metadata is a conflict.
-
-### Preparation and replacement
-
-With no state, Host-authorized `prepare()`:
-
-1. validates local topology and mount sources;
-2. applies image pull policy and resolves an immutable image ID;
-3. creates or recovers one exact bootstrap allocation by create correlation;
-4. dispatches one completely configured labeled container create;
-5. starts and validates that exact container;
-6. records changed state immediately;
-7. resolves only the authoritative loopback EIP route;
-8. opens a fresh EIP Session and completes initialization and readiness.
-
-Container `running` state and a published port do not establish HTTP or EIP readiness. The Provider bounds startup connection acquisition with one deadline and retries connection establishment failures or connection loss during initialization/readiness using fresh Session sources. Each failed source is closed before retrying. Authentication, protocol, identity, compatibility, and explicit not-ready failures are terminal; cancellation interrupts acquisition and releases local resources. This startup retry never repeats Agent operations or creates another container.
-
-With state, `prepare()` inspects and validates the exact container:
-
-- a compatible running container is re-entered without replacement;
-- a compatible created or exited container can receive an atomic credential replacement and be started;
-- authoritative container absence permits creation of one replacement under a fresh exact create correlation and updates state;
-- container or bootstrap unavailability, uncertain inspection, incompatible metadata, or an ambiguous label query fails without creating another container.
-
-A failure after a create or replacement preserves the new state through `dump_state()` even if EIP readiness later fails. A known failure before container dispatch cleans newly allocated bootstrap material. Cancellation after dispatch is an unknown outcome unless exact follow-up evidence proves the result.
-
-`close()` fences operations and closes EIP/SDK sessions, readiness work, and process-local handles. It does not stop or remove the container and does not delete bootstrap material.
-
-`destroy()` validates the exact represented target, stops it when necessary, removes only that container, confirms absence, then removes its exact bootstrap allocation. It never removes bind sources, external named volumes, or unrelated containers. Container absence with matching bootstrap cleanup failure is still cleanup failure. Unknown inspection or mutation outcome preserves state.
-
-`stop()` stops the exact validated container and retains its state and writable filesystem for later start. It does not promise to preserve process memory. Docker declares stop and destroy support and no Provider timeout-renewal requirement. Retention acts on the durable container independently of local scope close.
-
-### Prune discovery
-
-Docker exposes bounded provider-specific discovery sufficient for an authorized Host to find targets carrying the exact provider labels and correlations. Discovery returns candidates or unknown evidence; it never adopts, starts, stops, removes, or repairs a container.
-
-Prune policy, candidate persistence, grace periods, sharing checks, and destroy authorization remain Host-private behavior. The shared API does not define a prune-record class or database schema.
+Output observations are scoped to the current adapter. Per-stream and aggregate limits bound captured data; excess bytes are discarded and reported as incomplete. Shell results can retain bounded output in Host-local temporary storage. Rebinding a known exec identity can inspect native status but does not reconstruct lost output or stdin. Native command output is never replayed after a Worker restart. An Agent inspects uncertain work and decides what to do next.
 
 ## E2B
 
@@ -406,6 +316,6 @@ Hosts construct fresh operation objects from authoritative state and choose eage
 
 ## Host-local Backend Scope
 
-Direct Local, Local Envd and Docker backend configuration includes a fixed `host_id`. Docker also records its exact local `docker_host` endpoint. Hosts enforce this affinity before preparation and maintenance; equal filesystem paths on different hosts are different targets. Direct Local and Local Envd identify their selected workspace path without including access or connection state. Docker's canonical native identity is the exact container ID, independent of bootstrap credential rotation.
+Local Envd retains its library-local runtime semantics. Service does not offer Local Envd. Direct Local and Docker have no hostname scheduling affinity; Service requires their Workers to share one host and backend under the explicit single-host deployment contract. Docker backend configuration records its `docker_host` endpoint. Direct Local and Local Envd identify their selected workspace path without including access or connection state. Docker's canonical native identity is the exact container ID, independent of process-local connections.
 
-Docker reconciliation searches the frozen logical target's ownership labels, validates exact configuration and bootstrap evidence, and caches any recovered container ID without starting the container. External registration preserves the native identity in Provider state while exposing its independently allocated Service identity to Harness. An external stopped target is unavailable until its external owner starts it.
+Docker reconciliation searches the frozen logical target's ownership labels, validates ownership and configuration labels, and caches any recovered container ID without starting the container. External registration preserves the native identity in Provider state while exposing its independently allocated Service identity to Harness. An external stopped target is unavailable until its external owner starts it.

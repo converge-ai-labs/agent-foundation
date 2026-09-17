@@ -107,7 +107,7 @@ The Provider package owns provider-neutral single-Environment contracts for:
 - operation receipts and typed errors;
 - state dump, local close, and explicit destruction.
 
-Direct Local implements these contracts over the embedding operating system. Local Envd, Docker Envd, HTTP Envd and WebSocket Envd implement them through `a13n-envd` and EIP after provider-specific preparation. E2B implements them through its native asynchronous SDK and bounded command-local wrappers. Harness adds mount names, access ceilings, routing, stale-incarnation fencing, aggregate projection, and model Toolsets.
+Direct Local implements these contracts over the embedding operating system. Local Envd, HTTP Envd and WebSocket Envd implement them through `a13n-envd` and EIP after provider-specific preparation. Native Docker uses the Docker Engine API and bounded one-shot command helpers. E2B implements them through its native asynchronous SDK and bounded command-local wrappers. Harness adds mount names, access ceilings, routing, stale-incarnation fencing, aggregate projection, and model Toolsets.
 
 The [built-in matrix](03-built-in-providers.md#design-position) classifies six choices into Native and Envd routes. [Remote Envd](04-remote-envd.md) connects externally operated daemons without owning their infrastructure. Its reverse WebSocket SDK integrates accepted Host connections and starts no listener.
 

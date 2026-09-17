@@ -2,7 +2,7 @@
 
 Use `a13n.http-envd` when your Host can reach an existing daemon over HTTP(S). Use `a13n.websocket-envd` when the daemon must connect back to your Host, for example from a machine behind NAT.
 
-Both are **connect-only**: they do not create remote machines, start daemons, renew infrastructure timeouts, stop daemons or delete their workspaces. The operator owns deployment; your Host owns authentication, environment selection and scheduling. Files, shell, processes, output and ports use the same EIP-backed Provider operations as Local Envd and Docker Envd.
+Both are **connect-only**: they do not create remote machines, start daemons, renew infrastructure timeouts, stop daemons or delete their workspaces. The operator owns deployment; your Host owns authentication, environment selection and scheduling. Files, shell, processes, output and ports use the same EIP-backed Provider operations as Local Envd.
 
 ## Try both locally first
 

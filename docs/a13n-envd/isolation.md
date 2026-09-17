@@ -120,7 +120,7 @@ sudo rm /etc/sysctl.d/99-local-userns.conf
 sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
 ```
 
-For a managed Docker Envd deployment, the outer container normally owns containment and the Docker Provider explicitly disables envd's inner isolation. Do not use that setting as a workaround on an otherwise unsandboxed bare host.
+For an externally operated Envd deployment inside a container, the operator may explicitly select disabled isolation when the outer container owns containment. The native Docker Environment Provider does not use Envd. Do not use that setting as a workaround on an otherwise unsandboxed bare host.
 
 ## Validate from this repository
 

@@ -11,7 +11,7 @@ from a13n_service.agents.domain import ChildEnvironmentPolicy
 from a13n_service.agents.models import AgentRecord
 from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection, NewEnvironmentSelection
 from a13n_service.environments.errors import invalid_environment
-from a13n_service.environments.models import EnvironmentTemplateRevisionRecord
+from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentTemplateRevisionRecord
 from a13n_service.environments.selection import Omitted, allocate_selection, intersect_access, resolve_selection
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_agent_principal_actions
 
@@ -151,4 +151,7 @@ async def child_environment_choice(
     revision = await session.get(EnvironmentTemplateRevisionRecord, policy.template_revision_id)
     if revision is None:
         raise invalid_environment("Child Environment template revision is unavailable")
+    provider = await session.get(EnvironmentProviderRecord, revision.provider_id)
+    if provider is not None and provider.type == "a13n.direct-local":
+        raise invalid_environment("Direct Local does not support dedicated child environments")
     return NewEnvironmentSelection(template_id=revision.template_id, version=revision.version)

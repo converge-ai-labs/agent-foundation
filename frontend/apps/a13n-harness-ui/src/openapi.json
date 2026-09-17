@@ -5,6 +5,123 @@
     "version": "1"
   },
   "paths": {
+    "/api/push/configuration": {
+      "get": {
+        "summary": "Push Configuration",
+        "operationId": "push_configuration_api_push_configuration_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushConfiguration"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscription": {
+      "put": {
+        "summary": "Subscribe Push",
+        "operationId": "subscribe_push_api_push_subscription_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSubscriptionView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscriptions/{subscription_id}": {
+      "delete": {
+        "summary": "Unsubscribe Push",
+        "operationId": "unsubscribe_push_api_push_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Subscription Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscriptions/{subscription_id}/test": {
+      "post": {
+        "summary": "Test Push",
+        "operationId": "test_push_api_push_subscriptions__subscription_id__test_post",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Subscription Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushTestResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "summary": "Status",
@@ -8928,6 +9045,45 @@
         ],
         "title": "Provider"
       },
+      "PushConfiguration": {
+        "properties": {
+          "public_key": {
+            "type": "string",
+            "title": "Public Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "public_key"
+        ],
+        "title": "PushConfiguration"
+      },
+      "PushSubscriptionView": {
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "title": "Subscription Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subscription_id"
+        ],
+        "title": "PushSubscriptionView"
+      },
+      "PushTestResult": {
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "title": "PushTestResult"
+      },
       "QuestionOptionView": {
         "properties": {
           "label": {
@@ -12692,6 +12848,61 @@
         ],
         "title": "ErrorEnvelope",
         "type": "object"
+      },
+      "PushKeys": {
+        "properties": {
+          "p256dh": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "P256Dh"
+          },
+          "auth": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Auth"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "p256dh",
+          "auth"
+        ],
+        "title": "PushKeys"
+      },
+      "PushSubscriptionInput": {
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 4096,
+            "title": "Endpoint"
+          },
+          "keys": {
+            "$ref": "#/components/schemas/PushKeys"
+          },
+          "origin": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Origin"
+          },
+          "thread_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Thread Ids",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "endpoint",
+          "keys",
+          "origin"
+        ],
+        "title": "PushSubscriptionInput"
       },
       "TerminalCreate": {
         "properties": {

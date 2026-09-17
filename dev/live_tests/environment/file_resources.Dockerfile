@@ -26,9 +26,5 @@ RUN groupadd --gid 10001 fixture \
 USER fixture
 ENV PATH="/app/.venv/bin:${PATH}" PYTHONUNBUFFERED=1
 
-FROM runtime AS docker-sandbox
-ENTRYPOINT []
-CMD ["a13n-envd"]
-
 FROM runtime AS worker
 ENTRYPOINT ["python", "/app/file_resource_worker.py"]

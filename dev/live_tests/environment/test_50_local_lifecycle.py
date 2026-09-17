@@ -1,4 +1,4 @@
-"""Lifecycle gaps that require real local processes or exact Docker targets."""
+"""Lifecycle gaps that require real local processes."""
 
 import asyncio
 import logging
@@ -15,14 +15,14 @@ from .file_backends import FileBackend
 
 pytestmark = pytest.mark.anyio
 logger = logging.getLogger(__name__)
-KINDS = ("direct-local", "local-envd", "docker")
+KINDS = ("direct-local", "local-envd")
 OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=8, max_output_bytes=4096, overflow="retain")
 
 
 @pytest.fixture(autouse=True)
 def live_opt_in(request):
     if not request.config.getoption("--live-environments"):
-        pytest.skip("Opt in for real Local and Docker lifecycle boundaries")
+        pytest.skip("Opt in for real local lifecycle boundaries")
 
 
 def request(script, *, stdin=False):
@@ -31,12 +31,6 @@ def request(script, *, stdin=False):
         cwd="/",
         keep_stdin_open=stdin,
         output_policy=OUTPUT,
-    )
-
-
-async def targets(backend):
-    return await backend.engine.find_containers(
-        {"io.a13n.environment-provider": "a13n.docker", "io.a13n.environment-id": backend.identity}
     )
 
 
@@ -57,8 +51,6 @@ async def test_inert_entry_unused_close_and_concurrent_prepare_once(tmp_path, mo
         assert unused.operations.files is None and unused.dump_state() is None
         await unused.close()
         assert set(tmp_path.rglob("*")) == before
-        if kind == "docker":
-            assert await targets(backend) == ()
         environment = backend.adapter()
         backend.environment = environment
         await environment.enter(thread_id="t", run_id="parallel", agent_instance_id="a", mount_id="workspace")
@@ -73,8 +65,6 @@ async def test_inert_entry_unused_close_and_concurrent_prepare_once(tmp_path, mo
         await environment.prepare()
         assert calls == [1]
         assert await environment.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
-        if kind == "docker":
-            assert len(await targets(backend)) == 1
         logger.info("Inert entry and concurrent preparation verified backend=%s native_calls=1", kind)
 
 
@@ -176,103 +166,6 @@ async def test_local_envd_failure_after_launch_cleans_private_generation(tmp_pat
         assert await fresh.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
 
 
-@pytest.mark.parametrize("cancel", [False, True], ids=["readiness-error", "cancel"])
-async def test_docker_failure_after_create_preserves_target_for_fresh_scope(tmp_path, monkeypatch, cancel):
-    async with FileBackend("docker", tmp_path).open(prepare=False) as backend:
-        environment = backend.environment
-        reached, release = asyncio.Event(), asyncio.Event()
-
-        async def unavailable(*args, **kwargs):
-            reached.set()
-            if cancel:
-                await release.wait()
-            raise EnvironmentError("Injected readiness failure", code="environment_unavailable")
-
-        monkeypatch.setattr(environment, "_open_eip", unavailable)
-        task = asyncio.create_task(backend.prepare(environment))
-        await asyncio.wait_for(reached.wait(), 30)
-        if cancel:
-            task.cancel()
-        with pytest.raises(asyncio.CancelledError if cancel else EnvironmentError):
-            await task
-        state = environment.dump_state()
-        assert state is not None and environment.operations.files is None
-        identity = state.state["container_id"]
-        assert (await backend.engine.inspect_container(identity)).status == "running"
-        await environment.close()
-        fresh = await backend.prepare(backend.adapter(state=state))
-        assert fresh.dump_state() == state
-        assert [item.container_id for item in await targets(backend)] == [identity]
-        assert await fresh.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
-        backend.environment = fresh
-
-
-@pytest.mark.parametrize("action", ["prepare", "stop", "destroy"])
-async def test_docker_redirected_state_cannot_mutate_another_target(tmp_path, action):
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    async with FileBackend("docker", first).open() as backend, FileBackend("docker", second).open() as bystander:
-        state = backend.environment.dump_state()
-        other = bystander.environment.dump_state().state["container_id"]
-        await backend.environment.close()
-        forged = state.model_copy(deep=True)
-        forged.state["container_id"] = other
-        rejected = backend.adapter(state=forged)
-        with pytest.raises(EnvironmentProviderError):
-            if action == "prepare":
-                await backend.prepare(rejected)
-            else:
-                await getattr(rejected, action)()
-        for identity in (state.state["container_id"], other):
-            assert (await backend.engine.inspect_container(identity)).status == "running"
-        assert await bystander.environment.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
-
-
-@pytest.mark.parametrize("action", ["prepare", "reconcile"])
-async def test_docker_ambiguous_real_metadata_never_adopts_or_creates(tmp_path, monkeypatch, action):
-    async with FileBackend("docker", tmp_path).open(prepare=False) as backend:
-        native, specs = backend.engine.create_container, []
-
-        async def create(spec):
-            specs.append(spec)
-            return await native(spec)
-
-        monkeypatch.setattr(backend.engine, "create_container", create)
-        await backend.prepare(backend.environment)
-        await backend.environment.close()
-        duplicate = await native(specs[0])
-        try:
-            before = {item.container_id: item.status for item in await targets(backend)}
-            rejected = backend.adapter()
-            with pytest.raises(EnvironmentProviderError):
-                if action == "prepare":
-                    await backend.prepare(rejected)
-                else:
-                    await rejected.reconcile()
-            assert rejected.dump_state() is None
-            assert {item.container_id: item.status for item in await targets(backend)} == before
-            assert len(specs) == 1
-        finally:
-            await backend.engine.remove_container(duplicate)
-
-
-async def test_docker_destroy_is_exact_idempotent_and_preserves_bind_directory(tmp_path):
-    first, second = tmp_path / "first", tmp_path / "second"
-    first.mkdir()
-    second.mkdir()
-    async with FileBackend("docker", first).open() as backend, FileBackend("docker", second).open() as bystander:
-        state = backend.environment.dump_state()
-        await backend.environment.close()
-        destroy = backend.adapter(state=state)
-        await destroy.destroy()
-        await backend.adapter(state=state).destroy()
-        assert await backend.engine.inspect_container(state.state["container_id"]) is None
-        assert await backend.runtime.bootstrap_store.recover(state.state["bootstrap_correlation"]) is None
-        assert (backend.root / "file-tests/source").read_bytes() == b"ORIGINAL\n"
-        assert await bystander.environment.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
-
-
 @pytest.mark.parametrize("active", [False, True], ids=["idle", "active-process-tree"])
 async def test_local_envd_daemon_death_fences_old_scope_and_allows_fresh_generation(tmp_path, active):
     async with FileBackend("local-envd", tmp_path, commands=active).open() as backend:
@@ -332,54 +225,3 @@ async def test_local_envd_daemon_death_fences_old_scope_and_allows_fresh_generat
             ):
                 with pytest.raises(EnvironmentError):
                     await call()
-
-
-@pytest.mark.parametrize("restart", [False, True], ids=["close-rebind", "stop-start-fences"])
-async def test_docker_session_close_and_native_restart_have_distinct_process_semantics(tmp_path, restart):
-    async with FileBackend("docker", tmp_path, commands=True).open() as backend:
-        environment = backend.environment
-        processes = environment.operations.processes
-        started = await processes.start(request("printf 'PREFIX_0123456789'; read line; printf AFTER", stdin=True))
-        handle = started.process.handle
-        observed = await eventually(
-            lambda: processes.read_output(handle, stdout_start_offset=0, policy=OUTPUT),
-            lambda page: page.stdout.capture.available_end == 17,
-            "Docker output retained before close",
-        )
-        reference = observed.stdout.capture.reference
-        assert reference is not None
-        state, descriptor = environment.dump_state(), environment.descriptor
-        await environment.close()
-        assert (await backend.engine.inspect_container(state.state["container_id"])).status == "running"
-        if restart:
-            await backend.adapter(state=state).stop()
-            assert (await backend.engine.inspect_container(state.state["container_id"])).status == "exited"
-        fresh = await backend.prepare(backend.adapter(state=state))
-        backend.environment = fresh
-        assert fresh.descriptor.backing_identity == descriptor.backing_identity
-        assert (fresh.descriptor.generation != descriptor.generation) == restart
-        assert len(await targets(backend)) == 1
-        with pytest.raises(EnvironmentError):
-            await fresh.operations.processes.inspect(handle)
-        if restart:
-            with pytest.raises(EnvironmentError):
-                await fresh.operations.processes.rebind(handle.identity, output_policy=OUTPUT)
-            with pytest.raises(EnvironmentError):
-                await fresh.operations.outputs.read(reference, start_offset=0, policy=OUTPUT)
-        else:
-            rebound = await fresh.operations.processes.rebind(handle.identity, output_policy=OUTPUT)
-            assert rebound.status.phase == "running"
-            await fresh.operations.processes.write_stdin(rebound.handle, b"continue\n")
-            completed = await fresh.operations.processes.wait(
-                rebound.handle, condition="initial_terminal", timeout_seconds=20
-            )
-            assert completed.status.exit_code == 0
-            tail = await fresh.operations.processes.read_output(rebound.handle, stdout_start_offset=17, policy=OUTPUT)
-            assert b"".join(chunk.data for chunk in tail.stdout.chunks) == b"AFTER"
-        assert await fresh.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
-        logger.info(
-            "Docker native generation transition restart=%s old=%s new=%s",
-            restart,
-            descriptor.generation,
-            fresh.descriptor.generation,
-        )

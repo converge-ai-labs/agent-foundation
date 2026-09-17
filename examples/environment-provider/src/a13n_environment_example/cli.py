@@ -38,7 +38,6 @@ async def _run(arguments: argparse.Namespace) -> None:
         return
     if arguments.provider == "docker":
         result = await run_docker(
-            arguments.bootstrap_root,
             image=arguments.image,
         )
         print(f"provider: {result.provider_key}")
@@ -120,14 +119,9 @@ def _parser() -> argparse.ArgumentParser:
         help="Create, re-enter, and explicitly destroy one Docker Environment.",
     )
     docker.add_argument(
-        "--bootstrap-root",
-        type=Path,
-        default=_DEFAULT_ROOT / "docker-bootstrap",
-    )
-    docker.add_argument(
         "--image",
         default=DEFAULT_EXAMPLE_DOCKER_IMAGE,
-        help="Sandbox image reference; defaults to the image built by make image-sandbox.",
+        help="Sandbox image reference; defaults to the image built by make image-docker-environment.",
     )
     for name in ("http-envd", "websocket-envd"):
         remote = providers.add_parser(name, help="Connect to an externally operated daemon; never destroy its target.")

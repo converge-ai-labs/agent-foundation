@@ -642,6 +642,38 @@ Responses:
 
 ## bot-memory
 
+### `GET /api/v1/application-accounts/{account_id}/bot/memory-settings`
+
+Memory Settings.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default |
+| ------------ | -------- | -------- | ------------- | ----------------------- |
+| `account_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: AccountMemorySettings`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/application-accounts/{account_id}/bot/memory-settings`
+
+Update Memory Settings.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default |
+| ------------ | -------- | -------- | ------------- | ----------------------- |
+| `account_id` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `ReplaceMemorySettings`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: AccountMemorySettings`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/application-accounts/{account_id}/memory-scopes`
 
 Scopes.
@@ -1193,6 +1225,24 @@ Bot Collection.
 Responses:
 
 - **200** — Successful Response (`application/json: BotCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/bots/feishu/installation`
+
+Discover Feishu Installation.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `DiscoverFeishuInstallationRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: InstallationInfo`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -1951,7 +2001,6 @@ List Accounts.
 | `workspace` | path     | true     | string         | —                                  |
 | `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
 | `cursor`    | query    | false    | string or null | —                                  |
-| `bots_only` | query    | false    | boolean        | default=false                      |
 
 Responses:
 

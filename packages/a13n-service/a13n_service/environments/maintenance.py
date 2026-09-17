@@ -12,9 +12,8 @@ from a13n_service.background import PeriodicLoop
 from a13n_service.storage import is_database_unavailable, short_session
 from a13n_service.temporal import assume_utc
 
-from .identity import local_backend_eligible
 from .lifecycle import EnvironmentLifecycle
-from .models import EnvironmentProviderRecord, EnvironmentRecord
+from .models import EnvironmentRecord
 from .policy import DEFAULT_BATCH_SIZE
 
 logger = get_logger(__name__)
@@ -65,13 +64,9 @@ class EnvironmentMaintenanceLoop(PeriodicLoop):
                     ids = tuple(
                         await session.scalars(
                             select(EnvironmentRecord.id)
-                            .join(
-                                EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id
-                            )
                             .where(
                                 EnvironmentRecord.id > after,
                                 EnvironmentRecord.ownership == "managed",
-                                local_backend_eligible(),
                                 or_(EnvironmentRecord.status != "deleted", EnvironmentRecord.operation_id.is_not(None)),
                                 EnvironmentRecord.next_maintenance_at <= cutoff,
                             )

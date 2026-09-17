@@ -10,14 +10,14 @@ You do not need an Environment for an Agent that only calls ordinary application
 
 Use no Environment when the Agent needs only ordinary tools or remote APIs. Otherwise select a Native or Envd route:
 
-| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
-| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
-| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
-| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
-| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
-| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
-| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
-| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
+| Route  | Provider              | Use it for                               | Operation and ownership boundary                            |
+| ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
+| Native | `a13n.direct-local`   | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `a13n.e2b`            | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Native | `a13n.docker`         | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
+| Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
+| Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 [Try the remote examples locally](../a13n-environment/remote-envd.md) without a model, Docker or cloud account.
 

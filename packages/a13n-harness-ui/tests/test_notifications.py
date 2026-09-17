@@ -7,7 +7,7 @@ from typing import Any, cast
 import pytest
 from a13n_harness import HarnessRunResult, HarnessState
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization
-from a13n_harness_ui.live import HarnessUiSummaryHub, SummaryCursor
+from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice, SummaryCursor
 from a13n_harness_ui.notifications import reply_brief
 from a13n_harness_ui.root_execution import RootContinuationSelection, RootRunOutcome
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -42,10 +42,13 @@ def test_reply_brief_includes_details_after_a_short_introduction() -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("notify_raises", [False, True])
 @pytest.mark.parametrize(
     "scenario", ["completed", "save_failed", "question", "approval", "preparation_failed", "cancelled"]
 )
-async def test_root_notices_follow_host_settlement_and_replay_without_new_history(scenario: str) -> None:
+async def test_root_notices_follow_host_settlement_and_replay_without_new_history(
+    scenario: str, notify_raises: bool
+) -> None:
     hub = HarnessUiSummaryHub(epoch="notice-test")
     deferred = None
     if scenario == "question":
@@ -103,7 +106,14 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
             composition=cast(ObjectRef, SimpleNamespace(logical_digest="a" * 64)),
         )
 
-    coordinator = RootRunCoordinator(cast(Any, SimpleNamespace(execute=execute)), summary_hub=hub)
+    pushed: list[tuple[str, RootOperationNotice]] = []
+
+    def notify(thread_id: str, notice: RootOperationNotice) -> None:
+        pushed.append((thread_id, notice))
+        if notify_raises:
+            raise RuntimeError("Notification failure must not change settlement")
+
+    coordinator = RootRunCoordinator(cast(Any, SimpleNamespace(execute=execute)), summary_hub=hub, notify=notify)
     await coordinator.start()
     try:
         async with hub.subscribe() as subscription:
@@ -141,6 +151,7 @@ async def test_root_notices_follow_host_settlement_and_replay_without_new_histor
                     events.append(await replay.receive())
         notices = [event for event in events if event.notice is not None]
         assert len(notices) == (0 if scenario == "cancelled" else 1)
+        assert pushed == [("thread_test", event.notice) for event in notices]
     finally:
         await coordinator.close(timeout_seconds=1)
         await hub.close()

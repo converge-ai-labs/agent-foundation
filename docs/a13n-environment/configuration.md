@@ -5,7 +5,7 @@ An Environment has separate desired configuration, backend access, runtime colla
 | Value                 | Owns                                                        | Example                                                      |
 | --------------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |
 | Desired configuration | What this Environment should expose                         | Workspace root, Docker mounts, E2B template                  |
-| Backend configuration | Where the Host accesses the Provider                        | Host identity, Docker daemon, E2B domain, HTTP endpoint      |
+| Backend configuration | Where the Host accesses the Provider                        | Docker daemon, E2B domain, HTTP endpoint                     |
 | Credential            | Current access to that backend                              | E2B API key or HTTP EIP token                                |
 | Runtime               | Live clients, connector, process factory, bootstrap storage | `ProviderRuntimeContext` and Provider-specific collaborators |
 | `EnvironmentState`    | Validated reference to an exact retained target             | Container/sandbox identity and configuration fingerprint     |
@@ -16,7 +16,7 @@ The [complete generated field reference](configuration-reference.md) covers buil
 
 ## Direct Local
 
-`DirectLocalProviderConfiguration` requires an absolute `root.path`; `root.read_only` defaults to false. The basic recipe is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
+`DirectLocalProviderConfiguration` requires an absolute `root.path`; `root.read_only` defaults to false. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
 
 To enable one executable, follow the [complete command example](commands.md). For shell syntax, configure an absolute shell executable and profile ID, optional fixed arguments, dialect `posix` or `powershell`, and explicit login permission. Profile IDs are unique. A read-only root cannot enable process execution; PowerShell profiles cannot enable login mode.
 
@@ -32,19 +32,19 @@ A shell profile selects `profile_id`, absolute `executable`, fixed arguments, lo
 
 Provider defaults are 16 MiB file values, 64 KiB output previews, 1 GiB per output stream, and 64 GiB spool. Preview cannot exceed a stream bound, and spool must reserve both streams. Do not copy the standalone daemon's smaller default output quotas into a Provider tuning table.
 
-Runtime selection owns daemon binary/bootstrap and process construction. Desired data contains no live child process or token. Host-local Provider records use `HostLocalProviderConfiguration.host_id`, defaulted by the Host machine, for placement.
+Runtime selection owns daemon binary/bootstrap and process construction. Desired data contains no live child process or token. Local Envd remains a library/Harness UI Provider and is not offered by Service.
 
 ## Docker
 
-`DockerProviderConfiguration` defaults to the repository's `ghcr.io/converge-ai-labs/a13n-sandbox:latest` image string and `pull_policy="if_missing"`. This documents a source default, not verification of a registry's current image. Use a deployment-selected digest when exact image identity matters; `always` and `never` are the other pull policies.
+`DockerProviderConfiguration` uses an Envd-free image and native Docker exec. The default image is `ghcr.io/converge-ai-labs/a13n-docker-environment:latest`; select a deployment-owned digest for exact image identity. `pull_policy` is `if_missing`, `always`, or `never`.
 
-The default root mount ID is `workspace` at `/workspace`, with a `default` Bash profile using `-c`. Each mount can use Provider-owned container storage (`source=None`), a Host bind source, or an external named volume. Bind paths are absolute Host paths; container paths are normalized POSIX paths. Mount IDs/paths and profile IDs must be unique, and root mount ID must select an existing mount.
+The private container filesystem supplies `/workspace`. Optional host mounts have an existing absolute `source`, container `target`, and `read_only` flag (default true). They cannot replace `/workspace` or private command metadata. Named volumes are not a template option; external host data is preserved on destruction.
 
-Each mount defaults to writable and command-enabled, subject to the full validated configuration. Mounts/trusted executable paths cannot overlap Provider-owned runtime trees. Deleting a container does not authorize deletion of Host bind sources or externally owned volumes.
+`cpus` measures CPU cores; `memory_mib` measures MiB; `pids_limit` bounds processes. `environment` sets ordinary variables. `init_script` runs only on a new container, and failed initialization is not implicitly replayed. Do not store secrets in these template fields. `disable_network` is off by default and selects Docker's `none` network when enabled.
 
-CPU, memory, and PID limits are optional. Stop grace defaults to ten seconds (0–300). File/output defaults match Local Envd: 16 MiB files, 64 KiB previews, 1 GiB per stream, 64 GiB spool, with the same combined constraints.
+Advanced options include user, shell, Python executable, stop grace (ten seconds), request timeout (60 seconds), file values (16 MiB), output previews (64 KiB), captured bytes per stream (16 MiB), aggregate observation/retention budgets (64 MiB each), and concurrent process observations (128). Custom images need Linux, Python 3.11+, the configured shell, writable `/workspace` and `/tmp`, and Git for git-ignore queries.
 
-`DockerBackendConfiguration` separately selects Host identity and Docker daemon access. Bootstrap storage and live runtime collaborators remain Host-owned. A later worker must reach the same backend namespace to use saved state.
+`DockerBackendConfiguration.docker_host` selects the Engine socket. Worker restarts must reach that same Engine. Service permits Docker only in `deployment.mode = "single_host"`; its shipped Compose uses a dedicated DinD Engine, without mounting the host socket.
 
 ## E2B
 

@@ -18,7 +18,7 @@ The bundled WebUI is an online-only installable web app. Its same-origin manifes
 
 General settings offers installation when the browser supplies an install prompt and otherwise explains platform installation entry points. Prompts require an explicit user action; dismissal and failure do not cause automatic retries. An accepted prompt is not reported as completed installation without the browser's installation event. Installation availability depends on the browser and a secure origin (HTTPS or a loopback exception).
 
-The installed window uses the existing authentication, navigation, and observation paths. Installation neither starts nor bundles the Python backend. The server must remain reachable. There is no Service Worker, offline cache, queued mutation, background execution guarantee, or new push-notification service. Browser installation does not change the persistence or lifetime of existing drafts and Runs, and does not force reloads to apply updates.
+The installed window uses the existing authentication, navigation, and observation paths. Installation neither starts nor bundles the Python backend. The server must remain reachable. A separately opted-in notification-only Service Worker enables [closed-page Web Push](04-workbench-interaction.md#task-notifications). Its root-scoped `/sw.js` is public static delivery with revalidation, never an immutable hashed asset or HTML fallback. It contains no credentials, fetch interception, offline cache, or queued mutations. Installation alone does not opt into push or guarantee background execution. Browser installation and worker updates do not change draft or Run persistence and do not force page reloads.
 
 ## Docker Development Image
 

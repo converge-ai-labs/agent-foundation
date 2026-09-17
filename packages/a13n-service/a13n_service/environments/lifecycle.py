@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import socket
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -42,8 +41,8 @@ from .capacity import DEFAULT_CAPACITY_LIMITS, CapacityLimits
 from .configuration import load_configuration
 from .domain import EnvironmentConfiguration, EnvironmentStatus, JsonObject, TemplateConfiguration, retention_action
 from .errors import is_target_identity_conflict
-from .identity import local_backend_eligible
 from .identity import target_identity as scoped_target_identity
+from .local_directory import instance_configuration, managed_local_directory
 from .models import (
     EnvironmentCommandRecord,
     EnvironmentProviderRecord,
@@ -182,8 +181,6 @@ class EnvironmentLifecycle:
         attempt: AttemptContext | None = None,
     ) -> LifecycleOperation:
         """Record ownership after the caller decides eligibility under the row lock."""
-        if provider.configuration.get("host_id", socket.gethostname()) != socket.gethostname():
-            raise ValueError("Environment backend belongs to another host")
         # Validate the snapshot before changing ownership, so a planning failure
         # can back off without leaving a partially claimed operation behind.
         operation = LifecycleOperation(
@@ -248,7 +245,7 @@ class EnvironmentLifecycle:
             credential = provider.credential_model.model_validate_json(operation.credential.decrypt(self.protector))
         configuration = provider.validate_configuration(
             schema_version=operation.configuration.configuration_schema_version,
-            value=operation.configuration.configuration,
+            value=instance_configuration(operation.provider_type, operation.environment_id, operation.configuration),
         )
         runtime = await provider.create_runtime(
             configuration=provider.provider_configuration_model.model_validate(operation.provider_configuration),
@@ -341,6 +338,7 @@ class EnvironmentLifecycle:
     async def _dispatch(
         self, operation: LifecycleOperation, environment: OperationEnvironment, *, recovering: bool
     ) -> LifecycleOutcome:
+        directory = managed_local_directory(operation.provider_type, operation.environment_id, operation.configuration)
         observation = None
         expires_at = None
         error = None
@@ -348,6 +346,8 @@ class EnvironmentLifecycle:
             observed = await environment.reconcile()
             observation = EnvironmentStatus.deleted if observed == "absent" else EnvironmentStatus(observed)
         elif operation.action == "prepare":
+            if directory is not None:
+                await directory.create()
             if recovering:
                 await environment.recover()
             else:
@@ -359,6 +359,8 @@ class EnvironmentLifecycle:
                 await environment.stop()
                 observation = EnvironmentStatus.stopped
         elif operation.action == "delete":
+            if directory is not None:
+                await directory.delete()
             if operation.previous_status not in {"unprepared", "deleted"}:
                 await environment.destroy()
             observation = EnvironmentStatus.deleted
@@ -425,7 +427,9 @@ class EnvironmentLifecycle:
         ):
             configuration = provider.validate_configuration(
                 schema_version=operation.configuration.configuration_schema_version,
-                value=operation.configuration.configuration,
+                value=instance_configuration(
+                    operation.provider_type, operation.environment_id, operation.configuration
+                ),
             )
             identity = scoped_target_identity(
                 provider,
@@ -534,14 +538,9 @@ class EnvironmentLifecycle:
         now = assume_utc(self.clock())
         failure: Exception | None = None
         async with transaction(self.sessions) as session:
-            query = (
-                select(EnvironmentRecord)
-                .join(EnvironmentProviderRecord, EnvironmentProviderRecord.id == EnvironmentRecord.provider_id)
-                .where(
-                    EnvironmentRecord.id == environment_id,
-                    EnvironmentRecord.ownership == "managed",
-                    local_backend_eligible(),
-                )
+            query = select(EnvironmentRecord).where(
+                EnvironmentRecord.id == environment_id,
+                EnvironmentRecord.ownership == "managed",
             )
             if cutoff is not None:
                 query = query.where(EnvironmentRecord.next_maintenance_at <= assume_utc(cutoff))

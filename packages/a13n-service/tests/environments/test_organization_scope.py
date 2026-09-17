@@ -26,18 +26,20 @@ async def test_org_template_allocates_independent_workspace_environments(
         workspace_id=None,
         request=CreateProviderRequest(type="a13n.direct-local", name="Organization local"),
     )
-    recipe = CreateTemplateRequest(
+    template_config = CreateTemplateRequest(
         name="Standard",
         provider_id=provider.id,
         configuration={"root": {"path": str(tmp_path)}},
         retention={"idle": {"stop_after": None, "delete_after": None}},
     )
     template = await service.create_template(
-        actor=admin, workspace_id=None, request=recipe, idempotency_key="org-template"
+        actor=admin, workspace_id=None, request=template_config, idempotency_key="org-template"
     )
     assert template.workspace_id is None
     assert (
-        await service.create_template(actor=admin, workspace_id=None, request=recipe, idempotency_key="org-template")
+        await service.create_template(
+            actor=admin, workspace_id=None, request=template_config, idempotency_key="org-template"
+        )
         == template
     )
     assert (await service.list_templates(actor=actor(), workspace_id=WORKSPACE_ID)).items == (template,)
@@ -66,13 +68,13 @@ async def test_org_template_allocates_independent_workspace_environments(
         actor=admin,
         template_id=template.id,
         request=CreateTemplateRevisionRequest(
-            **recipe.model_dump(exclude={"name", "description", "labels"}),
+            **template_config.model_dump(exclude={"name", "description", "labels"}),
             expected_version=1,
         ),
     )
     assert revision.id == template.current_revision_id
     local = await service.create_template(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=recipe, idempotency_key="local-template"
+        actor=actor(), workspace_id=WORKSPACE_ID, request=template_config, idempotency_key="local-template"
     )
     assert local.workspace_id == WORKSPACE_ID
 

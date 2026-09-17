@@ -7,6 +7,7 @@ import { TransportContext } from "./transport/context";
 import { DraftContext, type SourceDraft } from "./configuration/sources";
 import { Workbench } from "./shell/workbench";
 import { NotificationsProvider } from "./shell/notifications";
+import { disablePush } from "./shell/push";
 import { ComposerDrafts } from "./conversations/composer";
 import { NewConversationDrafts } from "./conversations/new-conversation";
 import { NewDraftStore } from "./conversations/new-draft";
@@ -17,6 +18,8 @@ import { TextField } from "./shell/ui";
 import styles from "./shell/workbench.module.css";
 
 const KEY_STORAGE = "a13n-harness-ui.api-key";
+const PUSH_CLEANUP_WARNING =
+  "Background notifications could not be disabled. Task previews may still arrive. Block notifications in this site's browser settings.";
 export function initialKey(): string {
   const fragment = new URLSearchParams(window.location.hash.slice(1));
   const key = fragment.get("api_key");
@@ -53,6 +56,7 @@ export function BrowserApp() {
   const [attempt, setAttempt] = useState(0);
   const [status, setStatus] = useState<Schema<"ListenerStatus"> | null>(null);
   const [error, setError] = useState("");
+  const [pushWarning, setPushWarning] = useState("");
   const [connecting, setConnecting] = useState(true);
   const drafts = useRef(new Map<string, SourceDraft>());
   const composers = useRef(new Map<string, ThreadDraft>());
@@ -75,6 +79,9 @@ export function BrowserApp() {
   );
   const transportRef = useRef<ReturnType<typeof createTransport> | null>(null);
   const unauthorized = useCallback(() => {
+    void disablePush().catch(() => {
+      setPushWarning(PUSH_CLEANUP_WARNING);
+    });
     transportRef.current?.close();
     setStatus(null);
     setError("Access expired. Enter the API key printed by this server.");
@@ -127,7 +134,12 @@ export function BrowserApp() {
       transport.close();
     };
   }, [transport, key, queries]);
-  const forget = () => {
+  const forget = async () => {
+    // Keep authentication alive until bounded subscription cleanup finishes.
+    setPushWarning("");
+    await disablePush(transport).catch(() => {
+      setPushWarning(PUSH_CLEANUP_WARNING);
+    });
     transport.close();
     retainKey("");
     setInput("");
@@ -170,6 +182,7 @@ export function BrowserApp() {
                               ? "Connecting to server…"
                               : "Enter your instance key.")}
                         </p>
+                        {pushWarning && <p role="alert">{pushWarning}</p>}
                         <form
                           className={styles.stack}
                           onSubmit={(event) => {

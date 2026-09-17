@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.configuration.sources import load_settings
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.objects import RunStateStore
@@ -12,7 +13,7 @@ from ..infrastructure.config import CONFIG, load_config
 from ..infrastructure.round_two_lab import private_json
 
 
-def project(config):
+def project(config: EffectiveAgentConfig):
     return {
         "skills": [item.model_dump(mode="json") for item in config.skills],
         "children": {key: project(child.effective_config) for key, child in config.child_configs.items()},

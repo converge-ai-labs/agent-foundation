@@ -35,7 +35,7 @@ from tests.skills.test_runtime import DEPLOY_REVISION_ID, DEPLOY_SKILL_ID, _add_
 from . import test_attempt_execution as acceptance
 from . import worker_helpers
 from .conftest import NOW, ORGANIZATION_ID, WORKSPACE_ID
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 
 pytestmark = pytest.mark.anyio
 
@@ -47,7 +47,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
     # Concurrent Environment leases require PostgreSQL row locks, as in lifecycle tests.
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    await recipe(interaction_sessions, workspace, preparation)
+    await template_config(interaction_sessions, workspace, preparation)
     package = _package("deploy", "Deploy safely.", (("scripts/deploy.sh", b"#!/bin/sh\n"),))
     packages = SkillPackageStore(interaction_object_store)
     await packages.publish(organization_id=ORGANIZATION_ID, workspace_id=WORKSPACE_ID, package=package)

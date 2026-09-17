@@ -246,7 +246,7 @@ function EnvironmentDetails({
                 <ReadOnlyField label={t("Generation")}>
                   {detail.data.value.generation}
                 </ReadOnlyField>
-                <ReadOnlyField label={t("Access ceiling")}>
+                <ReadOnlyField label={t("Access permissions")}>
                   {t(
                     detail.data.value.access === "full"
                       ? "Full access"
@@ -509,7 +509,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
               )
                 setAccess(value);
             }}
-            label={t("Access ceiling")}
+            label={t("Access permissions")}
             options={[
               { value: "full", label: t("Full access") },
               { value: "read_write", label: t("Read and write") },

@@ -29,7 +29,7 @@ from tests.observability.test_runtime import runtime as observation_runtime
 
 from .conftest import NOW
 from .test_attempt_execution import _accept_root, _worker
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 from .worker_helpers import prepare_permissions, worker_runtime
 
 pytestmark = pytest.mark.anyio
@@ -56,7 +56,7 @@ async def test_worker_trace_matches_real_phase_boundaries_and_durable_outcomes(
 ):
     environment_catalog = None
     if scenario in {"on_run", "on_use_unused"}:
-        await recipe(interaction_sessions, tmp_path, "on_run" if scenario == "on_run" else "on_use")
+        await template_config(interaction_sessions, tmp_path, "on_run" if scenario == "on_run" else "on_use")
         environment_catalog = build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
     else:
         await seed_hook_actor_access(interaction_sessions)
@@ -254,7 +254,7 @@ async def test_lazy_environment_span_times_actual_first_use(interaction_sessions
 
     from .test_attempt_execution import _authority
 
-    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()

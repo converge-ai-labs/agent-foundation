@@ -3535,7 +3535,7 @@
         "additionalProperties": false,
         "properties": {
           "mode": {
-            "default": "none",
+            "default": "shared",
             "enum": [
               "none",
               "shared",

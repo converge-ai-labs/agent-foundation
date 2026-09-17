@@ -27,12 +27,17 @@ def test_development_images_publish_only_dev_without_smoke_or_sha_tags(tmp_path,
     output = tmp_path / "output"
     monkeypatch.setenv("GITHUB_OUTPUT", str(output))
     monkeypatch.setenv("GITHUB_EVENT_NAME", "workflow_dispatch")
-    for name in ("A13N_SERVICE_CHANGED", "SANDBOX_CHANGED", "HARNESS_UI_CHANGED"):
+    for name in ("A13N_SERVICE_CHANGED", "SANDBOX_CHANGED", "HARNESS_UI_CHANGED", "DOCKER_ENVIRONMENT_CHANGED"):
         monkeypatch.setenv(name, "false")
     matrix = next(step for step in workflow["jobs"]["changes"]["steps"] if step.get("id") == "matrix")
     subprocess.run(["bash", "-eu", "-c", matrix["run"]], check=True)
     images = json.loads(output.read_text().removeprefix("images="))
-    assert {image["name"] for image in images} == {"a13n-service", "a13n-sandbox", "a13n-harness-ui"}
+    assert {image["name"] for image in images} == {
+        "a13n-service",
+        "a13n-sandbox",
+        "a13n-harness-ui",
+        "a13n-docker-environment",
+    }
     assert (
         next(image for image in images if image["name"] == "a13n-harness-ui")["context"] == "dist/a13n-harness-ui-image"
     )

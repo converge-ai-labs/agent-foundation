@@ -25,7 +25,7 @@ from tests.lifecycle_support import test_lifecycle_writer
 from .conftest import AGENT_ID, NOW, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _completed_state, _waiting_state, _worker
 from .test_environment_capacity import sibling_run
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
@@ -33,7 +33,7 @@ pytestmark = pytest.mark.anyio
 
 @pytest.fixture
 async def retained_environment(interaction_sessions, tmp_path, monkeypatch):
-    service, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_run")
+    service, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_run")
     service.catalog = lifecycle.catalog = build_environment_provider_catalog(builtin_keys=("a13n.docker",))
     provider = await service.create_provider(
         actor=hook_actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.docker", name="Docker")

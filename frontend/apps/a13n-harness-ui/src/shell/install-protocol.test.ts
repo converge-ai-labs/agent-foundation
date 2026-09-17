@@ -1,4 +1,5 @@
 import { startApp } from "../../tests/app-fixture";
+import { createECDH, createHash } from "node:crypto";
 import {
   cp,
   copyFile,
@@ -63,7 +64,86 @@ it("serves public install metadata and correctly sized PNGs without changing API
     );
     expect(bytes).toEqual(await readFile(join(root, icon.src)));
   }
+  const worker = await fetch(`${origin}/sw.js`);
+  expect(worker.status).toBe(200);
+  expect(worker.headers.get("content-type")).toContain("text/javascript");
+  expect(worker.headers.get("cache-control")).toBe("no-cache");
+  expect(await worker.text()).toBe(await readFile(join(root, "sw.js"), "utf8"));
   expect((await fetch(`${origin}/api/status`)).status).toBe(401);
+  expect((await fetch(`${origin}/api/push/configuration`)).status).toBe(401);
+});
+
+it("authenticates and validates push configuration and subscription CRUD without a provider request", async () => {
+  const headers = {
+    Authorization: "Bearer test-only-key",
+    "Content-Type": "application/json",
+  };
+  const configuration = await fetch(`${origin}/api/push/configuration`, {
+    headers,
+  });
+  expect(configuration.status).toBe(200);
+  expect(
+    Buffer.from((await configuration.json()).public_key, "base64url"),
+  ).toHaveLength(65);
+  const receiver = createECDH("prime256v1");
+  const endpoint = "https://fcm.googleapis.com/fcm/send/protocol-fixture";
+  const body = {
+    endpoint,
+    origin,
+    keys: {
+      p256dh: receiver.generateKeys().toString("base64url"),
+      auth: Buffer.alloc(16, 1).toString("base64url"),
+    },
+    thread_ids: ["stale-thread"],
+  };
+  expect(
+    (
+      await fetch(`${origin}/api/push/subscription`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+      })
+    ).status,
+  ).toBe(401);
+  expect(
+    (
+      await fetch(`${origin}/api/push/subscription`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+        headers: { ...headers, Origin: "https://other.example" },
+      })
+    ).status,
+  ).toBe(403);
+  const invalid = await fetch(`${origin}/api/push/subscription`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ ...body, endpoint: "https://127.0.0.1/private" }),
+  });
+  expect(invalid.status).toBe(400);
+  const saved = await fetch(`${origin}/api/push/subscription`, {
+    method: "PUT",
+    headers,
+    body: JSON.stringify(body),
+  });
+  expect(saved.status).toBe(200);
+  const id = (await saved.json()).subscription_id;
+  expect(id).toBe(createHash("sha256").update(endpoint).digest("hex"));
+  expect(
+    (
+      await fetch(`${origin}/api/push/subscriptions/${id}`, {
+        method: "DELETE",
+        headers,
+      })
+    ).status,
+  ).toBe(204);
+  expect(
+    (
+      await fetch(`${origin}/api/push/subscriptions/${id}`, {
+        method: "DELETE",
+        headers,
+      })
+    ).status,
+  ).toBe(204);
 });
 
 it("keeps root metadata links valid on deep links and keeps hashed assets immutable", async () => {
@@ -73,6 +153,7 @@ it("keeps root metadata links valid on deep links and keeps hashed assets immuta
     "/new?project=project-one",
     "/new/thread_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "/settings",
+    "/settings/notifications",
     "/threads/thread-fixture",
   ]) {
     const response = await fetch(`${origin}${path}`);

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-`a13n.http-envd` and `a13n.websocket-envd` connect to externally operated daemons. They implement the same provider-neutral EIP operations as Local Envd and Docker Envd without provisioning, starting, stopping, deleting, or renewing the remote infrastructure. Both declare `supports_managed=False`, `supports_stop=False`, `supports_destroy=False`, and `requires_keepalive=False`.
+`a13n.http-envd` and `a13n.websocket-envd` connect to externally operated daemons. They implement the same provider-neutral EIP operations as Local Envd without provisioning, starting, stopping, deleting, or renewing the remote infrastructure. Both declare `supports_managed=False`, `supports_stop=False`, `supports_destroy=False`, and `requires_keepalive=False`.
 
 HTTP is Host-dialed. WebSocket is reverse: envd connects to a Host-owned listener while remaining the EIP responder. The WebSocket integration SDK accepts authenticated connections from Host code; it never starts a listener or supplies a default product ingress route.
 

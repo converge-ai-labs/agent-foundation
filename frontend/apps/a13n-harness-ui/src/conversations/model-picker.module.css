@@ -1,0 +1,137 @@
+.trigger {
+  min-width: 0;
+  max-width: 320px;
+  height: 32px;
+  gap: 6px;
+  padding-inline: 10px;
+  font-size: 13px;
+  font-weight: 400;
+  box-shadow: none;
+}
+.modelName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.summary {
+  min-width: 0;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--a13n-secondary);
+  flex-shrink: 0;
+}
+.popup {
+  width: min(340px, calc(100vw - 24px));
+}
+.title {
+  font-size: 13px;
+  color: var(--a13n-secondary);
+  line-height: 1.5;
+}
+.heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+}
+.heading:has(h2) {
+  justify-content: flex-start;
+}
+.modelOption {
+  width: 100%;
+  height: auto;
+  min-height: 36px;
+  justify-content: space-between;
+  text-align: left;
+  padding: 8px;
+  gap: 12px;
+  font-size: 14px;
+  font-weight: 400;
+  white-space: normal;
+}
+.modelOption > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.modelOption small {
+  display: block;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  margin-top: 2px;
+}
+.hint {
+  margin: 6px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.thinking {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--a13n-border);
+}
+.levels {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--a13n-hover);
+}
+.levels > button {
+  flex: 1 1 auto;
+  height: auto;
+  min-height: 30px;
+  padding: 5px 8px;
+  font-size: 12px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.levelList {
+  width: 100%;
+  flex-direction: column;
+  margin-top: 8px;
+}
+.levelList > button {
+  height: auto;
+  min-height: 32px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 8px;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+.levelList small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.search {
+  margin-top: 12px;
+}
+.modelList {
+  margin-top: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.divider {
+  border-top: 1px solid var(--a13n-border);
+  margin: 6px 8px;
+}
+@media (max-width: 600px) {
+  .trigger {
+    width: 100%;
+    max-width: 100%;
+  }
+}

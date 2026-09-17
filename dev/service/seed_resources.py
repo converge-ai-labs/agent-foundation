@@ -124,7 +124,7 @@ async def resources(client: Client, base: str, model_url: str, settings: Setting
     provider = await local_provider(client, base)
     root = settings.filesystem.root / "workspace"
     workspace = await local_workspace(client, base, provider["id"], root, "Local review workspace")
-    publication_path = root / "published-review.md"
+    publication_path = Path(workspace["root"]) / "published-review.md"
     publication_path.write_bytes((FIXTURES / "brief.md").read_bytes())
     scenarios["environment_shared"] = workspace["environment_id"]
     scenarios["environment_template"] = workspace["template_id"]

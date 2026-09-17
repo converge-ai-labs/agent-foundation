@@ -88,6 +88,11 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
       : can("environment_provider.manage");
   return (
     <div className={styles.stack}>
+      <p>
+        {t(
+          "Direct Local and Docker require a single-host deployment and operator configuration.",
+        )}
+      </p>
       <PageActions>
         {manage &&
           providerTypes.data?.items.some(

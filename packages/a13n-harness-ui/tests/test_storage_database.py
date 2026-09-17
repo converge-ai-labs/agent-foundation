@@ -41,6 +41,8 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "thread",
             "thread_configuration",
             "thread_usage",
+            "web_push_key",
+            "web_push_subscription",
         }
         with engine.connect() as connection:
             context = MigrationContext.configure(

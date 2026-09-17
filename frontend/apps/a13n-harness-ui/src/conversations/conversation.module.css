@@ -330,9 +330,9 @@
   margin-bottom: 8px;
 }
 .inputStatus {
-  display: block;
+  display: inline;
   font-size: 11px;
-  margin-top: 2px;
+  margin-inline-start: 8px;
 }
 .code {
   font-family: var(--a13n-mono);

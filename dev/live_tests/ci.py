@@ -248,8 +248,6 @@ SUITES = {
                 "test_missing_file_errors_preserve_directory_entries[http-envd-copy]",
                 "test_missing_file_errors_preserve_directory_entries[websocket-envd-stat]",
                 "test_missing_file_errors_preserve_directory_entries[websocket-envd-replace]",
-                "test_missing_file_errors_preserve_directory_entries[docker-list]",
-                "test_missing_file_errors_preserve_directory_entries[docker-patch]",
                 "test_append_requires_existing_file_for_local_and_envd",
                 "test_wrong_file_types_preserve_source_and_nonempty_destination[direct-local-read]",
                 "test_wrong_file_types_preserve_source_and_nonempty_destination[direct-local-copy-directory]",
@@ -257,8 +255,6 @@ SUITES = {
                 "test_wrong_file_types_preserve_source_and_nonempty_destination[local-envd-move-over-directory]",
                 "test_wrong_file_types_preserve_source_and_nonempty_destination[http-envd-text]",
                 "test_wrong_file_types_preserve_source_and_nonempty_destination[websocket-envd-list-file]",
-                "test_wrong_file_types_preserve_source_and_nonempty_destination[docker-replace-directory]",
-                "test_wrong_file_types_preserve_source_and_nonempty_destination[docker-mkdir-below-file]",
                 "test_writable_provider_exposes_mkdir_copy_and_patch",
                 "test_os_permission_failures_do_not_disclose_or_modify_files",
                 "test_aborted_stream_preserves_destination_and_cleans_staging",
@@ -271,24 +267,10 @@ SUITES = {
                 "test_close_serializes_with_real_preparation[local-envd-cancel]",
                 "test_close_serializes_with_real_preparation[http-envd-complete]",
                 "test_close_serializes_with_real_preparation[websocket-envd-cancel]",
-                "test_close_serializes_with_real_preparation[docker-cancel]",
-                "test_docker_stop_resume_and_metadata_recovery_preserve_only_target_identity",
-                "test_docker_external_removal_rebuilds_only_managed_targets",
-                "test_docker_lost_create_response_recovers_one_owned_container",
-                "test_docker_lost_mutation_response_is_reconciled_without_repeating_effect",
             ),
-            "environment/test_50_local_docker_lifecycle.py",
+            "environment/test_50_local_lifecycle.py",
             "environment/test_52_remote_envd_failures.py",
-            *cases(
-                "environment/test_53_docker_boundaries.py",
-                "test_bootstrap_failure_never_retargets_or_mutates_container[prepare-missing-directory]",
-                "test_bootstrap_failure_never_retargets_or_mutates_container[reconcile-missing-credential]",
-                "test_bootstrap_failure_never_retargets_or_mutates_container[stop-corrupt-manifest]",
-                "test_bootstrap_failure_never_retargets_or_mutates_container[destroy-corrupt-config]",
-                "test_engine_connection_loss_is_unknown_not_target_absence",
-                "test_destroy_preserves_external_named_volume_and_its_contents",
-            ),
-            "environment/test_54_docker_storage.py",
+            "environment/test_53_native_docker.py",
         ),
         ("--live-environments",),
     ),
@@ -310,10 +292,6 @@ SUITES = {
                 "test_first_prepare_is_serialized_between_processes[direct-local-on_use]",
                 "test_repeated_worker_handoffs_release_resources_and_preserve_shared_writes[direct-local]",
                 "test_concurrent_workers_preserve_owner_and_release_only_their_scope[direct-local]",
-                "test_first_prepare_is_serialized_between_processes[docker-on_run]",
-                "test_first_prepare_is_serialized_between_processes[docker-on_use]",
-                "test_one_user_lost_does_not_close_other_worker_use[docker-cancel]",
-                "test_one_user_lost_does_not_close_other_worker_use[docker-crash]",
                 "test_repeated_worker_handoffs_release_resources_and_preserve_shared_writes[docker]",
                 "test_concurrent_workers_preserve_owner_and_release_only_their_scope[docker]",
                 "test_one_user_lost_does_not_close_other_worker_use[http-envd-crash]",
@@ -452,7 +430,7 @@ def pytest_arguments(options):
 def clean_environment():
     # Only fixture-owned services/accounts participate. Native binary and image
     # overrides remain available to reproduce the exact CI build locally.
-    image_overrides = {"LIVE_TEST_SANDBOX_IMAGE", "LIVE_TEST_FILE_RESOURCE_IMAGE", "LIVE_TEST_DOCKER_RESOURCE_IMAGE"}
+    image_overrides = {"LIVE_TEST_SANDBOX_IMAGE", "LIVE_TEST_FILE_RESOURCE_IMAGE", "LIVE_TEST_DOCKER_IMAGE"}
     return {
         key: value
         for key, value in os.environ.items()
