@@ -380,6 +380,52 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
     assert calls == ["host:before", "host:after"]
 
 
+@pytest.mark.parametrize("placement", ["after", "between", "retry"])
+async def test_enqueued_input_projection_preserves_contiguous_tool_results(monkeypatch, placement):
+    from unittest.mock import AsyncMock
+
+    monkeypatch.setattr(RunContext, "emit", AsyncMock())
+    results = (
+        ToolReturnPart(tool_name="first", content="one", tool_call_id="call-1"),
+        ToolReturnPart(tool_name="second", content="two", tool_call_id="call-2"),
+    )
+    notice = UserPromptPart("new input")
+    parts = (results[0], notice, results[1]) if placement == "between" else (*results, notice)
+    if placement == "retry":
+        parts = (*parts, RetryPromptPart("retry"))
+    original = ModelRequest(parts=parts)
+    projection = ModelContextProjection(
+        blocks=(
+            ModelContextBlock("test.before-input", ModelContextPlacement.INPUT_PREAMBLE, "fresh context"),
+            ModelContextBlock("test.after-input", ModelContextPlacement.REQUEST_EPILOGUE, "epilogue"),
+        )
+    )
+    deps = _ProjectionDeps(projection=projection)
+    model = FunctionModel(lambda messages, info: "unused")
+    ctx = RunContext(deps=cast(AgentContext, deps), model=model, usage=RunUsage(), messages=[original], run_id="run-1")
+    request = ModelRequestContext(
+        model=model, messages=[original], model_settings=None, model_request_parameters=ModelRequestParameters()
+    )
+    handled = []
+
+    async def handler(current):
+        handled.append(current.messages[-1])
+        return ModelResponse(parts=(TextPart("done"),))
+
+    await ModelContextCoordinatorCapability().wrap_model_request(ctx, request_context=request, handler=handler)
+    if placement == "after":
+        final = handled[0]
+        assert final.parts[:2] == results
+        assert user_prompt_content(final.parts[2])[0].content == "fresh context"
+        assert final.parts[3] is notice
+        assert user_prompt_content(final.parts[4])[0].content == "epilogue"
+        assert ctx.messages[-1] is final
+        assert deps.projection_calls == 1
+    else:
+        assert handled == [original]
+        assert deps.projection_calls == 0
+
+
 def test_tool_result_projection_preserves_complete_batch_before_epilogue() -> None:
     original = ModelRequest(
         parts=(

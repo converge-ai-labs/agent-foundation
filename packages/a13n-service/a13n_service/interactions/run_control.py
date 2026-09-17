@@ -6,7 +6,7 @@ import asyncio
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Literal, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 from a13n_harness import (
     AgentContext,
@@ -28,6 +28,9 @@ from pydantic_graph import End
 from a13n_service.agents.domain import EffectiveAgentConfig, PreparedAgentPlugins
 from a13n_service.observability import observe_phase, observe_phase_result
 from a13n_service.storage import ObjectStoreUnavailable
+
+if TYPE_CHECKING:
+    from a13n_service.environments.mount_runtime import RunMountRuntime
 
 from .attempts import (
     AttemptAuthorityError,
@@ -142,6 +145,16 @@ class RunAttemptControl:
         self._driver: HarnessControlDriver | None = None
         self._cancel_executor: Callable[[], None] | None = None
         self._pre_execution_outcome: AttemptOutcome | None = None
+        self._mounts: RunMountRuntime | None = None
+
+    async def bind_environment_mounts(self, mounts: RunMountRuntime) -> None:
+        """Capture startup/takeover facts before this Attempt enters Harness."""
+        async with self._gate.lock:
+            self._require_open()
+            if self._mounts is not None or self._gate.identity is not None:
+                raise RuntimeError("Environment mounts must bind once before Harness entry")
+            await mounts.reconcile()
+            self._mounts = mounts
 
     def _install_state(self, state: StoredRunState) -> None:
         self._require_open()
@@ -318,6 +331,8 @@ class RunAttemptControl:
             self._require_boundary(boundary)
             try:
                 await self._prepare_boundary()
+                if self._mounts is not None:
+                    await self._mounts.apply()
                 if self._gate.delivery_gate is _DeliveryGate.open and self._gate.handoff_reason is None:
                     await self._offer_pending(boundary)
             except AttemptAuthorityError:
@@ -406,7 +421,7 @@ class RunAttemptControl:
         async with self._gate.lock:
             self._require_boundary(boundary)
             try:
-                await self._validate_authority()
+                await self._prepare_boundary()
                 if self._gate.delivery_gate is _DeliveryGate.first_response:
                     return
                 if isinstance(result, End):
@@ -596,6 +611,8 @@ class RunAttemptControl:
             return None if receipt.disposition is AttemptDisposition.continuing else receipt
 
     async def _commit_outcome(self, committer: AttemptCommitter) -> AttemptOutcome:
+        if self._mounts is not None:
+            await self._mounts.reconcile()
         verified = await committer.verify_state_outcome(self._context, self.current_state)
         async with self._authority_lock:
             self._require_open()
@@ -680,6 +697,8 @@ class RunAttemptControl:
 
     async def _prepare_boundary(self) -> None:
         await self._validate_authority()
+        if self._mounts is not None:
+            await self._mounts.reconcile()
         if self._gate.phase is _CoordinatorPhase.active:
             await self._confirm_inbox_receipts()
 
@@ -704,6 +723,8 @@ class RunAttemptControl:
         await self._checkpoint_state(await boundary.export_state(messages))
 
     async def _checkpoint_state(self, harness: HarnessState) -> None:
+        if self._mounts is not None:
+            await self._mounts.reconcile()
         self._record_incorporation(harness.message_history)
         await self._retry_publication()
         prior = self.current_state.envelope

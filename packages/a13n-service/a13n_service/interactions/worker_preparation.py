@@ -36,6 +36,9 @@ from a13n_service.agents.toolsets import web_selection
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
+from a13n_service.environments.mount_domain import AcceptedRunMount
+from a13n_service.environments.mount_observations import RunMountObservations
+from a13n_service.environments.mount_runtime import RunMountRuntime
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.models.model_factory import NativeModelFactory
@@ -63,7 +66,6 @@ from .harness_runtime import (
     ImmediateHarnessInput,
     MaterializedHarnessInput,
     MountedHarnessEnvironments,
-    SingleHarnessEnvironment,
 )
 from .input import AcceptedAgentInput
 from .objects import RunPayloadStore
@@ -229,13 +231,34 @@ class WorkerAttemptPreparer:
             )
             if environment is not None:
                 stack.push_async_callback(environment.close)
-                invocation = replace(
-                    invocation,
-                    environment=SingleHarnessEnvironment(
-                        EnvironmentMount(environment, access=EnvironmentAccess(environment.access))
-                    ),
+            mounted = MountedHarnessEnvironments(
+                entries=(
+                    {"workspace": EnvironmentMount(environment, access=EnvironmentAccess(environment.access))}
+                    if environment is not None
+                    else {}
                 )
-            yield invocation
+            )
+
+            async def prepare_mount(mount: AcceptedRunMount):
+                candidate = await prepare_run_environment(
+                    self._environments,
+                    self._control.current_context,
+                    client_connections=self._client_connections,
+                    mount=mount,
+                )
+                if candidate is None:
+                    raise RuntimeError("An accepted additional mount has no Environment")
+                return candidate
+
+            await self._control.bind_environment_mounts(
+                RunMountRuntime(
+                    runtime=mounted.runtime,
+                    observations=RunMountObservations(self._sessions, clock=self._environments.clock),
+                    current_attempt=lambda: self._control.current_context,
+                    prepare=prepare_mount,
+                )
+            )
+            yield replace(invocation, environment=mounted)
 
     async def _prepare(self, context: AttemptContext, stack: AsyncExitStack) -> HarnessInvocation[Any]:
         run = self._run

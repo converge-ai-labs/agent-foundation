@@ -273,7 +273,7 @@ Current Environment mounts (trusted dynamic context):
 
 Each projected mount contains only name, effective aggregate root, effective operation families, readiness summary, availability, and read-only observation. The root is the explicit `mount_path` when configured, otherwise the preferred compatibility alias. The projection excludes mount IDs, target IDs, provider-local paths, state payload, credentials, native handles, and lifecycle administration.
 
-`DynamicEnvironmentCapability` observes Run-local mount changes and enqueues at most one bounded refresh notice for a pending set. It does not duplicate the complete projection in ordinary messages.
+`DynamicEnvironmentCapability` observes committed Run-local mount changes before each ordinary model node drains input and enqueues at most one bounded refresh notice for that captured set. A Host that publishes mounts at this boundary orders publication before the notice check, so the same request receives the current tools and trusted Environment projection. Nested same-Agent compaction cannot consume the outer Run's notice. The notice does not duplicate the complete projection in ordinary messages.
 
 The model-facing Toolset is standard:
 

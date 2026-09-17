@@ -213,18 +213,24 @@ def _classify_request(
 
     tool_results = tuple(part for part in final.parts if isinstance(part, BaseToolReturnPart))
     if tool_results:
-        if len(tool_results) != len(final.parts):
+        if len(tool_results) == len(final.parts):
+            return ModelContextProjectionRequest(
+                kind=ModelContextRequestKind.TOOL_RESULTS,
+                tool_call_ids=tuple(part.tool_call_id for part in tool_results),
+            )
+        # Native enqueue appends input after the complete result batch.
+        # Project at that input without splitting sibling tool results.
+        if tuple(final.parts[: len(tool_results)]) != tool_results or not all(
+            isinstance(part, UserPromptPart) for part in final.parts[len(tool_results) :]
+        ):
             return None
-        return ModelContextProjectionRequest(
-            kind=ModelContextRequestKind.TOOL_RESULTS,
-            tool_call_ids=tuple(part.tool_call_id for part in tool_results),
-        )
 
     if any(isinstance(part, UserPromptPart) for part in final.parts):
         # Pydantic does not expose reliable enqueue provenance on ordinary text input.
         return ModelContextProjectionRequest(
             kind=ModelContextRequestKind.INPUT,
             input_origin=ModelContextInputOrigin.USER,
+            tool_call_ids=tuple(part.tool_call_id for part in tool_results),
         )
     return None
 

@@ -145,6 +145,7 @@ The coordinator classifies the complete final `ModelRequest`, after ordinary his
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
 | Ordinary user input                           | `INPUT`, `input_origin=USER`; both placements eligible                                           |
 | Harness-accepted enqueue or startup notice    | `INPUT`; `input_origin=ENQUEUE` only with explicit producer provenance; both placements eligible |
+| Complete tool-result batch followed by input  | `INPUT`; both placements eligible after the intact result batch; preserve its `tool_call_ids`    |
 | Ordinary complete tool-result batch           | `TOOL_RESULTS`; only `REQUEST_EPILOGUE` is eligible                                              |
 | Output validation/tool retry                  | No projection and no message mutation                                                            |
 | Deferred-tool exact resume                    | No projection or cleanup before the exact continuation advances                                  |

@@ -6,17 +6,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
+from pydantic_ai.agent import ModelRequestNode
+from pydantic_ai.capabilities import AbstractCapability, AgentNode
 from pydantic_ai.toolsets import AbstractToolset, CombinedToolset, DynamicToolset
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
-from a13n_harness.model_context import (
-    AbstractModelContextCapability,
-    ModelContextNext,
-    ModelContextProjection,
-    ModelContextProjectionRequest,
-)
+from a13n_harness.model_context import AbstractModelContextCapability
 from a13n_harness.toolsets.file_media import (
     AgentMediaUnderstandingProvider,
     MediaUnderstandingProvider,
@@ -150,13 +146,12 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
 
         return await self._shell_toolset.wrap_run(ctx, handler=run_with_dynamic_context)
 
-    async def wrap_model_context(
-        self,
-        ctx: RunContext[AgentContext],
-        request: ModelContextProjectionRequest,
-        handler: ModelContextNext,
-    ) -> ModelContextProjection:
-        return await self._dynamic_context.wrap_model_context(ctx, request, handler)
+    async def before_node_run(
+        self, ctx: RunContext[AgentContext], *, node: AgentNode[AgentContext]
+    ) -> AgentNode[AgentContext]:
+        if isinstance(node, ModelRequestNode):
+            self._dynamic_context.before_model_node(ctx)
+        return node
 
     async def _close_processes(self) -> None:
         await self._shell_toolset.close()

@@ -6,7 +6,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from inspect import isawaitable
 from types import MappingProxyType
 from typing import Any, Literal, Protocol
@@ -34,6 +34,7 @@ from a13n_harness import (
     RunModelResolver,
 )
 from a13n_harness.capabilities import WebBinding
+from a13n_harness.environment.advanced import EnvironmentRuntime, create_environment_runtime
 from a13n_harness.errors import RunError
 from a13n_harness.events import UsageReportPayload
 from a13n_harness.model_context import ModelContextMiddleware
@@ -102,15 +103,14 @@ class SingleHarnessEnvironment:
 
 @dataclass(frozen=True, slots=True)
 class MountedHarnessEnvironments:
-    """Mount a fresh named Environment set with an optional accepted default."""
+    """Own a stable, initially empty or populated, named Environment runtime."""
 
     entries: Mapping[str, EnvironmentEntry]
     default_environment: str | None = None
+    runtime: EnvironmentRuntime = field(init=False, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         entries = dict(self.entries)
-        if not entries:
-            raise ValueError("mounted Harness environments must not be empty")
         if any(not isinstance(name, str) or not name.strip() for name in entries):
             raise ValueError("mounted Harness environment names must be non-blank strings")
         for entry in entries.values():
@@ -119,6 +119,14 @@ class MountedHarnessEnvironments:
         if default is not None and default not in entries:
             raise ValueError("default Harness environment must name a supplied mount")
         object.__setattr__(self, "entries", MappingProxyType(entries))
+        object.__setattr__(
+            self,
+            "runtime",
+            create_environment_runtime(
+                mounts=entries,
+                default_mount=default if default is not None else next(iter(entries)) if len(entries) == 1 else None,
+            ),
+        )
 
 
 type ServiceHarnessEnvironment = NoHarnessEnvironment | SingleHarnessEnvironment | MountedHarnessEnvironments
@@ -586,9 +594,7 @@ def _create_stream[OutputT](
         return executable.stream(
             input_value,
             input_factory=input_factory,
-            environments=environment.entries,
-            default_environment=environment.default_environment,
-            bindings=bindings,
+            bindings=replace(bindings, environment=environment.runtime),
             previous_state=previous_state.harness,
             deferred_resume=deferred_resume,
             usage=usage,
@@ -612,10 +618,8 @@ def _observe_environment(
     if isinstance(environment, SingleHarnessEnvironment):
         return SingleHarnessEnvironment(observe_environment_entry(environment.entry, projector))
     if isinstance(environment, MountedHarnessEnvironments):
-        return MountedHarnessEnvironments(
-            entries={name: observe_environment_entry(entry, projector) for name, entry in environment.entries.items()},
-            default_environment=environment.default_environment,
-        )
+        for entry in environment.entries.values():
+            observe_environment_entry(entry, projector)
     return environment
 
 
