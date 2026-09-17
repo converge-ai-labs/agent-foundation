@@ -60,6 +60,9 @@
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+.output {
+  margin-top: 12px;
+}
 .mobile {
   display: none;
 }
@@ -89,10 +92,20 @@
 .menu nav small {
   color: var(--a13n-secondary);
 }
-.menu nav span {
+.menuPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.menuPreview > span {
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+.menuOutput {
+  color: var(--a13n-secondary);
+  font-size: 12px;
 }
 @container conversation-reader (max-width: 600px) {
   .rail {

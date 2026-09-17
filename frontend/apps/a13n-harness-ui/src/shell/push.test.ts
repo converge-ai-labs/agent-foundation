@@ -226,3 +226,33 @@ it("replaces a rejected endpoint on explicit reconnect even if the browser still
   expect(unsubscribe).toHaveBeenCalledOnce();
   expect(subscribe).toHaveBeenCalledTimes(2);
 });
+
+it("identifies a device push-service registration failure without saving or retrying", async () => {
+  const cause = new DOMException(
+    "Registration failed - push service error",
+    "AbortError",
+  );
+  subscribe.mockRejectedValue(cause);
+  await expect(enablePush(transport, [])).rejects.toMatchObject({
+    message: expect.stringContaining(
+      "Browser push registration failed before a subscription could be saved to Harness UI",
+    ),
+    cause,
+  });
+  expect(subscribe).toHaveBeenCalledOnce();
+  expect(
+    fetchMock.mock.calls.some(([request]) => request.method === "PUT"),
+  ).toBe(false);
+  expect(pushSubscriptionId()).toBe("");
+});
+
+it("preserves permission errors as browser registration failures, not server send errors", async () => {
+  subscribe.mockRejectedValue(
+    new DOMException("Permission denied", "NotAllowedError"),
+  );
+  await expect(enablePush(transport, [])).rejects.toThrow(
+    "Check this site's notification permission",
+  );
+  expect(subscribe).toHaveBeenCalledOnce();
+  expect(pushSubscriptionId()).toBe("");
+});

@@ -523,3 +523,74 @@ it("keeps boundary input and final visible while earlier process pages load", ()
   expect(screen.getAllByText("Original")).toHaveLength(1);
   expect(screen.getAllByText("Final")).toHaveLength(1);
 });
+
+it("keeps legacy closing output outside manually collapsed execution details", () => {
+  render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[
+        saved(
+          previewInput("round", ["Question"]) as Schema<"TranscriptPart">[],
+          0,
+        ),
+        saved([{ kind: "assistant", text: "Progress" }], 1),
+        saved([{ kind: "assistant", text: "Saved closing answer" }], 2),
+      ]}
+      turns={[
+        {
+          turn_id: "round",
+          input_position: 0,
+          end_position: 3,
+          output_position: 2,
+          preview: "Question",
+        },
+      ]}
+      blocks={[]}
+      localInputs={[]}
+    />,
+  );
+  const toggle = screen.getByRole("button", { name: "Execution details" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  fireEvent.click(toggle);
+  expect(screen.getByText("Progress").closest("[hidden]")).toBeTruthy();
+  expect(
+    screen.getByText("Saved closing answer").closest("[hidden]"),
+  ).toBeNull();
+});
+
+it("retains the saved final outside details when live rows arrive before history refresh", () => {
+  render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[
+        saved(
+          previewInput("round", ["Question"]) as Schema<"TranscriptPart">[],
+          0,
+        ),
+        saved([{ kind: "assistant", text: "Earlier process" }], 1),
+        saved([{ kind: "assistant", text: "Saved final" }], 2),
+      ]}
+      turns={[
+        {
+          turn_id: "round",
+          input_position: 0,
+          end_position: 3,
+          final_position: 2,
+          preview: "Question",
+        },
+      ]}
+      blocks={[{ id: "live", kind: "assistant", text: "New progress" }]}
+      localInputs={[]}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Execution details" }));
+  expect(screen.getByText("Saved final").closest("[hidden]")).toBeNull();
+  expect(screen.getByText("Earlier process").closest("[hidden]")).toBeTruthy();
+  expect(screen.getByText("New progress").closest("[hidden]")).toBeNull();
+  expect(
+    screen
+      .getByText("Saved final")
+      .compareDocumentPosition(screen.getByText("New progress")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+});

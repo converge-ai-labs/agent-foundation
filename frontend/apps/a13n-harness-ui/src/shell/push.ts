@@ -93,10 +93,26 @@ export async function enablePush(
       subscription = null;
     }
     const untracked = !subscription || !previousId;
-    subscription ??= await registration.pushManager.subscribe({
-      userVisibleOnly: true,
-      applicationServerKey: publicKey,
-    });
+    if (!subscription) {
+      try {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: publicKey,
+        });
+      } catch (error) {
+        const detail =
+          error instanceof Error
+            ? `${error.name}: ${error.message}`
+            : String(error);
+        const guidance = /push service|AbortError/i.test(detail)
+          ? "Check this device's push service and network access; on Android Chrome, check Google Play services and any VPN or firewall."
+          : "Check this site's notification permission and browser push support.";
+        throw new Error(
+          `Browser push registration failed before a subscription could be saved to Harness UI. ${guidance} Browser detail: ${detail}`,
+          { cause: error },
+        );
+      }
+    }
     try {
       const data = subscription.toJSON();
       if (!data.keys?.p256dh || !data.keys.auth)

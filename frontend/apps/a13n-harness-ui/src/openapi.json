@@ -11914,6 +11914,30 @@
             ],
             "title": "Final Position"
           },
+          "output_position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Position"
+          },
+          "output_preview": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Preview"
+          },
           "preview": {
             "type": "string",
             "maxLength": 512,

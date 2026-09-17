@@ -258,6 +258,8 @@ class TranscriptTurn(SurfaceModel):
     input_position: int = Field(ge=0)
     end_position: int = Field(ge=0)
     final_position: int | None = Field(default=None, ge=0)
+    output_position: int | None = Field(default=None, ge=0)
+    output_preview: str | None = Field(default=None, max_length=512)
     preview: str = Field(max_length=512)
     timestamp: datetime | None = None
     tool_count: int = Field(default=0, ge=0)

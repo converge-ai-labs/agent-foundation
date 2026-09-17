@@ -4158,6 +4158,10 @@ export interface components {
             end_position: number;
             /** Final Position */
             final_position?: number | null;
+            /** Output Position */
+            output_position?: number | null;
+            /** Output Preview */
+            output_preview?: string | null;
             /** Preview */
             preview: string;
             /** Timestamp */

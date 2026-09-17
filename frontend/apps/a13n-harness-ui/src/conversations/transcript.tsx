@@ -491,14 +491,26 @@ function Turn({
       row.kind === "input" &&
       (turn ? row.position === turn.input_position : row.id === `input:${id}`),
   );
-  const final = complete
+  // Saved output stays readable even while live work is appended or an older
+  // history has no successful-completion marker. Completion controls folding,
+  // not whether an already saved answer belongs inside execution details.
+  const outputPosition = turn?.output_position ?? turn?.final_position;
+  const final = rows.filter(
+    (row) =>
+      outputPosition != null &&
+      row.kind === "assistant" &&
+      row.position === outputPosition,
+  );
+  // A resumed/live suffix follows the old saved answer chronologically. It
+  // must not move above that answer or disappear with the earlier process.
+  const following = final.length
     ? rows.filter(
-        (row) =>
-          row.kind === "assistant" && row.position === turn.final_position,
+        (row) => row.position === undefined || row.position > outputPosition!,
       )
     : [];
   const process = rows.filter(
-    (row) => !input.includes(row) && !final.includes(row),
+    (row) =>
+      !input.includes(row) && !final.includes(row) && !following.includes(row),
   );
   const open = expanded ?? !complete;
   return (
@@ -558,6 +570,7 @@ function Turn({
         </div>
       )}
       <Rows rows={final} threadId={threadId} continuation />
+      <Rows rows={following} threadId={threadId} continuation />
     </section>
   );
 }

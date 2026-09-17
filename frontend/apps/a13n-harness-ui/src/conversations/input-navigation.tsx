@@ -59,8 +59,10 @@ export function InputNavigation({
     if (query.hasNextPage && !query.isFetching && !query.isError)
       void query.fetchNextPage();
   }, [query.hasNextPage, query.isFetching, query.isError, query.fetchNextPage]);
-  const items: Pick<Schema<"TranscriptTurn">, "turn_id" | "preview">[] =
-    query.data?.pages.flatMap((page) => page.turns) ?? [];
+  const items: Pick<
+    Schema<"TranscriptTurn">,
+    "turn_id" | "preview" | "output_preview"
+  >[] = query.data?.pages.flatMap((page) => page.turns) ?? [];
   for (const input of localInputs) {
     if (
       input.action !== "send" ||
@@ -137,6 +139,12 @@ export function InputNavigation({
             >
               <small>Input {index + 1}</small>
               <p>{item.preview}</p>
+              {item.output_preview && (
+                <div className={styles.output}>
+                  <small>Output</small>
+                  <p>{item.output_preview}</p>
+                </div>
+              )}
             </TooltipPopup>
           </Tooltip>
         ))}
@@ -163,7 +171,14 @@ export function InputNavigation({
                   onClick={() => select(item.turn_id)}
                 >
                   <small>{index + 1}</small>
-                  <span>{item.preview}</span>
+                  <span className={styles.menuPreview}>
+                    <span>{item.preview}</span>
+                    {item.output_preview && (
+                      <span className={styles.menuOutput}>
+                        Output: {item.output_preview}
+                      </span>
+                    )}
+                  </span>
                 </button>
               ))}
             </nav>

@@ -330,7 +330,7 @@ class ThreadProjectionService:
             {
                 boundary
                 for turn in visible_turns
-                for boundary in (turn.input_position, turn.final_position)
+                for boundary in (turn.input_position, turn.output_position)
                 if boundary is not None and not position <= boundary < upper_bound
             }
         )
@@ -579,12 +579,35 @@ def _transcript_turns(
         # resume/checkpoint makes an old result provisional, not a completed turn.
         final_position = end - 1 if end - 1 in completed_set else None
         messages = history[position:end]
+        closing = messages[-1]
+        # A readable closing response is not proof of successful execution.
+        # Legacy histories lack completion markers, but must not lose their answer
+        # when execution details are manually collapsed or paged separately.
+        output_position = (
+            end - 1
+            if isinstance(closing, ModelResponse)
+            and closing.state == "complete"
+            and not (closing.metadata or {}).get("a13n.context")
+            and (closing.metadata or {}).get("keep") != "compact"
+            and not any(isinstance(part, (ToolCallPart, NativeToolCallPart)) for part in closing.parts)
+            and any(isinstance(part, TextPart) and part.content.strip() for part in closing.parts)
+            else None
+        )
+        if final_position is not None:
+            output_position = final_position
+        output_preview = (
+            excerpt_text(" ".join(part.content for part in closing.parts if isinstance(part, TextPart)), 512)
+            if output_position is not None
+            else None
+        )
         turns.append(
             TranscriptTurn(
                 turn_id=identity,
                 input_position=position,
                 end_position=end,
                 final_position=final_position,
+                output_position=output_position,
+                output_preview=output_preview,
                 preview=preview,
                 timestamp=history[position].timestamp,
                 tool_count=sum(

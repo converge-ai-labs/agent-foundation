@@ -14,7 +14,7 @@ const model: Schema<"ModelSummary"> = {
   fast: { supported: true, state: "on" },
 };
 
-it("toggles directly without opening a model popup and distinguishes reset from Off", async () => {
+it("inherits Fast on and toggles two states with a stable label and no reset", async () => {
   const user = userEvent.setup();
   function Control() {
     const [value, setValue] = useState<boolean | null>(null);
@@ -23,33 +23,59 @@ it("toggles directly without opening a model popup and distinguishes reset from 
   render(<Control />);
   const toggle = screen.getByRole("button", { name: "Fast mode" });
   expect(toggle.getAttribute("aria-pressed")).toBe("true");
-  expect(toggle.title).toContain("Model default: on");
+  expect(toggle.getAttribute("data-active")).toBe("true");
+  expect(toggle.title).toContain("Model setting: Fast on");
   expect(screen.queryByRole("dialog")).toBeNull();
+  expect(screen.getAllByRole("button")).toHaveLength(1);
   await user.click(toggle);
-  expect(toggle.textContent).toContain("Fast Off");
+  expect(toggle.textContent).toBe("Fast");
   expect(toggle.getAttribute("aria-pressed")).toBe("false");
-  await user.click(
-    screen.getByRole("button", { name: "Use model default for Fast" }),
-  );
-  expect(toggle.textContent).toContain("Fast On");
+  expect(toggle.getAttribute("data-active")).toBe("false");
   toggle.focus();
   await user.keyboard("[Space]");
-  expect(toggle.textContent).toContain("Fast Off");
+  expect(toggle.getAttribute("aria-pressed")).toBe("true");
 });
 
-it("does not claim Off for an unknown default, and explains unavailable controls", async () => {
-  const user = userEvent.setup();
+it.each(["default", "off"] as const)(
+  "leaves inherited %s unlit and enables Fast on click",
+  async (state) => {
+    const user = userEvent.setup();
+    const change = vi.fn();
+    render(
+      <FastToggle
+        model={{ ...model, fast: { supported: true, state } }}
+        onChange={change}
+      />,
+    );
+    const toggle = screen.getByRole("button", { name: "Fast mode" });
+    expect(toggle.textContent).toBe("Fast");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(change).not.toHaveBeenCalled();
+    await user.click(toggle);
+    expect(change).toHaveBeenLastCalledWith(true);
+  },
+);
+
+it("follows changed model settings without overriding explicit Off", () => {
   const change = vi.fn();
-  const view = render(
+  const view = render(<FastToggle model={model} onChange={change} />);
+  const toggle = screen.getByRole("button", { name: "Fast mode" });
+  view.rerender(
     <FastToggle
-      model={{ ...model, fast: { supported: true, state: "default" } }}
+      model={{ ...model, fast: { supported: true, state: "off" } }}
       onChange={change}
     />,
   );
-  expect(screen.getByText("Fast Default")).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "Fast mode" }));
-  expect(change).toHaveBeenLastCalledWith(true);
-  view.rerender(
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  view.rerender(<FastToggle model={model} value={false} onChange={change} />);
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  expect(change).not.toHaveBeenCalled();
+});
+
+it("explains unavailable controls and cannot toggle them", async () => {
+  const user = userEvent.setup();
+  const change = vi.fn();
+  render(
     <FastToggle
       model={{
         ...model,
@@ -59,7 +85,6 @@ it("does not claim Off for an unknown default, and explains unavailable controls
           reason: "Unavailable connection",
         },
       }}
-      value={true}
       onChange={change}
     />,
   );
@@ -68,8 +93,6 @@ it("does not claim Off for an unknown default, and explains unavailable controls
   }) as HTMLButtonElement;
   expect(toggle.disabled).toBe(true);
   expect(toggle.title).toBe("Unavailable connection");
-  await user.click(
-    screen.getByRole("button", { name: "Use model default for Fast" }),
-  );
-  expect(change).toHaveBeenLastCalledWith(null);
+  await user.click(toggle);
+  expect(change).not.toHaveBeenCalled();
 });

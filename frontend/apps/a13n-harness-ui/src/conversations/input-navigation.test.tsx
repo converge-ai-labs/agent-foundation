@@ -22,7 +22,13 @@ it("loads the complete lightweight directory and excludes steer and duplicate lo
     .mockResolvedValueOnce({
       data: {
         continuation_id: "C1",
-        turns: [{ turn_id: "first", preview: "First input" }],
+        turns: [
+          {
+            turn_id: "first",
+            preview: "First input",
+            output_preview: "First saved answer",
+          },
+        ],
         next_cursor: "next",
       },
     })
@@ -87,8 +93,14 @@ it("loads the complete lightweight directory and excludes steer and duplicate lo
   expect(
     screen.queryByRole("button", { name: /Unconfirmed input/ }),
   ).toBeNull();
+  fireEvent.focus(screen.getByRole("button", { name: "Input 1: First input" }));
+  expect(await screen.findByText("First saved answer")).toBeTruthy();
   fireEvent.click(second);
   expect(select).toHaveBeenCalledWith("second");
+  fireEvent.click(screen.getByRole("button", { name: "Input history" }));
+  expect(await screen.findByText("Output: First saved answer")).toBeTruthy();
+  fireEvent.click(screen.getByText("Output: First saved answer"));
+  expect(select).toHaveBeenLastCalledWith("first");
   await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
   expect(GET.mock.calls.every(([path]) => path.endsWith("/inputs"))).toBe(true);
   expect(GET.mock.calls[1][1].params.query.cursor).toBe("next");

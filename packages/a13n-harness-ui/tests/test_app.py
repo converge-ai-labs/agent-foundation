@@ -2247,6 +2247,8 @@ async def test_input_directory_and_bidirectional_history_use_saved_turn_boundari
         index = await app.get_thread_inputs(thread_id=thread.thread_id, limit=2)
         assert [turn.preview for turn in index.turns] == ["First question", "Second question"]
         assert all(turn.final_position is not None for turn in index.turns)
+        assert all(turn.final_position == turn.output_position for turn in index.turns)
+        assert [turn.output_preview for turn in index.turns] == ["Final answer", "Final answer"]
         assert index.next_cursor is not None
         remaining = await app.get_thread_inputs(thread_id=thread.thread_id, cursor=index.next_cursor)
         assert [turn.preview for turn in remaining.turns] == ["Third question"]

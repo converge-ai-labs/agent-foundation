@@ -80,6 +80,14 @@ export function ThreadRunChoices({
   }, [selectionKey, onThinkingChange, onFastChange]);
   return (
     <div className={styles.runChoices}>
+      <FastToggle
+        model={catalog?.models?.find(
+          (item) => item.model_id === (modelId ?? agent?.model_id),
+        )}
+        value={fast}
+        disabled={disabled || !catalog}
+        onChange={onFastChange}
+      />
       <div className={styles.secondaryChoices} data-expanded={expanded}>
         <div className={styles.runChoice} title={agent?.name ?? agentId}>
           <SearchPicker
@@ -136,14 +144,6 @@ export function ThreadRunChoices({
           onThinkingChange={onThinkingChange}
         />
       </div>
-      <FastToggle
-        model={catalog?.models?.find(
-          (item) => item.model_id === (modelId ?? agent?.model_id),
-        )}
-        value={fast}
-        disabled={disabled || !catalog}
-        onChange={onFastChange}
-      />
     </div>
   );
 }

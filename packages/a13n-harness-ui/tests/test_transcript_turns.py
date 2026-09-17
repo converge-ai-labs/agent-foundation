@@ -117,3 +117,50 @@ def test_completion_preserves_legacy_envelope_and_never_changes_model_messages()
     assert completed.model_dump().keys() == old.model_dump().keys()
     assert messages[-1].metadata is None
     assert DisplayHistory.model_validate_json(completed.model_dump_json()).completed_responses == (1,)
+
+
+def test_legacy_closing_output_is_readable_without_claiming_success():
+    turns = _transcript_turns(
+        (
+            input_message("Question", "first"),
+            ModelResponse(parts=[TextPart("Progress"), ToolCallPart("read", {})]),
+            ModelRequest(parts=[ToolReturnPart("read", "ok")]),
+            ModelResponse(parts=[ThinkingPart("Private reasoning"), TextPart("First part"), TextPart("Second part")]),
+            input_message("Next question", "second"),
+        )
+    )
+    assert turns[0].final_position is None
+    assert turns[0].output_position == 3
+    assert turns[0].output_preview == "First part Second part"
+    assert turns[1].output_position is None
+    assert turns[1].output_preview is None
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        ModelResponse(parts=[TextPart("Working"), ToolCallPart("read", {})]),
+        ModelResponse(parts=[TextPart("Partial")], state="suspended"),
+        ModelResponse(parts=[TextPart("Summary")], metadata={"keep": "compact"}),
+        ModelResponse(parts=[ThinkingPart("No answer")]),
+    ],
+)
+def test_intermediate_or_synthetic_output_is_not_a_closing_preview(response):
+    turn = _transcript_turns((input_message("Question", "first"), response))[0]
+    assert turn.output_position is None
+    assert turn.output_preview is None
+
+
+def test_completed_output_preview_is_bounded_and_excludes_reasoning():
+    turn = _transcript_turns(
+        (
+            input_message("Question", "first"),
+            ModelResponse(parts=[ThinkingPart("Private"), TextPart("Answer " * 200)]),
+        ),
+        (1,),
+    )[0]
+    assert turn.final_position == turn.output_position == 1
+    assert turn.output_preview is not None
+    assert len(turn.output_preview) <= 512
+    assert turn.output_preview.startswith("Answer")
+    assert "Private" not in turn.output_preview
