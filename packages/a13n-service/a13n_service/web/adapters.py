@@ -6,7 +6,6 @@ import json
 import math
 from collections.abc import Callable
 from datetime import UTC, datetime
-from decimal import Decimal
 from email.utils import parsedate_to_datetime
 from typing import Literal
 
@@ -18,25 +17,15 @@ from a13n_harness.capabilities.web import (
     WebScrapeResult,
     WebSearchRequest,
     WebSearchResponse,
-    WebSearchResult,
 )
-from a13n_harness.usage import ProviderUsage
 from anyio import move_on_after
 from pydantic import BaseModel
 
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
-from a13n_service.ids import new_object_id
 from a13n_service.provider_plugins.api import WebProviderResponseError
 
-from .domain import MAX_SCRAPE_CONTENT_BYTES, ScrapeSelection, SearchSelection
-
-SEARCH_ENDPOINTS = {"brave": "https://api.search.brave.com/res/v1/web/search", "exa": "https://api.exa.ai/search"}
-SCRAPE_ENDPOINTS = {"exa": "https://api.exa.ai/contents"}
-SEARCH_RESPONSE_BYTES = 1024 * 1024
-# JSON may encode one UTF-8 output byte as a six-byte `\u00XX` escape.
-# The fixed allowance bounds the remaining result envelope and unexpected fields.
-SCRAPE_RESPONSE_OVERHEAD_BYTES = 256 * 1024
-MAX_JSON_BYTES_PER_CONTENT_BYTE = 6
+from .domain import ScrapeSelection, SearchSelection
+from .providers import SCRAPE, SEARCH
 
 
 def provider_client() -> httpx2.AsyncClient:
@@ -56,51 +45,10 @@ class WebProviderTransport:
     async def search(
         self, provider_type: str, credential: str, request: WebSearchRequest, selection: SearchSelection
     ) -> WebSearchResponse:
-        endpoint = SEARCH_ENDPOINTS.get(provider_type)
-        if endpoint is None:
+        adapter = SEARCH.get(provider_type)
+        if adapter is None:
             raise WebProviderError("web_search_unavailable")
-        limit = min(request.limit, selection.max_results)
-        if provider_type == "brave" and (len(request.query) > 600 or len(request.query.split()) > 75):
-            raise WebProviderError("web_search_request_invalid")
-        if provider_type == "brave":
-
-            def build_request(client: httpx2.AsyncClient) -> httpx2.Request:
-                return client.build_request(
-                    "GET",
-                    endpoint,
-                    headers={"X-Subscription-Token": credential, "Accept": "application/json"},
-                    params={
-                        "q": request.query,
-                        "count": limit,
-                        "result_filter": "web",
-                        "text_decorations": "false",
-                    },
-                )
-        else:
-            body: dict[str, object] = {
-                "query": request.query,
-                "numResults": limit,
-                "type": "auto",
-                "contents": {"text": False, "highlights": True},
-            }
-            if selection.allow_domains:
-                body["includeDomains"] = list(selection.allow_domains)
-            if selection.deny_domains:
-                body["excludeDomains"] = list(selection.deny_domains)
-
-            def build_request(client: httpx2.AsyncClient) -> httpx2.Request:
-                return client.build_request("POST", endpoint, headers={"x-api-key": credential}, json=body)
-
-        payload = await self.exchange_json(
-            build_request,
-            endpoint=endpoint,
-            operation="search",
-            max_response_bytes=SEARCH_RESPONSE_BYTES,
-        )
-        try:
-            return normalize_search_response(provider_type, payload, selection, limit=limit)
-        except (ValueError, TypeError, KeyError) as error:
-            raise WebProviderError("web_search_response_invalid") from error
+        return await adapter(self, credential, request, selection)
 
     async def search_registered(
         self,
@@ -120,43 +68,18 @@ class WebProviderTransport:
             allow_domains=allow_domains,
             deny_domains=deny_domains,
         )
-        if provider_type not in SEARCH_ENDPOINTS:
-            from .vendor_adapters import search
-
-            return await search(
-                self, provider_type, _api_key(credentials) if provider_type != "duckduckgo" else "", request, selection
-            )
-        credential = _api_key(credentials)
+        credential = "" if provider_type == "duckduckgo" else _api_key(credentials)
         return await self.search(provider_type, credential, request, selection)
 
     async def scrape(
         self, provider_type: str, credential: str, request: WebScrapeRequest, selection: ScrapeSelection
     ) -> WebScrapeResult:
-        endpoint = SCRAPE_ENDPOINTS.get(provider_type)
-        if endpoint is None:
+        adapter = SCRAPE.get(provider_type)
+        if adapter is None:
             raise WebProviderError("web_scrape_unavailable")
         if selection.restricted:
             raise WebProviderError("web_scrape_domain_restrictions_unsupported")
-        limit = min(request.max_content_bytes, selection.max_content_bytes)
-
-        def build_request(client: httpx2.AsyncClient) -> httpx2.Request:
-            return client.build_request(
-                "POST",
-                endpoint,
-                headers={"x-api-key": credential},
-                json={"urls": [request.url], "text": {"maxCharacters": limit + 1}},
-            )
-
-        payload = await self.exchange_json(
-            build_request,
-            endpoint=endpoint,
-            operation="scrape",
-            max_response_bytes=_scrape_response_bytes(limit),
-        )
-        try:
-            return normalize_scrape_response(payload, request, selection)
-        except (ValueError, TypeError, KeyError) as error:
-            raise WebProviderError("web_scrape_response_invalid") from error
+        return await adapter(self, credential, request, selection)
 
     async def scrape_registered(
         self,
@@ -175,12 +98,7 @@ class WebProviderTransport:
             allow_domains=(),
             deny_domains=(),
         )
-        if provider_type not in SCRAPE_ENDPOINTS:
-            from .vendor_adapters import scrape
-
-            return await scrape(self, provider_type, _api_key(credentials), request, selection)
-        credential = _api_key(credentials)
-        return await self.scrape(provider_type, credential, request, selection)
+        return await self.scrape(provider_type, _api_key(credentials), request, selection)
 
     async def exchange_json(
         self,
@@ -304,79 +222,6 @@ def _api_key(credentials: object) -> str:
     return value
 
 
-def _scrape_response_bytes(content_bytes: int) -> int:
-    if not 1 <= content_bytes <= MAX_SCRAPE_CONTENT_BYTES:
-        raise ValueError("scrape content budget is invalid")
-    return SCRAPE_RESPONSE_OVERHEAD_BYTES + (content_bytes + 1) * MAX_JSON_BYTES_PER_CONTENT_BYTE
-
-
-def normalize_search_response(
-    provider_type: str, payload: object, selection: SearchSelection, *, limit: int
-) -> WebSearchResponse:
-    if not isinstance(payload, dict):
-        raise ValueError("response must be an object")
-    if provider_type == "brave":
-        web = payload.get("web")
-        if web is None and payload.get("type") == "search":
-            raw = []
-        elif isinstance(web, dict):
-            raw = web.get("results")
-        else:
-            raise ValueError("missing web response")
-    else:
-        raw = payload.get("results")
-    if not isinstance(raw, list) or len(raw) > 100:
-        raise ValueError("invalid search results")
-    results: list[WebSearchResult] = []
-    for item in raw:
-        if not isinstance(item, dict):
-            raise ValueError("invalid search result")
-        snippet = item.get("description") if provider_type == "brave" else item.get("highlights")
-        if provider_type == "exa" and snippet is not None:
-            if not isinstance(snippet, list) or not all(isinstance(part, str) for part in snippet):
-                raise ValueError("invalid highlights")
-            snippet = "\n".join(snippet)
-        result = WebSearchResult(title=item.get("title") or "", url=item["url"], snippet=snippet or "")
-        if not selection.allows(result.url):
-            continue
-        results.append(result)
-    usage = _usage(payload, product="search") if provider_type == "exa" else ()
-    return WebSearchResponse(results=tuple(results[:limit]), usage=usage)
-
-
-def normalize_scrape_response(
-    payload: object, request: WebScrapeRequest, selection: ScrapeSelection
-) -> WebScrapeResult:
-    if not isinstance(payload, dict):
-        raise ValueError("response must be an object")
-    raw = payload.get("results")
-    if not isinstance(raw, list) or len(raw) != 1 or not isinstance(raw[0], dict):
-        raise ValueError("invalid scrape result")
-    item = raw[0]
-    content = item.get("text")
-    if not isinstance(content, str):
-        raise ValueError("invalid scrape content")
-    source_url = item.get("url") or request.url
-    if not isinstance(source_url, str):
-        raise ValueError("invalid scrape source URL")
-    encoded = content.encode("utf-8")
-    limit = min(request.max_content_bytes, selection.max_content_bytes)
-    truncated = len(encoded) > limit
-    if truncated:
-        content = encoded[:limit].decode("utf-8", errors="ignore")
-    title = item.get("title")
-    if title is not None and not isinstance(title, str):
-        raise ValueError("invalid scrape title")
-    return WebScrapeResult(
-        content=content,
-        source_url=request.url,
-        canonical_url=source_url,
-        title=title,
-        truncated=truncated,
-        usage=_usage(payload, product="contents"),
-    )
-
-
 def _failure_code(status: int, *, operation: Literal["search", "scrape"] = "search") -> str:
     prefix = f"web_{operation}"
     return {
@@ -390,25 +235,6 @@ def _failure_code(status: int, *, operation: Literal["search", "scrape"] = "sear
         503: f"{prefix}_unavailable",
         504: f"{prefix}_unavailable",
     }.get(status, f"{prefix}_failed")
-
-
-def _usage(payload: dict[str, object], *, product: str) -> tuple[ProviderUsage, ...]:
-    costs = payload.get("costDollars")
-    if not isinstance(costs, dict) or type(costs.get("total")) not in {int, float}:
-        return ()
-    cost = Decimal(str(costs["total"]))
-    if not cost.is_finite() or cost < 0:
-        return ()
-    return (
-        ProviderUsage(
-            usage_id=new_object_id("usage"),
-            provider="exa",
-            product=product,
-            timestamp=datetime.now(UTC),
-            cost=cost,
-            currency="USD",
-        ),
-    )
 
 
 def _retry_after(value: str | None) -> float:

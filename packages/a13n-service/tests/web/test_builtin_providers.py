@@ -7,7 +7,23 @@ import pytest
 from a13n_harness.capabilities.web import WebScrapeRequest, WebSearchRequest
 from a13n_service.provider_plugins.builtins import ApiKeyCredential, EmptyConfiguration
 from a13n_service.web.adapters import WebProviderTransport
-from a13n_service.web.vendor_adapters import SCRAPE_URLS, SEARCH_URLS
+from a13n_service.web.providers import duckduckgo, firecrawl, jina, parallel, perplexity, serpapi, tavily
+
+SEARCH_URLS = {
+    "duckduckgo": duckduckgo.SEARCH_URL,
+    "parallel": parallel.SEARCH_URL,
+    "tavily": tavily.SEARCH_URL,
+    "firecrawl": firecrawl.SEARCH_URL,
+    "jina": jina.SEARCH_URL,
+    "perplexity": perplexity.SEARCH_URL,
+    "serpapi": serpapi.SEARCH_URL,
+}
+SCRAPE_URLS = {
+    "parallel": parallel.SCRAPE_URL,
+    "tavily": tavily.SCRAPE_URL,
+    "firecrawl": firecrawl.SCRAPE_URL,
+    "jina": jina.SCRAPE_URL,
+}
 
 
 class FixedEndpointPolicy:

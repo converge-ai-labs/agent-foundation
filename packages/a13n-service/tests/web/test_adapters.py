@@ -6,7 +6,7 @@ import httpx2
 import pytest
 from a13n_harness.capabilities.web import WebProviderError, WebScrapeRequest, WebSearchRequest
 from a13n_service.provider_plugins import WebProviderResponseError
-from a13n_service.web.adapters import WebProviderTransport, _scrape_response_bytes
+from a13n_service.web.adapters import WebProviderTransport
 from a13n_service.web.domain import (
     MAX_SCRAPE_CONTENT_BYTES,
     CreateWebProviderRequest,
@@ -14,6 +14,7 @@ from a13n_service.web.domain import (
     SearchSelection,
     UpdateWebProviderRequest,
 )
+from a13n_service.web.providers.common import scrape_response_bytes
 from pydantic import ValidationError
 
 PROVIDER_ID = "wprov_1234567890abcdef"
@@ -330,7 +331,7 @@ async def test_exa_scrape_maximum_output_budget_is_reachable() -> None:
 
 @pytest.mark.anyio
 async def test_exa_scrape_rejects_wire_response_beyond_escaped_json_budget() -> None:
-    wire_limit = _scrape_response_bytes(MAX_SCRAPE_CONTENT_BYTES)
+    wire_limit = scrape_response_bytes(MAX_SCRAPE_CONTENT_BYTES)
 
     with pytest.raises(WebProviderError, match="web_scrape_response_invalid"):
         await transport(lambda _: httpx2.Response(200, content=b" " * (wire_limit + 1))).scrape(
