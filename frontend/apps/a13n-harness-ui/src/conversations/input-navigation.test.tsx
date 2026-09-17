@@ -12,7 +12,7 @@ import { createRef } from "react";
 import { TransportContext } from "../transport/context";
 import type { Transport } from "../transport/client";
 import { InputNavigation } from "./input-navigation";
-import { previewInput } from "./local-input";
+import { previewInput, type LocalInput } from "./local-input";
 
 afterEach(cleanup);
 
@@ -47,6 +47,19 @@ it("loads the complete lightweight directory and excludes steer and duplicate lo
           revision={1}
           onSelect={select}
           localInputs={[
+            ...(
+              [
+                "preparing",
+                "pending",
+                "unknown",
+                "rejected",
+              ] as LocalInput["state"][]
+            ).map((state) => ({
+              id: state,
+              action: "send" as const,
+              state,
+              parts: previewInput(state, ["Unconfirmed input"]),
+            })),
             {
               id: "first",
               action: "send",
@@ -71,6 +84,9 @@ it("loads the complete lightweight directory and excludes steer and duplicate lo
     screen.getAllByRole("button", { name: "Input 1: First input" }),
   ).toHaveLength(1);
   expect(screen.queryByText("Not in directory")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: /Unconfirmed input/ }),
+  ).toBeNull();
   fireEvent.click(second);
   expect(select).toHaveBeenCalledWith("second");
   await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));

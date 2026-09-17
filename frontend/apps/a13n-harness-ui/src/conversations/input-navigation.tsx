@@ -64,7 +64,7 @@ export function InputNavigation({
   for (const input of localInputs) {
     if (
       input.action !== "send" ||
-      input.state === "rejected" ||
+      input.state !== "accepted" ||
       items.some((item) => item.turn_id === input.id)
     )
       continue;
