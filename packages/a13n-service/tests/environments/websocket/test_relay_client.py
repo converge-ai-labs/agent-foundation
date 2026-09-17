@@ -8,7 +8,8 @@ import pytest
 from a13n_service.environments.websocket.authority import ConnectionIdentity, DispatchDenied, UseIdentity
 from a13n_service.environments.websocket.coordination import ConfirmedObservation, ConnectionObservation, UseGrant
 from a13n_service.environments.websocket.relay_client import RelayUseClient
-from a13n_service.environments.websocket.relay_protocol import RelayTerminal
+from a13n_service.environments.websocket.relay_protocol import RelayChunk, RelayTerminal, TransferPosition
+from a13n_service.environments.websocket.relay_scope import RelayUseScope
 from a13n_service.environments.websocket.relay_storage import (
     ConnectionRelayStore,
     RelayStoreError,
@@ -46,12 +47,13 @@ async def relay(relay_redis):
         0.005,
     )
     responses = RelayResponseDispatcher(mailbox)
-    client = RelayUseClient(USE, observed, owner, responses, check_authority=lambda: None)
+    scope = RelayUseScope(USE, observed, owner, responses, check_authority=lambda: None)
+    client = RelayUseClient(scope)
     reader = asyncio.create_task(responses.run())
     try:
         yield client, owner, responses
     finally:
-        await client.invalidate()
+        await scope.invalidate()
         responses.close()
         await reader
 
@@ -158,12 +160,11 @@ async def test_cancellation_and_early_stream_exit_send_bounded_control_request(r
     assert not responses._pending
 
 
-async def test_scope_close_is_idempotent_and_fences_later_publication(relay):
+async def test_scope_invalidation_is_idempotent_and_fences_later_publication(relay):
     client, owner, _ = relay
-    serving = asyncio.create_task(reply_once(owner))
-    await client.close()
-    assert (await serving).operation == "scope.close"
-    await client.close()
+    await client._scope.invalidate()
+    await client._scope.invalidate()
+    assert await owner.read(pending=True) == ()
     with pytest.raises(RelayOperationError) as rejected:
         await client.call("file.stat")
     assert rejected.value.failure.code == "environment_unavailable"
@@ -171,7 +172,7 @@ async def test_scope_close_is_idempotent_and_fences_later_publication(relay):
 
 async def test_takeover_observation_cannot_reuse_retained_old_use(relay):
     client, owner, responses = relay
-    now = client._server_ms
+    now = client._scope.server_ms
     takeover = ConfirmedObservation(
         ConnectionObservation(
             code="ok",
@@ -188,9 +189,44 @@ async def test_takeover_observation_cannot_reuse_retained_old_use(relay):
         0.005,
     )
     with pytest.raises(ValueError, match="exact confirmed use"):
-        RelayUseClient(USE, takeover, owner, responses, check_authority=lambda: None)
+        RelayUseScope(USE, takeover, owner, responses, check_authority=lambda: None)
     with pytest.raises(DispatchDenied):
-        await client.renew(takeover)
+        await client._scope.renew(takeover)
     with pytest.raises(RelayOperationError) as rejected:
         await client.call("file.stat")
     assert rejected.value.failure.code == "environment_unavailable"
+
+
+async def test_fencing_one_mount_preserves_other_waiters_and_shared_authority(relay):
+    client, _, responses = relay
+    other = RelayUseClient(client._scope, mount_name="other")
+    async with client.request("file.stat", {"path": "/first"}) as first:
+        async with other.request("file.stat", {"path": "/second"}) as second:
+            client.fence()
+            with pytest.raises(RelayOperationError) as rejected:
+                await first.result()
+            assert rejected.value.code == "environment_unavailable"
+            assert other.available and client._scope.available
+            responses.accept(RelayTerminal(request_id=second.request.request_id, use=USE, result="second-result"))
+            assert (await second.result()).result == "second-result"
+
+
+async def test_upload_input_cannot_cross_mount_clients_even_with_the_same_use(relay):
+    client, _, _ = relay
+    other = RelayUseClient(client._scope, mount_name="other")
+    async with client.request(
+        "file.write_bytes", {"transfer_id": "etr_transfer717171717171"}, streaming="upload"
+    ) as pending:
+        frame = RelayChunk(
+            request_id=pending.request.request_id,
+            use=USE,
+            transfer=TransferPosition(transfer_id="etr_transfer717171717171", sequence=0, offset=0),
+            data="eA==",
+        )
+        with pytest.raises(ValueError, match="this mount's pending request"):
+            await other.send_input(pending, frame)
+        client.fence()
+        with pytest.raises(RelayOperationError) as rejected:
+            await client.send_input(pending, frame)
+        assert rejected.value.code == "environment_unavailable"
+        assert other.available

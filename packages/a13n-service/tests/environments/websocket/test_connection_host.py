@@ -22,6 +22,7 @@ from a13n_service.environments.websocket.relay_client import RelayUseClient
 from a13n_service.environments.websocket.relay_file_operations import RelayFileOperations
 from a13n_service.environments.websocket.relay_processes import RelayProcessOperations, RelayShellOperations
 from a13n_service.environments.websocket.relay_protocol import RelayEnvironmentSnapshot
+from a13n_service.environments.websocket.relay_scope import RelayUseScope
 from a13n_service.environments.websocket.relay_storage import ConnectionRelayStore, WorkerResponseMailbox
 from a13n_service.environments.websocket.relay_waiters import RelayOperationError, RelayResponseDispatcher
 from a13n_service.environments.websocket.resources import ConnectionResources
@@ -174,15 +175,16 @@ async def test_named_mounts_keep_independent_policies_on_one_real_eip_session(
         grant = await service.coordination.acquire_use(identity, attempt_expires_at_ms=observed.value.now_ms + 60_000)
         responses = RelayResponseDispatcher(mailbox)
 
+        scope = RelayUseScope(
+            identity,
+            grant,
+            ConnectionRelayStore(relay_redis, identity.connection),
+            responses,
+            check_authority=lambda: None,
+        )
+
         def mount(name):
-            client = RelayUseClient(
-                identity,
-                grant,
-                ConnectionRelayStore(relay_redis, identity.connection),
-                responses,
-                check_authority=lambda: None,
-                mount_name=name,
-            )
+            client = RelayUseClient(scope, mount_name=name)
             client.bind_mount(name)
             return client
 
@@ -211,9 +213,9 @@ async def test_named_mounts_keep_independent_policies_on_one_real_eip_session(
             assert (root / "shared").read_text() == "allowed"
             await reader.call("scope.describe")
             assert authorized == [(identity, None), (identity, "reader"), (identity, "unknown"), (identity, "writer")]
-            await reader.close()
+            await reader.call("scope.close")
         finally:
-            await reader.invalidate()
+            await scope.invalidate()
             responses.close()
             await reading
 
@@ -243,13 +245,14 @@ async def test_ready_connection_relay_uses_real_envd_and_releases_carrier(
         await mailbox.prepare()
         grant = await service.coordination.acquire_use(identity, attempt_expires_at_ms=observed.value.now_ms + 60_000)
         responses = RelayResponseDispatcher(mailbox)
-        client = RelayUseClient(
+        scope = RelayUseScope(
             identity,
             grant,
             ConnectionRelayStore(relay_redis, identity.connection),
             responses,
             check_authority=lambda: None,
         )
+        client = RelayUseClient(scope)
         reader = asyncio.create_task(responses.run())
         try:
             snapshot = RelayEnvironmentSnapshot.model_validate(await client.call("scope.describe"))
@@ -286,9 +289,9 @@ async def test_ready_connection_relay_uses_real_envd_and_releases_carrier(
             with pytest.raises(RelayOperationError):
                 await RelayProcessOperations(client).inspect(started.process.handle)
             assert authorized == [(identity, None), (identity, "workspace")]
-            await client.close()
+            await client.call("scope.close")
         finally:
-            await client.invalidate()
+            await scope.invalidate()
             responses.close()
             await reader
         async with asyncio.timeout(3):

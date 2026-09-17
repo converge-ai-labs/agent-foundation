@@ -13,6 +13,7 @@ from a13n_service.environments.websocket.authority import ConnectionIdentity, Di
 from a13n_service.environments.websocket.coordination import ConfirmedObservation, ConnectionObservation, UseGrant
 from a13n_service.environments.websocket.relay_client import RelayUseClient
 from a13n_service.environments.websocket.relay_consumer import RelayControlConsumer
+from a13n_service.environments.websocket.relay_scope import RelayUseScope
 from a13n_service.environments.websocket.relay_storage import ConnectionRelayStore, WorkerResponseMailbox
 from a13n_service.environments.websocket.relay_waiters import RelayResponseDispatcher
 from a13n_service.environments.websocket.resources import ConnectionResources
@@ -100,7 +101,8 @@ async def control_relay(relay_redis):
         0.005,
     )
     responses = RelayResponseDispatcher(mailbox)
-    client = RelayUseClient(USE, observed, owner, responses, check_authority=lambda: None)
+    scope = RelayUseScope(USE, observed, owner, responses, check_authority=lambda: None)
+    client = RelayUseClient(scope)
     reader = asyncio.create_task(responses.run())
 
     @asynccontextmanager
@@ -123,6 +125,6 @@ async def control_relay(relay_redis):
     try:
         yield serving
     finally:
-        await client.invalidate()
+        await scope.invalidate()
         responses.close()
         await reader

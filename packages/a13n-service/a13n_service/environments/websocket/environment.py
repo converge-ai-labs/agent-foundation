@@ -89,7 +89,8 @@ class ClientRunEnvironment(Environment):
                 raise ValueError("Accepted Environment access changed")
             client = await self._connections.acquire(self._attempt, self.environment_id, target.permissions)
             self._client = client
-            client.bind_mount(mount_id)
+            if self.is_entered:
+                client.bind_mount(mount_id)
             try:
                 snapshot = RelayEnvironmentSnapshot.model_validate(await client.call("scope.describe"))
                 self._generation = target.generation

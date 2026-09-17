@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from time import monotonic
 from typing import TYPE_CHECKING
 
@@ -20,6 +22,7 @@ from a13n_service.temporal import assume_utc, utc_now
 from .authority import DispatchDenied, UseIdentity
 from .coordination import ConnectionCoordination, CoordinationError
 from .relay_client import RelayUseClient
+from .relay_scope import RelayUseScope
 from .relay_storage import ConnectionRelayStore, WorkerResponseMailbox
 from .relay_waiters import RelayResponseDispatcher
 
@@ -29,10 +32,23 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _Use:
-    client: RelayUseClient
+    scope: RelayUseScope
     attempt: AttemptContext
+    clients: dict[str, RelayUseClient] = field(default_factory=dict)
+
+    @property
+    def key(self) -> tuple[str, str, str]:
+        identity = self.scope.identity
+        return identity.connection.organization_id, identity.attempt_id, identity.connection.environment_id
+
+
+@dataclass(slots=True)
+class _Slot:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    waiters: int = 0
+    use: _Use | None = None
 
 
 def _check_attempt(attempt: AttemptContext, environment_id: str) -> None:
@@ -46,17 +62,20 @@ def _check_attempt(attempt: AttemptContext, environment_id: str) -> None:
 
 
 class WorkerClientConnections:
-    def __init__(self, redis: Redis, reader: Redis, instance_id: str, *, max_uses: int = 128) -> None:
+    def __init__(
+        self, redis: Redis, reader: Redis, instance_id: str, *, max_uses: int = 128, max_mounts: int = 32
+    ) -> None:
         if not 1 <= max_uses <= 4096:
             raise ValueError("Worker client Environment use capacity must be bounded")
+        if not 1 <= max_mounts <= 128:
+            raise ValueError("Worker mounts per Environment use must be bounded")
         self.instance_id = instance_id
         self._redis = redis
         self._coordination = ConnectionCoordination(redis)
         self._mailbox = WorkerResponseMailbox(redis, instance_id, reader=reader)
         self._responses = RelayResponseDispatcher(self._mailbox)
-        self._uses: dict[str, _Use] = {}
-        self._max_uses = max_uses
-        self._opening = 0
+        self._slots: dict[tuple[str, str, str], _Slot] = {}
+        self._max_uses, self._max_mounts = max_uses, max_mounts
         self._prepared = False
         self._draining = False
         self._closed = asyncio.Event()
@@ -67,15 +86,59 @@ class WorkerClientConnections:
         await self._mailbox.prepare()
         self._prepared = True
 
+    @asynccontextmanager
+    async def _slot(self, key: tuple[str, str, str]) -> AsyncIterator[_Slot]:
+        slot = self._slots.get(key)
+        if slot is None:
+            if len(self._slots) >= self._max_uses:
+                raise EnvironmentError("Worker Environment use capacity is exhausted", code="environment_overloaded")
+            slot = self._slots[key] = _Slot()
+        if slot.waiters >= self._max_mounts:
+            raise EnvironmentError("Worker mount admission capacity is exhausted", code="environment_overloaded")
+        slot.waiters += 1
+        try:
+            async with slot.lock:
+                yield slot
+        finally:
+            slot.waiters -= 1
+            self._discard_empty(key, slot)
+
+    def _discard_empty(self, key: tuple[str, str, str], slot: _Slot) -> None:
+        if slot.use is None and not slot.waiters and self._slots.get(key) is slot:
+            del self._slots[key]
+
     async def acquire(
-        self, attempt: AttemptContext, environment_id: str, permissions: frozenset[EnvironmentAction]
+        self,
+        attempt: AttemptContext,
+        environment_id: str,
+        permissions: frozenset[EnvironmentAction],
+        *,
+        mount_name: str = "workspace",
     ) -> RelayUseClient:
-        if not self._prepared or self._draining or attempt.worker_id != self.instance_id:
-            raise EnvironmentError("Client Environment Worker is unavailable", code="environment_unavailable")
-        if len(self._uses) + self._opening >= self._max_uses:
-            raise EnvironmentError("Worker Environment use capacity is exhausted", code="environment_overloaded")
+        key = attempt.organization_id, attempt.run_attempt_id, environment_id
+        async with self._slot(key) as slot:
+            if not self._prepared or self._draining or attempt.worker_id != self.instance_id:
+                raise EnvironmentError("Client Environment Worker is unavailable", code="environment_unavailable")
+            if slot.use is None:
+                slot.use = await self._acquire_use(attempt, environment_id)
+            use = slot.use
+            try:
+                if use.attempt != attempt or not use.scope.available:
+                    raise EnvironmentError("Client Environment use is unavailable", code="environment_unavailable")
+                if mount_name in use.clients:
+                    raise EnvironmentError("The mount already owns a use client", code="environment_busy")
+                if len(use.clients) >= self._max_mounts:
+                    raise EnvironmentError("Worker mount capacity is exhausted", code="environment_overloaded")
+                client = RelayUseClient(use.scope, permissions=permissions, mount_name=mount_name)
+                use.clients[mount_name] = client
+                return client
+            except BaseException:
+                if not use.clients:
+                    await self._retire_locked(slot, use)
+                raise
+
+    async def _acquire_use(self, attempt: AttemptContext, environment_id: str) -> _Use:
         identity = None
-        self._opening += 1
         try:
             _check_attempt(attempt, environment_id)
             observation = await self._coordination.observe(attempt.organization_id, environment_id)
@@ -103,16 +166,16 @@ class WorkerClientConnections:
             if self._draining:
                 raise DispatchDenied("Worker is draining")
             _check_attempt(attempt, environment_id)
-            client = RelayUseClient(
-                identity,
-                observation,
-                ConnectionRelayStore(self._redis, identity.connection),
-                self._responses,
-                check_authority=lambda: _check_attempt(attempt, environment_id),
-                permissions=permissions,
+            return _Use(
+                RelayUseScope(
+                    identity,
+                    observation,
+                    ConnectionRelayStore(self._redis, identity.connection),
+                    self._responses,
+                    check_authority=lambda: _check_attempt(attempt, environment_id),
+                ),
+                attempt,
             )
-            self._uses[identity.use_id] = _Use(client, attempt)
-            return client
         except BaseException as error:
             if identity is not None:
                 await self._release_identity(identity)
@@ -127,8 +190,6 @@ class WorkerClientConnections:
                     "Client Environment use is unavailable", code="environment_unavailable"
                 ) from error
             raise
-        finally:
-            self._opening -= 1
 
     def stop_admission(self) -> None:
         self._draining = True
@@ -137,20 +198,39 @@ class WorkerClientConnections:
         return self._closed.is_set()
 
     async def release(self, client: RelayUseClient) -> None:
-        owned = self._uses.get(client.identity.use_id)
-        if owned is None:
+        client.fence()
+        identity = client.identity
+        key = identity.connection.organization_id, identity.attempt_id, identity.connection.environment_id
+        slot = self._slots.get(key)
+        if slot is None:
             return
-        if owned.client is not client:
-            raise ValueError("Worker cannot release another use client")
+        async with slot.lock:
+            use = slot.use
+            if use is None or use.clients.get(client.mount_name) is not client:
+                return
+            del use.clients[client.mount_name]
+            if not use.clients:
+                await self._retire_locked(slot, use)
+
+    async def _retire(self, use: _Use) -> None:
+        slot = self._slots.get(use.key)
+        if slot is None:
+            return
+        async with slot.lock:
+            if slot.use is use:
+                await self._retire_locked(slot, use)
+
+    async def _retire_locked(self, slot: _Slot, use: _Use) -> None:
         try:
-            # Fence publications before retiring shared authority. Closing a use
-            # does not depend on the response reader or another operation waiter.
-            await client.invalidate()
+            # Only the last mount (or loss of shared authority) retires the carrier.
+            await use.scope.invalidate()
         finally:
             try:
-                await self._release_identity(client.identity)
+                await self._release_identity(use.scope.identity)
             finally:
-                self._uses.pop(client.identity.use_id, None)
+                use.clients.clear()
+                slot.use = None
+                self._discard_empty(use.key, slot)
 
     async def _release_identity(self, identity: UseIdentity) -> None:
         with move_on_after(1.2, shield=True):
@@ -166,25 +246,25 @@ class WorkerClientConnections:
         return int(assume_utc(attempt.lease.expires_at).timestamp() * 1000)
 
     async def _renew(self, use: _Use) -> None:
-        client, attempt = use.client, use.attempt
+        scope, attempt = use.scope, use.attempt
         try:
-            if not client.available:
+            if not scope.available:
                 raise DispatchDenied("Client Environment use is no longer available")
             observation = await self._coordination.renew_use(
-                client.identity, attempt_expires_at_ms=self._attempt_expiry(attempt)
+                scope.identity, attempt_expires_at_ms=self._attempt_expiry(attempt)
             )
-            await client.renew(observation)
+            await scope.renew(observation)
             return
         except CoordinationError as error:
-            if error.code == "coordination_unavailable" and client.available:
+            if error.code == "coordination_unavailable" and scope.available:
                 return
         except DispatchDenied:
             pass
-        await self.release(client)
+        await self._retire(use)
         logger.info(
             "client_environment_use_fenced",
             extra={
-                "environment_id": client.identity.connection.environment_id,
+                "environment_id": scope.identity.connection.environment_id,
                 "run_attempt_id": attempt.run_attempt_id,
             },
         )
@@ -199,8 +279,9 @@ class WorkerClientConnections:
 
         while not self._closed.is_set():
             async with asyncio.TaskGroup() as tasks:
-                for use in tuple(self._uses.values()):
-                    tasks.create_task(renew(use))
+                for slot in tuple(self._slots.values()):
+                    if slot.use is not None:
+                        tasks.create_task(renew(slot.use))
             if monotonic() >= next_touch:
                 await self._mailbox.touch()
                 next_touch = monotonic() + 30
@@ -216,16 +297,18 @@ class WorkerClientConnections:
                 tasks.create_task(self._maintain())
         finally:
             self._draining = True
-            for use in self._uses.values():
-                use.client.fence()
+            for slot in self._slots.values():
+                if slot.use is not None:
+                    slot.use.scope.fence()
             self._responses.close()
 
     async def close(self) -> None:
         self.stop_admission()
         try:
             async with asyncio.TaskGroup() as tasks:
-                for use in tuple(self._uses.values()):
-                    tasks.create_task(self.release(use.client))
+                for slot in tuple(self._slots.values()):
+                    if slot.use is not None:
+                        tasks.create_task(self._retire(slot.use))
         finally:
             self._responses.close()
             self._closed.set()

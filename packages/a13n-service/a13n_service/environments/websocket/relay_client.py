@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from time import monotonic
 from typing import Literal
@@ -15,8 +15,7 @@ from pydantic import JsonValue
 
 from a13n_service.ids import new_object_id
 
-from .authority import DispatchAuthority, DispatchDenied, LeaseDeadline, UseIdentity
-from .coordination import ConfirmedObservation
+from .authority import DispatchDenied, LeaseDeadline, UseIdentity
 from .relay_protocol import (
     CONTROL_OPERATIONS,
     RelayFailure,
@@ -26,87 +25,56 @@ from .relay_protocol import (
     canonical_message,
     operation_permissions,
 )
-from .relay_storage import ConnectionRelayStore, RelayStoreError
-from .relay_waiters import PendingRelayRequest, RelayOperationError, RelayResponseDispatcher
+from .relay_scope import RelayUseScope
+from .relay_storage import RelayStoreError
+from .relay_waiters import PendingRelayRequest, RelayOperationError
 
 
 class RelayUseClient:
+    """One mount's permissions and pending operations within a shared use scope."""
+
     def __init__(
         self,
-        identity: UseIdentity,
-        observation: ConfirmedObservation,
-        store: ConnectionRelayStore,
-        responses: RelayResponseDispatcher,
+        scope: RelayUseScope,
         *,
-        check_authority: Callable[[], None],
         permissions: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
         mount_name: str = "workspace",
     ) -> None:
-        if (
-            observation.value.use is None
-            or observation.value.use.identity != identity
-            or observation.value.status != "online"
-            or observation.value.connection != identity.connection
-            or store.connection != identity.connection
-        ):
-            raise ValueError("Relay client requires the exact confirmed use and connection")
-        self.identity = identity
-        self._authority = DispatchAuthority(identity, observation.deadline(use=True))
-        self._store = store
-        self._responses = responses
-        self._check_authority = check_authority
+        self._scope = scope
         self._permissions = permissions
-        self._server_ms = observation.value.now_ms
-        self._received_at = monotonic()
-        self._closed = False
-        self._mount_id = "mount-prepare"
         self._mount_name = mount_name
-        self._authority.check(identity)
+        self._mount_id = new_object_id("emt")
+        self._closed = False
+        self._pending: set[PendingRelayRequest] = set()
+
+    @property
+    def identity(self) -> UseIdentity:
+        return self._scope.identity
+
+    @property
+    def mount_name(self) -> str:
+        return self._mount_name
 
     def bind_mount(self, mount_id: str) -> None:
         self._mount_id = mount_id
 
     @property
     def limits(self) -> RelayLimits:
-        return self._store.limits
+        return self._scope.store.limits
 
     @property
     def available(self) -> bool:
-        try:
-            self._check()
-            return True
-        except DispatchDenied:
-            return False
-
-    async def renew(self, observation: ConfirmedObservation) -> None:
-        if (
-            observation.value.use is None
-            or observation.value.use.identity != self.identity
-            or observation.value.status != "online"
-            or observation.value.connection != self.identity.connection
-        ):
-            await self.invalidate()
-            raise DispatchDenied("Relay use was revoked")
-        self._authority.renew(self.identity, observation.deadline(use=True))
-        # Receipt time maps to an earlier server time, conservatively shortening
-        # request deadlines. Delayed responses never extend dispatch authority.
-        self._server_ms = observation.value.now_ms
-        self._received_at = monotonic()
-
-    async def invalidate(self) -> None:
-        self.fence()
-        await self._authority.fence()
+        return not self._closed and self._scope.available
 
     def fence(self) -> None:
         self._closed = True
-        self._responses.fence_use(self.identity)
-        self._authority.invalidate()
+        for pending in self._pending:
+            pending.fail("environment_unavailable")
 
     def _check(self) -> None:
         if self._closed:
-            raise DispatchDenied("Relay use is closed")
-        self._check_authority()
-        self._authority.check(self.identity)
+            raise DispatchDenied("Relay mount is closed")
+        self._scope.require_current()
 
     async def call(
         self,
@@ -145,9 +113,10 @@ class RelayUseClient:
             mount_id=self._mount_id,
             mount_name=self._mount_name,
             payload=payload,
-            deadline_ms=self._server_ms + math.floor((deadline.monotonic_at - self._received_at) * 1000),
+            deadline_ms=self._scope.server_ms + math.floor((deadline.monotonic_at - self._scope.received_at) * 1000),
         )
-        with self._responses.register(message, self._authority, deadline, streaming=streaming) as pending:
+        with self._scope.responses.register(message, self._scope.authority, deadline, streaming=streaming) as pending:
+            self._pending.add(pending)
             try:
                 async with asyncio.timeout_at(deadline.monotonic_at):
                     await self._publish(message, pending)
@@ -159,33 +128,34 @@ class RelayUseClient:
                 pending.fail("environment_timeout")
                 raise RelayOperationError(RelayFailure(code="environment_timeout", certainty="unknown")) from error
             finally:
+                self._pending.discard(pending)
                 if pending.needs_cancellation:
                     await self._cancel(message)
 
     async def _publish(self, message: RelayRequest, pending: PendingRelayRequest) -> None:
         canonical_message(
             message,
-            max_bytes=self._store.limits.control_bytes
+            max_bytes=self._scope.store.limits.control_bytes
             if message.operation in CONTROL_OPERATIONS
-            else self._store.limits.request_bytes,
+            else self._scope.store.limits.request_bytes,
         )
         pending.begin_publication()
         for attempt in range(2):
             try:
-                async with self._authority.write(self.identity):
+                async with self._scope.authority.write(self.identity):
                     self._check()
-                    evidence = await self._store.append(message)
+                    evidence = await self._scope.store.append(message)
                 result = evidence.terminal()
                 if evidence.phase == "completed":
                     if result is None or result.request_id != message.request_id or result.use != self.identity:
                         raise RelayStoreError("outcome_unknown")
-                    self._responses.accept(result)
+                    self._scope.responses.accept(result)
                 return
             except RelayStoreError as error:
                 if error.code == "relay_unavailable" and attempt == 0:
                     continue
                 if error.code in {"scope_lost", "response_scope_lost", "outcome_unknown", "request_conflict"}:
-                    await self.invalidate()
+                    await self._scope.invalidate()
                 known = attempt == 0 and error.code in {"relay_overloaded", "request_expired", "request_invalid"}
                 code = {
                     "relay_overloaded": "environment_overloaded",
@@ -202,13 +172,13 @@ class RelayUseClient:
                 raise RelayOperationError(RelayFailure(code="environment_unavailable", certainty="unknown")) from error
 
     async def send_input(self, pending: PendingRelayRequest, frame: RelayInput) -> None:
-        if pending.request.use != self.identity:
-            raise ValueError("Input publication requires this client's request")
+        if pending not in self._pending:
+            raise ValueError("Input publication requires this mount's pending request")
         for attempt in range(2):
             try:
-                async with self._authority.write(self.identity):
+                async with self._scope.authority.write(self.identity):
                     self._check()
-                    await self._store.send_input(pending.request, frame)
+                    await self._scope.store.send_input(pending.request, frame)
                 return
             except RelayStoreError as error:
                 if error.code == "relay_unavailable" and attempt == 0:
@@ -217,26 +187,18 @@ class RelayUseClient:
                 raise RelayOperationError(
                     RelayFailure(code="environment_transfer_incomplete", certainty="unknown")
                 ) from error
+            except DispatchDenied as error:
+                pending.fail("environment_unavailable")
+                raise RelayOperationError(RelayFailure(code="environment_unavailable", certainty="unknown")) from error
 
     async def _cancel(self, message: RelayRequest) -> None:
-        if message.operation in CONTROL_OPERATIONS or self._closed:
+        if message.operation in CONTROL_OPERATIONS or not self._scope.available:
             return
         with move_on_after(0.25, shield=True):
             try:
-                await self.call("operation.cancel", {"request_id": message.request_id}, timeout_seconds=0.2)
+                control = RelayUseClient(self._scope, permissions=frozenset())
+                await control.call("operation.cancel", {"request_id": message.request_id}, timeout_seconds=0.2)
             except Exception:
                 # Cancellation ends local waiting; no failure here can establish
                 # that a remote effect terminated or replace the caller's error.
                 pass
-
-    async def close(self) -> None:
-        if self._closed:
-            return
-        try:
-            with move_on_after(0.5, shield=True):
-                try:
-                    await self.call("scope.close", timeout_seconds=0.4)
-                except Exception:
-                    pass
-        finally:
-            await self.invalidate()
