@@ -58,7 +58,7 @@ class RetainedRunStreamEvent(_StrictModel):
 class RetainedItem(_StrictModel):
     id: ItemId
     kind: str = Field(min_length=1, max_length=64)
-    state: Literal["completed", "interrupted", "failed"]
+    state: Literal["in_progress", "completed", "interrupted", "failed"]
     parent_item_id: ItemId | None = None
     first_stream_id: RedisStreamId
     last_stream_id: RedisStreamId
