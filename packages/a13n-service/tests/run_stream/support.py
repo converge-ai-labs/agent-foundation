@@ -15,11 +15,13 @@ def publication_failure(operation: str, *, after: Literal["event", "receipts", "
     """Inject a runtime error at an actual partial-write boundary in the owning Lua."""
     marker = {
         "event": "    updates[#updates + 1] = 'event:' .. event.id",
-        "receipts": "local length = redis.call('XLEN', stream)",
-        "retention": "redis.call('HDEL', metadata, 'pending')",
+        "receipts": "if not closed then",
+        "retention": "\nredis.call('HDEL', metadata, 'pending')",
     }[after]
     assert _SCRIPT.count(marker) == 1
-    return _SCRIPT.replace(marker, f"if operation == '{operation}' then error('injected runtime error') end\n{marker}")
+    return _SCRIPT.replace(
+        marker, f"\nif operation == '{operation}' then error('injected runtime error') end\n{marker}"
+    )
 
 
 def opening_event(run_id: str, thread_id: str, *, attempt_id: str | None = None, number: int = 1) -> RunStreamEvent:

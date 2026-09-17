@@ -104,6 +104,7 @@ class RunStreamPage:
     high_watermark: str | None
     closed: bool
     trimmed: bool
+    closed_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +136,10 @@ class PublicationContinuityLost(PublicationUnavailable):
 
 class PublicationPending(PublicationUnavailable):
     """A different unfinished publication must be resolved before this operation."""
+
+
+class PublicationBackpressure(PublicationUnavailable):
+    """Unpersisted presentation reached the configured admission bound."""
 
 
 RecoveryReason = Literal["lease_expired", "retry_after_failure", "planned_handoff", "pending_input"]

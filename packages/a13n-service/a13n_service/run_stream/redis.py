@@ -6,9 +6,11 @@ import hashlib
 from collections.abc import Mapping, Sequence
 from datetime import datetime
 from importlib.resources import files
+from time import monotonic
 from typing import cast
 
 import rfc8785
+from anyio import sleep
 from pydantic import JsonValue, TypeAdapter
 from redis.asyncio import Redis
 from redis.exceptions import RedisError, ResponseError
@@ -20,6 +22,7 @@ from a13n_service.temporal import require_aware_utc
 from .domain import (
     ActivationResult,
     CompleteRunStream,
+    PublicationBackpressure,
     PublicationContinuityLost,
     PublicationPending,
     PublicationRejected,
@@ -54,13 +57,21 @@ class RedisRunStream:
         max_events: int = 4096,
         max_event_bytes: int = 320 * 1024,
         closed_ttl_seconds: int = 24 * 60 * 60,
+        backpressure_timeout_seconds: float = 5.0,
+        max_pending_events: int = 16384,
+        max_pending_bytes: int = 32 * 1024 * 1024,
     ) -> None:
-        if min(max_events, max_event_bytes, closed_ttl_seconds) < 1:
+        if min(max_events, max_event_bytes, closed_ttl_seconds, max_pending_events, max_pending_bytes) < 1:
             raise ValueError("Run Stream bounds must be positive")
+        if backpressure_timeout_seconds < 0:
+            raise ValueError("Run Stream backpressure timeout cannot be negative")
+        self._backpressure_timeout_seconds = backpressure_timeout_seconds
         self._redis = redis
         self._script = redis.register_script(_SCRIPT)
         self._retirement_script = redis.register_script(_RETIREMENT_SCRIPT)
         self._memory_server_id = redis_memory_identity(redis)
+        self._max_pending_events = max_pending_events
+        self._max_pending_bytes = max_pending_bytes
         self._max_events = max_events
         self._max_event_bytes = max_event_bytes
         self._closed_ttl_seconds = closed_ttl_seconds
@@ -168,6 +179,11 @@ class RedisRunStream:
         """Trusted terminal lifecycle projection closes a Run, never an Attempt writer."""
         await self._mutate(organization_id, run_id, "close", closed_at=_utc(closed_at).isoformat())
 
+    async def acknowledge_display(self, organization_id: str, run_id: str, *, cursor: str, finalized: bool) -> None:
+        """Release retention only after verifying durable display publication."""
+        _parse_stream_id(cursor)
+        await self._mutate(organization_id, run_id, "acknowledge_display", cursor=cursor, finalized=finalized)
+
     async def retire(self, organization_id: str, run_id: str, *, closed_at: datetime) -> None:
         """A trusted terminal fact retires unavailable history without reopening it."""
         await self._mutate(organization_id, run_id, "retire", closed_at=_utc(closed_at).isoformat())
@@ -244,17 +260,28 @@ class RedisRunStream:
             "digest": digest,
             "memory_server_id": self._memory_server_id,
             "max_events": self._max_events,
+            "max_pending_events": self._max_pending_events,
+            "max_pending_bytes": self._max_pending_bytes,
             "max_event_bytes": self._max_event_bytes,
             "closed_ttl_seconds": self._closed_ttl_seconds,
         }
         try:
             script = self._retirement_script if operation == "retire" else self._script
-            return cast(
-                Sequence[object],
-                await script(keys=list(_keys(organization_id, run_id)), args=[rfc8785.dumps(request)]),
-            )
+            deadline = monotonic() + self._backpressure_timeout_seconds
+            while True:
+                try:
+                    return cast(
+                        Sequence[object],
+                        await script(keys=list(_keys(organization_id, run_id)), args=[rfc8785.dumps(request)]),
+                    )
+                except ResponseError as error:
+                    if "RUN_STREAM_BACKPRESSURE" not in str(error) or monotonic() >= deadline:
+                        raise
+                    await sleep(min(0.05, max(0, deadline - monotonic())))
         except ResponseError as error:
             message = str(error)
+            if "RUN_STREAM_BACKPRESSURE" in message:
+                raise PublicationBackpressure("Run Stream is awaiting durable display progress") from error
             if "RUN_STREAM_STALE" in message:
                 raise PublicationRejected("RunAttempt publication generation is no longer active") from error
             if "RUN_STREAM_CLOSED" in message:
@@ -302,7 +329,7 @@ class RedisRunStream:
         high = None if not tail_rows else tail_rows[0][0]
         trimmed = metadata.get("trimmed") == "1"
         if metadata.get("incomplete") == "1" or (
-            trimmed and floor is not None and _precedes(after_stream_id or _INITIAL_STREAM_ID, floor)
+            trimmed and _precedes(after_stream_id or _INITIAL_STREAM_ID, metadata["trimmed_through"])
         ):
             raise RunStreamReplayGap(retained_floor=floor, high_watermark=high)
         entries = tuple(_decode_entry(row, expected_run_id=run_id) for row in rows)
@@ -313,6 +340,7 @@ class RedisRunStream:
             high_watermark=high,
             closed="closed_at" in metadata,
             trimmed=trimmed,
+            closed_at=None if "closed_at" not in metadata else _utc(datetime.fromisoformat(metadata["closed_at"])),
         )
 
     async def _read_rows(
