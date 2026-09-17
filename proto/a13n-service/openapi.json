@@ -3561,6 +3561,94 @@
         "title": "ChildEnvironmentPolicy",
         "type": "object"
       },
+      "ClientConnectionStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "connection_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Id"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "enum": [
+                  "environment_unavailable",
+                  "environment_initialization_failed",
+                  "control_draining"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "observed_at": {
+            "format": "date-time",
+            "title": "Observed At",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "online",
+              "connecting",
+              "offline"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "connection_id",
+          "observed_at",
+          "error"
+        ],
+        "title": "ClientConnectionStatus",
+        "type": "object"
+      },
+      "ClientConnectionTicket": {
+        "additionalProperties": false,
+        "properties": {
+          "connection_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Connection Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "ticket": {
+            "title": "Ticket",
+            "type": "string"
+          },
+          "websocket_url": {
+            "title": "Websocket Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ticket",
+          "expires_at",
+          "websocket_url",
+          "connection_id"
+        ],
+        "title": "ClientConnectionTicket",
+        "type": "object"
+      },
       "ClientToolDefinition": {
         "additionalProperties": false,
         "description": "Portable model guidance for one externally executed client tool.",
@@ -30905,6 +30993,178 @@
           }
         ],
         "summary": "Update Environment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/environments/{environment_id}/connection": {
+      "get": {
+        "operationId": "get_environments_environment_id_connection",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientConnectionStatus"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Connection Status",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/environments/{environment_id}/connection-tickets": {
+      "post": {
+        "operationId": "post_environments_environment_id_connection_tickets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClientConnectionTicket"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Issue Ticket",
         "tags": [
           "environments"
         ]

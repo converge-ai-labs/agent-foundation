@@ -71,8 +71,9 @@ def response_key(worker_instance_id: str) -> str:
 
 
 class _RelayScript:
-    def __init__(self, redis: Redis, limits: RelayLimits) -> None:
+    def __init__(self, redis: Redis, limits: RelayLimits, reader: Redis | None = None) -> None:
         self.redis = redis
+        self.reader = redis if reader is None else reader
         self.limits = limits
         self._script = redis.register_script(_SCRIPT)
         self._server_id = redis_memory_identity(redis)
@@ -100,7 +101,7 @@ class _RelayScript:
             raise ValueError("Relay pending cursor must be a bounded Stream entry ID")
         try:
             async with asyncio.timeout(1):
-                raw = await self.redis.xreadgroup(
+                raw = await self.reader.xreadgroup(
                     group, consumer, {key: after_id if pending else ">"}, count=count, block=None if pending else 100
                 )
             streams = _ROWS.validate_python(raw or [])
@@ -115,10 +116,15 @@ class ConnectionRelayStore:
     """One request consumer scope; reconnect never reuses its Stream or ledger."""
 
     def __init__(
-        self, redis: Redis, connection: ConnectionIdentity, *, limits: RelayLimits = DEFAULT_RELAY_LIMITS
+        self,
+        redis: Redis,
+        connection: ConnectionIdentity,
+        *,
+        limits: RelayLimits = DEFAULT_RELAY_LIMITS,
+        reader: Redis | None = None,
     ) -> None:
         self.connection = connection
-        self._storage = _RelayScript(redis, limits)
+        self._storage = _RelayScript(redis, limits, reader)
         self._scope = json.dumps(asdict(connection), sort_keys=True, separators=(",", ":"))
         self.requests_key = _key("requests", self._scope)
         self.ledger_key = _key("ledger", self._scope)

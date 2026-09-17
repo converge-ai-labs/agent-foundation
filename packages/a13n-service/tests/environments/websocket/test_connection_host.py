@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import os
 import socket
 import sys
 from contextlib import asynccontextmanager
@@ -36,16 +35,6 @@ from ..conftest import actor
 pytestmark = pytest.mark.anyio
 EXECUTABLE = str(Path(sys.executable).resolve())
 POLICY = EnvironmentOutputPolicy(max_inline_bytes=32, max_output_bytes=4096, overflow="retain")
-
-
-@pytest.fixture
-def envd_binary():
-    value = os.environ.get("A13N_ENVD_TEST_BINARY")
-    if value is None:
-        pytest.skip("set A13N_ENVD_TEST_BINARY to exercise reverse WebSocket Control with real envd")
-    binary = Path(value).resolve()
-    assert binary.is_file()
-    return binary
 
 
 @pytest.fixture

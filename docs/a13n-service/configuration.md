@@ -100,6 +100,8 @@ Restart Control after configuration changes. The same normalized configuration r
 
 E2B and HTTP Envd remain in the default implementation catalog. Configure E2B credentials through the Provider API or Console. Do not add local types to `environments.provider_builtins`; use `local_providers`.
 
+For client-initiated Envd connections, include `a13n.websocket-envd` in `environments.provider_builtins` and configure `environments.client_public_origin` on Control as the externally reachable WSS origin, such as `wss://foundation.example.com`. Tickets derive their connection URL from this operator setting. The origin cannot include a path, query, fragment, or credentials. Route WebSocket upgrades to Control; the `all` role owns the same ingress. `environments.client_max_connections` bounds sockets, including takeover candidates, per Control process. Blocking operation readers use a separate Redis pool so they cannot exhaust publication and lease-renewal connections. This Provider requires shared Redis with atomic Stream scripting; Control verifies that capability before serving traffic. It is not enabled by default.
+
 ## Install deployment Provider packages
 
 Service can load trusted implementations for the existing Environment, Model, Connector, Web, and Memory Provider domains from installed Python distributions. The image build installs the package; deployment configuration selects its metadata entry-point name:

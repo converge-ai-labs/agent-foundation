@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from time import monotonic
 
 import pytest
@@ -18,6 +20,16 @@ from a13n_service.storage.config import RedisServerConfig
 from a13n_service.storage.redis import open_redis
 
 from ..conftest import WORKSPACE_ID, actor
+
+
+@pytest.fixture
+def envd_binary():
+    value = os.environ.get("A13N_ENVD_TEST_BINARY")
+    if value is None:
+        pytest.skip("set A13N_ENVD_TEST_BINARY to exercise reverse WebSocket Control with real envd")
+    binary = Path(value).resolve()
+    assert binary.is_file()
+    return binary
 
 
 @pytest.fixture

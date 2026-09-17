@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from a13n_service.environments.lifecycle import EnvironmentLifecycle
     from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
     from a13n_service.environments.service import EnvironmentService
+    from a13n_service.environments.websocket.runtime import ClientConnectionRuntime
     from a13n_service.gateway import GatewayRuntime
     from a13n_service.hooks.management import HookSubscriptionService
     from a13n_service.iam import RequestAuthenticator
@@ -79,6 +80,7 @@ class ControlRuntime:
     memory_providers: MemoryProviderService | None = None
     identity: IdentityRuntime | None = None
     configuration: ConfigurationService | None = None
+    client_connections: ClientConnectionRuntime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,6 +132,8 @@ class ProcessRuntime:
             self.worker.environment_maintenance.drain()
         if self.control is not None:
             self.control.subagent_maintenance.drain()
+            if self.control.client_connections is not None:
+                self.control.client_connections.begin_drain()
         if first_request:
             logger.info(
                 "service_drain_started",

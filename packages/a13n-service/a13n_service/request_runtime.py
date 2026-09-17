@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from fastapi import Request
+from starlette.requests import HTTPConnection
 
 from a13n_service.process.runtime import ProcessRuntime
 
@@ -13,14 +14,14 @@ if TYPE_CHECKING:
     from a13n_service.process.runtime import ControlRuntime
 
 
-def get_process_runtime(request: Request) -> ProcessRuntime | None:
+def get_process_runtime(request: HTTPConnection) -> ProcessRuntime | None:
     """Return the initialized process runtime at the transport boundary."""
 
     runtime = getattr(request.app.state, "runtime", None)
     return runtime if isinstance(runtime, ProcessRuntime) else None
 
 
-def get_control_runtime(request: Request) -> ControlRuntime | None:
+def get_control_runtime(request: HTTPConnection) -> ControlRuntime | None:
     """Return Control-plane capabilities when the selected role owns them."""
 
     runtime = get_process_runtime(request)

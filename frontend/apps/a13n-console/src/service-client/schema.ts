@@ -1411,6 +1411,40 @@ export interface paths {
     patch: operations["patch_environments_environment_id"];
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/connection": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Connection Status */
+    get: operations["get_environments_environment_id_connection"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/connection-tickets": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Issue Ticket */
+    post: operations["post_environments_environment_id_connection_tickets"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/delete": {
     parameters: {
       query?: never;
@@ -5243,6 +5277,43 @@ export interface components {
       mode?: "none" | "shared" | "dedicated";
       /** Template Revision Id */
       template_revision_id?: string | null;
+    };
+    /** ClientConnectionStatus */
+    ClientConnectionStatus: {
+      /** Connection Id */
+      connection_id: string | null;
+      /** Error */
+      error:
+        | (
+            | "environment_unavailable"
+            | "environment_initialization_failed"
+            | "control_draining"
+          )
+        | null;
+      /**
+       * Observed At
+       * Format: date-time
+       */
+      observed_at: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "online" | "connecting" | "offline";
+    };
+    /** ClientConnectionTicket */
+    ClientConnectionTicket: {
+      /** Connection Id */
+      connection_id: string;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Ticket */
+      ticket: string;
+      /** Websocket Url */
+      websocket_url: string;
     };
     /**
      * ClientToolDefinition
@@ -15656,6 +15727,94 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Environment"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_environments_environment_id_connection: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ClientConnectionStatus"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_environments_environment_id_connection_tickets: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ClientConnectionTicket"];
         };
       };
       /** @description Invalid request. */

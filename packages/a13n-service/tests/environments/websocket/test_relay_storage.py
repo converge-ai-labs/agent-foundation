@@ -29,7 +29,7 @@ from a13n_service.environments.websocket.relay_storage import (
 )
 from a13n_service.environments.websocket.relay_waiters import RelayResponseDispatcher
 from a13n_service.ids import new_object_id
-from a13n_service.storage.config import RedisMemoryConfig
+from a13n_service.storage.config import RedisMemoryConfig, RedisServerConfig
 from a13n_service.storage.redis import open_redis
 from redis.crc import key_slot
 from redis.exceptions import TimeoutError as RedisTimeoutError
@@ -49,6 +49,37 @@ async def test_unsupported_stream_scripting_is_rejected_before_serving():
         with pytest.raises(ValueError, match="atomic Stream scripting support"):
             await validate_relay_backend(client)
         assert await client.keys("a13n:{environment-relay}:*") == []
+
+
+async def test_blocking_reader_cannot_exhaust_request_publication_pool(relay_redis, redis_url):
+    config = RedisServerConfig(url=redis_url, max_connections=1)
+    async with open_redis(config) as commands, open_redis(config) as reader:
+        await commands.client_setname("relay-publication")
+        await reader.client_setname("relay-reader")
+        owner = ConnectionRelayStore(commands, CONNECTION, reader=reader)
+        await WorkerResponseMailbox(commands, USE.worker_instance_id).prepare()
+        await owner.prepare()
+        seconds, micros = await commands.time()
+        request = RelayRequest(
+            request_id=new_object_id("erq"),
+            use=USE,
+            operation="file.stat",
+            deadline_ms=seconds * 1000 + micros // 1000 + 10_000,
+        )
+        reading = asyncio.create_task(owner.read())
+        try:
+            async with asyncio.timeout(1):
+                while not any(
+                    client["name"].startswith("relay-") and client["cmd"] == "xreadgroup"
+                    for client in await relay_redis.client_list()
+                ):
+                    assert not reading.done()
+                    await asyncio.sleep(0)
+            publication = await owner.append(request)
+            assert await reading == ((publication.entry_id, request),)
+        finally:
+            reading.cancel()
+            await asyncio.gather(reading, return_exceptions=True)
 
 
 def test_terminal_has_one_outcome_and_envelopes_reject_unknown_versions():

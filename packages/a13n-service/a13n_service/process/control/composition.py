@@ -40,7 +40,7 @@ from .agent import build_agent_management
 from .agent_configuration import build_configuration_service
 from .asset import build_asset_bundle
 from .collection import build_collection_tasks
-from .environment import build_environment_service
+from .environment import build_client_connections, build_environment_service
 from .hook import build_hook_bundle
 from .model import build_model_bundle
 from .recovery import build_recovery_tasks
@@ -77,6 +77,9 @@ async def build_control_runtime(
     environments = await build_environment_service(
         shared, environment_catalog, settings, oss_identity=identity is not None
     )
+    client_connections = await build_client_connections(shared, environment_catalog, settings, environments, stack)
+    if client_connections is not None:
+        stack.push_async_callback(client_connections.close)
     skills = await build_skill_bundle(components, shared, execution, stack)
     models = await build_model_bundle(settings, components, shared, execution, stack)
     agents = build_agent_management(
@@ -229,6 +232,7 @@ async def build_control_runtime(
         gateway=gateway,
         subagent_maintenance=subagents,
         identity=identity,
+        client_connections=client_connections,
         configuration=build_configuration_service(
             settings,
             shared,
@@ -252,6 +256,16 @@ async def build_control_runtime(
     ]
     background_tasks.extend(build_recovery_tasks(settings, shared, gateway_commands))
     background_tasks.extend(build_collection_tasks(settings, shared))
+    if client_connections is not None:
+        reconciler = client_connections.reconciler
+        background_tasks.append(
+            BackgroundTask(
+                "Client Environment observations",
+                reconciler.run,
+                reconciler.is_draining,
+                shutdown=partial(reconciler.shutdown, timeout_seconds=5),
+            )
+        )
     if a2a_publisher is not None:
         background_tasks.append(BackgroundTask("A2A push publisher", a2a_publisher.run))
     return runtime, tuple(background_tasks)

@@ -33,8 +33,10 @@ from .domain import (
 )
 from .errors import EnvironmentManagementError
 from .service import EnvironmentService
+from .websocket.router import router as client_connection_router
 
 router = APIRouter(prefix="/api/v1", tags=["environments"])
+router.include_router(client_connection_router)
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 

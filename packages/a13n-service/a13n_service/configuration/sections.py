@@ -124,6 +124,8 @@ class SubagentsSettings(Section):
 
 class EnvironmentsSettings(Section):
     provider_builtins: tuple[str, ...] = ("a13n.e2b", "a13n.http-envd")
+    client_public_origin: str | None = None
+    client_max_connections: int = Field(default=128, ge=1, le=1000)
     local_providers: dict[LocalProviderType, JsonObject] = Field(default_factory=dict)
     maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
     operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)

@@ -29,10 +29,12 @@ class ClientConnectionHost:
         authorize_use: UseAuthorizer,
         *,
         max_connections: int = 128,
+        reader: Redis | None = None,
     ) -> None:
         if not 1 <= max_connections <= 1024:
             raise ValueError("Control reverse connection capacity must be bounded")
         self._service, self._redis, self._authorize_use = service, redis, authorize_use
+        self._reader = reader
         self.instance_id = new_object_id("eco")
         self._capacity = max_connections
         self._active: dict[asyncio.Task[None], Callable[[], None]] = {}
@@ -59,7 +61,11 @@ class ClientConnectionHost:
                 raise CoordinationError("candidate_expired")
             connection_id = identity.connection_id
             session = ClientConnectionSession(
-                self._service, carrier, admission, ConnectionRelayStore(self._redis, identity), self._authorize_use
+                self._service,
+                carrier,
+                admission,
+                ConnectionRelayStore(self._redis, identity, reader=self._reader),
+                self._authorize_use,
             )
             self._active[current] = session.begin_drain
             await websocket.accept(subprotocol="eip.v1")

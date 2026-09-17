@@ -470,6 +470,25 @@
           "title": "Provider Builtins",
           "type": "array"
         },
+        "client_public_origin": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Public Origin"
+        },
+        "client_max_connections": {
+          "default": 128,
+          "maximum": 1000,
+          "minimum": 1,
+          "title": "Client Max Connections",
+          "type": "integer"
+        },
         "local_providers": {
           "additionalProperties": {
             "additionalProperties": {
