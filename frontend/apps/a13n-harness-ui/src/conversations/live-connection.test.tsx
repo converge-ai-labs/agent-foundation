@@ -32,12 +32,16 @@ it("keeps short replay handshakes quiet and reveals sustained loading", () => {
   act(() => vi.advanceTimersByTime(1000));
   expect(screen.getByRole("status").textContent).toBe("Loading current output");
 });
-it("retains the same notice through recovery rather than adding and removing layout rows", () => {
+it("keeps short reconnections quiet and dismisses the overlay after recovery", () => {
+  vi.useFakeTimers();
   const view = render(
     <LiveConnectionNotice connection="Reconnecting" reconnections={1} />,
   );
-  const notice = screen.getByRole("status");
+  expect(screen.queryByRole("status")).toBeNull();
+  act(() => vi.advanceTimersByTime(700));
+  expect(screen.getByRole("status").textContent).toBe(
+    "Reconnecting live updates… · 1 retry",
+  );
   view.rerender(<LiveConnectionNotice connection="Live" reconnections={1} />);
-  expect(screen.getByRole("status")).toBe(notice);
-  expect(notice.textContent).toBe("Live connection restored · 1 retry");
+  expect(screen.queryByRole("status")).toBeNull();
 });

@@ -29,7 +29,7 @@ const saved = (parts: Schema<"TranscriptPart">[], position = 0) =>
   ({ position, message_kind: "request", parts }) as Schema<"TranscriptEntry">;
 
 it.each(["send", "steer"] as const)(
-  "keeps %s input quiet and stable through preparation, partial SSE, acknowledgement and saved cutover",
+  "keeps %s input stable with preparation feedback and quiet accepted/saved cutover",
   (action) => {
     const input: LocalInput = { ...local(), action, state: "preparing" };
     const view = render(
@@ -41,8 +41,17 @@ it.each(["send", "steer"] as const)(
       />,
     );
     const message = screen.getByText("Hello");
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("status").textContent).toBe("Preparing message…");
     input.state = "pending";
+    view.rerender(
+      <ConversationTranscript
+        entries={[]}
+        blocks={[]}
+        localInputs={[input]}
+        threadId="one"
+      />,
+    );
+    expect(screen.getByRole("status").textContent).toBe("Sending…");
     const block = {
       id: "run:input:0",
       kind: "user" as const,

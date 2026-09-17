@@ -15,16 +15,18 @@ export function LiveConnectionNotice({
       setDelayed(false);
       return;
     }
-    const timer = setTimeout(() => setDelayed(true), 1000);
+    const timer = setTimeout(() => setDelayed(true), 700);
     return () => clearTimeout(timer);
   }, [pending]);
-  if (!reconnections && (!pending || !delayed)) return null;
+  if (!pending || !delayed) return null;
   return (
     <div className={styles.activityBar}>
       <small role="status">
         {reconnections > 0
-          ? `${connection === "Live" ? "Live connection restored" : "Reconnecting live updates…"} · ${reconnections} ${reconnections === 1 ? "retry" : "retries"}`
-          : connection}
+          ? `Reconnecting live updates… · ${reconnections} ${reconnections === 1 ? "retry" : "retries"}`
+          : connection === "Connecting"
+            ? "Connecting live updates…"
+            : connection}
       </small>
     </div>
   );

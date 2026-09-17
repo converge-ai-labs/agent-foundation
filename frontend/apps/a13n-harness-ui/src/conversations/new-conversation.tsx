@@ -36,6 +36,7 @@ import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
 import { ThreadRunChoices } from "./thread-run-choices";
 import { refreshThreadLists } from "./queries";
 import { ConversationTranscript } from "./transcript";
+import { ConversationOpening, useInitialReady } from "./opening";
 import styles from "./new-conversation.module.css";
 
 export const NewConversationDrafts = createContext(new NewDraftStore());
@@ -226,195 +227,230 @@ function NewConversation({
         ? "Sandbox"
         : "Custom environment";
   const choicesDisabled = preparing || draft.attempted;
+  const [showAvailable, setShowAvailable] = useState(false);
+  const projectAligned =
+    requestedProject === null ||
+    draft.attempted ||
+    (requestedProject || null) === (defaults.project_id ?? null);
+  const pageReady = useInitialReady(
+    showAvailable ||
+      (projectAligned &&
+        !selectors.isPending &&
+        !projects.isPending &&
+        !preview.isPending),
+  );
   const openConversation = () => {
     // Admission and page observation are independent. Open the retained identity
-    // immediately so detail and focused output can load together; the saved page
-    // keeps local input visible while history catches up.
+    // immediately so detail, history, focused output and the shared editor can
+    // initialize together behind the destination's first-observation gate.
     if (!active.current) return;
     navigate(`/threads/${encodeURIComponent(threadId)}?compose=1`, {
       replace: true,
     });
   };
   return (
-    <section className={styles.page} aria-label="New conversation">
-      <div className={styles.welcome}>
-        <Robot aria-hidden="true" />
-        <h1>
-          What would you like to build
-          {project ? (
-            <>
-              {" "}
-              in <span>{project.name}</span>
-            </>
-          ) : (
-            ""
-          )}
-          ?
-        </h1>
-      </div>
-      <div className={styles.inputArea}>
-        <ConversationTranscript
-          entries={[]}
-          blocks={[]}
-          localInputs={composerDraft.localInputs}
-          threadId={threadId}
-        />
-        <fieldset
-          className={styles.context}
-          disabled={preparing || draft.attempted}
-        >
-          <legend className={styles.srOnly}>Conversation settings</legend>
-          <div className={styles.location}>
-            <Folder aria-hidden="true" />
-            <SearchPicker
-              label="Project"
-              popupClassName={styles.choicePopup}
-              placeholder="Without a project"
-              emptyMessage="No projects found."
-              disabled={preparing || draft.attempted}
-              value={defaults.project_id ?? ""}
-              onValueChange={(value) => change({ project_id: value || null })}
-              groups={[
-                {
-                  label: "Projects",
-                  options: [
-                    { value: "", label: "Without a project" },
-                    ...(projects.data ?? []).map((item) => ({
-                      value: item.project_id,
-                      label: item.name,
-                    })),
-                    ...(defaults.project_id && !project && !projects.isPending
-                      ? [
-                          {
-                            value: defaults.project_id,
-                            label: `${defaults.project_id} (unavailable)`,
-                            disabled: true,
-                          },
-                        ]
-                      : []),
-                  ],
-                },
-              ]}
-            />
-          </div>
-          <div className={styles.location}>
-            <Monitor aria-hidden="true" />
-            <SearchPicker
-              label="Environment"
-              popupClassName={styles.choicePopup}
-              placeholder={effectiveEnvironment?.name ?? "Default environment"}
-              emptyMessage="No environments found."
-              disabled={preparing || draft.attempted}
-              value={defaults.environment_profile_id ?? ""}
-              onValueChange={(value) =>
-                change({ environment_profile_id: value || null })
-              }
-              groups={[
-                {
-                  label: "Environments",
-                  options: [
-                    {
-                      value: "",
-                      label:
-                        !defaults.environment_profile_id && effectiveEnvironment
-                          ? `Default · ${effectiveEnvironment.name}`
-                          : "Default environment",
-                      description: "Follow the project or app default.",
-                    },
-                    ...(selectors.data?.environments ?? []).map((item) => ({
-                      value: item.profile_id,
-                      label: item.name,
-                      description: item.description,
-                    })),
-                  ],
-                },
-              ]}
-            />
-          </div>
-        </fieldset>
-        <Composer
-          autoFocus
-          threadId={threadId}
-          activity={{ state: "inactive" }}
-          canRun={!!preview.data && !preview.isFetching && !preview.error}
-          profile={profile}
-          unauthorized={unauthorized}
-          reconcile={() => {
-            void refreshThreadLists(queries);
-          }}
-          local={!draft.created}
-          skillDefaults={defaults}
-          prepareThread={() => create.mutateAsync()}
-          onPreparing={setPreparing}
-          onSubmitted={openConversation}
-          modelId={composerDraft.modelId}
-          leadingControls={
-            effectiveEnvironment && (
-              <span
-                className={styles.mode}
-                data-full-control={effectiveEnvironment.mode === "full-control"}
-                title={
-                  effectiveEnvironment.mode === "full-control"
-                    ? "Runs on the host with your account permissions."
-                    : effectiveEnvironment.description
+    <ConversationOpening
+      ready={pageReady}
+      label="Preparing your conversation…"
+      onContinue={() => setShowAvailable(true)}
+    >
+      <section className={styles.page} aria-label="New conversation">
+        <div className={styles.welcome}>
+          <Robot aria-hidden="true" />
+          <h1>
+            What would you like to build
+            {project ? (
+              <>
+                {" "}
+                in <span>{project.name}</span>
+              </>
+            ) : (
+              ""
+            )}
+            ?
+          </h1>
+        </div>
+        <div className={styles.inputArea}>
+          <ConversationTranscript
+            entries={[]}
+            blocks={[]}
+            localInputs={composerDraft.localInputs}
+            threadId={threadId}
+          />
+          <fieldset
+            className={styles.context}
+            disabled={preparing || draft.attempted}
+          >
+            <legend className={styles.srOnly}>Conversation settings</legend>
+            <div className={styles.location}>
+              <Folder aria-hidden="true" />
+              <SearchPicker
+                label="Project"
+                popupClassName={styles.choicePopup}
+                placeholder="Without a project"
+                emptyMessage="No projects found."
+                disabled={preparing || draft.attempted}
+                value={defaults.project_id ?? ""}
+                onValueChange={(value) => change({ project_id: value || null })}
+                groups={[
+                  {
+                    label: "Projects",
+                    options: [
+                      { value: "", label: "Without a project" },
+                      ...(projects.data ?? []).map((item) => ({
+                        value: item.project_id,
+                        label: item.name,
+                      })),
+                      ...(defaults.project_id && !project && !projects.isPending
+                        ? [
+                            {
+                              value: defaults.project_id,
+                              label: `${defaults.project_id} (unavailable)`,
+                              disabled: true,
+                            },
+                          ]
+                        : []),
+                    ],
+                  },
+                ]}
+              />
+            </div>
+            <div className={styles.location}>
+              <Monitor aria-hidden="true" />
+              <SearchPicker
+                label="Environment"
+                popupClassName={styles.choicePopup}
+                placeholder={
+                  effectiveEnvironment?.name ?? "Default environment"
                 }
-              >
-                <ShieldWarning aria-hidden="true" />
-                {isolation}
-              </span>
-            )
-          }
-          controls={
-            <ThreadRunChoices
-              catalog={selectors.data}
-              agentId={defaults.agent_id ?? ""}
-              defaultAgentId={effectiveAgent?.agent_id}
-              modelId={composerDraft.modelId}
-              thinking={composerDraft.thinking}
-              disabled={choicesDisabled}
-              onAgentChange={(value) => {
-                change({ agent_id: value || null });
-                composerDraft.thinking = null;
-                composerDraft.notify();
-              }}
-              onModelChange={(value) => {
-                composerDraft.modelId = value;
-                composerDraft.thinking = null;
-                composerDraft.notify();
-              }}
-              onThinkingChange={(value) => {
-                composerDraft.thinking = value;
-                composerDraft.notify();
-              }}
-            />
-          }
-        />
-        {drafts.error && <p role="alert">{drafts.error}</p>}
-        {attachmentSelections(composerDraft.doc).some(
-          ({ key, id }) =>
-            !isReadyAttachment(id) && !composerDraft.uploads.has(key),
-        ) && (
-          <p role="alert">
-            Some attachments are unavailable. Local files are not saved across
-            reloads, and uploaded files belong to their original conversation.
-            Remove unavailable attachments and attach the files again before
-            sending.
-          </p>
-        )}
-        <ErrorNotice
-          error={preview.error || selectors.error || projects.error}
-        />
-        {draft.created && !preparing && (
-          <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
-            Open conversation with retained input
-          </Link>
-        )}
-        {(preview.error || setup.data?.needed) && (
-          <Link className={styles.setup} to="/setup">
-            Continue setup
-          </Link>
-        )}
-      </div>
-    </section>
+                emptyMessage="No environments found."
+                disabled={preparing || draft.attempted}
+                value={defaults.environment_profile_id ?? ""}
+                onValueChange={(value) =>
+                  change({ environment_profile_id: value || null })
+                }
+                groups={[
+                  {
+                    label: "Environments",
+                    options: [
+                      {
+                        value: "",
+                        label:
+                          !defaults.environment_profile_id &&
+                          effectiveEnvironment
+                            ? `Default · ${effectiveEnvironment.name}`
+                            : "Default environment",
+                        description: "Follow the project or app default.",
+                      },
+                      ...(selectors.data?.environments ?? []).map((item) => ({
+                        value: item.profile_id,
+                        label: item.name,
+                        description: item.description,
+                      })),
+                    ],
+                  },
+                ]}
+              />
+            </div>
+          </fieldset>
+          <Composer
+            autoFocus={pageReady}
+            threadId={threadId}
+            activity={{ state: "inactive" }}
+            canRun={!!preview.data && !preview.error}
+            unavailableReason={
+              preview.isPending
+                ? "Updating conversation settings…"
+                : preview.error
+                  ? "Review conversation settings before sending."
+                  : undefined
+            }
+            profile={profile}
+            unauthorized={unauthorized}
+            reconcile={() => {
+              void refreshThreadLists(queries);
+            }}
+            local={!draft.created}
+            skillDefaults={defaults}
+            prepareThread={() => create.mutateAsync()}
+            onPreparing={setPreparing}
+            onSubmitted={openConversation}
+            modelId={composerDraft.modelId}
+            leadingControls={
+              effectiveEnvironment && (
+                <span
+                  className={styles.mode}
+                  data-full-control={
+                    effectiveEnvironment.mode === "full-control"
+                  }
+                  title={
+                    effectiveEnvironment.mode === "full-control"
+                      ? "Runs on the host with your account permissions."
+                      : effectiveEnvironment.description
+                  }
+                >
+                  <ShieldWarning aria-hidden="true" />
+                  {isolation}
+                </span>
+              )
+            }
+            controls={
+              <ThreadRunChoices
+                catalog={selectors.data}
+                agentId={defaults.agent_id ?? ""}
+                defaultAgentId={effectiveAgent?.agent_id}
+                modelId={composerDraft.modelId}
+                thinking={composerDraft.thinking}
+                disabled={choicesDisabled}
+                onAgentChange={(value) => {
+                  change({ agent_id: value || null });
+                  composerDraft.thinking = null;
+                  composerDraft.notify();
+                }}
+                onModelChange={(value) => {
+                  composerDraft.modelId = value;
+                  composerDraft.thinking = null;
+                  composerDraft.notify();
+                }}
+                onThinkingChange={(value) => {
+                  composerDraft.thinking = value;
+                  composerDraft.notify();
+                }}
+              />
+            }
+          />
+          {drafts.error && <p role="alert">{drafts.error}</p>}
+          {attachmentSelections(composerDraft.doc).some(
+            ({ key, id }) =>
+              !isReadyAttachment(id) && !composerDraft.uploads.has(key),
+          ) && (
+            <p role="alert">
+              Some attachments are unavailable. Local files are not saved across
+              reloads, and uploaded files belong to their original conversation.
+              Remove unavailable attachments and attach the files again before
+              sending.
+            </p>
+          )}
+          <ErrorNotice
+            error={preview.error || selectors.error || projects.error}
+            retry={() => {
+              void preview.refetch();
+              void selectors.refetch();
+              void projects.refetch();
+            }}
+          />
+          {draft.created && !preparing && (
+            <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
+              Open conversation with retained input
+            </Link>
+          )}
+          {(preview.error || setup.data?.needed) && (
+            <Link className={styles.setup} to="/setup">
+              Continue setup
+            </Link>
+          )}
+        </div>
+      </section>
+    </ConversationOpening>
   );
 }

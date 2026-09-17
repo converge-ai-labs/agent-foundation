@@ -297,6 +297,7 @@ export function Composer({
   threadId,
   activity,
   canRun,
+  unavailableReason,
   profile,
   unauthorized,
   reconcile,
@@ -304,6 +305,7 @@ export function Composer({
   threadId: string;
   activity: Schema<"RootActivityView">;
   canRun: boolean;
+  unavailableReason?: string;
   profile: Profile;
   unauthorized: () => void;
   reconcile: () => void;
@@ -328,6 +330,19 @@ export function Composer({
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
   const upload = useRef<HTMLInputElement>(null);
   const editor = useRef<EditorView | null>(null);
+  const sendButton = useRef<HTMLButtonElement>(null);
+  const restoreEditorFocus = useRef(false);
+  useEffect(() => {
+    if (preparing || !restoreEditorFocus.current) return;
+    restoreEditorFocus.current = false;
+    // Inert preparation can blur the editor. Restore only our own focus, never
+    // steal it from another field or a page the user opened while waiting.
+    if (
+      document.activeElement === document.body ||
+      document.activeElement === sendButton.current
+    )
+      editor.current?.focus();
+  }, [preparing]);
   const [mobileOptions, setMobileOptions] = useState(false);
   useEffect(() => {
     if (!referenceAdded) return;
@@ -476,17 +491,28 @@ export function Composer({
   };
   const canSend =
     canRun && !busy && ready && !preparing && !pending && !unknown && valid;
+  const blockedReason =
+    hasInput &&
+    !preparing &&
+    !pending &&
+    !unknown &&
+    !draft.error &&
+    !draft.replacement
+      ? missing
+        ? uploading
+          ? "Waiting for attachments…"
+          : "Resolve unavailable attachments before sending."
+        : !ready
+          ? "Waiting for the shared draft connection…"
+          : !busy && !canRun
+            ? (unavailableReason ??
+              "Refresh conversation status before sending.")
+            : busy && !canSteer
+              ? "This operation cannot accept another message yet."
+              : undefined
+      : undefined;
   const submit = async (action: "send" | "steer") => {
-    if (action === "send" && !canSend) return;
-    if (
-      action === "steer" &&
-      (!ready ||
-        pending ||
-        unknown ||
-        !valid ||
-        !activity.available_actions?.includes("steer"))
-    )
-      return;
+    if (action === "send" ? !canSend : !canSteer) return;
     if (
       preparation.current ||
       draft.submission.kind === "pending" ||
@@ -495,6 +521,9 @@ export function Composer({
       return;
     const controller = new AbortController();
     preparation.current = controller;
+    restoreEditorFocus.current =
+      !!editor.current?.hasFocus ||
+      document.activeElement === sendButton.current;
     const attachmentMetadata = () =>
       new Map(
         attachmentSelections(draft.doc).flatMap(({ id }) => {
@@ -842,6 +871,11 @@ export function Composer({
             )}
           </ul>
         )}
+        {blockedReason && (
+          <p role="status" className={styles.composerConnection}>
+            {blockedReason}
+          </p>
+        )}
         {(error || draft.error) && (
           <p role="alert" className={styles.warning}>
             {error || draft.error}
@@ -921,6 +955,7 @@ export function Composer({
               {controls}
             </div>
             <Button
+              ref={sendButton}
               size="icon"
               className={styles.sendButton}
               aria-label={
@@ -935,11 +970,12 @@ export function Composer({
                         : "Send"
               }
               title={
-                stopAction
+                blockedReason ??
+                (stopAction
                   ? "Stop this operation"
                   : busy
                     ? "Steer current operation · Enter"
-                    : "Send message · Enter"
+                    : "Send message · Enter")
               }
               disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
               loading={pending || preparing || stopping}

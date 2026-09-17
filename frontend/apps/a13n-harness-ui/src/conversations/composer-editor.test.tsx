@@ -539,3 +539,99 @@ it("completes dollar skills without sending, and retains the editor across catal
   });
   await screen.findByRole("option", { name: /\$review/ });
 });
+
+it("sends immediately after ordinary typing even while completion checks are pending", async () => {
+  const { completionStatus } = await import("@codemirror/autocomplete");
+  const editor = { current: null as EditorView | null };
+  const submit = vi.fn();
+  const loadSkills = vi.fn();
+  render(
+    <ComposerEditor
+      draft={new ThreadDraft()}
+      editor={editor}
+      submit={submit}
+      loadSkills={loadSkills}
+      profile={{ display_name: "Test", color: "#000000" }}
+      presence={() => {}}
+    />,
+  );
+  act(() => {
+    editor.current!.focus();
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "Hello" },
+      selection: { anchor: 5 },
+      userEvent: "input.type",
+    });
+    expect(completionStatus(editor.current!.state)).toBe("pending");
+    fireEvent.keyDown(editor.current!.contentDOM, { key: "Enter" });
+  });
+  expect(submit).toHaveBeenCalledOnce();
+  expect(loadSkills).not.toHaveBeenCalled();
+});
+
+it("does not swallow Enter during a skill lookup without visible candidates", async () => {
+  const { startCompletion, completionStatus } =
+    await import("@codemirror/autocomplete");
+  const editor = { current: null as EditorView | null };
+  const submit = vi.fn();
+  const loadSkills = vi.fn(() => new Promise<never>(() => {}));
+  render(
+    <ComposerEditor
+      draft={new ThreadDraft()}
+      editor={editor}
+      submit={submit}
+      loadSkills={loadSkills}
+      profile={{ display_name: "Test", color: "#000000" }}
+      presence={() => {}}
+    />,
+  );
+  act(() => {
+    editor.current!.focus();
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "$rev" },
+      selection: { anchor: 4 },
+    });
+    startCompletion(editor.current!);
+  });
+  await waitFor(() => expect(loadSkills).toHaveBeenCalledOnce());
+  expect(completionStatus(editor.current!.state)).toBe("pending");
+  expect(screen.queryByRole("listbox")).toBeNull();
+  fireEvent.keyDown(editor.current!.contentDOM, { key: "Enter" });
+  expect(submit).toHaveBeenCalledOnce();
+});
+
+it("focuses when the initial page becomes ready without rebuilding or reclaiming focus on refresh", () => {
+  const editor = { current: null as EditorView | null };
+  const props = {
+    draft: new ThreadDraft(),
+    editor,
+    submit: vi.fn(),
+    presence: vi.fn(),
+    profile: { display_name: "Test", color: "#000000" },
+  };
+  const view = render(
+    <>
+      <input aria-label="Other field" />
+      <ComposerEditor {...props} />
+    </>,
+  );
+  const original = editor.current;
+  const other = screen.getByRole("textbox", { name: "Other field" });
+  act(() => other.focus());
+  view.rerender(
+    <>
+      <input aria-label="Other field" />
+      <ComposerEditor {...props} autoFocus />
+    </>,
+  );
+  expect(document.activeElement).toBe(editor.current!.contentDOM);
+  act(() => other.focus());
+  view.rerender(
+    <>
+      <input aria-label="Other field" />
+      <ComposerEditor {...props} autoFocus />
+    </>,
+  );
+  expect(document.activeElement).toBe(other);
+  expect(editor.current).toBe(original);
+});
