@@ -10,7 +10,7 @@ from a13n_service.interactions.domain import Run, RunInputKind
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     AsyncSubagentResultError,
@@ -60,7 +60,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_bbbbbbbbbbbbbbbb",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -72,7 +72,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         bindings=ordinary_memory(interaction_sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_bbbbbbbbbbbbbbbb",
         clock=lambda: NOW + timedelta(seconds=6),
@@ -150,7 +150,7 @@ async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
         authority,
         outcome="completed",
     )
-    replays, projector, output = await _complete_object_backed_child(
+    replays, projector, consumer, output = await _complete_object_backed_child(
         interaction_sessions,
         interaction_object_store,
         redis_client,
@@ -158,7 +158,12 @@ async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
         child_run_id,
     )
     await _project_all_lifecycle(projector)
-    snapshot = await replays.read(ORGANIZATION_ID, child_run_id)
+    await consumer.consume_once()
+    async with short_session(interaction_sessions) as database:
+        child = await database.get(RunRecord, child_run_id)
+        assert child is not None
+        child_thread_id = child.thread_id
+    snapshot = (await replays.read(ORGANIZATION_ID, child_run_id, expected_thread_id=child_thread_id)).snapshot
     entry = await AsyncSubagentResultPublisher(
         interaction_sessions,
         replays,
@@ -216,13 +221,13 @@ async def test_oldest_result_accepts_successor_and_later_result_binds_in_fifo_or
     await _fail_child(interaction_sessions, second_child_run_id)
     first = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_1212121212121212",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=first_child_run_id)
     second = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_1313131313131313",
         clock=lambda: NOW + timedelta(seconds=6),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=second_child_run_id)
@@ -230,7 +235,7 @@ async def test_oldest_result_accepts_successor_and_later_result_binds_in_fifo_or
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         bindings=ordinary_memory(interaction_sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_1414141414141414",
         clock=lambda: NOW + timedelta(seconds=7),
@@ -275,7 +280,7 @@ async def test_automatic_successor_rejects_payload_forged_after_publication(
     await _fail_child(interaction_sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_1818181818181818",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
@@ -288,7 +293,7 @@ async def test_automatic_successor_rejects_payload_forged_after_publication(
         await AsyncSubagentSuccessorReconciler(
             interaction_sessions,
             states,
-            RunReplayStore(interaction_object_store),
+            RunDisplayStore(interaction_object_store),
             bindings=ordinary_memory(interaction_sessions),
             run_id_factory=lambda _organization, _entry, _parent: "run_1818181818181818",
             clock=lambda: NOW + timedelta(seconds=6),
@@ -318,14 +323,14 @@ async def test_concurrent_postgresql_successor_reconciliation_accepts_one_run(
     await _fail_child(sessions, child_run_id)
     result = await AsyncSubagentResultPublisher(
         sessions,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         entry_id_factory=lambda: "inb_ffffffffffffffff",
         clock=lambda: NOW + timedelta(seconds=5),
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     reconciler = AsyncSubagentSuccessorReconciler(
         sessions,
         states,
-        RunReplayStore(interaction_object_store),
+        RunDisplayStore(interaction_object_store),
         bindings=ordinary_memory(sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_ffffffffffffffff",
         clock=lambda: NOW + timedelta(seconds=6),
@@ -434,7 +439,7 @@ async def test_periodic_recovery_expires_bound_result_and_releases_capacity(
 ):
     states, parent, _, child_run_id = await _accept_child(interaction_sessions, interaction_object_store)
     await _fail_child(interaction_sessions, child_run_id)
-    replays = RunReplayStore(interaction_object_store)
+    replays = RunDisplayStore(interaction_object_store)
     result = await AsyncSubagentResultPublisher(
         interaction_sessions, replays, clock=lambda: NOW + timedelta(seconds=5)
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)

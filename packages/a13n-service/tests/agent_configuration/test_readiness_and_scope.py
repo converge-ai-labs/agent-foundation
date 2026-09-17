@@ -12,7 +12,7 @@ from a13n_service.iam import AuthorizationError, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.providers import built_in_provider_registry
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import func, select
 
@@ -126,7 +126,7 @@ async def test_empty_configuration_conversation_is_visible_only_to_owner_even_fo
                 )
             )
     other = replace(actor(), principal=PrincipalRef(principal_type="user", principal_id=other_id))
-    queries = NativeInteractionQueries(agent_sessions, RunReplayStore(LocalObjectStore(tmp_path / "objects")))
+    queries = NativeInteractionQueries(agent_sessions, RunDisplayStore(LocalObjectStore(tmp_path / "objects")))
     assert (
         await queries.get_thread(
             actor=actor(),

@@ -353,6 +353,8 @@ class RedisRunStream:
             next_stream_id=None if not entries else entries[-1].stream_id,
             retained_floor=floor,
             high_watermark=high,
+            pending_events=int(metadata.get("pending_events", "0")),
+            pending_bytes=int(metadata.get("pending_bytes", "0")),
             closed="closed_at" in metadata,
             trimmed=trimmed,
             closed_at=None if "closed_at" not in metadata else _utc(datetime.fromisoformat(metadata["closed_at"])),

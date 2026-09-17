@@ -9,7 +9,8 @@ from time import monotonic
 import anyio
 
 from a13n_service.storage import ObjectConflict, ObjectNotFound
-from a13n_service.storage.codec import canonical_model_bytes
+from a13n_service.storage.codec import canonical_model_bytes, run_codec
+from a13n_service.temporal import utc_now
 
 from .display_candidates import DisplayCandidate, DisplayCandidates
 from .display_model import DisplayLimitExceeded, RunDisplaySnapshot
@@ -19,6 +20,9 @@ from .domain import PublicationContinuityLost, RunStreamReplayGap
 from .redis import RedisRunStream, run_stream_key_digest_sha256
 
 logger = logging.getLogger("a13n_service.run_stream.display_consumer")
+# Reserve closure time, a bounded safe reason, and version growth so reaching the
+# content cap never prevents recording incomplete finalization of the last prefix.
+_FINALIZATION_RESERVE_BYTES = 512
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,11 +54,24 @@ class DisplayConsumerPolicy:
             )
             <= 0
             or self.event_batch_size > 1000
+            or self.max_snapshot_bytes < 1024
         ):
-            raise ValueError("display consumption bounds must be positive and batches at most 1000 events")
+            raise ValueError(
+                "display bounds must be positive, snapshots at least 1024 bytes, and batches at most 1000 events"
+            )
 
 
 _DEFAULT_POLICY = DisplayConsumerPolicy()
+
+
+@dataclass(frozen=True, slots=True)
+class _DisplayBatch:
+    snapshot: RunDisplaySnapshot
+    events: int
+    source_bytes: int
+    pending_events: int
+    pending_bytes: int
+    lag_seconds: float
 
 
 class RunDisplayConsumer:
@@ -154,7 +171,8 @@ class RunDisplayConsumer:
                 await self._acknowledge(candidate, base)
             except PublicationContinuityLost:
                 pass  # The contiguous read below records the lost source explicitly.
-        snapshot, events, source_bytes = await self._consume_batch(candidate, base, started=started)
+        batch = await self._consume_batch(candidate, base, started=started)
+        snapshot = batch.snapshot
         if snapshot == base:
             return previous
         snapshot = snapshot.model_copy(update={"version": 1 if previous is None else previous.snapshot.version + 1})
@@ -167,8 +185,11 @@ class RunDisplayConsumer:
                 "run_id": candidate.run_id,
                 "version": snapshot.version,
                 "cursor": snapshot.cursor,
-                "source_events": events,
-                "source_bytes": source_bytes,
+                "source_events": batch.events,
+                "source_bytes": batch.source_bytes,
+                "pending_events": batch.pending_events,
+                "pending_bytes": batch.pending_bytes,
+                "consumption_lag_seconds": batch.lag_seconds,
                 "flush_seconds": monotonic() - started,
                 "complete": snapshot.complete,
                 "finalized": snapshot.finalized,
@@ -178,10 +199,12 @@ class RunDisplayConsumer:
 
     async def _consume_batch(
         self, candidate: DisplayCandidate, base: RunDisplaySnapshot, *, started: float
-    ) -> tuple[RunDisplaySnapshot, int, int]:
+    ) -> _DisplayBatch:
         snapshot = base
         events = 0
         source_bytes = 0
+        pending_events = pending_bytes = 0
+        lag_seconds = 0.0
         reason = base.incomplete_reason
         closed_at = None
         try:
@@ -192,9 +215,14 @@ class RunDisplayConsumer:
                     after_stream_id=snapshot.cursor,
                     limit=min(self._policy.event_batch_size, self._policy.flush_events - events),
                 )
+                pending_events, pending_bytes = page.pending_events, page.pending_bytes
                 if page.items:
+                    lag_seconds = max(lag_seconds, (utc_now() - page.items[0].event.occurred_at).total_seconds())
                     snapshot = project_display(snapshot, page.items, max_items=self._policy.max_items)
-                    if len(canonical_model_bytes(snapshot)) > self._policy.max_snapshot_bytes:
+                    if (
+                        len(await run_codec(canonical_model_bytes, snapshot)) + _FINALIZATION_RESERVE_BYTES
+                        > self._policy.max_snapshot_bytes
+                    ):
                         raise DisplayLimitExceeded("display bytes exceed their configured bound")
                     events += len(page.items)
                     source_bytes += sum(len(canonical_model_bytes(entry.event)) for entry in page.items)
@@ -203,7 +231,9 @@ class RunDisplayConsumer:
                     settlement = await self._candidates.settlement(candidate)
                     if settlement.closed_at is not None:
                         closed_at = settlement.closed_at
-                        if settlement.abandoned:
+                        if settlement.lifecycle_missing:
+                            reason = "lifecycle_history_unavailable"
+                        elif settlement.abandoned:
                             reason = "lifecycle_projection_abandoned"
                     break
                 if not page.items:
@@ -232,9 +262,9 @@ class RunDisplayConsumer:
             settlement = await self._candidates.settlement(candidate)
             closed_at = settlement.closed_at
         if snapshot == base and reason == base.incomplete_reason and closed_at is None:
-            return base, events, source_bytes
+            return _DisplayBatch(base, events, source_bytes, pending_events, pending_bytes, lag_seconds)
         snapshot = project_display(snapshot, (), closed_at=closed_at, incomplete_reason=reason)
-        return snapshot, events, source_bytes
+        return _DisplayBatch(snapshot, events, source_bytes, pending_events, pending_bytes, lag_seconds)
 
     async def _acknowledge(self, candidate: DisplayCandidate, snapshot: RunDisplaySnapshot) -> None:
         if not snapshot.complete:

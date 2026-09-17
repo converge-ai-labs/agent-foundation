@@ -162,3 +162,41 @@ async def test_successor_cannot_discard_durable_progress(object_store: ObjectSto
     with pytest.raises(DisplayIntegrityError):
         await store.publish("org_test", candidate, previous=previous)
     assert await store.read("org_test", "run_test", expected_thread_id="thread_test") == previous
+
+
+async def test_tool_parent_survives_later_observations_without_parent_field() -> None:
+    parent_id = deterministic_item_id("run_test", "text_message", "parent")
+    first = _delta(1)
+    start = RunStreamEntry(
+        "1-0",
+        first.event.model_copy(
+            update={
+                "event_type": "agui.tool_call_start",
+                "payload": {"item_kind": "tool_call", "parent_item_id": parent_id, "toolCallName": "search"},
+            }
+        ),
+    )
+    saved = project_display(_empty(), (start,))
+    delta = RunStreamEntry(
+        "2-0",
+        first.event.model_copy(
+            update={
+                "event_type": "agui.tool_call_args",
+                "payload": {"item_kind": "tool_call", "delta": "{}"},
+            }
+        ),
+    )
+    resumed = project_display(RunDisplaySnapshot.model_validate_json(saved.model_dump_json()), (delta,))
+    assert resumed.items[0].parent_item_id == parent_id
+    assert isinstance(resumed.items[0].content, dict)
+    assert resumed.items[0].content["arguments"] == "{}"
+    conflicting = RunStreamEntry(
+        "3-0",
+        delta.event.model_copy(
+            update={
+                "payload": {"item_kind": "tool_call", "parent_item_id": None, "delta": "x"},
+            }
+        ),
+    )
+    with pytest.raises(DisplayIntegrityError, match="correlation changed"):
+        project_display(resumed, (conflicting,))

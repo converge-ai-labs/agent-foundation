@@ -64,7 +64,7 @@ if operation == 'read' then
             summary[#summary + 1] = value
         end
     end
-    for _, name in ipairs({'organization_id', 'run_id', 'closed_at', 'trimmed', 'trimmed_through', 'incomplete'}) do include(name) end
+    for _, name in ipairs({'organization_id', 'run_id', 'closed_at', 'trimmed', 'trimmed_through', 'incomplete', 'pending_events', 'pending_bytes'}) do include(name) end
     for _, row in ipairs(rows) do
         for index = 1, #row[2], 2 do
             if row[2][index] == 'body' then

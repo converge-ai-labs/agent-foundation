@@ -12,7 +12,7 @@ from a13n_service.interactions.command_values import ContinueRunCommand
 from a13n_service.interactions.domain import ThreadOriginKind, ThreadRole
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.records import run_record, thread_record
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import delete
@@ -43,7 +43,7 @@ async def preview_queries(lifecycle_interaction_sessions, tmp_path):
     await seed_run_and_secret(lifecycle_interaction_sessions)
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     objects = await LocalObjectStore.create(tmp_path / "objects")
-    return NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(objects))
+    return NativeInteractionQueries(lifecycle_interaction_sessions, RunDisplayStore(objects))
 
 
 async def _add_thread(
@@ -270,7 +270,7 @@ async def test_preview_text_is_bounded_unicode_and_prefers_current_over_head(
             run.output_text = "结果🌏" * 200
             thread.current_run_id = None
             await database.flush()
-    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(objects))
+    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunDisplayStore(objects))
     page = await queries.list_sessions(actor=hook_actor(), workspace_id=WORKSPACE_ID, limit=20, cursor=None)
     assert page.items[0].preview is not None
     assert page.items[0].preview.input_text == ("输入🌏" * 200)[:256]
@@ -367,7 +367,7 @@ async def test_postgresql_batch_previews_use_bounded_unicode_projections(
             run.output_text = output_text
             owner.updated_at = NOW + timedelta(seconds=10)
             await database.flush()
-    queries = NativeInteractionQueries(sessions, RunReplayStore(objects))
+    queries = NativeInteractionQueries(sessions, RunDisplayStore(objects))
     counts = []
     for limit in (1, 5):
         with capture_sql(sessions) as statements:

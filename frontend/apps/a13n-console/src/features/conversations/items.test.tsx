@@ -53,7 +53,10 @@ it("places one agent identity before its reasoning, tools, and answer in observe
 it("does not keep unresolved tools spinning after cancellation or relabel a completed tool as waiting", () => {
   const items = [
     item("done", "tool_call", { toolName: "finished_tool" }),
-    item("open", "tool_call", { state: "streaming", toolName: "pending_tool" }),
+    item("open", "tool_call", {
+      state: "in_progress",
+      toolName: "pending_tool",
+    }),
   ];
   const cancelled = renderToStaticMarkup(
     <PresentedItems items={items} runState="cancelled" />,

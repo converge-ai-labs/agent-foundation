@@ -38,7 +38,7 @@ from a13n_service.interactions.worker_preparation import WorkerAttemptPreparer
 from a13n_service.observability import ObservabilityRuntime, RecoveryReason, RunAttemptCorrelation, RunAttemptOutcome
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
-from a13n_service.run_stream import RedisRunStream, RunReplayStore
+from a13n_service.run_stream import RedisRunStream, RunDisplayStore
 from a13n_service.run_stream.activation import PublicationActivator
 from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
 from a13n_service.secrets.agent_runtime import AgentSecretRuntime
@@ -71,7 +71,7 @@ class WorkerAttempts:
         external_tools: ExternalToolRuntime,
         skills: SkillRuntimePreparer,
         stream: RedisRunStream,
-        replay: RunReplayStore,
+        display: RunDisplayStore,
         assets: AssetObjectStore,
         asset_publication: AssetRuntime,
         observability: ObservabilityRuntime | None = None,
@@ -88,7 +88,7 @@ class WorkerAttempts:
         self._external_tools = external_tools
         self._skills = skills
         self._stream = stream
-        self._replay = replay
+        self._display = display
         self._assets = assets
         self._asset_publication = asset_publication
         self._secrets = AgentSecretRuntime(shared.storage.sessions, shared.secret_protector)
@@ -165,7 +165,7 @@ class WorkerAttempts:
                 context.authorization,
             )
 
-            async_results = AsyncSubagentResultMaterializer(sessions, self._replay)
+            async_results = AsyncSubagentResultMaterializer(sessions, self._display)
             inputs = WorkerInputMaterializer(sources, self._payloads, async_results)
             control = RunAttemptControl(
                 context=context,
@@ -189,7 +189,7 @@ class WorkerAttempts:
                     sessions,
                     self._configuration_drafts,
                     ConfigurationResources(sessions),
-                    NativeInteractionQueries(sessions, self._replay),
+                    NativeInteractionQueries(sessions, self._display),
                     run=run,
                     workspace_id=workspace_id,
                     current_context=lambda: control.current_context,

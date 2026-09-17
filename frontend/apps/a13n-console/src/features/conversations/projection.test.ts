@@ -40,14 +40,7 @@ describe("Run presentation checkpoints", () => {
         parent_item_id: null,
         first_stream_id: "100-0",
         last_stream_id: "100-1",
-        content: {
-          events: [
-            {
-              event_type: "agui.text_message_content",
-              payload: { delta: "Hello" },
-            },
-          ],
-        },
+        content: { text: "Hello" },
       },
     ]);
     items = applyRunEvent(

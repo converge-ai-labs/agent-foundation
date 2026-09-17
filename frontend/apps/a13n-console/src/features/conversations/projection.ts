@@ -39,7 +39,7 @@ function emptyItem(id: string, kind: string, cursor: string): PresentedItem {
   return {
     id,
     kind,
-    state: "streaming",
+    state: "in_progress",
     parentId: null,
     firstCursor: cursor,
     lastCursor: cursor,
@@ -90,6 +90,13 @@ export function applyRunEvent(
   entry: RunEvent,
 ): Map<string, PresentedItem> {
   const { event, cursor } = entry;
+  if (event.event_type === "run.recovery")
+    return new Map(
+      [...items].map(([id, item]) => [
+        id,
+        item.state === "in_progress" ? { ...item, state: "interrupted" } : item,
+      ]),
+    );
   if (!event.item_id) return new Map(items);
   const previous = items.get(event.item_id);
   if (previous && compareCursors(cursor, previous.lastCursor) <= 0)
@@ -113,17 +120,24 @@ export function presentRetainedItem(
   item: Schema["ItemResource"],
 ): PresentedItem {
   compareCursors(item.first_stream_id, item.last_stream_id);
-  let presented = emptyItem(item.id, item.kind, item.first_stream_id);
-  if (isObject(item.content) && Array.isArray(item.content.events))
-    for (const event of item.content.events) {
-      if (
-        isObject(event) &&
-        typeof event.event_type === "string" &&
-        isObject(event.payload)
-      )
-        presented = applyPayload(presented, event.event_type, event.payload);
-    }
-  else presented.detail = item.content;
+  const presented = emptyItem(item.id, item.kind, item.first_stream_id);
+  const content = item.content;
+  if (isObject(content) && item.kind !== "run_output") {
+    if (typeof content.text === "string") presented.text = content.text;
+    if (typeof content.role === "string") presented.role = content.role;
+    if (typeof content.toolCallName === "string")
+      presented.toolName = content.toolCallName;
+    if (typeof content.arguments === "string")
+      presented.arguments = content.arguments;
+    presented.result = content.result;
+    presented.failure = content.failure ?? content.interruption;
+    presented.protectedReasoning = "encrypted_value" in content;
+    if (
+      isObject(content.metadata) &&
+      typeof content.metadata.display === "boolean"
+    )
+      presented.display = content.metadata.display;
+  } else presented.detail = content;
   return {
     ...presented,
     state: item.state,

@@ -19,7 +19,7 @@ from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 
@@ -117,7 +117,7 @@ async def test_assistant_admission_has_real_identity_exact_scope_and_replay(agen
     assert run.execution_budget.max_usage.input_tokens == expected_limit
     assert run.execution_budget.max_usage.output_tokens == expected_limit
     validate_configuration_definition(run=run, config=state.effective_agent_config)
-    queries = NativeInteractionQueries(agent_sessions, RunReplayStore(objects))
+    queries = NativeInteractionQueries(agent_sessions, RunDisplayStore(objects))
     visible = await queries.get_run(actor=actor(), run_id=run.id)
     assert visible.agent_id == run.agent_id
     assert [

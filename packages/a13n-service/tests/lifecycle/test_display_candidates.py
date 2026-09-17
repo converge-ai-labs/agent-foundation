@@ -6,7 +6,7 @@ from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.run_stream.display_candidates import DisplayCandidates
 from a13n_service.storage import transaction
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from tests.hooks.support import RUN_ID, seed_run_and_secret
 from tests.interactions.conftest import NOW
 from tests.lifecycle_support import test_lifecycle_writer
@@ -67,3 +67,8 @@ async def test_keyset_discovery_includes_terminal_runs_and_waits_for_all_lifecyc
         accepted.projected_at = None
     retired = await discovery.settlement(candidate)
     assert not retired.accepted_projected and retired.abandoned and retired.closed_at == NOW
+
+    async with transaction(sessions) as database:
+        await database.execute(delete(LifecycleEventRecord))
+    expired = await discovery.settlement(candidate)
+    assert expired.closed_at == NOW and expired.lifecycle_missing

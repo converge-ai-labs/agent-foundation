@@ -85,7 +85,7 @@ export function applyExecution(current: Execution, entry: RunEvent): Execution {
       (["tool", "hitl"].includes(step.kind) ||
         (step.kind === "handoff" && !isObject(step.detail)))
     ) {
-      const state = item.state === "streaming" ? "running" : item.state;
+      const state = item.state === "in_progress" ? "running" : item.state;
       if (step.state !== state) next = updateStep(next, id, { state });
     }
   } else if (

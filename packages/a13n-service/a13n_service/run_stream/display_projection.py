@@ -76,7 +76,7 @@ def _merge_item(previous: RetainedItem | None, entry: RunStreamEntry) -> Retaine
     kind = payload.get("item_kind")
     if not isinstance(kind, str) or not kind:
         raise DisplayIntegrityError("display observation omitted Item kind")
-    parent = payload.get("parent_item_id")
+    parent = payload.get("parent_item_id", None if previous is None else previous.parent_item_id)
     if parent is not None and not isinstance(parent, str):
         raise DisplayIntegrityError("display Item parent identity is invalid")
     if previous is not None and (previous.kind != kind or previous.parent_item_id != parent):
@@ -114,7 +114,15 @@ def _merge_item(previous: RetainedItem | None, entry: RunStreamEntry) -> Retaine
 
 def _merge_content(content: dict[str, JsonValue], entry: RunStreamEntry) -> None:
     event, payload = entry.event, entry.event.payload
-    for field in ("messageId", "role", "toolCallId", "toolCallName", "parentMessageId", "source_tool_call_id"):
+    for field in (
+        "messageId",
+        "role",
+        "toolCallId",
+        "toolCallName",
+        "parentMessageId",
+        "source_tool_call_id",
+        "metadata",
+    ):
         if field in payload:
             content[field] = payload[field]
     content["run_attempt_id"] = event.run_attempt_id
@@ -134,5 +142,6 @@ def _merge_content(content: dict[str, JsonValue], entry: RunStreamEntry) -> None
         content["result"] = payload.get("content")
     if event.event_type == "agui.reasoning_encrypted_value":
         content["encrypted_value"] = payload.get("encryptedValue")
-    if "failure" in payload:
-        content["failure"] = payload["failure"]
+    for field in ("failure", "interruption"):
+        if field in payload:
+            content[field] = payload[field]

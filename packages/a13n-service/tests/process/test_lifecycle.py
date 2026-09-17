@@ -12,7 +12,7 @@ from a13n_service.interactions.worker import WorkerExecutionLoop
 from a13n_service.lifecycle.service import LifecycleEventService
 from a13n_service.process.background import run_critical_component
 from a13n_service.process.components import snapshot_components
-from a13n_service.run_stream import RedisRunStream, RunReplayStore
+from a13n_service.run_stream import RedisRunStream, RunDisplayStore
 from a13n_service.secrets import SecretProtectionError
 from a13n_service.settings import ProcessRole, Settings
 from a13n_service.skills import SkillRuntimePreparer
@@ -205,7 +205,7 @@ async def test_lifespan_wires_skill_components_only_to_their_process_roles(local
         assert worker.state.runtime.control is None
         assert isinstance(worker.state.runtime.worker.skill_runtime, SkillRuntimePreparer)
         assert isinstance(worker.state.runtime.worker.run_stream, RedisRunStream)
-        assert isinstance(worker.state.runtime.worker.run_replay, RunReplayStore)
+        assert isinstance(worker.state.runtime.worker.run_display, RunDisplayStore)
 
 
 @pytest.mark.anyio

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.interactions.models import RunRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.storage import short_session
+from a13n_service.temporal import assume_utc
 
 _TERMINAL_EVENTS = ("run.waiting", "run.completed", "run.failed", "run.cancelled")
 
@@ -27,6 +28,7 @@ class DisplaySettlement:
     accepted_projected: bool
     closed_at: datetime | None
     abandoned: bool
+    lifecycle_missing: bool = False
 
 
 class DisplayCandidates:
@@ -53,4 +55,12 @@ class DisplayCandidates:
         ).where(fact.organization_id == candidate.organization_id, fact.run_id == candidate.run_id)
         async with short_session(self._sessions) as database:
             accepted, terminal_at, unsettled, abandoned = (await database.execute(query)).one()
-        return DisplaySettlement(bool(accepted), terminal_at if not unsettled else None, bool(abandoned))
+            run = await database.get(RunRecord, candidate.run_id)
+        if unsettled:
+            return DisplaySettlement(bool(accepted), None, bool(abandoned))
+        missing = not accepted and not abandoned
+        if terminal_at is None and run is not None and run.organization_id == candidate.organization_id:
+            if run.status in {"waiting", "completed", "failed", "cancelled"} and run.sealed_at is not None:
+                terminal_at = assume_utc(run.sealed_at)
+                missing = True
+        return DisplaySettlement(bool(accepted), terminal_at, bool(abandoned), missing)

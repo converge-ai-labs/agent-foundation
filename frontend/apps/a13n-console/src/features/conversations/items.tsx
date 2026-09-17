@@ -57,7 +57,7 @@ export function PresentedItems({
                 <span className={styles.toolState}>
                   {item.state === "completed" ? (
                     <CheckIcon size={13} aria-label={t("Completed")} />
-                  ) : item.state === "streaming" &&
+                  ) : item.state === "in_progress" &&
                     ["running", "queued"].includes(runState ?? "running") ? (
                     <CircleNotchIcon
                       size={13}
@@ -67,7 +67,7 @@ export function PresentedItems({
                   ) : (
                     <StateBadge
                       state={
-                        item.state === "streaming"
+                        item.state === "in_progress"
                           ? ["waiting", "failed", "cancelled"].includes(
                               runState ?? "",
                             )
@@ -124,7 +124,7 @@ export function PresentedItems({
           <MarkdownContent
             text={
               item.text ||
-              (item.state === "streaming"
+              (item.state === "in_progress"
                 ? t("Thinking…")
                 : t("No text content"))
             }

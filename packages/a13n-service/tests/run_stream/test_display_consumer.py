@@ -146,13 +146,19 @@ async def test_gap_preserves_committed_items_and_requires_durable_incomplete_ret
 
 async def test_display_limit_never_commits_omitted_content(redis_client: Redis, object_store: ObjectStore) -> None:
     stream = RedisRunStream(redis_client)
-    store = RunDisplayStore(object_store)
+    store = RunDisplayStore(object_store, max_bytes=1024)
     candidates = _candidates()
     consumer = RunDisplayConsumer(candidates, stream, store)
     await activate_stream(stream, CANDIDATE.organization_id, CANDIDATE.run_id, CANDIDATE.thread_id)
     previous = await consumer.consume_run(CANDIDATE)
     await stream.append(CANDIDATE.organization_id, _delta(1), attempt_number=1)
-    bounded = RunDisplayConsumer(candidates, stream, store, policy=DisplayConsumerPolicy(max_snapshot_bytes=400))
+    bounded = RunDisplayConsumer(candidates, stream, store, policy=DisplayConsumerPolicy(max_snapshot_bytes=1024))
     partial = await bounded.consume_run(CANDIDATE)
     assert partial.snapshot.cursor == previous.snapshot.cursor
     assert partial.snapshot.items == () and partial.snapshot.incomplete_reason == "display_limit_exceeded"
+
+    await stream.retire(CANDIDATE.organization_id, CANDIDATE.run_id, closed_at=NOW)
+    candidates.settlement.return_value = DisplaySettlement(True, NOW, True)
+    finalized = await bounded.consume_run(CANDIDATE)
+    assert finalized.snapshot.finalized and not finalized.snapshot.complete
+    assert finalized.snapshot.cursor == previous.snapshot.cursor

@@ -13,7 +13,7 @@ from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
 from a13n_service.interactions.thread_creation import allocate_thread
 from a13n_service.interactions.thread_domain import CreateThreadRequest
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session
 from a13n_service.storage.object_store import LocalObjectStore
 from sqlalchemy import func, select
@@ -77,7 +77,7 @@ async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_nu
         assert (persisted.next_delivery_sequence, persisted.pending_count, persisted.pending_bytes) == (1, 0, 0)
     objects = await LocalObjectStore.create(tmp_path / "gateway-objects")
     commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(objects))
+    queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunDisplayStore(objects))
     notifications = NotificationService(lifecycle_interaction_sessions)
     (subscription,) = await notifications.authorize(
         actor=_actor(),

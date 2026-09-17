@@ -27,7 +27,7 @@ from a13n_service.interactions.inbox_persistence import (
     ThreadInboxConflict,
 )
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
-from a13n_service.run_stream import RunReplayStore
+from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -57,7 +57,7 @@ class AsyncSubagentResultPublisher:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        replays: RunReplayStore,
+        displays: RunDisplayStore,
         *,
         signals: ThreadControlSignalPublisher | None = None,
         max_pending_count: int = 256,
@@ -69,7 +69,7 @@ class AsyncSubagentResultPublisher:
             raise ValueError("Thread inbox admission limits must be positive")
         self._after_relationship_id = ""
         self._sessions = sessions
-        self._replays = replays
+        self._displays = displays
         self._signals = signals
         self._max_pending_count = max_pending_count
         self._max_pending_bytes = max_pending_bytes
@@ -87,7 +87,7 @@ class AsyncSubagentResultPublisher:
             child_run_id=child_run_id,
         )
         terminal_item = await load_async_subagent_terminal_item(
-            self._replays,
+            self._displays,
             organization_id=organization_id,
             child=authority.child,
             expected_item_id=None,
@@ -181,20 +181,20 @@ class AsyncSubagentResultPublisher:
                 )
                 created = True
         except IntegrityError as error:
-            replay = await self._read_existing(
+            display = await self._read_existing(
                 organization_id=organization_id,
                 relationship_id=authority.relationship.id,
             )
-            if replay is None:
+            if display is None:
                 raise ThreadInboxConflict("child result publication lost a concurrent mutation") from error
             expected = build_async_subagent_result_payload(
                 authority.relationship,
                 authority.child,
                 terminal_item=terminal_item,
             )
-            if parse_async_subagent_result_entry(replay) != expected:
+            if parse_async_subagent_result_entry(display) != expected:
                 raise AsyncSubagentResultError("concurrent child result does not match sealed authority") from error
-            entry = replay
+            entry = display
         if created and entry.status is ThreadInboxStatus.pending:
             await self._best_effort_signal(organization_id=organization_id, thread_id=entry.thread_id)
         return entry

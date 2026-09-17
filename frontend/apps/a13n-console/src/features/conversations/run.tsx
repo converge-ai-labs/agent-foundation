@@ -184,9 +184,13 @@ export function RunContent({
       <ErrorToast error={interrupt.error ?? retry.error} />
       {live.gap && (
         <p role="status" className={styles.notice}>
-          {t(
-            "Live replay had a gap. Available retained items have been reconciled; some live-only output may be unavailable.",
-          )}
+          {live.incomplete
+            ? t(
+                "Saved message history is incomplete. Some output is unavailable.",
+              )
+            : t(
+                "Live replay resumed from saved messages. Earlier raw events may be unavailable.",
+              )}
         </p>
       )}
       {live.state === "disconnected" && (

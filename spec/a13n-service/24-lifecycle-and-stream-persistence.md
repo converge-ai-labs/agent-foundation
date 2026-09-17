@@ -6,7 +6,7 @@ a13n Service separates durable lifecycle authority from presentation persistence
 
 Redis and display snapshots are projections, never Run or `RunAttempt` authority. Service creates no relational table for Items, live or retained stream replay, Native notifications, pending calls or approvals, or provider receipts.
 
-The Thread-scoped Redis control signal Stream is a separate business-payload-free reconciliation wakeup transport owned by [Agent Control: Active Execution](19-agent-control-active-execution.md#thread-control-signal-stream). It never shares the Run presentation cursor, retained replay object, or lifecycle projection state.
+The Thread-scoped Redis control signal Stream is a separate business-payload-free reconciliation wakeup transport owned by [Agent Control: Active Execution](19-agent-control-active-execution.md#thread-control-signal-stream). It never shares the Run presentation cursor, display object, or lifecycle projection state.
 
 ## Boundaries and Table Inventory
 
@@ -83,7 +83,7 @@ Entity and correlation fields are typed, organization-scoped references. A Run e
 
 Public lifecycle reads omit `projection_lease_owner`. Projection state, retry counts, timing, and safe failure observations remain available for diagnostics. Worker actors retain `actor_type="worker"` with a null `actor_id`; their process-instance identity and payload `worker_id` stay internal. Public Attempt IDs, Harness Run correlation, and Worker build identity remain available for diagnostics.
 
-Event queries, Native SSE, retained Item reads, and lifecycle Webhook delivery apply the same disclosure boundary to both new and previously retained data. An object-backed Run output exposes only `digest_sha256`, `size_bytes`, `content_type`, and `schema_version` metadata in its output reference; its `object_key` remains internal. These projections do not recursively redact user-authored output fields with matching names. Durable lifecycle facts and retained replay objects keep their original internal references and integrity metadata; public reads do not rewrite them.
+Event queries, Native SSE, retained Item reads, and lifecycle Webhook delivery apply the same disclosure boundary to both new and previously retained data. An object-backed Run output exposes only `digest_sha256`, `size_bytes`, `content_type`, and `schema_version` metadata in its output reference; its `object_key` remains internal. These projections do not recursively redact user-authored output fields with matching names. Durable lifecycle facts and display objects keep their original internal references and integrity metadata; public reads do not rewrite them.
 
 Fact columns through `created_at` are immutable. Projection columns may change as the event is mirrored to Redis but cannot change the fact or authorize a state transition.
 
@@ -206,7 +206,7 @@ Lua atomicity alone provides no continuity guarantee across asynchronous-replica
 
 A committed terminal Run fact owns retirement of unavailable presentation state. Retirement marks surviving metadata incomplete, removes publication admission, and applies the closed-stream retention deadline without repairing history or requiring a valid primary incarnation. Missing event or metadata keys and partial publication cannot prevent cleanup. A surviving stream without metadata receives an incomplete terminal marker. Retirement validates Run identity and never grants an expired or superseded Attempt authority.
 
-If terminal publication exhausts its retry budget, the same durable lifecycle projection remains retryable until retirement succeeds; subsequent claims perform cleanup only. A retirement retry preserves its first expiration deadline, including after a partially applied expiration or lost acknowledgement. Nonterminal abandonment remains recorded in SQL so the terminal fact can account for missing history and retire it. Cleanup failure never changes the authoritative Run outcome or certifies retained replay complete.
+If terminal publication exhausts its retry budget, the same durable lifecycle projection remains retryable until retirement succeeds; subsequent claims perform cleanup only. Retirement fences the source without expiring unpersisted content. After the consumer confirms an explicitly incomplete finalized display snapshot, cleanup starts the retention deadline; retries preserve that deadline, including after partially applied expiration or lost acknowledgement. Nonterminal abandonment remains recorded in SQL so the terminal fact can account for missing history and retire it. Cleanup failure never changes the authoritative Run outcome or certifies retained replay complete.
 
 ## Workspace Events and Best-Effort Notifications
 
@@ -224,7 +224,7 @@ Agent Stream Protocol projection assigns stable Item IDs and emits their changes
 organizations/{organization_id}/runs/{run_id}/display_messages.json
 ```
 
-Each successful publication atomically stores the complete merged representation through one cursor, including the continuation state needed to merge the next event. It uses the [compressed JSON codec](03-storage.md#compressed-json-objects), with `schema-version=1` and `run-id` added to the shared encoding metadata. This is a display schema, distinct from the legacy raw replay schema. The snapshot is a projection checkpoint, never a Harness execution checkpoint.
+Each successful publication atomically stores the complete merged representation through one cursor, including the continuation state needed to merge the next event. It uses the [compressed JSON codec](03-storage.md#compressed-json-objects), with `schema-version=1` and `run-id` added to the shared encoding metadata. The snapshot is a projection checkpoint, never a Harness execution checkpoint.
 
 The following conceptual schema defines the required stored information; the projection schema owns the exact typed Item content and merge-state encoding:
 
@@ -302,15 +302,11 @@ A client recovering display history loads one consistent Item snapshot, replaces
 
 ## Compatibility and Trade-offs
 
-Lifecycle payload versions, Redis presentation-event versions, Thread control signal versions, display snapshot versions, legacy replay versions, Item projection versions, and compressed storage encoding versions are independent. Unknown required versions fail explicitly in their own reader; they do not change Run or attempt interpretation.
+Lifecycle payload versions, Redis presentation-event versions, Thread control signal versions, display snapshot versions, Item projection versions, and compressed storage encoding versions are independent. Unknown required versions fail explicitly in their own reader; they do not change Run or attempt interpretation.
 
 The distinction between the Workspace `seq` cursor and resource-local `resource_seq`, including the latter's per-resource contiguity, is a wire compatibility contract. A deployment cannot renumber retained resource events, reuse a resource sequence, or reinterpret `entity_version` as the recovery cursor.
 
 Using Redis Streams and one replaceable display object keeps high-volume presentation writes out of the relational database. The costs are repeated whole-object writes, bounded consumer backpressure, and an exact replay horizon independent of display-history retention. Callers never mistake either projection for lifecycle or Run-state authority.
-
-Existing immutable `RunReplaySnapshot` objects at `replay/version-1.json` remain read-only compatibility sources. A valid complete legacy snapshot can supply retained Items and exact replay, or initialize the new display representation without losing content; incomplete or missing legacy history cannot be repaired by relabeling it. New display publication does not require creation of a legacy replay object. A corrupt or unsupported new display object fails explicitly rather than silently selecting older legacy content. Rollout updates consumers and removes unconditional trimming writers before relying on cursor-protected retention; old Native and Hosted clients retain explicit gap behavior when only merged history is available.
-
-The read-only legacy schema retains `schema_version="1"`, Run and Thread identity, stream-key digest, first/last stream IDs, closure time, source Attempt IDs, ordered `events` entries containing the original `stream_id` and `RunStreamEvent`, and terminal `items` with their original IDs, kinds, states, parents, source positions, and content. Its compressed encoding, identity validation, complete-source requirement, and create-only publication identity are unchanged. Legacy final Items map to a complete finalized display read; migration cannot invent open merge state or raw observations.
 
 Deployment compatibility covers every publication entry point: mixed versions cannot leave an unfenced writer able to bypass activation. Rollout or drain removes that access before relying on the new guarantee. Recovery is an additive presentation event; Native decoding, Hosted visibility, and replay serialization preserve its identity and ordering together.
 

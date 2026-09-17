@@ -1,12 +1,12 @@
-"""Run-scoped live presentation and retained replay persistence."""
+"""Run-scoped live observations and durable display checkpoints."""
 
+from .display_model import DisplayIntegrityError, RunDisplaySnapshot
+from .display_store import RunDisplayStore
 from .domain import (
     MAX_RUN_STREAM_PAYLOAD_BYTES,
     CompleteRunStream,
     RetainedItem,
     RetainedReplayUnavailable,
-    RetainedRunStreamEvent,
-    RunReplaySnapshot,
     RunStreamClosed,
     RunStreamEntry,
     RunStreamError,
@@ -18,20 +18,17 @@ from .domain import (
 )
 from .projector import LifecycleRunStreamProjector
 from .redis import RedisRunStream, run_stream_key_digest_sha256
-from .replay import RUN_REPLAY_CONTENT_TYPE, RunReplayIntegrityError, RunReplayStore, run_replay_key
 
 __all__ = [
     "MAX_RUN_STREAM_PAYLOAD_BYTES",
-    "RUN_REPLAY_CONTENT_TYPE",
     "CompleteRunStream",
+    "DisplayIntegrityError",
     "LifecycleRunStreamProjector",
     "RedisRunStream",
     "RetainedItem",
     "RetainedReplayUnavailable",
-    "RetainedRunStreamEvent",
-    "RunReplayIntegrityError",
-    "RunReplaySnapshot",
-    "RunReplayStore",
+    "RunDisplaySnapshot",
+    "RunDisplayStore",
     "RunStreamClosed",
     "RunStreamEntry",
     "RunStreamError",
@@ -40,6 +37,5 @@ __all__ = [
     "RunStreamReplayGap",
     "deterministic_item_id",
     "deterministic_run_stream_event_id",
-    "run_replay_key",
     "run_stream_key_digest_sha256",
 ]
