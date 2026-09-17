@@ -514,12 +514,7 @@ function Turn({
   );
   const open = expanded ?? !complete;
   return (
-    <section
-      data-turn-id={id}
-      data-incomplete-turn={missing ? "" : undefined}
-      className={styles.turn}
-      tabIndex={-1}
-    >
+    <section data-turn-id={id} className={styles.turn} tabIndex={-1}>
       <Rows rows={input} threadId={threadId} />
       {(process.length > 0 || missing) && (
         <div className={styles.execution}>

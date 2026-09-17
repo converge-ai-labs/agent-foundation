@@ -1257,7 +1257,126 @@ it.each([false, true])(
   },
 );
 
-it("loads missing turn details only on request instead of draining folded history", async () => {
+it.each([
+  [false, false],
+  [true, false],
+  [false, true],
+])(
+  "loads previous turns through folded pages (short viewport: %s, retry: %s)",
+  async (short, retry) => {
+    const requests: string[] = [];
+    const original = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation(async (request) => {
+      const url = new URL((request as Request).url);
+      if (!url.pathname.endsWith("/transcript")) return original(request);
+      const cursor = url.searchParams.get("cursor") ?? "latest";
+      requests.push(cursor);
+      if (retry && requests.length === 2)
+        return json(
+          { error: { message: "History temporarily unavailable" } },
+          503,
+        );
+      const earlier = cursor === "previous-turn";
+      return json({
+        continuation_id: "initial:one",
+        entries: [
+          {
+            position: earlier ? 3 : cursor === "steps" ? 70 : 100,
+            message_kind: "response",
+            parts: [
+              {
+                kind: cursor === "steps" ? "reasoning" : "assistant",
+                text: earlier
+                  ? "Previous answer"
+                  : cursor === "steps"
+                    ? "Folded intermediate work"
+                    : "Current answer",
+              },
+            ],
+          },
+        ],
+        boundary_entries: [
+          {
+            position: earlier ? 2 : 4,
+            message_kind: "request",
+            parts: [
+              {
+                kind: "user",
+                text: earlier ? "Previous task" : "Current task",
+              },
+            ],
+          },
+        ],
+        turns: [
+          {
+            turn_id: earlier ? "previous" : "current",
+            input_position: earlier ? 2 : 4,
+            end_position: earlier ? 4 : 101,
+            final_position: earlier ? 3 : 100,
+            preview: earlier ? "Previous task" : "Current task",
+            tool_count: earlier ? 0 : 50,
+            steering_count: 0,
+          },
+        ],
+        next_cursor: earlier
+          ? "oldest"
+          : cursor === "steps"
+            ? "previous-turn"
+            : "steps",
+      });
+    });
+    const view = mount(`/threads/${id}`);
+    const reader = view.container.querySelector(
+      '[class*="reading"]',
+    )! as HTMLElement;
+    let top = 0;
+    const height = () =>
+      (short ? 300 : 1400) +
+      (reader.textContent?.includes("Previous answer") ? 900 : 0);
+    Object.defineProperties(reader, {
+      clientHeight: { get: () => 600 },
+      scrollHeight: { get: height },
+      scrollTop: {
+        get: () => top,
+        set: (value: number) => {
+          top = Math.max(0, Math.min(height() - 600, value));
+        },
+      },
+    });
+    await screen.findByText("Current answer");
+    if (!short) {
+      expect(requests).toEqual(["latest"]);
+      fireEvent.wheel(reader, { deltaY: -100 });
+      reader.scrollTop = 40;
+      fireEvent.scroll(reader);
+    }
+    if (retry) {
+      const retryButton = await screen.findByRole("button", {
+        name: "Retry earlier messages",
+      });
+      fireEvent.scroll(reader);
+      await act(async () => {});
+      expect(requests).toEqual(["latest", "steps"]);
+      fireEvent.click(retryButton);
+    }
+    await screen.findByText("Previous answer");
+    const expectedRequests = retry
+      ? ["latest", "steps", "steps", "previous-turn"]
+      : ["latest", "steps", "previous-turn"];
+    expect(requests).toEqual(expectedRequests);
+    expect(top).toBe(short ? 600 : 940);
+    const toggle = screen.getByRole("button", { name: /Execution details/ });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      screen.getByText("Folded intermediate work").closest("[hidden]"),
+    ).not.toBeNull();
+    fireEvent.scroll(reader);
+    await act(async () => {});
+    expect(requests).toEqual(expectedRequests);
+  },
+);
+
+it("loads missing turn details on request when away from the top", async () => {
   const requests: string[] = [];
   const original = vi.mocked(fetch).getMockImplementation()!;
   vi.mocked(fetch).mockImplementation(async (request) => {
@@ -1300,8 +1419,8 @@ it("loads missing turn details only on request instead of draining folded histor
   )! as HTMLElement;
   Object.defineProperties(reader, {
     clientHeight: { get: () => 600 },
-    scrollHeight: { get: () => 300 },
-    scrollTop: { get: () => 0, set: () => {} },
+    scrollHeight: { get: () => 1400 },
+    scrollTop: { get: () => 800, set: () => {} },
   });
   const toggle = await screen.findByRole("button", {
     name: /Execution details/,

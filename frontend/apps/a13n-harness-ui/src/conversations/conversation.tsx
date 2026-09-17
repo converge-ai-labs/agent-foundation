@@ -465,13 +465,13 @@ function Conversation({
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
     // Short/context-only pages need no scroll gesture to fill the viewport.
-    // Missing turn details are loaded explicitly, not drained while collapsed.
+    // Folded execution details do not block reaching an earlier turn. A page
+    // can add only hidden steps, so keep paging while the reader stays at the top.
     if (
       pageReady &&
       element &&
       element.clientHeight > 0 &&
       element.scrollTop < 160 &&
-      !element.querySelector("[data-incomplete-turn]") &&
       history.hasNextPage &&
       !history.isFetching &&
       !history.isFetchNextPageError &&
@@ -607,7 +607,6 @@ function Conversation({
               readingAnchor.current = captureReadingAnchor(element);
               if (
                 element.scrollTop < 160 &&
-                !element.querySelector("[data-incomplete-turn]") &&
                 history.hasNextPage &&
                 !history.isFetching &&
                 !history.isFetchNextPageError &&
