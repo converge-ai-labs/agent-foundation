@@ -23,8 +23,9 @@ def project_display(
     Restarted reads may overlap the committed cursor. Such entries are skipped,
     while ordering and identity violations in the new suffix fail explicitly.
     """
-    if previous.finalized or not previous.complete:
+    if previous.finalized or (not previous.complete and entries):
         raise DisplayIntegrityError("settled or incomplete display cannot consume more events")
+    incomplete_reason = previous.incomplete_reason or incomplete_reason
     items = {item.id: item for item in previous.items}
     attempts = dict.fromkeys(previous.source_run_attempt_ids)
     cursor = previous.cursor

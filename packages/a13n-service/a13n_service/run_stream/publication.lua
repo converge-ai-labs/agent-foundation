@@ -125,8 +125,11 @@ if operation == 'acknowledge_display' then
     redis.call('HSET', metadata, 'durable_cursor', cursor,
         'pending_events', #suffix, 'pending_bytes', bytes, 'length', redis.call('XLEN', stream))
     if request.finalized then
-        redis.call('EXPIRE', stream, request.closed_ttl_seconds)
-        redis.call('EXPIRE', metadata, request.closed_ttl_seconds)
+        local deadline = field('retention_deadline') or
+            tostring(tonumber(redis.call('TIME')[1]) + request.closed_ttl_seconds)
+        redis.call('HSET', metadata, 'retention_deadline', deadline)
+        redis.call('EXPIREAT', stream, deadline)
+        redis.call('EXPIREAT', metadata, deadline)
     end
     redis.call('HDEL', metadata, 'pending')
     return {'ok'}

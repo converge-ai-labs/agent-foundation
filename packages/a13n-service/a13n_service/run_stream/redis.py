@@ -188,6 +188,10 @@ class RedisRunStream:
         """A trusted terminal fact retires unavailable history without reopening it."""
         await self._mutate(organization_id, run_id, "retire", closed_at=_utc(closed_at).isoformat())
 
+    async def release_retired(self, organization_id: str, run_id: str, *, closed_at: datetime) -> None:
+        """Expire an incomplete source only after its finalized display is durable."""
+        await self._mutate(organization_id, run_id, "release_retired", closed_at=_utc(closed_at).isoformat())
+
     async def mark_incomplete(
         self,
         organization_id: str,
@@ -266,7 +270,7 @@ class RedisRunStream:
             "closed_ttl_seconds": self._closed_ttl_seconds,
         }
         try:
-            script = self._retirement_script if operation == "retire" else self._script
+            script = self._retirement_script if operation in {"retire", "release_retired"} else self._script
             deadline = monotonic() + self._backpressure_timeout_seconds
             while True:
                 try:
@@ -312,6 +316,17 @@ class RedisRunStream:
     ) -> RunStreamPage:
         if limit < 1 or limit > 1000:
             raise ValueError("Run Stream read limit must be between 1 and 1000")
+        try:
+            return await self.read_for_display(organization_id, run_id, after_stream_id=after_stream_id, limit=limit)
+        except PublicationUnavailable as error:
+            raise RunStreamReplayGap(retained_floor=None, high_watermark=None) from error
+
+    async def read_for_display(
+        self, organization_id: str, run_id: str, *, after_stream_id: str | None, limit: int
+    ) -> RunStreamPage:
+        """Preserve transient publication errors so consumers never certify a false gap."""
+        if limit < 1 or limit > 1000:
+            raise ValueError("Run Stream read limit must be between 1 and 1000")
         return await self._read(organization_id, run_id, after_stream_id=after_stream_id, limit=limit)
 
     async def _read(
@@ -353,10 +368,7 @@ class RedisRunStream:
     ) -> tuple[dict[str, str], _StreamRows, _StreamRows, _StreamRows]:
         if after_stream_id is not None:
             _parse_stream_id(after_stream_id)
-        try:
-            values = await self._mutate(organization_id, run_id, "read", after=after_stream_id or "", limit=limit)
-        except PublicationUnavailable as error:
-            raise RunStreamReplayGap(retained_floor=None, high_watermark=None) from error
+        values = await self._mutate(organization_id, run_id, "read", after=after_stream_id or "", limit=limit)
         metadata = _metadata(_field_map(values[0]))
         _validate_identity(metadata, organization_id=organization_id, run_id=run_id)
         return metadata, _script_rows(values[1]), _script_rows(values[2]), _script_rows(values[3])
@@ -366,7 +378,7 @@ class RedisRunStream:
             metadata, _, _, rows = await self._read_rows(
                 organization_id, run_id, after_stream_id=None, limit=self._max_events + 1
             )
-        except RunStreamReplayGap as error:
+        except (RunStreamReplayGap, PublicationUnavailable) as error:
             raise RetainedReplayUnavailable("Run Stream continuity is unavailable") from error
         closed_at = metadata.get("closed_at")
         if closed_at is None or metadata.get("trimmed") == "1" or metadata.get("incomplete") == "1":
@@ -388,7 +400,7 @@ class RedisRunStream:
     async def untrimmed_entries(self, organization_id: str, run_id: str) -> tuple[RunStreamEntry, ...]:
         try:
             page = await self._read(organization_id, run_id, after_stream_id=None, limit=self._max_events)
-        except RunStreamReplayGap as error:
+        except (RunStreamReplayGap, PublicationUnavailable) as error:
             raise RetainedReplayUnavailable("Run Stream prefix is incomplete or was trimmed") from error
         return page.items
 
