@@ -585,6 +585,7 @@ it.each(["send", "steer"] as const)(
   async (action) => {
     const draft = new ThreadDraft();
     draft.thinking = false;
+    draft.fast = false;
     draft.doc.getText("text").insert(0, "Use $review $review $unknown");
     draft.status = "Connected";
     draft.receive({
@@ -624,6 +625,7 @@ it.each(["send", "steer"] as const)(
       undefined,
       async () => {
         draft.thinking = "high";
+        draft.fast = true;
         draft.doc
           .getText("text")
           .insert(draft.doc.getText("text").length, " later");
@@ -643,6 +645,8 @@ it.each(["send", "steer"] as const)(
     if (action === "send")
       expect(POST.mock.calls[0][1].body.thinking).toBe(false);
     else expect(POST.mock.calls[0][1].body).not.toHaveProperty("thinking");
+    if (action === "send") expect(POST.mock.calls[0][1].body.fast).toBe(false);
+    else expect(POST.mock.calls[0][1].body).not.toHaveProperty("fast");
     expect(values(draft.doc).prompt).toBe(" later");
   },
 );

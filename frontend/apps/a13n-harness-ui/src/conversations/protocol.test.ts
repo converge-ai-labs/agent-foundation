@@ -297,6 +297,7 @@ it("selects a model for one HTTP admission without changing sticky configuration
         prompt: "Use the alternate model",
         model_id: "model-alternate",
         thinking: "low",
+        fast: true,
       },
     }),
   );
@@ -308,6 +309,7 @@ it("selects a model for one HTTP admission without changing sticky configuration
         prompt: "Continue",
         model_id: "model-fixture",
         thinking: "high",
+        fast: false,
       }),
     }),
   ).rejects.toMatchObject({ status: 400 });
@@ -329,6 +331,10 @@ it("selects a model for one HTTP admission without changing sticky configuration
   );
   expect(inspection.captured?.agent.model_id).toBe("model-alternate");
   expect(inspection.captured?.agent.thinking_summary).toBe("Low");
+  expect(inspection.captured?.agent.fast).toBe("on");
+  expect(
+    catalog.models?.find((item) => item.model_id === "model-alternate")?.fast,
+  ).toMatchObject({ supported: true, state: "default" });
   expect(
     catalog.models
       ?.find((item) => item.model_id === "model-alternate")

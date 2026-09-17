@@ -153,6 +153,7 @@ export async function submitDraft(
   )
     return;
   const thinking = draft.thinking;
+  const fast = draft.fast;
   // Own the shared submission state before any asynchronous preparation so
   // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
   draft.submission = { kind: "pending", action };
@@ -197,6 +198,7 @@ export async function submitDraft(
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
             ...(thinking != null ? { thinking } : {}),
+            ...(fast != null ? { fast } : {}),
           },
         }),
       );
@@ -320,7 +322,7 @@ export function Composer({
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
   onReviewOutcome?: () => void;
-  controls?: ReactNode;
+  controls?: (expanded: boolean) => ReactNode;
   leadingControls?: ReactNode;
   modelId?: string;
 }) {
@@ -987,9 +989,7 @@ export function Composer({
             >
               <DotsThree />
             </Button>
-            <div className={styles.composerOptions} data-open={mobileOptions}>
-              {controls}
-            </div>
+            {controls?.(mobileOptions)}
             {busy && hasInput && (
               <Button
                 variant="ghost"

@@ -120,13 +120,15 @@
   }
 }
 
-.runChoices {
+.runChoices,
+.secondaryChoices {
   display: flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
   min-width: 0;
   max-width: 100%;
+  flex-wrap: wrap;
 }
 .runChoice {
   display: flex;
@@ -147,10 +149,18 @@
 .runChoice > button:hover {
   background: var(--a13n-hover);
 }
-@media (max-width: 600px) {
+@media (max-width: 700px) {
   .runChoices {
+    justify-content: flex-start;
+    padding: 4px 8px;
+  }
+  .secondaryChoices[data-expanded="false"] {
+    display: none;
+  }
+  .secondaryChoices {
     display: grid;
     grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    justify-items: start;
     width: 100%;
   }
   .runChoice {

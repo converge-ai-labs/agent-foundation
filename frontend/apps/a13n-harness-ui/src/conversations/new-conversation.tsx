@@ -374,22 +374,30 @@ function NewConversation({
             leadingControls={
               <EnvironmentMode environment={effectiveEnvironment} />
             }
-            controls={
+            controls={(expanded) => (
               <ThreadRunChoices
+                expanded={expanded}
                 catalog={selectors.data}
                 agentId={defaults.agent_id ?? ""}
                 defaultAgentId={effectiveAgent?.agent_id}
                 modelId={composerDraft.modelId}
                 thinking={composerDraft.thinking}
+                fast={composerDraft.fast}
+                onFastChange={(value) => {
+                  composerDraft.fast = value;
+                  composerDraft.notify();
+                }}
                 disabled={choicesDisabled}
                 onAgentChange={(value) => {
                   change({ agent_id: value || null });
                   composerDraft.thinking = null;
+                  composerDraft.fast = null;
                   composerDraft.notify();
                 }}
                 onModelChange={(value) => {
                   composerDraft.modelId = value;
                   composerDraft.thinking = null;
+                  composerDraft.fast = null;
                   composerDraft.notify();
                 }}
                 onThinkingChange={(value) => {
@@ -397,7 +405,7 @@ function NewConversation({
                   composerDraft.notify();
                 }}
               />
-            }
+            )}
           />
           {drafts.error && <p role="alert">{drafts.error}</p>}
           {attachmentSelections(composerDraft.doc).some(

@@ -1572,6 +1572,8 @@ export interface components {
             model_id: string;
             /** Thinking Summary */
             thinking_summary?: string | null;
+            /** @default default */
+            fast?: components["schemas"]["FastState"];
         };
         /** CapturedConfiguration */
         CapturedConfiguration: {
@@ -2275,6 +2277,16 @@ export interface components {
             /** Retry Hint */
             retry_hint?: string | null;
         };
+        /** FastControl */
+        FastControl: {
+            /** Supported */
+            supported: boolean;
+            state: components["schemas"]["FastState"];
+            /** Reason */
+            reason?: string | null;
+        };
+        /** @enum {string} */
+        FastState: "on" | "off" | "default";
         /** FileCapture */
         FileCapture: {
             attachment: components["schemas"]["ThreadAttachment"];
@@ -2843,6 +2855,7 @@ export interface components {
             /** Route */
             route: string;
             thinking?: components["schemas"]["ThinkingControl"] | null;
+            fast?: components["schemas"]["FastControl"] | null;
         };
         /** ModelToolChoice */
         ModelToolChoice: {
@@ -4858,6 +4871,8 @@ export interface components {
             /** Model Id */
             model_id?: string | null;
             thinking?: components["schemas"]["ThinkingSelection"] | null;
+            /** Fast */
+            fast?: boolean | null;
         };
         /** RootSteerRequest */
         RootSteerRequest: {

@@ -239,6 +239,7 @@ async def test_status_prioritizes_fast_and_cumulative_tokens_on_narrow_screens(
 
     shell.status.state = "ready"
     shell.status.service_tier = tier
+    shell.status.fast = "on" if tier == "priority" else "off" if tier in {"default", "flex"} else "default"
     shell.status.context_tokens = 1200
     shell.status.context_window = 350000
     if tokens is not None:

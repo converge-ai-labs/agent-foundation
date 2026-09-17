@@ -64,6 +64,7 @@ function Choices() {
   const [modelId, setModelId] = useState<string>();
   const [thinking, setThinking] =
     useState<Schema<"SubmitRequest">["thinking"]>();
+  const [fast, setFast] = useState<boolean | null>(null);
   return (
     <ThreadRunChoices
       catalog={catalog}
@@ -71,6 +72,8 @@ function Choices() {
       defaultAgentId="agent"
       modelId={modelId}
       thinking={thinking}
+      fast={fast}
+      onFastChange={setFast}
       disabled={false}
       onAgentChange={vi.fn()}
       onModelChange={setModelId}

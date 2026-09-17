@@ -1746,17 +1746,17 @@ async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
             await backend.execute(renderer, prompt="Standard please")
             thread_id = backend.thread_id
             version = (await app.get_thread(thread_id)).thread.configuration.version
-            assert "Fast (priority)" in await backend.fast(None)
+            assert "Fast · On" in await backend.fast(None)
             await backend.thinking("medium")
             assert backend.overrides.thinking == "medium"
-            assert backend.overrides.service_tier == "priority"
+            assert backend.overrides.fast is True
             await backend.execute(renderer, prompt="Priority please")
             await backend.fast("reset")
-            assert backend.overrides.service_tier is None
+            assert backend.overrides.fast is None
             assert backend.status.service_tier == "priority"  # Reset is not an off switch.
             await backend.fast("off")
             await backend.resume(thread_id)
-            assert backend.overrides.service_tier == "default"
+            assert backend.overrides.fast is False
             assert backend.status.service_tier == "default"
             assert (await app.get_thread(thread_id)).thread.configuration.version == version
             restarted = SessionBackend(app, CliRequest(thread_id=thread_id), tmp_path, Status())
@@ -1768,9 +1768,9 @@ async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
                 await backend.fast("invalid")
             assert backend.overrides == before
             await backend.new()
-            assert backend.overrides.service_tier == "default"
+            assert backend.overrides.fast is False
             await backend.models("default")
-            assert backend.overrides.service_tier is None
+            assert backend.overrides.fast is None
             assert backend.status.service_tier == "priority"
         finally:
             renderer.transcript.close()

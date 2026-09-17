@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { useTransport } from "../transport/context";
+import { result } from "../transport/client";
 import {
   Button,
   Popover,
@@ -38,6 +41,32 @@ export function ComposerStatus({
     busy ||
     operation?.status === "running" ||
     operation?.status === "preparing";
+  const { client } = useTransport();
+  const inspection = useQuery({
+    queryKey: ["thread", threadId, "configuration"],
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/threads/{thread_id}/configuration", {
+          params: { path: { thread_id: threadId } },
+          signal,
+        }),
+      ),
+  });
+  const captured = inspection.data;
+  const fast =
+    active &&
+    (captured?.capture_source !== "active_operation" ||
+      captured.receipt_id !== operation?.receipt.receipt_id)
+      ? undefined
+      : captured?.captured?.agent.fast;
+  const fastLabel =
+    fast === "on"
+      ? "On"
+      : fast === "off"
+        ? "Off"
+        : fast === "default"
+          ? "Default"
+          : "—";
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
   const [now, setNow] = useState(Date.now);
@@ -56,6 +85,7 @@ export function ComposerStatus({
   );
   const stale = !!(
     usage.error ||
+    inspection.error ||
     context.error ||
     observed.error ||
     activity.error
@@ -78,6 +108,9 @@ export function ComposerStatus({
           </span>
           <span>
             Time <strong>{elapsedTime(operation, now)}</strong>
+          </span>
+          <span title="Captured Run request setting, not guaranteed provider speed. Changing the toggle only affects the next run.">
+            Fast <strong>{fastLabel}</strong>
           </span>
           {stale && <span className={styles.stale}>Update unavailable</span>}
         </PopoverTrigger>
@@ -104,6 +137,13 @@ export function ComposerStatus({
               Cache-read tokens / (input + output tokens), matching the CLI
               status bar. Root agent only.
             </dd>
+            <dt>Fast</dt>
+            <dd>
+              {fastLabel}. Captured request setting for the active or saved Run,
+              not confirmation of provider speed. Default leaves the choice to
+              the Model or provider. The composer toggle applies to the next
+              run.
+            </dd>
             <dt>Time</dt>
             <dd>
               Elapsed time for the current or latest operation. Unavailable
@@ -112,7 +152,11 @@ export function ComposerStatus({
           </dl>
           <ErrorNotice
             error={
-              usage.error || context.error || observed.error || activity.error
+              usage.error ||
+              context.error ||
+              inspection.error ||
+              observed.error ||
+              activity.error
             }
           />
           <Button
@@ -122,6 +166,7 @@ export function ComposerStatus({
             onClick={() => {
               void usage.refetch();
               void context.refetch();
+              void inspection.refetch();
               if (receipt) void observed.refetch();
               else void activity.refetch();
             }}

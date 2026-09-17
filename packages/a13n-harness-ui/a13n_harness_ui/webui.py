@@ -217,6 +217,7 @@ class SteerRequest(SurfaceModel):
 class SubmitRequest(PromptRequest):
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     thinking: ThinkingSelection | None = None
+    fast: bool | None = None
 
 
 class RootSteerRequest(PromptRequest):
@@ -1326,7 +1327,9 @@ def create_webui(
                 thread_id=thread_id,
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
-                model_overrides=RunModelOverrides(model_id=document.model_id, thinking=document.thinking),
+                model_overrides=RunModelOverrides(
+                    model_id=document.model_id, thinking=document.thinking, fast=document.fast
+                ),
                 skill_references=document.skill_references,
                 input_surface="webui",
             )

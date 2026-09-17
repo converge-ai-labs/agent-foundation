@@ -75,6 +75,7 @@ function Conversation({
     },
     onSuccess: (updated) => {
       draft.thinking = null;
+      draft.fast = null;
       draft.notify();
       queries.setQueryData<Schema<"ThreadDetail">>(
         ["thread", threadId, "detail"],
@@ -679,12 +680,18 @@ function Conversation({
                 )}
               />
             }
-            controls={
+            controls={(expanded) => (
               <ThreadRunChoices
+                expanded={expanded}
                 catalog={selectors.data}
                 agentId={thread?.configuration.agent_source.id ?? ""}
                 modelId={draft.modelId}
                 thinking={draft.thinking}
+                fast={draft.fast}
+                onFastChange={(value) => {
+                  draft.fast = value;
+                  draft.notify();
+                }}
                 onThinkingChange={(value) => {
                   draft.thinking = value;
                   draft.notify();
@@ -700,10 +707,11 @@ function Conversation({
                 onModelChange={(value) => {
                   draft.modelId = value;
                   draft.thinking = null;
+                  draft.fast = null;
                   draft.notify();
                 }}
               />
-            }
+            )}
             profile={profile}
             unauthorized={unauthorized}
             reconcile={reconcile}

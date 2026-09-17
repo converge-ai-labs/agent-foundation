@@ -23,6 +23,7 @@ from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, BUILTIN_SKILLS_SOURCE_ID
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.errors import AppStateError, ThreadError
+from a13n_harness_ui.model_fast import describe_fast
 from a13n_harness_ui.model_thinking import describe_thinking
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import LocalStore, StoredContinuation
@@ -468,6 +469,7 @@ class TerminalProjectionService:
                     name=item.name,
                     route=item.route,
                     thinking=describe_thinking(item.route, item.settings),
+                    fast=describe_fast(item.route, item.settings),
                 )
                 for item in sorted(source.models.values(), key=lambda item: (item.name.casefold(), item.id))
             ),

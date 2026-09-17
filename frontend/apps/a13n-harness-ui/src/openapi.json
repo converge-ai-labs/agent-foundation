@@ -4907,6 +4907,10 @@
               }
             ],
             "title": "Thinking Summary"
+          },
+          "fast": {
+            "$ref": "#/components/schemas/FastState",
+            "default": "default"
           }
         },
         "additionalProperties": false,
@@ -6854,6 +6858,43 @@
         ],
         "title": "FailureView"
       },
+      "FastControl": {
+        "properties": {
+          "supported": {
+            "type": "boolean",
+            "title": "Supported"
+          },
+          "state": {
+            "$ref": "#/components/schemas/FastState"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "supported",
+          "state"
+        ],
+        "title": "FastControl"
+      },
+      "FastState": {
+        "type": "string",
+        "enum": [
+          "on",
+          "off",
+          "default"
+        ]
+      },
       "FileCapture": {
         "properties": {
           "attachment": {
@@ -8344,6 +8385,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ThinkingControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "fast": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FastControl"
               },
               {
                 "type": "null"
@@ -14118,6 +14169,17 @@
                 "type": "null"
               }
             ]
+          },
+          "fast": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fast"
           }
         },
         "title": "SubmitRequest",
