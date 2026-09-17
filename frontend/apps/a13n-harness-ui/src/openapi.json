@@ -969,15 +969,51 @@
         }
       }
     },
-    "/api/setup/model-options": {
+    "/api/models/choices": {
+      "get": {
+        "summary": "Model Choices",
+        "operationId": "model_choices_api_models_choices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelChoices"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/catalog": {
+      "get": {
+        "summary": "Model Catalog",
+        "operationId": "model_catalog_api_models_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogSnapshot"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/options": {
       "post": {
         "summary": "Model Options",
-        "operationId": "model_options_api_setup_model_options_post",
+        "operationId": "model_options_api_models_options_post",
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/SetupModelOptionsRequest"
+                "$ref": "#/components/schemas/ModelOptionsRequest"
               }
             }
           },
@@ -989,7 +1025,35 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SetupModelOptions"
+                  "$ref": "#/components/schemas/ModelOptions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/models/prepare": {
+      "post": {
+        "summary": "Prepare Model",
+        "operationId": "prepare_model_api_models_prepare_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelRecipeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelRecipe"
                 }
               }
             }
@@ -4654,6 +4718,14 @@
         ],
         "title": "ApprovalRequestView"
       },
+      "AuthenticationKind": {
+        "type": "string",
+        "enum": [
+          "api_key",
+          "codex_subscription",
+          "grok_subscription"
+        ]
+      },
       "Availability": {
         "type": "string",
         "enum": [
@@ -4902,6 +4974,86 @@
         "maxLength": 200,
         "minLength": 1,
         "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
+      },
+      "CatalogModel": {
+        "properties": {
+          "connection": {
+            "type": "string",
+            "title": "Connection"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended",
+            "default": false
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "bundled",
+              "directory"
+            ],
+            "title": "Source",
+            "default": "bundled"
+          },
+          "released": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Released"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "input_modalities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Input Modalities",
+            "default": []
+          },
+          "supports_tools": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supports Tools"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "connection",
+          "model_id",
+          "name"
+        ],
+        "title": "CatalogModel"
       },
       "CatalogReference": {
         "properties": {
@@ -5469,6 +5621,21 @@
         ],
         "title": "ChildToolCallView"
       },
+      "CodexSubscriptionAuthentication": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "codex_subscription",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "CodexSubscriptionAuthentication"
+      },
       "CommentAuthor": {
         "additionalProperties": false,
         "properties": {
@@ -5937,6 +6104,30 @@
         "type": "object",
         "title": "ContentMetadata",
         "description": "Client presentation conventions plus opaque caller-owned metadata.\n\nMetadata is not model instruction or authorization. Clients may resolve\nreferences such as image_object_id through their own application services."
+      },
+      "ContextChoice": {
+        "properties": {
+          "value": {
+            "type": "integer",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label",
+          "description"
+        ],
+        "title": "ContextChoice"
       },
       "ContextUsageView": {
         "properties": {
@@ -7263,6 +7454,21 @@
         ],
         "title": "GitStatus"
       },
+      "GrokSubscriptionAuthentication": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "grok_subscription",
+            "title": "Kind"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "GrokSubscriptionAuthentication"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -7641,6 +7847,27 @@
         ],
         "title": "MarkdownSubagentSource"
       },
+      "ModelAuthentication": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/ApiKeyAuthentication"
+          },
+          {
+            "$ref": "#/components/schemas/CodexSubscriptionAuthentication"
+          },
+          {
+            "$ref": "#/components/schemas/GrokSubscriptionAuthentication"
+          }
+        ],
+        "discriminator": {
+          "propertyName": "kind",
+          "mapping": {
+            "api_key": "#/components/schemas/ApiKeyAuthentication",
+            "codex_subscription": "#/components/schemas/CodexSubscriptionAuthentication",
+            "grok_subscription": "#/components/schemas/GrokSubscriptionAuthentication"
+          }
+        }
+      },
       "ModelCapability": {
         "type": "string",
         "enum": [
@@ -7651,8 +7878,331 @@
         "title": "ModelCapability",
         "description": "Harness-owned capabilities of the active Agent model."
       },
+      "ModelCatalogSnapshot": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogModel"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "bundled",
+              "ready",
+              "stale",
+              "unavailable"
+            ],
+            "title": "Status",
+            "default": "bundled"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ModelCatalogSnapshot"
+      },
       "ModelCharacteristics": {
         "$ref": "#/components/schemas/HarnessModelCharacteristics"
+      },
+      "ModelChoice": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "ModelChoice"
+      },
+      "ModelChoices": {
+        "properties": {
+          "connections": {
+            "items": {
+              "$ref": "#/components/schemas/ModelConnection"
+            },
+            "type": "array",
+            "title": "Connections"
+          },
+          "session_affinity_presets": {
+            "items": {
+              "$ref": "#/components/schemas/SessionAffinityPreset"
+            },
+            "type": "array",
+            "title": "Session Affinity Presets",
+            "default": [
+              {
+                "label": "LiteLLM",
+                "header": "x-litellm-session-id",
+                "description": "Requires session affinity to be enabled on the gateway."
+              },
+              {
+                "label": "Conversation ID",
+                "header": "x-conversation-id",
+                "description": "For gateways configured to route by this header; configure the routing rule first."
+              },
+              {
+                "label": "Bifrost (API-key affinity)",
+                "header": "x-bf-session-id",
+                "description": "API-key affinity only; does not guarantee weighted provider or target pinning."
+              },
+              {
+                "label": "X-Session-ID (legacy / custom)",
+                "header": "x-session-id",
+                "description": "Use only when your gateway is configured to recognize this header."
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ModelChoices"
+      },
+      "ModelConnection": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/AuthenticationKind"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url",
+            "default": ""
+          },
+          "credential_env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential Env"
+          },
+          "supports_base_url": {
+            "type": "boolean",
+            "title": "Supports Base Url",
+            "default": false
+          },
+          "supports_session_affinity": {
+            "type": "boolean",
+            "title": "Supports Session Affinity",
+            "default": false
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/ModelChoice"
+            },
+            "type": "array",
+            "title": "Models"
+          },
+          "default_model": {
+            "type": "string",
+            "title": "Default Model"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "label",
+          "provider",
+          "authentication",
+          "models",
+          "default_model"
+        ],
+        "title": "ModelConnection"
+      },
+      "ModelOptions": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "route": {
+            "type": "string",
+            "title": "Route"
+          },
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/ModelSettingsChoice"
+            },
+            "type": "array",
+            "title": "Presets"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "known_context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Known Context Window"
+          },
+          "context_choices": {
+            "items": {
+              "$ref": "#/components/schemas/ContextChoice"
+            },
+            "type": "array",
+            "title": "Context Choices",
+            "default": []
+          },
+          "characteristics": {
+            "$ref": "#/components/schemas/ModelCharacteristics"
+          },
+          "known_capabilities": {
+            "type": "boolean",
+            "title": "Known Capabilities"
+          },
+          "supports_service_tier": {
+            "type": "boolean",
+            "title": "Supports Service Tier"
+          },
+          "native_tools": {
+            "items": {
+              "$ref": "#/components/schemas/ModelToolChoice"
+            },
+            "type": "array",
+            "title": "Native Tools",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "route",
+          "presets",
+          "context_window",
+          "known_context_window",
+          "characteristics",
+          "known_capabilities",
+          "supports_service_tier"
+        ],
+        "title": "ModelOptions"
+      },
+      "ModelRecipe": {
+        "properties": {
+          "route": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 3,
+            "title": "Route"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/ModelAuthentication"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Settings"
+          },
+          "model_configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Model Configuration"
+          },
+          "model_characteristics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelCharacteristics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "route",
+          "authentication"
+        ],
+        "title": "ModelRecipe"
+      },
+      "ModelSettingsChoice": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Settings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label",
+          "description",
+          "settings"
+        ],
+        "title": "ModelSettingsChoice"
       },
       "ModelSummary": {
         "properties": {
@@ -7692,6 +8242,64 @@
           "route"
         ],
         "title": "ModelSummary"
+      },
+      "ModelToolChoice": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "recommended": {
+            "type": "boolean",
+            "title": "Recommended"
+          },
+          "capability": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capability"
+          },
+          "replaces_host_operation": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "search",
+                  "scrape"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replaces Host Operation"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label",
+          "description",
+          "recommended"
+        ],
+        "title": "ModelToolChoice"
       },
       "NotePage": {
         "properties": {
@@ -9224,194 +9832,6 @@
         ],
         "title": "SessionAffinityPreset"
       },
-      "SetupApiKeyModel": {
-        "properties": {
-          "route": {
-            "type": "string",
-            "maxLength": 512,
-            "minLength": 1,
-            "title": "Route"
-          },
-          "authentication": {
-            "$ref": "#/components/schemas/ApiKeyAuthentication"
-          },
-          "settings": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "type": "object",
-            "title": "Settings"
-          },
-          "model_configuration": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "type": "object",
-            "title": "Model Configuration"
-          },
-          "model_characteristics": {
-            "$ref": "#/components/schemas/ModelCharacteristics"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "route",
-          "authentication"
-        ],
-        "title": "SetupApiKeyModel"
-      },
-      "SetupApiProvider": {
-        "properties": {
-          "value": {
-            "type": "string",
-            "title": "Value"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "base_url": {
-            "type": "string",
-            "title": "Base Url"
-          },
-          "models": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Models"
-          },
-          "supports_session_affinity": {
-            "type": "boolean",
-            "title": "Supports Session Affinity",
-            "default": true
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "value",
-          "label",
-          "base_url",
-          "models"
-        ],
-        "title": "SetupApiProvider"
-      },
-      "SetupChoices": {
-        "properties": {
-          "defaults": {
-            "$ref": "#/components/schemas/SetupSelection"
-          },
-          "subscription_models": {
-            "additionalProperties": {
-              "items": {
-                "$ref": "#/components/schemas/SetupModelChoice"
-              },
-              "type": "array"
-            },
-            "type": "object",
-            "title": "Subscription Models"
-          },
-          "api_providers": {
-            "items": {
-              "$ref": "#/components/schemas/SetupApiProvider"
-            },
-            "type": "array",
-            "title": "Api Providers"
-          },
-          "session_affinity_presets": {
-            "items": {
-              "$ref": "#/components/schemas/SessionAffinityPreset"
-            },
-            "type": "array",
-            "title": "Session Affinity Presets",
-            "default": [
-              {
-                "label": "LiteLLM",
-                "header": "x-litellm-session-id",
-                "description": "Requires session affinity to be enabled on the gateway."
-              },
-              {
-                "label": "Conversation ID",
-                "header": "x-conversation-id",
-                "description": "For gateways configured to route by this header; configure the routing rule first."
-              },
-              {
-                "label": "Bifrost (API-key affinity)",
-                "header": "x-bf-session-id",
-                "description": "API-key affinity only; does not guarantee weighted provider or target pinning."
-              },
-              {
-                "label": "X-Session-ID (legacy / custom)",
-                "header": "x-session-id",
-                "description": "Use only when your gateway is configured to recognize this header."
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "defaults",
-          "subscription_models",
-          "api_providers"
-        ],
-        "title": "SetupChoices"
-      },
-      "SetupModelChoice": {
-        "properties": {
-          "value": {
-            "type": "string",
-            "title": "Value"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "value",
-          "label"
-        ],
-        "title": "SetupModelChoice"
-      },
-      "SetupModelOptions": {
-        "properties": {
-          "presets": {
-            "items": {
-              "$ref": "#/components/schemas/SetupSettingsChoice"
-            },
-            "type": "array",
-            "title": "Presets"
-          },
-          "context_window": {
-            "type": "integer",
-            "title": "Context Window"
-          },
-          "known_context_window": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Known Context Window"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "presets",
-          "context_window",
-          "known_context_window"
-        ],
-        "title": "SetupModelOptions"
-      },
       "SetupPreview": {
         "properties": {
           "files": {
@@ -9535,22 +9955,10 @@
       },
       "SetupSelection": {
         "properties": {
-          "providers": {
-            "items": {
-              "type": "string",
-              "enum": [
-                "codex",
-                "grok"
-              ]
-            },
-            "type": "array",
-            "title": "Providers",
-            "default": []
-          },
-          "api_key_model": {
+          "model": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SetupApiKeyModel"
+                "$ref": "#/components/schemas/ModelRecipe"
               },
               {
                 "type": "null"
@@ -9674,73 +10082,6 @@
               }
             ],
             "title": "Include Default Subagents"
-          },
-          "codex_model": {
-            "type": "string",
-            "enum": [
-              "gpt-5.6-terra",
-              "gpt-5.6-sol",
-              "gpt-6-astra"
-            ],
-            "title": "Codex Model",
-            "default": "gpt-5.6-sol"
-          },
-          "grok_model": {
-            "type": "string",
-            "enum": [
-              "grok-4.6",
-              "grok-4.5",
-              "grok-4.20-0309-reasoning"
-            ],
-            "title": "Grok Model",
-            "default": "grok-4.6"
-          },
-          "codex_thinking": {
-            "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high",
-              "xhigh"
-            ],
-            "title": "Codex Thinking",
-            "default": "high"
-          },
-          "codex_service_tier": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "priority",
-                  "default"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Codex Service Tier"
-          },
-          "codex_context_window": {
-            "type": "integer",
-            "maximum": 872000.0,
-            "minimum": 16000.0,
-            "title": "Codex Context Window",
-            "default": 350000
-          },
-          "proactive_context_management_threshold": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Proactive Context Management Threshold",
-            "default": 0.65
-          },
-          "compact_threshold": {
-            "type": "number",
-            "maximum": 1.0,
-            "exclusiveMinimum": 0.0,
-            "title": "Compact Threshold",
-            "default": 0.9
           }
         },
         "additionalProperties": false,
@@ -9749,38 +10090,6 @@
           "environment_profile"
         ],
         "title": "SetupSelection"
-      },
-      "SetupSettingsChoice": {
-        "properties": {
-          "value": {
-            "type": "string",
-            "title": "Value"
-          },
-          "label": {
-            "type": "string",
-            "title": "Label"
-          },
-          "description": {
-            "type": "string",
-            "title": "Description"
-          },
-          "settings": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "type": "object",
-            "title": "Settings"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "value",
-          "label",
-          "description",
-          "settings"
-        ],
-        "title": "SetupSettingsChoice"
       },
       "SetupStatus": {
         "properties": {
@@ -9798,8 +10107,8 @@
             "title": "Draft Scope",
             "default": ""
           },
-          "choices": {
-            "$ref": "#/components/schemas/SetupChoices"
+          "defaults": {
+            "$ref": "#/components/schemas/SetupSelection"
           },
           "configuration_path": {
             "type": "string",
@@ -12646,34 +12955,127 @@
         "title": "GitCaptureRequest",
         "type": "object"
       },
-      "SetupModelOptionsRequest": {
+      "ModelOptionsRequest": {
         "properties": {
-          "provider": {
+          "connection": {
             "type": "string",
             "maxLength": 128,
             "minLength": 1,
-            "title": "Provider"
+            "title": "Connection"
           },
           "model_id": {
             "type": "string",
-            "maxLength": 512,
+            "maxLength": 480,
             "minLength": 1,
             "title": "Model Id"
           },
           "base_url": {
-            "type": "string",
-            "maxLength": 4096,
-            "title": "Base Url",
-            "default": ""
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "provider",
+          "connection",
           "model_id"
         ],
-        "title": "SetupModelOptionsRequest"
+        "title": "ModelOptionsRequest"
+      },
+      "ModelRecipeRequest": {
+        "properties": {
+          "connection": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Connection"
+          },
+          "model_id": {
+            "type": "string",
+            "maxLength": 480,
+            "minLength": 1,
+            "title": "Model Id"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "authentication": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelAuthentication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settings"
+          },
+          "model_configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Model Configuration"
+          },
+          "model_characteristics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelCharacteristics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "connection",
+          "model_id"
+        ],
+        "title": "ModelRecipeRequest"
       },
       "SetupApplyRequest": {
         "properties": {

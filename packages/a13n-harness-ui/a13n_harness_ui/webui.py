@@ -70,6 +70,14 @@ from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, Summary
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
+from a13n_harness_ui.model_authoring import (
+    ModelChoices,
+    ModelOptions,
+    ModelOptionsRequest,
+    ModelRecipe,
+    ModelRecipeRequest,
+)
+from a13n_harness_ui.model_catalog import ModelCatalogSnapshot
 from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.output_comment_models import (
     CommentEdit,
@@ -88,7 +96,7 @@ from a13n_harness_ui.page_presence import (
     PresenceFrame,
     PresenceReport,
 )
-from a13n_harness_ui.setup import EnvironmentReadiness, SetupModelOptions, SetupModelOptionsRequest, SetupStatus
+from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage.usage import ThreadUsageView
@@ -832,11 +840,21 @@ def create_webui(
     async def setup(rediscover: bool = False) -> SetupStatus:
         return await app().setup_status(rediscover=rediscover)
 
-    @server.post(
-        "/api/setup/model-options", response_model=SetupModelOptions, openapi_extra=_body(SetupModelOptionsRequest)
-    )
-    async def model_options(request: Request) -> SetupModelOptions:
-        return await app().setup_model_options(await _document(request, SetupModelOptionsRequest))
+    @server.get("/api/models/choices", response_model=ModelChoices)
+    async def model_choices() -> ModelChoices:
+        return await app().model_choices()
+
+    @server.get("/api/models/catalog", response_model=ModelCatalogSnapshot)
+    async def model_catalog() -> ModelCatalogSnapshot:
+        return await app().model_catalog()
+
+    @server.post("/api/models/options", response_model=ModelOptions, openapi_extra=_body(ModelOptionsRequest))
+    async def model_options(request: Request) -> ModelOptions:
+        return await app().model_options(await _document(request, ModelOptionsRequest))
+
+    @server.post("/api/models/prepare", response_model=ModelRecipe, openapi_extra=_body(ModelRecipeRequest))
+    async def prepare_model(request: Request) -> ModelRecipe:
+        return await app().prepare_model(await _document(request, ModelRecipeRequest))
 
     @server.post("/api/setup/preview", response_model=SetupPreview, openapi_extra=_body(SetupSelection))
     async def preview(request: Request) -> SetupPreview:

@@ -141,6 +141,16 @@ from a13n_harness_ui.model_accounts import (
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus, ApiKeyStore
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginSessions, LoginStatus
 from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, ResetRequest, ResetResult
+from a13n_harness_ui.model_authoring import (
+    ModelChoices,
+    ModelOptions,
+    ModelOptionsRequest,
+    ModelRecipe,
+    ModelRecipeRequest,
+    model_options,
+    prepare_model,
+)
+from a13n_harness_ui.model_catalog import ModelCatalog, ModelCatalogSnapshot
 from a13n_harness_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
 from a13n_harness_ui.observation import open_observation
 from a13n_harness_ui.output_comment_models import (
@@ -172,12 +182,9 @@ from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.settings import HarnessUiSettings
 from a13n_harness_ui.setup import (
     EnvironmentReadiness,
-    SetupModelOptions,
-    SetupModelOptionsRequest,
     SetupProvider,
     SetupStatus,
     preflight_environment,
-    setup_model_options,
 )
 from a13n_harness_ui.shared_drafts import DraftCommand, SharedDraft
 from a13n_harness_ui.storage import (
@@ -331,6 +338,7 @@ class HarnessUiApp:
         self._settings = settings
         self._store = store
         self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
+        self._model_catalog = ModelCatalog()
         self._logins: LoginSessions | None = None
         self._configuration_path = configuration_path
         self._content_plugin_root = store.layout.content_plugins
@@ -1870,9 +1878,21 @@ class HarnessUiApp:
                 diagnostic=None if self._candidate_error is None else str(self._candidate_error),
             )
 
-    async def setup_model_options(self, request: SetupModelOptionsRequest) -> SetupModelOptions:
+    async def model_choices(self) -> ModelChoices:
         async with self._operation():
-            return setup_model_options(request)
+            return ModelChoices()
+
+    async def model_catalog(self) -> ModelCatalogSnapshot:
+        async with self._operation():
+            return await self._model_catalog.read()
+
+    async def model_options(self, request: ModelOptionsRequest) -> ModelOptions:
+        async with self._operation():
+            return await to_thread.run_sync(model_options, request)
+
+    async def prepare_model(self, request: ModelRecipeRequest) -> ModelRecipe:
+        async with self._operation():
+            return await to_thread.run_sync(prepare_model, request)
 
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
         async with self._operation(), self._configuration_lock:

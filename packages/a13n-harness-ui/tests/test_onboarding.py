@@ -187,7 +187,7 @@ async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cance
 
 
 @pytest.mark.anyio
-async def test_missing_account_requires_external_login_and_allows_retry(tmp_path: Path) -> None:
+async def test_missing_account_offers_explicit_login_and_allows_configuring_later(tmp_path: Path) -> None:
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
     answers = deque(["codex", "later", "gpt-5.6-sol", "", "", "full-control"])
     asked = []
@@ -195,7 +195,7 @@ async def test_missing_account_requires_external_login_and_allows_retry(tmp_path
     async def ask(question, selection):
         asked.append(question.text)
         if question.text == "Connect Codex":
-            assert [choice.value for choice in selection.choices] == ["retry", "later"]
+            assert [choice.value for choice in selection.choices] == ["device", "browser", "retry", "later"]
         return answers.popleft()
 
     async def unexpected(request):
@@ -219,10 +219,10 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
             "api",
             "openai-responses",
             "https://api.openai.com/v1",
-            "off",
+            "new",
             "env:TEST_KEY",
             "gpt-test",
-            "high",
+            "default",
             "",
             "",
             "full-control",
@@ -250,7 +250,7 @@ def test_custom_settings_are_optional_and_connection_change_clears_stale_values(
     for value in ("on", "all", "extended", "low", "", "no", "be concise", "full-control"):
         wizard.accept(value)
     assert wizard.question is None
-    assert wizard.selection("/tmp")["codex_context_window"] == 872000
+    assert wizard.selection("/tmp")["model"]["model_characteristics"]["context_window_tokens"] == 872000
     while wizard.history:
         assert wizard.back()
     wizard.accept("api")
@@ -543,7 +543,7 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
                     "api",
                     "anthropic",
                     "https://api.anthropic.com",
-                    "off",
+                    "new",
                     "env:TEST_KEY",
                     "claude-sonnet-4-6",
                     "adaptive",
@@ -560,7 +560,7 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
                     "provider",
                     "api_provider",
                     "base_url",
-                    "session_affinity_header",
+                    "credential_source",
                     "credential",
                     "model",
                     "preset",
@@ -617,3 +617,93 @@ async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path:
         source = await app.current_configuration()
         assert source.agents["agent-independent"].model == "model-agent-independent"
         assert source.models["model-agent-independent"].route == "openai-codex:gpt-6-astra"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("method", ["device", "browser"])
+async def test_inline_login_uses_shared_sessions_and_survives_setup_cancellation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, method: str
+) -> None:
+    from a13n_harness.model_auth import CodexLoginResult
+    from anyio import Event, fail_after
+    from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
+
+    from .test_model_accounts import _jwt
+
+    home = Path(os.environ["CODEX_HOME"])
+    home.mkdir(parents=True)
+    presented = Event()
+    messages = []
+
+    async def authorize(request, selected_method, present):
+        assert selected_method == method
+        present(verification_url="https://example.test/login", user_code="TEST-CODE")
+        await presented.wait()
+        expiry = datetime.now(UTC) + timedelta(hours=1)
+        token = _jwt(expires_at=expiry, account_id="test-account")
+        return CodexLoginResult(
+            credentials=OpenAICodexCredentials(
+                account_id="test-account", access_token=token, refresh_token="secret-refresh"
+            ),
+            id_token=token,
+        )
+
+    def emit(message):
+        messages.append(message)
+        if "TEST-CODE" in message:
+            presented.set()
+
+    async def ask(question, selection):
+        if question.key == "provider":
+            return "codex"
+        if question.key == "action":
+            return method
+        raise SetupCancelled()
+
+    monkeypatch.setattr("a13n_harness_ui.model_accounts.login.authorize_codex", authorize)
+    configuration = tmp_path / "config.yaml"
+    with fail_after(5):
+        async with open_harness_ui_app(
+            HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=configuration
+        ) as app:
+            assert not await run_setup(app, tmp_path, ask_user=ask, emit=emit)
+            assert await app.active_login() is None
+            assert (await app.setup_status()).providers[0].available
+    assert (home / "auth.json").exists()
+    assert not configuration.exists()
+    assert "secret-refresh" not in "\n".join(messages)
+
+
+@pytest.mark.anyio
+async def test_cancelling_inline_login_stops_the_shared_session(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    from a13n_harness_ui.interactive.onboarding import _ensure_account
+    from anyio import Event, fail_after
+
+    Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
+    waiting = Event()
+
+    async def authorize(request, method, present):
+        present(verification_url="https://example.test/login", user_code="TEST-CODE")
+        waiting.set()
+        await Event().wait()
+
+    async def ask(question, selection):
+        return "device"
+
+    monkeypatch.setattr("a13n_harness_ui.model_accounts.login.authorize_codex", authorize)
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")),
+        configuration_path=tmp_path / "config.yaml",
+    ) as app:
+        with fail_after(5):
+            task = asyncio.create_task(_ensure_account(app, "codex", ask, lambda message: None))
+            await waiting.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            assert await app.active_login() is None
+    assert not (Path(os.environ["CODEX_HOME"]) / "auth.json").exists()

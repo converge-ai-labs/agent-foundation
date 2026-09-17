@@ -61,7 +61,7 @@ export function SetupPage() {
       <ErrorNotice error={setup.error} retry={() => void setup.refetch()} />
     );
   if (
-    setup.data?.choices &&
+    setup.data?.defaults &&
     setup.data.draft_scope &&
     (setup.data.fresh || readWizardDraft(setup.data.draft_scope))
   )

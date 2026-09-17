@@ -79,7 +79,13 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
     configuration = tmp_path / ".a13n-harness-ui"
     configuration.mkdir()
     (configuration / "a13n-harness-ui.yaml").write_text('schema_version: "1"\nprocess:\n  pricing_auto_update: false\n')
-    process, master = _spawn(f"from a13n_harness_ui.cli import main; main({command!r})", tmp_path)
+    script = (
+        "from a13n_harness_ui import model_catalog\n"
+        "async def bundled():\n    return model_catalog.bundled_models()\n"
+        "model_catalog.fetch_directory = bundled\n"
+        f"from a13n_harness_ui.cli import main; main({command!r})"
+    )
+    process, master = _spawn(script, tmp_path)
     try:
         output = _read_until(master, b"Connect a model")
         assert output.count(b"\x1b[?1049h") == 1
@@ -88,9 +94,9 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         os.write(master, b"\r")
         output += _read_until(master, b"Base URL")
         os.write(master, b"\r")
-        output += _read_until(master, b"Gateway session affinity header")
+        output += _read_until(master, b"Choose API authentication")
         os.write(master, b"\r")
-        output += _read_until(master, b"Default: env:OPENAI_API_KEY")
+        output += _read_until(master, b"API key (hidden)")
         os.write(master, b"fixture-hidden-api-key\r")
         output += _read_until(master, b"Model ID")
         os.write(master, b"gpt-5.6-sol\r")

@@ -18,6 +18,7 @@ from a13n_harness_ui.interactive.backend import SessionBackend
 from a13n_harness_ui.interactive.commands import Command, CommandRegistry
 from a13n_harness_ui.interactive.rendering import Status, StreamRenderer, terminal_text
 from a13n_harness_ui.interactive.setup import SetupWizard
+from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 from a13n_harness_ui.settings import EnvdRuntimeSettings, HarnessUiSettings, StorageSettings
 from pydantic_ai.models.function import FunctionModel
 
@@ -163,12 +164,13 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
         wizard.accept(value)
     assert wizard.question is None
     selection = wizard.selection("/tmp")
-    assert selection["codex_model"] == "gpt-5.6-sol"
-    assert selection["codex_context_window"] == 872000
-    assert selection["proactive_context_management_threshold"] == 0.65
-    assert selection["compact_threshold"] == 0.9
+    assert selection["model"]["route"] == "openai-codex:gpt-5.6-sol"
+    characteristics = selection["model"]["model_characteristics"]
+    assert characteristics["context_window_tokens"] == 872000
+    assert characteristics["proactive_context_management_threshold"] == 0.65
+    assert characteristics["compact_threshold"] == 0.9
     assert selection["environment_profile"] == "environment-sandbox"
-    assert selection["codex_thinking"] == "medium"
+    assert selection["model"]["settings"]["thinking"] == "medium"
 
 
 @pytest.mark.parametrize(
@@ -209,7 +211,7 @@ async def _seed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     selection = SetupSelection(
-        providers=("codex",),
+        model=prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol")),
         default_agent="agent-codex",
         project="project-local",
         project_path=str(tmp_path),
@@ -1483,8 +1485,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
 
     path = await _seed(tmp_path, monkeypatch)
     second = SetupSelection(
-        providers=("codex",),
-        codex_model="gpt-6-astra",
+        model=prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-6-astra")),
         new_agent_id="agent-astra",
         new_agent_name="Astra",
         instructions="SECOND AGENT INSTRUCTIONS",

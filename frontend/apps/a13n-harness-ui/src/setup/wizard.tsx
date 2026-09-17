@@ -1,9 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Button,
-  ChoiceField,
   Dialog,
   DialogPopup,
   DialogHeader,
@@ -12,14 +11,16 @@ import {
   DialogPanel,
   DialogFooter,
   FormField,
-  Input,
   Textarea,
 } from "a13n-ui";
 import { ArrowRight, Check, ShieldCheck, Desktop } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
-import { ProviderAccount } from "./accounts";
+import {
+  ModelEditor,
+  type ModelEditorDraft,
+} from "../configuration/model-editor";
 import {
   dismissWizard,
   finishWizard,
@@ -29,7 +30,7 @@ import {
 } from "./wizard-state";
 import styles from "./wizard.module.css";
 
-const steps = ["Connect", "Choose a model", "Workspace"];
+const steps = ["Model", "Workspace"];
 type Selection = Schema<"SetupSelection">;
 
 export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
@@ -37,25 +38,26 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   const queries = useQueryClient();
   const navigate = useNavigate();
   const scope = status.draft_scope!;
-  const choices = status.choices!;
   const [draft, setDraft] = useState<WizardDraft>(
     () =>
       readWizardDraft(scope) ?? {
-        version: 1,
+        version: 2,
         step: 0,
-        connection:
-          status.providers.find((p) => p.available)?.provider ?? "codex",
-        selection: { ...choices.defaults, include_default_subagents: true },
-        apiProvider: choices.api_providers[0]!.value,
-        modelId: choices.api_providers[0]!.models[0]!,
-        baseUrl: choices.api_providers[0]!.base_url,
-        preset: "",
-        credential: "",
+        selection: {
+          environment_profile: "environment-native",
+          ...status.defaults,
+          include_default_subagents: true,
+          default_agent: "agent-primary",
+        },
         threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
       },
   );
-  const [secret, setSecret] = useState("");
-  const [connected, setConnected] = useState(false);
+  const [modelReady, setModelReady] = useState(false);
+  const changeModelDraft = useCallback(
+    (modelDraft: ModelEditorDraft) =>
+      setDraft((value) => ({ ...value, modelDraft })),
+    [],
+  );
   const [error, setError] = useState<unknown>();
   const [storageAvailable, setStorageAvailable] = useState(true);
   const [phase, setPhase] = useState("");
@@ -84,82 +86,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
   useEffect(() => {
     heading.current?.focus();
   }, [draft.step]);
-  const modelOptions = useQuery({
-    queryKey: [
-      "setup-model-options",
-      draft.apiProvider,
-      draft.modelId,
-      draft.baseUrl,
-    ],
-    queryFn: ({ signal }) =>
-      result(
-        client.POST("/api/setup/model-options", {
-          body: {
-            provider: draft.apiProvider,
-            model_id: draft.modelId,
-            base_url: draft.baseUrl,
-          },
-          signal,
-        }),
-      ),
-    enabled:
-      draft.connection === "api_key" && !!draft.modelId && draft.step === 1,
-  });
-  const keys = useQuery({
-    queryKey: ["keys"],
-    queryFn: ({ signal }) => result(client.GET("/api/auth/keys", { signal })),
-    enabled: draft.connection === "api_key",
-  });
-  const saveKey = useMutation({
-    mutationFn: async () => {
-      const reference =
-        draft.credential || `key-${crypto.randomUUID().replaceAll("-", "")}`;
-      // Allocate once before the request. A lost acknowledgement keeps this reference.
-      patch({ credential: reference });
-      await result(
-        client.PUT("/api/auth/keys", {
-          body: { credential_ref: reference, key: secret },
-        }),
-      );
-      return reference;
-    },
-    onSuccess: () => {
-      setSecret("");
-      void queries.invalidateQueries({ queryKey: ["keys"] });
-    },
-    onError: () => {
-      void queries.invalidateQueries({ queryKey: ["keys"] });
-    },
-  });
-  const apiReady =
-    !!draft.credential &&
-    !!keys.data?.some((key) => key.credential_ref === draft.credential);
-  const selection: Selection = {
-    ...draft.selection,
-    providers: draft.connection === "api_key" ? [] : [draft.connection],
-    default_agent:
-      draft.connection === "api_key"
-        ? "agent-api-key"
-        : `agent-${draft.connection}`,
-    ...(draft.connection === "api_key"
-      ? {
-          api_key_model: {
-            ...draft.selection.api_key_model,
-            route: `${draft.apiProvider}:${draft.modelId}`,
-            authentication: {
-              kind: "api_key",
-              credential_ref: draft.credential,
-            },
-            model_configuration: {
-              ...(draft.baseUrl ? { base_url: draft.baseUrl } : {}),
-              ...(draft.sessionAffinityHeader
-                ? { session_affinity_header: draft.sessionAffinityHeader }
-                : {}),
-            },
-          },
-        }
-      : { api_key_model: null }),
-  };
+  const selection: Selection = draft.selection;
   const selectionKey = JSON.stringify(selection);
   const currentPreview =
     preview?.key === selectionKey ? preview.value : undefined;
@@ -326,47 +253,10 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
       await openConversation(pending);
     });
   const close = () => {
-    if (busyRef.current || saveKey.isPending) return;
+    if (busyRef.current) return;
     dismissWizard(scope);
     navigate("/?setup=later", { replace: true });
   };
-  const nextModel = () => {
-    if (draft.connection === "api_key") {
-      const options = modelOptions.data;
-      const preset =
-        options?.presets.find((p) => p.value === draft.preset) ??
-        options?.presets[0];
-      if (!options || !preset) return;
-      patch({
-        step: 2,
-        selection: {
-          ...draft.selection,
-          api_key_model: {
-            route: `${draft.apiProvider}:${draft.modelId}`,
-            authentication: {
-              kind: "api_key",
-              credential_ref: draft.credential,
-            },
-            settings: preset.settings,
-            model_configuration: {
-              ...(draft.baseUrl ? { base_url: draft.baseUrl } : {}),
-              ...(draft.sessionAffinityHeader
-                ? { session_affinity_header: draft.sessionAffinityHeader }
-                : {}),
-            },
-            model_characteristics: {
-              context_window_tokens: draft.apiContext ?? options.context_window,
-              proactive_context_management_threshold: 0.65,
-              compact_threshold: 0.9,
-            },
-          },
-        },
-      });
-    } else patch({ step: 2 });
-  };
-  const provider = choices.api_providers.find(
-    (p) => p.value === draft.apiProvider,
-  )!;
   return (
     <Dialog
       open
@@ -380,7 +270,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         className={styles.wizard}
         closeProps={{
           "aria-label": "Set up later",
-          disabled: busy || saveKey.isPending,
+          disabled: busy,
         }}
       >
         <DialogHeader>
@@ -409,11 +299,9 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
           <div className={styles.content}>
             <h2 ref={heading} tabIndex={-1}>
               {
-                [
-                  "Connect your model account",
-                  "Choose your everyday model",
-                  "Decide where your agent works",
-                ][draft.step]
+                ["Choose your everyday model", "Decide where your agent works"][
+                  draft.step
+                ]
               }
             </h2>
             <ErrorNotice error={error} />
@@ -468,342 +356,21 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
             ) : (
               <fieldset disabled={busy} className={styles.fields}>
                 {draft.step === 0 && (
-                  <>
-                    <div
-                      className={styles.connections}
-                      role="group"
-                      aria-label="Model connection"
-                    >
-                      {(
-                        [
-                          ["codex", "Codex", "Use your OpenAI account"],
-                          ["grok", "Grok", "Use your Grok account"],
-                          ["api_key", "API key", "OpenAI, Anthropic & more"],
-                        ] as const
-                      ).map(([value, label, description]) => (
-                        <button
-                          type="button"
-                          key={value}
-                          aria-label={label}
-                          aria-pressed={draft.connection === value}
-                          onClick={() => {
-                            setConnected(false);
-                            setSecret("");
-                            patch({ connection: value });
-                          }}
-                        >
-                          <strong>{label}</strong>
-                          <span>{description}</span>
-                        </button>
-                      ))}
-                    </div>
-                    {draft.connection !== "api_key" ? (
-                      <ProviderAccount
-                        key={draft.connection}
-                        provider={draft.connection}
-                        inline
-                        onReady={setConnected}
-                      />
-                    ) : (
-                      <div className={styles.stack}>
-                        <ChoiceField
-                          label="API provider"
-                          value={draft.apiProvider}
-                          options={choices.api_providers.map((p) => ({
-                            value: p.value,
-                            label: p.label,
-                          }))}
-                          onValueChange={(value) => {
-                            const next = choices.api_providers.find(
-                              (p) => p.value === value,
-                            )!;
-                            setSecret("");
-                            patch({
-                              apiProvider: value,
-                              modelId: next.models[0]!,
-                              baseUrl: next.base_url,
-                              sessionAffinityHeader: "",
-                              credential: "",
-                              preset: "",
-                              apiContext: undefined,
-                            });
-                          }}
-                        />
-                        {!!keys.data?.length && (
-                          <ChoiceField
-                            label="Use a saved key"
-                            value={draft.credential}
-                            options={[
-                              { value: "", label: "Save a new API key" },
-                              ...keys.data.map((key) => ({
-                                value: key.credential_ref,
-                                label: key.credential_ref,
-                              })),
-                            ]}
-                            onValueChange={(credential) => {
-                              setSecret("");
-                              patch({ credential });
-                            }}
-                          />
-                        )}
-                        {!apiReady && (
-                          <>
-                            <FormField
-                              label="Provider API key"
-                              description="Saved immediately in this server's credential store, not in your browser draft. Cancelling setup does not delete a saved key."
-                            >
-                              <Input
-                                type="password"
-                                autoComplete="new-password"
-                                value={secret}
-                                onChange={(event) =>
-                                  setSecret(event.target.value)
-                                }
-                              />
-                            </FormField>
-                            <Button
-                              variant="outline"
-                              loading={saveKey.isPending}
-                              disabled={!secret.trim()}
-                              onClick={() => saveKey.mutate()}
-                            >
-                              Save API key
-                            </Button>
-                          </>
-                        )}
-                        <ErrorNotice error={saveKey.error || keys.error} />
-                        {apiReady && (
-                          <p role="status">
-                            Key saved on this server. Model access has not been
-                            tested.
-                          </p>
-                        )}
-                        <p>
-                          Credentials belong to this shared server, not your
-                          browser identity.
-                        </p>
-                      </div>
-                    )}
-                  </>
-                )}
-                {draft.step === 1 && (
                   <div className={styles.stack}>
-                    {draft.connection === "api_key" ? (
-                      <>
-                        <TextField
-                          label="Model ID"
-                          value={draft.modelId}
-                          onChange={(modelId) =>
-                            patch({
-                              modelId,
-                              preset: "",
-                              apiContext: undefined,
-                            })
-                          }
-                          description="Choose a release suggestion or enter your provider's model ID."
-                        />
-                        <div className={styles.suggestions}>
-                          {provider.models.map((id) => (
-                            <Button
-                              key={id}
-                              variant="outline"
-                              size="sm"
-                              onClick={() =>
-                                patch({
-                                  modelId: id,
-                                  preset: "",
-                                  apiContext: undefined,
-                                })
-                              }
-                            >
-                              {id}
-                            </Button>
-                          ))}
-                        </div>
-                        {provider.base_url && (
-                          <TextField
-                            label="API base URL"
-                            value={draft.baseUrl}
-                            onChange={(baseUrl) => patch({ baseUrl })}
-                          />
-                        )}
-                        {provider.supports_session_affinity && (
-                          <>
-                            <ChoiceField
-                              label="Gateway session affinity"
-                              value={
-                                choices.session_affinity_presets?.some(
-                                  (p) =>
-                                    p.header === draft.sessionAffinityHeader,
-                                )
-                                  ? draft.sessionAffinityHeader!
-                                  : draft.sessionAffinityHeader
-                                    ? "custom"
-                                    : "off"
-                              }
-                              description={
-                                choices.session_affinity_presets?.find(
-                                  (p) =>
-                                    p.header === draft.sessionAffinityHeader,
-                                )?.description
-                              }
-                              options={[
-                                { value: "off", label: "Disabled (default)" },
-                                ...(choices.session_affinity_presets ?? []).map(
-                                  (p) => ({
-                                    value: p.header,
-                                    label: `${p.label} · ${p.header}`,
-                                  }),
-                                ),
-                                ...(draft.sessionAffinityHeader &&
-                                !choices.session_affinity_presets?.some(
-                                  (p) =>
-                                    p.header === draft.sessionAffinityHeader,
-                                )
-                                  ? [
-                                      {
-                                        value: "custom",
-                                        label: "Custom header",
-                                      },
-                                    ]
-                                  : []),
-                              ]}
-                              onValueChange={(value) => {
-                                if (value !== "custom")
-                                  patch({
-                                    sessionAffinityHeader:
-                                      value === "off" ? "" : value,
-                                  });
-                              }}
-                            />
-                            <FormField
-                              label="Session affinity header"
-                              description="Choose a preset above or type any custom header name. Its value is a stable UUID derived from the current Thread ID. Leave empty to disable. Configure your gateway to route by this header; sending it alone does not guarantee provider pinning."
-                            >
-                              <Input
-                                name="session_affinity_header"
-                                autoComplete="off"
-                                maxLength={128}
-                                placeholder="e.g. x-conversation-id"
-                                value={draft.sessionAffinityHeader ?? ""}
-                                onChange={(event) =>
-                                  patch({
-                                    sessionAffinityHeader: event.target.value,
-                                  })
-                                }
-                              />
-                            </FormField>
-                          </>
-                        )}
-                        <ErrorNotice error={modelOptions.error} />
-                        {modelOptions.data && (
-                          <ChoiceField
-                            label="Reasoning & output budget"
-                            value={
-                              draft.preset ||
-                              modelOptions.data.presets[0]?.value ||
-                              ""
-                            }
-                            options={modelOptions.data.presets}
-                            onValueChange={(preset) => patch({ preset })}
-                          />
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        <ChoiceField
-                          label="Model"
-                          value={String(
-                            draft.selection[
-                              draft.connection === "codex"
-                                ? "codex_model"
-                                : "grok_model"
-                            ],
-                          )}
-                          options={
-                            choices.subscription_models[draft.connection]!
-                          }
-                          onValueChange={(value) =>
-                            changeSelection(
-                              draft.connection === "codex"
-                                ? {
-                                    codex_model:
-                                      value as Selection["codex_model"],
-                                  }
-                                : {
-                                    grok_model:
-                                      value as Selection["grok_model"],
-                                  },
-                            )
-                          }
-                        />
-                        <p>
-                          Release-reviewed defaults for coding, reasoning, and
-                          context management. Availability depends on your
-                          account.
-                        </p>
-                      </>
-                    )}
+                    <ModelEditor
+                      draft={draft.modelDraft}
+                      onDraftChange={changeModelDraft}
+                      value={selection.model ?? null}
+                      onChange={(model) => changeSelection({ model })}
+                      onReady={setModelReady}
+                    />
                     <details className={styles.advanced}>
-                      <summary>Advanced model & agent options</summary>
+                      <summary>Agent options</summary>
                       <div className={styles.stack}>
-                        {draft.connection === "codex" && (
-                          <>
-                            <ChoiceField
-                              label="Reasoning effort"
-                              value={draft.selection.codex_thinking!}
-                              options={["low", "medium", "high", "xhigh"].map(
-                                (value) => ({ value, label: value }),
-                              )}
-                              onValueChange={(value) =>
-                                changeSelection({
-                                  codex_thinking:
-                                    value as Selection["codex_thinking"],
-                                })
-                              }
-                            />
-                            <TextField
-                              label="Working context budget"
-                              value={String(
-                                draft.selection.codex_context_window,
-                              )}
-                              type="number"
-                              onChange={(value) =>
-                                changeSelection({
-                                  codex_context_window: Number(value),
-                                })
-                              }
-                            />
-                          </>
-                        )}
-                        {draft.connection === "api_key" &&
-                          modelOptions.data && (
-                            <TextField
-                              label="Working context budget"
-                              type="number"
-                              value={String(
-                                draft.apiContext ??
-                                  modelOptions.data.context_window,
-                              )}
-                              onChange={(value) =>
-                                patch({ apiContext: Number(value) })
-                              }
-                              description={
-                                modelOptions.data.known_context_window
-                                  ? `Bundled context limit: ${modelOptions.data.known_context_window.toLocaleString()} tokens.`
-                                  : "Unknown model limit. This is an editable working budget, not a provider guarantee."
-                              }
-                            />
-                          )}
-                        <p>
-                          Recommended native tools are selected by the server
-                          for this connection. Their provider usage charges may
-                          apply.
-                        </p>
                         <label>
                           <input
                             type="checkbox"
-                            checked={draft.selection.tool_capabilities == null}
+                            checked={selection.tool_capabilities == null}
                             onChange={(event) =>
                               changeSelection({
                                 tool_capabilities: event.target.checked
@@ -812,13 +379,13 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                               })
                             }
                           />{" "}
-                          Enable recommended native tools
+                          Enable recommended native tools on the new Agent
                         </label>
                         <label>
                           <input
                             type="checkbox"
                             checked={
-                              draft.selection.include_default_subagents ?? true
+                              selection.include_default_subagents ?? true
                             }
                             onChange={(event) =>
                               changeSelection({
@@ -831,7 +398,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                         <FormField label="Additional agent instructions">
                           <Textarea
                             rows={4}
-                            value={draft.selection.instructions ?? ""}
+                            value={selection.instructions ?? ""}
                             onChange={(event) =>
                               changeSelection({
                                 instructions: event.target.value,
@@ -843,7 +410,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                     </details>
                   </div>
                 )}
-                {draft.step === 2 && (
+                {draft.step === 1 && (
                   <div className={styles.stack}>
                     <div
                       className={styles.environments}
@@ -912,15 +479,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                       </p>
                     </details>
                     <div className={styles.summary}>
-                      <strong>
-                        {draft.connection === "api_key"
-                          ? draft.modelId
-                          : selection[
-                              draft.connection === "codex"
-                                ? "codex_model"
-                                : "grok_model"
-                            ]}
-                      </strong>
+                      <strong>{selection.model?.route}</strong>
                       <span>
                         {sandbox ? "Sandbox" : "Full Control"} ·{" "}
                         {selection.project_path || "Without a Project"}
@@ -991,15 +550,11 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
           </div>
         </DialogPanel>
         <DialogFooter variant="bare" className={styles.footer}>
-          <Button
-            variant="ghost"
-            disabled={busy || saveKey.isPending}
-            onClick={close}
-          >
+          <Button variant="ghost" disabled={busy} onClick={close}>
             Set up later
           </Button>
           <div>
-            <span className={styles.stepCount}>Step {draft.step + 1} of 3</span>
+            <span className={styles.stepCount}>Step {draft.step + 1} of 2</span>
             {draft.step > 0 && !draft.pending && (
               <Button
                 variant="outline"
@@ -1010,7 +565,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
               </Button>
             )}
             {!draft.pending &&
-              (draft.step === 2 ? (
+              (draft.step === 1 ? (
                 <Button
                   loading={busy}
                   disabled={!currentPreview || (sandbox && !sandboxReady)}
@@ -1020,19 +575,8 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                 </Button>
               ) : (
                 <Button
-                  disabled={
-                    busy ||
-                    saveKey.isPending ||
-                    (draft.step === 0
-                      ? !(draft.connection === "api_key" ? apiReady : connected)
-                      : draft.connection === "api_key" &&
-                        (!modelOptions.data ||
-                          modelOptions.isFetching ||
-                          !!modelOptions.error))
-                  }
-                  onClick={() =>
-                    draft.step === 0 ? patch({ step: 1 }) : nextModel()
-                  }
+                  disabled={busy || !modelReady}
+                  onClick={() => patch({ step: 1 })}
                 >
                   Continue <ArrowRight />
                 </Button>

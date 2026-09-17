@@ -20,7 +20,7 @@ def _wizard(provider="codex", model="gpt-5.6-sol"):
     if provider == "api":
         wizard.accept("openai-responses")
         wizard.accept("")
-        wizard.accept("off")
+        wizard.accept("new")
         wizard.accept("env:TEST_KEY")
     wizard.accept(model)
     while wizard.question.key != "tools":

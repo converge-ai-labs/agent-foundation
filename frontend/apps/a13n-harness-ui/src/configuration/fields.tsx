@@ -1,3 +1,4 @@
+import { AddModelButton } from "./models";
 import {
   ChoiceField,
   FormField,
@@ -5,7 +6,6 @@ import {
   SettingsSection,
   Textarea,
 } from "a13n-ui";
-import { Link } from "react-router";
 import { ResourceChoice } from "./resource-choice";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectors, useSources, useTransport } from "../transport/context";
@@ -14,6 +14,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
+import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { ProjectFolders } from "./project-folders";
 
@@ -61,11 +62,10 @@ export function ResourceFields({
     />
   );
   const models =
-    sources.data?.sources
-      .filter((item) => item.resource_kind === "model")
-      .flatMap((item) =>
-        item.resource_ids.map((id) => ({ value: id, label: id })),
-      ) ?? [];
+    selectors.data?.models?.map((model) => ({
+      value: model.model_id,
+      label: model.name,
+    })) ?? [];
   const agentOptions =
     selectors.data?.agents.map((agent) => ({
       value: agent.agent_id,
@@ -163,69 +163,8 @@ export function ResourceFields({
       )}
       {kind === "model" && (
         <SettingsSection title="Model connection">
-          <div className={`${styles.stack} ${styles.fieldGroup}`}>
-            {field(
-              "Model route",
-              ["route"],
-              "Use a registered provider route, such as openai-responses:<model>. No model request is sent by validation.",
-            )}
-            <ChoiceField
-              label="Authentication"
-              value={text(["authentication", "kind"])}
-              options={[
-                { value: "api_key", label: "API key reference" },
-                { value: "codex_subscription", label: "Codex account" },
-                { value: "grok_subscription", label: "Grok account" },
-              ]}
-              onValueChange={(value) =>
-                set(
-                  ["authentication"],
-                  value === "api_key"
-                    ? { kind: value, credential_ref: "key-primary" }
-                    : { kind: value },
-                )
-              }
-            />
-            {text(["authentication", "kind"]) === "api_key" && (
-              <>
-                <ChoiceField
-                  label="Credential source"
-                  value={
-                    document.hasIn(["authentication", "env"])
-                      ? "env"
-                      : "credential_ref"
-                  }
-                  options={[
-                    {
-                      value: "credential_ref",
-                      label: "Saved API key",
-                    },
-                    { value: "env", label: "Server environment variable" },
-                  ]}
-                  onValueChange={(value) =>
-                    set(["authentication"], {
-                      kind: "api_key",
-                      [value]:
-                        value === "env" ? "PROVIDER_API_KEY" : "key-primary",
-                    })
-                  }
-                />
-                {document.hasIn(["authentication", "env"]) ? (
-                  field("Environment variable", ["authentication", "env"])
-                ) : (
-                  <CredentialReference
-                    value={text(["authentication", "credential_ref"])}
-                    onChange={(value) =>
-                      set(["authentication", "credential_ref"], value)
-                    }
-                  />
-                )}
-              </>
-            )}
-            <p>
-              Provider settings, base URL and context characteristics remain
-              available in advanced YAML.
-            </p>
+          <div className={styles.fieldGroup}>
+            <ModelFields source={source} onChange={onChange} />
           </div>
         </SettingsSection>
       )}
@@ -233,6 +172,9 @@ export function ResourceFields({
         <>
           <SettingsSection title="Agent behavior">
             {scalar("Model", ["model"], models, "Not connected")}
+            <div className={styles.fieldGroup}>
+              <AddModelButton onSaved={(id) => set(["model"], id)} />
+            </div>
             <div className={styles.fieldGroup}>
               <FormField label="Instructions">
                 <Textarea
@@ -430,43 +372,6 @@ export function ResourceFields({
           </div>
         </SettingsSection>
       )}
-    </div>
-  );
-}
-
-function CredentialReference({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  const { client } = useTransport();
-  const keys = useQuery({
-    queryKey: ["keys"],
-    queryFn: ({ signal }) => result(client.GET("/api/auth/keys", { signal })),
-  });
-  return (
-    <div className={styles.stack}>
-      <ResourceChoice
-        label="Saved key name"
-        value={value}
-        loading={keys.isPending}
-        onValueChange={onChange}
-        placeholder="Choose a saved API key"
-        options={(keys.data ?? []).map((key) => ({
-          value: key.credential_ref,
-          label: key.credential_ref,
-        }))}
-        description={
-          <>
-            <Link to="/settings/accounts">Manage API keys</Link>. Only key names
-            are listed; secrets never appear in YAML. Your draft is retained
-            while you navigate.
-          </>
-        }
-      />
-      <ErrorNotice error={keys.error} retry={() => void keys.refetch()} />
     </div>
   );
 }

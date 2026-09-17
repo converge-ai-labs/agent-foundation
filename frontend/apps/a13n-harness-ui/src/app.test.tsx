@@ -616,7 +616,7 @@ it("reopens a one-click agent draft from its own settings list without writing o
     target: { value: "Unfinished assistant" },
   });
   const draftPath = new URLSearchParams(window.location.search).get("path")!;
-  fireEvent.click(screen.getByRole("link", { name: "Agents & models" }));
+  fireEvent.click(screen.getByRole("link", { name: "Agents" }));
   fireEvent.click(
     await screen.findByRole("link", {
       name: /Unfinished assistant.*Unsaved draft/,
@@ -821,6 +821,13 @@ it("configures Sidekick in General without changing defaults or starting convers
             },
             { agent_id: "agent-empty", name: "No model", model_id: null },
           ],
+          models: [
+            {
+              model_id: "model-worker",
+              name: "Worker model",
+              route: "openai-responses:custom",
+            },
+          ],
           environments: [],
           harness_plugins: [],
           environment_run_extensions: [],
@@ -839,7 +846,7 @@ it("configures Sidekick in General without changing defaults or starting convers
     screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
   ).toContain("Inherit current agent");
   await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
-  await user.click(await screen.findByRole("option", { name: "model-worker" }));
+  await user.click(await screen.findByRole("option", { name: "Worker model" }));
   expect(parse(content).webui.sidekick).toBeUndefined();
   await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
   await user.click(await screen.findByRole("option", { name: "Worker" }));

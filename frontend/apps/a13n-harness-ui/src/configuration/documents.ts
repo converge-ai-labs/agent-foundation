@@ -53,11 +53,7 @@ export function template(kind: ResourceKind, id: string): string {
   if (kind === "subagent")
     return `---\nname: ${id.replace(/^subagent-/, "")}\nid: ${id}\ndescription: Describe when to delegate to this subagent.\n---\n\nWrite the subagent instructions here.\n`;
   const fields: Record<Exclude<ResourceKind, "subagent">, object> = {
-    model: {
-      route: "",
-      authentication: { kind: "api_key", credential_ref: "key-primary" },
-      settings: {},
-    },
+    model: {},
     agent: { model: null, instructions: "", capabilities: [], subagents: [] },
     project: { roots: [{ path: "" }], defaults: {} },
     harness_plugin: { plugin_key: "", configuration: {} },

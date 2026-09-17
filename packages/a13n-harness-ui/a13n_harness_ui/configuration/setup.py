@@ -15,20 +15,18 @@ from pathlib import Path
 from typing import Literal, Self
 
 import yaml
-from a13n_harness.spec import HarnessModelCharacteristics
 from anyio import to_thread
-from pydantic import ConfigDict, Field, JsonValue, model_validator
+from pydantic import ConfigDict, Field, model_validator
 
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
-from a13n_harness_ui.model_presets import known_model_capabilities, starter_tool_capabilities
-from a13n_harness_ui.resource_names import coding_agent_name, model_name
+from a13n_harness_ui.model_authoring import ModelRecipe, recipe_document, recipe_name
+from a13n_harness_ui.model_presets import starter_tool_capabilities
+from a13n_harness_ui.resource_names import coding_agent_name
 from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
 from .loader import _parse_yaml_mapping, _read_bounded_stable, _scan_directory, load_harness_ui_configuration
 from .models import (
-    ApiKeyAuthentication,
     CapabilitySelection,
-    ModelCharacteristics,
     ResourceId,
     StrictModel,
     ToolsConfiguration,
@@ -39,19 +37,8 @@ _EMPTY_ROOT = b'schema_version: "1"\n'
 _DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "subagents")
 
 
-class SetupApiKeyModel(StrictModel):
-    route: str = Field(min_length=1, max_length=512)
-    authentication: ApiKeyAuthentication
-    settings: dict[str, JsonValue] = Field(default_factory=dict)
-    model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
-    model_characteristics: ModelCharacteristics = Field(
-        default_factory=lambda: HarnessModelCharacteristics(context_window_tokens=350000)
-    )
-
-
 class SetupSelection(StrictModel):
-    providers: tuple[Literal["codex", "grok"], ...] = ()
-    api_key_model: SetupApiKeyModel | None = None
+    model: ModelRecipe | None = None
     instructions: str = Field(default="", max_length=1024 * 1024)
     new_agent_id: ResourceId | None = None
     new_agent_name: str = Field(default="", max_length=128)
@@ -66,15 +53,6 @@ class SetupSelection(StrictModel):
     environment_profile: Literal["environment-native", "environment-sandbox"]
     shell_review: bool = True
     include_default_subagents: bool | None = None
-    codex_model: Literal["gpt-5.6-terra", "gpt-5.6-sol", "gpt-6-astra"] = "gpt-5.6-sol"
-
-    grok_model: Literal["grok-4.6", "grok-4.5", "grok-4.20-0309-reasoning"] = "grok-4.6"
-
-    codex_thinking: Literal["low", "medium", "high", "xhigh"] = "high"
-    codex_service_tier: Literal["priority", "default"] | None = None
-    codex_context_window: int = Field(default=350000, ge=16000, le=872000)
-    proactive_context_management_threshold: float = Field(default=0.65, ge=0.0, le=1.0)
-    compact_threshold: float = Field(default=0.90, gt=0.0, le=1.0)
 
     @property
     def is_addition(self) -> bool:
@@ -88,9 +66,7 @@ class SetupSelection(StrictModel):
             raise ValueError("Add Model cannot also create an Agent or select an existing Model")
         if self.new_model_id is not None and self.tool_capabilities is not None:
             raise ValueError("Tools belong to an Agent; configure them when adding an Agent for this Model")
-        if self.existing_model_id is not None and (
-            self.new_agent_id is None or self.providers or self.api_key_model is not None
-        ):
+        if self.existing_model_id is not None and (self.new_agent_id is None or self.model is not None):
             raise ValueError("An existing Model can only be selected when adding an Agent without a new connection")
         return self
 
@@ -125,190 +101,75 @@ def _capture(path: Path) -> dict[str, bytes]:
     return entries
 
 
-def _model_characteristics(route: str, authored: HarnessModelCharacteristics | None = None) -> dict[str, JsonValue]:
-    """Seed only omitted media capabilities; preserve every authored policy field."""
-    characteristics = authored if authored is not None else HarnessModelCharacteristics()
-    if "capabilities" not in characteristics.model_fields_set:
-        known = known_model_capabilities(route)
-        if known is not None:
-            characteristics = characteristics.model_copy(update={"capabilities": known})
-    document = characteristics.model_dump(mode="json")
-    # frozenset iteration differs between processes; previews must have stable bytes.
-    document["capabilities"] = sorted(capability.value for capability in characteristics.capabilities)
-    return document
-
-
 def _templates(selection: SetupSelection, *, existing_model: dict[str, object] | None = None) -> dict[str, str]:
     resources: dict[str, dict[str, object]] = {}
-    providers = selection.providers
-    if existing_model is not None:
-        authentication = existing_model.get("authentication")
-        kind = authentication.get("kind") if isinstance(authentication, dict) else None
-        providers = ("codex",) if kind == "codex_subscription" else ("grok",) if kind == "grok_subscription" else ()
-    shell_review = selection.shell_review and selection.new_model_id is None
-    for provider in dict.fromkeys(providers):
-        codex = provider == "codex"
-        model = selection.codex_model if codex else selection.grok_model
-        display_name = model_name("codex" if codex else "grok-subscription", model)
-        resources[f"models/{provider}.yaml"] = {
-            "schema_version": "1",
-            "kind": "model",
-            "id": f"model-{provider}",
-            "name": display_name,
-            "route": f"{'openai-codex' if codex else 'grok'}:{model}",
-            "authentication": {"kind": f"{provider}_subscription"},
-            "settings": {
-                "thinking": selection.codex_thinking,
-                "openai_reasoning_summary": "detailed",
-                "openai_store": False,
-                **(
-                    {"openai_service_tier": selection.codex_service_tier}
-                    if selection.codex_service_tier is not None
-                    else {}
-                ),
-            }
-            if codex
-            else {},
-            "model_characteristics": _model_characteristics(
-                f"{'openai-codex' if codex else 'grok'}:{model}",
-                HarnessModelCharacteristics(
-                    context_window_tokens=selection.codex_context_window,
-                    proactive_context_management_threshold=selection.proactive_context_management_threshold,
-                    compact_threshold=selection.compact_threshold,
-                )
-                if codex
-                else None,
-            ),
-        }
-        capabilities: list[dict[str, object]] = [
-            {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
-            {"capability": "skills", "configuration": {}},
-            {"capability": "compaction", "configuration": {}},
-            {"capability": "handoff", "configuration": {}},
-            {"capability": "runtime_context", "configuration": {}},
-        ]
-        resources[f"agents/{provider}.yaml"] = {
-            "schema_version": "1",
-            "kind": "agent",
-            "id": f"agent-{provider}",
-            "name": coding_agent_name(display_name),
-            "model": f"model-{provider}",
-            "capabilities": capabilities,
-        }
-    if shell_review and "codex" in providers:
-        resources["models/codex-review.yaml"] = {
-            "schema_version": "1",
-            "kind": "model",
-            "id": "model-codex-review",
-            "name": "Codex shell review",
-            "route": "openai-codex:gpt-5.6-luna",
-            "authentication": {"kind": "codex_subscription"},
-            "settings": {"thinking": "low"},
-            "model_characteristics": _model_characteristics("openai-codex:gpt-5.6-luna"),
-        }
-    if shell_review and "grok" in providers and "codex" not in providers:
-        resources["models/grok-shell-review.yaml"] = {
-            "schema_version": "1",
-            "kind": "model",
-            "id": "model-grok-shell-review",
-            "name": "Grok shell review",
-            "route": "grok:grok-4.6",
-            "authentication": {"kind": "grok_subscription"},
-            "settings": {"thinking": "low"},
-            "model_characteristics": _model_characteristics("grok:grok-4.6"),
-        }
-    if selection.api_key_model is not None:
-        api_provider, _, api_model = selection.api_key_model.route.partition(":")
-        display_name = model_name(api_provider, api_model)
-        resources["models/api-key.yaml"] = {
-            "schema_version": "1",
-            "kind": "model",
-            "id": "model-api-key",
-            "name": display_name,
-            "route": selection.api_key_model.route,
-            "authentication": selection.api_key_model.authentication.model_dump(mode="json"),
-            "settings": selection.api_key_model.settings,
-            "model_configuration": selection.api_key_model.model_configuration,
-            "model_characteristics": _model_characteristics(
-                selection.api_key_model.route, selection.api_key_model.model_characteristics
-            ),
-        }
-        resources["agents/api-key.yaml"] = {
-            "schema_version": "1",
-            "kind": "agent",
-            "id": "agent-api-key",
-            "name": coding_agent_name(display_name),
-            "model": "model-api-key",
-            "capabilities": [
-                {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
-                {"capability": "skills", "configuration": {}},
-                {"capability": "compaction", "configuration": {}},
-                {"capability": "handoff", "configuration": {}},
-                {"capability": "runtime_context", "configuration": {}},
-            ],
-        }
-    if not providers and selection.api_key_model is None:
-        resources["agents/default.yaml"] = {
-            "schema_version": "1",
-            "kind": "agent",
-            "id": "agent-default",
-            "name": "Default Agent",
-            **({"model": selection.existing_model_id} if selection.existing_model_id is not None else {}),
-            "capabilities": [
-                {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
-                {"capability": "skills", "configuration": {}},
-                {"capability": "compaction", "configuration": {}},
-                {"capability": "handoff", "configuration": {}},
-                {"capability": "runtime_context", "configuration": {}},
-            ],
-        }
-    if selection.new_agent_id is not None:
-        agents = [value for value in resources.values() if value["kind"] == "agent"]
-        if len(agents) != 1 or not agents[0].get("model") or not selection.new_agent_name.strip():
-            raise ConfigurationError("Adding an Agent requires one connection and a name.", code="setup_agent_invalid")
-        agent = agents[0]
-        model = next((value for value in resources.values() if value["id"] == agent.get("model")), None)
-        suffix = selection.new_agent_id.removeprefix("agent-")
-        resources = {key: value for key, value in resources.items() if value is not agent and value is not model}
-        agent.update(
-            id=selection.new_agent_id,
-            name=selection.new_agent_name,
-            model=selection.existing_model_id or f"model-agent-{suffix}",
+    recipe = selection.model
+    selected: dict[str, object] = dict(existing_model or (recipe_document(recipe) if recipe is not None else {}))
+    authentication = selected.get("authentication")
+    kind = authentication.get("kind") if isinstance(authentication, dict) else None
+    connection = "codex" if kind == "codex_subscription" else "grok" if kind == "grok_subscription" else "api-key"
+    display_name = recipe_name(recipe) if recipe is not None else str(selected.get("name", "Default Agent"))
+    model_id = selection.existing_model_id
+    if recipe is not None:
+        model_id = selection.new_model_id or (
+            f"model-{selection.new_agent_id}" if selection.new_agent_id else f"model-{connection}"
         )
-        resources[f"agents/{suffix}.yaml"] = agent
-        if selection.existing_model_id is None:
-            assert model is not None
-            model.update(id=f"model-agent-{suffix}")
-            resources[f"models/agent-{suffix}.yaml"] = model
+        resources[f"models/{model_id.removeprefix('model-')}.yaml"] = {
+            "schema_version": "1",
+            "kind": "model",
+            "id": model_id,
+            "name": selection.new_model_name or display_name,
+            **selected,
+        }
     if selection.new_model_id is not None:
-        models = [value for value in resources.values() if value["kind"] == "model"]
-        if len(models) != 1 or not selection.new_model_name.strip():
-            raise ConfigurationError("Adding a Model requires one connection and a name.", code="setup_model_invalid")
-        model = models[0]
-        model.update(id=selection.new_model_id, name=selection.new_model_name)
-        resources = {f"models/{selection.new_model_id.removeprefix('model-')}.yaml": model}
-    for resource in resources.values():
-        if resource["kind"] != "agent":
-            continue
-        selected_model = existing_model or next(
-            (item for item in resources.values() if item["id"] == resource.get("model")), {}
+        if recipe is None or not selection.new_model_name.strip():
+            raise ConfigurationError("Adding a Model requires a connection and a name.", code="setup_model_invalid")
+        return {name: yaml.safe_dump(value, sort_keys=False, allow_unicode=True) for name, value in resources.items()}
+    if selection.new_agent_id is not None and (model_id is None or not selection.new_agent_name.strip()):
+        raise ConfigurationError("Adding an Agent requires a Model and a name.", code="setup_agent_invalid")
+    agent_id = selection.new_agent_id or selection.default_agent
+    capabilities: list[dict[str, object]] = [
+        {"capability": "dynamic_environment", "configuration": {"files_enabled": True, "shell_enabled": True}},
+        {"capability": "skills", "configuration": {}},
+        {"capability": "compaction", "configuration": {}},
+        {"capability": "handoff", "configuration": {}},
+        {"capability": "runtime_context", "configuration": {}},
+    ]
+    route = selected.get("route", "")
+    configuration = selected.get("model_configuration", {})
+    base_url = configuration.get("base_url") if isinstance(configuration, dict) else None
+    assert isinstance(route, str)
+    capabilities.extend(
+        [capability.model_dump(mode="json") for capability in selection.tool_capabilities]
+        if selection.tool_capabilities is not None
+        else [dict(item) for item in starter_tool_capabilities(route, authentication=kind, base_url=base_url)]
+    )
+    resources[f"agents/{agent_id.removeprefix('agent-')}.yaml"] = {
+        "schema_version": "1",
+        "kind": "agent",
+        "id": agent_id,
+        "name": selection.new_agent_name or (coding_agent_name(display_name) if model_id else "Default Agent"),
+        **({"model": model_id} if model_id else {}),
+        "capabilities": capabilities,
+        **({"instructions": selection.instructions} if selection.instructions.strip() else {}),
+    }
+    if selection.shell_review and kind in {"codex_subscription", "grok_subscription"}:
+        codex = kind == "codex_subscription"
+        reviewer = "codex-review" if codex else "grok-shell-review"
+        review = ModelRecipe.model_validate(
+            {
+                "route": "openai-codex:gpt-5.6-luna" if codex else "grok:grok-4.6",
+                "authentication": {"kind": kind},
+                "settings": {"thinking": "low"},
+            }
         )
-        route = selected_model.get("route", "")
-        authentication = selected_model.get("authentication", {})
-        configuration = selected_model.get("model_configuration", {})
-        kind = authentication.get("kind") if isinstance(authentication, dict) else None
-        base_url = configuration.get("base_url") if isinstance(configuration, dict) else None
-        agent_capabilities = resource["capabilities"]
-        assert isinstance(agent_capabilities, list) and isinstance(route, str)
-        agent_capabilities.extend(
-            [capability.model_dump(mode="json") for capability in selection.tool_capabilities]
-            if selection.tool_capabilities is not None
-            else starter_tool_capabilities(route, authentication=kind, base_url=base_url)
-        )
-    if selection.instructions.strip():
-        for resource in resources.values():
-            if resource["id"] == (selection.new_agent_id or selection.default_agent):
-                resource["instructions"] = selection.instructions
+        resources[f"models/{reviewer}.yaml"] = {
+            "schema_version": "1",
+            "kind": "model",
+            "id": f"model-{reviewer}",
+            "name": "Codex shell review" if codex else "Grok shell review",
+            **recipe_document(review),
+        }
     if not selection.is_addition and selection.project is not None:
         assert selection.project_path is not None
         resources[f"projects/{selection.project}.yaml"] = {
@@ -374,25 +235,15 @@ async def preview_setup(
             )
     elif selection.new_model_id is not None:
         connection_model = selection.new_model_id
-    elif selection.api_key_model is not None:
-        connection_model = "model-api-key"
-        old_model = existing.get(connection_model)
-        if old_model is not None:
-            desired = yaml.safe_load(templates["models/api-key.yaml"])
-            if not _same_connection(old_model[1], desired):
-                suffix = hashlib.sha256(json.dumps(desired, sort_keys=True).encode()).hexdigest()[:12]
-                connection_model = f"model-api-key-{suffix}"
-                desired["id"] = connection_model
-                del templates["models/api-key.yaml"]
-                templates[f"models/api-key-{suffix}.yaml"] = yaml.safe_dump(
-                    desired, sort_keys=False, allow_unicode=True
-                )
-                starter = yaml.safe_load(templates["agents/api-key.yaml"])
-                starter["model"] = connection_model
-                templates["agents/api-key.yaml"] = yaml.safe_dump(starter, sort_keys=False, allow_unicode=True)
-    elif selection.providers:
-        provider = selection.default_agent.removeprefix("agent-")
-        connection_model = f"model-{provider if provider in selection.providers else selection.providers[0]}"
+    elif selection.model is not None:
+        # Setup never replaces an authored Model. A different connection gets a
+        # deterministic new identity so retries do not create duplicates.
+        connection_model = next(
+            resource["model"]
+            for text in templates.values()
+            if (resource := yaml.safe_load(text)).get("kind") == "agent" and resource.get("model")
+        )
+        assert connection_model is not None
         old_model = existing.get(connection_model)
         if old_model is not None:
             model_path, desired = next(

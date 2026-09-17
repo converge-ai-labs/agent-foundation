@@ -13,6 +13,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import uvicorn
+from a13n_harness_ui import model_catalog
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
@@ -179,6 +180,10 @@ async def main() -> None:
         async def resolve(self, context, model_id):
             return FunctionModel(stream_function=model)
 
+        async def offline_directory():
+            return model_catalog.bundled_models()
+
+        model_catalog.fetch_directory = offline_directory
         HarnessUiModelResolver.__call__ = resolve
         settings = HarnessUiSettings(storage=StorageSettings(data_root=root / "data"), pricing_auto_update=False)
         server = create_webui(

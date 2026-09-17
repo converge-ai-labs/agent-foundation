@@ -292,7 +292,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/setup/model-options": {
+    "/api/models/choices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Model Choices */
+        get: operations["model_choices_api_models_choices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Model Catalog */
+        get: operations["model_catalog_api_models_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/options": {
         parameters: {
             query?: never;
             header?: never;
@@ -302,7 +336,24 @@ export interface paths {
         get?: never;
         put?: never;
         /** Model Options */
-        post: operations["model_options_api_setup_model_options_post"];
+        post: operations["model_options_api_models_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/models/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare Model */
+        post: operations["prepare_model_api_models_prepare_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1329,8 +1380,8 @@ export interface components {
         /** ApiKeyAuthentication */
         ApiKeyAuthentication: {
             /**
-             * Kind
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             kind: "api_key";
             /** Env */
@@ -1421,6 +1472,8 @@ export interface components {
              */
             override_allowed?: boolean;
         };
+        /** @enum {string} */
+        AuthenticationKind: "api_key" | "codex_subscription" | "grok_subscription";
         /**
          * Availability
          * @enum {string}
@@ -1507,6 +1560,37 @@ export interface components {
             omitted_fields?: string[];
         };
         CatalogKey: string;
+        /** CatalogModel */
+        CatalogModel: {
+            /** Connection */
+            connection: string;
+            /** Model Id */
+            model_id: string;
+            /** Name */
+            name: string;
+            /**
+             * Recommended
+             * @default false
+             */
+            recommended?: boolean;
+            /**
+             * Source
+             * @default bundled
+             * @enum {string}
+             */
+            source?: "bundled" | "directory";
+            /** Released */
+            released?: string | null;
+            /** Context Window */
+            context_window?: number | null;
+            /**
+             * Input Modalities
+             * @default []
+             */
+            input_modalities?: string[];
+            /** Supports Tools */
+            supports_tools?: boolean | null;
+        };
         /** CatalogReference */
         CatalogReference: {
             /**
@@ -1718,6 +1802,14 @@ export interface components {
             arguments?: components["schemas"]["JsonValue"] | null;
             result?: components["schemas"]["JsonValue"] | null;
         };
+        /** CodexSubscriptionAuthentication */
+        CodexSubscriptionAuthentication: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "codex_subscription";
+        };
         /** CommentAuthor */
         CommentAuthor: {
             /** Display Name */
@@ -1890,6 +1982,15 @@ export interface components {
             media?: boolean;
         } & {
             [key: string]: unknown;
+        };
+        /** ContextChoice */
+        ContextChoice: {
+            /** Value */
+            value: number;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
         };
         /** ContextUsageView */
         ContextUsageView: {
@@ -2346,6 +2447,14 @@ export interface components {
             /** Next Offset */
             next_offset: number | null;
         };
+        /** GrokSubscriptionAuthentication */
+        GrokSubscriptionAuthentication: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "grok_subscription";
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2511,13 +2620,152 @@ export interface components {
             /** Id */
             id: string;
         };
+        ModelAuthentication: components["schemas"]["ApiKeyAuthentication"] | components["schemas"]["CodexSubscriptionAuthentication"] | components["schemas"]["GrokSubscriptionAuthentication"];
         /**
          * ModelCapability
          * @description Harness-owned capabilities of the active Agent model.
          * @enum {string}
          */
         ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding";
+        /** ModelCatalogSnapshot */
+        ModelCatalogSnapshot: {
+            /** Items */
+            items?: components["schemas"]["CatalogModel"][];
+            /**
+             * Status
+             * @default bundled
+             * @enum {string}
+             */
+            status?: "bundled" | "ready" | "stale" | "unavailable";
+            /** Updated At */
+            updated_at?: string | null;
+        };
         ModelCharacteristics: components["schemas"]["HarnessModelCharacteristics"];
+        /** ModelChoice */
+        ModelChoice: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+        };
+        /** ModelChoices */
+        ModelChoices: {
+            /** Connections */
+            connections?: components["schemas"]["ModelConnection"][];
+            /**
+             * Session Affinity Presets
+             * @default [
+             *       {
+             *         "label": "LiteLLM",
+             *         "header": "x-litellm-session-id",
+             *         "description": "Requires session affinity to be enabled on the gateway."
+             *       },
+             *       {
+             *         "label": "Conversation ID",
+             *         "header": "x-conversation-id",
+             *         "description": "For gateways configured to route by this header; configure the routing rule first."
+             *       },
+             *       {
+             *         "label": "Bifrost (API-key affinity)",
+             *         "header": "x-bf-session-id",
+             *         "description": "API-key affinity only; does not guarantee weighted provider or target pinning."
+             *       },
+             *       {
+             *         "label": "X-Session-ID (legacy / custom)",
+             *         "header": "x-session-id",
+             *         "description": "Use only when your gateway is configured to recognize this header."
+             *       }
+             *     ]
+             */
+            session_affinity_presets?: components["schemas"]["SessionAffinityPreset"][];
+        };
+        /** ModelConnection */
+        ModelConnection: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
+            /** Provider */
+            provider: string;
+            authentication: components["schemas"]["AuthenticationKind"];
+            /**
+             * Base Url
+             * @default
+             */
+            base_url?: string;
+            /** Credential Env */
+            credential_env?: string | null;
+            /**
+             * Supports Base Url
+             * @default false
+             */
+            supports_base_url?: boolean;
+            /**
+             * Supports Session Affinity
+             * @default false
+             */
+            supports_session_affinity?: boolean;
+            /** Models */
+            models: components["schemas"]["ModelChoice"][];
+            /** Default Model */
+            default_model: string;
+        };
+        /** ModelOptions */
+        ModelOptions: {
+            /** Name */
+            name: string;
+            /** Route */
+            route: string;
+            /** Presets */
+            presets: components["schemas"]["ModelSettingsChoice"][];
+            /** Context Window */
+            context_window: number | null;
+            /** Known Context Window */
+            known_context_window: number | null;
+            /**
+             * Context Choices
+             * @default []
+             */
+            context_choices?: components["schemas"]["ContextChoice"][];
+            characteristics: components["schemas"]["ModelCharacteristics"];
+            /** Known Capabilities */
+            known_capabilities: boolean;
+            /** Supports Service Tier */
+            supports_service_tier: boolean;
+            /**
+             * Native Tools
+             * @default []
+             */
+            native_tools?: components["schemas"]["ModelToolChoice"][];
+        };
+        /** ModelRecipe */
+        ModelRecipe: {
+            /** Route */
+            route: string;
+            authentication: components["schemas"]["ModelAuthentication"];
+            /** Settings */
+            settings?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Model Configuration */
+            model_configuration?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            model_characteristics?: components["schemas"]["ModelCharacteristics"] | null;
+        };
+        /** ModelSettingsChoice */
+        ModelSettingsChoice: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Settings */
+            settings: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
         /** ModelSummary */
         ModelSummary: {
             /** Model Id */
@@ -2527,6 +2775,23 @@ export interface components {
             /** Route */
             route: string;
             thinking?: components["schemas"]["ThinkingControl"] | null;
+        };
+        /** ModelToolChoice */
+        ModelToolChoice: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Recommended */
+            recommended: boolean;
+            /** Capability */
+            capability?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Replaces Host Operation */
+            replaces_host_operation?: ("search" | "scrape") | null;
         };
         /** NotePage */
         NotePage: {
@@ -3037,89 +3302,6 @@ export interface components {
             /** Description */
             description: string;
         };
-        /** SetupApiKeyModel */
-        SetupApiKeyModel: {
-            /** Route */
-            route: string;
-            authentication: components["schemas"]["ApiKeyAuthentication"];
-            /** Settings */
-            settings?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            /** Model Configuration */
-            model_configuration?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            model_characteristics?: components["schemas"]["ModelCharacteristics"];
-        };
-        /** SetupApiProvider */
-        SetupApiProvider: {
-            /** Value */
-            value: string;
-            /** Label */
-            label: string;
-            /** Base Url */
-            base_url: string;
-            /** Models */
-            models: string[];
-            /**
-             * Supports Session Affinity
-             * @default true
-             */
-            supports_session_affinity?: boolean;
-        };
-        /** SetupChoices */
-        SetupChoices: {
-            defaults: components["schemas"]["SetupSelection"];
-            /** Subscription Models */
-            subscription_models: {
-                [key: string]: components["schemas"]["SetupModelChoice"][];
-            };
-            /** Api Providers */
-            api_providers: components["schemas"]["SetupApiProvider"][];
-            /**
-             * Session Affinity Presets
-             * @default [
-             *       {
-             *         "label": "LiteLLM",
-             *         "header": "x-litellm-session-id",
-             *         "description": "Requires session affinity to be enabled on the gateway."
-             *       },
-             *       {
-             *         "label": "Conversation ID",
-             *         "header": "x-conversation-id",
-             *         "description": "For gateways configured to route by this header; configure the routing rule first."
-             *       },
-             *       {
-             *         "label": "Bifrost (API-key affinity)",
-             *         "header": "x-bf-session-id",
-             *         "description": "API-key affinity only; does not guarantee weighted provider or target pinning."
-             *       },
-             *       {
-             *         "label": "X-Session-ID (legacy / custom)",
-             *         "header": "x-session-id",
-             *         "description": "Use only when your gateway is configured to recognize this header."
-             *       }
-             *     ]
-             */
-            session_affinity_presets?: components["schemas"]["SessionAffinityPreset"][];
-        };
-        /** SetupModelChoice */
-        SetupModelChoice: {
-            /** Value */
-            value: string;
-            /** Label */
-            label: string;
-        };
-        /** SetupModelOptions */
-        SetupModelOptions: {
-            /** Presets */
-            presets: components["schemas"]["SetupSettingsChoice"][];
-            /** Context Window */
-            context_window: number;
-            /** Known Context Window */
-            known_context_window: number | null;
-        };
         /** SetupPreview */
         SetupPreview: {
             /** Files */
@@ -3160,12 +3342,7 @@ export interface components {
         };
         /** SetupSelection */
         SetupSelection: {
-            /**
-             * Providers
-             * @default []
-             */
-            providers?: ("codex" | "grok")[];
-            api_key_model?: components["schemas"]["SetupApiKeyModel"] | null;
+            model?: components["schemas"]["ModelRecipe"] | null;
             /**
              * Instructions
              * @default
@@ -3208,54 +3385,6 @@ export interface components {
             shell_review?: boolean;
             /** Include Default Subagents */
             include_default_subagents?: boolean | null;
-            /**
-             * Codex Model
-             * @default gpt-5.6-sol
-             * @enum {string}
-             */
-            codex_model?: "gpt-5.6-terra" | "gpt-5.6-sol" | "gpt-6-astra";
-            /**
-             * Grok Model
-             * @default grok-4.6
-             * @enum {string}
-             */
-            grok_model?: "grok-4.6" | "grok-4.5" | "grok-4.20-0309-reasoning";
-            /**
-             * Codex Thinking
-             * @default high
-             * @enum {string}
-             */
-            codex_thinking?: "low" | "medium" | "high" | "xhigh";
-            /** Codex Service Tier */
-            codex_service_tier?: ("priority" | "default") | null;
-            /**
-             * Codex Context Window
-             * @default 350000
-             */
-            codex_context_window?: number;
-            /**
-             * Proactive Context Management Threshold
-             * @default 0.65
-             */
-            proactive_context_management_threshold?: number;
-            /**
-             * Compact Threshold
-             * @default 0.9
-             */
-            compact_threshold?: number;
-        };
-        /** SetupSettingsChoice */
-        SetupSettingsChoice: {
-            /** Value */
-            value: string;
-            /** Label */
-            label: string;
-            /** Description */
-            description: string;
-            /** Settings */
-            settings: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
         };
         /** SetupStatus */
         SetupStatus: {
@@ -3271,7 +3400,7 @@ export interface components {
              * @default
              */
             draft_scope?: string;
-            choices?: components["schemas"]["SetupChoices"];
+            defaults?: components["schemas"]["SetupSelection"];
             /** Configuration Path */
             configuration_path: string;
             /**
@@ -4352,17 +4481,35 @@ export interface components {
             /** End Line */
             end_line?: number | null;
         };
-        /** SetupModelOptionsRequest */
-        SetupModelOptionsRequest: {
-            /** Provider */
-            provider: string;
+        /** ModelOptionsRequest */
+        ModelOptionsRequest: {
+            /** Connection */
+            connection: string;
             /** Model Id */
             model_id: string;
-            /**
-             * Base Url
-             * @default
-             */
-            base_url?: string;
+            /** Base Url */
+            base_url?: string | null;
+        };
+        /** ModelRecipeRequest */
+        ModelRecipeRequest: {
+            /** Connection */
+            connection: string;
+            /** Model Id */
+            model_id: string;
+            /** Base Url */
+            base_url?: string | null;
+            authentication?: components["schemas"]["ModelAuthentication"] | null;
+            /** Preset */
+            preset?: string | null;
+            /** Settings */
+            settings?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            } | null;
+            /** Model Configuration */
+            model_configuration?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            model_characteristics?: components["schemas"]["ModelCharacteristics"] | null;
         };
         /** SetupApplyRequest */
         SetupApplyRequest: {
@@ -5259,7 +5406,47 @@ export interface operations {
             };
         };
     };
-    model_options_api_setup_model_options_post: {
+    model_choices_api_models_choices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelChoices"];
+                };
+            };
+        };
+    };
+    model_catalog_api_models_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelCatalogSnapshot"];
+                };
+            };
+        };
+    };
+    model_options_api_models_options_post: {
         parameters: {
             query?: never;
             header?: never;
@@ -5268,7 +5455,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SetupModelOptionsRequest"];
+                "application/json": components["schemas"]["ModelOptionsRequest"];
             };
         };
         responses: {
@@ -5278,7 +5465,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SetupModelOptions"];
+                    "application/json": components["schemas"]["ModelOptions"];
+                };
+            };
+        };
+    };
+    prepare_model_api_models_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelRecipeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelRecipe"];
                 };
             };
         };

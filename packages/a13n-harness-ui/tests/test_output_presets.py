@@ -5,9 +5,10 @@ from typing import cast
 
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
-from a13n_harness_ui.configuration.setup import SetupApiKeyModel, SetupSelection
+from a13n_harness_ui.configuration.setup import SetupSelection
 from a13n_harness_ui.interactive.onboarding import run_setup
 from a13n_harness_ui.interactive.setup import SetupWizard
+from a13n_harness_ui.model_authoring import ModelRecipe
 from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS, settings_presets
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 
@@ -94,7 +95,7 @@ def test_backtracking_replaces_the_whole_preset_and_context_does_not_scale_outpu
         "api",
         "openai-responses",
         "https://example.invalid/v1",
-        "off",
+        "new",
         "env:TEST_KEY",
         "gpt-5.4",
         "high",
@@ -110,8 +111,8 @@ def test_backtracking_replaces_the_whole_preset_and_context_does_not_scale_outpu
     assert "Output limit: 16,384 tokens" in wizard.notice()
     wizard.accept("Example")
     selection = SetupSelection.model_validate(wizard.selection("/tmp"))
-    assert selection.api_key_model.settings["max_tokens"] == 16384
-    assert selection.api_key_model.model_characteristics.context_window_tokens == 64000
+    assert selection.model.settings["max_tokens"] == 16384
+    assert selection.model.model_characteristics.context_window_tokens == 64000
 
 
 @pytest.mark.anyio
@@ -171,7 +172,7 @@ async def test_all_creation_paths_display_and_persist_paired_settings(tmp_path: 
 
 
 def test_direct_setup_settings_remain_authoritative() -> None:
-    model = SetupApiKeyModel.model_validate(
+    model = ModelRecipe.model_validate(
         {
             "route": "openai-responses:gpt-5.4",
             "authentication": {"kind": "api_key", "env": "TEST_KEY"},

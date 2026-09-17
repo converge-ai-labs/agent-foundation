@@ -223,11 +223,14 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
 ) -> None:
     from a13n_environment import LocalEnvdEnvironment, LocalEnvdProviderRuntime, TemporaryLocalEnvdRuntimeAllocator
     from a13n_harness_ui.errors import AppStateError
+    from a13n_harness_ui.model_authoring import ModelRecipeRequest, prepare_model
 
     path = tmp_path / "config.yaml"
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
         selection = SetupSelection(
-            providers=("codex",), default_agent="agent-codex", environment_profile="environment-sandbox"
+            model=prepare_model(ModelRecipeRequest(connection="codex", model_id="gpt-5.6-sol")),
+            default_agent="agent-codex",
+            environment_profile="environment-sandbox",
         )
         preview = await app.preview_setup(selection)
         assert preview.project_paths == (str(app._store.layout.staging),)

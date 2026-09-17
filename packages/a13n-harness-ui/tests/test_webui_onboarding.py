@@ -1,55 +1,46 @@
 """First-use discovery and creation stay local, explicit, and recoverable."""
 
 from pathlib import Path
-from typing import get_args
 
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.configuration.setup import SetupSelection
 from a13n_harness_ui.errors import HarnessUiError, StoreIntegrityError
+from a13n_harness_ui.model_authoring import ModelChoices, ModelOptionsRequest, model_options
 from a13n_harness_ui.model_presets import API_MODEL_SUGGESTIONS, API_PROVIDERS, settings_presets
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
-from a13n_harness_ui.setup import SetupModelOptionsRequest, setup_choices, setup_model_options
 from anyio import create_task_group
 
 
-def test_setup_choices_project_existing_release_catalog() -> None:
-    choices = setup_choices()
-    assert choices.defaults == SetupSelection(environment_profile="environment-native")
-    for provider in ("codex", "grok"):
-        assert tuple(choice.value for choice in choices.subscription_models[provider]) == get_args(
-            SetupSelection.model_fields[f"{provider}_model"].annotation
-        )
-    assert tuple(provider.value for provider in choices.api_providers) == tuple(p.route for p in API_PROVIDERS)
-    for provider in choices.api_providers:
-        assert provider.models == API_MODEL_SUGGESTIONS[provider.value]
+def test_model_choices_project_release_owned_connections() -> None:
+    choices = ModelChoices()
+    subscriptions = [c for c in choices.connections if c.authentication != "api_key"]
+    assert [c.id for c in subscriptions] == ["codex", "grok-subscription"]
+    providers = [c for c in choices.connections if c.authentication == "api_key"]
+    assert tuple(provider.id for provider in providers) == tuple(p.route for p in API_PROVIDERS)
+    for provider in providers:
+        assert tuple(m.value for m in provider.models) == API_MODEL_SUGGESTIONS[provider.id]
 
 
 def test_api_model_options_reuse_presets_without_provider_discovery() -> None:
-    options = setup_model_options(
-        SetupModelOptionsRequest(provider="openai-responses", model_id="gpt-5.4", base_url="https://api.openai.com/v1")
+    options = model_options(
+        ModelOptionsRequest(connection="openai-responses", model_id="gpt-5.4", base_url="https://api.openai.com/v1")
     )
     assert [p.settings for p in options.presets] == [
         p.settings for p in settings_presets("openai-responses", "gpt-5.4")
     ]
-    assert options.context_window <= 350000
-    custom = setup_model_options(
-        SetupModelOptionsRequest(
-            provider="openai-chat", model_id="custom-deployment", base_url="http://localhost:8080/v1"
-        )
+    assert options.context_window is not None and options.context_window <= 350000
+    custom = model_options(
+        ModelOptionsRequest(connection="openai-chat", model_id="custom-deployment", base_url="http://localhost:8080/v1")
     )
     assert custom.known_context_window is None
     assert custom.context_window == 350000
     with pytest.raises(HarnessUiError, match="without credentials"):
-        setup_model_options(
-            SetupModelOptionsRequest(
-                provider="openai-chat", model_id="custom", base_url="https://key:secret@example.com"
-            )
+        model_options(
+            ModelOptionsRequest(connection="openai-chat", model_id="custom", base_url="https://key:secret@example.com")
         )
-    with pytest.raises(HarnessUiError, match="default endpoint"):
-        setup_model_options(
-            SetupModelOptionsRequest(provider="xai", model_id="grok-4.6", base_url="https://example.com")
-        )
+    with pytest.raises(HarnessUiError, match="native endpoint"):
+        model_options(ModelOptionsRequest(connection="xai", model_id="grok-4.6", base_url="https://example.com"))
 
 
 @pytest.mark.anyio
@@ -108,3 +99,50 @@ async def test_first_conversation_identity_is_create_only_and_survives_restart(t
         with pytest.raises(StoreIntegrityError, match="already exists"):
             await app.create_thread(thread_id=identity, title="Different request")
         assert (await app.list_threads()).total == 1
+
+
+@pytest.mark.anyio
+async def test_shared_model_authoring_http_contract_is_inert_and_has_one_setup_shape(tmp_path: Path) -> None:
+    import httpx
+    from a13n_harness_ui.webui import create_webui
+
+    configuration = tmp_path / "config.yaml"
+    server = create_webui(
+        lambda: open_harness_ui_app(
+            HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False),
+            configuration_path=configuration,
+        ),
+        api_key="model-authoring-test",
+    )
+    async with (
+        server.router.lifespan_context(server),
+        httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server),
+            base_url="http://localhost",
+            headers={"Authorization": "Bearer model-authoring-test"},
+        ) as client,
+    ):
+        choices = await client.get("/api/models/choices")
+        assert choices.status_code == 200
+        assert {c["id"] for c in choices.json()["connections"]} >= {"codex", "grok-subscription", "openai-chat"}
+        catalog = await client.get("/api/models/catalog")
+        assert catalog.status_code == 200 and catalog.json()["items"]
+        options = await client.post("/api/models/options", json={"connection": "codex", "model_id": "gpt-5.6-sol"})
+        assert options.status_code == 200 and options.json()["supports_service_tier"]
+        recipe = await client.post("/api/models/prepare", json={"connection": "codex", "model_id": "gpt-5.6-sol"})
+        assert recipe.status_code == 200
+        assert recipe.json()["authentication"] == {"kind": "codex_subscription"}
+        assert not configuration.exists()
+        assert not (configuration.parent / "models").exists()
+        assert "/api/setup/model-options" not in server.openapi()["paths"]
+        assert (await client.post("/api/setup/model-options", json={})).status_code == 405
+        rejected = await client.post(
+            "/api/setup/preview", json={"providers": ["codex"], "environment_profile": "environment-native"}
+        )
+        assert rejected.status_code == 400
+        preview = await client.post(
+            "/api/setup/preview", json={"model": recipe.json(), "environment_profile": "environment-native"}
+        )
+        assert preview.status_code == 200, preview.text
+        assert "models/codex.yaml" in preview.json()["files"]
+        assert not configuration.exists()

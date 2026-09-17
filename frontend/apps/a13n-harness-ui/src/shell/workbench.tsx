@@ -1,3 +1,4 @@
+import { ModelsPage } from "../configuration/models";
 import { useEffect, useRef, useState } from "react";
 import {
   Link,
@@ -354,12 +355,13 @@ function WorkbenchContent({
                   path="/settings/notifications"
                   element={<NotificationSettings />}
                 />
+                <Route path="/settings/models" element={<ModelsPage />} />
                 <Route
                   path="/settings/agents"
                   element={
                     <SourcesPage
-                      kinds={["agent", "model"]}
-                      title="Agents & models"
+                      kinds={["agent"]}
+                      title="Agents"
                       description="Configure how your agents work and which models they use."
                     />
                   }
