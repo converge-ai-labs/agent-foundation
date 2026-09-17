@@ -243,12 +243,34 @@ class TranscriptEntry(SurfaceModel):
         return value.astimezone(UTC)
 
 
+class TranscriptTurn(SurfaceModel):
+    """One ordinary input and its execution, including steering and resumes."""
+
+    turn_id: str
+    input_position: int = Field(ge=0)
+    end_position: int = Field(ge=0)
+    final_position: int | None = Field(default=None, ge=0)
+    preview: str = Field(max_length=512)
+    timestamp: datetime | None = None
+    tool_count: int = Field(default=0, ge=0)
+    steering_count: int = Field(default=0, ge=0)
+
+
+class TranscriptInputPage(SurfaceModel):
+    continuation_id: str
+    turns: tuple[TranscriptTurn, ...]
+    next_cursor: str | None = None
+
+
 class TranscriptPage(SurfaceModel):
     completion_version: int = Field(default=0, ge=0)
     continuation_id: str | None = Field(default=None, pattern=r"^(?:initial:)?[0-9a-f]{64}$")
     entries: tuple[TranscriptEntry, ...]
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+    newer_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+    turns: tuple[TranscriptTurn, ...] = ()
+    boundary_entries: tuple[TranscriptEntry, ...] = ()
 
 
 class EnvironmentProfileSummary(SurfaceModel):

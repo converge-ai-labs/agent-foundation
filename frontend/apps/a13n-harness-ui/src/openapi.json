@@ -3746,6 +3746,22 @@
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "turn_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Turn Id"
+            }
           }
         ],
         "responses": {
@@ -3755,6 +3771,89 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TranscriptPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/inputs": {
+      "get": {
+        "summary": "Transcript Inputs",
+        "operationId": "transcript_inputs_api_threads__thread_id__inputs_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "expected_continuation_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Continuation Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TranscriptInputPage"
                 }
               }
             }
@@ -12113,6 +12212,39 @@
         ],
         "title": "TranscriptEntry"
       },
+      "TranscriptInputPage": {
+        "properties": {
+          "continuation_id": {
+            "type": "string",
+            "title": "Continuation Id"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptTurn"
+            },
+            "type": "array",
+            "title": "Turns"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "continuation_id",
+          "turns"
+        ],
+        "title": "TranscriptInputPage"
+      },
       "TranscriptPage": {
         "properties": {
           "completion_version": {
@@ -12157,6 +12289,35 @@
               }
             ],
             "title": "Next Cursor"
+          },
+          "newer_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newer Cursor"
+          },
+          "turns": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptTurn"
+            },
+            "type": "array",
+            "title": "Turns",
+            "default": []
+          },
+          "boundary_entries": {
+            "items": {
+              "$ref": "#/components/schemas/TranscriptEntry"
+            },
+            "type": "array",
+            "title": "Boundary Entries",
+            "default": []
           }
         },
         "additionalProperties": false,
@@ -12297,6 +12458,75 @@
           "kind"
         ],
         "title": "TranscriptPart"
+      },
+      "TranscriptTurn": {
+        "properties": {
+          "turn_id": {
+            "type": "string",
+            "title": "Turn Id"
+          },
+          "input_position": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Input Position"
+          },
+          "end_position": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "End Position"
+          },
+          "final_position": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Final Position"
+          },
+          "preview": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Preview"
+          },
+          "timestamp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp"
+          },
+          "tool_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Tool Count",
+            "default": 0
+          },
+          "steering_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Steering Count",
+            "default": 0
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "turn_id",
+          "input_position",
+          "end_position",
+          "preview"
+        ],
+        "title": "TranscriptTurn",
+        "description": "One ordinary input and its execution, including steering and resumes."
       },
       "UsageTotals": {
         "properties": {

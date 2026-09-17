@@ -1968,6 +1968,9 @@ async def test_consumed_steering_checkpoint_and_terminal_save_use_successive_sel
             ] == ["Initial task", "Focus on correctness"]
             assert any(part.text == "First answer" for entry in history.entries for part in entry.parts)
             assert not any(part.text == "Steered answer" for entry in history.entries for part in entry.parts)
+            assert len(history.turns) == 1
+            assert history.turns[0].final_position is None
+            assert history.turns[0].steering_count == 1
             release_second.set()
             with fail_after(10):
                 outcome = await app.wait_root_operation(receipt.receipt_id)
@@ -1992,6 +1995,10 @@ async def test_consumed_steering_checkpoint_and_terminal_save_use_successive_sel
             if part.kind == "user" and part.metadata.display
         ] == ["Initial task", "Focus on correctness"]
         assert any(part.text == "Steered answer" for entry in final_history.entries for part in entry.parts)
+        assert len(final_history.turns) == 1
+        assert final_history.turns[0].final_position == final_history.entries[-1].position
+        directory = await app.get_thread_inputs(thread_id=thread.thread_id)
+        assert directory.turns == final_history.turns
 
 
 @pytest.mark.parametrize("cancel_count", [1, 3])
@@ -2218,3 +2225,43 @@ async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions
         assert retained.continuation_id == pending.continuation_id
         assert retained.expires_at is None
         assert await reopened.active_root_operation(pending_thread.thread_id) is None
+
+
+async def test_input_directory_and_bidirectional_history_use_saved_turn_boundaries(tmp_path, monkeypatch):
+    async def model(messages, info):
+        yield "Final answer"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = _settings(tmp_path / "state")
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        for prompt in ("First question", "Second question", "Third question"):
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=prompt)
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+            assert outcome.status is RootOperationStatus.completed
+        index = await app.get_thread_inputs(thread_id=thread.thread_id, limit=2)
+        assert [turn.preview for turn in index.turns] == ["First question", "Second question"]
+        assert all(turn.final_position is not None for turn in index.turns)
+        assert index.next_cursor is not None
+        remaining = await app.get_thread_inputs(thread_id=thread.thread_id, cursor=index.next_cursor)
+        assert [turn.preview for turn in remaining.turns] == ["Third question"]
+        assert remaining.next_cursor is None
+        middle = await app.get_thread_transcript(thread_id=thread.thread_id, turn_id=index.turns[1].turn_id, limit=1)
+        assert middle.turns == (index.turns[1],)
+        assert middle.entries[0].position == index.turns[1].final_position
+        assert middle.boundary_entries[0].position == index.turns[1].input_position
+        assert middle.next_cursor and middle.newer_cursor
+        earlier = await app.get_thread_transcript(thread_id=thread.thread_id, cursor=middle.next_cursor, limit=1)
+        later = await app.get_thread_transcript(thread_id=thread.thread_id, cursor=middle.newer_cursor, limit=1)
+        assert earlier.entries[0].position + 1 == middle.entries[0].position
+        assert later.entries[0].position == middle.entries[0].position + 1
+        async with open_harness_ui_app(settings, configuration_path=root) as reopened:
+            assert await reopened.get_thread_inputs(thread_id=thread.thread_id, limit=2) == index
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Fourth question")
+        await app.wait_root_operation(receipt.receipt_id)
+        with pytest.raises(ThreadError, match="another history"):
+            await app.get_thread_inputs(thread_id=thread.thread_id, cursor=index.next_cursor)

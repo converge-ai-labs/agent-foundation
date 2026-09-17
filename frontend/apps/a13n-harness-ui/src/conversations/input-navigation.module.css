@@ -1,0 +1,112 @@
+.rail {
+  position: absolute;
+  inset-inline-start: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  max-height: 65%;
+  width: 34px;
+  overflow-y: auto;
+  scrollbar-width: none;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  padding-block: 8px;
+}
+.tick {
+  flex: 0 0 22px;
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+.tick span {
+  width: 12px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--a13n-secondary);
+  opacity: 0.4;
+  transition:
+    width 120ms ease,
+    opacity 120ms ease;
+}
+.tick:hover span,
+.tick[aria-current] span {
+  width: 23px;
+  opacity: 1;
+  background: var(--a13n-text);
+}
+.tick:focus-visible {
+  outline: 2px solid var(--a13n-text);
+  outline-offset: -2px;
+}
+.preview {
+  width: min(320px, calc(100vw - 64px));
+  padding: 10px 12px;
+  line-height: 1.5;
+  text-align: start;
+}
+.preview small {
+  color: var(--a13n-secondary);
+}
+.preview p {
+  margin: 4px 0 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.mobile {
+  display: none;
+}
+.menu {
+  width: min(340px, calc(100vw - 32px));
+}
+.menu nav {
+  max-height: 50dvh;
+  overflow-y: auto;
+  margin-top: 10px;
+}
+.menu nav button {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  text-align: start;
+  cursor: pointer;
+}
+.menu nav button:hover,
+.menu nav button[aria-current] {
+  background: var(--a13n-hover);
+}
+.menu nav small {
+  color: var(--a13n-secondary);
+}
+.menu nav span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@container conversation-reader (max-width: 600px) {
+  .rail {
+    display: none;
+  }
+  .mobile {
+    display: block;
+    position: absolute;
+    inset: 0 auto auto 0;
+    z-index: 2;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tick span {
+    transition: none;
+  }
+}

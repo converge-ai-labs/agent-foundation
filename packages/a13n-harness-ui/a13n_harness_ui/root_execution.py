@@ -515,7 +515,9 @@ class RootRunExecutor:
                     value=StoredContinuation(
                         harness_release=harness_version,
                         run_composition=composition,
-                        harness_state=with_display_history(state, display.capture(state.message_history))
+                        harness_state=with_display_history(
+                            state, display.capture(state.message_history, completed=completed_run_id is not None)
+                        )
                         if display is not None
                         else state,
                         excerpt=excerpt,

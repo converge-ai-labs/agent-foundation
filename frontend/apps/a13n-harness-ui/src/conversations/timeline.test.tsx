@@ -83,6 +83,18 @@ it.each(["send", "steer"] as const)(
     view.rerender(
       <ConversationTranscript
         entries={[saved(input.parts as Schema<"TranscriptPart">[])]}
+        turns={
+          action === "send"
+            ? [
+                {
+                  turn_id: input.id,
+                  input_position: 0,
+                  end_position: 1,
+                  preview: "Hello",
+                },
+              ]
+            : []
+        }
         blocks={[block]}
         localInputs={[]}
         continuation="C1"
@@ -345,4 +357,146 @@ it("keeps history and an expanded summary through saved cutover and later contin
   expect(screen.getByText("Summary").closest("details")).toBe(details);
   expect(details.open).toBe(true);
   expect(screen.getByText("Earlier answer")).toBe(earlier);
+});
+
+it("collapses the whole completed process including steering, preserving all final text parts", () => {
+  const input = local("round", "Original input");
+  const entries = [
+    saved(input.parts as Schema<"TranscriptPart">[], 0),
+    saved(
+      [
+        { kind: "thinking", text: "Internal plan" },
+        { kind: "assistant", text: "Progress update" },
+      ],
+      1,
+    ),
+    saved(
+      previewInput("steer", ["Change direction"]) as Schema<"TranscriptPart">[],
+      2,
+    ),
+    saved(
+      [
+        { kind: "thinking", text: "Final reasoning" },
+        { kind: "assistant", text: "Final part one" },
+        { kind: "assistant", text: "Final part two" },
+      ],
+      3,
+    ),
+  ];
+  const turn = {
+    turn_id: "round",
+    input_position: 0,
+    end_position: 4,
+    final_position: 3,
+    preview: "Original input",
+    steering_count: 1,
+  };
+  const view = render(
+    <ConversationTranscript
+      entries={entries}
+      turns={[turn]}
+      blocks={[]}
+      localInputs={[]}
+      threadId="one"
+    />,
+  );
+  const toggle = screen.getByRole("button", { name: /Execution details/ });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(screen.getByText("Change direction").closest("[hidden]")).toBeTruthy();
+  expect(screen.getByText("Progress update").closest("[hidden]")).toBeTruthy();
+  expect(screen.getByText("Final reasoning").closest("[hidden]")).toBeTruthy();
+  for (const text of ["Original input", "Final part one", "Final part two"])
+    expect(screen.getByText(text).closest("[hidden]")).toBeNull();
+  fireEvent.click(toggle);
+  expect(screen.getByText("Change direction").closest("[hidden]")).toBeNull();
+  view.rerender(
+    <ConversationTranscript
+      entries={[...entries]}
+      turns={[{ ...turn }]}
+      blocks={[]}
+      localInputs={[]}
+      threadId="one"
+      continuation="new-head"
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /Execution details/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+});
+
+it("keeps unfinished work open and only auto-collapses after a saved final boundary", () => {
+  const entries = [
+    saved(previewInput("round", ["Input"]) as Schema<"TranscriptPart">[], 0),
+    saved([{ kind: "assistant", text: "Working" }], 1),
+  ];
+  const turn = {
+    turn_id: "round",
+    input_position: 0,
+    end_position: 2,
+    preview: "Input",
+  };
+  const view = render(
+    <ConversationTranscript
+      entries={entries}
+      turns={[turn]}
+      blocks={[]}
+      localInputs={[]}
+      threadId="one"
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /Execution details/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("true");
+  view.rerender(
+    <ConversationTranscript
+      entries={[...entries, saved([{ kind: "assistant", text: "Done" }], 2)]}
+      turns={[{ ...turn, end_position: 3, final_position: 2 }]}
+      blocks={[]}
+      localInputs={[]}
+      threadId="one"
+    />,
+  );
+  expect(
+    screen
+      .getByRole("button", { name: /Execution details/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(screen.getByText("Done").closest("[hidden]")).toBeNull();
+});
+
+it("keeps boundary input and final visible while earlier process pages load", () => {
+  const load = vi.fn();
+  render(
+    <ConversationTranscript
+      entries={[
+        saved(
+          previewInput("round", ["Original"]) as Schema<"TranscriptPart">[],
+          0,
+        ),
+        saved([{ kind: "assistant", text: "Final" }], 80),
+      ]}
+      turns={[
+        {
+          turn_id: "round",
+          input_position: 0,
+          end_position: 81,
+          final_position: 80,
+          preview: "Original",
+        },
+      ]}
+      blocks={[]}
+      localInputs={[]}
+      threadId="one"
+      loadEarlier={load}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Execution details" }));
+  fireEvent.click(screen.getByRole("button", { name: "Load earlier steps" }));
+  expect(load).toHaveBeenCalledOnce();
+  expect(screen.getAllByText("Original")).toHaveLength(1);
+  expect(screen.getAllByText("Final")).toHaveLength(1);
 });
