@@ -103,6 +103,7 @@ function ConnectionChoice({
                 identity={preset.key}
                 endpoint={preset.endpoint_url}
                 logo={preset.logo_url}
+                fallbackIdentity="mcp"
               />
             ),
           })),
@@ -147,6 +148,7 @@ function ConnectionChoice({
               identity={selected.preset?.key}
               endpoint={selected.preset?.endpoint_url}
               logo={selected.preset?.logo_url}
+              fallbackIdentity="mcp"
             />
           )}
           <div>

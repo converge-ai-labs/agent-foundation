@@ -1037,8 +1037,11 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
     original = resolver.resolve_run(source, _selection())
+    # Service-tier support does not imply thinking support (deepseek-chat is
+    # non-reasoning). Unsupported explicit thinking is tested separately.
+    thinking = None if route == "deepseek:deepseek-chat" else "low"
     composition = resolver.resolve_run(
-        source, _selection(), model_overrides=RunModelOverrides(service_tier=tier, thinking="low")
+        source, _selection(), model_overrides=RunModelOverrides(service_tier=tier, thinking=thinking)
     )
     assert composition.root.model.route == route
     if tier is None:
@@ -1047,7 +1050,7 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
         assert composition.root.model.settings["service_tier"] == tier
         if tier_key != "service_tier":
             assert tier_key not in composition.root.model.settings
-    assert composition.root.model.settings["thinking"] == "low"
+    assert composition.root.model.settings.get("thinking") == thinking
     assert composition.root.model.settings["max_tokens"] == 32768
     assert composition.root.children[0].definition.model == composition.root.model
     assert composition.root.children[1].definition.model == original.root.children[1].definition.model

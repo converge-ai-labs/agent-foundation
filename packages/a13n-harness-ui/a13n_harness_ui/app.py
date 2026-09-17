@@ -166,8 +166,9 @@ from a13n_harness_ui.page_presence import (
     TerminalPage,
     WorkbenchPage,
 )
+from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.root_execution import RootRunExecutor
-from a13n_harness_ui.root_input import detach_input
+from a13n_harness_ui.root_input import append_surface_hint, detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.settings import HarnessUiSettings
 from a13n_harness_ui.setup import (
@@ -244,6 +245,7 @@ from a13n_harness_ui.thread_files import (
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
+from a13n_harness_ui.web_push import WebPush
 
 
 @dataclass(frozen=True, slots=True)
@@ -327,8 +329,10 @@ class HarnessUiApp:
         grok_login: GrokLoginCallback | None,
         candidate_error: HarnessUiError | None = None,
         share_computer: bool = False,
+        web_push: WebPush | None = None,
     ) -> None:
         self._settings = settings
+        self._web_push = web_push
         self._store = store
         self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
         self._logins: LoginSessions | None = None
@@ -368,6 +372,33 @@ class HarnessUiApp:
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
+
+    def _push(self) -> WebPush:
+        if self._web_push is None:
+            raise HarnessUiError("Web Push is only available in WebUI mode.", code="push_unavailable")
+        return self._web_push
+
+    async def push_configuration(self) -> PushConfiguration:
+        async with self._operation():
+            return await self._push().configuration()
+
+    async def subscribe_push(self, subscription: PushSubscriptionInput) -> PushSubscriptionView:
+        async with self._operation():
+            followed = []
+            for thread_id in subscription.thread_ids:
+                thread = await self._store.threads.get(thread_id)
+                if thread is not None and thread.parent_thread_id is None:
+                    followed.append(thread_id)
+            subscription = subscription.model_copy(update={"thread_ids": tuple(followed)})
+            return PushSubscriptionView(subscription_id=await self._push().repository.save(subscription))
+
+    async def unsubscribe_push(self, subscription_id: str) -> None:
+        async with self._operation():
+            await self._push().repository.remove(subscription_id)
+
+    async def test_push(self, subscription_id: str) -> PushTestResult:
+        async with self._operation():
+            return await self._push().test(subscription_id)
 
     async def start_login(self, request: LoginRequest) -> LoginStatus:
         async with self._operation():
@@ -1161,6 +1192,10 @@ class HarnessUiApp:
         async with self._operation():
             return await self._output_comments.child_outputs(parent_thread_id, execution_id, cursor=cursor, limit=limit)
 
+    async def lookup_threads(self, *, thread_ids: tuple[str, ...]) -> ThreadPage:
+        async with self._operation():
+            return await self._projections.lookup_threads(thread_ids)
+
     async def get_thread_transcript(
         self,
         *,
@@ -1589,6 +1624,7 @@ class HarnessUiApp:
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
+        input_surface: Literal["tui", "webui"] | None = None,
     ) -> RootRunReceipt:
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
@@ -1600,6 +1636,8 @@ class HarnessUiApp:
             )
             await self._threads.get(thread_id)
             prompt = await self._prepare_input(thread_id, prompt, attachment_ids)
+            if input_surface is not None:
+                prompt = append_surface_hint(prompt, input_surface)
             receipt = await self._root_runs.submit_prompt(
                 thread_id=thread_id,
                 prompt=prompt,
@@ -2360,8 +2398,15 @@ async def open_harness_ui_app(
                 cleanup_timeout_seconds=cleanup_timeout,
                 thread_files=thread_files,
             )
+            web_push = None
+            if host_mode == "webui":
+                push_client = await resources.enter_async_context(
+                    httpx2.AsyncClient(timeout=10, follow_redirects=False)
+                )
+                web_push = WebPush(store, push_client)
             root_runs = RootRunCoordinator(
                 root_executor,
+                notify=web_push.enqueue if web_push is not None else None,
                 summary_hub=summary_hub,
                 observation=observation,
                 touch_thread=store.threads.touch,
@@ -2429,6 +2474,7 @@ async def open_harness_ui_app(
                 grok_login=grok_login,
                 candidate_error=candidate_error,
                 share_computer=share_computer,
+                web_push=web_push,
             )
             if host_mode == "webui":
                 thread_tools = ThreadToolController(
@@ -2451,6 +2497,8 @@ async def open_harness_ui_app(
                 async with create_task_group() as background:
                     app._logins = LoginSessions(background, app._account)
                     background.start_soon(app._prune_thread_files_periodically)
+                    if web_push is not None:
+                        background.start_soon(web_push.run)
                     if configuration_path is not None:
                         background.start_soon(app._observe_configuration)
                     try:

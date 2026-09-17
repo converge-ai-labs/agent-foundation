@@ -70,6 +70,7 @@ from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, Summary
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
+from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.output_comment_models import (
     CommentEdit,
     CommentPage,
@@ -87,6 +88,7 @@ from a13n_harness_ui.page_presence import (
     PresenceFrame,
     PresenceReport,
 )
+from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupModelOptions, SetupModelOptionsRequest, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
 from a13n_harness_ui.storage import ThreadConfiguration
@@ -116,6 +118,7 @@ from a13n_harness_ui.surfaces import (
     ThreadConfigurationResolution,
     ThreadDetail,
     ThreadFocusSnapshot,
+    ThreadLookup,
     ThreadMetadataMutation,
     ThreadPage,
     ThreadSelectorCatalog,
@@ -205,6 +208,7 @@ class SteerRequest(SurfaceModel):
 
 class SubmitRequest(PromptRequest):
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    thinking: ThinkingSelection | None = None
 
 
 class RootSteerRequest(PromptRequest):
@@ -482,6 +486,25 @@ def create_webui(
             status_code=200 if available else 503,
             headers={"Cache-Control": "no-store"},
         )
+
+    @server.get("/api/push/configuration", response_model=PushConfiguration)
+    async def push_configuration() -> PushConfiguration:
+        return await app().push_configuration()
+
+    @server.put(
+        "/api/push/subscription", response_model=PushSubscriptionView, openapi_extra=_body(PushSubscriptionInput)
+    )
+    async def subscribe_push(request: Request) -> PushSubscriptionView:
+        return await app().subscribe_push(await _document(request, PushSubscriptionInput))
+
+    @server.delete("/api/push/subscriptions/{subscription_id}", status_code=204)
+    async def unsubscribe_push(subscription_id: str) -> Response:
+        await app().unsubscribe_push(subscription_id)
+        return Response(status_code=204)
+
+    @server.post("/api/push/subscriptions/{subscription_id}/test", response_model=PushTestResult)
+    async def test_push(subscription_id: str) -> PushTestResult:
+        return await app().test_push(subscription_id)
 
     @server.get("/api/status", response_model=ListenerStatus)
     async def status() -> ListenerStatus:
@@ -1096,6 +1119,11 @@ def create_webui(
     async def selectors() -> ThreadSelectorCatalog:
         return await app().thread_selectors()
 
+    @server.post("/api/threads/lookup", response_model=ThreadPage, openapi_extra=_body(ThreadLookup))
+    async def lookup_threads(request: Request) -> ThreadPage:
+        query = await _document(request, ThreadLookup)
+        return await app().lookup_threads(thread_ids=query.thread_ids)
+
     @server.get("/api/threads/activity", response_model=ThreadActivityPage)
     async def thread_activity(
         project_id: Annotated[str | None, Query(max_length=128)] = None,
@@ -1280,8 +1308,9 @@ def create_webui(
                 thread_id=thread_id,
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
-                model_overrides=RunModelOverrides(model_id=document.model_id) if document.model_id else None,
+                model_overrides=RunModelOverrides(model_id=document.model_id, thinking=document.thinking),
                 skill_references=document.skill_references,
+                input_surface="webui",
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1414,6 +1443,7 @@ def create_webui(
     async def static(path: str) -> FileResponse | JSONResponse:
         install_assets = {
             "manifest.webmanifest": "application/manifest+json",
+            "sw.js": "text/javascript",
             "icons/icon-192.png": "image/png",
             "icons/icon-512.png": "image/png",
             "icons/icon-maskable-512.png": "image/png",
@@ -1440,6 +1470,7 @@ def create_webui(
             "settings/source",
             "settings/accounts",
             "settings/catalog",
+            "settings/notifications",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects", "new"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)

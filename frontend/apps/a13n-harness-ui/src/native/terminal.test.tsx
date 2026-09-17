@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -13,11 +14,18 @@ import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import TerminalScreen from "./terminal-screen";
 import { TerminalPanel } from "./terminal";
+import { ComposerDrafts } from "../conversations/composer";
+import { ThreadDraft, encode } from "../conversations/draft";
+import * as Y from "yjs";
 
 const emulator = vi.hoisted(() => ({
   input: (_: string) => {},
   disposed: vi.fn(),
   resized: vi.fn(),
+  selection: "",
+  select: () => {},
+  findNext: vi.fn(() => true),
+  findPrevious: vi.fn(() => true),
 }));
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
@@ -26,6 +34,18 @@ vi.mock("@xterm/xterm", () => ({
     open() {}
     focus() {}
     reset() {}
+    buffer = { active: { getLine: () => undefined } };
+    registerLinkProvider() {
+      return { dispose() {} };
+    }
+    getSelection() {
+      return emulator.selection;
+    }
+    onSelectionChange(fn: () => void) {
+      emulator.select = fn;
+      return { dispose() {} };
+    }
+    attachCustomKeyEventHandler() {}
     resize = emulator.resized;
     onData(fn: (text: string) => void) {
       emulator.input = fn;
@@ -47,6 +67,17 @@ vi.mock("@xterm/addon-fit", () => ({
     }
   },
 }));
+vi.mock("@xterm/addon-search", () => ({
+  SearchAddon: class {
+    findNext = emulator.findNext;
+    findPrevious = emulator.findPrevious;
+    clearDecorations() {}
+    onDidChangeResults() {
+      return { dispose() {} };
+    }
+  },
+}));
+vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: class {} }));
 class Socket {
   static OPEN = 1;
   static all: Socket[] = [];
@@ -65,6 +96,8 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  emulator.selection = "";
+  localStorage.clear();
 });
 function setup(sessions: Schema<"TerminalView">[] = [view]) {
   Socket.all = [];
@@ -173,9 +206,10 @@ it("controller controls stay disabled until acknowledgement; collapse detaches w
   component.rerender(
     <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
   );
-  expect(Socket.all).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
   expect(Socket.all).toHaveLength(2);
+  emit(Socket.all[1], null, 3);
+  await screen.findByRole("button", { name: "Take control" });
+  expect(Socket.all[1].send).not.toHaveBeenCalled();
   expect(f.post).not.toHaveBeenCalled();
 });
 
@@ -215,7 +249,7 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
   component.rerender(<TerminalPanel {...props} selected="terminal-one" />);
   fireEvent.click(await screen.findByRole("button", { name: "End session" }));
   expect(f.remove).not.toHaveBeenCalled();
-  f.remove.mockResolvedValue({});
+  f.remove.mockResolvedValue({ data: { ...view, state: "closed" } });
   fireEvent.click(
     screen.getByRole("button", { name: "End session for everyone" }),
   );
@@ -415,3 +449,91 @@ it.each(["project-two", ""])(
     expect(f.post).not.toHaveBeenCalled();
   },
 );
+
+it("keeps explicit disconnect across hide/show without recreating a screen", async () => {
+  const f = setup();
+  const unauthorized = vi.fn();
+  const component = render(
+    <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
+    { wrapper: f.Wrapper },
+  );
+  emit(Socket.all[0], null, 0);
+  fireEvent.click(await screen.findByRole("button", { name: "Disconnect" }));
+  component.rerender(
+    <TerminalScreen
+      id="terminal-one"
+      visible={false}
+      unauthorized={unauthorized}
+    />,
+  );
+  component.rerender(
+    <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
+  );
+  expect(Socket.all).toHaveLength(1);
+  expect(emulator.disposed).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "Reconnect" })).toBeTruthy();
+});
+
+it("searches retained output and appends selection only to the currently selected Thread", async () => {
+  const f = setup();
+  const one = new ThreadDraft();
+  const two = new ThreadDraft();
+  for (const [id, draft] of [
+    ["one", one],
+    ["two", two],
+  ] as const) {
+    draft.doc.getText("text").insert(0, `Draft ${id}`);
+    draft.receive({
+      draft_id: `draft-${id}`,
+      participant_id: "me",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+  }
+  const unauthorized = vi.fn();
+  const drafts = new Map([
+    ["one", one],
+    ["two", two],
+  ]);
+  const content = (threadId: string) => (
+    <ComposerDrafts value={drafts}>
+      <TerminalScreen
+        id="terminal-one"
+        visible
+        threadId={threadId}
+        unauthorized={unauthorized}
+      />
+    </ComposerDrafts>
+  );
+  const component = render(content("one"), { wrapper: f.Wrapper });
+  act(() => {
+    emulator.selection = "hello ``` output";
+    emulator.select();
+  });
+  component.rerender(content("two"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add selection to prompt" }),
+  );
+  expect(one.doc.getText("text").toString()).toBe("Draft one");
+  expect(two.doc.getText("text").toString()).toContain(
+    "Draft two\n\nSelected output from Server terminal terminal-one",
+  );
+  expect(two.doc.getText("text").toString()).toContain(
+    "````text\nhello ``` output\n````",
+  );
+  expect(f.post).not.toHaveBeenCalled();
+  expect(Socket.all).toHaveLength(1);
+  fireEvent.click(screen.getByRole("button", { name: "Find in output" }));
+  fireEvent.change(screen.getByLabelText("Find in retained terminal output"), {
+    target: { value: "hello" },
+  });
+  expect(emulator.findNext).toHaveBeenLastCalledWith(
+    "hello",
+    expect.objectContaining({ incremental: true }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Previous match" }));
+  expect(emulator.findPrevious).toHaveBeenLastCalledWith(
+    "hello",
+    expect.objectContaining({ decorations: expect.any(Object) }),
+  );
+});

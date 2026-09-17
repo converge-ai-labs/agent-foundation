@@ -101,6 +101,34 @@ it("keeps input completion distinct from execution success and handles failure e
   ).toBe("Append");
 });
 
+it.each(["", "\n"])(
+  "retains every replacement line and final-newline metadata beyond the minimal diff budget (%j)",
+  (ending) => {
+    const before = Array.from({ length: 2001 }, (_, i) => `before ${i}`);
+    const after = Array.from({ length: 2001 }, (_, i) => `after ${i}`);
+    const patch = editPatch({
+      file_path: "/tmp/large",
+      before: before.join("\n") + ending,
+      after: after.join("\n") + ending,
+    });
+    const marker = ending ? [] : ["\\ No newline at end of file"];
+    expect(patch.hunks).toEqual([
+      {
+        oldStart: 1,
+        oldLines: 2001,
+        newStart: 1,
+        newLines: 2001,
+        lines: [
+          ...before.map((line) => `-${line}`),
+          ...marker,
+          ...after.map((line) => `+${line}`),
+          ...marker,
+        ],
+      },
+    ]);
+  },
+);
+
 it("shows actual applied content without confusing source +++ lines or missing final newlines", () => {
   const edit = { file_path: "/tmp/a", before: "++old", after: "++new" };
   const lines = editPatch(edit)?.hunks[0].lines;
@@ -108,8 +136,8 @@ it("shows actual applied content without confusing source +++ lines or missing f
   expect(lines).toContain("+++new");
   expect(lines).toContain("\\ No newline at end of file");
   expect(
-    editPatch({ ...edit, before: "x".repeat(512 * 1024 + 1) }),
-  ).toBeUndefined();
+    editPatch({ ...edit, before: "x".repeat(512 * 1024 + 1) }).hunks[0].lines,
+  ).toContain(`-${"x".repeat(512 * 1024 + 1)}`);
   render(
     <ToolCall
       tool={{

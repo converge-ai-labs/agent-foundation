@@ -48,6 +48,7 @@ const scope = {
   provider_id: "mp_test",
   external_conversation_id: "C1",
   name: "Support",
+  audience: "private",
   version: 3,
   enabled: false,
   use_memory: true,
@@ -138,12 +139,7 @@ it("does not fetch memory or its directory for a viewer", () => {
 it("configures only this target and preserves existing toggles and the draft version", async () => {
   const cache = setup();
   await userEvent.click(
-    await screen.findByRole("button", { name: "Group memory actions" }),
-  );
-  await userEvent.click(
-    await screen.findByRole("menuitem", {
-      name: "This group's memory settings",
-    }),
+    await screen.findByRole("button", { name: "Group memory settings" }),
   );
   await waitFor(() =>
     expect(
@@ -171,6 +167,7 @@ it("configures only this target and preserves existing toggles and the draft ver
   expect(state.http.POST.mock.calls[0][1].body).toEqual({
     external_conversation_id: "C1",
     expected_version: 3,
+    visibility: "group",
     enabled: false,
     use_memory: true,
     save_on_request: false,
@@ -179,4 +176,45 @@ it("configures only this target and preserves existing toggles and the draft ver
   expect(
     state.http.GET.mock.calls.some(([path]) => path.endsWith("/targets")),
   ).toBe(false);
+});
+
+it("saves one-way visibility with the current scope version and preserves the private default", async () => {
+  setup();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Group memory settings" }),
+  );
+  const choice = await screen.findByRole("combobox", {
+    name: "Who can read this group's memory?",
+  });
+  expect(choice.textContent).toContain("Only this group");
+  await userEvent.click(choice);
+  await userEvent.click(
+    await screen.findByRole("option", { name: "All connected groups" }),
+  );
+  expect(screen.getByText(/Their private memory stays private/)).toBeTruthy();
+  expect(screen.getByText(/This includes historical memory/)).toBeTruthy();
+  await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.http.POST).toHaveBeenCalledOnce());
+  expect(state.http.POST.mock.calls[0][1].body).toMatchObject({
+    visibility: "installation",
+    expected_version: 3,
+    external_conversation_id: "C1",
+  });
+});
+
+it("canceling visibility changes does not save a grant", async () => {
+  setup();
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Group memory settings" }),
+  );
+  await userEvent.click(
+    await screen.findByRole("combobox", {
+      name: "Who can read this group's memory?",
+    }),
+  );
+  await userEvent.click(
+    await screen.findByRole("option", { name: "All connected groups" }),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+  expect(state.http.POST).not.toHaveBeenCalled();
 });

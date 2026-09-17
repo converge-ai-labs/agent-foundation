@@ -60,7 +60,13 @@
   height: 1.5rem;
 }
 .details {
+  max-height: min(65vh, 40rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
   display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
   gap: 0.75rem;
   min-width: 0;
 }
@@ -100,8 +106,7 @@
 .content pre,
 .diff pre {
   margin: 0;
-  max-height: 24rem;
-  overflow: auto;
+  overflow-x: auto;
   font: 0.75rem/1.65 var(--font-mono);
   tab-size: 4;
 }

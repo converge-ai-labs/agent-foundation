@@ -15,7 +15,7 @@ import { useSelectors, useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
-import { Composer, useDraft } from "./composer";
+import { Composer, submitContinuation, useDraft } from "./composer";
 import { ComposerStatus } from "./composer-status";
 import { ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
@@ -33,6 +33,9 @@ import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import { ConversationTranscript, RecoveryNotice } from "./transcript";
 import { inputSource } from "./local-input";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
+import { savedResultVisible } from "./result-visibility";
+import { ConversationOpening, useInitialReady } from "./opening";
 
 export function ConversationPage(props: {
   profile: Profile;
@@ -53,6 +56,12 @@ function Conversation({
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(threadId);
+  const results = useResults();
+  const tracker = results.tracker;
+  useEffect(() => {
+    if (detail.data)
+      void tracker?.follow(detail.data.thread, detail.dataUpdatedAt);
+  }, [detail.data, detail.dataUpdatedAt, tracker]);
   const selectors = useSelectors();
   const agentSelection = useMutation({
     mutationFn: async (agentId: string) => {
@@ -69,6 +78,8 @@ function Conversation({
       );
     },
     onSuccess: (updated) => {
+      draft.thinking = null;
+      draft.notify();
       queries.setQueryData<Schema<"ThreadDetail">>(
         ["thread", threadId, "detail"],
         (current) => {
@@ -106,7 +117,29 @@ function Conversation({
   const [display] = useState(() => new FocusDisplay());
   const [connection, setConnection] = useState("Connecting");
   const [reconnections, setReconnections] = useState(0);
+  const connected = connection === "Live";
+  const [connectionDelayed, setConnectionDelayed] = useState(false);
+  useEffect(() => {
+    setConnectionDelayed(false);
+    if (connected) return;
+    const timer = setTimeout(() => setConnectionDelayed(true), 700);
+    return () => clearTimeout(timer);
+  }, [connected]);
   const [revision, setRevision] = useState(0);
+  const [showAvailable, setShowAvailable] = useState(false);
+  const pageReady = useInitialReady(
+    showAvailable ||
+      detail.isError ||
+      !!detail.data?.thread.parent_thread_id ||
+      (!!detail.data &&
+        (!!history.data || history.isError) &&
+        !selectors.isPending &&
+        (display.ready || reconnections > 0) &&
+        (detail.data.thread.archived ||
+          draft.status === "Connected" ||
+          !!draft.replacement ||
+          !!draft.error)),
+  );
   const rename = dialog === "rename";
   const setRename = (open: boolean) => {
     if (!open) closeDialog();
@@ -236,6 +269,55 @@ function Conversation({
     previousLocalInput.current = latestLocalInput;
   }, [latestLocalInput, scrollToLatest]);
   const continuation = history.data?.pages[0]?.continuation_id;
+  const completionVersion =
+    history.isPreviousHistory || history.isError
+      ? 0
+      : (history.data?.pages[0]?.completion_version ?? 0);
+  const acknowledged = results.followed.get(threadId);
+  useEffect(() => {
+    if (
+      !pageReady ||
+      !tracker ||
+      !completionVersion ||
+      acknowledged === undefined ||
+      acknowledged >= completionVersion
+    )
+      return;
+    const element = reader.current;
+    if (!element) return;
+    const check = () => {
+      if (!olderAnchor.current && savedResultVisible(element))
+        void tracker.acknowledge(threadId, completionVersion);
+    };
+    // The effect runs after transcript commit; the frame observes layout and the
+    // actual scroll position, never the optimistic follow/smooth-scroll flag.
+    const frame = requestAnimationFrame(check);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(check);
+    observer?.observe(element);
+    if (element.firstElementChild) observer?.observe(element.firstElementChild);
+    element.addEventListener("scroll", check);
+    window.addEventListener("focus", check);
+    window.addEventListener("resize", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      element.removeEventListener("scroll", check);
+      window.removeEventListener("focus", check);
+      window.removeEventListener("resize", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [
+    pageReady,
+    tracker,
+    threadId,
+    completionVersion,
+    acknowledged,
+    history.data,
+  ]);
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   useEffect(() => {
@@ -277,7 +359,7 @@ function Conversation({
   const lastContent = useRef("");
   useLayoutEffect(() => {
     const element = reader.current;
-    if (!element || !history.data) return;
+    if (!pageReady || !element || !history.data) return;
     const restored = !!restoreScroll.current;
     if (restoreScroll.current) {
       try {
@@ -306,6 +388,7 @@ function Conversation({
       setNewOutput(true);
     lastContent.current = visibleContent;
   }, [
+    pageReady,
     revision,
     visibleContent,
     history.data,
@@ -315,7 +398,13 @@ function Conversation({
   useEffect(() => {
     const element = reader.current;
     const content = element?.firstElementChild;
-    if (!element || !content || typeof ResizeObserver === "undefined") return;
+    if (
+      !pageReady ||
+      !element ||
+      !content ||
+      typeof ResizeObserver === "undefined"
+    )
+      return;
     const observer = new ResizeObserver(() => {
       // Both late content and a growing composer can move the actual bottom.
       if (follow.current && !olderAnchor.current) scrollToLatest(true);
@@ -323,12 +412,13 @@ function Conversation({
     observer.observe(element);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [scrollToLatest]);
+  }, [pageReady, scrollToLatest]);
   useEffect(() => {
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
     // Short/context-only pages need no scroll gesture to fill the viewport.
     if (
+      pageReady &&
       element &&
       element.clientHeight > 0 &&
       element.scrollTop < 160 &&
@@ -344,6 +434,7 @@ function Conversation({
       void history.fetchNextPage();
     }
   }, [
+    pageReady,
     history.data,
     history.hasNextPage,
     history.isFetching,
@@ -352,6 +443,7 @@ function Conversation({
   ]);
   useLayoutEffect(() => {
     const element = reader.current;
+    if (!pageReady) return;
     return () => {
       if (element)
         writePreference(
@@ -359,7 +451,7 @@ function Conversation({
           JSON.stringify({ top: element.scrollTop, follow: follow.current }),
         );
     };
-  }, [threadId]);
+  }, [threadId, pageReady]);
   useEffect(() => {
     if (detail.data && !detail.data.thread?.archived)
       writePreference("last-thread", threadId);
@@ -396,15 +488,20 @@ function Conversation({
       </div>
     );
   return (
-    <>
+    <ConversationOpening
+      ready={pageReady}
+      label="Opening conversation…"
+      onContinue={() => setShowAvailable(true)}
+    >
       <div className={styles.page}>
-        {(reconnections > 0 ||
-          (connection !== "Live" && connection !== "Connecting")) && (
+        {!connected && connectionDelayed && (
           <div className={styles.activityBar}>
             <small role="status">
               {reconnections > 0
-                ? `${connection === "Live" ? "Live connection restored" : "Reconnecting live updates…"} · ${reconnections} ${reconnections === 1 ? "retry" : "retries"}`
-                : connection}
+                ? `Reconnecting live updates… · ${reconnections} ${reconnections === 1 ? "retry" : "retries"}`
+                : connection === "Connecting"
+                  ? "Connecting live updates…"
+                  : connection}
             </small>
           </div>
         )}
@@ -443,6 +540,7 @@ function Conversation({
               interruptScroll();
           }}
           onScroll={() => {
+            if (!pageReady) return;
             const element = reader.current!;
             // Layout-driven scroll events must not detach an active follower.
             // After a user gesture, resume only at the actual bottom.
@@ -500,6 +598,29 @@ function Conversation({
               threadId={threadId}
               receipt={receipt}
               display={display}
+              retry={
+                thread?.archived
+                  ? undefined
+                  : () => {
+                      void submitContinuation(
+                        draft,
+                        transport,
+                        threadId,
+                        tracker ? () => tracker.beforeRun(threadId) : undefined,
+                      ).finally(reconcile);
+                    }
+              }
+              retryDisabled={
+                !detail.data?.available_actions?.includes("run") ||
+                thread?.root_activity.state !== "inactive" ||
+                agentSelection.isPending ||
+                agentSelection.isError ||
+                detail.isError ||
+                draft.submission.kind === "pending" ||
+                draft.submission.kind === "unknown" ||
+                (draft.submission.kind === "accepted" &&
+                  draft.submission.receipt !== receipt)
+              }
             />
             <RecoveryNotice recovery={display.recovery} />
             {!!detail.data?.deferred_requests?.length && (
@@ -570,7 +691,7 @@ function Conversation({
         )}
         {!thread?.archived && (
           <Composer
-            autoFocus={search.get("compose") === "1"}
+            autoFocus={pageReady && search.get("compose") === "1"}
             threadId={threadId}
             activity={thread?.root_activity ?? { state: "inactive" }}
             canRun={
@@ -579,12 +700,24 @@ function Conversation({
               !detail.isError &&
               (detail.data?.available_actions?.includes("run") ?? false)
             }
+            unavailableReason={
+              agentSelection.isPending
+                ? "Updating conversation settings…"
+                : !detail.data
+                  ? "Loading conversation…"
+                  : undefined
+            }
             modelId={draft.modelId}
             controls={
               <ThreadRunChoices
                 catalog={selectors.data}
                 agentId={thread?.configuration.agent_source.id ?? ""}
                 modelId={draft.modelId}
+                thinking={draft.thinking}
+                onThinkingChange={(value) => {
+                  draft.thinking = value;
+                  draft.notify();
+                }}
                 disabled={
                   !thread ||
                   agentSelection.isPending ||
@@ -595,6 +728,7 @@ function Conversation({
                 onAgentChange={(value) => agentSelection.mutate(value)}
                 onModelChange={(value) => {
                   draft.modelId = value;
+                  draft.thinking = null;
                   draft.notify();
                 }}
               />
@@ -698,6 +832,6 @@ function Conversation({
             )}
         </ModalFrame>
       </div>
-    </>
+    </ConversationOpening>
   );
 }

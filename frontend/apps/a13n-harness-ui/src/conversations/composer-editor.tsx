@@ -162,7 +162,12 @@ export function ComposerEditor({
           ...["Enter", "Mod-Enter"].map((key) => ({
             key,
             run: (editor: EditorView) => {
-              if (key === "Enter" && completionStatus(editor.state) !== null)
+              // Background completion checks run even for ordinary typing.
+              // Only visible candidates may consume Enter instead of sending.
+              if (
+                key === "Enter" &&
+                completionStatus(editor.state) === "active"
+              )
                 return true;
               if (!editor.compositionStarted) send.current();
               return true;
@@ -225,7 +230,6 @@ export function ComposerEditor({
     if (editor) editor.current = view;
     window.addEventListener("blur", clearCursor);
     document.addEventListener("visibilitychange", clearCursor);
-    if (autoFocus) view.focus();
     let scheduled = false;
     const unsubscribe = draft.subscribe(() => {
       if (scheduled) return;
@@ -258,6 +262,9 @@ export function ComposerEditor({
       });
     };
   }, [draft, doc, editor]);
+  useEffect(() => {
+    if (autoFocus) currentView.current?.focus();
+  }, [autoFocus, draft, doc, editor]);
   useEffect(() => {
     currentView.current?.dispatch({
       effects: attributes.current.reconfigure(contentAttributes),

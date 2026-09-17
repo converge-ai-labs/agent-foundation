@@ -26,13 +26,13 @@ export function MemoryOperations({
       open={open}
       onOpenChange={setOpen}
       {...dialog}
-      title={t("Pending operations")}
+      title={t("Memory needs attention")}
       size="lg"
       closeLabel={t("Close")}
       trigger={
         dialog ? undefined : (
           <Button type="button" size="sm" variant="outline">
-            {t("Pending operations")}
+            {t("Memory needs attention")}
           </Button>
         )
       }
@@ -124,16 +124,10 @@ function Operation({
             { params: { path } },
           )
           .then(data);
-      if (entry.publication_source_id)
-        await client.http.POST(
-          "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw",
-          { params: { path }, body: { expected_version: entry.version ?? 1 } },
-        );
-      else
-        await client.http.DELETE(
-          "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}",
-          { params: { path } },
-        );
+      await client.http.DELETE(
+        "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}",
+        { params: { path } },
+      );
       return client.http
         .GET(
           "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id}",

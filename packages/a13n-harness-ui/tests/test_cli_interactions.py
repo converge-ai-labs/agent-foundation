@@ -276,6 +276,9 @@ async def test_inline_decision_keys_preserve_preexisting_draft(tmp_path: Path) -
         async def skill_catalog(self):
             return None
 
+        def thinking_choices(self):
+            return ()
+
         async def initialize(self):
             ready.set()
             return True

@@ -1,9 +1,17 @@
+import type { ReactNode } from "react";
+import { Button } from "a13n-ui";
 import { WarningCircle } from "@phosphor-icons/react";
 import { useOperation } from "./queries";
 import type { FocusDisplay } from "./stream";
 import styles from "./conversation.module.css";
 
-export function FailureNotice({ message }: { message?: string | null }) {
+export function FailureNotice({
+  message,
+  action,
+}: {
+  message?: string | null;
+  action?: ReactNode;
+}) {
   if (!message) return null;
   const first = message.split("\n")[0].trim();
   const short = first.length > 240 ? `${first.slice(0, 240)}…` : first;
@@ -19,6 +27,7 @@ export function FailureNotice({ message }: { message?: string | null }) {
             <pre>{message}</pre>
           </details>
         )}
+        {action}
       </div>
     </section>
   );
@@ -28,10 +37,14 @@ export function RootFailureNotice({
   threadId,
   receipt,
   display,
+  retry,
+  retryDisabled = false,
 }: {
   threadId: string;
   receipt?: string | null;
   display: FocusDisplay;
+  retry?: () => void;
+  retryDisabled?: boolean;
 }) {
   const operation = useOperation(threadId, receipt);
   const snapshot = display.snapshot?.root_operation;
@@ -48,5 +61,16 @@ export function RootFailureNotice({
         current.outcome?.execution.failure?.message ??
         "The operation could not finish.")
       : undefined;
-  return <FailureNotice message={live ?? saved} />;
+  return (
+    <FailureNotice
+      message={live ?? saved}
+      action={
+        current?.status === "failed" && retry ? (
+          <Button variant="outline" disabled={retryDisabled} onClick={retry}>
+            Retry
+          </Button>
+        ) : undefined
+      }
+    />
+  );
 }

@@ -168,6 +168,7 @@ class Status:
             f"ctx {context}",
             f"cache {self.cache_rate_text}",
             cost,
+            f"{'think' if compact else 'Thinking'} {self.thinking}",
             self.model.split(":")[-1],
             _elapsed_text(elapsed),
         ]

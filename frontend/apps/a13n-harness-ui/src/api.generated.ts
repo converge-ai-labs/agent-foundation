@@ -1,4 +1,72 @@
 export interface paths {
+    "/api/push/configuration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Push Configuration */
+        get: operations["push_configuration_api_push_configuration_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Subscribe Push */
+        put: operations["subscribe_push_api_push_subscription_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscriptions/{subscription_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Unsubscribe Push */
+        delete: operations["unsubscribe_push_api_push_subscriptions__subscription_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/push/subscriptions/{subscription_id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Test Push */
+        post: operations["test_push_api_push_subscriptions__subscription_id__test_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -848,6 +916,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lookup Threads */
+        post: operations["lookup_threads_api_threads_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/activity": {
         parameters: {
             query?: never;
@@ -1357,7 +1442,7 @@ export interface components {
         };
         /**
          * AppliedEditView
-         * @description Observed edit content, or an explicit omission when retention bounds were reached.
+         * @description Observed edit content; nullable fields retain compatibility with older omitted previews.
          */
         AppliedEditView: {
             /** File Path */
@@ -1432,6 +1517,8 @@ export interface components {
             source_id: string;
             /** Model Id */
             model_id: string;
+            /** Thinking Summary */
+            thinking_summary?: string | null;
         };
         /** CapturedConfiguration */
         CapturedConfiguration: {
@@ -1884,6 +1971,8 @@ export interface components {
             model_id?: string | null;
             /** Thinking */
             thinking?: string | boolean | null;
+            /** Thinking Summary */
+            thinking_summary?: string | null;
         };
         /** ContinuationSelectionView */
         ContinuationSelectionView: {
@@ -2505,6 +2594,7 @@ export interface components {
             name: string;
             /** Route */
             route: string;
+            thinking?: components["schemas"]["ThinkingControl"] | null;
         };
         /** NotePage */
         NotePage: {
@@ -2723,6 +2813,21 @@ export interface components {
          * @enum {string}
          */
         Provider: "codex" | "grok";
+        /** PushConfiguration */
+        PushConfiguration: {
+            /** Public Key */
+            public_key: string;
+        };
+        /** PushSubscriptionView */
+        PushSubscriptionView: {
+            /** Subscription Id */
+            subscription_id: string;
+        };
+        /** PushTestResult */
+        PushTestResult: {
+            /** Accepted */
+            accepted: boolean;
+        };
         /** QuestionOptionView */
         QuestionOptionView: {
             /** Label */
@@ -3594,6 +3699,31 @@ export interface components {
             /** Output End */
             output_end: number;
         };
+        /** ThinkingControl */
+        ThinkingControl: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "supported" | "unsupported" | "unknown";
+            /** Default Summary */
+            default_summary: string;
+            /** Options */
+            options: components["schemas"]["ThinkingOption"][];
+            /** Reason */
+            reason?: string | null;
+        };
+        /** ThinkingOption */
+        ThinkingOption: {
+            value: components["schemas"]["ThinkingSelection"] | null;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Disabled Reason */
+            disabled_reason?: string | null;
+        };
+        ThinkingSelection: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh" | "max");
         /** ThreadActivityPage */
         ThreadActivityPage: {
             /** Project Id */
@@ -3647,6 +3777,23 @@ export interface components {
             /** Source */
             source?: components["schemas"]["FileContextSource"] | components["schemas"]["GitContextSource"] | components["schemas"]["CommentContextSource"] | null;
             comment?: components["schemas"]["CommentReferencePreview"] | null;
+        };
+        /**
+         * ThreadCompletion
+         * @description Latest successfully selected root result; independent of current operation state.
+         */
+        ThreadCompletion: {
+            /** Version */
+            version: number;
+            /** Run Id */
+            run_id: string;
+            /** Continuation Id */
+            continuation_id: string;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
         };
         /** ThreadConfiguration */
         ThreadConfiguration: {
@@ -3822,6 +3969,7 @@ export interface components {
              */
             continuation_state: "initial" | "selected";
             root_activity: components["schemas"]["RootActivityView"];
+            completion?: components["schemas"]["ThreadCompletion"] | null;
         };
         /** ThreadUsageView */
         ThreadUsageView: {
@@ -3907,6 +4055,11 @@ export interface components {
         };
         /** TranscriptPage */
         TranscriptPage: {
+            /**
+             * Completion Version
+             * @default 0
+             */
+            completion_version?: number;
             /** Continuation Id */
             continuation_id?: string | null;
             /** Entries */
@@ -4200,6 +4353,26 @@ export interface components {
         ErrorEnvelope: {
             error: components["schemas"]["ErrorBody"];
         };
+        /** PushKeys */
+        PushKeys: {
+            /** P256Dh */
+            p256dh: string;
+            /** Auth */
+            auth: string;
+        };
+        /** PushSubscriptionInput */
+        PushSubscriptionInput: {
+            /** Endpoint */
+            endpoint: string;
+            keys: components["schemas"]["PushKeys"];
+            /** Origin */
+            origin: string;
+            /**
+             * Thread Ids
+             * @default []
+             */
+            thread_ids?: string[];
+        };
         /** TerminalCreate */
         TerminalCreate: {
             /**
@@ -4466,6 +4639,11 @@ export interface components {
             /** Responses */
             responses: (components["schemas"]["ApprovalDecision"] | components["schemas"]["ExternalToolResult"] | components["schemas"]["QuestionResponse"])[];
         };
+        /** ThreadLookup */
+        ThreadLookup: {
+            /** Thread Ids */
+            thread_ids: string[];
+        };
         /** SteerRequest */
         SteerRequest: {
             /** Prompt */
@@ -4532,6 +4710,7 @@ export interface components {
             source_id?: string | null;
             /** Model Id */
             model_id?: string | null;
+            thinking?: components["schemas"]["ThinkingSelection"] | null;
         };
         /** RootSteerRequest */
         RootSteerRequest: {
@@ -4564,6 +4743,110 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    push_configuration_api_push_configuration_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushConfiguration"];
+                };
+            };
+        };
+    };
+    subscribe_push_api_push_subscription_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscriptionInput"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushSubscriptionView"];
+                };
+            };
+        };
+    };
+    unsubscribe_push_api_push_subscriptions__subscription_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    test_push_api_push_subscriptions__subscription_id__test_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PushTestResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     status_api_status_get: {
         parameters: {
             query?: never;
@@ -6468,6 +6751,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadSelectorCatalog"];
+                };
+            };
+        };
+    };
+    lookup_threads_api_threads_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadLookup"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPage"];
                 };
             };
         };

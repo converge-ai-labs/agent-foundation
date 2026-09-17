@@ -106,7 +106,7 @@ Terminal sessions are App-owned live resources associated with Project context, 
 
 Multiple participants can observe one terminal. One participant supplies input at a time, and control transfer is explicit and visible; keystrokes from independent participants are not silently interleaved. Terminal size follows the input controller rather than competing viewers. Losing a viewer does not by itself terminate the process.
 
-A browser disconnect closes its attachment, not the terminal. Reattachment displays available current output and discloses gaps; it neither replays keyboard input nor claims missing output has been recovered. Terminal close is an explicit action affecting the shared session. App shutdown closes its owned native terminal resources and child processes. Server restart does not restore a live PTY from conversation or draft state.
+A browser disconnect closes its attachment, not the terminal. Hiding a view detaches it; showing a retained view automatically reattaches as a viewer unless explicitly disconnected. A bounded browser-local cache can preserve recent terminal screens, without making them durable or complete logs. Reattachment displays available current output and discloses gaps; it neither replays keyboard input nor claims missing output has been recovered. Terminal close is an explicit action affecting the shared session. App shutdown closes its owned native terminal resources and child processes. Server restart does not restore a live PTY from conversation or draft state.
 
 Finite output retention is inspection evidence, not a complete durable terminal log. If a write or control action has an uncertain outcome, the browser does not retry keystrokes or destructive actions automatically.
 

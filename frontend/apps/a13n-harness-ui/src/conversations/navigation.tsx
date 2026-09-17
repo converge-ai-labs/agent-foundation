@@ -35,6 +35,7 @@ import { RenameProject } from "../configuration/rename-project";
 import { newConversationPath } from "./new-conversation";
 import { ThreadRow } from "./thread-row";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
 
 type Presence = Schema<"PresenceFrame"> | null;
 type Group = {
@@ -261,6 +262,18 @@ function ProjectGroup({
   order: ReturnType<typeof useProjectOrder>;
 }) {
   const navigate = useNavigate();
+  const results = useResults();
+  const projects = useProjects();
+  const belongs = (thread: Schema<"ThreadSummary">) => {
+    const project = thread.configuration.project_id;
+    return group.scope === "projectless"
+      ? project == null
+      : group.scope === "unavailable"
+        ? project != null &&
+          !!projects.data &&
+          !projects.data.some((item) => item.project_id === project)
+        : project === group.projectId;
+  };
   const list = useThreads("", group.projectId, false, {
     scope: group.scope,
     enabled: enabled && expanded,
@@ -277,6 +290,27 @@ function ProjectGroup({
       ...(list.data?.pages[0]?.active_rows ?? []),
     ].map((row) => [row.thread.thread_id, row]),
   );
+  for (const { thread, observedAt } of results.threads.values()) {
+    const page = list.data?.pages.find((page, index) =>
+      [...page.rows, ...(index === 0 ? (page.active_rows ?? []) : [])].some(
+        (row) => row.thread.thread_id === thread.thread_id,
+      ),
+    );
+    if (observed.has(thread.thread_id) && observedAt <= (page?.observedAt ?? 0))
+      continue;
+    if (!belongs(thread)) {
+      observed.delete(thread.thread_id);
+      continue;
+    }
+    if (
+      observed.has(thread.thread_id) ||
+      results.tracker?.isUnread(thread.thread_id)
+    )
+      observed.set(thread.thread_id, {
+        ...observed.get(thread.thread_id),
+        thread,
+      });
+  }
   const selectedPage = selected
     ? list.data?.pages.find((page, index) =>
         (index === 0
@@ -288,7 +322,11 @@ function ProjectGroup({
   if (
     selected &&
     (!observed.has(selected.thread_id) ||
-      selectedUpdatedAt > (selectedPage?.observedAt ?? 0))
+      selectedUpdatedAt >
+        Math.max(
+          selectedPage?.observedAt ?? 0,
+          results.threads.get(selected.thread_id)?.observedAt ?? 0,
+        ))
   ) {
     observed.set(selected.thread_id, {
       ...observed.get(selected.thread_id),
@@ -296,15 +334,32 @@ function ProjectGroup({
     });
   }
   const activeRows: Row[] = [];
+  const unreadRows: Row[] = [];
   const recentRows: Row[] = [];
+  let unreadCount = 0;
   for (const row of observed.values()) {
     if (row.thread.archived) continue;
-    (row.thread.root_activity.state === "inactive"
-      ? recentRows
-      : activeRows
+    const unread = results.tracker?.isUnread(row.thread.thread_id);
+    if (unread) unreadCount++;
+    (row.thread.root_activity.state !== "inactive"
+      ? activeRows
+      : unread
+        ? unreadRows
+        : recentRows
     ).push(row);
   }
-  const rows = [...activeRows, ...recentRows];
+  const byTouch = (a: Row, b: Row) => {
+    const left = a.thread.touched_at ?? a.thread.created_at;
+    const right = b.thread.touched_at ?? b.thread.created_at;
+    return left && right
+      ? right.localeCompare(left) ||
+          b.thread.thread_id.localeCompare(a.thread.thread_id)
+      : 0;
+  };
+  activeRows.sort(byTouch);
+  unreadRows.sort(byTouch);
+  recentRows.sort(byTouch);
+  const rows = [...activeRows, ...unreadRows, ...recentRows];
   return (
     <section
       hidden={hidden}
@@ -336,6 +391,15 @@ function ProjectGroup({
           />
           <Folder />
           <span title={group.name}>{group.name}</span>
+          {unreadCount > 0 && (
+            <small
+              className={styles.resultCount}
+              aria-label={`${unreadCount} conversations with new results`}
+              title="Conversations with new results"
+            >
+              {unreadCount}
+            </small>
+          )}
         </button>
         <div className={styles.groupActions}>
           {expanded && list.isFetching && !!list.data && (
@@ -412,9 +476,16 @@ function ProjectGroup({
                 Running · {activeRows.length}
               </small>
             )}
-            {activeRows.length > 0 && index === activeRows.length && (
-              <small className={styles.emptyGroup}>Recent</small>
+            {unreadRows.length > 0 && index === activeRows.length && (
+              <small className={styles.emptyGroup}>
+                New results · {unreadRows.length}
+              </small>
             )}
+            {recentRows.length > 0 &&
+              (activeRows.length > 0 || unreadRows.length > 0) &&
+              index === activeRows.length + unreadRows.length && (
+                <small className={styles.emptyGroup}>Recent</small>
+              )}
             <ThreadRow row={row} presence={presence} />
           </Fragment>
         ))}

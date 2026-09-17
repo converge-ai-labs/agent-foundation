@@ -5,6 +5,123 @@
     "version": "1"
   },
   "paths": {
+    "/api/push/configuration": {
+      "get": {
+        "summary": "Push Configuration",
+        "operationId": "push_configuration_api_push_configuration_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushConfiguration"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscription": {
+      "put": {
+        "summary": "Subscribe Push",
+        "operationId": "subscribe_push_api_push_subscription_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PushSubscriptionInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushSubscriptionView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscriptions/{subscription_id}": {
+      "delete": {
+        "summary": "Unsubscribe Push",
+        "operationId": "unsubscribe_push_api_push_subscriptions__subscription_id__delete",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Subscription Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/push/subscriptions/{subscription_id}/test": {
+      "post": {
+        "summary": "Test Push",
+        "operationId": "test_push_api_push_subscriptions__subscription_id__test_post",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Subscription Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PushTestResult"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "summary": "Status",
@@ -2757,6 +2874,34 @@
         }
       }
     },
+    "/api/threads/lookup": {
+      "post": {
+        "summary": "Lookup Threads",
+        "operationId": "lookup_threads_api_threads_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadLookup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/activity": {
       "get": {
         "summary": "Thread Activity",
@@ -4525,8 +4670,7 @@
           "before": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 65536
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4537,8 +4681,7 @@
           "after": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 65536
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4558,7 +4701,7 @@
           "file_path"
         ],
         "title": "AppliedEditView",
-        "description": "Observed edit content, or an explicit omission when retention bounds were reached."
+        "description": "Observed edit content; nullable fields retain compatibility with older omitted previews."
       },
       "ApprovalRequestView": {
         "properties": {
@@ -4681,6 +4824,17 @@
           "model_id": {
             "type": "string",
             "title": "Model Id"
+          },
+          "thinking_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Summary"
           }
         },
         "additionalProperties": false,
@@ -5953,6 +6107,17 @@
               }
             ],
             "title": "Thinking"
+          },
+          "thinking_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Summary"
           }
         },
         "additionalProperties": false,
@@ -7624,6 +7789,16 @@
             "type": "string",
             "minLength": 1,
             "title": "Route"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -8261,6 +8436,45 @@
           "grok"
         ],
         "title": "Provider"
+      },
+      "PushConfiguration": {
+        "properties": {
+          "public_key": {
+            "type": "string",
+            "title": "Public Key"
+          }
+        },
+        "type": "object",
+        "required": [
+          "public_key"
+        ],
+        "title": "PushConfiguration"
+      },
+      "PushSubscriptionView": {
+        "properties": {
+          "subscription_id": {
+            "type": "string",
+            "title": "Subscription Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "subscription_id"
+        ],
+        "title": "PushSubscriptionView"
+      },
+      "PushTestResult": {
+        "properties": {
+          "accepted": {
+            "type": "boolean",
+            "title": "Accepted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "accepted"
+        ],
+        "title": "PushTestResult"
       },
       "QuestionOptionView": {
         "properties": {
@@ -10464,6 +10678,108 @@
         "title": "TerminalView",
         "type": "object"
       },
+      "ThinkingControl": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "default_summary": {
+            "type": "string",
+            "title": "Default Summary"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/ThinkingOption"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "default_summary",
+          "options"
+        ],
+        "title": "ThinkingControl"
+      },
+      "ThinkingOption": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label",
+          "description"
+        ],
+        "title": "ThinkingOption"
+      },
+      "ThinkingSelection": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "type": "string"
+          }
+        ]
+      },
       "ThreadActivityPage": {
         "properties": {
           "project_id": {
@@ -10661,6 +10977,41 @@
         ],
         "title": "ThreadAttachment",
         "description": "A Thread-scoped handle; paths are resolved by the App, never by clients."
+      },
+      "ThreadCompletion": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "continuation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Continuation Id"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "run_id",
+          "continuation_id",
+          "completed_at"
+        ],
+        "title": "ThreadCompletion",
+        "description": "Latest successfully selected root result; independent of current operation state."
       },
       "ThreadConfiguration": {
         "properties": {
@@ -11215,6 +11566,16 @@
           },
           "root_activity": {
             "$ref": "#/components/schemas/RootActivityView"
+          },
+          "completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadCompletion"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -11445,6 +11806,12 @@
       },
       "TranscriptPage": {
         "properties": {
+          "completion_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completion Version",
+            "default": 0
+          },
           "continuation_id": {
             "anyOf": [
               {
@@ -12172,6 +12539,61 @@
         ],
         "title": "ErrorEnvelope",
         "type": "object"
+      },
+      "PushKeys": {
+        "properties": {
+          "p256dh": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "P256Dh"
+          },
+          "auth": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Auth"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "p256dh",
+          "auth"
+        ],
+        "title": "PushKeys"
+      },
+      "PushSubscriptionInput": {
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "maxLength": 4096,
+            "title": "Endpoint"
+          },
+          "keys": {
+            "$ref": "#/components/schemas/PushKeys"
+          },
+          "origin": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Origin"
+          },
+          "thread_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 256,
+            "title": "Thread Ids",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "endpoint",
+          "keys",
+          "origin"
+        ],
+        "title": "PushSubscriptionInput"
       },
       "TerminalCreate": {
         "properties": {
@@ -13038,6 +13460,27 @@
         "title": "DecisionResponseBatch",
         "type": "object"
       },
+      "ThreadLookup": {
+        "properties": {
+          "thread_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Thread Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_ids"
+        ],
+        "title": "ThreadLookup"
+      },
       "SteerRequest": {
         "additionalProperties": false,
         "properties": {
@@ -13263,6 +13706,16 @@
               }
             ],
             "title": "Model Id"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "SubmitRequest",

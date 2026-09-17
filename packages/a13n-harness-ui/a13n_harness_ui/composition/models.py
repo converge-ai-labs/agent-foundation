@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
 from a13n_harness_ui.configuration.models import AgentToolProxy, ModelCharacteristics, SidekickConfiguration
+from a13n_harness_ui.model_thinking import ThinkingSelection
 
 
 class CompositionModel(BaseModel):
@@ -49,6 +50,7 @@ class ResolvedModelRecipe(CompositionModel):
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
     model_characteristics: ModelCharacteristics | None = None
+    thinking_override: ThinkingSelection | None = Field(default=None, exclude_if=lambda value: value is None)
 
 
 class ResolvedCapabilityRecipe(CompositionModel):

@@ -5,8 +5,8 @@ export const conditions: Record<Condition, string> = {
   disabled: "Disabled",
   needs_verification: "Needs verification",
   check_failed: "Verification failed",
-  reception_off: "Reception off",
-  receiving: "Reception enabled",
+  reception_off: "Message responses off",
+  receiving: "Message responses enabled",
 };
 export const stages: Record<
   NonNullable<Schema["BotSummary"]["test_stage"]>,

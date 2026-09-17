@@ -1,9 +1,4 @@
-import {
-  ArrowClockwiseIcon,
-  CaretDownIcon,
-  PlusIcon,
-  XIcon,
-} from "@phosphor-icons/react";
+import { CaretDownIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 import {
   BrandIcon,
   Button,
@@ -14,10 +9,7 @@ import {
   FormField,
   Input,
   Label,
-  Tooltip,
-  TooltipPopup,
-  TooltipTrigger,
-  resolveBrand,
+  Spinner,
 } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type Dispatch, type SetStateAction } from "react";
@@ -29,6 +21,7 @@ import { data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import type { useAgentChoices } from "./choices";
 import type { AgentConfig } from "./configuration";
+import { MCPConnectionIcon } from "../connections/mcp-icon";
 import { EditorSection } from "./section";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
 import styles from "./agents.module.css";
@@ -51,13 +44,8 @@ function ConnectionBrandIcon({ connection }: { connection: Connection }) {
       {connection.source.kind === "connector" ? (
         <BrandIcon alias={connection.source.connector_key} size={18} />
       ) : (
-        <BrandIcon
+        <MCPConnectionIcon
           endpoint={connection.source.endpoint_url}
-          identity={
-            resolveBrand({ endpoint: connection.source.endpoint_url })
-              ? undefined
-              : "mcp"
-          }
           size={18}
         />
       )}
@@ -163,7 +151,11 @@ export function AgentConnections({
                     onClick={() => {
                       setConnections((previous) => [
                         ...previous,
-                        { connection_id: connection.id, tools: null },
+                        {
+                          connection_id: connection.id,
+                          tools: null,
+                          defer_loading: true,
+                        },
                       ]);
                       setAdding(false);
                     }}
@@ -222,11 +214,10 @@ function ConnectionGroup({
   const { t } = useTranslation();
   const client = useClient();
   const [expanded, setExpanded] = useState(false);
-  const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(40);
   const catalog = useQuery({
     queryKey: ["connection-tool-catalog", connection?.id, connection?.version],
-    enabled: expanded && !!connection,
+    enabled: !!connection,
     retry: false,
     refetchOnWindowFocus: false,
     queryFn: async (): Promise<CatalogTool[]> => {
@@ -268,11 +259,6 @@ function ConnectionGroup({
     .filter((name) => !known.has(name))
     .map((name) => ({ name, description: "", unavailable: true }));
   const tools = [...discovered, ...retained];
-  const visible = tools.filter((tool) =>
-    `${tool.name} ${tool.description}`
-      .toLocaleLowerCase()
-      .includes(search.toLocaleLowerCase()),
-  );
   const selectedCount =
     selection.tools == null
       ? tools.length
@@ -362,30 +348,6 @@ function ConnectionGroup({
               {connection ? displayName(connection) : selection.connection_id}
             </span>
           </CollapsibleTrigger>
-          {connection && (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className={styles.connectionRefresh}
-                    aria-label={t("Refresh tools for {{name}}", {
-                      name: displayName(connection),
-                    })}
-                    disabled={catalog.isFetching}
-                    onClick={() => catalog.refetch()}
-                  />
-                }
-              >
-                <ArrowClockwiseIcon size={15} aria-hidden="true" />
-              </TooltipTrigger>
-              <TooltipPopup>
-                {t("Reload the available tools from this Connection.")}
-              </TooltipPopup>
-            </Tooltip>
-          )}
           <CollapsibleTrigger
             render={
               <button
@@ -399,7 +361,11 @@ function ConnectionGroup({
                 {connection ? t(connection.status) : t("Unavailable")}
               </span>
             )}
-            <span className={styles.toolsetGroupCount}>{count}</span>
+            {catalog.isPending && connection ? (
+              <Spinner size={16} aria-label={t("Loading…")} />
+            ) : (
+              <span className={styles.toolsetGroupCount}>{count}</span>
+            )}
             <CaretDownIcon
               size={16}
               className={
@@ -426,6 +392,55 @@ function ConnectionGroup({
         </div>
         <CollapsiblePanel>
           <div className={styles.toolsetGroupBody}>
+            <div className={styles.connectionOptions}>
+              <div className={styles.connectionOption}>
+                <span>
+                  <strong>{t("Load tools on demand")}</strong>
+                  <small>
+                    {t(
+                      "Load this Connection's tools only when the agent needs them.",
+                    )}
+                  </small>
+                </span>
+                <Checkbox
+                  aria-label={t("Load tools on demand")}
+                  disabled={editingDisabled}
+                  checked={selection.defer_loading ?? false}
+                  onCheckedChange={(checked) =>
+                    onChange((current) => ({
+                      ...current,
+                      defer_loading: checked === true,
+                    }))
+                  }
+                />
+              </div>
+              <div className={styles.connectionOption}>
+                <span>
+                  <strong>{t("Default tool permission")}</strong>
+                  <small>
+                    {t(
+                      "Applies to tools without an individual permission, including newly discovered tools.",
+                    )}
+                  </small>
+                </span>
+                <ToolPermissions
+                  name={t("Default tool permission")}
+                  label={t("Default tool permission")}
+                  value={selection.permission}
+                  readOnly={editingDisabled}
+                  onChange={(permission) =>
+                    onChange((current) => ({ ...current, permission }))
+                  }
+                />
+              </div>
+              {selection.permission === "review" && (
+                <p className={styles.toolsetToolHint}>
+                  {t(
+                    "Review is configured as the default. Choose another permission to replace it.",
+                  )}
+                </p>
+              )}
+            </div>
             {catalog.isPending && connection && (
               <div className={styles.connectionCatalogStatus}>
                 <Loading variant="list" rows={3} />
@@ -443,22 +458,7 @@ function ConnectionGroup({
                 )}
               </p>
             )}
-            {tools.length > 8 && (
-              <div className={styles.connectionSearch}>
-                <FormField label={t("Search tools")} hideLabel>
-                  <Input
-                    type="search"
-                    placeholder={t("Search tools")}
-                    value={search}
-                    onChange={(event) => {
-                      setSearch(event.target.value);
-                      setLimit(40);
-                    }}
-                  />
-                </FormField>
-              </div>
-            )}
-            {visible.slice(0, limit).map((tool) => {
+            {tools.slice(0, limit).map((tool) => {
               const checked =
                 selection.tools == null || selection.tools.includes(tool.name);
               const permission =
@@ -502,7 +502,7 @@ function ConnectionGroup({
                 </div>
               );
             })}
-            {visible.length > limit && (
+            {tools.length > limit && (
               <div className={styles.connectionCatalogStatus}>
                 <Button
                   type="button"
@@ -519,60 +519,6 @@ function ConnectionGroup({
                 {t("No tools found")}
               </p>
             )}
-            {search && !visible.length && tools.length > 0 && (
-              <p className={styles.connectionCatalogStatus}>
-                {t("No tools found")}
-              </p>
-            )}
-            <div className={styles.connectionOptions}>
-              <div className={styles.connectionOption}>
-                <span>
-                  <strong>{t("Default tool permission")}</strong>
-                  <small>
-                    {t(
-                      "Applies to tools without an individual permission, including newly discovered tools.",
-                    )}
-                  </small>
-                </span>
-                <ToolPermissions
-                  name={t("Default tool permission")}
-                  label={t("Default tool permission")}
-                  value={selection.permission}
-                  readOnly={editingDisabled}
-                  onChange={(permission) =>
-                    onChange((current) => ({ ...current, permission }))
-                  }
-                />
-              </div>
-              {selection.permission === "review" && (
-                <p className={styles.toolsetToolHint}>
-                  {t(
-                    "Review is configured as the default. Choose another permission to replace it.",
-                  )}
-                </p>
-              )}
-              <div className={styles.connectionOption}>
-                <span>
-                  <strong>{t("Load tools on demand")}</strong>
-                  <small>
-                    {t(
-                      "Load this Connection's tools only when the agent needs them.",
-                    )}
-                  </small>
-                </span>
-                <Checkbox
-                  aria-label={t("Load tools on demand")}
-                  disabled={editingDisabled}
-                  checked={selection.defer_loading ?? false}
-                  onCheckedChange={(checked) =>
-                    onChange((current) => ({
-                      ...current,
-                      defer_loading: checked === true,
-                    }))
-                  }
-                />
-              </div>
-            </div>
           </div>
         </CollapsiblePanel>
       </Collapsible>

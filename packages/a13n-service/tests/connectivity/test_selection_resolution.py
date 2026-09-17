@@ -1,6 +1,7 @@
 import pytest
 from a13n_service.agents.domain import ConnectionToolSelection
 from a13n_service.connectivity.connectors.models import ConnectorConnectionRecord
+from a13n_service.connectivity.naming import connection_model_aliases
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionError, ConnectivitySelectionResolver
 from a13n_service.storage import transaction
 
@@ -31,7 +32,41 @@ async def test_acceptance_retains_requested_scope_without_discovery(connectivity
     assert retained.connection_selections[0].tools == ("not-discovered",)
     assert retained.connection_selections[0].defer_loading
     assert retained.connection_selections[1].tools is None
+    assert [selection.model_alias for selection in retained.connection_selections] == [
+        "conn_orders_account",
+        "conn_docs",
+    ]
     assert not hasattr(retained, "mcp_tool_snapshot")
+
+
+def test_connection_aliases_only_add_hash_for_collisions():
+    aliases = connection_model_aliases((("first", "Henry's Notion"), ("second", "Henry s Notion"), ("third", "Linear")))
+    assert aliases["third"] == "conn_linear"
+    assert aliases["first"] != aliases["second"]
+    assert all(
+        alias.startswith("conn_henry_s_") and len(alias) <= 29 for alias in (aliases["first"], aliases["second"])
+    )
+
+
+async def test_accepted_alias_survives_connection_rename(connectivity_sessions):
+    await seed_selection_sources(connectivity_sessions)
+    resolver = ConnectivitySelectionResolver(connectivity_sessions)
+    prepared = await resolver.prepare(
+        actor=actor(),
+        organization_id=ORG_ID,
+        workspace_id=WORKSPACE_ID,
+        connection_tools=(ConnectionToolSelection(connection_id=CONNECTOR_CONNECTION_ID),),
+    )
+    selection = prepared.selections.connection_selections[0]
+    async with transaction(connectivity_sessions) as session:
+        connection = await session.get(ConnectorConnectionRecord, CONNECTOR_CONNECTION_ID)
+        connection.name = "Renamed account"
+        connection.normalized_name = "renamed account"
+    async with transaction(connectivity_sessions) as session:
+        await resolver.require_current_source(
+            session, actor=actor(), organization_id=ORG_ID, workspace_id=WORKSPACE_ID, selection=selection
+        )
+    assert selection.model_alias == "conn_orders_account"
 
 
 async def test_acceptance_rechecks_resource_revocation(connectivity_sessions):

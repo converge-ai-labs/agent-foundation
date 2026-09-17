@@ -192,6 +192,9 @@ class Backend:
     thread_id = None
     resumed_transcript = None
 
+    def thinking_choices(self):
+        return ()
+
     async def skill_catalog(self):
         return None
 

@@ -121,7 +121,7 @@ The defaults are release-owned recommendations, not claims that every account su
 
 A **working budget** controls local reminders and compaction. It does not increase the provider's limit or grant access. The default reminder threshold is 65% and automatic compaction starts at 90%, based on the latest reported root request footprint rather than cumulative tokens. At 350k these are 227,500 and 315,000 tokens.
 
-Reasoning choices are `low`, `medium`, `high`, and `xhigh`. `/thinking default` returns to the selected Model's configured value. High reasoning is independent of detailed display: you can use high reasoning while seeing concise output. Only provider-exposed reasoning is shown, and some providers do not return it.
+Use `/thinking` to see the choices supported by the selected Model and installed adapter. The menu can offer effort levels, explicit token-budget presets, or Off; it does not offer a universal list. `/thinking default` returns to the selected Model's configured settings, including provider-native thinking fields. The status line describes the requested setting, not a measured provider result. High reasoning is independent of detailed display: you can use high reasoning while seeing concise output. Only provider-exposed reasoning is shown, and some providers do not return it.
 
 Codex subscription requests do **not** receive an API output-token cap copied from YAACLI presets. The official Pydantic AI Codex profile strips unsupported generic settings such as `max_tokens`; `openai_store` is forced false. Explicit `openai_*` settings otherwise follow upstream validation rather than a separate Harness filter.
 

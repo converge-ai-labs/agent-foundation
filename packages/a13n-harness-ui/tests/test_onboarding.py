@@ -356,7 +356,12 @@ async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready(
         return None
 
     backend = SimpleNamespace(
-        thread_id=None, resumed_transcript=None, interaction=empty, skill_catalog=skill_catalog, cancel=empty
+        thinking_choices=lambda: (),
+        thread_id=None,
+        resumed_transcript=None,
+        interaction=empty,
+        skill_catalog=skill_catalog,
+        cancel=empty,
     )
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()
@@ -405,7 +410,12 @@ async def test_chat_task_failure_preserves_error_after_terminal_cleanup(
         return None
 
     backend = SimpleNamespace(
-        thread_id=None, resumed_transcript=None, interaction=empty, skill_catalog=empty, cancel=empty
+        thinking_choices=lambda: (),
+        thread_id=None,
+        resumed_transcript=None,
+        interaction=empty,
+        skill_catalog=empty,
+        cancel=empty,
     )
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()

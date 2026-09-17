@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
@@ -22,18 +21,11 @@ from a13n_service.temporal import utc_now
 from .access import Authority, RuntimeAuthority, subject
 from .audit import audit
 from .domain import CreateDocument, Document, ScopeSettings
-from .models import DocumentRecord, PublicationRecipientRecord
+from .models import DocumentRecord
 from .service import digest
-from .sharing import eligible_groups
 
 if TYPE_CHECKING:
     from .service import BotMemoryService
-
-
-@dataclass(frozen=True, slots=True)
-class Publication:
-    source_id: str
-    recipients: tuple[str, ...]
 
 
 async def create(
@@ -43,32 +35,16 @@ async def create(
     scope_id: str,
     body: CreateDocument,
     idempotency_key: str,
-    *,
-    publication: Publication | None = None,
 ) -> Document:
     record_id = ""
     metadata: dict[str, JsonValue] = {}
     access = None
     native_subject = None
     key = digest(idempotency_key)
-    fingerprint = digest(body.model_dump_json() + (repr(publication) if publication else ""))
-    action = WorkspaceAction.bot_memory_share if publication else WorkspaceAction.bot_memory_create
+    fingerprint = digest(body.model_dump_json())
+    action = WorkspaceAction.bot_memory_create
     async with transaction(service.sessions) as session:
         scope = await service._scope(session, authority, account_id, scope_id, action, lock=True)
-        if publication:
-            await eligible_groups(session, account_id, scope.provider_id, (scope_id, *publication.recipients))
-            source = await session.scalar(
-                select(DocumentRecord)
-                .where(
-                    DocumentRecord.id == publication.source_id,
-                    DocumentRecord.scope_id == scope_id,
-                    DocumentRecord.state == "active",
-                    DocumentRecord.publication_source_id.is_(None),
-                )
-                .with_for_update()
-            )
-            if source is None:
-                raise failure("memory_not_found", "Publication source not found.", ErrorCategory.not_found)
         existing = await session.scalar(
             select(DocumentRecord).where(DocumentRecord.scope_id == scope_id, DocumentRecord.request_key == key)
         )
@@ -118,8 +94,6 @@ async def create(
                 metadata["source_agent_id"] = authority.agent_id
             if body.correction_of:
                 metadata["correction_of"] = body.correction_of
-            if publication:
-                metadata["publication_source_id"] = publication.source_id
             row = DocumentRecord(
                 id=record_id,
                 scope_id=scope_id,
@@ -134,20 +108,14 @@ async def create(
                 timezone=settings.timezone,
                 metadata_json=dict(metadata),
                 correction_of=body.correction_of,
-                publication_source_id=publication.source_id if publication else None,
                 created_at=now,
                 version=1,
             )
             session.add(row)
             await session.flush()
-            if publication:
-                session.add_all(
-                    PublicationRecipientRecord(document_id=record_id, scope_id=recipient)
-                    for recipient in publication.recipients
-                )
             access, native_subject = await service._provider(session, scope), subject(scope)
     if replay_id is not None:
-        return await service.get(authority, account_id, scope_id, replay_id, publication=publication is not None)
+        return await service.get(authority, account_id, scope_id, replay_id)
     assert access is not None and native_subject is not None and record_id
     try:
         async with (
@@ -166,15 +134,6 @@ async def create(
             )
         async with transaction(service.sessions) as session:
             scope = await service._scope(session, authority, account_id, scope_id, action, lock=True)
-            if publication:
-                await eligible_groups(session, account_id, scope.provider_id, (scope_id, *publication.recipients))
-                source = await session.scalar(
-                    select(DocumentRecord).where(DocumentRecord.id == publication.source_id).with_for_update()
-                )
-                if source is None or source.state != "active":
-                    raise failure(
-                        "memory_write_unconfirmed", "Publication source is no longer available.", ErrorCategory.conflict
-                    )
             row = await session.scalar(select(DocumentRecord).where(DocumentRecord.id == record_id).with_for_update())
             assert row is not None
             row.native_id = record.id
@@ -188,7 +147,7 @@ async def create(
                 authority,
                 organization_id=scope.organization_id,
                 workspace_id=scope.workspace_id,
-                action="publish" if publication else "create",
+                action="create",
                 resource_id=row.id,
                 details={"scope_id": scope.id},
             )
@@ -224,7 +183,6 @@ async def delete(
             .where(
                 DocumentRecord.id == document_id,
                 DocumentRecord.scope_id == scope_id,
-                DocumentRecord.publication_source_id.is_(None),
             )
             .with_for_update()
         )

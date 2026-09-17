@@ -98,6 +98,7 @@ class RootRunCoordinator:
         observation: UiObservation | None = None,
         touch_thread: Callable[[str], Awaitable[None]] | None = None,
         interaction_timeouts: bool = False,
+        notify: Callable[[str, RootOperationNotice], None] | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
@@ -105,6 +106,7 @@ class RootRunCoordinator:
         self._executor = executor
         self._touch_thread = touch_thread
         self._summary_hub = summary_hub
+        self._notify = notify
         self._lock = Lock()
         self._operations: dict[str, _RootOperation] = {}
         self._active_by_thread: dict[str, str] = {}
@@ -523,6 +525,13 @@ class RootRunCoordinator:
                         code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
                     )
         with CancelScope(shield=True):
+            # Completion is navigation-worthy, unlike streamed progress. Persist it
+            # before releasing waiters/publishing the terminal view, outside the lock.
+            if self._touch_thread is not None:
+                try:
+                    await self._touch_thread(operation.receipt.thread_id)
+                except Exception:
+                    get_logger(__name__).exception("Could not touch completed Thread: %s", operation.receipt.thread_id)
             async with self._lock:
                 if cancelled:
                     operation.status = RootOperationStatus.cancelled
@@ -664,6 +673,11 @@ class RootRunCoordinator:
             stream.cancel()
 
     async def _publish_change(self, operation: _RootOperation, *, notice: RootOperationNotice | None = None) -> None:
+        if notice is not None and self._notify is not None:
+            try:
+                self._notify(operation.receipt.thread_id, notice)
+            except Exception:
+                pass  # Optional delivery cannot change execution settlement.
         if self._summary_hub is None:
             return
         try:

@@ -31,6 +31,7 @@ class MemorySettings(StrictModel):
 
 
 class ScopeSettings(StrictModel):
+    visibility: Literal["group", "installation"] = "group"
     enabled: bool = True
     use_memory: bool = True
     save_on_request: bool = True
@@ -87,16 +88,13 @@ class DocumentEntry(StrictModel):
 
 
 class DocumentAccessReason(StrictModel):
-    kind: Literal["owner", "publication", "policy"]
-    policy_id: ObjectId | None = None
-    policy_name: str | None = None
+    kind: Literal["owner", "installation"]
 
 
 class Document(DocumentEntry):
     text: str
     owner_name: str | None = None
     access_reasons: tuple[DocumentAccessReason, ...] = ()
-    more_access_reasons: bool = False
 
 
 class DocumentCollection(StrictModel):
@@ -115,55 +113,3 @@ class SearchDocuments(StrictModel):
     query: str = Field(min_length=1, max_length=16000)
     limit: int = Field(default=20, ge=1, le=100)
     include_shared: bool = True
-
-
-class PublishDocument(StrictModel):
-    text: MemoryText
-    title: str = Field(min_length=1, max_length=160)
-    description: str = Field(default="", max_length=320)
-    recipient_scope_ids: tuple[ObjectId, ...] = Field(min_length=1, max_length=128)
-
-
-class PublicationAudience(StrictModel):
-    expected_version: int = Field(ge=1)
-    recipient_scope_ids: tuple[ObjectId, ...] = Field(max_length=128)
-
-
-class PublicationAccess(StrictModel):
-    version: int
-    recipient_scope_ids: tuple[ObjectId, ...]
-
-
-class WithdrawPublication(StrictModel):
-    expected_version: int = Field(ge=1)
-
-
-class SharingPolicyInput(StrictModel):
-    name: str = Field(min_length=1, max_length=128)
-    scope_ids: tuple[ObjectId, ...] = Field(min_length=2, max_length=128)
-    kinds: tuple[Literal["daily", "long_term"], ...] = ("long_term",)
-    include_history: bool = False
-    enroll_future_groups: bool = False
-    enabled: bool = True
-
-
-class ReplaceSharingPolicy(SharingPolicyInput):
-    expected_version: int = Field(ge=1)
-
-
-class SharingParticipant(StrictModel):
-    scope_id: ObjectId
-    joined_at: datetime
-
-
-class SharingPolicy(SharingPolicyInput):
-    id: ObjectId
-    version: int
-    created_at: datetime
-    future_since: datetime
-    participants: tuple[SharingParticipant, ...]
-
-
-class SharingPolicyCollection(StrictModel):
-    items: tuple[SharingPolicy, ...]
-    next_cursor: str | None = None

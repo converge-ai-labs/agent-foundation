@@ -15,9 +15,8 @@ from a13n_service.temporal import assume_utc, utc_now
 from .access import subject
 from .audit import audit
 from .domain import DocumentCollection, DocumentEntry
-from .models import DocumentRecord, PublicationRecipientRecord
+from .models import DocumentRecord
 from .service import BotMemoryService, digest
-from .sharing import eligible_groups
 
 
 async def list_operations(
@@ -128,18 +127,9 @@ async def reconcile(
         row.native_id = native_id
         if row.state == "unconfirmed":
             if row.publication_source_id is not None:
-                source = await session.get(DocumentRecord, row.publication_source_id)
-                if source is None or source.state != "active":
-                    row.state = "deleting"
-                    return row.to_entry()
-                recipients = tuple(
-                    await session.scalars(
-                        select(PublicationRecipientRecord.scope_id).where(
-                            PublicationRecipientRecord.document_id == document_id,
-                        )
-                    )
-                )
-                await eligible_groups(session, account_id, scope.provider_id, (scope_id, *recipients))
+                # Retired publication writes can be cleaned up, never reactivated.
+                row.state = "deleting"
+                return row.to_entry()
             row.state = "active"
             row.saved_at = utc_now()
             row.version += 1

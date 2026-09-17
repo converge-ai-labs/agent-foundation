@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   useInfiniteQuery,
   useQuery,
@@ -7,7 +7,7 @@ import {
 import { Button } from "a13n-ui";
 import { result, type Schema } from "../transport/client";
 import { useStatus, useTransport } from "../transport/context";
-import { ErrorNotice } from "../shell/ui";
+import { ErrorNotice, TextField } from "../shell/ui";
 import { PatchEditor } from "./patch-editor";
 import { gitPath } from "./buffer";
 import styles from "./native.module.css";
@@ -81,17 +81,44 @@ export function Changes({
   openFile,
   selected,
   select,
+  onChoices,
 }: {
   path: string;
   openFile: (path: string) => void;
   selected: DiffSelection | null;
-  select: (selection: DiffSelection | null) => void;
+  select: (selection: DiffSelection | null, choices?: DiffSelection[]) => void;
+  onChoices?: (choices: DiffSelection[]) => void;
 }) {
   const queries = useQueryClient();
   const [ignored, setIgnored] = useState(false);
+  const [filter, setFilter] = useState("");
   const { discovery, status, feature, entries } = useGitStatus(path, ignored);
   const repository =
     status.data?.pages[0]?.repository ?? discovery.data?.repository;
+  const choices = useMemo(() => {
+    const groups = ["staged", "unstaged", "untracked"] as const;
+    const matches = (
+      status.data?.pages.flatMap((page) => page.entries) ?? []
+    ).filter((entry) =>
+      `${entry.path} ${entry.original_path ?? ""}`
+        .toLowerCase()
+        .includes(filter.toLowerCase()),
+    );
+    return repository
+      ? groups.flatMap((comparison) =>
+          matches
+            .filter((entry) => changeAxes(entry).includes(comparison))
+            .map((entry) => ({
+              repository_path: repository.root,
+              path: entry.path,
+              comparison,
+            })),
+        )
+      : [];
+  }, [status.data, repository?.root, filter]);
+  useEffect(() => {
+    onChoices?.(choices);
+  }, [choices, onChoices]);
   if (!feature)
     return (
       <div className={styles.empty}>
@@ -104,6 +131,11 @@ export function Changes({
     );
   if (!path) return <p>Choose a native directory to inspect its repository.</p>;
   const groups = ["staged", "unstaged", "untracked"] as const;
+  const matches = entries.filter((entry) =>
+    `${entry.path} ${entry.original_path ?? ""}`
+      .toLowerCase()
+      .includes(filter.toLowerCase()),
+  );
   return (
     <div className={styles.stack}>
       <ErrorNotice
@@ -155,13 +187,21 @@ export function Changes({
             />
             Show ignored entries
           </label>
+          <TextField
+            label="Filter loaded changes by path"
+            value={filter}
+            onChange={setFilter}
+          />
+          {status.hasNextPage && (
+            <small>Counts and filtering cover loaded changes only.</small>
+          )}
           {groups.map((axis) => {
-            const rows = entries.filter((entry) =>
+            const rows = matches.filter((entry) =>
               changeAxes(entry).includes(axis),
             );
             return (
-              <section className={styles.changeGroup} key={axis}>
-                <h3>
+              <details className={styles.changeGroup} key={axis} open>
+                <summary>
                   {axis === "staged"
                     ? "Staged · HEAD → index"
                     : axis === "unstaged"
@@ -171,18 +211,22 @@ export function Changes({
                     {rows.length}
                     {status.hasNextPage ? "+" : ""}
                   </span>
-                </h3>
+                </summary>
                 {rows.map((entry) => (
                   <button
                     type="button"
                     className={`${styles.changeRow} ${selected?.path === entry.path && selected.comparison === axis && selected.repository_path === repository.root ? styles.selected : ""}`}
                     key={entry.path}
+                    title={entry.path}
                     onClick={() =>
-                      select({
-                        repository_path: repository.root,
-                        path: entry.path,
-                        comparison: axis,
-                      })
+                      select(
+                        {
+                          repository_path: repository.root,
+                          path: entry.path,
+                          comparison: axis,
+                        },
+                        choices,
+                      )
                     }
                   >
                     <span>
@@ -209,11 +253,11 @@ export function Changes({
                     .
                   </small>
                 )}
-              </section>
+              </details>
             );
           })}
           {ignored &&
-            entries
+            matches
               .filter((entry) => entry.kind === "ignored")
               .map((entry) => (
                 <button
@@ -245,10 +289,14 @@ export function DiffView({
   selection,
   threadId,
   openFile,
+  choices = [],
+  navigate,
 }: {
   selection: DiffSelection;
   threadId?: string;
-  openFile: (path: string) => void;
+  openFile: (path: string, line?: number) => void;
+  choices?: DiffSelection[];
+  navigate?: (selection: DiffSelection) => void;
 }) {
   const { client } = useTransport();
   const diff = useQuery({
@@ -263,6 +311,12 @@ export function DiffView({
     refetchOnMount: "always",
   });
   const value = diff.data;
+  const index = choices.findIndex(
+    (item) =>
+      item.repository_path === selection.repository_path &&
+      item.path === selection.path &&
+      item.comparison === selection.comparison,
+  );
   return (
     <section className={styles.file} aria-label="Reviewed Git diff">
       <div className={styles.fileHeader}>
@@ -277,6 +331,31 @@ export function DiffView({
           Open in Files
         </Button>
       </div>
+      {navigate && choices.length > 1 && (
+        <nav className={styles.actions} aria-label="Review changed files">
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={index <= 0}
+            onClick={() => navigate(choices[index - 1]!)}
+          >
+            Previous file
+          </Button>
+          <small>
+            {index >= 0
+              ? `${index + 1} / ${choices.length} loaded comparisons`
+              : "Comparison no longer in the list"}
+          </small>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={index < 0 || index >= choices.length - 1}
+            onClick={() => navigate(choices[index + 1]!)}
+          >
+            Next file
+          </Button>
+        </nav>
+      )}
       <ErrorNotice error={diff.error} retry={() => void diff.refetch()} />
       {diff.isFetching && <p role="status">Reading comparison…</p>}
       {value && (
@@ -292,6 +371,16 @@ export function DiffView({
               value={value}
               threadId={threadId}
               disabled={diff.isFetching || !!diff.error}
+              openLine={
+                selection.comparison === "unstaged" ||
+                selection.comparison === "untracked"
+                  ? (line) =>
+                      openFile(
+                        gitPath(selection.repository_path, selection.path),
+                        line,
+                      )
+                  : undefined
+              }
             />
           ) : (
             <p>

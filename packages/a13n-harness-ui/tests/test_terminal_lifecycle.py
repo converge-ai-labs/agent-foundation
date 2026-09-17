@@ -179,7 +179,12 @@ async def test_terminal_loop_failures_preserve_only_pending_task_notifications(
         await asyncio.Future()
 
     backend = SimpleNamespace(
-        thread_id=None, resumed_transcript=None, interaction=empty, skill_catalog=empty, cancel=empty
+        thinking_choices=lambda: (),
+        thread_id=None,
+        resumed_transcript=None,
+        interaction=empty,
+        skill_catalog=empty,
+        cancel=empty,
     )
     loop = asyncio.get_running_loop()
     previous_handler = loop.get_exception_handler()

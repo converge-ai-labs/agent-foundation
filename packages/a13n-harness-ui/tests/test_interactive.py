@@ -47,6 +47,9 @@ def test_command_registry_has_one_grammar_and_rejects_collisions() -> None:
     assert registry.parse("/mode detailed", busy=True).arguments == ("detailed",)
     assert registry.completions("/mo")[0][0] == "/mode"
     assert registry.completions("/mode d")[0][0] == "detailed"
+    registry.thinking_choices = (("default", "Configured native value"), ("off", "Disable thinking"))
+    assert registry.completions("/thinking o") == (("off", "Disable thinking"),)
+    assert registry.completions("/thinking h") == ()
     assert "Alt+Enter" in registry.help()
     for invalid in ("/unknown", "/model a b", "/mode invalid", '/attach "unclosed'):
         with pytest.raises(ValueError):
@@ -611,12 +614,14 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         assert await backend.execute(renderer, prompt="Do the task") == ""
         display = renderer.drain()
         assert "GLOBAL GUIDANCE" not in display
+        assert "surface-context" not in display
         assert "Repository rule" not in display
         sources = [block.source for block in renderer.transcript.blocks.values()]
         assert sum(source == "> Do the task" for source in sources) == 1, sources
         page = await app.get_thread_transcript(thread_id=backend.thread_id, limit=50)
         hidden = [part for entry in page.entries for part in entry.parts if not part.metadata.display]
         assert any("GLOBAL GUIDANCE" in (part.text or "") for part in hidden)
+        assert any("Harness UI TUI" in (part.text or "") for part in hidden)
         assert any("FINAL REPOSITORY RULE" in (part.text or "") for part in hidden)
         # A fresh adapter reads retained native metadata, not transient renderer state.
         resumed = SessionBackend(app, CliRequest(), cwd, Status())
@@ -624,6 +629,7 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         assert "GLOBAL GUIDANCE" not in await _retained_history(resumed)
         history = await _retained_history(backend)
         assert "Do the task" in history and "done" in history
+        assert "surface-context" not in history
         assert "GLOBAL GUIDANCE" not in history
         assert "Repository rule" not in history
         (path.parent / "AGENTS.md").unlink()
@@ -642,6 +648,8 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
         if isinstance(part, UserPromptPart)
     )
     assert "GLOBAL GUIDANCE" in user_text
+    assert '<surface-context source="a13n-harness-ui">' in user_text
+    assert "Harness UI TUI" in user_text
     visible = str(seen[0])
     assert "Repository rule 0" in visible and "FINAL REPOSITORY RULE" in visible
     assert "DO NOT INJECT" not in visible
@@ -675,7 +683,14 @@ async def test_session_overrides_capture_native_context_and_resume(
         backend = SessionBackend(app, CliRequest(), tmp_path, status)
         assert await backend.initialize()
         assert status.context_window == 350000
+        choices = await backend.choices("thinking")
+        assert {item.value for item in choices} == {"default", "off", "low", "medium", "high", "xhigh"}
         await backend.thinking("low")
+        assert status.thinking == "Low"
+        assert "Thinking Low" in status.line(160)
+        with pytest.raises(ValueError, match="Unsupported"):
+            await backend.thinking("minimal")
+        assert backend.overrides.thinking == "low"
         renderer = StreamRenderer(status)
         assert await backend.execute(renderer, prompt="First") == ""
         assert "Hello from the mock." in renderer.drain()
