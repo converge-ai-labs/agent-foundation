@@ -62,7 +62,7 @@ A successful execution is not proof of successful checkpoint publication or clea
 | `submit_thread`                                                           | Ordinary input, optional attachments, mutation, Model overrides, Skill references |
 | `respond_thread`, `respond_decisions`                                     | Exact deferred continuation responses                                             |
 
-`NewThreadDefaults` selects optional Project, Agent, Environment profile, middleware, Environment extensions, and MCP IDs. Omitted values use the configured defaults. Per-operation `RunModelOverrides` selects Model, thinking, or service tier without rewriting a resource or sticky Thread head.
+`NewThreadDefaults` selects optional Project, Agent, `default_model_id`, Environment profile, middleware, Environment extensions, and MCP IDs. Omitted resource selections use the configured defaults; a null or omitted default Model follows the Agent. Effective Model precedence is per-operation override, saved Thread default, then Agent Model. A versioned `ThreadConfigurationPatch` can set `default_model_id`, clear it with null, or omit it to retain the current value. Per-operation `RunModelOverrides` selects Model, thinking, or service tier without rewriting a resource or sticky Thread head.
 
 Metadata `expected_version`, configuration `expected_version`, and `expected_continuation_id` are different preconditions. Read the appropriate current value; never substitute one for another. Metadata omission preserves a field, explicit null can clear a title, and supplied `archived` cannot be null. Archiving requires inactive root execution.
 

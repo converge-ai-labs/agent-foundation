@@ -39,6 +39,7 @@ class _ProjectDefault(Enum):
 class RootThreadDefaults:
     project_id: str | _ProjectDefault | None = _ProjectDefault.global_default
     agent_id: str | None = None
+    default_model_id: str | None = None
     environment_profile_id: str | None = None
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
@@ -239,6 +240,7 @@ def resolve_thread_configuration_details(
         version=1,
         project_id=project_id,
         agent_source=AgentResourceSource(id=agent_id),
+        default_model_id=requested.default_model_id,
         environment_profile_id=environment,
         harness_plugin_ids=plugins,
         environment_run_extension_ids=extensions,
@@ -250,6 +252,7 @@ def resolve_thread_configuration_details(
         provenance=ConfigurationProvenance(
             project_id="global" if isinstance(requested.project_id, _ProjectDefault) else "explicit",
             agent_source=agent_origin,
+            default_model_id="explicit" if requested.default_model_id is not None else "agent",
             environment_profile_id=environment_origin,
             harness_plugin_ids=plugins_origin,
             environment_run_extension_ids=extensions_origin,
@@ -275,6 +278,11 @@ def _validate_configuration(
         raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
     if root and value.agent_source.kind != "agent":
         raise ThreadError("A root Thread cannot select a Markdown source.", code="thread_agent_invalid")
+    if value.default_model_id is not None:
+        if value.agent_source.kind != "agent":
+            raise ThreadError("A Markdown child follows its parent Model.", code="thread_model_invalid")
+        if value.default_model_id not in source.models:
+            raise ThreadError("The selected Thread Model is unavailable.", code="thread_model_missing")
     resources = source.agents if value.agent_source.kind == "agent" else source.subagents
     if value.agent_source.id not in resources:
         raise ThreadError("The selected Agent source is unavailable.", code="thread_agent_missing")

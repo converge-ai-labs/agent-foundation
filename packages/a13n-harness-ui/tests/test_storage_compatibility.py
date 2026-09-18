@@ -33,6 +33,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20260918_e416fbd4674c_add_thread_default_model.py").unlink()
     (newer / "versions/20260917_768a6a993a59_add_indexed_thread_inspection_.py").unlink()
     (newer / "versions/20260917_acd7efeb9fd8_add_continuation_read_models.py").unlink()
     (newer / "versions/20260917_9aeed42d15b3_add_browser_push_subscriptions.py").unlink()
@@ -55,6 +56,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     engine = create_engine(f"sqlite:///{path}")
     try:
         with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE thread_configuration ADD COLUMN default_model_id VARCHAR(128)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN completion_version INTEGER NOT NULL DEFAULT 0"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN completion_run_id VARCHAR(80)"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN completion_digest VARCHAR(64)"))

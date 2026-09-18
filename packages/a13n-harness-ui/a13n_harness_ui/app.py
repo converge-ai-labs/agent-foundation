@@ -1048,6 +1048,7 @@ class HarnessUiApp:
                     provenance=ConfigurationProvenance(
                         project_id="thread",
                         agent_source="thread",
+                        default_model_id="thread" if selected.default_model_id is not None else "agent",
                         environment_profile_id="thread",
                         harness_plugin_ids="thread",
                         environment_run_extension_ids="thread",
@@ -1055,7 +1056,7 @@ class HarnessUiApp:
                     ),
                 ),
                 next_generation_digest=None if source is None else source.source_digest,
-                next_model_id=None if agent is None else agent.model,
+                next_model_id=selected.default_model_id or (None if agent is None else agent.model),
                 next_capability_ids=() if agent is None else tuple(item.capability for item in agent.capabilities),
                 next_tool_proxy=(
                     None
@@ -2534,6 +2535,7 @@ async def open_harness_ui_app(
                     root_runs=root_runs,
                     create_thread=app.create_thread,
                     configurations=configurations,
+                    inspect_configuration=app.inspect_thread_configuration,
                 )
                 root_executor.set_root_capability_factory(
                     lambda composition: ThreadCollaborationCapability(

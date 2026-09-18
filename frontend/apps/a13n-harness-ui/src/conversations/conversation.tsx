@@ -799,6 +799,7 @@ function Conversation({
                 expanded={expanded}
                 catalog={selectors.data}
                 agentId={thread?.configuration.agent_source.id ?? ""}
+                defaultModelId={thread?.configuration.default_model_id}
                 modelId={draft.modelId}
                 thinking={draft.thinking}
                 fast={draft.fast}

@@ -5956,6 +5956,19 @@
             ],
             "title": "Agent Source"
           },
+          "default_model_id": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Default Model Id",
+            "default": "agent"
+          },
           "environment_profile_id": {
             "type": "string",
             "enum": [
@@ -8712,6 +8725,19 @@
               }
             ]
           },
+          "default_model_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model Id"
+          },
           "environment_profile_id": {
             "anyOf": [
               {
@@ -10921,6 +10947,19 @@
           "agent_source": {
             "$ref": "#/components/schemas/AgentSource"
           },
+          "default_model_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model Id"
+          },
           "environment_profile_id": {
             "type": "string",
             "maxLength": 128,
@@ -11117,6 +11156,20 @@
           },
           "agent_source": {
             "$ref": "#/components/schemas/AgentSourceView"
+          },
+          "default_model_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Default Model Id"
           },
           "environment_profile_id": {
             "maxLength": 128,
@@ -13810,6 +13863,19 @@
             ],
             "title": "Agent Id"
           },
+          "default_model_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model Id"
+          },
           "environment_profile_id": {
             "anyOf": [
               {
@@ -13897,6 +13963,19 @@
               }
             ],
             "title": "Agent Id"
+          },
+          "default_model_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Model Id"
           },
           "environment_profile_id": {
             "anyOf": [

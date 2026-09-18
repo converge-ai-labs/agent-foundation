@@ -83,6 +83,7 @@ class ThreadCompositionSelection:
     harness_plugin_ids: tuple[str, ...]
     environment_run_extension_ids: tuple[str, ...]
     mcp_server_ids: tuple[str, ...]
+    default_model_id: str | None = None
 
 
 class AgentCompositionResolver:
@@ -147,6 +148,10 @@ class AgentCompositionResolver:
         """Resolve one exact Thread head against one accepted source generation."""
 
         self._validate_selection(source, selection)
+        if selection.default_model_id is not None and (model_overrides is None or model_overrides.model_id is None):
+            model_overrides = (model_overrides or RunModelOverrides()).model_copy(
+                update={"model_id": selection.default_model_id}
+            )
         project = source.projects[selection.project_id] if selection.project_id is not None else None
         plugin_catalog = self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values()))
         budget = [_MAX_RESOLVED_NODES]
@@ -235,6 +240,8 @@ class AgentCompositionResolver:
     ) -> None:
         if selection.project_id is not None and selection.project_id not in source.projects:
             raise CompositionError("The Thread Project is unavailable.", code="project_missing")
+        if selection.default_model_id is not None and selection.agent_source_kind != "agent":
+            raise CompositionError("A Markdown child follows its parent Model.", code="thread_model_invalid")
         sources = source.agents if selection.agent_source_kind == "agent" else source.subagents
         if selection.agent_source_id not in sources:
             raise CompositionError("The Thread Agent source is unavailable.", code="agent_source_missing")

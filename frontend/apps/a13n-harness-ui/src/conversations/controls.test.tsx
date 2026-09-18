@@ -100,6 +100,53 @@ it("keeps dirty selections on external changes and requires review before versio
     patch: { mcp_server_ids: ["mcp-one"] },
   });
 });
+it("clears a saved default Model with an explicit null versioned patch", async () => {
+  const user = userEvent.setup();
+  const PATCH = vi.fn().mockResolvedValue({
+    data: { ...configuration, version: 2, default_model_id: null },
+  });
+  const wrapper = harness({
+    PATCH,
+    GET: vi.fn(async (path) => ({
+      data:
+        path === "/api/projects"
+          ? []
+          : {
+              agents: [],
+              environments: [],
+              models: [
+                {
+                  model_id: "model-one",
+                  name: "Saved model",
+                  route: "custom:one",
+                },
+              ],
+            },
+    })),
+  });
+  render(
+    <ThreadSelections
+      threadId="one"
+      configuration={{ ...configuration, default_model_id: "model-one" }}
+      reconcile={vi.fn()}
+    />,
+    { wrapper },
+  );
+  fireEvent.click(screen.getByText("Change next Run selections"));
+  const choice = await screen.findByRole("combobox", { name: "Default model" });
+  await waitFor(() => expect(choice.textContent).toBe("Saved model"));
+  await user.click(choice);
+  await user.click(screen.getByRole("option", { name: "Follow Agent model" }));
+  await user.click(
+    screen.getByRole("button", { name: "Save next Run selections" }),
+  );
+  await waitFor(() => expect(PATCH).toHaveBeenCalledOnce());
+  expect(PATCH.mock.calls[0][1].body).toEqual({
+    expected_version: 1,
+    patch: { default_model_id: null },
+  });
+});
+
 const batch = {
   thread_id: "one",
   continuation_id: "C1",

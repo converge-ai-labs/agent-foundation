@@ -2055,3 +2055,35 @@ async def test_model_memory_disambiguates_projects_on_resume(tmp_path: Path, mon
         await backend.models("default")
         assert await app.cwd_model_preference(tmp_path, project_id="project-a") == ("project-a", "model-codex")
         assert await app.cwd_model_preference(tmp_path, project_id="project-b") == ("project-b", None)
+
+
+@pytest.mark.anyio
+async def test_resume_thread_default_outranks_restored_memory_but_not_explicit_choice(tmp_path, monkeypatch):
+    import yaml
+    from a13n_harness_ui.surfaces import NewThreadDefaults
+
+    path = await _seed(tmp_path, monkeypatch)
+    model = yaml.safe_load((path.parent / "models/codex.yaml").read_text())
+    model.update(id="model-alternate", name="Alternate")
+    (path.parent / "models/alternate.yaml").write_text(yaml.safe_dump(model))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        creator = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await creator.initialize()
+        await creator.models("model-alternate")
+        project = await app.ensure_cwd_project(tmp_path)
+        target = await app.create_thread(defaults=NewThreadDefaults(project_id=project, default_model_id="model-codex"))
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.overrides.model_id == "model-alternate"
+        await backend.resume(target.thread_id)
+        assert backend.overrides.model_id is None
+        assert backend.status.model == model["route"]
+        # Explicit in-session choice remains an override when switching Threads.
+        await backend.models("model-alternate")
+        await backend.resume(target.thread_id)
+        assert backend.overrides.model_id == "model-alternate"
+        fresh = SessionBackend(app, CliRequest(thread_id=target.thread_id), tmp_path, Status())
+        await fresh.initialize()
+        assert fresh.overrides.model_id is None
+        assert fresh.status.model == model["route"]

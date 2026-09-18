@@ -65,6 +65,7 @@ class AgentSourceView(SurfaceModel):
 class NewThreadDefaults(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
@@ -75,6 +76,7 @@ class ThreadConfigurationView(SurfaceModel):
     version: int = Field(ge=1)
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_source: AgentSourceView
+    default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str = Field(min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] = ()
     environment_run_extension_ids: tuple[str, ...] = ()
@@ -87,6 +89,7 @@ ConfigurationOrigin = Literal["explicit", "project", "agent", "global", "builtin
 class ConfigurationProvenance(SurfaceModel):
     project_id: ConfigurationOrigin
     agent_source: ConfigurationOrigin
+    default_model_id: ConfigurationOrigin = "agent"
     environment_profile_id: ConfigurationOrigin
     harness_plugin_ids: ConfigurationOrigin
     environment_run_extension_ids: ConfigurationOrigin
@@ -670,6 +673,7 @@ class ThreadSelectorCatalog(SurfaceModel):
 class ThreadConfigurationPatch(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
@@ -681,7 +685,7 @@ class ThreadConfigurationPatch(SurfaceModel):
             raise ValueError("Thread configuration patch must not be empty")
         values = self.model_dump(exclude_unset=True)
         for name, value in values.items():
-            if name != "project_id" and value is None:
+            if name not in {"project_id", "default_model_id"} and value is None:
                 raise ValueError(f"{name} cannot be null when supplied")
             if isinstance(value, tuple) and len(value) != len(set(value)):
                 raise ValueError(f"{name} must be unique and ordered")

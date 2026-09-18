@@ -37,6 +37,7 @@ export function ThreadRunChoices({
   catalog,
   agentId,
   defaultAgentId,
+  defaultModelId,
   modelId,
   thinking,
   onThinkingChange,
@@ -50,6 +51,7 @@ export function ThreadRunChoices({
   catalog?: Schema<"ThreadSelectorCatalog">;
   agentId: string;
   defaultAgentId?: string;
+  defaultModelId?: string | null;
   modelId?: string;
   thinking?: Schema<"SubmitRequest">["thinking"];
   onThinkingChange: (value: Schema<"SubmitRequest">["thinking"]) => void;
@@ -62,8 +64,9 @@ export function ThreadRunChoices({
   const agent = catalog?.agents.find(
     (item) => item.agent_id === (agentId || defaultAgentId),
   );
+  const inheritedModelId = defaultModelId ?? agent?.model_id;
   const selectionKey = agent
-    ? JSON.stringify([agent.agent_id, modelId ?? agent.model_id])
+    ? JSON.stringify([agent.agent_id, modelId ?? inheritedModelId])
     : undefined;
   const previousSelection = useRef(selectionKey);
   useEffect(() => {
@@ -82,7 +85,7 @@ export function ThreadRunChoices({
     <div className={styles.runChoices}>
       <FastToggle
         model={catalog?.models?.find(
-          (item) => item.model_id === (modelId ?? agent?.model_id),
+          (item) => item.model_id === (modelId ?? inheritedModelId),
         )}
         value={fast}
         disabled={disabled || !catalog}
@@ -136,7 +139,8 @@ export function ThreadRunChoices({
         </div>
         <ModelPicker
           models={catalog?.models ?? []}
-          defaultModelId={agent?.model_id ?? undefined}
+          defaultModelId={inheritedModelId ?? undefined}
+          defaultSource={defaultModelId != null ? "thread" : "agent"}
           value={modelId}
           disabled={disabled || !catalog}
           onChange={onModelChange}

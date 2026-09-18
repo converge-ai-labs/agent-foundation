@@ -60,7 +60,7 @@ const catalog: Schema<"ThreadSelectorCatalog"> = {
   mcp_servers: [],
 };
 
-function Choices() {
+function Choices({ defaultModelId }: { defaultModelId?: string } = {}) {
   const [modelId, setModelId] = useState<string>();
   const [thinking, setThinking] =
     useState<Schema<"SubmitRequest">["thinking"]>();
@@ -70,6 +70,7 @@ function Choices() {
       catalog={catalog}
       agentId=""
       defaultAgentId="agent"
+      defaultModelId={defaultModelId}
       modelId={modelId}
       thinking={thinking}
       fast={fast}
@@ -144,6 +145,22 @@ it("searches models in the same popup, returns focus, and resets thinking on mod
   expect(
     screen.getByRole("button", { name: "Model and thinking" }).textContent,
   ).toBe("Reasoning model· High");
+});
+
+it("follows the saved Thread default and restores it after an explicit Run choice", async () => {
+  const user = userEvent.setup();
+  render(<Choices defaultModelId="model-two" />);
+  const trigger = screen.getByRole("button", { name: "Model and thinking" });
+  expect(trigger.textContent).toBe("Other model");
+  await user.click(trigger);
+  expect(screen.getByText("Following thread default")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Change model" }));
+  await user.click(screen.getByRole("button", { name: "Reasoning model" }));
+  expect(trigger.textContent).toBe("Reasoning model· High");
+  await user.click(screen.getByRole("button", { name: "Change model" }));
+  await user.click(screen.getByRole("button", { name: /Thread default/ }));
+  expect(trigger.textContent).toBe("Other model");
+  expect(screen.getByText("Following thread default")).toBeTruthy();
 });
 
 it("keeps unavailable selections visible and disambiguates duplicate model names", async () => {

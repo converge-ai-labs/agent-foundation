@@ -21,6 +21,7 @@ export function ModelPicker({
   models,
   defaultModelId,
   value,
+  defaultSource = "agent",
   thinking,
   disabled,
   onChange,
@@ -28,6 +29,7 @@ export function ModelPicker({
 }: {
   models: Schema<"ModelSummary">[];
   defaultModelId?: string;
+  defaultSource?: "agent" | "thread";
   value?: string;
   thinking?: Schema<"SubmitRequest">["thinking"];
   disabled?: boolean;
@@ -128,7 +130,9 @@ export function ModelPicker({
                 onClick={() => selectModel(undefined)}
               >
                 <span>
-                  Agent default
+                  {defaultSource === "thread"
+                    ? "Thread default"
+                    : "Agent default"}
                   <small>
                     {defaultModel
                       ? `Currently ${defaultModel.name}`
@@ -181,7 +185,7 @@ export function ModelPicker({
             </Button>
             <p className={styles.hint}>
               {value === undefined
-                ? "Following agent default"
+                ? `Following ${defaultSource} default`
                 : "Override for next run"}
             </p>
             <ThinkingPicker

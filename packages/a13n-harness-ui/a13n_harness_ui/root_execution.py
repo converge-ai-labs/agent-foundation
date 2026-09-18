@@ -676,6 +676,7 @@ def _selection(thread: Thread) -> ThreadCompositionSelection:
         project_id=thread.configuration.project_id,
         agent_source_kind=source.kind,
         agent_source_id=source.id,
+        default_model_id=thread.configuration.default_model_id,
         environment_profile_id=thread.configuration.environment_profile_id,
         harness_plugin_ids=thread.configuration.harness_plugin_ids,
         environment_run_extension_ids=thread.configuration.environment_run_extension_ids,
