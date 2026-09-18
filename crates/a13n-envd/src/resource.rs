@@ -444,11 +444,12 @@ impl ResourceRegistry {
             relative(path)?;
         }
         // Lock a retained directory inode, never a removable lock file.
+        // Dir handles may use O_PATH on Linux; flock needs a readable file descriptor.
         let lock = mount
             .root
-            .open_dir(".")
+            .open(".")
             .map_err(|_| ResourceError::Io)?
-            .into_std_file();
+            .into_std();
         loop {
             self.check_cancelled(&params.context.operation_id)?;
             match fs2::FileExt::try_lock_exclusive(&lock) {

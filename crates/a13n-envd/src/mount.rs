@@ -556,9 +556,9 @@ impl Mount {
                 ancestor
             };
             self.root
-                .open_dir(directory)
+                .open(directory)
                 .map_err(MountPathError::from_io)?
-                .into_std_file()
+                .into_std()
                 .sync_all()
                 .map_err(MountPathError::from_io)?;
         }
