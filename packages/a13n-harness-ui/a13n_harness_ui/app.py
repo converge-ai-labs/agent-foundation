@@ -237,6 +237,7 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSelectorCatalog,
     ThreadSummary,
+    ThreadWork,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -253,6 +254,7 @@ from a13n_harness_ui.thread_files import (
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
+from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.web_push import WebPush
 
 
@@ -320,6 +322,7 @@ class HarnessUiApp:
         threads: ThreadService,
         projections: ThreadProjectionService,
         terminal_projections: TerminalProjectionService,
+        work: ThreadWorkService,
         root_runs: RootRunCoordinator,
         thread_files: ThreadFiles,
         subagent_operator: HarnessUiSubagentOperator,
@@ -352,6 +355,7 @@ class HarnessUiApp:
         self._threads = threads
         self._projections = projections
         self._terminal_projections = terminal_projections
+        self._work = work
         self._thread_files = thread_files
         self._host_files = HostFiles(enabled=share_computer)
         self._host_git = HostGit(enabled=share_computer)
@@ -818,6 +822,15 @@ class HarnessUiApp:
     async def thread_usage(self, *, thread_id: str) -> ThreadUsageView:
         async with self._operation():
             return await self._store.usage.snapshot(thread_id=thread_id)
+
+    async def thread_work(
+        self,
+        *,
+        thread_id: str,
+        include: tuple[Literal["tasks", "notes"], ...] = (),
+    ) -> ThreadWork:
+        async with self._operation():
+            return await self._work.snapshot(thread_id, include)
 
     async def thread_notes(
         self,
@@ -2436,7 +2449,9 @@ async def open_harness_ui_app(
                 store=store,
                 configurations=configurations,
             )
+            work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
+                work=work,
                 store=store,
                 threads=threads,
                 configurations=configurations,
@@ -2511,6 +2526,7 @@ async def open_harness_ui_app(
                 threads=threads,
                 projections=projections,
                 terminal_projections=terminal_projections,
+                work=work,
                 root_runs=root_runs,
                 thread_files=thread_files,
                 subagent_operator=operator,

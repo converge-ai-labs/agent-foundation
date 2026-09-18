@@ -133,6 +133,7 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSelectorCatalog,
     ThreadSummary,
+    ThreadWork,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -1207,6 +1208,13 @@ def create_webui(
             cursor=cursor,
             limit=limit,
         )
+
+    @server.get("/api/threads/{thread_id}/work", response_model=ThreadWork)
+    async def work(
+        thread_id: str,
+        include: Annotated[tuple[Literal["tasks", "notes"], ...], Query(max_length=2)] = (),
+    ) -> ThreadWork:
+        return await app().thread_work(thread_id=thread_id, include=tuple(include))
 
     @server.get("/api/threads/{thread_id}/tasks", response_model=TaskPage)
     async def tasks(

@@ -626,7 +626,6 @@ it("isolates interleaved child output by execution, run and parent, and clears i
   ).toBeUndefined();
   display.accept(focusFrame({ kind: "reset", reason: "epoch_changed" }));
   expect(display.children.size).toBe(0);
-  expect(display.tasks).toBeUndefined();
 });
 it("bounds observed child text and events without pretending it is complete saved history", () => {
   const display = new FocusDisplay();
@@ -652,24 +651,12 @@ it("bounds observed child text and events without pretending it is complete save
   expect(child.blocks.size).toBeLessThanOrEqual(128);
   expect([...child.blocks.values()].at(-1)?.id).toContain("text-199");
 });
-it("merges same-version task batches, rejects stale projections and never mixes child tasks into root", () => {
+it("keeps task activity in its transcript without mixing private child tasks into root", () => {
   const display = new FocusDisplay();
   const prefix = snapshot(0);
   if (prefix.kind !== "snapshot") throw new Error("Expected snapshot");
   display.accept(prefix);
   display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
-  display.tasks = {
-    version: 3,
-    available: true,
-    tasks: [
-      {
-        task_id: "task-one",
-        version: 2,
-        subject: "Current",
-        status: "in_progress",
-      },
-    ],
-  };
   let sequence = 101;
   function emit(
     id: string,
@@ -701,20 +688,18 @@ it("merges same-version task batches, rejects stale projections and never mixes 
     };
     display.accept(frame);
   }
-  emit("task-one", 2, 9, "Stale state");
-  emit("task-one", 3, 1, "Stale task");
-  expect(display.tasks?.tasks?.[0].subject).toBe("Current");
   emit("task-one", 4, 3, "Updated");
   emit("task-two", 4, 1, "Reciprocal update");
   emit("child-task", 5, 1, "Child task", true);
-  expect(display.tasks?.version).toBe(4);
-  expect(display.tasks?.tasks?.map((task) => task.subject)).toEqual([
-    "Updated",
-    "Reciprocal update",
-  ]);
-  expect(display.tasks?.tasks?.[0].blocks).toEqual(["task-next"]);
+  expect(
+    [...display.blocks.values()]
+      .filter((block) => block.kind === "task")
+      .map((block) => block.text),
+  ).toEqual(["Updated", "Reciprocal update"]);
+  expect([...display.children.values()][0].display.blocks.size).toBeGreaterThan(
+    0,
+  );
   display.accept(snapshot());
-  expect(display.tasks).toBeUndefined();
 });
 
 it.each(["a13n.harness_ui.checkpoint", "plugin.test.fact"])(

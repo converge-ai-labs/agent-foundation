@@ -148,6 +148,27 @@ async def main() -> None:
         async def model(messages, info):
             nonlocal attempts
             attempts += 1
+            if "--work" in sys.argv:
+                if attempts == 1:
+                    yield {
+                        0: DeltaToolCall(
+                            name="task_create",
+                            tool_call_id="work-task",
+                            json_args=json.dumps(
+                                {"subject": "Review observations", "description": "Retain across Runs"}
+                            ),
+                        ),
+                        1: DeltaToolCall(
+                            name="note_write",
+                            tool_call_id="work-note",
+                            json_args=json.dumps({"key": "decision", "value": "Owner-published work"}),
+                        ),
+                    }
+                else:
+                    yield "Observing work. "
+                    await asyncio.sleep(3)
+                    yield "Complete."
+                return
             if "--hitl" in sys.argv:
                 if not info.function_tools:
                     yield {

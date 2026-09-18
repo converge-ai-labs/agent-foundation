@@ -62,6 +62,7 @@
   font-weight: 500;
 }
 .caption {
+  overflow-wrap: anywhere;
   color: var(--a13n-secondary);
   font-size: 12px;
   margin: 0 0 12px;

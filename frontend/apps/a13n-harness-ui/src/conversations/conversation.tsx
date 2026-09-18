@@ -744,9 +744,7 @@ function Conversation({
         {detail.data && (
           <WorkInspector
             threadId={threadId}
-            continuation={detail.data?.continuation_id}
             display={display}
-            live={showLive}
             connected={connection === "Live"}
             reconcile={reconcile}
           />

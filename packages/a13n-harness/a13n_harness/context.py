@@ -25,7 +25,7 @@ if TYPE_CHECKING:
     from a13n_harness.capabilities.media import MediaReader
     from a13n_harness.capabilities.steering import SteeringBridge
     from a13n_harness.capabilities.web import WebBinding
-    from a13n_harness.capabilities.working_state import TaskStateBinding
+    from a13n_harness.capabilities.working_state import TaskStateBinding, WorkingStateObserver
     from a13n_harness.environment.models import EnvironmentPath
     from a13n_harness.environment.providers import BoundEnvironment as Environment
     from a13n_harness.environment.providers import EnvironmentRuntime, FileScopeSelection
@@ -141,6 +141,7 @@ class RunBindings:
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
+    working_state_observer: WorkingStateObserver | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
@@ -206,6 +207,7 @@ class RunBindings:
         file_media_understanding: MediaUnderstandingProvider | None = None,
         skill_selection: frozenset[str] | None = None,
         task_state: TaskStateBinding | None = None,
+        working_state_observer: WorkingStateObserver | None = None,
         client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
@@ -229,6 +231,7 @@ class RunBindings:
             file_media_understanding=file_media_understanding,
             skill_selection=skill_selection,
             task_state=task_state,
+            working_state_observer=working_state_observer,
             client_toolsets=client_toolsets,
             tool_result_directory=tool_result_directory,
             metadata=metadata or {},
@@ -364,6 +367,7 @@ class AgentContext:
     file_media_understanding: MediaUnderstandingProvider | None = None
     skill_selection: frozenset[str] | None = None
     task_state: TaskStateBinding | None = None
+    working_state_observer: WorkingStateObserver | None = None
     client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
     tool_metadata: ToolRuntimeMetadata = field(default_factory=ToolRuntimeMetadata, compare=False)

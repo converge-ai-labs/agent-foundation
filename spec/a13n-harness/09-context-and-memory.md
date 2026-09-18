@@ -221,6 +221,10 @@ Inline children receive either an explicit identity-bound shared task view or an
 
 Missing, duplicate, source-incompatible, or mode-incompatible run collaborators fail before task tools are exposed. Restored state cannot select a provider, scope, or current authority.
 
+A Host can supply a fresh `RunBindings.working_state_observer` to receive typed, detached `WorkingStateObservation` values. Working State publishes one complete restored baseline on first run binding, then publishes after committed note or embedded task replacements and successful provider observations. The value identifies the Run, a run-local observation revision, an independent run-local note version, immutable Working State, and the complete embedded or last-observed provider task snapshot. A provider baseline has no task snapshot until a fresh provider read succeeds; a persisted cursor alone is not task content. Observation revisions do not change the serialized Working State version or imply durable saving.
+
+The callback is synchronous, non-blocking, and observational: it must not perform I/O, reenter task cells, or mutate state. Delivery stays ordered with the owner's state replacement without adding a cancellation point to task-cell commits. Observer exceptions are reported without changing tool mutation outcomes. The Host installs the detached value before issuing any asynchronous refresh hint. No observation callback is inherited by children; explicit shared inline task cells notify their original owner, while child notes and isolated task scopes remain private. Hosts do not reconstruct current work from tool arguments, historical context overlays, or task-event deltas.
+
 ## Structured User Interaction
 
 Structured questions use the native client-side deferred-tool boundary owned by [Tool Execution](07-tool-execution.md#structured-user-questions). This document adds no second interaction lifecycle or answer representation.

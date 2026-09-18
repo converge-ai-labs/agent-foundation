@@ -3136,6 +3136,63 @@
         }
       }
     },
+    "/api/threads/{thread_id}/work": {
+      "get": {
+        "summary": "Work",
+        "operationId": "work_api_threads__thread_id__work_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "include",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "enum": [
+                  "tasks",
+                  "notes"
+                ],
+                "type": "string"
+              },
+              "maxItems": 2,
+              "default": [],
+              "title": "Include"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadWork"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/tasks": {
       "get": {
         "summary": "Tasks",
@@ -8332,6 +8389,45 @@
         ],
         "title": "NoteView"
       },
+      "NoteWorkSummary": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": true
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total",
+            "default": 0
+          },
+          "page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotePage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "NoteWorkSummary"
+      },
       "OutputComment": {
         "properties": {
           "body": {
@@ -10434,6 +10530,83 @@
         ],
         "title": "TaskView"
       },
+      "TaskWorkSummary": {
+        "properties": {
+          "available": {
+            "type": "boolean",
+            "title": "Available",
+            "default": true
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "embedded",
+              "provider_observed",
+              "unavailable"
+            ],
+            "title": "Source",
+            "default": "embedded"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Total",
+            "default": 0
+          },
+          "pending": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Pending",
+            "default": 0
+          },
+          "in_progress": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "In Progress",
+            "default": 0
+          },
+          "completed": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completed",
+            "default": 0
+          },
+          "active": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "page": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TaskPage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "TaskWorkSummary"
+      },
       "TerminalPage": {
         "additionalProperties": false,
         "properties": {
@@ -11507,6 +11680,98 @@
           "other_runs"
         ],
         "title": "ThreadUsageView"
+      },
+      "ThreadWork": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "epoch": {
+            "type": "string",
+            "title": "Epoch"
+          },
+          "sequence": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Sequence"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "live",
+              "saved",
+              "unavailable"
+            ],
+            "title": "Source"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Continuation Id"
+          },
+          "base_continuation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Continuation Id"
+          },
+          "tasks": {
+            "$ref": "#/components/schemas/TaskWorkSummary"
+          },
+          "notes": {
+            "$ref": "#/components/schemas/NoteWorkSummary"
+          },
+          "children": {
+            "$ref": "#/components/schemas/ChildStatusCounts"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "epoch",
+          "sequence",
+          "source",
+          "tasks",
+          "notes",
+          "children"
+        ],
+        "title": "ThreadWork",
+        "description": "Current work observations; sections are independently owned, not atomic."
       },
       "ToolProxyConfig": {
         "properties": {
@@ -12606,7 +12871,8 @@
               "thread",
               "root_operation",
               "child_execution",
-              "comment"
+              "comment",
+              "thread_work"
             ],
             "title": "Kind",
             "type": "string"
@@ -12663,6 +12929,43 @@
               }
             ],
             "default": null
+          },
+          "work_sections": {
+            "default": [],
+            "items": {
+              "enum": [
+                "tasks",
+                "notes",
+                "children"
+              ],
+              "type": "string"
+            },
+            "title": "Work Sections",
+            "type": "array"
+          },
+          "work_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Work Revision"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Run Id"
           }
         },
         "required": [

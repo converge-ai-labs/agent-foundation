@@ -75,6 +75,7 @@ from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunMo
 from a13n_harness_ui.thread_files import ThreadFiles
 from a13n_harness_ui.thread_projection import build_thread_inspection
 from a13n_harness_ui.thread_service import ThreadService
+from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.tool_evidence import ToolEvidenceCollector
 
 
@@ -112,6 +113,7 @@ class RootRunExecutor:
         summary_hub: HarnessUiSummaryHub | None = None,
         cleanup_timeout_seconds: float = 30.0,
         thread_files: ThreadFiles | None = None,
+        work: ThreadWorkService | None = None,
     ) -> None:
         self._store = store
         self._threads = threads
@@ -125,6 +127,7 @@ class RootRunExecutor:
         self._summary_hub = summary_hub
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._thread_files = thread_files
+        self._work = work
         self._root_capability_factory: Callable[[ResolvedRunComposition], AbstractCapability[AgentContext]] | None = (
             None
         )
@@ -267,6 +270,11 @@ class RootRunExecutor:
                 environment=environment.runtime,
                 tool_result_directory=environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
+                working_state_observer=(
+                    partial(self._work.observe, thread_id, base_continuation_id=base_continuation_id)
+                    if self._work is not None
+                    else None
+                ),
             )
             bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
             record_phase_result(
@@ -418,6 +426,9 @@ class RootRunExecutor:
             ):
                 finalization_span.set_attribute("a13n.phase.status", "failed")
                 finalization_span.set_status(StatusCode.ERROR)
+        if stream is not None and self._work is not None:
+            with CancelScope(shield=True):
+                await self._work.finish(thread_id, stream.run_id)
         if stream is not None and self._live_hub is not None:
             with CancelScope(shield=True):
                 await self._live_hub.finish_root(

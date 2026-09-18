@@ -481,11 +481,16 @@ class RootOperationNotice(_StreamModel):
 class SummaryInvalidation(_StreamModel):
     epoch: str = Field(min_length=1, max_length=80)
     sequence: int = Field(ge=1)
-    kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution", "comment"]
+    kind: Literal[
+        "configuration", "catalog", "project", "thread", "root_operation", "child_execution", "comment", "thread_work"
+    ]
     root_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     execution_id: str | None = Field(default=None, min_length=1, max_length=80)
     notice: RootOperationNotice | None = None
+    work_sections: tuple[Literal["tasks", "notes", "children"], ...] = ()
+    work_revision: int | None = None
+    run_id: str | None = None
 
 
 class _SummarySubscriber:
@@ -552,41 +557,92 @@ class HarnessUiSummaryHub:
         self._closed = False
         self._lock = Lock()
 
+    @property
+    def cursor(self) -> SummaryCursor:
+        """Current invalidation boundary; not an atomic cross-owner snapshot."""
+        return SummaryCursor(epoch=self._epoch, sequence=self._sequence)
+
     async def publish(
         self,
         *,
-        kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution", "comment"],
+        kind: Literal[
+            "configuration",
+            "catalog",
+            "project",
+            "thread",
+            "root_operation",
+            "child_execution",
+            "comment",
+            "thread_work",
+        ],
         root_thread_id: str | None = None,
         thread_id: str | None = None,
         execution_id: str | None = None,
         notice: RootOperationNotice | None = None,
+        work_sections: tuple[Literal["tasks", "notes", "children"], ...] = (),
+        work_revision: int | None = None,
+        run_id: str | None = None,
     ) -> None:
-        async with self._lock:
-            if self._closed:
-                return
-            self._sequence += 1
-            event = SummaryInvalidation(
-                epoch=self._epoch,
-                sequence=self._sequence,
-                kind=kind,
-                root_thread_id=root_thread_id,
-                thread_id=thread_id,
-                execution_id=execution_id,
-                notice=notice,
-            )
-            self._ring.append(event)
-            stale: list[_SummarySubscriber] = []
-            for subscriber in self._subscribers:
-                if subscriber.gap:
-                    continue
-                try:
-                    subscriber.send.send_nowait(event.model_copy(deep=True))
-                except WouldBlock:
-                    subscriber.gap = True
-                except (BrokenResourceError, ClosedResourceError):
-                    stale.append(subscriber)
-            for subscriber in stale:
-                self._discard_subscriber(subscriber)
+        self.publish_nowait(
+            kind=kind,
+            root_thread_id=root_thread_id,
+            thread_id=thread_id,
+            execution_id=execution_id,
+            notice=notice,
+            work_sections=work_sections,
+            work_revision=work_revision,
+            run_id=run_id,
+        )
+
+    def publish_nowait(
+        self,
+        *,
+        kind: Literal[
+            "configuration",
+            "catalog",
+            "project",
+            "thread",
+            "root_operation",
+            "child_execution",
+            "comment",
+            "thread_work",
+        ],
+        root_thread_id: str | None = None,
+        thread_id: str | None = None,
+        execution_id: str | None = None,
+        notice: RootOperationNotice | None = None,
+        work_sections: tuple[Literal["tasks", "notes", "children"], ...] = (),
+        work_revision: int | None = None,
+        run_id: str | None = None,
+    ) -> None:
+        if self._closed:
+            return
+        self._sequence += 1
+        event = SummaryInvalidation(
+            epoch=self._epoch,
+            sequence=self._sequence,
+            kind=kind,
+            root_thread_id=root_thread_id,
+            thread_id=thread_id,
+            execution_id=execution_id,
+            notice=notice,
+            work_sections=work_sections,
+            work_revision=work_revision,
+            run_id=run_id,
+        )
+        self._ring.append(event)
+        stale: list[_SummarySubscriber] = []
+        for subscriber in self._subscribers:
+            if subscriber.gap:
+                continue
+            try:
+                subscriber.send.send_nowait(event.model_copy(deep=True))
+            except WouldBlock:
+                subscriber.gap = True
+            except (BrokenResourceError, ClosedResourceError):
+                stale.append(subscriber)
+        for subscriber in stale:
+            self._discard_subscriber(subscriber)
 
     @asynccontextmanager
     async def subscribe(self, *, after: SummaryCursor | None = None) -> AsyncGenerator[SummarySubscription]:
