@@ -21,6 +21,7 @@ def test_settings_normalize_process_values(tmp_path: Path) -> None:
     assert settings.log_level == "DEBUG"
     assert settings.log_format == "pretty"
     assert settings.pricing_auto_update is True
+    assert settings.shutdown_timeout_seconds == 60.0
 
 
 def test_settings_reject_unknown_or_invalid_values(tmp_path: Path) -> None:
@@ -87,6 +88,7 @@ async def test_default_settings_use_one_fixed_user_root(tmp_path: Path, monkeypa
     assert source.path == tmp_path / ".a13n-harness-ui/a13n-harness-ui.yaml"
     assert source.settings.storage.data_root == tmp_path / ".a13n-harness-ui/data"
     assert source.settings.storage.max_object_bytes == 256 * 1024 * 1024
+    assert source.settings.shutdown_timeout_seconds == 60.0
 
     ensure_default_directories(source)
     assert (tmp_path / ".a13n-harness-ui/data").is_dir()
