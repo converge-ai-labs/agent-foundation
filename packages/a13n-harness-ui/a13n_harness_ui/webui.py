@@ -549,6 +549,11 @@ def create_webui(
         await app().unsubscribe_push(subscription_id)
         return Response(status_code=204)
 
+    @server.post("/api/push/subscriptions/{subscription_id}/activity", status_code=204)
+    async def record_push_activity(subscription_id: str) -> Response:
+        await app().record_push_activity(subscription_id)
+        return Response(status_code=204)
+
     @server.post("/api/push/subscriptions/{subscription_id}/test", response_model=PushTestResult)
     async def test_push(subscription_id: str) -> PushTestResult:
         return await app().test_push(subscription_id)

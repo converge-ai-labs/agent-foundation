@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime, timedelta
 
 from cryptography.hazmat.primitives import serialization
@@ -36,9 +35,6 @@ class PushRepository:
     async def save(self, subscription: PushSubscriptionInput) -> str:
         async with transaction(self._sessions) as session:
             record = await session.get(WebPushSubscriptionRecord, subscription.subscription_id)
-            previous = json.loads(record.thread_ids_json) if record is not None else []
-            threads = [item for item in previous if item not in subscription.thread_ids]
-            threads = [*threads, *subscription.thread_ids][-256:]
             if record is None:
                 record = WebPushSubscriptionRecord(subscription_id=subscription.subscription_id)
                 session.add(record)
@@ -46,7 +42,6 @@ class PushRepository:
             record.p256dh = subscription.keys.p256dh
             record.auth = subscription.keys.auth
             record.origin = subscription.origin
-            record.thread_ids_json = json.dumps(threads)
             record.updated_at = datetime.now(UTC)
         return subscription.subscription_id
 
@@ -55,14 +50,29 @@ class PushRepository:
             record = await session.get(WebPushSubscriptionRecord, subscription_id)
             return None if record is None else _subscription(record)
 
-    async def recipients(self, thread_id: str) -> tuple[PushSubscriptionInput, ...]:
-        cutoff = datetime.now(UTC) - timedelta(days=90)
+    async def mark_active(self, subscription_id: str) -> bool:
+        async with transaction(self._sessions) as session:
+            record = await session.get(WebPushSubscriptionRecord, subscription_id)
+            if record is None:
+                return False
+            record.last_active_at = record.updated_at = datetime.now(UTC)
+            return True
+
+    async def recipients(self) -> tuple[PushSubscriptionInput, ...]:
+        now = datetime.now(UTC)
+        cutoff = now - timedelta(days=90)
         async with transaction(self._sessions) as session:
             await session.execute(
                 delete(WebPushSubscriptionRecord).where(WebPushSubscriptionRecord.updated_at < cutoff)
             )
-            records = (await session.scalars(select(WebPushSubscriptionRecord))).all()
-            return tuple(_subscription(record) for record in records if thread_id in json.loads(record.thread_ids_json))
+            records = (
+                await session.scalars(
+                    select(WebPushSubscriptionRecord).where(
+                        WebPushSubscriptionRecord.last_active_at > now - timedelta(hours=6)
+                    )
+                )
+            ).all()
+            return tuple(_subscription(record) for record in records)
 
     async def remove(self, subscription_id: str, *, expected_auth: str | None = None) -> None:
         async with transaction(self._sessions) as session:
@@ -79,5 +89,4 @@ def _subscription(record: WebPushSubscriptionRecord) -> PushSubscriptionInput:
         endpoint=record.endpoint,
         keys=PushKeys(p256dh=record.p256dh, auth=record.auth),
         origin=record.origin,
-        thread_ids=tuple(json.loads(record.thread_ids_json)),
     )

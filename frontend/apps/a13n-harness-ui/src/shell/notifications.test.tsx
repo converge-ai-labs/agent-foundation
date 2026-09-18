@@ -11,7 +11,6 @@ import {
 import { MemoryRouter, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
-  deliverOnce,
   NotificationSettings,
   notificationPermission,
   NotificationsProvider,
@@ -64,6 +63,12 @@ beforeEach(() => {
   Object.assign(native, { requestPermission: request });
   vi.stubGlobal("Notification", native);
   vi.stubGlobal("isSecureContext", true);
+  vi.stubGlobal("PushManager", function () {});
+  Object.defineProperty(navigator, "serviceWorker", {
+    configurable: true,
+    value: {},
+  });
+  vi.spyOn(push, "reportPushActivity").mockResolvedValue();
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addEventListener() {},
@@ -79,6 +84,8 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   queries.clear();
+  Reflect.deleteProperty(navigator, "serviceWorker");
+  vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
@@ -123,7 +130,7 @@ it("requires explicit background opt-in for granted permission and suppresses pa
     screen.getByRole("button", { name: "Enable background notifications" }),
   );
   await screen.findByText("Enabled on this device");
-  expect(enable).toHaveBeenCalledWith(transport, ["thread-1"]);
+  expect(enable).toHaveBeenCalledWith(transport);
   fireEvent.click(screen.getByText("Emit"));
   expect(native).not.toHaveBeenCalled();
   fireEvent.click(
@@ -164,54 +171,6 @@ it("schedules cleanup even when a first opt-in has not returned its subscription
   transport.close();
 });
 
-it("keeps a single permission prompt until explicit permission or disabling, without automatic browser requests", async () => {
-  const first = mount();
-  expect(screen.getAllByLabelText("Notification permission")).toHaveLength(1);
-  expect(request).not.toHaveBeenCalled();
-  await act(async () => {
-    fireEvent.click(
-      screen.getByRole("button", { name: "Enable notifications" }),
-    );
-  });
-  expect(request).toHaveBeenCalledOnce();
-  expect(screen.queryByLabelText("Notification permission")).toBeNull();
-  expect(screen.getByText("Allowed")).toBeTruthy();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send test notification" }),
-  );
-  expect(native).toHaveBeenCalledOnce();
-  fireEvent.click(
-    screen.getByRole("switch", { name: "Enable browser notifications" }),
-  );
-  expect(localStorage.getItem("a13n-harness-ui.notifications.enabled")).toBe(
-    "false",
-  );
-  expect(native.mock.results[0].value.close).toHaveBeenCalled();
-  first.unmount();
-  mount();
-  expect(screen.queryByLabelText("Notification permission")).toBeNull();
-  expect(
-    screen
-      .getByRole("button", { name: "Send test notification" })
-      .hasAttribute("disabled"),
-  ).toBe(true);
-});
-it("retains the prompt after dismissing browser permission, and permits re-enabling from Settings", async () => {
-  request.mockResolvedValue("default");
-  mount();
-  await act(async () => {
-    fireEvent.click(
-      screen.getByRole("button", { name: "Enable notifications" }),
-    );
-  });
-  expect(screen.getAllByLabelText("Notification permission")).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: "Turn off reminders" }));
-  expect(screen.queryByLabelText("Notification permission")).toBeNull();
-  fireEvent.click(
-    screen.getByRole("switch", { name: "Enable browser notifications" }),
-  );
-  expect(screen.getAllByLabelText("Notification permission")).toHaveLength(1);
-});
 it("explains denied and unavailable permission instead of repeatedly requesting it", () => {
   permission = "denied";
   mount();
@@ -223,29 +182,6 @@ it("explains denied and unavailable permission instead of repeatedly requesting 
   vi.stubGlobal("isSecureContext", false);
   fireEvent(document, new Event("visibilitychange"));
   expect(screen.getByText("Unavailable here")).toBeTruthy();
-});
-it("renders actual briefs, deduplicates replay, and opens the matching conversation from a native notification", async () => {
-  permission = "granted";
-  localStorage.setItem(
-    "a13n-harness-ui.notifications.conversations",
-    '["thread-1"]',
-  );
-  mount("/settings/notifications");
-  fireEvent.click(screen.getByText("Emit"));
-  await waitFor(() => expect(native).toHaveBeenCalledOnce());
-  expect(native).toHaveBeenCalledWith(
-    "Task completed · UI polish",
-    expect.objectContaining({
-      body: event.notice!.brief,
-      tag: "a13n-harness-ui.receipt-1",
-    }),
-  );
-  expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
-  fireEvent.click(screen.getByText("Emit"));
-  expect(native).toHaveBeenCalledOnce();
-  vi.spyOn(window, "focus").mockImplementation(() => {});
-  act(() => native.mock.results[0].value.onclick());
-  expect(screen.getByText("/threads/thread-1")).toBeTruthy();
 });
 it("keeps attention notices without permission or when desktop reminders are disabled", async () => {
   mount();
@@ -263,94 +199,6 @@ it("keeps attention notices without permission or when desktop reminders are dis
   fireEvent.click(screen.getByText("Emit"));
   expect(native).not.toHaveBeenCalled();
 });
-it.each([
-  {
-    focused: true,
-    visibility: "visible",
-    current: true,
-    desktop: false,
-    banner: false,
-  },
-  {
-    focused: true,
-    visibility: "visible",
-    current: false,
-    desktop: false,
-    banner: true,
-  },
-  {
-    focused: false,
-    visibility: "visible",
-    current: true,
-    desktop: true,
-    banner: false,
-  },
-  {
-    focused: false,
-    visibility: "visible",
-    current: false,
-    desktop: true,
-    banner: true,
-  },
-  {
-    focused: true,
-    visibility: "hidden",
-    current: true,
-    desktop: true,
-    banner: false,
-  },
-] as const)(
-  "routes completion feedback by attention: %j",
-  async ({ focused, visibility, current, desktop, banner }) => {
-    permission = "granted";
-    vi.mocked(document.hasFocus).mockReturnValue(focused);
-    vi.spyOn(document, "visibilityState", "get").mockReturnValue(visibility);
-    localStorage.setItem(
-      "a13n-harness-ui.notifications.conversations",
-      '["thread-1"]',
-    );
-    mount(current ? "/threads/thread-1" : "/threads/thread-2");
-    await act(async () => fireEvent.click(screen.getByText("Emit")));
-    expect(native).toHaveBeenCalledTimes(desktop ? 1 : 0);
-    expect(!!screen.queryByText(event.notice!.brief)).toBe(banner);
-  },
-);
-it.each(["failed", "suspended"] as const)(
-  "keeps %s banners in the focused conversation without a desktop alert",
-  async (status) => {
-    permission = "granted";
-    vi.mocked(document.hasFocus).mockReturnValue(true);
-    event = notice("receipt-1", status);
-    mount();
-    await act(async () => fireEvent.click(screen.getByText("Emit")));
-    expect(screen.getByText(event.notice!.brief)).toBeTruthy();
-    expect(native).not.toHaveBeenCalled();
-  },
-);
-it("rechecks focus after waiting for the native delivery lock", async () => {
-  permission = "granted";
-  let claim!: () => void;
-  vi.stubGlobal("navigator", {
-    locks: {
-      request: vi.fn(async (_name, callback) => {
-        claim = callback;
-      }),
-    },
-  });
-  mount();
-  fireEvent.click(screen.getByText("Emit"));
-  vi.mocked(document.hasFocus).mockReturnValue(true);
-  await act(async () => claim());
-  expect(native).not.toHaveBeenCalled();
-});
-it("does not synthesize historical notices or notify for unopened conversations", () => {
-  permission = "granted";
-  mount("/settings/notifications");
-  expect(native).not.toHaveBeenCalled();
-  fireEvent.click(screen.getByText("Emit"));
-  expect(native).not.toHaveBeenCalled();
-  expect(screen.queryByText(event.notice!.brief)).toBeNull();
-});
 it("reflects permission revocation and another tab disabling reminders", () => {
   permission = "granted";
   mount();
@@ -366,167 +214,8 @@ it("reflects permission revocation and another tab disabling reminders", () => {
   );
   expect(screen.queryByLabelText("Notification permission")).toBeNull();
 });
-it("serializes concurrent tab delivery and does not claim failed delivery", async () => {
-  let tail = Promise.resolve();
-  const locks = {
-    request: vi.fn((_name: string, callback: () => void) => {
-      tail = tail.then(callback);
-      return tail;
-    }),
-  };
-  vi.stubGlobal("navigator", { locks });
-  const show = vi.fn(() => true);
-  await Promise.all([deliverOnce("same", show), deliverOnce("same", show)]);
-  expect(show).toHaveBeenCalledOnce();
-  await deliverOnce("retry", () => false);
-  await deliverOnce("retry", show);
-  expect(show).toHaveBeenCalledTimes(2);
-});
-it("continues in-app delivery when native notification construction fails", async () => {
-  permission = "granted";
-  native.mockImplementation(function () {
-    throw new Error("Unsupported constructor");
-  });
-  event = notice("receipt-1", "failed");
-  mount();
-  fireEvent.click(screen.getByText("Emit"));
-  expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
-  expect(screen.getAllByRole("alert")[0].textContent).toContain(
-    "could not display",
-  );
-});
-
-it("allows foreground test notifications without claiming delivery and reports asynchronous failures", async () => {
-  permission = "granted";
-  vi.mocked(document.hasFocus).mockReturnValue(true);
-  mount();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send test notification" }),
-  );
-  expect(native).toHaveBeenCalledOnce();
-  expect(
-    screen.getByText(/Test requested from the browser/).textContent,
-  ).toContain("does not confirm");
-  const notification = native.mock.results[0].value;
-  act(() => notification.onshow());
-  expect(screen.getByText(/browser reported/)).toBeTruthy();
-  act(() => notification.onerror());
-  expect(screen.getAllByRole("alert")[0].textContent).toContain(
-    "system notification settings",
-  );
-  expect(screen.queryByText(/browser reported/)).toBeNull();
-});
-it("falls back to native delivery when optional cross-tab locking is unavailable", async () => {
-  permission = "granted";
-  vi.stubGlobal("navigator", {
-    locks: {
-      request: vi.fn().mockRejectedValue(new Error("Lock unavailable")),
-    },
-  });
-  mount();
-  fireEvent.click(screen.getByText("Emit"));
-  await waitFor(() => expect(native).toHaveBeenCalledOnce());
-  expect(screen.queryByText(event.notice!.brief)).toBeNull();
-});
-
-function worker() {
-  const close = vi.fn();
-  const showNotification = vi.fn(
-    async (_title: string, _options: NotificationOptions) => {},
-  );
-  const getNotifications = vi.fn(
-    async (_filter?: GetNotificationOptions) => [] as Notification[],
-  );
-  const registration = {
-    showNotification,
-    getNotifications,
-  } as unknown as ServiceWorkerRegistration;
-  vi.stubGlobal("navigator", { serviceWorker: {} });
-  vi.spyOn(push, "notificationWorker").mockResolvedValue(registration);
-  return { registration, showNotification, getNotifications, close };
-}
-
-it("uses worker notifications on Android for live alerts and foreground tests without a push subscription", async () => {
-  permission = "granted";
-  native.mockImplementation(function () {
-    throw new TypeError("Illegal constructor");
-  });
-  const sw = worker();
-  mount();
-  fireEvent.click(screen.getByText("Emit"));
-  await waitFor(() => expect(sw.showNotification).toHaveBeenCalledOnce());
-  expect(sw.showNotification).toHaveBeenCalledWith(
-    "Task completed · UI polish",
-    expect.objectContaining({
-      tag: "a13n-harness-ui.receipt-1",
-      data: { path: "/threads/thread-1" },
-    }),
-  );
-  vi.mocked(document.hasFocus).mockReturnValue(true);
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send test notification" }),
-  );
-  await screen.findByText(/browser accepted the test notification/);
-  expect(sw.showNotification).toHaveBeenCalledTimes(2);
-  expect(native).not.toHaveBeenCalled();
-  expect(push.pushSubscriptionId()).toBe("");
-});
-
-it("does not suppress live worker alerts when an enabled push provider silently fails", async () => {
-  permission = "granted";
-  const sw = worker();
-  writePreference("notifications.push-subscription", "subscription-one");
-  const transport = createTransport("fixture-key", vi.fn());
-  vi.spyOn(push, "enablePush").mockResolvedValue();
-  mount("/threads/thread-1", transport);
-  await screen.findByText("Enabled on this device");
-  fireEvent.click(screen.getByText("Emit"));
-  await waitFor(() => expect(sw.showNotification).toHaveBeenCalledOnce());
-  transport.close();
-});
-
-it("reuses an already displayed push with the same receipt tag", async () => {
-  permission = "granted";
-  const sw = worker();
-  sw.getNotifications.mockResolvedValue([
-    { close: sw.close } as unknown as Notification,
-  ]);
-  mount();
-  await act(async () => fireEvent.click(screen.getByText("Emit")));
-  expect(sw.getNotifications).toHaveBeenCalledWith({
-    tag: "a13n-harness-ui.receipt-1",
-  });
-  expect(sw.showNotification).not.toHaveBeenCalled();
-});
-
-it.each(["disable", "focus", "unmount"] as const)(
-  "rechecks %s after waiting for the worker",
-  async (change) => {
-    permission = "granted";
-    const sw = worker();
-    let ready!: (registration: ServiceWorkerRegistration) => void;
-    vi.mocked(push.notificationWorker).mockReturnValue(
-      new Promise((resolve) => {
-        ready = resolve;
-      }),
-    );
-    const view = mount();
-    fireEvent.click(screen.getByText("Emit"));
-    if (change === "disable")
-      fireEvent.click(
-        screen.getByRole("switch", { name: "Enable browser notifications" }),
-      );
-    else if (change === "focus")
-      vi.mocked(document.hasFocus).mockReturnValue(true);
-    else view.unmount();
-    await act(async () => ready(sw.registration));
-    expect(sw.showNotification).not.toHaveBeenCalled();
-  },
-);
-
 it("retains a failed subscription as reconnect intent, not enabled delivery, and retries on reconnect", async () => {
   permission = "granted";
-  const sw = worker();
   writePreference("notifications.push-subscription", "stale-subscription");
   const transport = createTransport("fixture-key", vi.fn());
   vi.spyOn(push, "supportsPush").mockReturnValue(true);
@@ -540,7 +229,8 @@ it("retains a failed subscription as reconnect intent, not enabled delivery, and
   await screen.findByText("Subscription needs attention");
   expect(push.pushSubscriptionId()).toBe("stale-subscription");
   fireEvent.click(screen.getByText("Emit"));
-  await waitFor(() => expect(sw.showNotification).toHaveBeenCalledOnce());
+  expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
+  expect(native).not.toHaveBeenCalled();
   expect(
     screen.getByRole("heading", { name: "Reconnect background notifications" }),
   ).toBeTruthy();
@@ -559,7 +249,7 @@ it("retains a failed subscription as reconnect intent, not enabled delivery, and
   await screen.findByText("Enabled on this device");
   expect(screen.queryByLabelText("Notification permission")).toBeNull();
   expect(enable).toHaveBeenCalledTimes(2);
-  expect(screen.queryAllByRole("alert")).toHaveLength(0);
+  expect(screen.queryByText(/could not be synchronized/)).toBeNull();
   transport.close();
 });
 
@@ -631,60 +321,8 @@ it("uses real capabilities in the installed iPad app without blocking permission
   expect(enable).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Allow notifications" }));
   await screen.findByText("Enabled on this device");
-  expect(enable).toHaveBeenCalledWith(transport, []);
+  expect(enable).toHaveBeenCalledWith(transport);
   transport.close();
-});
-
-it("holds cross-tab delivery claims until worker display completes, and does not claim rejected delivery", async () => {
-  let tail = Promise.resolve();
-  vi.stubGlobal("navigator", {
-    locks: {
-      request: vi.fn((_name, callback) => {
-        tail = tail.then(callback);
-        return tail;
-      }),
-    },
-  });
-  let complete!: (accepted: boolean) => void;
-  const show = vi.fn(
-    () =>
-      new Promise<boolean>((resolve) => {
-        complete = resolve;
-      }),
-  );
-  const first = deliverOnce("worker-receipt", show);
-  const second = deliverOnce("worker-receipt", show);
-  await waitFor(() => expect(show).toHaveBeenCalledOnce());
-  complete(true);
-  await Promise.all([first, second]);
-  expect(show).toHaveBeenCalledOnce();
-  await deliverOnce("worker-failed", async () => false);
-  const retry = vi.fn(async () => true);
-  await deliverOnce("worker-failed", retry);
-  expect(retry).toHaveBeenCalledOnce();
-});
-
-it("sends a new local test each time even while the previous test remains in the notification center", async () => {
-  permission = "granted";
-  const sw = worker();
-  const displayed = new Set<string>();
-  sw.showNotification.mockImplementation(async (_title, options) => {
-    displayed.add(options.tag!);
-  });
-  sw.getNotifications.mockImplementation(async (filter) =>
-    displayed.has(filter?.tag ?? "")
-      ? [{ close: sw.close } as unknown as Notification]
-      : [],
-  );
-  mount("/settings/notifications");
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    fireEvent.click(
-      screen.getByRole("button", { name: "Send test notification" }),
-    );
-    await screen.findByText(/browser accepted the test notification/);
-    expect(sw.showNotification).toHaveBeenCalledTimes(attempt);
-  }
-  expect(displayed.size).toBe(2);
 });
 
 it.each([
@@ -712,4 +350,97 @@ it("keeps installation guidance inline without duplicating a persistent toast in
   expect(
     screen.queryByText(/Without background delivery, keep WebUI open/),
   ).toBeNull();
+});
+
+it.each(["completed", "failed", "suspended"] as const)(
+  "shows %s on current and never-visited conversations regardless of focus, permission or opt-in",
+  async (status) => {
+    writePreference("notifications.enabled", "false");
+    vi.mocked(document.hasFocus).mockReturnValue(true);
+    event = notice("current", status);
+    mount();
+    fireEvent.click(screen.getByText("Emit"));
+    expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
+    fireEvent.click(screen.getByText("Emit"));
+    expect(screen.getAllByText(event.notice!.brief)).toHaveLength(1);
+    event = { ...notice("unvisited", status), root_thread_id: "never-visited" };
+    fireEvent.click(screen.getByText("Emit"));
+    expect(screen.getAllByText(event.notice!.brief)).toHaveLength(2);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Open conversation" })[0],
+    );
+    expect(await screen.findByText("/threads/never-visited")).toBeTruthy();
+    expect(native).not.toHaveBeenCalled();
+  },
+);
+
+it("does not synthesize history and deduplicates receipts only within an epoch", () => {
+  mount("/settings/notifications");
+  expect(screen.queryByText(event.notice!.brief)).toBeNull();
+  fireEvent.click(screen.getByText("Emit"));
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.getAllByText(event.notice!.brief)).toHaveLength(1);
+  event = { ...event, epoch: "epoch-2" };
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.getAllByText(event.notice!.brief)).toHaveLength(2);
+});
+
+it("has no permission-only setup or local test fallback without Push support", () => {
+  vi.spyOn(push, "supportsPush").mockReturnValue(false);
+  permission = "granted";
+  mount();
+  expect(screen.getByText("Unavailable here")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Send test notification" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  expect(
+    screen.queryByRole("button", { name: "Allow notifications" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByText("Emit"));
+  expect(screen.getByText(event.notice!.brief)).toBeTruthy();
+  expect(native).not.toHaveBeenCalled();
+  expect(request).not.toHaveBeenCalled();
+});
+
+it("pulses visible pages immediately and every minute, coalesces waits, and stops on hide or unmount", async () => {
+  permission = "granted";
+  writePreference("notifications.push-subscription", "subscription-one");
+  vi.spyOn(push, "enablePush").mockResolvedValue();
+  const transport = createTransport("fixture-key", vi.fn());
+  vi.useFakeTimers();
+  const view = mount("/settings/notifications", transport);
+  await act(async () => {});
+  expect(screen.getByText("Enabled on this device")).toBeTruthy();
+  const activity = vi.mocked(push.reportPushActivity);
+  expect(activity).toHaveBeenCalled();
+  activity.mockClear();
+  await act(async () => vi.advanceTimersByTime(60000));
+  expect(activity).toHaveBeenCalledOnce();
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  fireEvent(document, new Event("visibilitychange"));
+  await act(async () => vi.advanceTimersByTime(120000));
+  expect(activity).toHaveBeenCalledOnce();
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  await act(async () => fireEvent(document, new Event("visibilitychange")));
+  expect(activity.mock.calls.length).toBeGreaterThan(1);
+  activity.mockClear();
+  let finish!: () => void;
+  activity.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  await act(async () => vi.advanceTimersByTime(60000));
+  await act(async () => vi.advanceTimersByTime(120000));
+  expect(activity).toHaveBeenCalledOnce();
+  const signal = activity.mock.calls[0][1];
+  view.unmount();
+  expect(signal.aborted).toBe(true);
+  await act(async () => finish());
+  await act(async () => vi.advanceTimersByTime(120000));
+  expect(activity).toHaveBeenCalledOnce();
+  transport.close();
 });

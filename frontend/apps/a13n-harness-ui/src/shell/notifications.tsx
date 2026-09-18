@@ -18,7 +18,7 @@ import { TransportContext } from "../transport/context";
 import {
   disablePush,
   enablePush,
-  notificationWorker,
+  reportPushActivity,
   pushSubscriptionId,
   supportsPush,
   testPush,
@@ -30,27 +30,6 @@ type Permission = NotificationPermission | "unavailable" | "install-required";
 type Background = "disabled" | "checking" | "enabled" | "error";
 type SummaryEvent = Schema<"SummaryInvalidation">;
 const ENABLED = "notifications.enabled";
-const VISITED = "notifications.conversations";
-const DELIVERED = "notifications.delivered";
-
-function readIds(key: string): string[] {
-  try {
-    const value: unknown = JSON.parse(readPreference(key, "[]"));
-    return Array.isArray(value)
-      ? value.filter((id): id is string => typeof id === "string").slice(-256)
-      : [];
-  } catch {
-    return [];
-  }
-}
-function remember(key: string, id: string) {
-  writePreference(
-    key,
-    JSON.stringify(
-      [...readIds(key).filter((item) => item !== id), id].slice(-256),
-    ),
-  );
-}
 export function notificationPermission(): Permission {
   if (!window.isSecureContext) return "unavailable";
   const appleMobile =
@@ -61,24 +40,7 @@ export function notificationPermission(): Permission {
     (navigator as Navigator & { standalone?: boolean }).standalone === true;
   // Prefer capability detection; the platform hint only explains missing APIs.
   if (appleMobile && !standalone && !supportsPush()) return "install-required";
-  return typeof Notification !== "undefined"
-    ? Notification.permission
-    : "unavailable";
-}
-
-// Serialize native delivery in same-origin tabs where Web Locks is available.
-// The native tag also replaces duplicates on browsers without that API/storage.
-export async function deliverOnce(
-  id: string,
-  deliver: () => boolean | Promise<boolean>,
-) {
-  const claim = async () => {
-    if (readIds(DELIVERED).includes(id)) return;
-    if (await deliver()) remember(DELIVERED, id);
-  };
-  if (navigator.locks)
-    await navigator.locks.request("a13n-harness-ui.notifications", claim);
-  else await claim();
+  return supportsPush() ? Notification.permission : "unavailable";
 }
 
 type Notifications = {
@@ -122,21 +84,13 @@ function NotificationState({ children }: { children: ReactNode }) {
   const [refreshVersion, refreshSubscription] = useState(0);
   const transport = useContext(TransportContext);
   const navigate = useNavigate();
-  const match = useMatch("/threads/:threadId");
   const settings = useMatch("/settings/notifications");
   const queries = useQueryClient();
   const toast = useToast();
   const seen = useRef(new Set<string>());
-  const visited = useRef(new Set<string>());
-  const native = useRef(new Set<Notification>());
   const alive = useRef(false);
-  const threadId = match?.params.threadId;
-  const current = useRef({ enabled, navigate, toast, threadId, background });
-  current.current = { enabled, navigate, toast, threadId, background };
-  const closeNative = useCallback(() => {
-    native.current.forEach((item) => item.close());
-    native.current.clear();
-  }, []);
+  const current = useRef({ enabled, navigate, toast, background });
+  current.current = { enabled, navigate, toast, background };
   useEffect(() => {
     alive.current = true;
     const refresh = () => {
@@ -157,18 +111,8 @@ function NotificationState({ children }: { children: ReactNode }) {
       window.removeEventListener("storage", refresh);
       window.removeEventListener("online", refresh);
       document.removeEventListener("visibilitychange", refresh);
-      closeNative();
     };
-  }, [closeNative]);
-  useEffect(() => {
-    if (match?.params.threadId) {
-      visited.current.add(match.params.threadId);
-      remember(VISITED, match.params.threadId);
-    }
-  }, [match?.params.threadId]);
-  useEffect(() => {
-    if (!enabled || permission !== "granted") closeNative();
-  }, [enabled, permission, closeNative]);
+  }, []);
   useEffect(() => {
     if (requesting) return;
     if (!pushSubscriptionId()) {
@@ -180,7 +124,7 @@ function NotificationState({ children }: { children: ReactNode }) {
     setBackground("checking");
     const sync =
       enabled && permission === "granted"
-        ? enablePush(transport, readIds(VISITED), false)
+        ? enablePush(transport, false)
         : disablePush(transport);
     void sync
       .then(() => {
@@ -193,14 +137,39 @@ function NotificationState({ children }: { children: ReactNode }) {
         if (active) {
           setBackground("error");
           setError(
-            "Background notifications could not be synchronized. Check your connection and reconnect them. Live alerts remain available while WebUI is open.",
+            "Background notifications could not be synchronized. Check your connection and reconnect them. In-app notices remain available while WebUI is open.",
           );
         }
       });
     return () => {
       active = false;
     };
-  }, [transport, enabled, permission, threadId, refreshVersion, requesting]);
+  }, [transport, enabled, permission, refreshVersion, requesting]);
+  useEffect(() => {
+    if (!transport || !enabled || permission !== "granted" || requesting)
+      return;
+    const controller = new AbortController();
+    let pending = false;
+    const pulse = () => {
+      if (pending || document.visibilityState !== "visible") return;
+      pending = true;
+      void reportPushActivity(transport, controller.signal)
+        .catch(() => {
+          // Best effort: retry on the next visible pulse, never recreate a row.
+        })
+        .finally(() => {
+          pending = false;
+        });
+    };
+    pulse();
+    const timer = window.setInterval(pulse, 60000);
+    document.addEventListener("visibilitychange", pulse);
+    return () => {
+      controller.abort();
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", pulse);
+    };
+  }, [transport, enabled, permission, requesting, background]);
   const setEnabled = (value: boolean) => {
     current.current.enabled = value;
     writePreference(ENABLED, String(value));
@@ -224,6 +193,7 @@ function NotificationState({ children }: { children: ReactNode }) {
   const request = async () => {
     if (
       requesting ||
+      !transport ||
       ["denied", "unavailable", "install-required"].includes(
         notificationPermission(),
       )
@@ -232,13 +202,9 @@ function NotificationState({ children }: { children: ReactNode }) {
     setEnabled(true);
     setRequesting(true);
     try {
-      if (supportsPush() && transport) {
-        await enablePush(transport, readIds(VISITED));
-        if (alive.current)
-          setBackground(pushSubscriptionId() ? "enabled" : "disabled");
-      } else {
-        await Notification.requestPermission();
-      }
+      await enablePush(transport);
+      if (alive.current)
+        setBackground(pushSubscriptionId() ? "enabled" : "disabled");
       if (alive.current) setPermission(notificationPermission());
     } catch (failure) {
       if (alive.current) {
@@ -254,107 +220,6 @@ function NotificationState({ children }: { children: ReactNode }) {
       if (alive.current) setRequesting(false);
     }
   };
-  const showNative = useCallback(
-    async (title: string, body: string, tag: string, path?: string) => {
-      const allowed = () =>
-        !(
-          !alive.current ||
-          !current.current.enabled ||
-          readPreference(ENABLED, "true") === "false" ||
-          notificationPermission() !== "granted" ||
-          // Worker notifications share receipt tags with pushes, so a stale or
-          // unreachable push service must not suppress a live mobile alert.
-          (current.current.background === "enabled" &&
-            !!pushSubscriptionId() &&
-            !("serviceWorker" in navigator)) ||
-          (tag !== "a13n-harness-ui.test" &&
-            document.visibilityState === "visible" &&
-            document.hasFocus())
-        );
-      if (!allowed()) return false;
-      const retain = (notification: Notification) => {
-        native.current.add(notification);
-        if (native.current.size > 64) {
-          const oldest = native.current.values().next().value!;
-          oldest.close();
-          native.current.delete(oldest);
-        }
-      };
-      try {
-        const options = {
-          body: Array.from(body).slice(0, 180).join(""),
-          // Explicit tests are new attempts, not replayed operation receipts.
-          tag:
-            tag === "a13n-harness-ui.test" && "serviceWorker" in navigator
-              ? `${tag}.${crypto.randomUUID()}`
-              : tag,
-        };
-        if ("serviceWorker" in navigator) {
-          const registration = await notificationWorker();
-          // Focus, permission and opt-out may change while the worker starts.
-          if (!allowed()) return false;
-          if (
-            (await registration.getNotifications({ tag: options.tag })).length
-          )
-            return true;
-          if (!allowed()) return false;
-          await registration.showNotification(title, {
-            ...options,
-            icon: "/icons/icon-192.png",
-            data: { path: path ?? "/settings/notifications" },
-          });
-          for (const notification of await registration.getNotifications({
-            tag,
-          })) {
-            if (!allowed()) notification.close();
-            else retain(notification);
-          }
-          if (alive.current && tag === "a13n-harness-ui.test")
-            setTestStatus(
-              "The browser accepted the test notification. This does not confirm a system banner; check your device's notification settings.",
-            );
-          return true;
-        }
-        const notification = new Notification(title, options);
-        retain(notification);
-        notification.onshow = () => {
-          if (alive.current && tag === "a13n-harness-ui.test")
-            setTestStatus(
-              "The browser reported the test notification as shown. If no banner appeared, check your system notification settings.",
-            );
-        };
-        notification.onerror = () => {
-          native.current.delete(notification);
-          if (!alive.current) return;
-          setTestStatus("");
-          setError(
-            "This browser could not display a desktop notification. Check site permission and system notification settings. In-app notices remain available.",
-          );
-        };
-        notification.onclose = () => native.current.delete(notification);
-        notification.onclick = () => {
-          if (alive.current) {
-            window.focus();
-            if (path) current.current.navigate(path);
-          }
-          notification.close();
-          native.current.delete(notification);
-        };
-        if (tag === "a13n-harness-ui.test")
-          setTestStatus(
-            "Test requested from the browser. This does not confirm that your device displayed a banner.",
-          );
-        return true;
-      } catch {
-        if (alive.current)
-          setError(
-            "This browser could not display a notification. Check site permission and system notification settings. In-app notices remain available.",
-          );
-        return false;
-      }
-    },
-    [],
-  );
   const receive = useCallback(
     (event: SummaryEvent) => {
       const notice = event.notice;
@@ -371,13 +236,6 @@ function NotificationState({ children }: { children: ReactNode }) {
       seen.current.add(id);
       if (seen.current.size > 256)
         seen.current.delete(seen.current.values().next().value!);
-      // Browser-local interest follows conversations opened here, not every
-      // collaborator's work. Opening history does not synthesize notices.
-      if (
-        !visited.current.has(threadId) &&
-        !readIds(VISITED).includes(threadId)
-      )
-        return;
       const detail = queries.getQueryData<Schema<"ThreadDetail">>([
         "thread",
         threadId,
@@ -395,47 +253,24 @@ function NotificationState({ children }: { children: ReactNode }) {
             : "Your input is needed";
       const title = `${state} · ${Array.from(name).slice(0, 80).join("")}`;
       const path = `/threads/${encodeURIComponent(threadId)}`;
-      if (
-        notice.status !== "completed" ||
-        current.current.threadId !== threadId
-      )
-        current.current.toast.add({
-          id,
-          title,
-          description: notice.brief,
-          type:
-            notice.status === "failed"
-              ? "error"
-              : notice.status === "suspended"
-                ? "warning"
-                : "success",
-          timeout: notice.status === "suspended" ? 0 : 8000,
-          actionProps: {
-            children: "Open conversation",
-            onClick: () => current.current.navigate(path),
-          },
-        });
-      if (!current.current.enabled || notificationPermission() !== "granted")
-        return;
-      void deliverOnce(id, () => {
-        return showNative(
-          title,
-          notice.brief,
-          `a13n-harness-ui.${notice.receipt_id}`,
-          path,
-        );
-      }).catch(() => {
-        // Optional cross-tab coordination must not silently swallow an alert.
-        // The native tag still provides best-effort replacement.
-        showNative(
-          title,
-          notice.brief,
-          `a13n-harness-ui.${notice.receipt_id}`,
-          path,
-        );
+      current.current.toast.add({
+        id,
+        title,
+        description: notice.brief,
+        type:
+          notice.status === "failed"
+            ? "error"
+            : notice.status === "suspended"
+              ? "warning"
+              : "success",
+        timeout: notice.status === "suspended" ? 0 : 8000,
+        actionProps: {
+          children: "Open conversation",
+          onClick: () => current.current.navigate(path),
+        },
       });
     },
-    [queries, showNative],
+    [queries],
   );
   const test = () => {
     setError("");
@@ -461,11 +296,6 @@ function NotificationState({ children }: { children: ReactNode }) {
         });
       return;
     }
-    void showNative(
-      "Harness UI test notification",
-      "Task results and requests for your input will appear here while WebUI is open.",
-      "a13n-harness-ui.test",
-    );
   };
   const value = {
     enabled,
@@ -543,7 +373,7 @@ function PermissionToast() {
         </h2>
         <p>
           {notifications.permission === "granted" ? (
-            "Browser permission is already allowed. Background delivery is a separate subscription for alerts while WebUI is closed."
+            "Browser permission is already allowed. A push subscription is also required for system alerts, whether WebUI is open or closed."
           ) : (
             <PermissionDescription permission={notifications.permission} />
           )}
@@ -592,8 +422,8 @@ export function NotificationSettings() {
               Enable browser notifications
             </label>
             <p>
-              Task results and requests for your input, for conversations opened
-              on this device. Previews may appear on your lock screen.
+              Task results and requests for your input across all conversations.
+              Previews may appear on your lock screen.
             </p>
           </div>
           <Switch
@@ -616,10 +446,10 @@ export function NotificationSettings() {
           <strong>{backgroundLabels[notifications.background]}</strong>
           <br />
           {notifications.background === "enabled"
-            ? "The subscription was synchronized, not delivery-confirmed. You can close WebUI or lock your phone. The server must stay running and able to reach your browser's push service."
+            ? "The subscription was synchronized, not delivery-confirmed. System alerts continue for six hours after this device last had a visible WebUI page. The server must stay running and able to reach your browser's push service."
             : notifications.permission !== "granted"
               ? "Allow notifications in a supported browser or Home Screen app to receive system alerts. In-app notices remain available."
-              : "Without background delivery, keep WebUI open to receive live alerts."}
+              : "Without working push delivery, only in-app notices are available while WebUI is open."}
         </p>
         <div className={styles.actions}>
           {notifications.enabled &&
@@ -652,7 +482,7 @@ export function NotificationSettings() {
               !notifications.enabled ||
               notifications.permission !== "granted" ||
               notifications.requesting ||
-              notifications.background === "checking"
+              notifications.background !== "enabled"
             }
             onClick={notifications.test}
           >
@@ -673,8 +503,9 @@ export function NotificationSettings() {
         <p>
           In-app notices remain available without notification permission.
           Background push uses your browser's push service and can show alerts
-          even while WebUI is open. Missed history is not replayed as new
-          alerts.
+          alongside in-app notices even for the conversation you are viewing.
+          Keeping a WebUI page visible renews the six-hour delivery window.
+          Missed history is not replayed as new alerts.
         </p>
       </Panel>
     </>

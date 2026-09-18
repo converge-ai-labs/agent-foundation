@@ -30,9 +30,7 @@ def encoded(value: bytes) -> str:
     return base64.urlsafe_b64encode(value).rstrip(b"=").decode()
 
 
-def subscription(
-    *, endpoint: str = "https://fcm.googleapis.com/fcm/send/test", thread_ids: tuple[str, ...] = ("thread-one",)
-):
+def subscription(*, endpoint: str = "https://fcm.googleapis.com/fcm/send/test"):
     key = ec.generate_private_key(ec.SECP256R1())
     return key, PushSubscriptionInput(
         endpoint=endpoint,
@@ -43,7 +41,6 @@ def subscription(
             auth=encoded(b"test-auth-secret"),
         ),
         origin="https://anui.example.test:8090",
-        thread_ids=thread_ids,
     )
 
 
@@ -79,7 +76,7 @@ def test_subscription_validates_keys_and_origin() -> None:
 
 
 @pytest.mark.anyio
-async def test_repository_persists_key_merges_tabs_and_expires_inactive_subscriptions(tmp_path: Path) -> None:
+async def test_repository_persists_key_and_expires_unmaintained_subscriptions(tmp_path: Path) -> None:
     path = tmp_path / "metadata.sqlite3"
     settings = StorageSettings(data_root=tmp_path)
     _, device = subscription()
@@ -94,12 +91,13 @@ async def test_repository_persists_key_merges_tabs_and_expires_inactive_subscrip
             tasks.start_soon(save_key, one)
             tasks.start_soon(save_key, two)
             tasks.start_soon(one.save, device)
-            tasks.start_soon(two.save, device.model_copy(update={"thread_ids": ("thread-two",)}))
+            tasks.start_soon(two.save, device)
         assert len(set(keys)) == 1
         saved = await one.get(device.subscription_id)
-        assert saved is not None and set(saved.thread_ids) == {"thread-one", "thread-two"}
-        assert len(await two.recipients("thread-one")) == 1
-        assert await two.recipients("thread-other") == ()
+        assert saved == device
+        assert await two.recipients() == ()
+        assert await one.mark_active(device.subscription_id)
+        assert await two.recipients() == (device,)
         await one.remove(device.subscription_id, expected_auth="old-auth")
         assert await one.get(device.subscription_id) is not None
     async with open_database(path, settings) as reopened:
@@ -110,7 +108,7 @@ async def test_repository_persists_key_merges_tabs_and_expires_inactive_subscrip
             record = await session.get(WebPushSubscriptionRecord, device.subscription_id)
             assert record is not None
             record.updated_at = datetime.now(UTC) - timedelta(days=91)
-        assert await repository.recipients("thread-one") == ()
+        assert await repository.recipients() == ()
         assert await repository.get(device.subscription_id) is None
 
 
@@ -220,9 +218,9 @@ async def test_webui_run_push_does_not_need_any_browser_observer(
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
     async with open_harness_ui_app(settings, configuration_path=configuration, host_mode="webui") as app:
         thread = await app.create_thread(title="Background work")
-        device = template.model_copy(update={"thread_ids": (thread.thread_id, "stale-thread")})
-        saved = await app.subscribe_push(device)
-        assert saved.subscription_id == device.subscription_id
+        saved = await app.subscribe_push(template)
+        assert saved.subscription_id == template.subscription_id
+        await app.record_push_activity(saved.subscription_id)
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Fix delivery")
         result = await app.wait_root_operation(receipt.receipt_id, timeout_seconds=10)
         assert result.status == "completed"
@@ -249,3 +247,43 @@ def test_queue_capacity_does_not_block_settlement(tmp_path: Path) -> None:
     for _ in range(200):
         push.enqueue("thread-one", notice)
     assert push._send.statistics().current_buffer_used == 128
+
+
+@pytest.mark.anyio
+async def test_activity_cutoff_is_strict_server_time_and_reconciliation_is_not_activity(tmp_path, monkeypatch):
+    import a13n_harness_ui.storage.push as storage_push
+
+    now = datetime(2026, 9, 18, 12, tzinfo=UTC)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return now
+
+    monkeypatch.setattr(storage_push, "datetime", Clock)
+    async with open_database(tmp_path / "metadata.sqlite3", StorageSettings(data_root=tmp_path)) as database:
+        repository = PushRepository(database.sessions)
+        devices = [subscription(endpoint=f"https://fcm.googleapis.com/fcm/send/{i}")[1] for i in range(4)]
+        for device in devices:
+            await repository.save(device)
+        async with transaction(database.sessions) as session:
+            for device, age in zip(
+                devices[:3], [timedelta(hours=5), timedelta(hours=6), timedelta(hours=7)], strict=True
+            ):
+                record = await session.get(WebPushSubscriptionRecord, device.subscription_id)
+                record.last_active_at = now - age
+        assert await repository.recipients() == (devices[0],)
+        # Saving keys/origin must not extend the activity window.
+        await repository.save(devices[2])
+        assert await repository.recipients() == (devices[0],)
+        assert await repository.mark_active(devices[2].subscription_id)
+        assert {d.subscription_id for d in await repository.recipients()} == {
+            devices[0].subscription_id,
+            devices[2].subscription_id,
+        }
+        async with transaction(database.sessions) as session:
+            record = await session.get(WebPushSubscriptionRecord, devices[2].subscription_id)
+            assert record.last_active_at == record.updated_at == now
+        await repository.remove(devices[2].subscription_id)
+        assert not await repository.mark_active(devices[2].subscription_id)
+        assert await repository.get(devices[2].subscription_id) is None
