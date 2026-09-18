@@ -152,7 +152,7 @@ export function ConnectionDetails({
             ) : (
               <>
                 {/* Details stays mounted so an unsaved name survives a tab visit. */}
-                <div hidden={active !== "details"}>
+                <div hidden={active !== "details"} className={styles.stack}>
                   <ConnectionSettings connection={connection} reload={reload} />
                 </div>
                 {active === "setup" &&

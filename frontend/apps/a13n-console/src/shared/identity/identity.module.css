@@ -117,6 +117,16 @@
   width: 13px;
   height: 13px;
 }
+/* Inside a row the marker waits for the pointer, so lists stay quiet. */
+:where(tr, .resourceIdentity) .marker {
+  opacity: 0;
+}
+:where(tr, .resourceIdentity):hover .marker,
+:where(tr, .resourceIdentity):focus-within .marker,
+.marker:focus-visible,
+.marker[data-popup-open] {
+  opacity: 1;
+}
 .marker:hover,
 .marker:focus-visible,
 .marker[data-popup-open] {

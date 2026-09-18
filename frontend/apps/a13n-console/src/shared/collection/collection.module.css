@@ -2,6 +2,10 @@
 .table {
   width: 100%;
 }
+/* Only body rows respond to the pointer. */
+.table thead tr:hover {
+  background: transparent;
+}
 .cell {
   color: var(--a13n-text-supporting);
   font-size: 13px;

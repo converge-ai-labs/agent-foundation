@@ -8,6 +8,11 @@
   min-width: 0;
   padding-top: 16px;
 }
+/* Settings groups inside one tab breathe like the settings pages. */
+.stack {
+  display: grid;
+  gap: 24px;
+}
 .reason {
   margin: 0;
   padding: 10px 14px;

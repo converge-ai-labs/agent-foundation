@@ -27,17 +27,22 @@ export function avatarColor(seed: string): string {
 
 /**
  * Initials from the first and last word, so "Local Reviewer" reads "LR" rather
- * than repeating the shared prefix of every seeded name.
+ * than repeating the shared prefix of every seeded name. Mixed-script names
+ * such as "Local Runner / 演示成员" keep to the script they start with.
  */
 export function nameInitials(name: string, max: 1 | 2 = 2): string {
   const letters = name
     .trim()
-    .split(/\s+/)
+    .split(/[\s/|·,]+/)
     .flatMap((word) => {
       const letter = word.match(/[\p{L}\p{N}]/u)?.[0];
       return letter ? [letter.toLocaleUpperCase()] : [];
     });
   if (!letters.length) return "";
-  if (max === 1 || letters.length === 1) return letters[0]!;
-  return `${letters[0]}${letters.at(-1)}`;
+  const latin = (letter: string) => /[A-Za-z0-9]/.test(letter);
+  const sameScript = letters.filter(
+    (letter) => latin(letter) === latin(letters[0]!),
+  );
+  if (max === 1 || sameScript.length === 1) return sameScript[0]!;
+  return `${sameScript[0]}${sameScript.at(-1)}`;
 }
