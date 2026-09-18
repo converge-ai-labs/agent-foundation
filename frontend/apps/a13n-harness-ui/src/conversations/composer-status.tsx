@@ -98,6 +98,9 @@ export function ComposerStatus({
           aria-label="Conversation usage details"
         >
           <span>
+            Tokens <strong>{summary.tokens}</strong>
+          </span>
+          <span>
             Context <strong>{summary.context}</strong>
           </span>
           <span>
@@ -117,6 +120,13 @@ export function ComposerStatus({
         <PopoverPopup side="top" align="start" className={styles.popup}>
           <PopoverTitle>Conversation usage</PopoverTitle>
           <dl>
+            <dt>Total tokens</dt>
+            <dd>
+              {summary.totalTokens?.toLocaleString() ?? "Unknown"} cumulative
+              input + output tokens recorded for the root agent in this
+              conversation, matching the CLI status bar. Cache tokens are
+              already included; descendant usage is excluded.
+            </dd>
             <dt>Context</dt>
             <dd>
               {tokens?.toLocaleString() ?? "Unknown"} /{" "}
