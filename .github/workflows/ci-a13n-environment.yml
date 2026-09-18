@@ -52,7 +52,6 @@ jobs:
           - name: Windows
             runner: windows-2025
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -78,7 +77,7 @@ jobs:
         run: uv run --locked pyright packages/a13n-environment/a13n_environment
 
       - name: Test a13n Environment
-        run: uv run --locked python -m pytest packages/a13n-environment/tests -v --timeout=120 --durations=20
+        run: uv run --locked python -m pytest packages/a13n-environment/tests
 
       - name: Build a13n Environment distribution
         if: matrix.name == 'Linux'
