@@ -759,7 +759,7 @@ async def test_recovery_attempts_share_one_run_and_record_attempt_count() -> Non
         del messages, info
         calls += 1
         if calls == 1:
-            raise UnexpectedModelBehavior("interrupted")
+            raise UnexpectedModelBehavior("Streamed response ended without content or tool calls")
         yield "recovered"
 
     tracer_provider, exporter, meter_provider, reader = _providers()

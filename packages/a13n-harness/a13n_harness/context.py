@@ -19,6 +19,7 @@ from pydantic_ai.messages import ModelMessage
 from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.observation import HarnessObservationContext
+from a13n_harness.recovery import ModelRecoveryState
 from a13n_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
@@ -354,6 +355,7 @@ class AgentContext:
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
     _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
+    _model_recovery: ModelRecoveryState = field(default_factory=ModelRecoveryState, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,

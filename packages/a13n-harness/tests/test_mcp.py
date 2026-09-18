@@ -333,7 +333,7 @@ async def test_contextual_mcp_factory_runs_once_across_harness_model_recovery() 
         assert native.headers == {"X-Run": factory_calls[0]}
         if model_calls == 1:
             yield "partial"
-            raise RuntimeError("stream disconnected")
+            raise ConnectionResetError("stream disconnected")
         yield "done"
 
     executable = HarnessBuilder().build(

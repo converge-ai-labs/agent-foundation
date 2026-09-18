@@ -329,7 +329,7 @@ async def test_checkpoint_rebinds_to_native_recovery_attempt_in_the_same_harness
         calls += 1
         assert len(saved) == calls
         if calls == 1:
-            raise RuntimeError("stream disconnected before the first response")
+            raise ConnectionResetError("stream disconnected before the first response")
         yield "recovered"
 
     executable = HarnessBuilder().build(

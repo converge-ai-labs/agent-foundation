@@ -153,7 +153,7 @@ async def test_interrupted_image_preview_never_enters_events_or_continuation(can
             waiting.set()
             if cancel:
                 await asyncio.Event().wait()
-            raise RuntimeError("provider stream interrupted")
+            raise ConnectionResetError("provider stream interrupted")
 
     async def save(ctx: RunContext[AgentContext], image: FilePart) -> str:
         saved.append(image.content.data)

@@ -127,7 +127,7 @@ The override is not a field-by-field merge. Keep stable workload budgets on `Age
 spec = AgentSpec(retries={"tools": 2, "output": 1})
 ```
 
-When omitted, Pydantic AI allows one function-tool retry and one output-validation retry. An integer sets both; a mapping configures them independently. This does not configure provider transport retries or enable Harness model-interruption recovery. `ModelRecoveryPolicy` remains disabled by default and, when enabled, has its own bounded total-attempt budget.
+When omitted, Pydantic AI allows one function-tool retry and one output-validation retry. An integer sets both; a mapping configures them independently. This does not configure provider transport retries or enable Harness model-interruption recovery. `ModelRecoveryPolicy` remains disabled by default and, when enabled, has its own bounded consecutive-failure budget. A complete, accepted primary model response resets the recovery count and backoff, including a tool-call response; partial output and auxiliary requests such as compaction do not. Recovery only retries recognized transient model-request failures. Permanent and unknown failures stop without consuming the remaining retries. The default is five attempts per failure streak, including the initial attempt, rather than five attempts over the entire Run. Keep `UsageLimits` to bound overall Run usage.
 
 ### System prompt and instructions
 

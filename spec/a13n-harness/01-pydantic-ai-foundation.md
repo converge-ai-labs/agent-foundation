@@ -120,7 +120,7 @@ The same context is supplied to every `ModelAttempt` inside one logical Harness 
 05. Bind run plugins and freeze `BoundPluginContext`.
 06. Start the plugin chain lazily on first iteration.
 07. Run one `ModelAttempt` with a unique model-attempt ID.
-08. On a recoverable model interruption, normalize public history and repeat within the total attempt budget while the Environment facade remains active.
+08. On a recoverable model interruption, normalize public history and repeat within the consecutive-failure attempt budget while the Environment facade remains active.
 09. On output, deferred work, cancellation, failure, or hard stop, build one terminal candidate.
 10. Unwind trusted result middleware.
 11. Establish the terminal fence and close all run resources before terminal delivery.

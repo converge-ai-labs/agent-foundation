@@ -87,7 +87,7 @@ async def test_concurrent_runs_keep_fresh_active_capabilities_through_recovery()
         if calls[run] == 1:
             await asyncio.wait_for(barrier.wait(), timeout=5)
             yield "partial"
-            raise RuntimeError("recoverable interruption")
+            raise ConnectionResetError("recoverable interruption")
         yield "done"
 
     transport = Provider()

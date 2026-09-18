@@ -155,7 +155,7 @@ Recovery layers remain bounded and separate:
 
 - provider transport retry under provider/client policy;
 - at most one exact `SelfHealingModel` replay after an effective repair;
-- a finite total Harness semantic-attempt budget, disabled by default;
+- a finite consecutive-failure Harness recovery budget, replenished only by accepted primary model progress and disabled by default;
 - Host durable recovery only from authoritative checkpoints.
 
 Cancellation, usage limits, output retry exhaustion, tool failure, native deferred/HITL boundaries, and non-model Harness failures stop semantic recovery. Backoff is cancellation-aware.

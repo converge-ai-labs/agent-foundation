@@ -1283,7 +1283,7 @@ async def test_build_plan_survives_model_recovery_without_replaying_completed_ta
             }
         elif requests == 2:
             yield "partial answer"
-            raise RuntimeError("stream disconnected")
+            raise ConnectionResetError("stream disconnected")
         else:
             assert any(part.content == "saved" for part in _returns(messages))
             yield "recovered"

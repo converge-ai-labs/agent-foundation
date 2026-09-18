@@ -2250,6 +2250,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         policy = self._executable.definition.model_recovery
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
+        recovery = exchange.context._model_recovery
         current_history = (
             self._tool_recovery.messages if self._tool_recovery is not None else self._previous_state.message_history
         )
@@ -2269,14 +2270,15 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         while True:
             await exchange.context._steering.resolve_delivered(current_history)
             retry_error: BaseException | None = None
-            next_attempt_index = attempt_index + 1
+            recovery.attempt_id = f"model-attempt-{uuid4().hex}"
+            recovery.request_error = None
             response_tracker = InterruptedResponseTracker()
             attempt_token = self._observation.record_model_attempt() if self._observation is not None else None
             manager = self._executable._agent.run_stream_events(
                 current_input.value,
                 message_history=current_history,
                 deferred_tool_results=(deferred_results if attempt_index == 0 else None),
-                run_id=f"model-attempt-{uuid4().hex}",
+                run_id=recovery.attempt_id,
                 conversation_id=self.thread_id,
                 deps=self.context,
                 usage=self._usage,
@@ -2411,9 +2413,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             )
                             return
 
-                        model_failure = is_recoverable_model_failure(error, messages)
-                        retryable = policy.enabled and model_failure
-                        retrying = retryable and next_attempt_index < max_attempts
+                        model_failure = recovery.request_error is error and not isinstance(error, HarnessError)
+                        retryable = policy.enabled and model_failure and is_recoverable_model_failure(error)
+                        if retryable:
+                            recovery.consecutive_failures += 1
+                        retrying = retryable and recovery.consecutive_failures < max_attempts
                         failure_details = (
                             _model_failure_details(
                                 error, thread_id=self.thread_id, run_id=self.run_id, retrying=retrying
@@ -2429,7 +2433,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                             yield await self._failed_candidate(
                                 code="model_recovery_exhausted" if exhausted else "agent_run_failed",
                                 message=(
-                                    f"Model execution could not recover after {max_attempts} attempts. "
+                                    f"Model execution could not recover after {max_attempts} consecutive failed attempts. "
                                     "Try continuing the conversation again."
                                     if exhausted
                                     else f"Pydantic AI agent execution failed ({type(error).__name__})."
@@ -2456,16 +2460,19 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 raise
             finally:
                 self._pydantic_events = None
+                recovery.attempt_id = None
+                recovery.request_error = None
                 if attempt_token is not None:
                     _LogicalRunObservation.reset_model_attempt(attempt_token)
 
             assert retry_error is not None
-            delay = policy.delay(next_attempt_index)
+            retry_index = recovery.consecutive_failures
+            delay = policy.delay(retry_index)
             yield self._adapt_extension_event(
                 HarnessExtensionEvent(
                     kind="recovery",
                     payload=ModelRetryScheduledPayload(
-                        attempt=next_attempt_index + 1,
+                        attempt=retry_index + 1,
                         max_attempts=max_attempts,
                         delay_seconds=delay,
                     ).model_dump(mode="json"),
@@ -2477,7 +2484,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         span,
                         {
                             "recovery.step": "backoff",
-                            "recovery.next_attempt": next_attempt_index + 1,
+                            "recovery.next_attempt": retry_index + 1,
                             "recovery.max_attempts": max_attempts,
                             "recovery.delay_seconds": delay,
                         },
@@ -2507,16 +2514,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     span,
                     {
                         "recovery.step": "build_prompt",
-                        "recovery.next_attempt": next_attempt_index + 1,
+                        "recovery.next_attempt": retry_index + 1,
                         "recovery.max_attempts": max_attempts,
                         "recovery.history_count": len(self._latest_messages),
                     },
                 )
-                retry_input = await policy.build_prompt(retry_error, next_attempt_index, self._latest_messages)
+                retry_input = await policy.build_prompt(retry_error, retry_index, self._latest_messages)
                 observe_output(span, {"retry_input_available": retry_input is not None}, status="prepared")
             current_input = normalize_input(retry_input)
             current_history = self._latest_messages
-            attempt_index = next_attempt_index
+            attempt_index += 1
 
     async def _failed_candidate(
         self,

@@ -94,7 +94,7 @@ sequenceDiagram
     Harness->>Harness: normalize and enter fresh Environment adapters, publish mounts, and create context
     Harness->>Plugins: bind one fresh middleware chain
     Caller->>Harness: request first item
-    loop total ModelAttempt budget
+    loop consecutive-failure recovery budget
         Harness->>PAI: run_stream_events with attempt run_id and Thread conversation_id
         PAI->>Provider: model and tool work
         Provider-->>PAI: events, response, or failure
@@ -117,13 +117,15 @@ The stream is lazy: entering it performs preparation but no model or tool work. 
 
 ## Model Attempt Recovery
 
-`ModelRecoveryPolicy` is disabled by default. When enabled, `max_attempts` is the total number of `ModelAttempt` values, including the first one. Its upper bound defaults to five. The policy owns:
+`ModelRecoveryPolicy` is disabled by default. When enabled, `max_attempts` bounds consecutive failed attempts without an accepted primary model response, including the initial failed attempt. It defaults to five: one initial attempt and at most four recovery continuations in each failure streak. It does not cap the cumulative number of `ModelAttempt` values in a logical Run. The policy owns:
 
-- the total attempt budget;
+- the consecutive-failure attempt budget;
 - a fixed continuation input or sync/async prompt factory;
 - equal-jitter exponential backoff bounded by configured initial and maximum delays.
 
-For retry index `n` starting at one, the delay is sampled uniformly between half of `min(initial * 2 ** (n - 1), maximum)` and that capped ceiling. Positive backoff settings therefore retain a minimum wait rather than permitting an immediate retry. The default initial and maximum values are 1 and 30 seconds; the four retries in the default attempt budget wait 0.5–1, 1–2, 2–4, and 4–8 seconds. Setting either delay value to zero explicitly disables waiting.
+A fully completed, accepted primary model response resets the failure count and backoff, including a response that requests tools. Receiving HTTP headers, a first token, or partial streamed content does not reset either. Responses rejected by request hooks and successful auxiliary requests such as compaction do not replenish the primary budget. The budget is private process-local Run state, not continuation state. Cumulative model-attempt observations, request identities, shared usage, and event sequence remain monotonic; resetting the budget does not repeat deferred-result injection or replay completed tools. Effective usage limits continue to bound the overall Run independently.
+
+The prompt factory receives the one-based retry index within the current failure streak, which restarts after accepted primary progress. For retry index `n` starting at one, the delay is sampled uniformly between half of `min(initial * 2 ** (n - 1), maximum)` and that capped ceiling. Positive backoff settings therefore retain a minimum wait rather than permitting an immediate retry. The default initial and maximum values are 1 and 30 seconds; the four retries in the default attempt budget wait 0.5–1, 1–2, 2–4, and 4–8 seconds. Setting either delay value to zero explicitly disables waiting.
 
 On a recoverable model interruption, the Harness:
 
@@ -142,7 +144,9 @@ A finalized ordinary tool call missing a result at an explicitly interrupted bou
 
 This preserves a valid conversation shape without claiming rollback, non-execution, or exactly-once behavior.
 
-Recovery is limited to model-boundary failures. It does not restart after:
+Recovery requires both a failure observed at the primary model-request boundary and a recognized transient cause. Eligible causes are explicit timeout, connection, read/write, and remote-protocol failures, including transport causes retained through provider exceptions; HTTP `408`, `429`, `500`, `502`, `503`, `504`, and `529`; and the supported upstream empty-stream or missing-finish-marker errors. A generic provider exception or interrupted message alone is not evidence of a transient failure. Certificate verification failures and recognized structured permanent quota/billing codes are terminal even when wrapped in a connection error or returned with a retryable HTTP status. Unknown failures, other HTTP statuses, content filtering, and malformed model output are not automatically retried. Exact provider-history repair remains owned by `SelfHealingModel` below this classification.
+
+It does not restart after:
 
 - explicit or external cancellation;
 - `UsageLimitExceeded`;
@@ -154,9 +158,9 @@ Recovery is limited to model-boundary failures. It does not restart after:
 
 Provider transport retries remain below this layer. `SelfHealingModel` may replay one request after an exact history repair before the `ModelAttempt` recovery loop observes the failure. These budgets are independent and are not multiplied into a second unbounded retry framework.
 
-Before each recovery backoff, the Harness emits one `recovery` extension with `type="model_retry_scheduled"`, the next one-based `attempt`, `max_attempts` (including the first attempt), and `delay_seconds`. It contains no exception payload or continuation input. This is a scheduled continuation, not proof that another attempt has started: cancellation can still stop it. No retry notice is emitted when recovery is disabled, excluded, or exhausted. Intermediate recovered failures retain safe stack locations at debug level rather than warning level; only the terminal failure uses warning-level diagnostics.
+Before each recovery backoff, the Harness emits one `recovery` extension with `type="model_retry_scheduled"`, the next one-based `attempt` within the current failure streak, `max_attempts` (including the initial attempt in that streak), and `delay_seconds`. It contains no exception payload or continuation input. This is a scheduled continuation, not proof that another attempt has started: cancellation can still stop it. No retry notice is emitted when recovery is disabled, excluded, or exhausted. Intermediate recovered failures retain safe stack locations at debug level rather than warning level; only the terminal failure uses warning-level diagnostics.
 
-When the `ModelAttempt` budget is exhausted, the logical run returns `status="failed"` with `failure.code="model_recovery_exhausted"`, `retry_hint="new_run"`, and a message identifying the total attempt count and suggesting another continuation. This hint does not authorize automatic Host replay or guarantee that repeating side effects is safe. When recovery is disabled, recognized Pydantic execution failure returns `failure.code="agent_run_failed"`. Safe failure details identify the exception type and, for HTTP failures, the status code without exposing the provider body or exception message. Local diagnostic logs correlate the failure with Thread and Run IDs and retain exception types and stack locations without locals, source lines, or exception payloads.
+When the `ModelAttempt` budget is exhausted, the logical run returns `status="failed"` with `failure.code="model_recovery_exhausted"`, `retry_hint="new_run"`, and a message identifying the consecutive failed attempt count and suggesting another continuation. This hint does not authorize automatic Host replay or guarantee that repeating side effects is safe. When recovery is disabled or the model-request failure is not transient, it returns `failure.code="agent_run_failed"`; recognized terminal Pydantic execution failures use the same code. Safe failure details identify the exception type and, for HTTP failures, the status code without exposing the provider body or exception message. Local diagnostic logs correlate the failure with Thread and Run IDs and retain exception types and stack locations without locals, source lines, or exception payloads.
 
 ## Native Deferred and Provider Continuation
 

@@ -115,7 +115,7 @@ async def test_auto_recall_is_once_per_logical_run_and_persists_input_overlays()
         del info
         calls.append(messages)
         if len(calls) == 1:
-            raise UnexpectedModelBehavior("retry")
+            raise UnexpectedModelBehavior("Streamed response ended without content or tool calls")
         yield "done"
 
     exporter = InMemorySpanExporter()

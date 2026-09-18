@@ -58,7 +58,7 @@ class _FirstPartyPayload(BaseModel):
 
 
 class ModelRetryScheduledPayload(_FirstPartyPayload):
-    """A bounded in-process continuation, not a durable Host retry."""
+    """A continuation numbered within a failure streak, not a durable Host retry."""
 
     type: Literal["model_retry_scheduled"] = "model_retry_scheduled"
     attempt: int = Field(ge=2)

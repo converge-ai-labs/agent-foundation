@@ -5,13 +5,16 @@ from __future__ import annotations
 import asyncio
 import inspect
 import random
+import ssl
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Literal
 
+import httpx2
 from pydantic_ai.exceptions import (
     ModelAPIError,
+    ModelHTTPError,
     RunCancelled,
     ToolFailed,
     UnexpectedModelBehavior,
@@ -116,9 +119,18 @@ def prepare_tool_recovery(messages: Sequence[ModelMessage], mode: ToolRecoveryMo
     return plan
 
 
+@dataclass(slots=True)
+class ModelRecoveryState:
+    """Private logical-run budget, fenced to the active primary Agent invocation."""
+
+    attempt_id: str | None = None
+    consecutive_failures: int = 0
+    request_error: BaseException | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ModelRecoveryPolicy:
-    """Optional total attempt budget for interrupted model execution."""
+    """Optional consecutive-failure attempt budget for interrupted model execution."""
 
     enabled: bool = False
     max_attempts: int = 5
@@ -313,23 +325,53 @@ def normalize_interrupted_history(
     return tuple(normalized), 0
 
 
-def is_recoverable_model_failure(error: BaseException, messages: Sequence[ModelMessage]) -> bool:
-    """Classify only failures at a model-request boundary as attempt-recoverable."""
+def is_recoverable_model_failure(error: BaseException) -> bool:
+    """Allow known transient failures; the caller owns model-boundary provenance."""
     if isinstance(error, HarnessError | RunCancelled | UsageLimitExceeded | asyncio.CancelledError):
         return False
-    if isinstance(error, ModelAPIError):
-        return True
     if isinstance(error, UnexpectedModelBehavior):
-        # Pydantic AI has no dedicated retry-exhaustion exception: tools use
-        # "exceeded max retries", while output validation uses "exceeded maximum retries".
-        text = str(error).lower()
-        return "exceeded max" not in text or "retries" not in text
-    if not messages:
+        # Upstream has no dedicated exception for these stream-establishment
+        # failures. Do not classify arbitrary malformed output as a network error.
+        return (
+            type(error) is UnexpectedModelBehavior
+            and error.message == "Streamed response ended without content or tool calls"
+        )
+    if type(error) is ModelAPIError and error.message == "Streamed response ended without a `finish_reason`":
+        return True
+    if not isinstance(error, ModelAPIError | httpx2.TransportError | ConnectionError | TimeoutError):
         return False
-    tail = messages[-1]
-    if isinstance(tail, ModelResponse):
-        return tail.state == "interrupted"
-    return isinstance(tail, ModelRequest) and tail.state != "interrupted"
+
+    transient = False
+    seen: set[int] = set()
+    cause: BaseException | None = error
+    while cause is not None and id(cause) not in seen:
+        seen.add(id(cause))
+        if isinstance(cause, ssl.SSLCertVerificationError):
+            return False
+        if isinstance(cause, ModelHTTPError):
+            return cause.status_code in {408, 429, 500, 502, 503, 504, 529} and not _has_permanent_error_code(
+                cause.body
+            )
+        if isinstance(
+            cause,
+            httpx2.TimeoutException | httpx2.NetworkError | httpx2.RemoteProtocolError | ConnectionError | TimeoutError,
+        ):
+            transient = True
+        cause = cause.__cause__
+    return transient
+
+
+def _has_permanent_error_code(body: object) -> bool:
+    """Read structured provider codes, never guess from arbitrary error prose."""
+    if not isinstance(body, Mapping):
+        return False
+    error = body.get("error", body)
+    if not isinstance(error, Mapping):
+        return False
+    return any(
+        isinstance(code, str) and code in {"insufficient_quota", "billing_hard_limit_reached", "usage_limit_reached"}
+        for code in (error.get("code"), error.get("type"))
+    )
 
 
 def _native_parts_are_balanced(parts: Sequence[object]) -> bool:

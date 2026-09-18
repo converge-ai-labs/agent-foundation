@@ -1779,7 +1779,7 @@ async def test_explicit_file_offsets_survive_inner_model_recovery_attempts(tmp_p
             }
         elif len(returns) == 1 and not failed_once:
             failed_once = True
-            raise RuntimeError("model stream disconnected")
+            raise ConnectionResetError("model stream disconnected")
         elif len(returns) == 1:
             yield {
                 0: DeltaToolCall(
@@ -2587,7 +2587,7 @@ async def test_environment_change_event_adapter_survives_model_recovery_boundary
         del messages, info
         calls += 1
         if calls == 1:
-            raise RuntimeError("recoverable failure")
+            raise ConnectionResetError("recoverable failure")
         yield "done"
 
     aggregate = create_empty_environment_runtime()
