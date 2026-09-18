@@ -26,6 +26,7 @@ import { ConnectorToolPreview } from "../connectors/tools";
 import { CreateMCP } from "../mcp/create";
 import { providersPath } from "../providers/navigation";
 import { useConnectionDirectory } from "./directory";
+import styles from "./connections.module.css";
 
 export type Selection =
   | {
@@ -97,10 +98,10 @@ export function SourceSetup({
     <>
       <ConnectionSetup connector={selected.connector} onStarted={onStarted} />
       {selected.provider.type === "composio" && (
-        <div className="space-y-3 text-muted-foreground text-sm">
+        <div className={styles.composioHelp}>
           {selected.connector.authentication_methods.includes("OAUTH2") && (
             <DisclosureSection title={t("Use your own OAuth app")}>
-              <ol className="list-decimal space-y-2 pl-5">
+              <ol className={styles.steps}>
                 <li>
                   {t(
                     "In Composio Dashboard, create an auth config for this application and select custom credentials.",
@@ -205,6 +206,11 @@ function NewConnectionDialog({
             backLabel={t("All sources")}
             onBack={started ? undefined : () => setSelected(undefined)}
           >
+            {started && (
+              <p className={styles.progressNote} role="status">
+                {t("Authorization in progress")}
+              </p>
+            )}
             <SourceSetup
               selected={selected}
               onStarted={() => setStarted(true)}
@@ -361,7 +367,7 @@ function SourceDirectory({
             type="button"
             variant="ghost"
             size="sm"
-            className="mx-auto my-1.5"
+            className={styles.loadMore}
             loading={directory.loadingMore}
             onClick={directory.loadMore}
           >

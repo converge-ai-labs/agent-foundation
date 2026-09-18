@@ -1,0 +1,13 @@
+/* Provider category panels sit under the settings heading, not a page header. */
+.panel {
+  margin-top: 24px;
+}
+.notice {
+  margin: 0;
+  padding: 12px 16px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}

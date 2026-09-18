@@ -1,17 +1,15 @@
 import {
-  ArrowRightIcon,
-  ArrowUpRightIcon,
   ChatCircleTextIcon,
   CheckCircleIcon,
-  SlidersHorizontalIcon,
-  SparkleIcon,
   CubeIcon,
   LockSimpleIcon,
+  SlidersHorizontalIcon,
+  SparkleIcon,
 } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useRef } from "react";
 import { Composer } from "../conversations/composer";
-import { Button } from "a13n-ui";
+import { Button, StatusPill } from "a13n-ui";
 import { Link, useNavigate, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -23,12 +21,28 @@ import {
   type Schema,
 } from "../../shared/api";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
-import { Page } from "../../shared/page";
-import { Pagination, useCursor } from "../../shared/collection";
+import {
+  CollectionFooter,
+  Empty,
+  ListRow,
+  ListRows,
+  Pagination,
+  useCursor,
+} from "../../shared/collection";
 import { useIdempotency } from "../../shared/idempotency";
 import { useAssistantReadiness } from "./api";
 import styles from "./configuration.module.css";
 
+const readinessMessages: Record<string, string> = {
+  ready: "Ready",
+  provider_setup_required: "Configure a model provider to start the assistant.",
+  model_setup_required:
+    "Provider configured. Add an enabled model to continue.",
+  compatible_model_required: "Choose a model that supports tool calling.",
+  model_access_denied: "Ask an administrator for model access.",
+};
+
+/** What is missing before the assistant can run, and the way to fix it. */
 export function ReadinessNotice({
   readiness,
   prerequisite = false,
@@ -38,77 +52,72 @@ export function ReadinessNotice({
 }) {
   const { t } = useTranslation();
   if (readiness.ready) return null;
-  const messages = {
-    ready: "Ready",
-    provider_setup_required:
-      "Configure a model provider to start the assistant.",
-    model_setup_required:
-      "Provider configured. Add an enabled model to continue.",
-    compatible_model_required: "Choose a model that supports tool calling.",
-    model_access_denied: "Ask an administrator for model access.",
-  };
   const needsModel =
     readiness.reason_code === "model_setup_required" ||
     readiness.reason_code === "compatible_model_required";
-  return (
-    <div
-      role="status"
-      className={prerequisite ? styles.prerequisite : styles.notice}
-    >
-      {prerequisite ? (
-        <span className={styles.stepNumber} aria-hidden="true">
-          1
+  const openLabel = t(needsModel ? "Open Models" : "Open model setup");
+  const cannotAct = readiness.setup_actions.includes("contact_administrator");
+  if (!prerequisite)
+    return (
+      <p role="status" className={styles.notice}>
+        <CubeIcon size={16} aria-hidden="true" />
+        <span>
+          {t(readinessMessages[readiness.reason_code])}{" "}
+          {cannotAct ? (
+            t("Contact your administrator to complete setup.")
+          ) : (
+            <Link to={readiness.setup_url}>{openLabel}</Link>
+          )}
         </span>
-      ) : (
-        <CubeIcon size={22} aria-hidden="true" />
-      )}
-      <div className={styles.noticeBody}>
-        {prerequisite && (
-          <div className={styles.setupHeading}>
-            <h3>
-              {t(
-                readiness.reason_code === "model_setup_required"
-                  ? "Provider ready. Add a model next"
-                  : "Set up a model first",
-              )}
-            </h3>
-            <span>{t("Required")}</span>
-          </div>
-        )}
-        <p>{t(messages[readiness.reason_code])}</p>
-        {readiness.setup_actions.includes("contact_administrator") ? (
+      </p>
+    );
+  return (
+    <div role="status" className={styles.step} data-state="required">
+      <span className={styles.stepNumber} aria-hidden="true">
+        1
+      </span>
+      <div className={styles.stepBody}>
+        <div className={styles.stepHeading}>
+          <h3>
+            {t(
+              readiness.reason_code === "model_setup_required"
+                ? "Provider ready. Add a model next"
+                : "Set up a model first",
+            )}
+          </h3>
+          <StatusPill variant="warning">{t("Required")}</StatusPill>
+        </div>
+        <p>{t(readinessMessages[readiness.reason_code])}</p>
+        {cannotAct ? (
           <p>{t("Contact your administrator to complete setup.")}</p>
-        ) : prerequisite ? (
-          <>
-            <Button
-              render={
-                <Link
-                  to={readiness.setup_url}
-                  target="_blank"
-                  rel="noreferrer"
-                />
-              }
-            >
-              <CubeIcon size={16} aria-hidden="true" />
-              {t(needsModel ? "Open Models" : "Open model setup")}
-              <ArrowUpRightIcon size={15} aria-hidden="true" />
-            </Button>
-            <p>
-              {t(
-                "Complete model setup in the new tab, then return here to continue.",
-              )}
-            </p>
-          </>
         ) : (
-          <Link to={readiness.setup_url} target="_blank" rel="noreferrer">
-            {t(needsModel ? "Open Models" : "Open model setup")}
-            <ArrowUpRightIcon size={15} aria-hidden="true" />
-          </Link>
+          <Button size="sm" render={<Link to={readiness.setup_url} />}>
+            <CubeIcon size={15} aria-hidden="true" />
+            {openLabel}
+          </Button>
         )}
       </div>
     </div>
   );
 }
+
+const howItWorks = [
+  {
+    icon: ChatCircleTextIcon,
+    title: "Describe your goal",
+    description: "Tell the assistant what your agent should do.",
+  },
+  {
+    icon: SlidersHorizontalIcon,
+    title: "Shape the details",
+    description: "Refine instructions, models and tools together.",
+  },
+  {
+    icon: CheckCircleIcon,
+    title: "Review and apply",
+    description: "You decide when the draft becomes your agent.",
+  },
+];
 
 export function ConfigurationStart() {
   const { t } = useTranslation(),
@@ -179,142 +188,129 @@ export function ConfigurationStart() {
       `${basePath}/configuration-threads/${receipt.thread_id}?run=${receipt.run_id}`,
     );
   }
+  const ready = readiness.data?.ready;
   return (
-    <Page title={t("Configuration assistant")}>
-      <div className={styles.start}>
-        <section className={styles.intro}>
-          <div className={styles.assistantIcon}>
-            <SparkleIcon size={28} weight="duotone" aria-hidden="true" />
-          </div>
-          <h2>
-            {t(
-              target
-                ? "Improve an agent together"
-                : "Describe the agent you want to build",
-            )}
-          </h2>
-          <p>
-            {t(
-              "Discuss instructions, models and tools. Review the draft before applying it to your agent.",
-            )}
-          </p>
-          <ol className={styles.steps}>
-            {[
-              {
-                icon: ChatCircleTextIcon,
-                title: "Describe your goal",
-                description: "Tell the assistant what your agent should do.",
-              },
-              {
-                icon: SlidersHorizontalIcon,
-                title: "Shape the details",
-                description: "Refine instructions, models and tools together.",
-              },
-              {
-                icon: CheckCircleIcon,
-                title: "Review and apply",
-                description: "You decide when the draft becomes your agent.",
-              },
-            ].map(({ icon: Icon, title, description }) => (
-              <li key={title}>
-                <Icon size={20} aria-hidden="true" />
-                <h3>{t(title)}</h3>
-                <p>{t(description)}</p>
-              </li>
-            ))}
-          </ol>
-          {revision && (
-            <p>
-              {t("Source revision")}: <code>{revision}</code>
-            </p>
+    <div className={styles.start}>
+      <header className={styles.intro}>
+        <span className={styles.assistantIcon}>
+          <SparkleIcon size={24} weight="duotone" aria-hidden="true" />
+        </span>
+        <h1>
+          {t(
+            target
+              ? "Improve an agent together"
+              : "Describe the agent you want to build",
           )}
-          <div className={styles.startActions}>
-            {readiness.isPending && <Loading />}
-            <ErrorNotice
-              error={readiness.error}
-              retry={() => void readiness.refetch()}
-            />
-            {readiness.data && !readiness.data.ready ? (
-              <div className={styles.setupFlow}>
-                <ReadinessNotice readiness={readiness.data} prerequisite />
-                <div className={styles.lockedStep}>
-                  <span className={styles.stepNumber} aria-hidden="true">
-                    2
-                  </span>
-                  <div>
-                    <h3>
-                      <LockSimpleIcon size={16} aria-hidden="true" />
-                      {t("Start configuration conversation")}
-                    </h3>
-                    <p>{t("Available once a compatible model is ready.")}</p>
-                  </div>
+        </h1>
+        <p>
+          {t(
+            "Discuss instructions, models and tools. Review the draft before applying it to your agent.",
+          )}
+        </p>
+      </header>
+      <ol className={styles.steps}>
+        {howItWorks.map(({ icon: Icon, title, description }) => (
+          <li key={title}>
+            <Icon size={18} aria-hidden="true" />
+            <h2>{t(title)}</h2>
+            <p>{t(description)}</p>
+          </li>
+        ))}
+      </ol>
+      {revision && (
+        <p className={styles.sourceRevision}>
+          {t("Source revision")} <code>{revision}</code>
+        </p>
+      )}
+      <div className={styles.startActions}>
+        <ErrorNotice
+          error={readiness.error}
+          retry={() => void readiness.refetch()}
+        />
+        {readiness.data && !ready ? (
+          <div className={styles.setupFlow}>
+            <ReadinessNotice readiness={readiness.data} prerequisite />
+            <div className={styles.step} data-state="locked">
+              <span className={styles.stepNumber} aria-hidden="true">
+                2
+              </span>
+              <div className={styles.stepBody}>
+                <div className={styles.stepHeading}>
+                  <h3>
+                    <LockSimpleIcon size={15} aria-hidden="true" />
+                    {t("Start configuration conversation")}
+                  </h3>
                 </div>
-              </div>
-            ) : (
-              <div className={styles.startComposer}>
-                <Composer
-                  key={scope}
-                  disabled={!readiness.data?.ready || !can("run.continue")}
-                  label={t("Start configuration conversation")}
-                  submit={start}
-                />
-                <p className={styles.startHint}>
-                  {t(
-                    "A conversation is created when you send your first message.",
-                  )}
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
-        <section className={styles.history}>
-          <h2>{t("Your configuration conversations")}</h2>
-          <ErrorNotice
-            error={sessions.error}
-            retry={() => void sessions.refetch()}
-          />
-          {sessions.isPending && <Loading />}
-          {sessions.data?.items.length === 0 && (
-            <div className={styles.historyEmpty}>
-              <ChatCircleTextIcon size={24} aria-hidden="true" />
-              <div>
-                <h3>{t("No configuration conversations yet")}</h3>
-                <p>
-                  {t(
-                    "Your conversations will appear here so you can return to a draft anytime.",
-                  )}
-                </p>
+                <p>{t("Available once a compatible model is ready.")}</p>
               </div>
             </div>
-          )}
-          {sessions.data?.items.map((session) => (
-            <Link
-              key={session.id}
-              to={`${basePath}/configuration-threads/${session.root_thread_id}`}
-            >
-              <ChatCircleTextIcon size={20} aria-hidden="true" />
-              <span className={styles.sessionIdentity}>
-                <span
-                  className={styles.sessionTitle}
-                  title={session.title ?? undefined}
-                >
-                  {session.title || t("Configuration draft")}
-                </span>
-                <span className={styles.draftId}>
-                  {t(
-                    session.has_runs === false
-                      ? "Not started"
-                      : "Configuration draft",
-                  )}
-                </span>
-              </span>
-              <Timestamp value={session.updated_at} relative />
-              <ArrowRightIcon size={16} aria-hidden="true" />
-            </Link>
-          ))}
-          <Pagination page={page} next={sessions.data?.next_cursor} />
-        </section>
+          </div>
+        ) : (
+          <div className={styles.startComposer}>
+            <Composer
+              key={scope}
+              disabled={!ready || !can("run.continue")}
+              label={t("Start configuration conversation")}
+              submit={start}
+            />
+            <p className={styles.startHint}>
+              {t("A conversation is created when you send your first message.")}
+            </p>
+          </div>
+        )}
       </div>
-    </Page>
+      <section className={styles.history}>
+        <h2>{t("Your configuration conversations")}</h2>
+        <ErrorNotice
+          error={sessions.error}
+          retry={() => void sessions.refetch()}
+        />
+        {sessions.isPending && <Loading variant="list" />}
+        {sessions.data?.items.length === 0 && (
+          <Empty
+            icon={<ChatCircleTextIcon aria-hidden="true" />}
+            title={t("No configuration conversations yet")}
+            description={t(
+              "Your conversations will appear here so you can return to a draft anytime.",
+            )}
+          />
+        )}
+        {!!sessions.data?.items.length && (
+          <>
+            <ListRows>
+              {sessions.data.items.map((session) => (
+                <Link
+                  key={session.id}
+                  className={styles.sessionRow}
+                  to={`${basePath}/configuration-threads/${session.root_thread_id}`}
+                >
+                  <ListRow
+                    icon={<ChatCircleTextIcon size={16} aria-hidden="true" />}
+                    name={session.title || t("Configuration draft")}
+                    secondary={
+                      <Timestamp value={session.updated_at} relative />
+                    }
+                    control={
+                      <StatusPill
+                        variant={
+                          session.has_runs === false ? "neutral" : "info"
+                        }
+                      >
+                        {t(
+                          session.has_runs === false ? "Not started" : "Draft",
+                        )}
+                      </StatusPill>
+                    }
+                  />
+                </Link>
+              ))}
+            </ListRows>
+            <CollectionFooter>
+              <Pagination page={page} next={sessions.data.next_cursor} />
+            </CollectionFooter>
+          </>
+        )}
+      </section>
+    </div>
   );
 }

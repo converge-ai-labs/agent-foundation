@@ -1,7 +1,5 @@
 import {
   Button,
-  FormField,
-  Input,
   Menu,
   MenuCheckboxItem,
   MenuPopup,
@@ -13,12 +11,13 @@ import {
 } from "a13n-ui";
 import { CaretDownIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { SetURLSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
+import { Toolbar } from "../../shared/collection";
 import { DateTimeField } from "../../shared/forms";
 import { ErrorNotice } from "../../shared/feedback";
 import {
@@ -26,6 +25,7 @@ import {
   parseLocalDateTime,
 } from "../../shared/local-date-time";
 import type { SessionFilters } from "./api";
+import styles from "./conversations.module.css";
 
 const statuses: Schema["RunStatus"][] = [
   "accepted",
@@ -74,8 +74,8 @@ export function SessionFilterBar({
   const { t } = useTranslation();
   const { workspace, can } = useWorkspace();
   const client = useClient();
-  const [query, setQuery] = useState(search.get("q") ?? "");
   const committedQuery = search.get("q") ?? "";
+  const [query, setQuery] = useState(committedQuery);
   useEffect(() => setQuery(committedQuery), [committedQuery]);
   const agents = useQuery({
     queryKey: ["session-filter-agents", workspace.id],
@@ -104,6 +104,17 @@ export function SessionFilterBar({
       }
       return next;
     });
+  // Typing narrows the server query, so it is committed once the reader pauses.
+  const debounce = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(debounce.current), []);
+  function onSearchChange(value: string) {
+    setQuery(value);
+    clearTimeout(debounce.current);
+    debounce.current = setTimeout(
+      () => update({ q: value.trim() ? [value.trim()] : [] }),
+      300,
+    );
+  }
   const agentId = search.get("agent_id") ?? "";
   const agentOptions = (agents.data ?? []).map((agent) => ({
     value: agent.id,
@@ -112,83 +123,76 @@ export function SessionFilterBar({
   }));
   if (agentId && !agentOptions.some((agent) => agent.value === agentId))
     agentOptions.push({ value: agentId, label: agentId, keywords: [] });
+  const active = keys.some((key) => search.has(key));
   return (
     <>
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <FormField
-          label={t("Search sessions")}
-          hideLabel
-          className="w-full min-w-0 sm:w-80"
-        >
-          <Input
-            type="search"
-            maxLength={72}
-            placeholder={t("Session ID or Thread ID…")}
-            value={query}
-            onChange={(event) => {
-              const value = event.target.value;
-              setQuery(value);
-              update({ q: value.trim() ? [value.trim()] : [] });
-            }}
-          />
-        </FormField>
-        <div className="w-44">
-          <SearchPicker
-            label={t("Recent agent")}
-            placeholder={t("All agents")}
-            emptyMessage={t("No matching agents")}
-            groups={[
-              {
-                label: t("Agents"),
-                options: [
-                  { value: "all", label: t("All agents") },
-                  ...agentOptions,
-                ],
-              },
-            ]}
-            value={agentId || "all"}
-            onValueChange={(value) =>
-              update({ agent_id: value === "all" ? [] : [value] })
-            }
-          />
-        </div>
-        <MultiFilter
-          label={t("Run status")}
-          values={search.getAll("status")}
-          options={statuses.map((value) => ({
-            value,
-            label: t(`state.${value}`),
-          }))}
-          onChange={(values) => update({ status: values })}
-        />
-        <MultiFilter
-          label={t("Trigger source")}
-          values={search.getAll("trigger_type")}
-          options={triggers.map((value) => ({
-            value,
-            label: t(`trigger.${value}`),
-          }))}
-          onChange={(values) => update({ trigger_type: values })}
-        />
-        <UpdatedFilter
-          after={search.get("updated_after")}
-          before={search.get("updated_before")}
-          onChange={(after, before) =>
-            update({ updated_after: [after], updated_before: [before] })
-          }
-        />
-        {keys.some((key) => search.has(key)) && (
-          <Button
-            variant="ghost"
-            onClick={() => {
-              setQuery("");
-              update(Object.fromEntries(keys.map((key) => [key, []])));
-            }}
-          >
-            {t("Clear filters")}
-          </Button>
-        )}
-      </div>
+      <Toolbar
+        search={query}
+        onSearchChange={onSearchChange}
+        searchLabel={t("Search by title, session or thread ID")}
+        filters={
+          <>
+            <div className={styles.agentFilter}>
+              <SearchPicker
+                label={t("Agent")}
+                placeholder={t("All agents")}
+                emptyMessage={t("No matching agents")}
+                groups={[
+                  {
+                    label: t("Agents"),
+                    options: [
+                      { value: "all", label: t("All agents") },
+                      ...agentOptions,
+                    ],
+                  },
+                ]}
+                value={agentId || "all"}
+                onValueChange={(value) =>
+                  update({ agent_id: value === "all" ? [] : [value] })
+                }
+              />
+            </div>
+            <MultiFilter
+              label={t("Status")}
+              values={search.getAll("status")}
+              options={statuses.map((value) => ({
+                value,
+                label: t(`state.${value}`),
+              }))}
+              onChange={(values) => update({ status: values })}
+            />
+            <MultiFilter
+              label={t("Trigger")}
+              values={search.getAll("trigger_type")}
+              options={triggers.map((value) => ({
+                value,
+                label: t(`trigger.${value}`),
+              }))}
+              onChange={(values) => update({ trigger_type: values })}
+            />
+            <UpdatedFilter
+              after={search.get("updated_after")}
+              before={search.get("updated_before")}
+              onChange={(after, before) =>
+                update({ updated_after: [after], updated_before: [before] })
+              }
+            />
+            {active && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setQuery("");
+                  clearTimeout(debounce.current);
+                  update(Object.fromEntries(keys.map((key) => [key, []])));
+                }}
+              >
+                {t("Clear")}
+              </Button>
+            )}
+          </>
+        }
+      />
       <ErrorNotice error={agents.error} retry={() => void agents.refetch()} />
     </>
   );
@@ -207,10 +211,12 @@ function MultiFilter({
 }) {
   return (
     <Menu>
-      <MenuTrigger render={<Button variant="outline" />}>
-        <span className="text-muted-foreground">{label}</span>
-        {values.length > 0 && <span>{values.length}</span>}
-        <CaretDownIcon />
+      <MenuTrigger render={<Button variant="outline" size="sm" />}>
+        <span className={styles.filterLabel}>{label}</span>
+        {values.length > 0 && (
+          <span className={styles.filterCount}>{values.length}</span>
+        )}
+        <CaretDownIcon size={12} aria-hidden="true" />
       </MenuTrigger>
       <MenuPopup align="start" aria-label={label}>
         {options.map((option) => (
@@ -253,6 +259,11 @@ function UpdatedFilter({
     (!!start && !startDate) ||
     (!!end && !endDate) ||
     (!!startDate && !!endDate && startDate >= endDate);
+  const presets = [
+    { days: 1, label: t("24 hours"), name: t("Last 24 hours") },
+    { days: 7, label: t("7 days"), name: t("Last 7 days") },
+    { days: 30, label: t("30 days"), name: t("Last 30 days") },
+  ];
   return (
     <Popover
       open={open}
@@ -264,56 +275,41 @@ function UpdatedFilter({
         setOpen(value);
       }}
     >
-      <PopoverTrigger render={<Button variant="outline" />}>
-        {t("Last updated")}
+      <PopoverTrigger render={<Button variant="outline" size="sm" />}>
+        <span className={styles.filterLabel}>{t("Updated")}</span>
         {(after || before) && (
-          <span
-            aria-label={t("Filter active")}
-            className="size-1.5 rounded-full bg-current"
-          />
+          <span className={styles.filterDot} aria-label={t("Filter active")} />
         )}
-        <CaretDownIcon />
+        <CaretDownIcon size={12} aria-hidden="true" />
       </PopoverTrigger>
       <PopoverPopup
-        aria-label={t("Last updated")}
+        aria-label={t("Updated")}
         align="end"
-        className="w-[22rem] max-w-[calc(100vw-2rem)]"
+        className={styles.updatedPopup}
       >
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3">
-            <p className="text-sm font-medium">{t("Time range")}</p>
-            <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/60 p-1">
-              {[1, 7, 30].map((days) => (
-                <Button
-                  key={days}
-                  variant="ghost"
-                  size="sm"
-                  className="font-normal"
-                  aria-label={t(
-                    days === 1
-                      ? "Last 24 hours"
-                      : days === 7
-                        ? "Last 7 days"
-                        : "Last 30 days",
-                  )}
-                  onClick={() => {
-                    const now = new Date();
-                    setStart(
-                      formatLocalDateTime(
-                        new Date(now.getTime() - days * 86400000),
-                      ),
-                    );
-                    setEnd(formatLocalDateTime(now));
-                  }}
-                >
-                  {t(
-                    days === 1 ? "24 hours" : days === 7 ? "7 days" : "30 days",
-                  )}
-                </Button>
-              ))}
-            </div>
+        <div className={styles.updatedBody}>
+          <div className={styles.presets}>
+            {presets.map((preset) => (
+              <Button
+                key={preset.days}
+                variant="ghost"
+                size="sm"
+                aria-label={preset.name}
+                onClick={() => {
+                  const now = new Date();
+                  setStart(
+                    formatLocalDateTime(
+                      new Date(now.getTime() - preset.days * 86400000),
+                    ),
+                  );
+                  setEnd(formatLocalDateTime(now));
+                }}
+              >
+                {preset.label}
+              </Button>
+            ))}
           </div>
-          <div className="flex flex-col gap-4 [&_[data-slot=popover-trigger]]:w-full [&_[data-slot=field-label]]:text-xs [&_[data-slot=field-label]]:text-muted-foreground">
+          <div className={styles.updatedFields}>
             <DateTimeField
               label={t("Start time")}
               value={start}
@@ -326,15 +322,13 @@ function UpdatedFilter({
             />
           </div>
           {invalid && (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className={styles.updatedError}>
               {t("Choose a valid time range.")}
             </p>
           )}
-          <div className="flex items-center justify-between gap-2 border-t pt-3">
-            <span className="text-xs text-muted-foreground">
-              {Intl.DateTimeFormat().resolvedOptions().timeZone}
-            </span>
-            <div className="flex items-center gap-2">
+          <div className={styles.updatedFooter}>
+            <span>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+            <div className={styles.updatedActions}>
               <Button
                 variant="ghost"
                 size="sm"

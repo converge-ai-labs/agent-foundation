@@ -1,25 +1,31 @@
-import { FormSection, formSectionStyles } from "../../shared/forms";
-import { CredentialEditor } from "../../shared/forms";
-import { ResourceReference } from "../../shared/identity";
-import { ProviderTypeField } from "../../shared/forms";
-import { ProviderEnabled } from "../../shared/forms";
-import { ProviderKeyLink } from "../../shared/forms";
-import { providerKeyUrls } from "./provider-key-urls";
-import { requiresProviderCredential } from "./provider-credentials";
-import {
-  ProviderConnection,
-  ordinaryConfigurationSchema,
-} from "./provider-connection";
-import { useProviderDraft } from "./provider-draft";
-import { ConnectionTest } from "./connection-test";
 import { FormField, Input } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
-import { SchemaFields } from "../../shared/forms";
+import {
+  CredentialEditor,
+  FormActions,
+  FormSection,
+  ProviderEnabled,
+  ProviderKeyLink,
+  ProviderTypeField,
+  SchemaFields,
+  formSectionStyles,
+} from "../../shared/forms";
 import { type ModelScope } from "./api";
+import { ConnectionTest } from "./connection-test";
+import {
+  ProviderConnection,
+  ordinaryConfigurationSchema,
+} from "./provider-connection";
+import { requiresProviderCredential } from "./provider-credentials";
+import { useProviderDraft } from "./provider-draft";
+import { providerKeyUrls } from "./provider-key-urls";
 
+/**
+ * Identity, then connection, then the advanced disclosure — the group order
+ * every provider editor follows.
+ */
 export function ProviderForm({
   scope,
   resource,
@@ -57,7 +63,7 @@ export function ProviderForm({
         <FormField
           className="min-w-0 w-full"
           label={t("Name")}
-          labelAction={original && <ResourceReference id={original.value.id} />}
+          description={t("How this provider is listed across the console.")}
         >
           <Input
             required={true}
@@ -68,6 +74,12 @@ export function ProviderForm({
             maxLength={128}
           />
         </FormField>
+        {original && (
+          <ProviderEnabled
+            checked={draft.enabled}
+            onCheckedChange={draft.setEnabled}
+          />
+        )}
       </FormSection>
       <FormSection title={t("Connection")}>
         <ProviderTypeField
@@ -149,14 +161,6 @@ export function ProviderForm({
           />
         )}
       </FormSection>
-      {original && (
-        <FormSection>
-          <ProviderEnabled
-            checked={draft.enabled}
-            onCheckedChange={draft.setEnabled}
-          />
-        </FormSection>
-      )}
       <ErrorNotice
         error={save.error}
         retry={original ? () => void reload() : undefined}

@@ -97,9 +97,7 @@ it("refreshes unknown outcomes through reads without offering a resend", async (
       "The platform may have received this reply. Check the conversation before deciding whether another reply is needed. Refreshing does not resend it.",
     ),
   ).toBeTruthy();
-  await userEvent.click(
-    screen.getByRole("button", { name: "Refresh observations" }),
-  );
+  await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
   expect(state.GET).toHaveBeenCalledTimes(2);
   expect(screen.queryByRole("button", { name: /resend/i })).toBeNull();
 });

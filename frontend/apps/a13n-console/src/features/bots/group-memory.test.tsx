@@ -93,7 +93,7 @@ afterEach(cleanup);
 
 it("uses the exact target lookup and ignores a different scope in the URL", async () => {
   setup();
-  await screen.findByRole("button", { name: "Support" });
+  await screen.findByText("Support");
   const scopeCalls = state.http.GET.mock.calls.filter(([path]) =>
     path.endsWith("/memory-scopes"),
   );

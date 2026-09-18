@@ -1,35 +1,158 @@
-import { ApiError } from "../../service-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, FormField, Input, ModalFrame, ReadOnlyField } from "a13n-ui";
+import { Button, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
+import { ApiError } from "../../service-client";
 import {
   allPages,
   data,
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
+import { ListRow, ListRows, ResourceIdentity } from "../../shared/collection";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
-import { CredentialEditor } from "../../shared/forms";
-import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
-import { FormSection, formSectionStyles } from "../../shared/forms";
-import { ProviderEnabled } from "../../shared/forms";
-import { ProviderTypeField } from "../../shared/forms";
-import { ResourceEditorButton } from "../../shared/identity";
 import {
+  CatalogStep,
+  ConflictNotice,
   useResourceEditorState,
   type ResourceEditorControl,
 } from "../../shared/dialogs";
-import { ResourceReference } from "../../shared/identity";
-import { SchemaFields, withSchemaValues } from "../../shared/forms";
-import { useSuggestedName } from "../../shared/forms";
-import { jsonObject, validateSettings } from "../../shared/forms";
+import { ErrorNotice } from "../../shared/feedback";
+import {
+  CredentialEditor,
+  FormActions,
+  FormSection,
+  ProviderEnabled,
+  ProviderTypeField,
+  SchemaFields,
+  formSectionStyles,
+  jsonObject,
+  validateSettings,
+  withSchemaValues,
+} from "../../shared/forms";
+import { ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
+import {
+  AddProviderDialog,
+  CredentialsPill,
+  EditProviderDialog,
+} from "../providers";
 import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
 
+type Definition = Schema["MemoryProviderDefinition"];
+
+export function useMemoryProviderDefinitions(
+  scope: MemoryProviderScope,
+  enabled = true,
+) {
+  const client = useClient();
+  return useQuery({
+    queryKey: ["memory-provider-types", scope.kind, scope.id],
+    enabled,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/memory-provider-types", {
+          signal,
+          headers:
+            scope.kind === "workspace" ? workspaceHeaders(scope.id) : undefined,
+        })
+        .then(data),
+  });
+}
+
+/** Whether a backend asks for a secret at all. */
+export function memoryCredentialState(
+  provider: { credential_configured?: boolean },
+  definition?: Definition,
+) {
+  const schema = (definition?.credential_schema ?? {}) as {
+    properties?: Record<string, unknown>;
+  };
+  if (definition && !Object.keys(schema.properties ?? {}).length)
+    return "not_required" as const;
+  return provider.credential_configured
+    ? ("configured" as const)
+    : ("not_configured" as const);
+}
+
+/**
+ * Creation and editing share one entry point so callers that only know they
+ * want "a memory provider editor" keep working.
+ */
 export function MemoryProviderEditor({
+  providerId,
+  ...props
+}: ResourceEditorControl & {
+  scope: MemoryProviderScope;
+  providerId?: string;
+  extra?: ReactNode;
+  readOnly?: boolean;
+  onSaved?: (provider: Schema["MemoryProvider"]) => void;
+}) {
+  return providerId ? (
+    <EditMemoryProvider providerId={providerId} {...props} />
+  ) : (
+    <AddMemoryProvider {...props} />
+  );
+}
+
+/** Catalog-first creation: choose the backend, then configure it. */
+export function AddMemoryProvider({
+  scope,
+  controlledOpen,
+  onClose,
+  finalFocus,
+  onSaved,
+}: ResourceEditorControl & {
+  scope: MemoryProviderScope;
+  onSaved?: (provider: Schema["MemoryProvider"]) => void;
+}) {
+  const { t } = useTranslation();
+  const [localOpen, setLocalOpen] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  const open = controlledOpen ?? localOpen;
+  const definitions = useMemoryProviderDefinitions(scope, open);
+  // Closing discards the step and the draft, whoever asked for it.
+  function change(value: boolean) {
+    setLocalOpen(value);
+    if (!value) {
+      onClose?.();
+      setGeneration((current) => current + 1);
+    }
+  }
+  return (
+    <AddProviderDialog<Definition>
+      key={generation}
+      definitions={definitions.data?.items}
+      error={definitions.error}
+      open={open}
+      finalFocus={finalFocus}
+      trigger={controlledOpen === undefined ? undefined : null}
+      onOpenChange={change}
+      description={t(
+        "Connect a memory backend. Saving configuration does not test the connection.",
+      )}
+    >
+      {(definition, back) => (
+        <CatalogStep backLabel={t("All providers")} onBack={back}>
+          <MemoryProviderForm
+            scope={scope}
+            definition={definition}
+            definitions={definitions.data?.items ?? []}
+            onCancel={() => change(false)}
+            onSaved={(provider) => {
+              change(false);
+              onSaved?.(provider);
+            }}
+          />
+        </CatalogStep>
+      )}
+    </AddProviderDialog>
+  );
+}
+
+function EditMemoryProvider({
   scope,
   providerId,
   controlledOpen,
@@ -40,7 +163,7 @@ export function MemoryProviderEditor({
   onSaved,
 }: ResourceEditorControl & {
   scope: MemoryProviderScope;
-  providerId?: string;
+  providerId: string;
   extra?: ReactNode;
   readOnly?: boolean;
   onSaved?: (provider: Schema["MemoryProvider"]) => void;
@@ -49,64 +172,59 @@ export function MemoryProviderEditor({
     client = useClient();
   const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
   const [pending, setPending] = useState(false);
-  const definitions = useQuery({
-    queryKey: ["memory-provider-types", scope.kind, scope.id],
-    enabled: state.open,
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/memory-provider-types", {
-          signal,
-          headers:
-            scope.kind === "workspace" ? workspaceHeaders(scope.id) : undefined,
-        })
-        .then(data),
-  });
+  const definitions = useMemoryProviderDefinitions(scope, state.open);
   const resource = useQuery({
     queryKey: ["memory-provider", scope.kind, scope.id, providerId],
-    enabled: state.open && !!providerId,
+    enabled: state.open,
     queryFn: ({ signal }) =>
-      memoryProviderApi(client, scope).provider(providerId!, signal),
+      memoryProviderApi(client, scope).provider(providerId, signal),
   });
+  const definition = definitions.data?.items.find(
+    (item) => item.type === resource.data?.value.type,
+  );
   return (
-    <ModalFrame
-      {...state.modalProps}
+    <EditProviderDialog
+      modalProps={state.modalProps}
       onOpenChange={(open, details) => {
         if (pending) details.cancel();
         else state.modalProps.onOpenChange(open, details);
       }}
-      size="lg"
-      title={t(
-        readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
-      )}
-      description={
-        !providerId
-          ? t(
-              "Connect a memory backend. Saving configuration does not test the connection.",
-            )
-          : undefined
-      }
-      closeLabel={t("Close")}
-      trigger={
-        controlledOpen === undefined ? (
-          <ResourceEditorButton
-            editing={!!providerId}
-            createLabel="Add provider"
-            editLabel="Edit"
-          />
-        ) : undefined
-      }
+      open={state.open}
+      name={resource.data?.value.name}
+      id={providerId}
+      readOnly={readOnly}
+      loading={definitions.isPending || resource.isPending}
+      error={resource.error}
     >
-      {state.open &&
-        (definitions.isPending || (providerId && resource.isPending) ? (
-          <Loading variant="form" rows={4} />
-        ) : resource.error || (!providerId && definitions.error) ? (
-          <ErrorNotice error={resource.error ?? definitions.error} />
+      {resource.data &&
+        (readOnly ? (
+          <div className={styles.stack}>
+            <ResourceIdentity
+              icon={<ProviderIcon type={resource.data.value.type} />}
+              name={resource.data.value.name}
+              description={definition?.display_name ?? resource.data.value.type}
+            />
+            <ConfigurationSummary
+              value={resource.data.value.configuration}
+              schema={definition?.configuration_schema ?? {}}
+            />
+            <div className={styles.twoColumns}>
+              <ReadOnlyField label={t("Status")}>
+                {t(resource.data.value.enabled ? "Enabled" : "Disabled")}
+              </ReadOnlyField>
+              <ReadOnlyField label={t("Credentials")}>
+                <CredentialsPill
+                  state={memoryCredentialState(resource.data.value, definition)}
+                />
+              </ReadOnlyField>
+            </div>
+            {extra}
+          </div>
         ) : (
           <MemoryProviderForm
             scope={scope}
-            resource={providerId ? resource.data : undefined}
+            resource={resource.data}
             definitions={definitions.data?.items ?? []}
-            readOnly={readOnly}
             extra={extra}
             onPending={setPending}
             onCancel={() => state.setOpen(false)}
@@ -116,15 +234,15 @@ export function MemoryProviderEditor({
             }}
           />
         ))}
-    </ModalFrame>
+    </EditProviderDialog>
   );
 }
 
 export function MemoryProviderForm({
   scope,
   resource,
+  definition: chosen,
   definitions,
-  readOnly = false,
   extra,
   onCancel,
   onSaved,
@@ -132,8 +250,9 @@ export function MemoryProviderForm({
 }: {
   scope: MemoryProviderScope;
   resource?: { value: Schema["MemoryProvider"]; etag?: string };
-  definitions: Schema["MemoryProviderDefinition"][];
-  readOnly?: boolean;
+  /** Fixed by the catalog when creating. */
+  definition?: Definition;
+  definitions: Definition[];
   extra?: ReactNode;
   onCancel: () => void;
   onSaved: (provider: Schema["MemoryProvider"]) => void;
@@ -143,11 +262,13 @@ export function MemoryProviderForm({
     client = useClient(),
     cache = useQueryClient();
   const [original, setOriginal] = useState(resource);
-  const [type, setType] = useState(
-    resource?.value.type ?? definitions[0]?.type ?? "",
-  );
-  const { name, setName, suggestName } = useSuggestedName(
-    resource?.value.name ?? definitions[0]?.display_name,
+  const type =
+    resource?.value.type ?? chosen?.type ?? definitions[0]?.type ?? "";
+  const [name, setName] = useState(
+    resource?.value.name ??
+      chosen?.display_name ??
+      definitions[0]?.display_name ??
+      "",
   );
   const [configuration, setConfiguration] = useState<Record<string, unknown>>(
     resource?.value.configuration ?? {},
@@ -159,7 +280,7 @@ export function MemoryProviderForm({
   const [uncertainCreate, setUncertainCreate] = useState(false);
   const [existing, setExisting] = useState<Schema["MemoryProvider"][]>();
   const api = memoryProviderApi(client, scope);
-  const definition = definitions.find((item) => item.type === type);
+  const definition = definitions.find((item) => item.type === type) ?? chosen;
   const configSchema = definition?.configuration_schema ?? {};
   const credentialSchema = definition?.credential_schema ?? {};
   const replacingCredential = Object.keys(credential).length > 0;
@@ -235,7 +356,7 @@ export function MemoryProviderForm({
       onSubmit={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        if (!readOnly && !save.isPending && !uncertainCreate) {
+        if (!save.isPending && !uncertainCreate) {
           onPending?.(true);
           save.mutate();
         }
@@ -243,13 +364,7 @@ export function MemoryProviderForm({
     >
       <fieldset disabled={save.isPending} className="fieldset-reset">
         <FormSection>
-          <FormField
-            readOnly={readOnly}
-            label={t("Name")}
-            labelAction={
-              original && <ResourceReference id={original.value.id} />
-            }
-          >
+          <FormField label={t("Name")}>
             <Input
               required
               maxLength={128}
@@ -257,21 +372,16 @@ export function MemoryProviderForm({
               onChange={(event) => setName(event.target.value)}
             />
           </FormField>
+          {original && (
+            <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+          )}
         </FormSection>
         <FormSection title={t("Connection")}>
           <ProviderTypeField
-            definitions={definitions}
+            definitions={definition ? [definition] : definitions}
             value={type}
-            readOnly={!!original || readOnly}
-            onValueChange={(value) => {
-              setType(value);
-              setConfiguration({});
-              setCredential({});
-              suggestName(
-                definitions.find((item) => item.type === value)?.display_name ??
-                  value,
-              );
-            }}
+            readOnly
+            onValueChange={() => {}}
           />
           {original ? (
             <>
@@ -279,7 +389,7 @@ export function MemoryProviderForm({
                 value={original.value.configuration}
                 schema={configSchema}
               />
-              <p className="text-sm text-muted-foreground">
+              <p className={styles.muted}>
                 {t(
                   "Storage configuration cannot be changed. Create a new provider for a different target; existing memories are not migrated.",
                 )}
@@ -293,17 +403,7 @@ export function MemoryProviderForm({
               onChange={setConfiguration}
             />
           )}
-        </FormSection>
-        <FormSection title={t("Credentials")}>
-          {readOnly ? (
-            <ReadOnlyField label={t("Credentials")}>
-              {t(
-                original?.value.credential_configured
-                  ? "Configured"
-                  : "Not configured",
-              )}
-            </ReadOnlyField>
-          ) : original ? (
+          {original ? (
             <CredentialEditor
               configured={original.value.credential_configured}
               removing={removeCredential}
@@ -320,7 +420,7 @@ export function MemoryProviderForm({
                   onChange={setCredential}
                 />
               ) : (
-                <p className="text-sm text-muted-foreground">
+                <p className={styles.muted}>
                   {t(
                     "The backend definition is unavailable. Credential replacement requires its installed schema.",
                   )}
@@ -339,14 +439,7 @@ export function MemoryProviderForm({
         </FormSection>
         {original && (
           <FormSection>
-            {readOnly ? (
-              <ReadOnlyField label={t("Status")}>
-                {t(enabled ? "Enabled" : "Disabled")}
-              </ReadOnlyField>
-            ) : (
-              <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-            )}
-            <p className="text-sm text-muted-foreground">
+            <p className={styles.muted}>
               {t(
                 "Disabling a provider prevents memory access but does not delete stored records.",
               )}
@@ -355,86 +448,96 @@ export function MemoryProviderForm({
         )}
       </fieldset>
       {extra}
-      <ErrorNotice error={error ?? save.error} />
-      {conflict && (
-        <Button
-          variant="outline"
-          onClick={async () => {
-            try {
-              setOriginal(
-                await api.provider(
-                  original!.value.id,
-                  new AbortController().signal,
-                ),
-              );
-              save.reset();
-              setError(undefined);
-            } catch (error) {
-              setError(error);
-            }
-          }}
-        >
-          {t("Load current version and keep my draft")}
-        </Button>
-      )}
-      {uncertainCreate && (
-        <div className={styles.stack}>
-          <p role="alert">
-            {t(
-              "Creation could not be confirmed. Review saved providers before creating another; credentials cannot be compared.",
-            )}
-          </p>
-          <Button
-            variant="outline"
-            loading={reconcile.isPending}
-            onClick={() => reconcile.mutate()}
-          >
-            {t("Review existing providers")}
-          </Button>
-          <ErrorNotice error={reconcile.error} />
-          {existing && (
-            <>
-              {existing.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-2"
-                >
-                  <span>
-                    {item.name} · {item.type}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => onSaved(item)}
-                  >
-                    {t("Return to providers")}
-                  </Button>
-                </div>
-              ))}
-              {!existing.length && (
-                <p>{t("No saved providers found in this scope.")}</p>
-              )}
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setUncertainCreate(false);
-                  save.reset();
-                }}
-              >
-                {t("I checked; allow another create attempt")}
-              </Button>
-            </>
+      <ErrorNotice error={error ?? (conflict ? undefined : save.error)} />
+      {conflict && original && (
+        <ConflictNotice
+          title={t("This provider changed")}
+          description={t(
+            "Your draft is preserved. Load the saved version, then save again.",
           )}
-        </div>
-      )}
-      {!readOnly && (
-        <FormActions
-          onCancel={onCancel}
-          label={t(original ? "Save changes" : "Add provider")}
-          pending={save.isPending}
-          disabled={uncertainCreate}
+          recover={{
+            label: t("Load current version and keep my draft"),
+            onClick: async () => {
+              try {
+                setOriginal(
+                  await api.provider(
+                    original.value.id,
+                    new AbortController().signal,
+                  ),
+                );
+                save.reset();
+                setError(undefined);
+              } catch (error) {
+                setError(error);
+              }
+            },
+          }}
         />
       )}
+      {uncertainCreate && (
+        <ConflictNotice
+          title={t("Creation could not be confirmed")}
+          description={t(
+            "Review saved providers before creating another; credentials cannot be compared.",
+          )}
+          recover={{
+            label: t("Review existing providers"),
+            onClick: () => reconcile.mutate(),
+            pending: reconcile.isPending,
+          }}
+          proceed={
+            existing
+              ? {
+                  label: t("I checked; allow another create attempt"),
+                  onClick: () => {
+                    setUncertainCreate(false);
+                    setExisting(undefined);
+                    reconcile.reset();
+                    save.reset();
+                  },
+                }
+              : undefined
+          }
+        >
+          {existing && (
+            <ListRows className="mt-2">
+              {existing.map((item) => (
+                <ListRow
+                  key={item.id}
+                  icon={<ProviderIcon type={item.type} />}
+                  name={item.name}
+                  secondary={
+                    definitions.find((entry) => entry.type === item.type)
+                      ?.display_name ?? item.type
+                  }
+                  actions={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => onSaved(item)}
+                    >
+                      {t("Return to providers")}
+                    </Button>
+                  }
+                />
+              ))}
+              {!existing.length && (
+                <p className={styles.muted}>
+                  {t("No saved providers found in this scope.")}
+                </p>
+              )}
+            </ListRows>
+          )}
+        </ConflictNotice>
+      )}
+      <ErrorNotice error={reconcile.error} />
+      <FormActions
+        onCancel={onCancel}
+        label={t(original ? "Save changes" : "Add provider")}
+        pending={save.isPending}
+        disabled={uncertainCreate}
+      />
     </form>
   );
 }

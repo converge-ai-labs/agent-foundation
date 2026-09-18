@@ -1,34 +1,100 @@
-import { useSuggestedName } from "../../shared/forms";
-import { FormSection, formSectionStyles } from "../../shared/forms";
-import { ResourceReference } from "../../shared/identity";
-import { Identifier } from "../../shared/identity";
-import { ProviderTypeField } from "../../shared/forms";
-import {
-  useResourceEditorState,
-  type ResourceEditorControl,
-} from "../../shared/dialogs";
-import { ProviderKeyLink } from "../../shared/forms";
-import { ResourceEditorButton } from "../../shared/identity";
-import { ApiError } from "../../service-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  FormField,
-  Input,
-  ReadOnlyField,
-  ModalFrame,
-  Switch,
-} from "a13n-ui";
+import { Button, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
+import { ApiError } from "../../service-client";
 import { allPages, data, type Schema } from "../../shared/api";
-import { ErrorNotice, Loading } from "../../shared/feedback";
-import { ResourceIdentity } from "../../shared/collection";
-import { FormActions } from "../../shared/forms";
+import { ListRow, ListRows, ResourceIdentity } from "../../shared/collection";
+import {
+  CatalogStep,
+  ConflictNotice,
+  useResourceEditorState,
+  type ResourceEditorControl,
+} from "../../shared/dialogs";
+import { ErrorNotice } from "../../shared/feedback";
+import {
+  FormActions,
+  FormSection,
+  ProviderEnabled,
+  ProviderKeyLink,
+  ProviderTypeField,
+  formSectionStyles,
+} from "../../shared/forms";
+import { ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
+import {
+  AddProviderDialog,
+  CredentialsPill,
+  EditProviderDialog,
+} from "../providers";
 import { webProviderApi, type WebProviderScope } from "./api";
 
+type Definition = Schema["WebProviderDefinition"];
+
+function useWebProviderDefinitions(enabled = true) {
+  const client = useClient();
+  return useQuery({
+    queryKey: ["web-provider-types"],
+    enabled,
+    queryFn: ({ signal }) =>
+      client.http.GET("/api/v1/web-provider-types", { signal }).then(data),
+  });
+}
+
+/** Catalog-first creation: choose the service, then connect it. */
+export function AddWebProvider({
+  scope,
+  onSaved,
+}: {
+  scope: WebProviderScope;
+  onSaved?: (provider: Schema["WebProvider"]) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  const definitions = useWebProviderDefinitions();
+  // Closing discards the step and the draft, whoever asked for it.
+  function change(value: boolean) {
+    setOpen(value);
+    if (!value) setGeneration((current) => current + 1);
+  }
+  return (
+    <AddProviderDialog<Definition>
+      key={generation}
+      definitions={definitions.data?.items}
+      error={definitions.error}
+      open={open}
+      onOpenChange={change}
+      description={t("Choose a search or scrape service for your agents.")}
+      hint={(definition) =>
+        definition.credential_required ? "API key" : "No credentials"
+      }
+      connectDescription={(definition) =>
+        definition.credential_required
+          ? t("Paste the API key from your provider account.")
+          : t("This service needs no credentials.")
+      }
+    >
+      {(definition, back) => (
+        <CatalogStep backLabel={t("All providers")} onBack={back}>
+          <WebProviderForm
+            scope={scope}
+            definition={definition}
+            definitions={definitions.data?.items ?? []}
+            onCancel={() => change(false)}
+            onSaved={(provider) => {
+              onSaved?.(provider);
+              change(false);
+            }}
+          />
+        </CatalogStep>
+      )}
+    </AddProviderDialog>
+  );
+}
+
+/** Editing a saved provider, or reading one owned by another scope. */
 export function WebProviderEditor({
   scope,
   providerId,
@@ -40,109 +106,78 @@ export function WebProviderEditor({
 }: ResourceEditorControl & {
   readOnly?: boolean;
   scope: WebProviderScope;
-  providerId?: string;
+  providerId: string;
   onSaved?: (provider: Schema["WebProvider"]) => void;
 }) {
   const { t } = useTranslation(),
     client = useClient();
-  const { open, setOpen, modalProps } = useResourceEditorState({
-    controlledOpen,
-    onClose,
-    finalFocus,
-  });
-
+  const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
   const api = webProviderApi(client, scope);
-  const definitions = useQuery({
-    queryKey: ["web-provider-types"],
-    enabled: open,
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/web-provider-types", { signal }).then(data),
-  });
+  const definitions = useWebProviderDefinitions(state.open);
   const resource = useQuery({
     queryKey: ["web-provider", scope.kind, scope.id, providerId],
-    enabled: open && !!providerId,
-    queryFn: ({ signal }) => api.provider(providerId!, signal),
+    enabled: state.open,
+    queryFn: ({ signal }) => api.provider(providerId, signal),
   });
+  const definition = definitions.data?.items.find(
+    (item) => item.type === resource.data?.value.type,
+  );
   return (
-    <ModalFrame
-      {...modalProps}
-      size="lg"
-      title={t(
-        readOnly ? "Provider" : providerId ? "Edit provider" : "Add provider",
-      )}
-      description={
-        providerId ? undefined : t("Connect a Web Provider for your agents.")
-      }
-      closeLabel={t("Close")}
-      trigger={
-        controlledOpen === undefined ? (
-          <ResourceEditorButton
-            editing={!!providerId}
-            createLabel="Add provider"
-            editLabel="Edit"
-          />
-        ) : undefined
-      }
+    <EditProviderDialog
+      modalProps={state.modalProps}
+      open={state.open}
+      name={resource.data?.value.name}
+      id={providerId}
+      readOnly={readOnly}
+      loading={definitions.isPending || resource.isPending}
+      error={definitions.error ?? resource.error}
     >
-      {open &&
-        (definitions.isPending || (providerId && resource.isPending) ? (
-          <Loading variant="form" rows={4} />
-        ) : definitions.error || resource.error ? (
-          <ErrorNotice error={definitions.error ?? resource.error} />
-        ) : (
-          definitions.data &&
-          (readOnly ? (
-            <div className={styles.stack}>
-              {resource.data && (
-                <ResourceIdentity
-                  name={resource.data.value.name}
-                  resourceId={resource.data.value.id}
-                />
-              )}
-              {resource.data && (
-                <div className={styles.twoColumns}>
-                  <ReadOnlyField label={t("Provider type")}>
-                    {definitions.data.items.find(
-                      (item) => item.type === resource.data?.value.type,
-                    )?.display_name ?? resource.data.value.type}
-                  </ReadOnlyField>
-                  <ReadOnlyField label={t("Status")}>
-                    {t(resource.data.value.enabled ? "Enabled" : "Disabled")}
-                  </ReadOnlyField>
-                  <ReadOnlyField label={t("Credentials")}>
-                    {t(
-                      definitions.data.items.find(
-                        (item) => item.type === resource.data?.value.type,
-                      )?.credential_required === false
-                        ? "Not required"
-                        : resource.data.value.credential_configured
-                          ? "Configured"
-                          : "Not configured",
-                    )}
-                  </ReadOnlyField>
-                </div>
-              )}
-            </div>
-          ) : (
-            <WebProviderForm
-              scope={scope}
-              onCancel={() => setOpen(false)}
-              resource={providerId ? resource.data : undefined}
-              definitions={definitions.data.items}
-              onSaved={(provider) => {
-                onSaved?.(provider);
-                setOpen(false);
-              }}
+      {definitions.data &&
+        resource.data &&
+        (readOnly ? (
+          <div className={styles.stack}>
+            <ResourceIdentity
+              icon={<ProviderIcon type={resource.data.value.type} />}
+              name={resource.data.value.name}
+              description={definition?.display_name ?? resource.data.value.type}
             />
-          ))
+            <div className={styles.twoColumns}>
+              <ReadOnlyField label={t("Status")}>
+                {t(resource.data.value.enabled ? "Enabled" : "Disabled")}
+              </ReadOnlyField>
+              <ReadOnlyField label={t("Credentials")}>
+                <CredentialsPill
+                  state={
+                    definition?.credential_required === false
+                      ? "not_required"
+                      : resource.data.value.credential_configured
+                        ? "configured"
+                        : "not_configured"
+                  }
+                />
+              </ReadOnlyField>
+            </div>
+          </div>
+        ) : (
+          <WebProviderForm
+            scope={scope}
+            resource={resource.data}
+            definitions={definitions.data.items}
+            onCancel={() => state.setOpen(false)}
+            onSaved={(provider) => {
+              onSaved?.(provider);
+              state.setOpen(false);
+            }}
+          />
         ))}
-    </ModalFrame>
+    </EditProviderDialog>
   );
 }
 
 export function WebProviderForm({
   scope,
   resource,
+  definition: chosen,
   definitions,
   onSaved,
   onCancel,
@@ -150,45 +185,41 @@ export function WebProviderForm({
   scope: WebProviderScope;
   onCancel?: () => void;
   resource?: { value: Schema["WebProvider"]; etag?: string };
-  definitions: Schema["WebProviderDefinition"][];
+  /** Fixed by the catalog when creating. */
+  definition?: Definition;
+  definitions: Definition[];
   onSaved: (provider: Schema["WebProvider"]) => void;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
     cache = useQueryClient();
   const [original, setOriginal] = useState(resource),
-    [type, setType] = useState(
-      resource?.value.type ?? definitions[0]?.type ?? "",
+    type = resource?.value.type ?? chosen?.type ?? definitions[0]?.type ?? "",
+    [name, setName] = useState(
+      resource?.value.name ??
+        chosen?.display_name ??
+        definitions[0]?.display_name ??
+        "",
     ),
-    { name, setName, suggestName } = useSuggestedName(resource?.value.name),
     [credential, setCredential] = useState(""),
     [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
-  const [reconciling, setReconciling] = useState(false),
-    [existing, setExisting] = useState<Schema["WebProvider"][]>(),
-    [reconcileError, setReconcileError] = useState<unknown>();
+  const [existing, setExisting] = useState<Schema["WebProvider"][]>();
   const [reloadError, setReloadError] = useState<unknown>();
   const api = webProviderApi(client, scope),
     definition = definitions.find((item) => item.type === type);
-  async function reconcile() {
-    setReconciling(true);
-    try {
-      const items = await allPages((cursor) =>
-        api.providers(new AbortController().signal, cursor),
-      );
+  const reconcile = useMutation({
+    retry: false,
+    mutationFn: () =>
+      allPages((cursor) => api.providers(new AbortController().signal, cursor)),
+    onSuccess: (items) =>
       setExisting(
         items.filter((item) =>
           scope.kind === "organization"
             ? item.workspace_id === null
             : item.workspace_id === scope.id,
         ),
-      );
-      setReconcileError(undefined);
-    } catch (error) {
-      setReconcileError(error);
-    } finally {
-      setReconciling(false);
-    }
-  }
+      ),
+  });
   const save = useMutation({
     gcTime: 0,
     retry: false,
@@ -236,10 +267,11 @@ export function WebProviderForm({
           error.status >= 500 ||
           error.code === "web_provider_name_conflict")
       )
-        void reconcile();
+        reconcile.mutate();
     },
   });
   const conflict = save.error instanceof ApiError && save.error.status === 412;
+  const unconfirmed = !original && (reconcile.isPending || !!existing);
   return (
     <form
       className={formSectionStyles.form}
@@ -250,44 +282,24 @@ export function WebProviderForm({
       }}
     >
       <FormSection>
-        <div className={original ? "grid gap-4 sm:grid-cols-2" : ""}>
-          <FormField
-            label={t("Name")}
-            labelAction={
-              original && <ResourceReference id={original.value.id} />
-            }
-          >
-            <Input
-              required
-              maxLength={128}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-            />
-          </FormField>
-          {original && (
-            <FormField label={t("Enabled")}>
-              <Switch
-                checked={enabled}
-                onCheckedChange={setEnabled}
-                className="my-1.5"
-              />
-            </FormField>
-          )}
-        </div>
+        <FormField label={t("Name")}>
+          <Input
+            required
+            maxLength={128}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+        {original && (
+          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+        )}
       </FormSection>
       <FormSection title={t("Connection")}>
         <ProviderTypeField
           definitions={definitions}
           value={type}
-          readOnly={!!original}
-          onValueChange={(value) => {
-            setType(value);
-            suggestName(
-              definitions.find((item) => item.type === value)?.display_name ??
-                value,
-            );
-            setCredential("");
-          }}
+          readOnly
+          onValueChange={() => {}}
           labelAction={
             definition?.credential_required && (
               <ProviderKeyLink href={definition.setup_url} />
@@ -319,73 +331,92 @@ export function WebProviderForm({
           </FormField>
         )}
       </FormSection>
-      <ErrorNotice error={reloadError ?? save.error ?? reconcileError} />
-      {conflict && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={async () => {
-            if (original) {
+      <ErrorNotice error={reloadError ?? (conflict ? undefined : save.error)} />
+      {conflict && original && (
+        <ConflictNotice
+          title={t("This provider changed")}
+          description={t(
+            "Your draft is preserved. Load the saved version, then save again.",
+          )}
+          recover={{
+            label: t("Load current version and keep my draft"),
+            onClick: async () => {
               try {
-                const latest = await api.provider(
-                  original.value.id,
-                  new AbortController().signal,
+                setOriginal(
+                  await api.provider(
+                    original.value.id,
+                    new AbortController().signal,
+                  ),
                 );
-                setOriginal(latest);
                 save.reset();
                 setReloadError(undefined);
               } catch (error) {
                 setReloadError(error);
               }
-            }
+            },
+          }}
+        />
+      )}
+      {unconfirmed && (
+        <ConflictNotice
+          title={t("Creation could not be confirmed")}
+          description={t(
+            "Review these saved providers before creating another. Stored API keys cannot be compared.",
+          )}
+          recover={{
+            label: t("Review existing providers"),
+            onClick: () => reconcile.mutate(),
+            pending: reconcile.isPending,
+          }}
+          proceed={{
+            label: t("I checked; allow another create attempt"),
+            onClick: () => {
+              setExisting(undefined);
+              reconcile.reset();
+              save.reset();
+            },
           }}
         >
-          {t("Load current version and keep my draft")}
-        </Button>
-      )}
-      {reconciling && (
-        <p role="status">
-          {t("Checking existing providers before another create attempt…")}
-        </p>
-      )}
-      {!!reconcileError && (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => void reconcile()}
-        >
-          {t("Review existing providers")}
-        </Button>
-      )}
-      {existing && (
-        <div>
-          <p>
-            {t(
-              "Review these saved providers before creating another. Stored API keys cannot be compared.",
-            )}
-          </p>
-          {existing.map((item) => (
-            <div key={item.id}>
-              <strong>{item.name}</strong> · {item.type} ·{" "}
-              <Identifier value={item.id} />
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => {
-                  setCredential("");
-                  onSaved(item);
-                }}
-              >
-                {t("Use this provider")}
-              </Button>
-            </div>
-          ))}
-        </div>
+          {existing && (
+            <ListRows className="mt-2">
+              {existing.map((item) => (
+                <ListRow
+                  key={item.id}
+                  icon={<ProviderIcon type={item.type} />}
+                  name={item.name}
+                  secondary={
+                    definitions.find((entry) => entry.type === item.type)
+                      ?.display_name ?? item.type
+                  }
+                  actions={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setCredential("");
+                        onSaved(item);
+                      }}
+                    >
+                      {t("Use this provider")}
+                    </Button>
+                  }
+                />
+              ))}
+              {!existing.length && (
+                <p className={styles.muted}>
+                  {t("No saved providers found in this scope.")}
+                </p>
+              )}
+            </ListRows>
+          )}
+        </ConflictNotice>
       )}
       <FormActions
         onCancel={onCancel}
         label={t(original ? "Save changes" : "Add provider")}
-        pending={save.isPending || reconciling || !!reconcileError}
+        pending={save.isPending}
+        disabled={unconfirmed}
       />
     </form>
   );

@@ -1,21 +1,18 @@
-import { Button } from "a13n-ui";
-import {
-  ArrowRightIcon,
-  ChatCircleDotsIcon,
-  BrainIcon,
-} from "@phosphor-icons/react";
-import { botAccount } from "./account";
-import { useAgent } from "../agents/queries";
+import { ArrowRightIcon, CircleIcon } from "@phosphor-icons/react";
+import { Button, SettingsRow, SettingsSection } from "a13n-ui";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
+import { ListRow, ListRows } from "../../shared/collection";
 import { StatePill, Timestamp } from "../../shared/feedback";
-import { EventConnection } from "./event-connection";
-import { CallbackSetup } from "./connect";
-import { BotChecks } from "./checks";
+import { DetailLayout, RailRow, RailSection, Section } from "../../shared/page";
+import { useAgent } from "../agents/queries";
+import { ReceptionPill, SetupPill, testStages } from "../integrations/platform";
+import { botAccount } from "./account";
+import { BotChecks, useBotCheck } from "./checks";
+import { CallbackSetup } from "./event-setup";
 import { LatestBotTest } from "./test-observation";
-import { conditions, stages } from "./summary-labels";
 import {
   messagingPolicy,
   responseLabels,
@@ -32,8 +29,9 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
   const agent = useAgent(account.default_agent_id ?? undefined);
   const admin = can("application_account.manage"),
     policy = messagingPolicy(account.provider_policy);
+  const check = useBotCheck({ account });
   const settings = `${basePath}/bots/${account.id}/settings`,
-    groups = `${basePath}/bots/${account.id}/channels`;
+    channels = `${basePath}/bots/${account.id}/channels`;
   const tasks: {
     text: string;
     label: string;
@@ -68,7 +66,7 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
     tasks.push({
       text: "Add a conversation before enabling reception for configured targets.",
       label: "Configure conversations",
-      href: groups,
+      href: channels,
       allowed: can("account_target.manage"),
     });
   if (
@@ -91,206 +89,182 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
       href: `${basePath}/bots/connect?account=${account.id}`,
       allowed: admin,
     });
-  return (
+  const agentValue = !account.default_agent_id ? (
+    <span className={styles.unset}>{t("Not configured")}</span>
+  ) : agent.data && !agent.error ? (
+    <Link to={`${basePath}/agents/${agent.data.key}`}>{agent.data.name}</Link>
+  ) : (
+    <span className={styles.unset}>
+      {t(agent.isPending ? "Loading…" : "Agent unavailable")}
+    </span>
+  );
+  const rail = (
     <>
-      <section
-        className={styles.overviewStatus}
-        aria-label={t("Setup condition")}
-      >
-        <div>
-          <strong>{t(conditions[summary.setup_condition])}</strong>
-          {summary.checked_at && (
-            <p>
-              {t("Last checked")}
-              {" · "}
-              <Timestamp value={summary.checked_at} />
-            </p>
+      <RailSection title={t("Status")}>
+        <RailRow label={t("Availability")}>
+          <StatePill state={account.status} />
+        </RailRow>
+        <RailRow label={t("Setup")}>
+          <SetupPill condition={summary.setup_condition} />
+        </RailRow>
+        <RailRow label={t("Message responses")}>
+          <ReceptionPill enabled={!!account.receive_enabled} />
+        </RailRow>
+        <RailRow label={t("Platform connection")}>
+          {check.result ? (
+            <StatePill
+              state={
+                check.result.error_code
+                  ? "failed"
+                  : check.result.installation?.enabled
+                    ? "active"
+                    : "inactive"
+              }
+              label={t(
+                check.result.error_code
+                  ? "Check failed"
+                  : check.result.installation?.enabled
+                    ? "Reachable"
+                    : "Inactive",
+              )}
+            />
+          ) : (
+            <span className={styles.unset}>{t("Not checked")}</span>
           )}
-        </div>
-        <div>
-          <strong>
+        </RailRow>
+        {summary.checked_at && (
+          <RailRow label={t("Last checked")}>
+            <Timestamp value={summary.checked_at} relative />
+          </RailRow>
+        )}
+        <RailRow label={t("Setup test")}>
+          <span>
             {t(
               summary.test_stage
-                ? stages[summary.test_stage]
+                ? testStages[summary.test_stage]
                 : "No setup test recorded",
             )}
-          </strong>
-          {summary.test_observed_at && (
-            <p>
-              {t("Test observation")}
-              {" · "}
-              <Timestamp value={summary.test_observed_at} />
-            </p>
-          )}
-        </div>
-      </section>
-      {!!tasks.length && (
-        <section className={styles.setupTasks} aria-label={t("Complete setup")}>
-          <h2>{t("Complete setup")}</h2>
-          <ul>
-            {tasks.map((task) => (
-              <li key={task.text}>
-                <span>{t(task.text)}</span>
-                {task.allowed && <Link to={task.href}>{t(task.label)}</Link>}
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      <div className={styles.overview}>
-        <section>
-          <header className={styles.overviewCardHeader}>
-            <h2>
-              <ChatCircleDotsIcon aria-hidden="true" />
-              {t("Message responses")}
-            </h2>
+          </span>
+        </RailRow>
+      </RailSection>
+      {!github && (
+        <RailSection title={t("Group memory")}>
+          <RailRow label={t("Storage")}>
             <StatePill
-              state={account.receive_enabled ? "enabled" : "disabled"}
+              state={account.memory ? "enabled" : "disabled"}
+              label={t(account.memory ? "Configured" : "Not configured")}
             />
-          </header>
-          <p>
-            {t(
-              account.reception_scope === "configured_targets"
-                ? "Only configured conversations can trigger this bot."
-                : "All accessible conversations may trigger this bot.",
-            )}
-          </p>
-          <dl className={styles.overviewFacts}>
-            <div>
-              <dt>{t("Default agent")}</dt>
-              <dd>
-                {!account.default_agent_id ? (
-                  t("Not configured")
-                ) : agent.data && !agent.error ? (
-                  <Link
-                    className={styles.factLink}
-                    to={`${basePath}/agents/${agent.data.key}`}
-                  >
-                    {agent.data.name}
-                    <ArrowRightIcon aria-hidden="true" />
-                  </Link>
-                ) : (
-                  t(agent.isPending ? "Loading…" : "Agent unavailable")
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>{t("When to respond")}</dt>
-              <dd>
-                <span className={styles.factValue}>
-                  {github
-                    ? t(
-                        account.provider_config_version ===
-                          "github_notifications_v1"
-                          ? "Notification updates"
-                          : "Selected GitHub events",
-                      )
-                    : policy
-                      ? t(responseLabels[policy.interaction_mode])
-                      : t("Not configured")}
-                </span>
-              </dd>
-            </div>
-            <div>
-              <dt>{t("Reply placement")}</dt>
-              <dd>
-                <span className={styles.factValue}>
-                  {github
-                    ? t("Issue or PR comment")
-                    : policy
-                      ? t(placementLabels[policy.reply_mode])
-                      : t("Not configured")}
-                </span>
-                {policy?.reply_mode === "auto" && (
-                  <small className={styles.factHint}>
-                    {t(automaticPlacementHint)}
-                  </small>
-                )}
-              </dd>
-            </div>
-            <div>
-              <dt>
-                {t(
-                  github
-                    ? "Configured repositories"
-                    : "Configured conversations",
-                )}
-              </dt>
-              <dd>
-                <Link className={styles.factLink} to={groups}>
-                  {summary.configured_target_count}
-                  <ArrowRightIcon aria-hidden="true" />
-                </Link>
-              </dd>
-            </div>
-          </dl>
-        </section>
-        {!github && (
-          <section>
-            <header className={styles.overviewCardHeader}>
-              <h2>
-                <BrainIcon aria-hidden="true" />
-                {t("Group memory")}
-              </h2>
-            </header>
-            <p>
-              {t(
-                account.memory
-                  ? "Bot-wide memory permissions. Each group can further restrict access and choose who can read its memory."
-                  : "Memory is not configured. Your bot can still participate in conversations.",
-              )}
-            </p>
-            {account.memory && (
-              <dl className={styles.overviewFacts}>
-                <div>
-                  <dt>{t("Refer to memory when answering")}</dt>
-                  <dd>
-                    <StatePill
-                      state={account.memory.use_memory ? "enabled" : "disabled"}
-                    />
-                  </dd>
-                </div>
-                <div>
-                  <dt>{t("Allow saving or deleting memory through chat")}</dt>
-                  <dd>
-                    <StatePill
-                      state={
-                        account.memory.save_on_request ? "enabled" : "disabled"
-                      }
-                    />
-                  </dd>
-                </div>
-              </dl>
-            )}
-            <footer className={styles.overviewCardFooter}>
-              <p>
-                {t(
-                  "Memory management is available to workspace administrators.",
-                )}
-              </p>
-              {admin && (
-                <Button
-                  variant="outline"
-                  render={<Link to={`${basePath}/bots/${account.id}/memory`} />}
-                >
-                  {t("Manage memory")}
-                  <ArrowRightIcon aria-hidden="true" />
-                </Button>
-              )}
-            </footer>
-          </section>
-        )}
-      </div>
-      {account.provider_config.event_transport === "websocket" && (
-        <div className={styles.eventConnection}>
-          <EventConnection account={account} />
-        </div>
+          </RailRow>
+          {account.memory && (
+            <>
+              <RailRow label={t("Referenced in answers")}>
+                <ReceptionPill enabled={!!account.memory.use_memory} />
+              </RailRow>
+              <RailRow label={t("Editable from chat")}>
+                <ReceptionPill enabled={!!account.memory.save_on_request} />
+              </RailRow>
+            </>
+          )}
+          {admin && (
+            <RailRow label={t("Manage")}>
+              <Link to={`${basePath}/bots/${account.id}/memory`}>
+                {t("Manage memory")}
+              </Link>
+            </RailRow>
+          )}
+        </RailSection>
       )}
-      {github && admin && <CallbackSetup account={account} />}
-      <BotChecks account={account} showAccountLink />
-      <div className={styles.overviewTest}>
-        <LatestBotTest account={account} />
-      </div>
     </>
+  );
+  return (
+    <DetailLayout rail={rail}>
+      {!!tasks.length && (
+        <Section
+          title={t("Complete setup")}
+          description={t(
+            "What is still missing before this bot can answer in its conversations.",
+          )}
+        >
+          <ListRows>
+            {tasks.map((task) => (
+              <ListRow
+                key={task.text}
+                icon={<CircleIcon size={14} aria-hidden="true" />}
+                name={t(task.text)}
+                actions={
+                  task.allowed && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      render={<Link to={task.href} />}
+                    >
+                      {t(task.label)}
+                    </Button>
+                  )
+                }
+              />
+            ))}
+          </ListRows>
+        </Section>
+      )}
+      <Section
+        title={t("Reception")}
+        description={t(
+          account.reception_scope === "configured_targets"
+            ? "Only configured conversations can trigger this bot."
+            : "All accessible conversations may trigger this bot.",
+        )}
+        actions={
+          admin && (
+            <Button size="sm" variant="outline" render={<Link to={settings} />}>
+              {t("Edit")}
+            </Button>
+          )
+        }
+      >
+        <SettingsSection>
+          <SettingsRow label={t("Default agent")}>{agentValue}</SettingsRow>
+          <SettingsRow label={t("When to respond")}>
+            {github
+              ? t(
+                  account.provider_config_version === "github_notifications_v1"
+                    ? "Notification updates"
+                    : "Selected GitHub events",
+                )
+              : policy
+                ? t(responseLabels[policy.interaction_mode])
+                : t("Not configured")}
+          </SettingsRow>
+          <SettingsRow
+            label={t("Reply placement")}
+            description={
+              policy?.reply_mode === "auto"
+                ? t(automaticPlacementHint)
+                : undefined
+            }
+          >
+            {github
+              ? t("Issue or PR comment")
+              : policy
+                ? t(placementLabels[policy.reply_mode])
+                : t("Not configured")}
+          </SettingsRow>
+          <SettingsRow
+            label={t(
+              github ? "Configured repositories" : "Configured conversations",
+            )}
+          >
+            <Link to={channels} className={styles.countLink}>
+              {summary.configured_target_count}
+              <ArrowRightIcon size={12} aria-hidden="true" />
+            </Link>
+          </SettingsRow>
+        </SettingsSection>
+      </Section>
+      {(account.provider_config.event_transport === "websocket" ||
+        (github && admin)) && <CallbackSetup account={account} />}
+      <BotChecks account={account} showAccountLink />
+      <LatestBotTest account={account} />
+    </DetailLayout>
   );
 }

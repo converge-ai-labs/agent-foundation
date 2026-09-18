@@ -1,4 +1,5 @@
 import { Button } from "a13n-ui";
+import { DownloadSimpleIcon } from "@phosphor-icons/react";
 import {
   queryOptions,
   useMutation,
@@ -6,13 +7,20 @@ import {
 } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { data, workspaceHeaders, type Schema } from "../../shared/api";
+import { data, workspaceHeaders } from "../../shared/api";
 import { downloadBlob } from "../../shared/download";
 import { ErrorToast } from "../../shared/feedback";
 
+/** Everything needed to reach one published package. */
+export interface RevisionRef {
+  id: string;
+  skill_id: string;
+  workspace_id: string;
+}
+
 export function archiveQuery(
   client: ReturnType<typeof useClient>,
-  revision: Schema["SkillRevision"],
+  revision: RevisionRef,
 ) {
   return queryOptions({
     queryKey: [
@@ -41,33 +49,42 @@ export function archiveQuery(
   });
 }
 
-export function DownloadRevision({
-  revision,
-  filename,
-}: {
-  revision: Schema["SkillRevision"];
-  filename: string;
-}) {
+/**
+ * The package bytes are already cached for the file browser, so a download
+ * reuses them instead of asking for the archive twice.
+ */
+export function useArchiveDownload(revision: RevisionRef, filename: string) {
   const client = useClient(),
-    cache = useQueryClient(),
-    { t } = useTranslation();
-  const download = useMutation({
+    cache = useQueryClient();
+  return useMutation({
     mutationFn: async () => {
       const bytes = await cache.fetchQuery(archiveQuery(client, revision));
       downloadBlob(new Blob([bytes], { type: "application/zip" }), filename);
     },
   });
+}
+
+export function DownloadRevision({
+  revision,
+  filename,
+}: {
+  revision: RevisionRef;
+  filename: string;
+}) {
+  const { t } = useTranslation();
+  const download = useArchiveDownload(revision, filename);
   return (
-    <div>
+    <>
       <Button
         size="sm"
-        variant="outline"
+        variant="ghost"
         loading={download.isPending}
         onClick={() => download.mutate()}
       >
+        <DownloadSimpleIcon size={14} aria-hidden="true" />
         {t("Download ZIP")}
       </Button>
       <ErrorToast error={download.error} />
-    </div>
+    </>
   );
 }

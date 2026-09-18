@@ -1,307 +1,342 @@
+/* Wizard shell ----------------------------------------------------------- */
 .layout {
   display: grid;
-  grid-template-columns: 210px minmax(0, 760px);
+  grid-template-columns: 220px minmax(0, 1fr);
   gap: 40px;
-  margin-top: 28px;
   align-items: start;
 }
-.steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: 8px;
+.content {
+  max-width: 640px;
+  min-width: 0;
 }
-.steps li {
+
+/* Step rail -------------------------------------------------------------- */
+.steps {
+  position: sticky;
+  top: 24px;
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 8px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  list-style: none;
+}
+.steps > li {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px;
+  padding: 8px 10px;
+  border-radius: var(--a13n-radius-row);
   color: var(--a13n-secondary);
   font-size: 13px;
-  border-radius: 8px;
 }
-.steps span {
-  width: 26px;
-  height: 26px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 50%;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-}
-.steps li[aria-current] {
+.steps > li[data-state="current"] {
+  background: var(--a13n-selected);
   color: var(--a13n-text);
-  background: var(--a13n-surface);
-}
-.steps li[aria-current] span {
-  border-color: currentColor;
-}
-.content {
-  min-width: 0;
-}
-.content h2 {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 16px;
-}
-.content h2:not(:first-child) {
-  margin-top: 32px;
-}
-.content p,
-.instructions {
-  font-size: 13px;
-  line-height: 1.75;
-  color: var(--a13n-secondary);
-  margin-bottom: 18px;
-}
-.content a {
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-.platforms {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 12px;
-  max-width: 600px;
-  margin: 16px 0;
-}
-.platforms button {
-  min-height: 64px;
-  gap: 12px;
-  justify-content: space-between;
-  font-size: 14px;
-}
-.instructions {
-  padding-left: 22px;
-}
-.instructions li {
-  margin: 10px 0;
-}
-.endpoint {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 8px;
-  margin: 16px 0;
-}
-.endpoint code {
-  overflow-wrap: anywhere;
-  font-size: 12px;
-  flex: 1;
-  min-width: 180px;
-}
-.manifest {
-  overflow: auto;
-  max-height: 280px;
-  font-size: 12px;
-  padding: 16px;
-  border: 1px solid var(--a13n-border);
-  margin-top: 12px;
-  border-radius: 8px;
-}
-.existing {
-  list-style: none;
-  padding: 0;
-}
-.existing li + li {
-  border-top: 1px solid var(--a13n-border);
-}
-.existing li a {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 14px 12px;
-  border-radius: 6px;
-  text-decoration: none;
-}
-.existing li a:hover {
-  background: var(--a13n-surface);
-}
-.existing li a:focus-visible {
-  outline: 2px solid var(--a13n-text);
-  outline-offset: 2px;
-}
-.existing strong,
-.existing small {
-  display: block;
-  overflow-wrap: anywhere;
-}
-.existing strong {
-  font-size: 14px;
   font-weight: 500;
 }
-.existing small {
-  margin-top: 4px;
-  font-size: 12px;
-  color: var(--a13n-secondary);
+.steps > li[data-state="done"] {
+  color: var(--a13n-text);
 }
-.existing svg {
-  flex-shrink: 0;
+.stepMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 8px;
+  background: var(--a13n-elevated);
   color: var(--a13n-secondary);
+  font-size: 11.5px;
+  font-variant-numeric: tabular-nums;
 }
-.accountModes {
+.steps > li[data-state="current"] .stepMark {
+  background: var(--a13n-text);
+  color: var(--a13n-canvas);
+}
+.steps > li[data-state="done"] .stepMark {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+
+/* Step panel ------------------------------------------------------------- */
+.step {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  width: 100%;
-  max-width: 480px;
+  gap: 20px;
+  min-width: 0;
 }
-.accountModes button {
-  min-height: 40px;
-  white-space: normal;
+.stepHeader h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.3;
 }
-.modeContent {
-  max-width: 600px;
-  padding-top: 16px;
+.stepHeader p {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
+.stepBody {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.stepFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+}
+.stepPrimary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Chosen platform and account -------------------------------------------- */
+.selectedPlatform,
 .account {
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  font-size: 13px;
+}
+.selectedPlatform strong,
+.account strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.account small {
+  display: block;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.account > a {
+  margin-left: auto;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+
+/* GitHub connection type ------------------------------------------------- */
+.githubModes {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.githubModes legend {
+  padding: 0 0 8px;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.githubModes label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+  cursor: pointer;
+}
+.githubModes label:hover {
+  background: var(--a13n-hover);
+}
+.githubModes label[data-checked="true"] {
+  background: var(--a13n-selected);
+}
+.githubModes input {
+  margin-top: 2px;
+  accent-color: var(--a13n-text);
+}
+.githubModes strong {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.githubModes small {
+  display: block;
+  margin-top: 2px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Instructions and helper copy ------------------------------------------- */
+.instructions {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 14px 16px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.instructions p,
+.instructions li {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.instructions ol {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding-left: 18px;
+}
+.instructions h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--a13n-text);
+}
+.instructions code {
+  font-size: 12px;
+}
+.newAccount {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
+.hint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* Pilot and test --------------------------------------------------------- */
+.pilotForm {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
 }
 .actions {
   display: flex;
-  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
-  margin-top: 24px;
 }
-.content blockquote {
-  border-left: 3px solid var(--a13n-border);
-  padding: 16px;
-  margin: 20px 0;
-  font-size: 14px;
-  line-height: 1.6;
+.prepareTest {
+  justify-self: start;
 }
-@media (max-width: 800px) {
+.picker {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.candidates {
+  display: grid;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  min-width: 0;
+}
+.candidates button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+  text-align: left;
+  font-size: 13px;
+  cursor: pointer;
+}
+.candidates button:hover {
+  background: var(--a13n-hover);
+}
+.candidates strong {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.candidates small {
+  display: block;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
   .layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;
   }
   .steps {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px;
+    position: static;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    overflow-x: auto;
   }
-  .steps li {
-    padding: 8px;
-  }
-  .steps li:not([aria-current]) strong {
-    display: none;
+  .steps > li {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 12px;
   }
 }
 
-.picker,
-.pilotForm {
-  display: grid;
-  gap: 16px;
-  margin-bottom: 24px;
-}
-.picker > button {
-  justify-self: start;
-}
-.candidates {
-  list-style: none;
-  padding: 0;
+/* Manifest template ------------------------------------------------------ */
+.manifest {
   max-height: 260px;
   overflow: auto;
-  margin: 12px 0;
-}
-.candidates button {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  gap: 16px;
-}
-.candidates code {
-  font-size: 11px;
-}
-.pilotForm p {
-  margin-bottom: 0;
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-elevated);
+  font-size: 11.5px;
+  line-height: 1.6;
 }
 
-.testStages {
+/* Existing accounts ------------------------------------------------------ */
+.existing {
   display: grid;
-  gap: 1rem;
-  margin-block: 1.5rem;
-  padding-left: 1.5rem;
-  list-style: decimal;
+  gap: 6px;
+  min-width: 0;
 }
-.testStages li > * {
-  width: fit-content;
-  max-width: 100%;
-  display: block;
-  margin-block: 0.35rem;
-  overflow-wrap: anywhere;
-}
-
-.testStages li > [data-slot="button"] {
-  display: inline-flex;
-}
-
-.prepareTest {
-  margin-bottom: 18px;
-}
-.testMessage {
-  overflow-wrap: anywhere;
-  padding: 16px;
-  margin-block: 16px;
-  border: 1px solid var(--a13n-border);
-  border-radius: 8px;
-  font-size: 13px;
-  line-height: 1.75;
-}
-
-.platforms button > span:not(:first-child) {
-  flex: 1;
-  text-align: left;
-}
-.selectedPlatform {
+.existing > a {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  max-width: 600px;
-  padding-bottom: 20px;
-  margin-bottom: 24px;
-  border-bottom: 1px solid var(--a13n-border);
-}
-.selectedPlatform strong {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 15px;
-}
-
-.githubModes {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
-  margin-bottom: 24px;
-}
-.githubModes button {
-  height: auto;
-  min-height: 88px;
-  align-items: flex-start;
-  flex-direction: column;
-  white-space: normal;
-  text-align: left;
-  padding: 16px;
-  gap: 8px;
-}
-.githubModes button[aria-pressed="true"] {
-  border-color: var(--a13n-text);
+  min-width: 0;
+  padding: 9px 12px;
+  border-radius: var(--a13n-radius-row);
   background: var(--a13n-surface);
+  color: var(--a13n-text);
+  text-decoration: none;
 }
-.githubModes button span {
-  font-size: 12px;
-  font-weight: 400;
+.existing > a:hover {
+  background: var(--a13n-hover);
+}
+.existingCopy {
+  display: grid;
+  gap: 1px;
+  flex: 1;
+  min-width: 0;
+}
+.existing strong {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.existing small {
   color: var(--a13n-secondary);
-  line-height: 1.5;
+  font-size: 12px;
 }
-@media (max-width: 600px) {
-  .githubModes {
-    grid-template-columns: 1fr;
-  }
+.existing svg {
+  color: var(--a13n-secondary);
+}
+.moreLink {
+  justify-self: start;
+  padding: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
 }

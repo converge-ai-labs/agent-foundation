@@ -1,19 +1,27 @@
 import { useState } from "react";
-import { Button } from "a13n-ui";
+import { ArrowClockwiseIcon, ChatsCircleIcon } from "@phosphor-icons/react";
+import { Button, MenuItem } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router";
+import { useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty } from "../../shared/collection";
+import {
+  CollectionFooter,
+  Empty,
+  Pagination,
+  ResourceIdentity,
+  ResourceTable,
+  useCursor,
+} from "../../shared/collection";
 import {
   ErrorNotice,
   Loading,
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
+import { Panel, Section } from "../../shared/page";
 import { AgentLink } from "../agents/link";
 import { runPath } from "../conversations/api";
 import styles from "./bots.module.css";
@@ -45,7 +53,8 @@ function ConversationList({
 }) {
   const client = useClient(),
     { workspace, basePath, can } = useWorkspace(),
-    { t } = useTranslation();
+    { t } = useTranslation(),
+    navigate = useNavigate();
   const page = useCursor();
   const [replyRun, setReplyRun] = useState<string>();
   const query = useQuery({
@@ -61,68 +70,57 @@ function ConversationList({
         })
         .then(data),
   });
+  const items =
+    query.data?.items.map((item) => ({ ...item, id: item.binding_id })) ?? [];
   return (
-    <section
-      className={styles.memorySection}
-      aria-label={t("Bot conversations")}
-    >
-      <div className={styles.memoryHeading}>
-        <div>
-          <h2>{t("Conversations")}</h2>
-          <p>
-            {t(
-              "Conversations started by this bot, within your existing history permissions.",
-            )}
-          </p>
-        </div>
+    <Section
+      title={t("Conversations")}
+      description={t(
+        "Conversations started by this bot, within your existing history permissions.",
+      )}
+      actions={
         <Button
-          variant="outline"
+          size="sm"
+          variant="ghost"
           disabled={query.isFetching}
           onClick={() => void query.refetch()}
         >
+          <ArrowClockwiseIcon aria-hidden="true" />
           {t("Refresh")}
         </Button>
-      </div>
+      }
+    >
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading variant="table" columns={4} />
-      ) : query.data?.items.length ? (
+      ) : items.length ? (
         <>
           <ResourceTable
-            items={query.data.items.map((item) => ({
-              ...item,
-              id: item.binding_id,
-            }))}
+            items={items}
+            caption={t("Conversations")}
+            onRowActivate={(item) => navigate(runPath(basePath, item))}
+            rowMenuLabel={t("Conversation actions")}
+            rowMenu={(item) =>
+              can("application_account.read") ? (
+                <MenuItem onClick={() => setReplyRun(item.run_id)}>
+                  {t("Inspect replies")}
+                </MenuItem>
+              ) : null
+            }
             columns={[
               {
                 label: t("Conversation"),
                 tone: "primary",
                 render: (item) => (
-                  <Link
-                    className={styles.historyIdentity}
-                    title={item.thread_id}
+                  <ResourceIdentity
                     to={runPath(basePath, item)}
-                  >
-                    {item.thread_id}
-                  </Link>
+                    name={item.thread_id}
+                    description={t("Thread")}
+                    icon={<ChatsCircleIcon aria-hidden="true" size={16} />}
+                    resourceId={item.run_id}
+                  />
                 ),
               },
-              ...(can("application_account.read")
-                ? [
-                    {
-                      label: t("Replies"),
-                      render: (item: { run_id: string }) => (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setReplyRun(item.run_id)}
-                        >
-                          {t("Inspect replies")}
-                        </Button>
-                      ),
-                    },
-                  ]
-                : []),
               {
                 label: t("Agent"),
                 render: (item) => <AgentLink agentId={item.agent_id} />,
@@ -133,15 +131,25 @@ function ConversationList({
               },
               {
                 label: t("Updated"),
-                render: (item) => <Timestamp value={item.updated_at} />,
+                tone: "muted",
+                render: (item) => (
+                  <Timestamp value={item.updated_at} relative />
+                ),
               },
             ]}
           />
-          <Pagination page={page} next={query.data.next_cursor} />
+          <CollectionFooter
+            count={t("{{count}} conversations on this page", {
+              count: items.length,
+            })}
+          >
+            <Pagination page={page} next={query.data?.next_cursor} />
+          </CollectionFooter>
         </>
       ) : (
         !query.error && (
           <Empty
+            icon={<ChatsCircleIcon aria-hidden="true" />}
             title={t("No visible bot conversations")}
             description={t(
               "Accepted conversations appear here when you have permission to view their sessions, threads, and runs.",
@@ -149,19 +157,18 @@ function ConversationList({
           />
         )
       )}
-      {replyRun && (
-        <>
-          <Button variant="ghost" onClick={() => setReplyRun(undefined)}>
-            {t("Close reply observations")}
-          </Button>
-          <BotReplies accountId={accountId} runId={replyRun} />
-        </>
-      )}
-      <p className={styles.historyNote}>
+      <p className={styles.hint}>
         {t(
           "Run status describes agent execution. It does not confirm that a reply was delivered to the platform.",
         )}
       </p>
-    </section>
+      <Panel
+        open={!!replyRun}
+        title={t("Platform reply observations")}
+        onClose={() => setReplyRun(undefined)}
+      >
+        {replyRun && <BotReplies accountId={accountId} runId={replyRun} />}
+      </Panel>
+    </Section>
   );
 }

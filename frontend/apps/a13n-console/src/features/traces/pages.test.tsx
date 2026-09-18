@@ -308,17 +308,17 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
     labels.findIndex((label) => label?.startsWith("child")),
   );
   await user.click(screen.getByRole("button", { name: /^child/ }));
-  const dialog = await screen.findByRole("dialog");
-  await user.click(within(dialog).getByRole("tab", { name: "Metadata" }));
-  expect(within(dialog).getByText("Diagnostic reason")).toBeTruthy();
-  expect(within(dialog).getByText("Requested model")).toBeTruthy();
-  expect(within(dialog).getByText("model-alias")).toBeTruthy();
-  expect(within(dialog).getByText("model-version")).toBeTruthy();
-  expect(within(dialog).getByText("Error")).toBeTruthy();
-  expect(within(dialog).getByText("Telemetry status")).toBeTruthy();
-  expect(within(dialog).getAllByText("-").length).toBeGreaterThan(0);
+  const panel = within(await screen.findByRole("complementary"));
+  await user.click(panel.getByRole("tab", { name: "Metadata" }));
+  expect(panel.getByText("Diagnostic reason")).toBeTruthy();
+  expect(panel.getByText("Requested model")).toBeTruthy();
+  expect(panel.getByText("model-alias")).toBeTruthy();
+  expect(panel.getByText("model-version")).toBeTruthy();
+  expect(panel.getByText("Error")).toBeTruthy();
+  expect(panel.getByText("Telemetry status")).toBeTruthy();
+  expect(panel.getAllByText("-").length).toBeGreaterThan(0);
   expect(
-    within(dialog).getByRole("button", { name: "Resource attributes" }),
+    panel.getByRole("button", { name: "Resource attributes" }),
   ).toBeTruthy();
 });
 
@@ -429,7 +429,7 @@ it("shows a loaded cost subtotal until pagination succeeds, without counting the
   expect(screen.getByText("$0.35")).toBeTruthy();
 });
 
-it("shows full root previews, seconds, normalized levels and paginated aggregate cost in the list", async () => {
+it("shows seconds, normalized levels and paginated aggregate cost in the list", async () => {
   const root = {
     ...observation("root"),
     level: "default",
@@ -463,16 +463,14 @@ it("shows full root previews, seconds, normalized levels and paginated aggregate
   });
   mount(<TracesPage />);
   await screen.findByText("$0.35");
-  expect(screen.getByText("Input preview")).toBeTruthy();
-  expect(screen.getByText("Output preview")).toBeTruthy();
   expect(screen.getByText("2.5 s")).toBeTruthy();
   expect(screen.getByText("Info")).toBeTruthy();
   expect(
     screen.getAllByRole("columnheader").map((cell) => cell.textContent?.trim()),
-  ).toEqual(["Trace", "Started", "Duration", "Cost", "Input", "Output"]);
+  ).toEqual(["Trace", "Run", "Level", "Duration", "Cost", "Started"]);
   expect(
-    screen.getByRole("link", { name: "Input preview" }).getAttribute("href"),
-  ).toContain("?tab=content");
+    screen.getByRole("link", { name: "run" }).getAttribute("href"),
+  ).toContain("/sessions/session/threads/thread/runs/run");
   expect(screen.queryByText("Root status")).toBeNull();
   expect(screen.queryByText("Severity")).toBeNull();
   expect(screen.queryByText(/USD|Unavailable/)).toBeNull();
@@ -480,7 +478,7 @@ it("shows full root previews, seconds, normalized levels and paginated aggregate
     "/api/v1/workspaces/{workspace}/traces",
     expect.objectContaining({
       params: expect.objectContaining({
-        query: expect.objectContaining({ view: "full", limit: 25 }),
+        query: expect.objectContaining({ view: "compact", limit: 25 }),
       }),
     }),
   );
@@ -504,20 +502,20 @@ it("does not expose root-only or partial list costs when a later page fails or r
     return response({ items: [root], next_cursor: "next" });
   });
   const cache = mount(<TracesPage />);
-  await screen.findByRole("columnheader", { name: "Input" });
+  await screen.findByRole("columnheader", { name: "Trace" });
   await waitFor(() => expect(cache.isFetching()).toBe(0));
   expect(screen.queryByText("$9")).toBeNull();
   for (const row of screen.getAllByRole("row").slice(1)) {
     const cells = within(row).getAllByRole("cell");
-    expect(cells[2].textContent).toBe("-");
     expect(cells[3].textContent).toBe("-");
+    expect(cells[4].textContent).toBe("-");
   }
   expect(
     http.GET.mock.calls.filter(([path]) => path.endsWith("observations")),
   ).toHaveLength(4);
 });
 
-it("hides list previews after a cost read reports revoked access", async () => {
+it("hides the list after a cost read reports revoked access", async () => {
   http.GET.mockImplementation(async (path) => {
     if (path.endsWith("trace-query")) return response(descriptor);
     if (path.endsWith("observations"))
@@ -573,7 +571,7 @@ it("caps advancing cost pagination without exposing a partial total", async () =
   await waitFor(() => expect(cache.isFetching()).toBe(0));
   expect(reads).toBe(20);
   expect(
-    within(screen.getAllByRole("row")[1]).getAllByRole("cell")[3].textContent,
+    within(screen.getAllByRole("row")[1]).getAllByRole("cell")[4].textContent,
   ).toBe("-");
 });
 
@@ -595,9 +593,9 @@ it("uses seconds in the detail overview, timeline and observation dialog", async
   ).toBeTruthy();
   expect(screen.queryByText("Root status")).toBeNull();
   await user.click(screen.getByRole("button", { name: /^root/ }));
-  const dialog = await screen.findByRole("dialog");
-  expect(within(dialog).getByText("2.5 s")).toBeTruthy();
-  expect(within(dialog).queryByText(/\d ms\b/)).toBeNull();
+  const panel = within(await screen.findByRole("complementary"));
+  expect(panel.getByText("2.5 s")).toBeTruthy();
+  expect(panel.queryByText(/\d ms\b/)).toBeNull();
 });
 
 it("immediately hides revoked content without waiting for unrelated cost reads or starting more pages", async () => {
@@ -683,7 +681,7 @@ it("sorts aggregate costs rather than root costs and keeps the order after pagin
   ).toBe("ascending");
 });
 
-it("opens the root content tab from preview links without substituting child output", async () => {
+it("opens the root content tab without substituting child output", async () => {
   const user = userEvent.setup();
   http.GET.mockImplementation(async (path) =>
     response(
@@ -713,13 +711,13 @@ it("opens the root content tab from preview links without substituting child out
   await screen.findByText("Root input");
   expect(
     screen
-      .getByRole("tab", { name: "Input and output" })
+      .getByRole("tab", { name: "Input & output" })
       .getAttribute("aria-selected"),
   ).toBe("true");
   expect(screen.queryByText("Child only output")).toBeNull();
   await user.click(screen.getByRole("tab", { name: "Observations" }));
   await user.click(await screen.findByRole("button", { name: /^child/ }));
-  const childDialog = within(await screen.findByRole("dialog"));
-  await user.click(childDialog.getByRole("tab", { name: "Output" }));
-  expect(childDialog.getByText("Child only output")).toBeTruthy();
+  const childPanel = within(await screen.findByRole("complementary"));
+  await user.click(childPanel.getByRole("tab", { name: "Output" }));
+  expect(childPanel.getByText("Child only output")).toBeTruthy();
 });

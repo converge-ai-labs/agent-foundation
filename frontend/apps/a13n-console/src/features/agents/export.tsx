@@ -15,36 +15,33 @@ import { downloadBlob } from "../../shared/download";
 import { ErrorToast } from "../../shared/feedback";
 import { agentFile, serializeAgentFile, type AgentFile } from "./transfer";
 import type { AgentConfig } from "./configuration";
+import styles from "./agents.module.css";
 
 export function AgentFilePreview({ file }: { file: AgentFile }) {
   const { t } = useTranslation();
   const yaml = serializeAgentFile(file);
   return (
-    <Tabs defaultValue="rendered" className="min-w-0">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <TabsList aria-label={t("Agent config")}>
+    <Tabs defaultValue="rendered" className={styles.preview}>
+      <div className={styles.previewToolbar}>
+        <TabsList size="sm" aria-label={t("Agent config")}>
           <TabsTab value="rendered">{t("Rendered")}</TabsTab>
           <TabsTab value="raw">{t("Raw")}</TabsTab>
         </TabsList>
         <CopyButton value={yaml} copyLabel={t("Copy YAML")} />
       </div>
-      <TabsPanel value="rendered" className="space-y-5">
-        <div>
-          <h3 className="break-words text-base font-semibold">{file.name}</h3>
-          {file.description && (
-            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-muted-foreground">
-              {file.description}
-            </p>
-          )}
+      <TabsPanel value="rendered" className={styles.previewBody}>
+        <div className={styles.previewIdentity}>
+          <h3>{file.name}</h3>
+          {file.description && <p>{file.description}</p>}
         </div>
-        <dl className="grid grid-cols-2 gap-4 text-sm">
+        <dl className={styles.previewFacts}>
           <div>
-            <dt className="text-muted-foreground">{t("Model")}</dt>
-            <dd className="mt-1 break-all">{file.config.model.model_key}</dd>
+            <dt>{t("Model")}</dt>
+            <dd>{file.config.model.model_key}</dd>
           </div>
           <div>
-            <dt className="text-muted-foreground">{t("Capabilities")}</dt>
-            <dd className="mt-1">
+            <dt>{t("Capabilities")}</dt>
+            <dd>
               {t("{{skills}} skills · {{connections}} connections", {
                 skills: file.config.skills?.length ?? 0,
                 connections: file.config.connection_tools?.length ?? 0,
@@ -52,15 +49,11 @@ export function AgentFilePreview({ file }: { file: AgentFile }) {
             </dd>
           </div>
         </dl>
-        <div>
-          <h4 className="mb-2 text-sm text-muted-foreground">
-            {t("Instructions")}
-          </h4>
-          <p className="max-h-64 overflow-auto whitespace-pre-wrap break-words text-sm a13n-scrollbar">
-            {file.config.instructions || "—"}
-          </p>
+        <div className={styles.previewInstructions}>
+          <h4>{t("Instructions")}</h4>
+          <p className="a13n-scrollbar">{file.config.instructions || "—"}</p>
         </div>
-        <p className="text-xs text-muted-foreground">
+        <p className={styles.previewNote}>
           {t(
             "Raw YAML includes the complete configuration and dependency references.",
           )}
@@ -69,7 +62,7 @@ export function AgentFilePreview({ file }: { file: AgentFile }) {
       <TabsPanel value="raw" className="min-w-0">
         <pre
           aria-label={t("Agent YAML")}
-          className="max-h-96 overflow-auto rounded-lg border bg-muted/30 p-4 text-xs leading-6 a13n-scrollbar"
+          className={`${styles.rawYaml} a13n-scrollbar`}
         >
           <code>{yaml}</code>
         </pre>
@@ -112,11 +105,12 @@ export function ExportAgent({
       closeLabel={t("Close")}
       size="lg"
       footer={
-        <div className="flex justify-end gap-3">
+        <div className={styles.exportActions}>
           <Button variant="ghost" onClick={() => setOpen(false)}>
             {t("Close")}
           </Button>
           <Button
+            variant="outline"
             onClick={() => {
               try {
                 downloadBlob(
@@ -137,8 +131,8 @@ export function ExportAgent({
         </div>
       }
     >
-      <div className="space-y-5">
-        <p className="text-xs text-muted-foreground">
+      <div className={styles.exportBody}>
+        <p className={styles.previewNote}>
           {t(
             "Saved version {{version}} · Credentials and dependent resources are not included.",
             { version },

@@ -1,4 +1,4 @@
-import { Button, DisclosureSection } from "a13n-ui";
+import { Button, DisclosureSection, Tabs, TabsList, TabsTab } from "a13n-ui";
 import { diffLines } from "diff";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -117,24 +117,16 @@ function ChangeView({ change }: { change: Change }) {
       </div>
       <div className={styles.toolbar}>
         <span>{t("Changes")}</span>
-        <div className={styles.viewSwitch}>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-pressed={!split}
-            onClick={() => setSplit(false)}
-          >
-            {t("Unified diff")}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-pressed={split}
-            onClick={() => setSplit(true)}
-          >
-            {t("Side-by-side diff")}
-          </Button>
-        </div>
+        <Tabs
+          value={split ? "split" : "unified"}
+          onValueChange={(value) => setSplit(value === "split")}
+          className={styles.viewSwitch}
+        >
+          <TabsList size="sm" aria-label={t("Comparison layout")}>
+            <TabsTab value="unified">{t("Unified diff")}</TabsTab>
+            <TabsTab value="split">{t("Side-by-side diff")}</TabsTab>
+          </TabsList>
+        </Tabs>
         {hasHidden && (
           <Button
             size="sm"

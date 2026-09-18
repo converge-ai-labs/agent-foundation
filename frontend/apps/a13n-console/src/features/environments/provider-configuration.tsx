@@ -1,12 +1,21 @@
-import { Button, DisclosureSection, Tabs, TabsList, TabsTab } from "a13n-ui";
+import {
+  Button,
+  DisclosureSection,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "a13n-ui";
 import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { TextAreaField } from "../../shared/forms";
 import type { Schema } from "../../shared/api";
-import { SchemaFields } from "../../shared/forms";
-import styles from "../../shared/shared.module.css";
-import { jsonObject } from "../../shared/forms";
+import { StatePill } from "../../shared/feedback";
+import { jsonObject, SchemaFields, TextAreaField } from "../../shared/forms";
+import styles from "./environments.module.css";
 
+/**
+ * The provider-specific part of a template revision. Ordinary fields lead;
+ * the JSON escape hatch is one toggle away; mounts and rare settings stay in
+ * disclosures.
+ */
 export function ProviderConfiguration({
   schema,
   text,
@@ -58,17 +67,30 @@ export function ProviderConfiguration({
   }
   const change = (next: Record<string, unknown>) =>
     onChange(JSON.stringify(next, null, 2));
-  const jsonMode = mode === "json" || !schema || !value;
+  const fieldsAvailable = !!schema && !!value;
+  const jsonMode = mode === "json" || !fieldsAvailable;
   return (
-    <div className={styles.stack}>
-      <Tabs value={jsonMode ? "json" : "fields"} onValueChange={setMode}>
-        <TabsList aria-label={t("Environment configuration editor")}>
-          <TabsTab value="fields" disabled={!schema || !value}>
+    <div className="grid min-w-0 gap-4">
+      <div className={styles.groupHeader}>
+        <div className="min-w-0">
+          <h4>{t("Configuration")}</h4>
+        </div>
+        <ToggleGroup
+          className={styles.segmented}
+          variant="outline"
+          size="sm"
+          value={[jsonMode ? "json" : "fields"]}
+          onValueChange={(next) => {
+            if (next[0]) setMode(next[0]);
+          }}
+          aria-label={t("Configuration editor")}
+        >
+          <ToggleGroupItem value="fields" disabled={!fieldsAvailable}>
             {t("Fields")}
-          </TabsTab>
-          <TabsTab value="json">JSON</TabsTab>
-        </TabsList>
-      </Tabs>
+          </ToggleGroupItem>
+          <ToggleGroupItem value="json">JSON</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
       {jsonMode || !value ? (
         <TextAreaField
           readOnly={readOnly}
@@ -82,7 +104,7 @@ export function ProviderConfiguration({
       ) : (
         <Fragment key={reset}>
           {image.length > 0 && (
-            <div className={styles.stack}>
+            <div className="grid min-w-0 gap-3">
               <fieldset disabled={readOnly}>
                 <SchemaFields
                   schema={{ ...schema, properties: Object.fromEntries(image) }}
@@ -90,27 +112,22 @@ export function ProviderConfiguration({
                   onChange={change}
                 />
               </fieldset>
-              <Button
-                type="button"
-                size="sm"
-                disabled={imageTest?.pending}
-                onClick={imageTest?.run}
-              >
-                {imageTest?.pending ? t("Testing image…") : t("Test image")}
-              </Button>
-              {imageTest?.result && (
-                <p role="status">
-                  {imageTest.result.error
-                    ? imageTest.result.error
-                    : t("Image {{id}} passed: {{checks}}", {
-                        id: imageTest.result.image_id,
-                        checks: imageTest.result.checks?.join(", "),
-                      })}
-                </p>
-              )}
-              {imageTest?.error && (
-                <p role="alert">{imageTest.error.message}</p>
-              )}
+              <div className={styles.testRow}>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  loading={imageTest?.pending}
+                  onClick={imageTest?.run}
+                >
+                  {t("Test image")}
+                </Button>
+                <ImageTestResult
+                  pending={imageTest?.pending}
+                  result={imageTest?.result}
+                  error={imageTest?.error}
+                />
+              </div>
             </div>
           )}
           <fieldset disabled={readOnly}>
@@ -148,22 +165,77 @@ export function ProviderConfiguration({
               </fieldset>
             </DisclosureSection>
           )}
-          {error && <p role="alert">{error}</p>}
+          {error && (
+            <p role="alert" className="text-destructive-foreground text-xs">
+              {error}
+            </p>
+          )}
         </Fragment>
       )}
       {!readOnly && (
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          onClick={() => {
-            onChange("{}");
-            setReset((value) => value + 1);
-          }}
-        >
-          {t("Reset to defaults")}
-        </Button>
+        <div>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              onChange("{}");
+              setReset((value) => value + 1);
+            }}
+          >
+            {t("Reset to defaults")}
+          </Button>
+        </div>
       )}
     </div>
+  );
+}
+
+/** The image test reports as a pill plus the detail the Worker returned. */
+function ImageTestResult({
+  pending,
+  result,
+  error,
+}: {
+  pending?: boolean;
+  result?: Schema["ImageTestResponse"];
+  error?: Error | null;
+}) {
+  const { t } = useTranslation();
+  if (pending)
+    return (
+      <p className={styles.testResult} role="status">
+        {t("Testing image…")}
+      </p>
+    );
+  if (error)
+    return (
+      <>
+        <StatePill state="failed" />
+        <p className={styles.testResult} role="alert">
+          {error.message}
+        </p>
+      </>
+    );
+  if (!result) return null;
+  if (result.error)
+    return (
+      <>
+        <StatePill state="failed" />
+        <p className={styles.testResult} role="status">
+          {result.error}
+        </p>
+      </>
+    );
+  return (
+    <>
+      <StatePill state="succeeded" />
+      <p className={styles.testResult} role="status">
+        {t("Image {{id}} passed: {{checks}}", {
+          id: result.image_id,
+          checks: result.checks?.join(", "),
+        })}
+      </p>
+    </>
   );
 }

@@ -23,6 +23,8 @@ import {
 } from "a13n-ui";
 import {
   CaretDownIcon,
+  GearSixIcon,
+  type Icon as PhosphorIcon,
   ListIcon,
   SidebarSimpleIcon,
   XIcon,
@@ -34,8 +36,9 @@ import { Loading } from "../shared/feedback";
 import { routeSkeleton } from "./navigation";
 import { AccountMenu } from "./account-menu";
 import { navigationGroups } from "./navigation";
+import { usePageTitle } from "./page-title";
 import { useMemoryProviders } from "../features/memory/availability";
-import { useWorkspace } from "./workspace";
+import { useAccess, useWorkspace } from "./workspace";
 import { WorkspaceMenu } from "./workspace-menu";
 const SIDEBAR_STATE_KEY = "a13n-console-sidebar";
 function PageOutlet() {
@@ -64,6 +67,8 @@ function PageOutlet() {
 }
 export function Shell() {
   const location = useLocation();
+  const { workspace } = useAccess();
+  usePageTitle(workspace?.name);
   const [collapsed, setCollapsed] = useState(() => {
     try {
       return localStorage.getItem(SIDEBAR_STATE_KEY) === "collapsed";
@@ -81,8 +86,8 @@ export function Shell() {
   };
   const contextual =
     /^\/[^/]+\/[^/]+\/settings(\/|$)/.test(location.pathname) ||
-    location.pathname === "/settings/profile" ||
-    location.pathname === "/organization/settings";
+    /^\/settings(\/|$)/.test(location.pathname) ||
+    /^\/organization\/settings(\/|$)/.test(location.pathname);
   if (contextual)
     return (
       <div className="min-h-svh bg-background">
@@ -196,41 +201,15 @@ function WorkspaceNavigation({
                       pathname.startsWith(`${destination(path)}/`);
                     return (
                       <SidebarMenuItem key={path}>
-                        {rail ? (
-                          <Tooltip>
-                            <TooltipTrigger
-                              render={
-                                <SidebarMenuButton
-                                  isActive={active}
-                                  className="justify-center"
-                                  render={
-                                    <NavLink
-                                      to={destination(path)}
-                                      onClick={close}
-                                    />
-                                  }
-                                />
-                              }
-                            >
-                              <Icon weight={active ? "duotone" : "regular"} />
-                              <span className="sr-only">{t(label)}</span>
-                            </TooltipTrigger>
-                            <TooltipPopup side="right">{t(label)}</TooltipPopup>
-                          </Tooltip>
-                        ) : (
-                          <SidebarMenuButton
-                            isActive={active}
-                            render={
-                              <NavLink to={destination(path)} onClick={close} />
-                            }
-                          >
-                            <Icon weight={active ? "duotone" : "regular"} />
-                            <span>{t(label)}</span>
-                            {children && (
-                              <CaretDownIcon className="ml-auto size-3" />
-                            )}
-                          </SidebarMenuButton>
-                        )}
+                        <NavigationRow
+                          to={destination(path)}
+                          label={t(label)}
+                          icon={Icon}
+                          active={active}
+                          rail={rail}
+                          expandable={!!children}
+                          onNavigate={close}
+                        />
                         {!rail && children && active && (
                           <SidebarMenuSub className="mt-0.5 gap-0.5 border-0 py-0">
                             {children.map(([childPath, childLabel]) => (
@@ -260,6 +239,18 @@ function WorkspaceNavigation({
           </nav>
         </SidebarContent>
         <SidebarFooter>
+          <SidebarMenu>
+            <SidebarMenuItem>
+              <NavigationRow
+                to={destination("settings")}
+                label={t("Settings")}
+                icon={GearSixIcon}
+                active={pathname.startsWith(destination("settings"))}
+                rail={rail}
+                onNavigate={close}
+              />
+            </SidebarMenuItem>
+          </SidebarMenu>
           <AccountMenu onNavigate={close} compact={rail} />
         </SidebarFooter>
       </Sidebar>
@@ -278,5 +269,53 @@ function WorkspaceNavigation({
         <PageOutlet />
       </SidebarInset>
     </>
+  );
+}
+
+/** One navigation row: a tooltip-only icon in the rail, icon and label when open. */
+function NavigationRow({
+  to,
+  label,
+  icon: Icon,
+  active,
+  rail,
+  expandable = false,
+  onNavigate,
+}: {
+  to: string;
+  label: string;
+  icon: PhosphorIcon;
+  active: boolean;
+  rail: boolean;
+  expandable?: boolean;
+  onNavigate: () => void;
+}) {
+  if (rail)
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <SidebarMenuButton
+              isActive={active}
+              className="justify-center"
+              render={<NavLink to={to} onClick={onNavigate} />}
+            />
+          }
+        >
+          <Icon weight={active ? "duotone" : "regular"} />
+          <span className="sr-only">{label}</span>
+        </TooltipTrigger>
+        <TooltipPopup side="right">{label}</TooltipPopup>
+      </Tooltip>
+    );
+  return (
+    <SidebarMenuButton
+      isActive={active}
+      render={<NavLink to={to} onClick={onNavigate} />}
+    >
+      <Icon weight={active ? "duotone" : "regular"} />
+      <span>{label}</span>
+      {expandable && <CaretDownIcon className="ml-auto size-3" />}
+    </SidebarMenuButton>
   );
 }

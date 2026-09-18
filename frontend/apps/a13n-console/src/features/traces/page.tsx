@@ -1,7 +1,6 @@
 import {
   BrandIcon,
   Button,
-  FormField,
   Input,
   Popover,
   PopoverPopup,
@@ -23,14 +22,20 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { Pagination, useCursor } from "../../shared/collection";
-import { Empty } from "../../shared/collection";
-import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import {
+  CollectionFooter,
+  Empty,
+  Pagination,
+  Toolbar,
+  useCursor,
+} from "../../shared/collection";
+import { ErrorNotice, Loading } from "../../shared/feedback";
 import { Page } from "../../shared/page";
 import { TraceTable } from "./list-table";
 import type { ObservationSort } from "./sorting";
 import { useListCosts } from "./list-cost";
-import traceStyles from "./traces.module.css";
+import styles from "./traces.module.css";
+
 function localTime(date: Date) {
   if (!Number.isFinite(date.getTime())) date = new Date();
   return formatLocalDateTime(date);
@@ -160,12 +165,13 @@ function TraceBrowser({
     }, 350);
     return () => clearTimeout(timer);
   }, [from, to, idQuery, appliedMetadata]);
+  const filtered = idQuery !== "" || appliedMetadata.length > 0;
   return (
     <Page
       title={t("Traces")}
       titleAction={
         <span
-          className={traceStyles.providerChip}
+          className={styles.providerChip}
           title={
             descriptor.history_from
               ? `${t("Queryable since")} ${new Date(descriptor.history_from).toLocaleDateString(i18n.resolvedLanguage, { dateStyle: "medium" })}`
@@ -179,46 +185,41 @@ function TraceBrowser({
       description={t(
         "Inspect attempt telemetry, model calls, and tool execution.",
       )}
-    >
-      <div
-        className={`${traceStyles.filterForm} flex flex-wrap items-center gap-2`}
-      >
-        <FormField
-          label={t("Search by ID")}
-          hideLabel
-          className="w-full min-w-0 sm:w-80"
-        >
-          <Input
-            type="search"
-            placeholder={t("Session, thread, or run ID…")}
-            value={idQuery}
-            onChange={(event) => setIdQuery(event.target.value)}
-            maxLength={128}
-          />
-        </FormField>
-        <TimeRangeFilter
-          from={from}
-          to={to}
-          historyFrom={descriptor.history_from}
-          onChange={(nextFrom, nextTo) => {
-            setFrom(nextFrom);
-            setTo(nextTo);
-          }}
+      toolbar={
+        <Toolbar
+          search={idQuery}
+          onSearchChange={setIdQuery}
+          searchLabel={t("Search by ID")}
+          filters={
+            <>
+              <TimeRangeFilter
+                from={from}
+                to={to}
+                historyFrom={descriptor.history_from}
+                onChange={(nextFrom, nextTo) => {
+                  setFrom(nextFrom);
+                  setTo(nextTo);
+                }}
+              />
+              <MetadataFilter rows={metadataRows} onChange={setMetadataRows} />
+              {filtered && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setIdQuery("");
+                    setMetadataRows([]);
+                  }}
+                >
+                  {t("Clear")}
+                </Button>
+              )}
+            </>
+          }
         />
-        <MetadataFilter rows={metadataRows} onChange={setMetadataRows} />
-        {(idQuery || appliedMetadata.length > 0) && (
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setIdQuery("");
-              setMetadataRows([]);
-            }}
-          >
-            {t("Clear filters")}
-          </Button>
-        )}
-      </div>
+      }
+    >
       <ErrorNotice error={error} />
       <TraceList filters={filters} page={page} />
     </Page>
@@ -271,6 +272,22 @@ function TimeRangeFilter({
           committedEnd.getTime() - committedStart.getTime() - days * 86_400_000,
         ) < 60_000,
     );
+  const draftPreset =
+    startDate &&
+    endDate &&
+    ([1, 7, 30] as const).find(
+      (days) =>
+        Math.abs(endDate.getTime() - startDate.getTime() - days * 86_400_000) <
+        60_000,
+    );
+  const presetLabel = (days: number) =>
+    t(
+      days === 1
+        ? "Last 24 hours"
+        : days === 7
+          ? "Last 7 days"
+          : "Last 30 days",
+    );
   return (
     <Popover
       open={open}
@@ -282,64 +299,56 @@ function TimeRangeFilter({
         setOpen(value);
       }}
     >
-      <PopoverTrigger render={<Button variant="outline" type="button" />}>
-        <span className="text-muted-foreground">{t("Time range")}</span>
+      <PopoverTrigger
+        render={<Button variant="outline" size="sm" type="button" />}
+      >
+        <span className={styles.chipLabel}>{t("Time range")}</span>
         {committedStart && committedEnd && (
           <span>
             {preset
-              ? t(
-                  preset === 1
-                    ? "Last 24 hours"
-                    : preset === 7
-                      ? "Last 7 days"
-                      : "Last 30 days",
-                )
+              ? presetLabel(preset)
               : `${fmt.format(committedStart)} – ${fmt.format(committedEnd)}`}
           </span>
         )}
-        <CaretDownIcon />
+        <CaretDownIcon aria-hidden="true" />
       </PopoverTrigger>
       <PopoverPopup
         aria-label={t("Time range")}
         align="start"
-        className="w-[22rem] max-w-[calc(100vw-2rem)]"
+        className={styles.filterPopup}
       >
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3">
-            <p className="text-sm font-medium">{t("Time range")}</p>
-            <div className="grid grid-cols-3 gap-1 rounded-lg bg-muted/60 p-1">
-              {[1, 7, 30].map((days) => (
-                <Button
-                  key={days}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="font-normal"
-                  aria-label={t(
-                    days === 1
-                      ? "Last 24 hours"
-                      : days === 7
-                        ? "Last 7 days"
-                        : "Last 30 days",
-                  )}
-                  onClick={() => {
-                    const now = new Date();
-                    setStart(
-                      formatLocalDateTime(
-                        new Date(now.getTime() - days * 86400000),
-                      ),
-                    );
-                    setEnd(formatLocalDateTime(now));
-                  }}
-                >
-                  {t(
-                    days === 1 ? "24 hours" : days === 7 ? "7 days" : "30 days",
-                  )}
-                </Button>
-              ))}
-            </div>
+        <div className={styles.filterPopover}>
+          <div>
+            <p className={styles.popoverTitle}>{t("Time range")}</p>
+            <p className={styles.popoverHint}>
+              {t("Traces are queried over the range you apply.")}
+            </p>
           </div>
-          <div className="flex flex-col gap-4 [&_[data-slot=field-label]]:text-xs [&_[data-slot=field-label]]:text-muted-foreground">
+          <div className={styles.presets}>
+            {[1, 7, 30].map((days) => (
+              <Button
+                key={days}
+                type="button"
+                variant="ghost"
+                size="sm"
+                aria-label={presetLabel(days)}
+                aria-pressed={draftPreset === days}
+                data-active={draftPreset === days || undefined}
+                onClick={() => {
+                  const now = new Date();
+                  setStart(
+                    formatLocalDateTime(
+                      new Date(now.getTime() - days * 86400000),
+                    ),
+                  );
+                  setEnd(formatLocalDateTime(now));
+                }}
+              >
+                {t(days === 1 ? "24 hours" : days === 7 ? "7 days" : "30 days")}
+              </Button>
+            ))}
+          </div>
+          <div className={styles.rangeFields}>
             <DateTimeField
               label={t("Start time")}
               value={start}
@@ -352,14 +361,12 @@ function TimeRangeFilter({
             />
           </div>
           {invalid && (
-            <p role="alert" className="text-sm text-destructive">
+            <p role="alert" className={styles.popoverError}>
               {t("Choose a valid time range of up to 31 days.")}
             </p>
           )}
-          <div className="flex items-center justify-between gap-2 border-t pt-3">
-            <span className="text-xs text-muted-foreground">
-              {Intl.DateTimeFormat().resolvedOptions().timeZone}
-            </span>
+          <div className={styles.popoverFooter}>
+            <span>{Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
             <Button
               size="sm"
               type="button"
@@ -405,68 +412,72 @@ function MetadataFilter({
         setOpen(value);
       }}
     >
-      <PopoverTrigger render={<Button variant="outline" type="button" />}>
-        <span className="text-muted-foreground">{t("Metadata")}</span>
+      <PopoverTrigger
+        render={<Button variant="outline" size="sm" type="button" />}
+      >
+        <span className={styles.chipLabel}>{t("Metadata")}</span>
         {active > 0 && <span>{active}</span>}
-        <CaretDownIcon />
+        <CaretDownIcon aria-hidden="true" />
       </PopoverTrigger>
       <PopoverPopup
         aria-label={t("Metadata")}
         align="start"
-        className="w-[24rem] max-w-[calc(100vw-2rem)]"
+        className={`${styles.filterPopup} ${styles.metadataPopup}`}
       >
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <p className="text-sm font-medium">{t("Metadata")}</p>
-            <p className="text-xs text-muted-foreground">
+        <div className={styles.filterPopover}>
+          <div>
+            <p className={styles.popoverTitle}>{t("Metadata")}</p>
+            <p className={styles.popoverHint}>
               {t("Exact key=value matches on run metadata.")}
             </p>
           </div>
-          {rows.map((row, index) => (
-            <div
-              key={row.id}
-              className="grid grid-cols-[minmax(0,5fr)_minmax(0,7fr)_auto] items-center gap-2"
-            >
-              <Input
-                aria-label={t("Metadata key") + ` ${index + 1}`}
-                autoComplete="off"
-                placeholder={t("Key")}
-                value={row.key}
-                onChange={(event) =>
-                  update(row.id, { key: event.target.value })
-                }
-              />
-              <Input
-                aria-label={t("Metadata value") + ` ${index + 1}`}
-                autoComplete="off"
-                placeholder={t("Value")}
-                value={row.value}
-                onChange={(event) =>
-                  update(row.id, { value: event.target.value })
-                }
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                aria-label={t("Remove filter") + ` ${index + 1}`}
-                onClick={() =>
-                  onChange(rows.filter((item) => item.id !== row.id))
-                }
-              >
-                <XIcon aria-hidden />
-              </Button>
-            </div>
-          ))}
+          <div className={styles.metadataRows}>
+            {rows.map((row, index) => (
+              <div key={row.id} className={styles.metadataRow}>
+                <Input
+                  size="sm"
+                  aria-label={t("Metadata key") + ` ${index + 1}`}
+                  autoComplete="off"
+                  placeholder={t("Key")}
+                  value={row.key}
+                  onChange={(event) =>
+                    update(row.id, { key: event.target.value })
+                  }
+                />
+                <Input
+                  size="sm"
+                  aria-label={t("Metadata value") + ` ${index + 1}`}
+                  autoComplete="off"
+                  placeholder={t("Value")}
+                  value={row.value}
+                  onChange={(event) =>
+                    update(row.id, { value: event.target.value })
+                  }
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t("Remove filter") + ` ${index + 1}`}
+                  title={t("Remove filter") + ` ${index + 1}`}
+                  onClick={() =>
+                    onChange(rows.filter((item) => item.id !== row.id))
+                  }
+                >
+                  <XIcon size={14} aria-hidden="true" />
+                </Button>
+              </div>
+            ))}
+          </div>
           <Button
             type="button"
             variant="outline"
             size="sm"
-            className="self-start"
+            className={styles.addFilter}
             disabled={rows.length >= 8}
             onClick={() => onChange([...rows, metadataRow()])}
           >
-            <PlusIcon aria-hidden />
+            <PlusIcon aria-hidden="true" />
             {t("Add filter")}
           </Button>
         </div>
@@ -486,13 +497,6 @@ interface TraceListProps {
   page: ReturnType<typeof useCursor>;
 }
 export function TraceList({ filters, page }: TraceListProps) {
-  return <TraceResults filters={filters} page={page} view="full" />;
-}
-function TraceResults({
-  filters,
-  page,
-  view,
-}: TraceListProps & { view: Schema["TraceView"] }) {
   const [sort, setSort] = useState<ObservationSort>({
     field: "started",
     direction: "desc",
@@ -501,7 +505,7 @@ function TraceResults({
     { workspace, basePath } = useWorkspace(),
     { t } = useTranslation();
   const query = useQuery({
-    queryKey: ["trace-list", workspace.id, filters, page.cursor, view],
+    queryKey: ["trace-list", workspace.id, filters, page.cursor],
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/workspaces/{workspace}/traces", {
@@ -514,7 +518,7 @@ function TraceResults({
               run_id: filters.run_id || undefined,
               metadata: filters.metadata?.length ? filters.metadata : undefined,
               cursor: page.cursor,
-              view,
+              view: "compact",
               limit: 25,
             },
           },
@@ -555,13 +559,13 @@ function TraceResults({
         }}
       />
     );
+  const items = query.data?.items ?? [];
   return (
     <>
-      {query.data?.items.length ? (
+      {items.length ? (
         <TraceTable
-          items={query.data.items}
+          items={items}
           basePath={basePath}
-          view={view}
           costs={costs.isSuccess ? costs.data : {}}
           sort={sort}
           onSortChange={setSort}
@@ -574,7 +578,15 @@ function TraceResults({
           )}
         />
       )}
-      <Pagination page={page} next={query.data?.next_cursor} />
+      <CollectionFooter
+        count={
+          items.length
+            ? t("{{count}} traces on this page", { count: items.length })
+            : undefined
+        }
+      >
+        <Pagination page={page} next={query.data?.next_cursor} />
+      </CollectionFooter>
     </>
   );
 }

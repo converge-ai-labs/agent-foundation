@@ -1,17 +1,33 @@
-import { ArrowLeftIcon } from "@phosphor-icons/react";
+import { ClockCounterClockwiseIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, DisclosureSection } from "a13n-ui";
+import { Button } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
-import { JsonView } from "../../shared/forms";
-import styles from "../../shared/shared.module.css";
+import {
+  CollectionFooter,
+  ListRow,
+  ListRows,
+  ListRowsEmpty,
+  Pagination,
+  useCursor,
+} from "../../shared/collection";
+import { CatalogStep } from "../../shared/dialogs";
+import {
+  ErrorNotice,
+  Loading,
+  StatePill,
+  Timestamp,
+} from "../../shared/feedback";
+import styles from "./environments.module.css";
 import { type EnvironmentScope } from "./api";
 import { TemplateConfig } from "./template-config";
 
+/**
+ * Every published revision of one template. Restoring opens the old
+ * configuration as a draft; publishing it creates a new revision on top.
+ */
 export function TemplateHistory({
   template,
   scope,
@@ -42,73 +58,77 @@ export function TemplateHistory({
   });
   if (restore)
     return (
-      <>
-        <Button
-          variant="outline"
-          onClick={() => setRestore(undefined)}
-          type="button"
-        >
-          <ArrowLeftIcon size={14} aria-hidden="true" />{" "}
-          {t("Back to revisions")}
-        </Button>
+      <CatalogStep
+        backLabel={t("Back to versions")}
+        onBack={() => setRestore(undefined)}
+      >
+        <p className={styles.revisionNote}>
+          {t(
+            "Publishing this draft restores version {{version}} as the current revision.",
+            {
+              version: restore.version,
+            },
+          )}
+        </p>
         <TemplateConfig
           scope={scope}
           template={template}
           revision={restore}
           close={close}
         />
-      </>
+      </CatalogStep>
     );
   return (
-    <div className={styles.stack}>
+    <div className={styles.versions}>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading variant="table" columns={4} rows={5} />
+        <Loading variant="list" rows={4} />
       ) : (
         query.data && (
           <>
-            <ResourceTable
-              items={query.data.items}
-              columns={[
-                {
-                  label: t("Version"),
-                  tone: "primary",
-                  render: (item) => `v${item.version}`,
-                },
-                {
-                  label: t("Created"),
-                  tone: "muted",
-                  render: (item) => <Timestamp value={item.created_at} />,
-                },
-                {
-                  label: t("Template configuration"),
-                  render: (item) => (
-                    <DisclosureSection
-                      title={<>{t("View template configuration")}</>}
-                    >
-                      <JsonView value={item} />
-                    </DisclosureSection>
-                  ),
-                },
-                {
-                  label: t("Actions"),
-                  align: "right",
-                  render: (item) =>
-                    editable &&
-                    item.id !== template.current_revision_id && (
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setRestore(item)}
-                        type="button"
-                      >
-                        {t("Restore as new revision")}
-                      </Button>
-                    ),
-                },
-              ]}
-            />
-            <Pagination page={page} next={query.data.next_cursor} />
+            {query.data.items.length ? (
+              <ListRows>
+                {query.data.items.map((item) => {
+                  const current = item.id === template.current_revision_id;
+                  return (
+                    <ListRow
+                      key={item.id}
+                      icon={
+                        <ClockCounterClockwiseIcon
+                          aria-hidden="true"
+                          className="size-4 text-muted-foreground"
+                        />
+                      }
+                      name={t("Version {{version}}", { version: item.version })}
+                      secondary={<Timestamp value={item.created_at} />}
+                      actions={
+                        <span className={styles.versionMeta}>
+                          {current ? (
+                            <StatePill state="active" label={t("Current")} />
+                          ) : (
+                            editable && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setRestore(item)}
+                                type="button"
+                              >
+                                {t("Restore as new revision")}
+                              </Button>
+                            )
+                          )}
+                        </span>
+                      }
+                    />
+                  );
+                })}
+              </ListRows>
+            ) : (
+              <ListRowsEmpty>{t("No revisions yet")}</ListRowsEmpty>
+            )}
+            <CollectionFooter>
+              <Pagination page={page} next={query.data.next_cursor} />
+            </CollectionFooter>
           </>
         )
       )}

@@ -1,5 +1,5 @@
-import { BrandIcon, Button, Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
-import { CaretRightIcon } from "@phosphor-icons/react";
+import { ArrowSquareOutIcon, CaretRightIcon } from "@phosphor-icons/react";
+import { Button, Tabs, TabsList, TabsTab } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -7,17 +7,22 @@ import { Link, useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { CopyButton } from "../../shared/identity";
 import { Empty } from "../../shared/collection";
+import { CatalogTile, CatalogTiles } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
+import { IconTile } from "../../shared/identity";
 import { Page } from "../../shared/page";
 import { AccountForm } from "../application-accounts/form";
-import { EventConnection } from "./event-connection";
+import { PlatformIcon, usePlatformName } from "../integrations/platform";
+import { BotChecks } from "./checks";
+import { CallbackSetup } from "./event-setup";
 import { BotPilot } from "./pilot";
 import { PilotTest } from "./pilot-test";
-import { BotChecks } from "./checks";
 import { BotSetupInstructions } from "./setup-instructions";
+import { Step, StepRail } from "./wizard";
 import styles from "./connect.module.css";
+
+export { CallbackSetup } from "./event-setup";
 
 const steps = [
   "Platform and account",
@@ -43,7 +48,8 @@ export function BotConnect() {
 function ConnectFlow() {
   const client = useClient(),
     { workspace, basePath } = useWorkspace(),
-    { t } = useTranslation();
+    { t } = useTranslation(),
+    platformName = usePlatformName();
   const [search, setSearch] = useSearchParams();
   const accountId = search.get("account") ?? "";
   const [platform, setPlatform] = useState<"slack" | "lark" | "github" | null>(
@@ -128,200 +134,176 @@ function ConnectFlow() {
   function saved(value: Schema["Account"]) {
     setSearch({ account: value.id, step: "verify" }, { replace: true });
   }
+  function resetPlatform() {
+    setPlatform(null);
+    setAccountMode(null);
+    setGithubMode("github_polling");
+  }
   return (
     <Page
       title={t("Connect a bot")}
       back={`${basePath}/bots`}
+      backLabel={t("Bots")}
       description={t(
         "Connect a platform identity you own, then choose an agent and reception scope.",
       )}
     >
       <div className={styles.layout}>
-        <ol className={styles.steps} aria-label={t("Bot setup steps")}>
-          {steps.map((label, index) => (
-            <li key={label} aria-current={index === step ? "step" : undefined}>
-              <span>{index + 1}</span>
-              <strong>{t(label)}</strong>
-            </li>
-          ))}
-        </ol>
+        <StepRail steps={steps} current={step} label={t("Bot setup steps")} />
         <div className={styles.content}>
           {!accountId && !platform && (
-            <section>
-              <h2>{t("Choose your platform")}</h2>
-              <p>{t("Where will your bot respond?")}</p>
-              <div className={styles.platforms}>
-                <Button variant="outline" onClick={() => setPlatform("slack")}>
-                  <BrandIcon alias="slack" />
-                  <span>Slack</span>
-                  <CaretRightIcon aria-hidden="true" />
-                </Button>
-                <Button variant="outline" onClick={() => setPlatform("lark")}>
-                  <BrandIcon alias="feishu" />
-                  <span>{t("Feishu")}</span>
-                  <CaretRightIcon aria-hidden="true" />
-                </Button>
-                <Button variant="outline" onClick={() => setPlatform("github")}>
-                  <BrandIcon alias="github" />
-                  <span>GitHub</span>
-                  <CaretRightIcon aria-hidden="true" />
-                </Button>
-              </div>
-            </section>
+            <Step
+              title={t("Choose your platform")}
+              description={t("Where will your bot respond?")}
+            >
+              <CatalogTiles>
+                {(["slack", "lark", "github"] as const).map((value) => (
+                  <CatalogTile
+                    key={value}
+                    icon={<PlatformIcon type={value} size={22} />}
+                    name={platformName(value)}
+                    detail={t(
+                      value === "github"
+                        ? "Issues and pull requests"
+                        : "Channels and group chats",
+                    )}
+                    onClick={() => setPlatform(value)}
+                  />
+                ))}
+              </CatalogTiles>
+            </Step>
           )}
           {!accountId && platform && (
-            <>
+            <Step
+              title={t("Choose an account")}
+              description={t(
+                "Use a platform identity you already connected, or create a new one.",
+              )}
+              onBack={resetPlatform}
+              backLabel={t("Change platform")}
+            >
               <div className={styles.selectedPlatform}>
-                <strong>
-                  <BrandIcon
-                    alias={platform === "lark" ? "feishu" : platform}
-                  />
-                  {platform === "lark"
-                    ? t("Feishu")
-                    : platform === "github"
-                      ? "GitHub"
-                      : "Slack"}
-                </strong>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setPlatform(null);
-                    setAccountMode(null);
-                    setGithubMode("github_polling");
-                  }}
-                >
-                  {t("Change platform")}
-                </Button>
+                <IconTile size={32} tone="elevated">
+                  <PlatformIcon type={platform} size={18} />
+                </IconTile>
+                <strong>{platformName(platform)}</strong>
               </div>
-              <h2>{t("Choose an account")}</h2>
               <ErrorNotice
                 error={accounts.error}
                 retry={() => void accounts.refetch()}
               />
-              {accounts.isPending && <Loading />}
+              {accounts.isPending && <Loading variant="list" rows={3} />}
               {accounts.isSuccess && (
-                <Tabs
-                  value={mode}
-                  onValueChange={(value) => setAccountMode(String(value))}
-                >
-                  <TabsList
-                    className={styles.accountModes}
-                    aria-label={t("Account source")}
+                <>
+                  <Tabs
+                    value={mode}
+                    onValueChange={(value) => setAccountMode(String(value))}
                   >
-                    <TabsTab value="existing">
-                      {t("Use an existing account")}
-                    </TabsTab>
-                    <TabsTab value="new">{t("Create a new account")}</TabsTab>
-                  </TabsList>
-                  <TabsPanel value="existing" className={styles.modeContent}>
-                    {mode === "existing" && (
-                      <ExistingAccounts
-                        accounts={accounts.data}
-                        onCreate={() => setAccountMode("new")}
-                      />
-                    )}
-                  </TabsPanel>
-                  <TabsPanel value="new" className={styles.modeContent}>
-                    {mode === "new" && (
-                      <>
-                        {accounts.data.items.length === 0 && (
+                    <TabsList aria-label={t("Account source")}>
+                      <TabsTab value="existing">
+                        {t("Use an existing account")}
+                      </TabsTab>
+                      <TabsTab value="new">{t("Create a new account")}</TabsTab>
+                    </TabsList>
+                  </Tabs>
+                  {mode === "existing" ? (
+                    <ExistingAccounts
+                      accounts={accounts.data}
+                      onCreate={() => setAccountMode("new")}
+                    />
+                  ) : (
+                    <div className={styles.newAccount}>
+                      {platform === "github" && (
+                        <fieldset className={styles.githubModes}>
+                          <legend>{t("GitHub connection type")}</legend>
+                          {(
+                            [
+                              [
+                                "github_polling",
+                                "GitHub account · Polling",
+                                "Use an account token. No public callback needed.",
+                              ],
+                              [
+                                "github",
+                                "GitHub App · Webhook",
+                                "Use an installed App and a public webhook address.",
+                              ],
+                            ] as const
+                          ).map(([value, label, hint]) => (
+                            <label
+                              key={value}
+                              data-checked={githubMode === value}
+                            >
+                              <input
+                                type="radio"
+                                name="github-mode"
+                                value={value}
+                                checked={githubMode === value}
+                                onChange={() => setGithubMode(value)}
+                              />
+                              <span>
+                                <strong>{t(label)}</strong>
+                                <small>{t(hint)}</small>
+                              </span>
+                            </label>
+                          ))}
+                        </fieldset>
+                      )}
+                      {platform === "github" ? (
+                        <div className={styles.instructions}>
                           <p>
                             {t(
-                              "No accounts for this platform yet. Create one to connect your bot.",
+                              setupProvider === "github_polling"
+                                ? "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed."
+                                : "Create and install a GitHub App with Issues and Pull requests read/write permissions. Subscribe to Issues, Issue comments, Pull requests, Pull request reviews, and Pull request review comments. A public webhook address is required.",
                             )}
                           </p>
-                        )}
-                        {platform === "github" && (
-                          <div
-                            className={styles.githubModes}
-                            role="group"
-                            aria-label={t("GitHub connection type")}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            render={
+                              <a
+                                href={
+                                  setupProvider === "github_polling"
+                                    ? "https://github.com/settings/tokens"
+                                    : "https://github.com/settings/apps"
+                                }
+                                target="_blank"
+                                rel="noreferrer"
+                              />
+                            }
                           >
-                            <Button
-                              variant="outline"
-                              aria-pressed={githubMode === "github_polling"}
-                              onClick={() => setGithubMode("github_polling")}
-                            >
-                              <strong>{t("GitHub account · Polling")}</strong>
-                              <span>
-                                {t(
-                                  "Use an account token. No public callback needed.",
-                                )}
-                              </span>
-                            </Button>
-                            <Button
-                              variant="outline"
-                              aria-pressed={githubMode === "github"}
-                              onClick={() => setGithubMode("github")}
-                            >
-                              <strong>{t("GitHub App · Webhook")}</strong>
-                              <span>
-                                {t(
-                                  "Use an installed App and a public webhook address.",
-                                )}
-                              </span>
-                            </Button>
-                          </div>
+                            {t("Open GitHub settings")}
+                            <ArrowSquareOutIcon size={13} aria-hidden="true" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <BotSetupInstructions platform={platform} />
+                      )}
+                      <p className={styles.hint}>
+                        {t(
+                          "The account is saved with reception disabled. Only explicitly configured conversations will be admitted when you enable it.",
+                        )}{" "}
+                        {t(
+                          setupProvider === "github_polling"
+                            ? "The token identifies your account automatically. Grant the bot access to the repositories it should handle, and mention or subscribe it to receive notifications."
+                            : platform === "lark"
+                              ? "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving."
+                              : "Enter the installation identifiers from your app settings. They are verified in the next step; entering an ID does not prove access.",
                         )}
-                        {platform === "github" ? (
-                          <section>
-                            <h2>
-                              {t(
-                                setupProvider === "github_polling"
-                                  ? "Connect a GitHub account"
-                                  : "Connect a GitHub App",
-                              )}
-                            </h2>
-                            <p>
-                              {t(
-                                setupProvider === "github_polling"
-                                  ? "Use a dedicated GitHub account and a classic PAT: notifications plus public_repo for public repositories, or repo for private repositories. No public callback address is needed."
-                                  : "Create and install a GitHub App with Issues and Pull requests read/write permissions. Subscribe to Issues, Issue comments, Pull requests, Pull request reviews, and Pull request review comments. A public webhook address is required.",
-                              )}
-                            </p>
-                            <a
-                              href={
-                                setupProvider === "github_polling"
-                                  ? "https://github.com/settings/tokens"
-                                  : "https://github.com/settings/apps"
-                              }
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              {t("Open GitHub settings")}
-                            </a>
-                          </section>
-                        ) : (
-                          <BotSetupInstructions platform={platform} />
-                        )}
-                        <p>
-                          {t(
-                            "The account is saved with reception disabled. Only explicitly configured conversations will be admitted when you enable it.",
-                          )}
-                        </p>
-                        <p>
-                          {t(
-                            setupProvider === "github_polling"
-                              ? "The token identifies your account automatically. Grant the bot access to the repositories it should handle, and mention or subscribe it to receive notifications."
-                              : platform === "lark"
-                                ? "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving."
-                                : "Enter the installation identifiers from your app settings. They are verified in the next step; entering an ID does not prove access.",
-                          )}
-                        </p>
-                        <AccountForm
-                          key={setupProvider}
-                          bot
-                          setupProvider={setupProvider}
-                          onCancel={() => setAccountMode("existing")}
-                          onSuccess={saved}
-                        />
-                      </>
-                    )}
-                  </TabsPanel>
-                </Tabs>
+                      </p>
+                      <AccountForm
+                        key={setupProvider}
+                        bot
+                        setupProvider={setupProvider}
+                        onCancel={() => setAccountMode("existing")}
+                        onSuccess={saved}
+                      />
+                    </div>
+                  )}
+                </>
               )}
-            </>
+            </Step>
           )}
           {accountId && account.isPending && (
             <Loading variant="form" rows={5} />
@@ -344,37 +326,40 @@ function ConnectFlow() {
           ) : (
             current && (
               <>
-                <p className={styles.account}>
-                  {current.name} ·{" "}
-                  {current.provider_key === "github"
-                    ? "GitHub"
-                    : current.provider_key === "slack"
-                      ? "Slack"
-                      : t("Feishu")}
-                </p>
                 {step === 2 && (
-                  <>
-                    <CallbackSetup account={current} />
-                    <BotChecks account={current} />
-                    <p>
-                      {t(
-                        "Confirm that the verified external organization is the installation you intend to connect.",
-                      )}
-                    </p>
-                    <Button
-                      disabled={!verified || check.isFetching}
-                      onClick={() => advance("reception")}
-                    >
-                      {t("Confirm installation and continue")}
-                    </Button>
-                    <p>
+                  <Step
+                    title={t("Verify the installation")}
+                    description={t(
+                      "Confirm that the verified external organization is the installation you intend to connect.",
+                    )}
+                    onBack={() => setSearch({})}
+                    backLabel={t("Change account")}
+                    primary={
+                      <Button
+                        disabled={!verified || check.isFetching}
+                        onClick={() => advance("reception")}
+                      >
+                        {t("Continue")}
+                      </Button>
+                    }
+                  >
+                    <div className={styles.account}>
+                      <IconTile size={32} tone="elevated">
+                        <PlatformIcon type={current.provider_key} size={18} />
+                      </IconTile>
+                      <span>
+                        <strong>{current.name}</strong>
+                        <small>{platformName(current.provider_key)}</small>
+                      </span>
                       <Link
                         to={`${basePath}/application-accounts/${current.id}`}
                       >
                         {t("Review account identity and credentials")}
                       </Link>
-                    </p>
-                  </>
+                    </div>
+                    <CallbackSetup account={current} />
+                    <BotChecks account={current} />
+                  </Step>
                 )}
                 {step === 3 && (
                   <BotPilot
@@ -418,140 +403,58 @@ function ExistingAccounts({
   onCreate: () => void;
 }) {
   const { basePath } = useWorkspace(),
-    { t } = useTranslation();
-  return (
-    <section>
-      <p>
-        {t("Select an account for this platform in the current workspace.")}
-      </p>
-      <ul className={styles.existing}>
-        {accounts.items.map(({ account: item }) => {
-          const organization =
-            item.provider_config[
-              item.provider_key === "slack" ? "team_id" : "tenant_key"
-            ];
-          return (
-            <li key={item.id}>
-              <Link to={`${basePath}/bots/${item.id}`}>
-                <span>
-                  <strong>{item.name}</strong>
-                  <small>
-                    {item.provider_key === "github"
-                      ? t(
-                          item.provider_config_version ===
-                            "github_notifications_v1"
-                            ? "GitHub account · Polling"
-                            : "GitHub App · Webhook",
-                        )
-                      : item.provider_key === "slack"
-                        ? "Slack"
-                        : t("Feishu")}
-                    {typeof organization === "string" &&
-                      organization &&
-                      ` · ${organization}`}
-                  </small>
-                </span>
-                <CaretRightIcon aria-hidden="true" />
-              </Link>
-            </li>
-          );
-        })}
-      </ul>
-      {accounts.items.length === 0 && (
-        <>
-          <p>
-            {t(
-              "No accounts for this platform yet. Create one to connect your bot.",
-            )}
-          </p>
-          <Button variant="outline" onClick={onCreate}>
-            {t("Create a new account")}
-          </Button>
-        </>
-      )}
-      {accounts.next_cursor && (
-        <Link to={`${basePath}/bots`}>{t("View all bots")}</Link>
-      )}
-    </section>
-  );
-}
-
-export function CallbackSetup({ account }: { account: Schema["Account"] }) {
-  return account.provider_config.event_transport === "websocket" ? (
-    <EventConnection account={account} />
-  ) : (
-    <HttpCallbackSetup account={account} />
-  );
-}
-
-function HttpCallbackSetup({ account }: { account: Schema["Account"] }) {
-  const client = useClient(),
-    { t } = useTranslation();
-  const query = useQuery({
-    queryKey: ["bot-setup", account.workspace_id, account.id],
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/application-accounts/{account_id}/bot/setup", {
-          params: { path: { account_id: account.id } },
-          signal,
-        })
-        .then(data),
-  });
-  if (account.provider_config_version === "github_notifications_v1")
+    { t } = useTranslation(),
+    platformName = usePlatformName();
+  if (!accounts.items.length)
     return (
-      <section>
-        <h2>{t("Notification polling")}</h2>
+      <div className={styles.instructions}>
         <p>
           {t(
-            "Only outbound GitHub access is required. Mention this account or subscribe it to an Issue or PR in a configured repository. Polling starts when reception is enabled.",
+            "No accounts for this platform yet. Create one to connect your bot.",
           )}
         </p>
-        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-        {query.data?.poll_checked_at && (
-          <p>
-            {t("Last checked")}: {query.data.poll_checked_at}
-          </p>
-        )}
-        {query.data?.poll_error_code && (
-          <p role="status">
-            {t("Polling failed")}: {query.data.poll_error_code}
-          </p>
-        )}
-      </section>
+        <Button variant="outline" size="sm" onClick={onCreate}>
+          {t("Create a new account")}
+        </Button>
+      </div>
     );
   return (
-    <section>
-      <h2>{t("Configure HTTP events")}</h2>
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      {query.isPending && <Loading />}
-      {query.data && (
-        <>
-          <p>
-            {t(
-              "Set this event endpoint in your provider's app settings. Provider URL verification works while reception is disabled.",
-            )}
-          </p>
-          <div className={styles.endpoint}>
-            <code>{query.data.event_url ?? query.data.event_path ?? ""}</code>
-            <CopyButton
-              value={query.data.event_url ?? query.data.event_path ?? ""}
-              copyLabel={t("Copy event endpoint")}
-            />
-          </div>
-          {!query.data.event_url && (
-            <p role="status">
-              {t(
-                "No public event origin is configured. Ask the deployment administrator to configure it before connecting the provider.",
-              )}
-            </p>
-          )}
-          <p>
-            {t(
-              "The provider must be able to reach this endpoint. A localhost address is only usable for local tests.",
-            )}
-          </p>
-        </>
+    <div className={styles.existing}>
+      {accounts.items.map(({ account: item }) => {
+        const organization =
+          item.provider_config?.[
+            item.provider_key === "slack" ? "team_id" : "tenant_key"
+          ];
+        const source =
+          item.provider_key === "github"
+            ? t(
+                item.provider_config_version === "github_notifications_v1"
+                  ? "GitHub account · Polling"
+                  : "GitHub App · Webhook",
+              )
+            : platformName(item.provider_key);
+        return (
+          <Link key={item.id} to={`${basePath}/bots/${item.id}`}>
+            <IconTile size={32} tone="elevated">
+              <PlatformIcon type={item.provider_key} size={18} />
+            </IconTile>
+            <span className={styles.existingCopy}>
+              <strong>{item.name}</strong>
+              <small>
+                {typeof organization === "string" && organization
+                  ? `${source} · ${organization}`
+                  : source}
+              </small>
+            </span>
+            <CaretRightIcon aria-hidden="true" size={13} />
+          </Link>
+        );
+      })}
+      {accounts.next_cursor && (
+        <Link className={styles.moreLink} to={`${basePath}/bots`}>
+          {t("View all bots")}
+        </Link>
       )}
-    </section>
+    </div>
   );
 }

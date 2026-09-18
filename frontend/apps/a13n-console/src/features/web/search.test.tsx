@@ -8,7 +8,7 @@ import {
   focusManager,
 } from "@tanstack/react-query";
 import { ApiError } from "../../service-client";
-import { WebProviderEditor } from "./editor";
+import { AddWebProvider, WebProviderEditor } from "./editor";
 
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -94,12 +94,12 @@ afterEach(() => {
 it("creates a saved provider independently and clears its credential on close without caching mutation input", async () => {
   const user = userEvent.setup(),
     saved = vi.fn(),
-    cache = setup(<WebProviderEditor scope={scope} onSaved={saved} />);
+    cache = setup(<AddWebProvider scope={scope} onSaved={saved} />);
   await user.click(screen.getByRole("button", { name: "Add provider" }));
-  await user.type(
-    await screen.findByRole("textbox", { name: "Name" }),
-    "Research",
-  );
+  await user.click(await screen.findByRole("button", { name: /Brave Search/ }));
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  await user.clear(name);
+  await user.type(name, "Research");
   await user.type(screen.getByLabelText("API Key"), "test-secret");
   expect(http.POST).not.toHaveBeenCalled();
   await user.click(screen.getByRole("button", { name: "Add provider" }));
@@ -118,6 +118,7 @@ it("creates a saved provider independently and clears its credential on close wi
   ).not.toContain("test-secret");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(await screen.findByRole("button", { name: /Brave Search/ }));
   expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
 });
 
@@ -137,12 +138,9 @@ it("creates a credential-free DuckDuckGo provider without an API key", async () 
     ),
   );
   const user = userEvent.setup();
-  setup(<WebProviderEditor scope={scope} />);
+  setup(<AddWebProvider scope={scope} />);
   await user.click(screen.getByRole("button", { name: "Add provider" }));
-  await user.click(
-    await screen.findByRole("combobox", { name: "Provider type" }),
-  );
-  await user.click(await screen.findByRole("option", { name: "DuckDuckGo" }));
+  await user.click(await screen.findByRole("button", { name: /DuckDuckGo/ }));
   expect(screen.queryByLabelText("API Key")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
@@ -155,8 +153,14 @@ it("creates a credential-free DuckDuckGo provider without an API key", async () 
 
 it("keeps the existing credential write-only and sends If-Match for edits", async () => {
   const user = userEvent.setup();
-  setup(<WebProviderEditor scope={scope} providerId={provider.id} />);
-  await user.click(screen.getByRole("button", { name: "Edit" }));
+  setup(
+    <WebProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
   expect(await screen.findByLabelText("API Key")).toHaveProperty("value", "");
   await user.type(screen.getByRole("textbox", { name: "Name" }), " renamed");
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
@@ -171,13 +175,13 @@ it("keeps the existing credential write-only and sends If-Match for edits", asyn
 
 it("reconciles an uncertain create before allowing another attempt", async () => {
   const user = userEvent.setup();
-  setup(<WebProviderEditor scope={scope} />);
+  setup(<AddWebProvider scope={scope} />);
   http.POST.mockRejectedValue(new TypeError("Network unavailable"));
   await user.click(screen.getByRole("button", { name: "Add provider" }));
-  await user.type(
-    await screen.findByRole("textbox", { name: "Name" }),
-    "Research",
-  );
+  await user.click(await screen.findByRole("button", { name: /Brave Search/ }));
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  await user.clear(name);
+  await user.type(name, "Research");
   await user.type(screen.getByLabelText("API Key"), "test-secret");
   await user.click(screen.getByRole("button", { name: "Add provider" }));
   await screen.findByRole("button", { name: "Use this provider" });
@@ -189,11 +193,17 @@ it("reconciles an uncertain create before allowing another attempt", async () =>
 
 it("retains the provider draft across a stale ETag and requires loading the current version before resubmitting", async () => {
   const user = userEvent.setup();
-  setup(<WebProviderEditor scope={scope} providerId={provider.id} />);
+  setup(
+    <WebProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
   http.PATCH.mockRejectedValueOnce(
     new ApiError(412, "precondition_failed", "Changed", {}, "req_test"),
   );
-  await user.click(screen.getByRole("button", { name: "Edit" }));
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),
     " draft",

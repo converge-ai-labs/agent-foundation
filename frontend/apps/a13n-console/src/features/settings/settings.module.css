@@ -1,140 +1,89 @@
+/*
+ * The contextual settings shell: a tinted 240px navigation column that lists
+ * every scope the reader can reach, and one 760px content column.
+ */
 .layout {
   display: grid;
-  grid-template-columns: 244px minmax(0, 1fr);
+  grid-template-columns: 240px minmax(0, 1fr);
   min-height: 100dvh;
-  background: var(--a13n-surface);
+  background: var(--a13n-canvas);
 }
 .outline {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   padding: 16px 12px 24px;
   position: sticky;
   top: 0;
   height: 100dvh;
   overflow-y: auto;
+  background: var(--sidebar);
 }
 .back {
   display: flex;
   align-items: center;
   gap: 8px;
-  height: 28px;
-  margin: 0 8px 12px;
+  height: 32px;
+  padding: 0 8px;
+  border-radius: var(--a13n-radius-row);
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 13px;
   text-decoration: none;
 }
 .back:hover {
+  background: var(--a13n-hover);
   color: var(--a13n-text);
 }
-.settingsSearch {
-  margin-bottom: 20px;
+.search input {
+  min-height: 32px;
+  height: 32px;
+  font-size: 13px;
+  background: var(--a13n-surface);
+  border-color: transparent;
 }
-.settingsSearch > div {
-  min-height: 30px;
-}
-.settingsSearch input {
-  min-height: 28px;
-  height: 28px;
-  font-size: 12px;
+.search input:focus-visible {
+  border-color: var(--a13n-input-border);
 }
 .outline nav {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: 20px;
+  align-content: start;
+}
+.scope {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
 }
 .scopeLabel {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin: 0 8px 6px;
   font-size: 11px;
   font-weight: 500;
   line-height: 16px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   color: var(--a13n-secondary);
-  margin: 0 8px 6px;
 }
 .scopeName {
-  margin: -2px 8px 8px;
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--a13n-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.scopeToggle {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  margin: 0 0 4px;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: none;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.scopeToggle:hover {
-  background: var(--a13n-hover);
-}
-.scopeToggleText {
   flex: 1;
   min-width: 0;
-}
-.scopeToggleLabel {
-  display: block;
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 16px;
-  color: var(--a13n-secondary);
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.scopeToggleName {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  line-height: 16px;
-  color: var(--a13n-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.scopeChevron {
-  flex-shrink: 0;
-  color: var(--a13n-secondary);
-  transition: transform 160ms ease;
-}
-.scopeToggle[aria-expanded="true"] .scopeChevron {
-  transform: rotate(90deg);
-}
-.scopeItems {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 1fr;
-  transition:
-    grid-template-rows 160ms ease,
-    visibility 0s;
-}
-.scopeItems[data-open="false"] {
-  grid-template-rows: 0fr;
-  visibility: hidden;
-  transition:
-    grid-template-rows 160ms ease,
-    visibility 0s 160ms;
-}
-.scopeItems .sectionLinks {
-  min-height: 0;
-  overflow: hidden;
-}
-.sectionLinks {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
 }
 .outline nav a {
   display: flex;
   gap: 8px;
   align-items: center;
-  border-radius: 6px;
-  padding: 5px 8px;
-  min-height: 28px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: var(--a13n-radius-row);
   line-height: 18px;
   color: var(--a13n-secondary);
   text-decoration: none;
@@ -150,44 +99,39 @@
 .outline nav a[aria-current] {
   background: var(--a13n-selected);
   color: var(--a13n-text);
+  font-weight: 500;
 }
 .noResults {
   color: var(--a13n-secondary);
-  font-size: 12px;
+  font-size: 12.5px;
   padding: 0 8px;
+  margin: 0;
 }
 .surface {
   min-width: 0;
-  margin: 8px 8px 8px 0;
-  background: var(--a13n-canvas);
-  border: 1px solid var(--a13n-border-soft);
-  border-radius: 12px;
 }
 .content {
-  padding: 60px 40px 80px;
+  padding: 48px 40px 96px;
   width: 100%;
-  max-width: 720px;
+  max-width: 760px;
   min-width: 0;
   margin: 0 auto;
 }
+/* A section that lists resources needs more room than one that edits fields. */
 .content[data-content="collection"] {
-  max-width: 1120px;
+  max-width: 1040px;
 }
 .heading {
-  margin-bottom: 36px;
+  margin-bottom: 32px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
 }
-.content[data-content="collection"] .heading {
-  padding: 0;
-  margin-bottom: 24px;
-}
 .heading h1 {
-  font-size: 24px;
-  line-height: 32px;
-  letter-spacing: -0.6px;
+  font-size: 22px;
+  line-height: 30px;
+  letter-spacing: -0.4px;
   font-weight: 500;
   margin: 0;
 }
@@ -195,7 +139,7 @@
   color: var(--a13n-secondary);
   font-size: 13px;
   line-height: 20px;
-  margin: 8px 0 0;
+  margin: 6px 0 0;
 }
 .headingActions {
   display: flex;
@@ -206,38 +150,93 @@
 .headingActions:empty {
   display: none;
 }
-.sections,
-.preferences {
-  display: grid;
-  gap: 40px;
-}
-.profile {
-  display: grid;
-  gap: 16px;
-}
 
+/* Section content */
+.sections {
+  display: grid;
+  gap: 36px;
+}
+.note {
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  margin: 0;
+}
 .nameControl {
-  width: 240px;
+  width: 260px;
   max-width: 100%;
 }
 .profileKey {
   padding: 16px 0;
 }
-.saveRow {
+
+/* Detail pane inside a settings section (a service account and its keys). */
+.detailHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.detailIdentity {
+  display: grid;
+  min-width: 0;
+}
+.detailIdentity strong {
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 26px;
+}
+.detailIdentity span {
+  font-size: 12.5px;
+  color: var(--a13n-secondary);
+}
+.detailActions {
+  margin-left: auto;
   display: flex;
   align-items: center;
   gap: 8px;
-  justify-content: flex-end;
 }
+.facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 4px 24px;
+  padding: 14px 16px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  margin: 0;
+}
+.facts div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.facts dt {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--a13n-secondary);
+}
+.facts dd {
+  margin: 0;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 .mobileNavigation {
   display: none;
 }
 @media (max-width: 1000px) {
+  .layout {
+    grid-template-columns: 216px minmax(0, 1fr);
+  }
   .content {
-    padding: 48px 24px 64px;
+    padding: 40px 24px 80px;
   }
 }
-@media (max-width: 650px) {
+@media (max-width: 720px) {
   .layout {
     display: block;
   }
@@ -245,9 +244,10 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--a13n-border-soft);
-    font-size: 12px;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--sidebar);
+    font-size: 12.5px;
     color: var(--a13n-secondary);
   }
   .mobileNavigation button[aria-expanded="true"] svg {
@@ -257,38 +257,80 @@
     display: none;
     position: static;
     height: auto;
-    padding: 16px 14px;
+    padding: 12px;
   }
   .outline[data-open="true"] {
-    display: block;
-  }
-  .outline nav a {
-    min-height: 36px;
-  }
-  .surface {
-    min-height: calc(100dvh - 49px);
-    margin: 0;
-    border-radius: 0;
-    border: 0;
+    display: flex;
   }
   .content {
-    padding: 32px 20px 56px;
+    padding: 28px 20px 64px;
   }
   .heading {
-    padding: 0;
-    align-items: flex-start;
     flex-direction: column;
     gap: 16px;
-    margin-bottom: 28px;
-  }
-  .profile input {
-    min-height: 40px;
-    font-size: 16px;
+    margin-bottom: 24px;
   }
 }
 
-.preferenceNote {
+/* Name and avatar on one line inside a table cell. */
+.inlineIdentity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.inlineIdentity > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* An action the content places itself, aligned like a page action. */
+.inlineAction {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* A role is a classification, not a state: a chip without a status dot. */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--a13n-surface);
+  color: var(--a13n-text-supporting);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+/* Back out of a nested settings pane. */
+.contentBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: var(--a13n-secondary);
-  font-size: 11px;
-  margin: 0;
+  font-size: 12.5px;
+  text-decoration: none;
+  width: fit-content;
+}
+.contentBack:hover {
+  color: var(--a13n-text);
+}
+
+/* Two lines in one table cell: the name, then what it refers to. */
+.stacked {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.stacked > span {
+  font-size: 13px;
+}
+.stacked > small,
+.stacked > span + * {
+  font-size: 12px;
+  color: var(--a13n-secondary);
 }

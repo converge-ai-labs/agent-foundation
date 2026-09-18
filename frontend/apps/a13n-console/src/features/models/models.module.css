@@ -1,90 +1,174 @@
+/* Models list ------------------------------------------------------------ */
+.list {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+}
 .listTable {
-  max-height: max(280px, calc(100dvh - 280px));
-  overflow: auto;
-  border-radius: 8px;
-}
-.listTable [data-slot="table-container"] {
-  overflow: visible;
-}
-.listTable table {
-  min-width: 680px;
   table-layout: fixed;
-}
-.listTable thead {
-  position: sticky;
-  top: 0;
-  /* Copyable keys use z-index: 1 and must stay behind the header. */
-  z-index: 2;
+  min-width: 840px;
 }
 .listTable th:nth-child(1) {
-  width: 40%;
+  width: 28%;
 }
 .listTable th:nth-child(2) {
-  width: 32%;
+  width: 25%;
 }
 .listTable th:nth-child(3) {
-  width: 14%;
+  width: 21%;
 }
 .listTable th:nth-child(4) {
-  width: 14%;
+  width: 16%;
+}
+.listTable th:nth-child(5) {
+  width: 10%;
 }
 .listTable td {
-  height: 68px;
+  height: 62px;
 }
-.listTable strong,
-.listTable small {
-  display: block;
+.listTable tbody tr:hover,
+.listTable tbody tr:focus-within {
+  background: var(--a13n-hover);
+}
+.modelMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.modelMeta > span:first-child {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.backButton {
-  align-self: flex-start;
-  justify-self: start;
-}
-.connectionSummary {
+.providerCell {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
-.connectionSummary > div {
-  flex: 1;
+.providerCell > :first-child {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+.providerCell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 11.5px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.statusCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+/* Below the wide breakpoint the declared capabilities give way to identity. */
+@media (max-width: 1180px) {
+  .listTable {
+    min-width: 620px;
+  }
+  .listTable th:nth-child(3),
+  .listTable td:nth-child(3) {
+    display: none;
+  }
+  .listTable th:nth-child(1) {
+    width: 36%;
+  }
+  .listTable th:nth-child(2) {
+    width: 30%;
+  }
+  .listTable th:nth-child(4) {
+    width: 20%;
+  }
+  .listTable th:nth-child(5) {
+    width: 14%;
+  }
+}
+
+/* Dialog steps ----------------------------------------------------------- */
+.step {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.stepNote {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.variantChoice {
+  padding: 12px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.catalogFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Model form ------------------------------------------------------------- */
+.modelForm {
+  display: grid;
+  min-width: 0;
+  gap: 20px;
+}
+.identityFields {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.chosenRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.chosenCopy {
   display: grid;
   gap: 2px;
+  flex: 1;
   min-width: 0;
 }
-.connectionSummary span {
+.chosenCopy strong {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chosenCopy small {
   color: var(--a13n-secondary);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.connectionSummary strong {
-  font-size: 13px;
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
 
-.modelForm {
-  display: grid;
-  min-width: 0;
-  gap: 24px;
-}
-.capabilities {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  border: 0;
-  padding: 0;
-  margin: 0;
-}
-.capabilities legend {
-  font-size: 13px;
-  font-weight: 500;
-  margin-bottom: 10px;
-}
+/* Pricing tiers ---------------------------------------------------------- */
 .pricingEditor {
   display: grid;
   gap: 12px;
@@ -123,31 +207,4 @@
 .pricingActions {
   display: flex;
   justify-content: space-between;
-}
-.modelEditor .modelForm {
-  gap: 18px;
-}
-.connectionFields,
-.identityFields {
-  display: grid;
-  gap: 16px;
-  min-width: 0;
-}
-.identityFields {
-  gap: 14px;
-}
-.modelForm > [data-a13n-form-actions] {
-  border-top: 0;
-  margin-top: 0;
-}
-
-.modelStatus {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-.modelStatus label {
-  font-size: 13px;
-  cursor: pointer;
 }

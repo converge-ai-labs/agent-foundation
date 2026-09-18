@@ -5,7 +5,6 @@ import { ConfigurationSummary } from "../../shared/configuration-summary";
 import { ResourceReference } from "../../shared/identity";
 import { ProviderTypeField } from "../../shared/forms";
 import { ProviderEnabled } from "../../shared/forms";
-import { ProviderIcon } from "../../shared/identity";
 import { ProviderKeyLink } from "../../shared/forms";
 import {
   useResourceEditorState,
@@ -13,8 +12,7 @@ import {
   type ResourceEditorControl,
 } from "../../shared/dialogs";
 import { ResourceEditorButton } from "../../shared/identity";
-import { ResourceIdentity } from "../../shared/collection";
-import { ScopeBadge } from "../../shared/identity";
+
 import {
   Button,
   FormField,
@@ -26,26 +24,25 @@ import {
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { PageActions } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty } from "../../shared/collection";
-import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { useCursor } from "../../shared/collection";
+import { ProviderTable } from "../providers";
+import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import { SchemaFields } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, stringValues, validateSettings } from "../../shared/forms";
 import { connectorApi, type ConnectorScope } from "./api";
+import layout from "./connectors.module.css";
 
 export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
   const client = useClient(),
     { can, organizationAdmin } = useAccess(),
-    { t } = useTranslation(),
     page = useCursor();
   const rows = useResourceRows<Schema["ConnectorProvider"]>();
   const query = useQuery({
@@ -64,8 +61,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
       ? organizationAdmin
       : can("connector_provider.manage");
   return (
-    <div className={styles.stack}>
-      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+    <>
       {rows.selected && (
         <ProviderEditor
           key={rows.selected.id}
@@ -79,63 +75,32 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
           {...rows.control}
         />
       )}
-      <ErrorNotice error={query.error} />
-      {query.isPending ? (
-        <Loading variant="table" columns={3} />
-      ) : query.data?.items.length ? (
-        <>
-          <ResourceTable
-            items={query.data.items}
-            canActivateRow={(item) =>
-              (item.workspace_id ? manage : organizationAdmin) ||
-              (scope.kind === "workspace" && item.status === "active")
-            }
-            onRowActivate={rows.activate}
-            columns={[
-              {
-                label: t("Provider"),
-                tone: "primary",
-                render: (item) => (
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProviderIcon type={item.type} />
-                    <ResourceIdentity
-                      name={item.name}
-                      description={item.type}
-                      resourceId={item.id}
-                    />
-                  </div>
-                ),
-              },
-              {
-                label: t("Scope"),
-                tone: "muted",
-                render: (item) => (
-                  <ScopeBadge workspaceId={item.workspace_id} />
-                ),
-              },
-              {
-                label: t("Status"),
-                render: (item) => (
-                  <StatePill
-                    state={item.status === "active" ? "enabled" : "disabled"}
-                  />
-                ),
-              },
-            ]}
-          />
-          <Pagination page={page} next={query.data.next_cursor} />
-        </>
-      ) : (
-        !query.error && (
-          <Empty
-            title={t("No connector providers")}
-            description={t(
-              "Add an integration-service provider to discover available connectors.",
-            )}
-          />
-        )
-      )}
-    </div>
+      <ProviderTable
+        category="connectors"
+        items={query.data?.items}
+        isPending={query.isPending}
+        error={query.error}
+        page={page}
+        nextCursor={query.data?.next_cursor}
+        action={manage ? <ProviderEditor scope={scope} /> : undefined}
+        canActivateRow={(item) =>
+          (item.workspace_id ? manage : organizationAdmin) ||
+          (scope.kind === "workspace" && item.status === "active")
+        }
+        onRowActivate={rows.activate}
+        row={(item) => ({
+          id: item.id,
+          name: item.name,
+          definition: item.type,
+          type: item.type,
+          workspaceId: item.workspace_id,
+          credentials: item.credential_configured
+            ? "configured"
+            : "not_configured",
+          state: item.status === "active" ? "enabled" : "disabled",
+        })}
+      />
+    </>
   );
 }
 function ProviderEditor({
@@ -428,7 +393,7 @@ function ProviderForm({
           )}
         {basis && (
           <>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div className={layout.checkRow}>
               <Button
                 size="sm"
                 variant="outline"
@@ -444,7 +409,7 @@ function ProviderForm({
               >
                 {t("Check connection")}
               </Button>
-              <span className="text-xs text-muted-foreground">
+              <span className={layout.checkNote}>
                 {t("May consume quota or incur cost.")}
               </span>
             </div>

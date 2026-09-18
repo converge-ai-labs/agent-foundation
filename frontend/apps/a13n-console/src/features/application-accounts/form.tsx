@@ -1,32 +1,36 @@
 import {
-  BrandIcon,
   ChoiceField,
   DisclosureSection,
   FormField,
   Input,
   Label,
+  ReadOnlyField,
   Switch,
   SettingsRow,
 } from "a13n-ui";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useId, useRef, useState, type ReactNode } from "react";
-import layout from "./form.module.css";
+import { useId, useRef, useState } from "react";
 import { ApiError } from "../../service-client";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
+import { PlatformIcon } from "../integrations/platform";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions } from "../../shared/forms";
+import {
+  FormActions,
+  FormSection,
+  formSectionStyles,
+} from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import { SchemaFields } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, stringValues, validateSettings } from "../../shared/forms";
 import { useAccountProviders, useReceptionOptions } from "./data";
 
-const accountProviderLabels: Record<string, string> = {
+export const accountProviderLabels: Record<string, string> = {
   "github@github_app_http_v1": "GitHub App · Webhook",
   "github@github_notifications_v1": "GitHub account · Polling",
   "lark@lark_http_v1": "Lark",
@@ -40,10 +44,13 @@ export function AccountForm({
   reload,
   bot = false,
   setupProvider,
+  chosenProvider,
 }: {
   initial?: Schema["Account"];
   bot?: boolean;
   setupProvider?: "slack" | "lark" | "github" | "github_polling";
+  /** `provider_key@config_version` fixed by a catalog step. */
+  chosenProvider?: string;
   onSuccess: (account: Schema["Account"]) => void;
   onCancel: () => void;
   reload?: () => Promise<void>;
@@ -58,15 +65,16 @@ export function AccountForm({
   const [basis] = useState(initial),
     [name, setName] = useState(initial?.name ?? ""),
     [provider, setProvider] = useState(
-      initial
-        ? `${initial.provider_key}@${initial.provider_config_version}`
-        : setupProvider
-          ? setupProvider === "github"
-            ? "github@github_app_http_v1"
-            : setupProvider === "github_polling"
-              ? "github@github_notifications_v1"
-              : `${setupProvider}@${setupProvider}_http_v1`
-          : "",
+      chosenProvider ??
+        (initial
+          ? `${initial.provider_key}@${initial.provider_config_version}`
+          : setupProvider
+            ? setupProvider === "github"
+              ? "github@github_app_http_v1"
+              : setupProvider === "github_polling"
+                ? "github@github_notifications_v1"
+                : `${setupProvider}@${setupProvider}_http_v1`
+            : ""),
     ),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       initial?.provider_config ??
@@ -289,26 +297,19 @@ export function AccountForm({
   if (definitions.isPending) return <Loading variant="form" rows={5} />;
   const receptionFields = definition ? (
     <>
-      {editingBot ? (
-        <SettingsRow
-          label={t("Receive events")}
-          description={t("Only configured conversations can trigger this bot.")}
-          controlId={receiveId}
-        >
-          <Switch
-            id={receiveId}
-            aria-describedby={`${receiveId}-description`}
-            checked={receive}
-            onCheckedChange={setReceive}
-          />
-        </SettingsRow>
-      ) : (
-        <Label className="flex items-center gap-2">
-          <Switch checked={receive} onCheckedChange={setReceive} />
-          {t("Receive events")}
-        </Label>
-      )}
-      <div className={editingBot ? layout.receptionFields : styles.stack}>
+      <SettingsRow
+        label={t("Receive events")}
+        description={t("Only configured conversations can trigger this bot.")}
+        controlId={receiveId}
+      >
+        <Switch
+          id={receiveId}
+          aria-describedby={`${receiveId}-description`}
+          checked={receive}
+          onCheckedChange={setReceive}
+        />
+      </SettingsRow>
+      <div className={styles.twoColumns}>
         <ChoiceField
           placeholder={t("Select agent")}
           value={agentId || "none"}
@@ -341,34 +342,19 @@ export function AccountForm({
           ]}
         />
       </div>
-      {editingBot ? (
-        <DisclosureSection
-          title={t("Advanced response settings")}
-          open={responseDetailsOpen}
-          onOpenChange={setResponseDetailsOpen}
-        >
-          <BatchingFields value={batching} onChange={setBatching} />
-          <SchemaFields
-            key={`${provider}-policy`}
-            schema={definition.reception_policy_schema}
-            value={policy}
-            onChange={setPolicy}
-          />
-        </DisclosureSection>
-      ) : (
-        <>
-          {" "}
-          <BatchingFields value={batching} onChange={setBatching} />
-          <DisclosureSection title={<>{t("Provider reception policy")}</>}>
-            <SchemaFields
-              key={`${provider}-policy`}
-              schema={definition.reception_policy_schema}
-              value={policy}
-              onChange={setPolicy}
-            />
-          </DisclosureSection>
-        </>
-      )}
+      <DisclosureSection
+        title={t("Advanced response settings")}
+        open={responseDetailsOpen}
+        onOpenChange={setResponseDetailsOpen}
+      >
+        <BatchingFields value={batching} onChange={setBatching} />
+        <SchemaFields
+          key={`${provider}-policy`}
+          schema={definition.reception_policy_schema}
+          value={policy}
+          onChange={setPolicy}
+        />
+      </DisclosureSection>
     </>
   ) : null;
   const identityFields = definition ? (
@@ -382,7 +368,7 @@ export function AccountForm({
   return (
     <form
       autoComplete="off"
-      className={editingBot ? layout.botForm : styles.form}
+      className={formSectionStyles.form}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -393,8 +379,7 @@ export function AccountForm({
           definitions.error ?? options.agents.error ?? options.accounts.error
         }
       />
-      <AccountFormSection
-        enabled={editingBot}
+      <FormSection
         title={t("Basic information")}
         description={t("Name and platform for this bot.")}
       >
@@ -407,31 +392,28 @@ export function AccountForm({
           />
         </FormField>
         {editingBot ? (
-          <div className={layout.platform}>
-            <BrandIcon
-              alias={
-                definition?.provider_key === "lark"
-                  ? configuration.brand === "lark"
+          <ReadOnlyField label={t("Platform")}>
+            <span className="flex items-center gap-2">
+              <PlatformIcon
+                type={
+                  definition?.provider_key === "lark" &&
+                  configuration.brand !== "lark"
                     ? "lark"
-                    : "feishu"
-                  : (definition?.provider_key ?? "")
-              }
-              size={24}
-            />
-            <span>
+                    : (definition?.provider_key ?? "")
+                }
+              />
               {definition?.provider_key === "lark" &&
               configuration.brand !== "lark"
                 ? t("Feishu")
                 : (accountProviderLabels[provider] ?? provider)}
             </span>
-            <span className={layout.platformLabel}>{t("Platform")}</span>
-          </div>
+          </ReadOnlyField>
         ) : (
           <ChoiceField
             placeholder={t("Select account provider")}
             value={provider}
             className="min-w-0"
-            readOnly={!!basis || !!setupProvider}
+            readOnly={!!basis || !!setupProvider || !!chosenProvider}
             required
             onValueChange={(value) => {
               setProvider(value);
@@ -459,11 +441,10 @@ export function AccountForm({
             }
           />
         )}
-      </AccountFormSection>
+      </FormSection>
       {definition && (
         <>
-          <AccountFormSection
-            enabled={editingBot}
+          <FormSection
             title={t("Platform connection")}
             description={t("Choose how messages reach this bot.")}
           >
@@ -505,11 +486,7 @@ export function AccountForm({
                   </p>
                 )}
                 {basis && (
-                  <p
-                    className={
-                      editingBot ? layout.connectionNote : styles.muted
-                    }
-                  >
+                  <p className={styles.muted}>
                     {t(
                       "Before switching, update the account credentials for the new connection method. Keep both methods' credentials during the switch.",
                     )}
@@ -528,7 +505,7 @@ export function AccountForm({
             ) : (
               identityFields
             )}
-          </AccountFormSection>
+          </FormSection>
           {!basis && (
             <>
               <DisclosureSection title={t("Credentials")} defaultOpen>
@@ -542,22 +519,16 @@ export function AccountForm({
               </DisclosureSection>
             </>
           )}
-          {!setupProvider &&
-            (editingBot ? (
-              <AccountFormSection
-                enabled
-                title={t("Message responses")}
-                description={t(
-                  "Choose who responds and which identity runs the agent.",
-                )}
-              >
-                {receptionFields}
-              </AccountFormSection>
-            ) : (
-              <DisclosureSection title={t("Reception")} defaultOpen={receive}>
-                {receptionFields}
-              </DisclosureSection>
-            ))}
+          {!setupProvider && (
+            <FormSection
+              title={t("Message responses")}
+              description={t(
+                "Choose who responds and which identity runs the agent.",
+              )}
+            >
+              {receptionFields}
+            </FormSection>
+          )}
         </>
       )}
       <ErrorNotice
@@ -578,30 +549,6 @@ export function AccountForm({
     </form>
   );
 }
-function AccountFormSection({
-  enabled,
-  title,
-  description,
-  children,
-}: {
-  enabled: boolean;
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
-  const id = useId();
-  if (!enabled) return children;
-  return (
-    <section className={layout.section} aria-labelledby={id}>
-      <div className={layout.sectionHeading}>
-        <h2 id={id}>{title}</h2>
-        <p>{description}</p>
-      </div>
-      <div className={layout.sectionFields}>{children}</div>
-    </section>
-  );
-}
-
 export function BatchingFields({
   value,
   onChange,

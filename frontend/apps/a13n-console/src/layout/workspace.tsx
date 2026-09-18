@@ -26,6 +26,10 @@ interface WorkspaceContextValue {
   organizationAdmin: boolean;
 }
 const Context = createContext<WorkspaceContextValue | null>(null);
+/** Personal settings render without a workspace, whichever section is open. */
+const isPersonalSettings = (pathname: string) =>
+  pathname === "/settings" || pathname.startsWith("/settings/");
+
 const lastWorkspaceByUser = new Map<string, string>();
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const auth = useAuth(),
@@ -91,7 +95,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   if (organization && workspaces.data?.items.length === 0)
     return <NoWorkspace organization={organization} />;
   const error = auth.error ?? workspaces.error ?? permissions.error;
-  if (error && location.pathname === "/settings/profile") return <Outlet />;
+  if (error && isPersonalSettings(location.pathname)) return <Outlet />;
   if (error)
     return (
       <ErrorPage
@@ -219,7 +223,7 @@ function NoWorkspace({
                   <Link to="/organization/settings">
                     {t("Organization settings")}
                   </Link>
-                  <Link to="/organization/settings?section=providers">
+                  <Link to="/organization/settings/providers">
                     {t("Providers")}
                   </Link>
                 </>
@@ -240,9 +244,9 @@ function NoWorkspace({
             retry={() => void permissions.refetch()}
           />
           <ErrorToast error={logout.error} />
-          {["/settings/profile", "/organization/settings"].includes(
-            location.pathname,
-          ) && !permissions.isPending ? (
+          {(isPersonalSettings(location.pathname) ||
+            location.pathname.startsWith("/organization/settings")) &&
+          !permissions.isPending ? (
             <Outlet />
           ) : permissions.isPending ? (
             <Loading />
@@ -288,7 +292,7 @@ function NoOrganization() {
         }
       >
         <ErrorToast error={logout.error} />
-        {location.pathname === "/settings/profile" ? (
+        {isPersonalSettings(location.pathname) ? (
           <Outlet />
         ) : (
           <>

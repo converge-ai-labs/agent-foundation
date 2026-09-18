@@ -8,6 +8,7 @@ import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { useIdempotency } from "../../shared/idempotency";
 import { TestObservation } from "./test-observation";
+import { Step } from "./wizard";
 import styles from "./connect.module.css";
 
 export function PilotTest({
@@ -73,27 +74,63 @@ export function PilotTest({
     },
   });
   const test = observation.data?.latest;
+  const prepare = (
+    <Button
+      className={styles.prepareTest}
+      loading={create.isPending}
+      disabled={
+        create.isPending ||
+        !account.receive_enabled ||
+        !target ||
+        !!targets.error
+      }
+      onClick={() => {
+        if (target)
+          create.mutate(
+            create.isError && create.variables
+              ? create.variables
+              : {
+                  expected_version: account.version,
+                  target_id: target.id,
+                  target_version: target.version,
+                },
+          );
+      }}
+    >
+      {create.isError ? t("Retry preparing test") : t("Prepare a test message")}
+    </Button>
+  );
   return (
-    <section>
-      <h2>
-        {t(
-          account.provider_key === "github"
-            ? "Test in your pilot repository"
-            : "Test in your pilot conversation",
-        )}
-      </h2>
+    <Step
+      title={t(
+        account.provider_key === "github"
+          ? "Test in your pilot repository"
+          : "Test in your pilot conversation",
+      )}
+      description={t(
+        "Prepare a test message, then send it yourself in the pilot conversation. Sending it invokes your agent and may consume model usage.",
+      )}
+      onBack={back}
+      backLabel={t("Review reception settings")}
+      primary={
+        <>
+          {prepare}
+          <Button
+            variant="outline"
+            render={<Link to={`${basePath}/bots/${account.id}`} />}
+          >
+            {t("Open bot")}
+          </Button>
+        </>
+      }
+    >
       {account.provider_key === "github" && (
-        <p>
+        <p className={styles.hint}>
           {t(
             "Post the test text as an Issue or PR comment in the pilot repository. For polling, mention the connected GitHub account and allow at least one polling interval. Use an allowed sender account.",
           )}
         </p>
       )}
-      <p>
-        {t(
-          "Prepare a test message, then send it yourself in the pilot conversation. Sending it invokes your agent and may consume model usage.",
-        )}
-      </p>
       <ErrorNotice error={targets.error} retry={() => void targets.refetch()} />
       <ErrorNotice
         error={observation.error}
@@ -101,50 +138,23 @@ export function PilotTest({
       />
       <ErrorNotice error={create.error} />
       {targets.isPending || observation.isPending ? (
-        <Loading variant="detail" />
+        <Loading variant="list" rows={3} />
       ) : (
         <>
           {!account.receive_enabled && (
-            <p role="status">
+            <p className={styles.hint} role="status">
               {t(
                 "Reception is still disabled. Enable it before sending the test message.",
               )}
             </p>
           )}
           {!target && (
-            <p role="status">
+            <p className={styles.hint} role="status">
               {t(
                 "Configure exactly one pilot conversation before preparing a test.",
               )}
             </p>
           )}
-          <Button
-            className={styles.prepareTest}
-            disabled={
-              create.isPending ||
-              !account.receive_enabled ||
-              !target ||
-              !!targets.error
-            }
-            onClick={() => {
-              if (target)
-                create.mutate(
-                  create.isError && create.variables
-                    ? create.variables
-                    : {
-                        expected_version: account.version,
-                        target_id: target.id,
-                        target_version: target.version,
-                      },
-                );
-            }}
-          >
-            {create.isPending
-              ? t("Preparing test…")
-              : create.isError
-                ? t("Retry preparing test")
-                : t("Prepare a test message")}
-          </Button>
           {test && !observation.error && (
             <TestObservation
               account={account}
@@ -156,19 +166,11 @@ export function PilotTest({
           )}
         </>
       )}
-      <p>
+      <p className={styles.hint}>
         {t(
           "Closing setup does not cancel work that has already been accepted.",
         )}
       </p>
-      <div className={styles.actions}>
-        <Button variant="outline" onClick={back}>
-          {t("Review reception settings")}
-        </Button>
-        <Button render={<Link to={`${basePath}/bots/${account.id}`} />}>
-          {t("Open bot")}
-        </Button>
-      </div>
-    </section>
+    </Step>
   );
 }

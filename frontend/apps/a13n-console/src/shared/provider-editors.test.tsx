@@ -130,13 +130,17 @@ it.each(cases)(
     const { connector, type, listPath, detailPath } = setup(kind, surface);
     await screen.findByText("Existing provider");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
-    await user.click(screen.getByRole("combobox", { name: "Provider type" }));
-    expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
-    await user.click(
-      await screen.findByRole("option", {
-        name: connector ? "Composio" : type,
-      }),
-    );
+    if (connector) {
+      // Connector creation still selects its type inside the form.
+      await user.click(screen.getByRole("combobox", { name: "Provider type" }));
+      await user.click(await screen.findByRole("option", { name: "Composio" }));
+    } else {
+      // Environment creation starts from the provider catalog.
+      expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
+      await user.click(
+        await screen.findByRole("button", { name: new RegExp(type) }),
+      );
+    }
     const nameField = screen.getByRole("textbox", {
       name: "Name",
     }) as HTMLInputElement;
@@ -177,12 +181,19 @@ it.each(cases)(
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await user.click(screen.getByRole("button", { name: "Add provider" }));
-    expect(
-      (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
-    ).toBe("");
-    expect(
-      screen.getByRole("combobox", { name: "Provider type" }).textContent,
-    ).toContain("Select provider type");
+    if (connector) {
+      expect(
+        (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement)
+          .value,
+      ).toBe("");
+      expect(
+        screen.getByRole("combobox", { name: "Provider type" }).textContent,
+      ).toContain("Select provider type");
+    } else {
+      // The catalog comes back, so the previous draft cannot leak forward.
+      expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+      await screen.findByRole("button", { name: new RegExp(type) });
+    }
   },
 );
 
@@ -192,7 +203,8 @@ it.each(cases)(
     const user = userEvent.setup();
     const { connector, detailPath, provider } = setup(kind, surface);
     await screen.findByText("Existing provider");
-    expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+    // Every provider surface carries the shared row overflow menu.
+    expect(screen.getByRole("columnheader", { name: "Actions" })).toBeTruthy();
     const row = screen.getByRole("row", { name: /Existing provider/ });
     row.focus();
     await user.keyboard("{Enter}");

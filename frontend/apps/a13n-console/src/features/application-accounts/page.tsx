@@ -1,28 +1,52 @@
-import { Button, ModalFrame } from "a13n-ui";
-
+import { PlugsConnectedIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
-
+import { useNavigate, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { commandHeaders, data } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty } from "../../shared/collection";
-import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
-import { Page } from "../../shared/page";
-import { Confirm } from "../../shared/dialogs";
-import { useIdempotency } from "../../shared/idempotency";
+import { data } from "../../shared/api";
+import {
+  CollectionFooter,
+  Empty,
+  Pagination,
+  ResourceIdentity,
+  ResourceTable,
+  useCursor,
+} from "../../shared/collection";
+import {
+  ErrorNotice,
+  Loading,
+  StatePill,
+  Timestamp,
+} from "../../shared/feedback";
+import { IconTile } from "../../shared/identity";
+import {
+  DetailHeader,
+  DetailLayout,
+  DetailPage,
+  Page,
+  RailRow,
+  RailSection,
+  Section,
+  useTabParam,
+} from "../../shared/page";
+import {
+  PlatformIcon,
+  ReceptionPill,
+  usePlatformName,
+} from "../integrations/platform";
+import { AccountActions } from "./actions";
+import { AddApplicationAccount } from "./add-account";
 import { AccountCredentials } from "./credentials";
-import { AccountForm } from "./form";
+import { AccountTargets } from "./targets";
 
 export function ApplicationAccountsPage() {
   const client = useClient(),
     { workspace, can, basePath } = useWorkspace(),
     { t } = useTranslation(),
+    platformName = usePlatformName(),
     page = useCursor(),
-    [open, setOpen] = useState(false),
     navigate = useNavigate();
   const query = useQuery({
     queryKey: ["application-accounts", workspace.id, page.cursor],
@@ -37,59 +61,56 @@ export function ApplicationAccountsPage() {
         })
         .then(data),
   });
+  const add = can("application_account.manage") && (
+    <AddApplicationAccount
+      onCreated={(account) =>
+        navigate(`${basePath}/application-accounts/${account.id}`)
+      }
+    />
+  );
+  const items = query.data?.items ?? [];
   return (
     <Page
       title={t("Application accounts")}
       description={t(
         "Bot identities and application installations operated by this workspace.",
       )}
-      actions={
-        can("application_account.manage") && (
-          <ModalFrame
-            onOpenChange={setOpen}
-            trigger={
-              <Button variant="default" type="button">
-                {t("Add account")}
-              </Button>
-            }
-            size={"lg"}
-            title={t("Add application account")}
-            description={t(
-              "Connect an external account and choose how incoming events reach your agents.",
-            )}
-            closeLabel={t("Close")}
-            open={open}
-          >
-            {open && (
-              <AccountForm
-                onCancel={() => setOpen(false)}
-                onSuccess={(account) => {
-                  setOpen(false);
-                  navigate(account.id);
-                }}
-              />
-            )}
-          </ModalFrame>
-        )
-      }
+      actions={add}
     >
-      <ErrorNotice error={query.error} />
+      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading variant="table" columns={4} />
-      ) : query.data?.items.length ? (
+      ) : items.length ? (
         <>
           <ResourceTable
-            items={query.data.items}
+            items={items}
+            caption={t("Application accounts")}
+            onRowActivate={(item) =>
+              navigate(`${basePath}/application-accounts/${item.id}`)
+            }
             columns={[
               {
                 label: t("Account"),
                 tone: "primary",
-                render: (item) => (
-                  <Link to={item.id}>
-                    <strong>{item.name}</strong>
-                    <small>{item.provider_key}</small>
-                  </Link>
-                ),
+                render: (item) => {
+                  const organization =
+                    item.provider_config?.[
+                      item.provider_key === "slack" ? "team_id" : "tenant_key"
+                    ];
+                  return (
+                    <ResourceIdentity
+                      to={`${basePath}/application-accounts/${item.id}`}
+                      name={item.name}
+                      icon={<PlatformIcon type={item.provider_key} />}
+                      description={
+                        typeof organization === "string" && organization
+                          ? `${platformName(item.provider_key)} · ${organization}`
+                          : platformName(item.provider_key)
+                      }
+                      resourceId={item.id}
+                    />
+                  );
+                },
               },
               {
                 label: t("Status"),
@@ -98,9 +119,7 @@ export function ApplicationAccountsPage() {
               {
                 label: t("Reception"),
                 render: (item) => (
-                  <StatePill
-                    state={item.receive_enabled ? "enabled" : "disabled"}
-                  />
+                  <ReceptionPill enabled={!!item.receive_enabled} />
                 ),
               },
               {
@@ -112,30 +131,47 @@ export function ApplicationAccountsPage() {
                       : "Not configured",
                   ),
               },
+              {
+                label: t("Updated"),
+                tone: "muted",
+                render: (item) => (
+                  <Timestamp value={item.updated_at} relative />
+                ),
+              },
             ]}
           />
-          <Pagination page={page} next={query.data.next_cursor} />
+          <CollectionFooter
+            count={t("{{count}} accounts on this page", {
+              count: items.length,
+            })}
+          >
+            <Pagination page={page} next={query.data?.next_cursor} />
+          </CollectionFooter>
         </>
       ) : (
         !query.error && (
           <Empty
+            icon={<PlugsConnectedIcon aria-hidden="true" />}
             title={t("No application accounts")}
             description={t(
               "Add a Slack, Lark, or GitHub application identity using a registered provider.",
             )}
+            action={add}
           />
         )
       )}
     </Page>
   );
 }
+
 export function ApplicationAccountDetail() {
   const { accountId = "" } = useParams(),
     client = useClient(),
-    { workspace, can, basePath } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
+    platformName = usePlatformName(),
     [generation, setGeneration] = useState(0),
-    key = useIdempotency(),
+    [tab, setTab] = useTabParam(["overview", "targets"]),
     navigate = useNavigate();
   const query = useQuery({
     queryKey: ["application-accounts", workspace.id, accountId],
@@ -154,80 +190,88 @@ export function ApplicationAccountDetail() {
   if (query.isPending) return <Loading variant="detail" page />;
   if (!query.data)
     return <ErrorNotice error={query.error} retry={() => void reload()} />;
-  const account = query.data,
-    manage = can("application_account.manage");
+  const account = query.data;
+  const organization =
+    account.provider_config?.[
+      account.provider_key === "slack" ? "team_id" : "tenant_key"
+    ];
   return (
-    <Page
-      title={account.name}
-      description={account.provider_key}
+    <DetailPage
       back={`${basePath}/application-accounts`}
-      actions={
-        manage && (
-          <>
-            <Confirm
-              subject={account.name}
-              title={t(
-                account.status === "active"
-                  ? "Disable account"
-                  : "Enable account",
-              )}
-              description={t(
-                "Administrative availability controls reception and provider dispatch.",
-              )}
-              trigger={t(account.status === "active" ? "Disable" : "Enable")}
-              action={async () => {
-                const action =
-                    account.status === "active" ? "disable" : "enable",
-                  body = { expected_version: account.version };
-                await client.http.POST(
-                  "/api/v1/application-accounts/{account_id}/{action}",
-                  {
-                    params: {
-                      path: { account_id: account.id, action },
-                      header: commandHeaders(
-                        workspace.id,
-                        key.forBody({ action, ...body }),
-                      ),
-                    },
-                    body,
-                  },
-                );
-                await reload();
-              }}
+      backLabel={t("Application accounts")}
+      tab={tab}
+      onTabChange={setTab}
+      tabs={[
+        { value: "overview", label: t("Overview") },
+        { value: "targets", label: t("Targets") },
+      ]}
+      header={
+        <DetailHeader
+          avatar={
+            <IconTile size={44}>
+              <PlatformIcon type={account.provider_key} size={24} />
+            </IconTile>
+          }
+          name={account.name}
+          status={<StatePill state={account.status} />}
+          description={
+            typeof organization === "string" && organization
+              ? `${platformName(account.provider_key)} · ${organization}`
+              : platformName(account.provider_key)
+          }
+          actions={
+            <AccountActions
+              account={account}
+              reload={reload}
+              onDeleted={() => navigate(`${basePath}/application-accounts`)}
+              label={t("Account actions")}
             />
-            <Confirm
-              subject={account.name}
-              title={t("Delete application account")}
-              description={t(
-                "This makes the identity unavailable and clears its credentials. Retained run evidence keeps its original identity.",
-              )}
-              trigger={t("Delete")}
-              danger
-              action={async () => {
-                await client.http.DELETE(
-                  "/api/v1/application-accounts/{account_id}",
-                  {
-                    params: {
-                      path: { account_id: account.id },
-                      query: { expected_version: account.version },
-                    },
-                  },
-                );
-                navigate(`${basePath}/application-accounts`);
-              }}
-            />
-          </>
-        )
+          }
+        />
+      }
+      rail={
+        tab === "overview" ? (
+          <RailSection title={t("Overview")}>
+            <RailRow label={t("Status")}>
+              <StatePill state={account.status} />
+            </RailRow>
+            <RailRow label={t("Reception")}>
+              <ReceptionPill enabled={!!account.receive_enabled} />
+            </RailRow>
+            <RailRow label={t("Provider")}>
+              <span>{account.provider_config_version}</span>
+            </RailRow>
+            <RailRow label={t("Credentials")}>
+              <span>
+                {t(
+                  account.credential_configured
+                    ? "Configured"
+                    : "Not configured",
+                )}
+              </span>
+            </RailRow>
+            <RailRow label={t("Updated")}>
+              <Timestamp value={account.updated_at} relative />
+            </RailRow>
+          </RailSection>
+        ) : undefined
       }
     >
-      <section
-        key={generation}
-        className="grid gap-4"
-        aria-label={t("Credentials")}
-      >
-        <h2>{t("Credentials")}</h2>
-        <AccountCredentials account={account} reload={reload} />
-      </section>
-    </Page>
+      {tab === "overview" ? (
+        <Section
+          key={generation}
+          title={t("Credentials")}
+          description={t(
+            "Existing credentials are never displayed. Supply a complete replacement.",
+          )}
+        >
+          <AccountCredentials account={account} reload={reload} />
+        </Section>
+      ) : (
+        <DetailLayout>
+          <AccountTargets account={account} />
+        </DetailLayout>
+      )}
+    </DetailPage>
   );
 }

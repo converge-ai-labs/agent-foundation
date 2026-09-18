@@ -1,27 +1,34 @@
-import { ResourceIdentity } from "../../shared/collection";
-import { ProviderIcon } from "../../shared/identity";
-import { useResourceRows } from "../../shared/dialogs";
-import { ScopeBadge } from "../../shared/identity";
-import { ManageProvidersLink } from "../providers/manage-link";
+import { StackIcon } from "@phosphor-icons/react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty } from "../../shared/collection";
+import {
+  CollectionFooter,
+  Empty,
+  Pagination,
+  ResourceIdentity,
+  ResourceTable,
+  useCursor,
+} from "../../shared/collection";
+import { useResourceRows } from "../../shared/dialogs";
 import {
   ErrorNotice,
   InlineLoading,
   Loading,
   StatePill,
+  Timestamp,
 } from "../../shared/feedback";
+import { ProviderIcon, ScopeBadge } from "../../shared/identity";
 import { PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
+import { ManageProvidersLink } from "../providers/manage-link";
 import { environmentApi, type EnvironmentScope } from "./api";
 import { useEnvironmentTypes } from "./providers";
 import { TemplateEditor } from "./template-editor";
 
+/** Reusable environment definitions: one row per template, newest revision. */
 export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
   const client = useClient(),
     { can, organizationAdmin } = useAccess(),
@@ -59,10 +66,24 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
       revision.data ? [[revision.data.id, revision.data] as const] : [],
     ),
   );
+  const resolving =
+    providers.isPending || revisions.some((entry) => entry.isPending);
   const manage =
     scope.kind === "organization"
       ? organizationAdmin
       : can("environment_template.manage");
+  function providerOf(template: Schema["EnvironmentTemplate"]) {
+    const revision = revisionById.get(template.current_revision_id);
+    return revision ? providerById.get(revision.provider_id) : undefined;
+  }
+  function providerName(provider?: Schema["EnvironmentProvider"]) {
+    if (!provider) return undefined;
+    return (
+      providerTypes.data?.items.find(
+        (definition) => definition.type === provider.type,
+      )?.display_name ?? provider.name
+    );
+  }
   return (
     <div className={styles.stack}>
       <PageActions>
@@ -88,53 +109,45 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
         retry={() => void providers.refetch()}
       />
       {query.isPending ? (
-        <Loading variant="table" columns={4} />
+        <Loading variant="table" columns={5} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
+            caption={t("Environment templates")}
             items={query.data.items}
             onRowActivate={rows.activate}
             columns={[
               {
-                label: t("Name"),
+                label: t("Template"),
                 tone: "primary",
-                render: (item) => (
-                  <ResourceIdentity
-                    name={item.name}
-                    description={item.description}
-                    resourceId={item.id}
-                  />
-                ),
-              },
-              {
-                label: t("Provider"),
                 render: (item) => {
-                  const revision = revisionById.get(item.current_revision_id);
-                  const provider = revision
-                    ? providerById.get(revision.provider_id)
-                    : undefined;
-                  return provider ? (
-                    <div className="flex min-w-0 items-center gap-3">
-                      <ProviderIcon key={provider.type} type={provider.type} />
-                      <ResourceIdentity
-                        name={provider.name}
-                        resourceId={provider.id}
-                        description={
-                          providerTypes.data?.items.find(
-                            (definition) => definition.type === provider.type,
-                          )?.display_name ?? provider.type
-                        }
-                      />
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {providers.isPending ||
-                      revisions.some((entry) => entry.isPending) ? (
-                        <InlineLoading width="7rem" />
-                      ) : (
-                        t("Provider unavailable")
-                      )}
-                    </span>
+                  const provider = providerOf(item);
+                  return (
+                    <ResourceIdentity
+                      name={item.name}
+                      resourceId={item.id}
+                      icon={
+                        provider ? (
+                          <ProviderIcon
+                            key={provider.type}
+                            type={provider.type}
+                          />
+                        ) : (
+                          <StackIcon
+                            aria-hidden="true"
+                            className="size-4 text-muted-foreground"
+                          />
+                        )
+                      }
+                      description={
+                        providerName(provider) ??
+                        (resolving ? (
+                          <InlineLoading width="6rem" />
+                        ) : (
+                          t("Provider unavailable")
+                        ))
+                      }
+                    />
                   );
                 },
               },
@@ -145,24 +158,41 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
                   <ScopeBadge workspaceId={item.workspace_id} />
                 ),
               },
-              { label: t("Version"), render: (item) => `v${item.version}` },
+              {
+                label: t("Version"),
+                render: (item) =>
+                  t("Version {{version}}", { version: item.version }),
+              },
               {
                 label: t("Status"),
                 render: (item) => (
                   <StatePill state={item.archived_at ? "archived" : "active"} />
                 ),
               },
+              {
+                label: t("Updated"),
+                tone: "muted",
+                render: (item) => <Timestamp value={item.updated_at} />,
+              },
             ]}
           />
-          <Pagination page={page} next={query.data.next_cursor} />
+          <CollectionFooter
+            count={t("{{count}} templates on this page", {
+              count: query.data.items.length,
+            })}
+          >
+            <Pagination page={page} next={query.data.next_cursor} />
+          </CollectionFooter>
         </>
       ) : (
         !query.error && (
           <Empty
+            icon={<StackIcon aria-hidden="true" />}
             title={t("No environment templates")}
             description={t(
               "Create a template, then choose it when starting a conversation.",
             )}
+            action={manage ? <TemplateEditor scope={scope} /> : undefined}
           />
         )
       )}

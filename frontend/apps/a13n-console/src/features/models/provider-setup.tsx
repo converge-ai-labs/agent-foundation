@@ -1,150 +1,97 @@
 import { PlusIcon } from "@phosphor-icons/react";
-import { Button, FormField, SearchPicker } from "a13n-ui";
-import { useState } from "react";
+import { StatusPill } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
-import { ErrorNotice, Loading } from "../../shared/feedback";
-import { ProviderIcon } from "../../shared/identity";
-import styles from "../../shared/shared.module.css";
 import {
-  ProviderCatalog,
-  ProviderConnectForm,
-  connectStepDescription,
-} from "./add-provider";
-import { type ModelScope } from "./api";
-import { useProviderDraft } from "./provider-draft";
+  CatalogStep,
+  DirectoryGroup,
+  DirectoryList,
+  DirectoryRow,
+} from "../../shared/dialogs";
+import { ProviderIcon } from "../../shared/identity";
+import { ModelProviderCatalog, ProviderConnectForm } from "./add-provider";
+import { type useProviderDraft } from "./provider-draft";
+
+type Definition = Schema["ModelProviderDefinition"];
 
 /**
- * Provider choice inside the model form. Connecting a new provider reuses the
- * same catalog and connect form as the Add provider dialog.
+ * First step of the add flow: the providers this scope already connects, with
+ * a way to connect another one without leaving the dialog.
  */
-export function ProviderSetup({
-  scope,
+export function ProviderChoice({
   providers,
   definitions,
-  value,
-  error,
   onSelect,
-  onCreated,
-  onCancel,
+  onConnect,
 }: {
-  scope: ModelScope;
-  providers?: Schema["ModelProvider"][];
-  definitions?: Schema["ModelProviderDefinition"][];
-  value: string;
-  error?: unknown;
+  providers: readonly Schema["ModelProvider"][];
+  definitions: readonly Definition[];
   onSelect: (id: string) => void;
-  onCreated: (provider: Schema["ModelProvider"], modelApi?: string) => void;
-  onCancel: () => void;
+  onConnect: () => void;
 }) {
-  const { t } = useTranslation(),
-    [connecting, setConnecting] = useState(false);
-  if (error) return <ErrorNotice error={error} />;
-  if (!providers || !definitions) return <Loading variant="form" rows={3} />;
-  if (connecting || !providers.length)
-    return (
-      <ConnectProvider
-        scope={scope}
-        definitions={definitions}
-        onBack={providers.length ? () => setConnecting(false) : undefined}
-        onCancel={() => (providers.length ? setConnecting(false) : onCancel())}
-        onCreated={onCreated}
-      />
-    );
+  const { t } = useTranslation();
   return (
-    <div className={styles.stack}>
-      <FormField
-        label={t("Provider")}
-        labelAction={
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setConnecting(true)}
-          >
-            <PlusIcon size={14} />
-            {t("Connect provider")}
-          </Button>
-        }
-      >
-        <SearchPicker
-          label={t("Provider")}
-          placeholder={t("Choose a provider…")}
-          emptyMessage={t("No results")}
-          value={value}
-          onValueChange={onSelect}
-          groups={[
-            {
-              label: t("Providers"),
-              options: providers.map((item) => ({
-                value: item.id,
-                label: item.name,
-                icon: <ProviderIcon type={item.type} />,
-                description:
-                  definitions.find(
-                    (definition) => definition.type === item.type,
-                  )?.display_name ?? item.type,
-                disabled: !item.enabled,
-              })),
-            },
-          ]}
-        />
-      </FormField>
-    </div>
+    <DirectoryList>
+      <DirectoryRow
+        tone="elevated"
+        icon={<PlusIcon size={18} aria-hidden="true" />}
+        name={t("Connect a new provider")}
+        detail={t("OpenAI, a gateway, or any OpenAI-compatible endpoint")}
+        onClick={onConnect}
+      />
+      <DirectoryGroup label={t("Connected providers")}>
+        {providers.map((provider) => (
+          <DirectoryRow
+            key={provider.id}
+            icon={<ProviderIcon type={provider.type} />}
+            name={provider.name}
+            detail={
+              definitions.find((item) => item.type === provider.type)
+                ?.display_name ?? provider.type
+            }
+            meta={
+              provider.enabled ? undefined : (
+                <StatusPill variant="warning">{t("Disabled")}</StatusPill>
+              )
+            }
+            onClick={() => onSelect(provider.id)}
+          />
+        ))}
+      </DirectoryGroup>
+    </DirectoryList>
   );
 }
 
-function ConnectProvider({
-  scope,
+/**
+ * Connecting a provider inline reuses the catalog and the connect form of the
+ * Add provider dialog, so both routes ask for the same things.
+ */
+export function ProviderConnect({
   definitions,
+  draft,
   onBack,
-  onCancel,
-  onCreated,
 }: {
-  scope: ModelScope;
-  definitions: Schema["ModelProviderDefinition"][];
+  definitions: Definition[];
+  draft: ReturnType<typeof useProviderDraft>;
   onBack?: () => void;
-  onCancel: () => void;
-  onCreated: (provider: Schema["ModelProvider"], modelApi?: string) => void;
 }) {
   const { t } = useTranslation();
-  const draft = useProviderDraft({
-    scope,
-    definitions,
-    initialType: "",
-    close: onCancel,
-    onCreated,
-  });
-  const chosen = draft.definition;
-  if (!chosen)
+  if (!draft.definition)
     return (
-      <div className={styles.stack}>
-        {onBack && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="justify-self-start"
-            onClick={onBack}
-          >
-            {t("Choose provider")}
-          </Button>
-        )}
-        <ProviderCatalog
+      <CatalogStep backLabel={t("Choose a provider")} onBack={onBack}>
+        <ModelProviderCatalog
           definitions={definitions}
           onChoose={draft.chooseType}
         />
-      </div>
+      </CatalogStep>
     );
   return (
-    <div className={styles.stack}>
-      <p className={styles.muted}>{connectStepDescription(chosen, t)}</p>
-      <ProviderConnectForm
-        draft={draft}
-        definition={chosen}
-        onBack={() => draft.chooseType("")}
-        submitLabel={t("Connect provider")}
-      />
-    </div>
+    <ProviderConnectForm
+      draft={draft}
+      definition={draft.definition}
+      onBack={() => draft.chooseType("")}
+      backLabel={t("All providers")}
+      submitLabel={t("Connect provider")}
+    />
   );
 }

@@ -1,7 +1,3 @@
-.sections {
-  display: grid;
-  gap: 40px;
-}
 .note {
   display: flex;
   align-items: flex-start;

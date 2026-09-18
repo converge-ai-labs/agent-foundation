@@ -16,6 +16,7 @@ The frame of a screen.
 - `Rail`, `RailSection`, `RailRow`, `RailNote` — the quiet summary groups inside the rail: an 11px uppercase heading, then label and value rows.
 - `useTabParam` — reads and writes the active tab through `?tab=`; the first tab is the default and never appears in the URL.
 - `Section` — a titled group on a surface: 15px title, 12.5px description, optional actions at the right, and the section body. Sections never draw an outline; the editor separates them with 36px of whitespace.
+- `Panel` — the side panel that inspects one row without leaving the collection: a header with the identity and its actions, an optional tab strip, a scrollable body, and a drag handle at the left edge. `inline` places the same anatomy in a layout slot its owner sizes, so a panel that reads beside a transcript never covers it; pass `width` and `onWidthChange` to own that width.
 - `SaveBar` — the floating bar for draft editors: a pulse dot, what changed, the consequence of saving, an optional note field, Discard, and Save. It is a `type="submit"` control, so it belongs inside the editor's form.
 
 ## `shared/collection`
@@ -63,6 +64,7 @@ Fields and form chrome that several features share.
 Overlays and the state behind them.
 
 - `Confirm` — destructive confirmation: it names the resource and labels the action with its verb.
+- `ConflictNotice` — concurrency recovery: a saved resource moved underneath the draft (412), or a create could not be confirmed. One explanation and the two ways out — reconcile with the server, or continue with the draft.
 - `useResourceRows` / `useResourceEditorState` — the pair that opens a row's editor as a modal and returns focus to the row that opened it.
 - `ResourceModalTitle` — a name plus its reference popover, for editor titles.
 - `BrandTitle` — brand mark plus title, used by the second step of a catalog-first creation flow.

@@ -1,4 +1,4 @@
-import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import { BrainIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, SearchPicker } from "a13n-ui";
 import { useState } from "react";
@@ -10,10 +10,11 @@ import { allPages, data } from "../../shared/api";
 import { Empty } from "../../shared/collection";
 import { ErrorNotice } from "../../shared/feedback";
 import { Page } from "../../shared/page";
-import { providersPath } from "../providers/navigation";
+import { ManageProvidersLink } from "../providers/manage-link";
 import { memoryKey, type MemoryTarget } from "./api";
 import { MemoryContents } from "./contents";
-import { useMemoryProviders } from "./availability";
+import { memoryProviderUsable, useMemoryProviders } from "./availability";
+import styles from "./memory.module.css";
 
 export function MemoriesPage() {
   const [params, setParams] = useSearchParams();
@@ -71,6 +72,12 @@ function MemoryPageSelection({
         }
       : null;
   const selected = providers.data?.find((item) => item.id === provider);
+  const incomplete = !provider.trim() || (scope !== "user" && !subject.trim());
+  const scopeLabels = {
+    user: t("My memories"),
+    agent: t("Agent"),
+    thread: t("Thread"),
+  };
   return (
     <Page
       title={t("Memories")}
@@ -79,180 +86,178 @@ function MemoryPageSelection({
       )}
       actions={
         can("memory_provider.read") ? (
-          <a
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-            href={providersPath("memory", "workspace", workspace.key)}
-          >
-            {t("Manage memory providers")}
-            <ArrowSquareOutIcon size={14} aria-hidden="true" />
-          </a>
+          <ManageProvidersLink category="memory" scope="workspace" />
         ) : undefined
       }
-    >
-      <form
-        className="mb-6 rounded-lg bg-muted p-4"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (
-            editing ||
-            !provider.trim() ||
-            (scope !== "user" && !subject.trim())
-          )
-            return;
-          const next = new URLSearchParams({
-            provider: provider.trim(),
-            scope,
-          });
-          if (scope !== "user") next.set("subject", subject.trim());
-          onSelect(next);
-        }}
-      >
-        <fieldset
-          disabled={editing}
-          className="grid min-w-0 gap-4 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_1fr_auto]"
+      toolbar={
+        <form
+          className={styles.selector}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (editing || incomplete) return;
+            const next = new URLSearchParams({
+              provider: provider.trim(),
+              scope,
+            });
+            if (scope !== "user") next.set("subject", subject.trim());
+            onSelect(next);
+          }}
         >
-          {can("memory_provider.read") ? (
-            <FormField label={t("Memory provider")}>
-              <SearchPicker
-                label={t("Memory provider")}
-                placeholder={t("Choose a memory provider…")}
-                emptyMessage={t("No memory providers available.")}
-                value={provider}
-                onValueChange={(value) => setProvider(value ?? "")}
-                groups={[
-                  {
-                    label: t("Providers"),
-                    options: [
-                      ...(providers.data ?? []).map((item) => ({
-                        value: item.id,
-                        label: item.name,
-                        description: `${t(item.workspace_id ? "Workspace" : "Organization")} · ${item.id}${!item.enabled || !item.credential_configured ? ` · ${t("Unavailable")}` : ""}`,
-                      })),
-                      ...(provider && !selected
-                        ? [
-                            {
-                              value: provider,
-                              label: provider,
-                              description: t("Selected provider unavailable"),
-                            },
-                          ]
-                        : []),
-                    ],
-                  },
-                ]}
-              />
-            </FormField>
-          ) : (
-            <FormField label={t("Memory provider ID")}>
-              <Input
-                required
-                value={provider}
-                onChange={(event) => setProvider(event.target.value)}
-              />
-            </FormField>
-          )}
-          <ChoiceField
-            label={t("Memory scope")}
-            value={scope}
-            onValueChange={(value) => {
-              setScope(value as MemoryTarget["scope"]);
-              setSubject("");
-            }}
-            options={[
-              { value: "user", label: t("My memories") },
-              { value: "agent", label: t("Agent") },
-              { value: "thread", label: t("Thread") },
-            ]}
-          />
-          {scope === "agent" ? (
-            <FormField label={t("Agent")}>
-              <SearchPicker
-                label={t("Agent")}
-                placeholder={t("Choose an agent…")}
-                emptyMessage={t("No agents available.")}
-                value={subject}
-                onValueChange={(value) => setSubject(value ?? "")}
-                groups={[
-                  {
-                    label: t("Agents"),
-                    options: [
-                      ...(agents.data ?? []).map((item) => ({
-                        value: item.id,
-                        label: item.name,
-                        description: item.id,
-                      })),
-                      ...(subject &&
-                      !agents.data?.some((item) => item.id === subject)
-                        ? [
-                            {
-                              value: subject,
-                              label: subject,
-                              description: t("Selected subject"),
-                            },
-                          ]
-                        : []),
-                    ],
-                  },
-                ]}
-              />
-            </FormField>
-          ) : scope === "thread" ? (
-            <FormField label={t("Thread ID")}>
-              <Input
-                required
-                value={subject}
-                onChange={(event) => setSubject(event.target.value)}
-                placeholder="thr_…"
-              />
-            </FormField>
-          ) : (
-            <p className="self-end pb-2 text-sm text-muted-foreground">
-              {t("Only your memories in this workspace.")}
+          <fieldset disabled={editing} className={styles.selectorFields}>
+            {can("memory_provider.read") ? (
+              <div className={styles.selectorField}>
+                <SearchPicker
+                  label={t("Memory provider")}
+                  placeholder={t("Provider")}
+                  emptyMessage={t("No memory providers available.")}
+                  value={provider}
+                  onValueChange={(value) => setProvider(value ?? "")}
+                  groups={[
+                    {
+                      label: t("Providers"),
+                      options: [
+                        ...(providers.data ?? []).map((item) => ({
+                          value: item.id,
+                          label: item.name,
+                          description: `${t(item.workspace_id ? "Workspace" : "Organization")}${memoryProviderUsable(item) ? "" : ` · ${t("Unavailable")}`}`,
+                        })),
+                        ...(provider && !selected
+                          ? [
+                              {
+                                value: provider,
+                                label: provider,
+                                description: t("Selected provider unavailable"),
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                  ]}
+                />
+              </div>
+            ) : (
+              <FormField
+                hideLabel
+                className={styles.selectorField}
+                label={t("Memory provider ID")}
+              >
+                <Input
+                  required
+                  placeholder={t("Memory provider ID")}
+                  value={provider}
+                  onChange={(event) => setProvider(event.target.value)}
+                />
+              </FormField>
+            )}
+            <ChoiceField
+              variant="filter"
+              className={styles.selectorField}
+              label={t("Scope")}
+              value={scope}
+              onValueChange={(value) => {
+                setScope(value as MemoryTarget["scope"]);
+                setSubject("");
+              }}
+              options={[
+                { value: "user", label: scopeLabels.user },
+                { value: "agent", label: scopeLabels.agent },
+                { value: "thread", label: scopeLabels.thread },
+              ]}
+            />
+            {scope === "agent" ? (
+              <div className={styles.selectorField}>
+                <SearchPicker
+                  label={t("Agent")}
+                  placeholder={t("Agent")}
+                  emptyMessage={t("No agents available.")}
+                  value={subject}
+                  onValueChange={(value) => setSubject(value ?? "")}
+                  groups={[
+                    {
+                      label: t("Agents"),
+                      options: [
+                        ...(agents.data ?? []).map((item) => ({
+                          value: item.id,
+                          label: item.name,
+                          description: item.id,
+                        })),
+                        ...(subject &&
+                        !agents.data?.some((item) => item.id === subject)
+                          ? [
+                              {
+                                value: subject,
+                                label: subject,
+                                description: t("Selected subject"),
+                              },
+                            ]
+                          : []),
+                      ],
+                    },
+                  ]}
+                />
+              </div>
+            ) : scope === "thread" ? (
+              <FormField
+                hideLabel
+                className={styles.selectorField}
+                label={t("Thread ID")}
+              >
+                <Input
+                  required
+                  value={subject}
+                  onChange={(event) => setSubject(event.target.value)}
+                  placeholder={t("Thread ID")}
+                />
+              </FormField>
+            ) : (
+              <p className={styles.selectorHint}>
+                {t("Only your memories in this workspace.")}
+              </p>
+            )}
+            <Button
+              className={styles.selectorAction}
+              type="submit"
+              disabled={incomplete}
+            >
+              {t("View")}
+            </Button>
+          </fieldset>
+          {scope === "thread" && (
+            <p className={styles.note}>
+              {t(
+                "Open a thread’s memories from its session, or enter its stable Thread ID. Access follows the thread’s current run, not a historical run.",
+              )}
             </p>
           )}
-          <Button
-            className="self-end"
-            type="submit"
-            variant="outline"
-            disabled={!provider.trim() || (scope !== "user" && !subject.trim())}
-          >
-            {t("View memories")}
-          </Button>
-        </fieldset>
-        {scope === "thread" && (
-          <p className="mt-3 text-xs text-muted-foreground">
-            {t(
-              "Open a thread’s memories from its session, or enter its stable Thread ID. Access follows the thread’s current run, not a historical run.",
-            )}
-          </p>
-        )}
-        <ErrorNotice error={providers.error ?? agents.error} />
-      </form>
+          {target && (
+            <p className={styles.note}>
+              {t("Viewing {{provider}} · {{scope}} · {{subject}}", {
+                provider:
+                  providers.data?.find((item) => item.id === target.provider_id)
+                    ?.name ?? target.provider_id,
+                scope: scopeLabels[target.scope],
+                subject:
+                  target.scope === "user"
+                    ? t("Current user")
+                    : (agents.data?.find(
+                        (item) => item.id === target.subject_id,
+                      )?.name ?? target.subject_id),
+              })}
+            </p>
+          )}
+          <ErrorNotice error={providers.error ?? agents.error} />
+        </form>
+      }
+    >
       {target ? (
-        <>
-          <p className="mb-4 break-words text-xs text-muted-foreground">
-            {t("Viewing {{provider}} · {{scope}} · {{subject}}", {
-              provider:
-                providers.data?.find((item) => item.id === target.provider_id)
-                  ?.name ?? target.provider_id,
-              scope: t(
-                target.scope === "user"
-                  ? "My memories"
-                  : target.scope === "agent"
-                    ? "Agent"
-                    : "Thread",
-              ),
-              subject: target.subject_id ?? t("Current user"),
-            })}
-          </p>
-          <MemoryContents
-            key={JSON.stringify(memoryKey(target))}
-            target={target}
-            onEditing={setEditing}
-          />
-        </>
+        <MemoryContents
+          key={JSON.stringify(memoryKey(target))}
+          target={target}
+          onEditing={setEditing}
+        />
       ) : (
         <Empty
+          icon={<BrainIcon aria-hidden="true" />}
           title={t("Choose whose memories to view")}
           description={t(
             "Select a provider and a scope above. Agent and thread memories require an exact subject; My memories uses your signed-in identity.",

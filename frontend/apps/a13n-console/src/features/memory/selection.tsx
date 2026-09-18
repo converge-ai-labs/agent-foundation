@@ -1,5 +1,5 @@
-import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import {
+  Button,
   ChoiceField,
   DisclosureSection,
   FormField,
@@ -10,12 +10,14 @@ import {
 } from "a13n-ui";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { providersPath } from "../providers/navigation";
-import { useMemoryProviders } from "./availability";
+import { ManageProvidersLink } from "../providers/manage-link";
+import { memoryProviderUsable, useMemoryProviders } from "./availability";
 import { memoriesPath } from "./api";
+import styles from "./memory.module.css";
 
 export function AgentMemorySelection({
   value,
@@ -31,7 +33,7 @@ export function AgentMemorySelection({
   savedProviderId?: string;
 }) {
   const { t } = useTranslation(),
-    { workspace, can, basePath } = useWorkspace();
+    { can, basePath } = useWorkspace();
   const id = useId();
   const [advanced, setAdvanced] = useState(false);
   const { providers } = useMemoryProviders();
@@ -39,9 +41,7 @@ export function AgentMemorySelection({
     (item) => item.id === value?.provider_id,
   );
   const options = (providers.data ?? []).filter(
-    (item) =>
-      item.id === value?.provider_id ||
-      (item.enabled && item.credential_configured),
+    (item) => item.id === value?.provider_id || memoryProviderUsable(item),
   );
   function toggle(
     key: "auto_recall" | "toolset" | "recall_required",
@@ -73,7 +73,7 @@ export function AgentMemorySelection({
     );
   }
   return (
-    <div className="flex min-w-0 flex-col gap-4">
+    <div className={styles.selectionForm}>
       <ChoiceField
         readOnly={readOnly}
         label={t("Memory provider")}
@@ -85,7 +85,7 @@ export function AgentMemorySelection({
           { value: "off", label: t("Off") },
           ...options.map((item) => ({
             value: item.id,
-            label: `${item.name} · ${t(item.workspace_id ? "Workspace" : "Organization")}${!item.enabled || !item.credential_configured ? ` · ${t("Unavailable")}` : ""}`,
+            label: `${item.name} · ${t(item.workspace_id ? "Workspace" : "Organization")}${memoryProviderUsable(item) ? "" : ` · ${t("Unavailable")}`}`,
           })),
           ...(value && !selected
             ? [
@@ -104,40 +104,41 @@ export function AgentMemorySelection({
       {value &&
         providers.isSuccess &&
         (!selected?.enabled || !selected.credential_configured) && (
-          <p role="alert" className="text-sm text-destructive-foreground">
+          <p role="alert" className={styles.selectionAlert}>
             {t(
               "The selected provider is unavailable or disabled. Choose another provider before saving.",
             )}
           </p>
         )}
       {!can("memory_provider.read") && (
-        <p className="text-sm text-muted-foreground">
+        <p className={styles.note}>
           {t(
             "You do not have permission to browse memory providers. The saved selection is retained.",
           )}
         </p>
       )}
-      {can("memory_provider.read") && (
-        <a
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-          href={providersPath("memory", "workspace", workspace.key)}
-        >
-          {t("Manage memory providers")}
-          <ArrowSquareOutIcon size={14} aria-hidden="true" />
-        </a>
-      )}
-      {agentId && (
-        <a
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-          href={memoriesPath(basePath, {
-            scope: "agent",
-            subject_id: agentId,
-            provider_id: savedProviderId,
-          })}
-        >
-          {t("View agent memories")}
-          <ArrowSquareOutIcon size={14} aria-hidden="true" />
-        </a>
+      {(can("memory_provider.read") || agentId) && (
+        <div className={styles.selectionLinks}>
+          {can("memory_provider.read") && (
+            <ManageProvidersLink category="memory" scope="workspace" />
+          )}
+          {agentId && (
+            <Button
+              variant="outline"
+              render={
+                <Link
+                  to={memoriesPath(basePath, {
+                    scope: "agent",
+                    subject_id: agentId,
+                    provider_id: savedProviderId,
+                  })}
+                />
+              }
+            >
+              {t("View agent memories")}
+            </Button>
+          )}
+        </div>
       )}
       {value && (
         <>
@@ -182,7 +183,7 @@ export function AgentMemorySelection({
             onOpenChange={setAdvanced}
           >
             <div
-              className="flex flex-col gap-4"
+              className={styles.selectionForm}
               onInvalidCapture={() => setAdvanced(true)}
             >
               <FormField readOnly={readOnly} label={t("Recall limit")}>

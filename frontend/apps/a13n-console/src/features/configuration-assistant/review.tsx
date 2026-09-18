@@ -20,8 +20,9 @@ import {
   StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { JsonView } from "../../shared/forms";
+import { JsonView, TextAreaField } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
+import { RailRow, RailSection } from "../../shared/page";
 import { Pagination, useCursor } from "../../shared/collection";
 import { useConfigurationApplications, useConfigurationDraft } from "./api";
 import styles from "./configuration.module.css";
@@ -117,12 +118,14 @@ function ApplicationHistory({ draftId }: { draftId: string }) {
   const history = useConfigurationApplications(draftId, page.cursor);
   return (
     <DisclosureSection title={t("Application history")}>
-      {history.isPending && <Loading />}
+      {history.isPending && <Loading variant="list" />}
       <ErrorNotice error={history.error} retry={() => void history.refetch()} />
       {history.data?.items.map((receipt) => (
         <Receipt key={receipt.reviewed_version} receipt={receipt} />
       ))}
-      {history.data?.items.length === 0 && <p>{t("No applications yet")}</p>}
+      {history.data?.items.length === 0 && (
+        <p className={styles.reviewNote}>{t("No applications yet")}</p>
+      )}
       <Pagination page={page} next={history.data?.next_cursor} />
     </DisclosureSection>
   );
@@ -134,7 +137,7 @@ export function DraftReview({ draftId }: { draftId: string }) {
   if (query.isPending)
     return (
       <aside className={styles.review}>
-        <Loading />
+        <Loading variant="form" />
       </aside>
     );
   if (!query.data)
@@ -144,38 +147,31 @@ export function DraftReview({ draftId }: { draftId: string }) {
       </aside>
     );
   const draft = query.data.value;
+  const actions = draft.status === "open" && (
+    <DraftActions
+      draft={draft}
+      etag={query.data.etag}
+      refresh={async () => {
+        await query.refetch();
+      }}
+    />
+  );
   return (
     <aside
       className={`${styles.review} a13n-scrollbar`}
       aria-label={t("Configuration draft")}
     >
-      <div className={styles.actions}>
+      <header className={styles.reviewHeader}>
         <h2>
-          {t("Configuration draft")} · v{draft.version}
+          {t("Draft")} · v{draft.version}
         </h2>
         <StatePill state={draft.status} />
-      </div>
-      <p>
+      </header>
+      <p className={styles.reviewNote}>
         {t(
           "Saving a draft does not change your agent. Apply only after reviewing the candidate and its differences.",
         )}
       </p>
-      <DisclosureSection title={t("Draft details")}>
-        <dl>
-          <dt>{t("Draft")}</dt>
-          <dd>
-            <code>{draft.id}</code>
-          </dd>
-          <dt>{t("Source revision")}</dt>
-          <dd>{draft.source ? `v${draft.source.version}` : t("Empty")}</dd>
-          <dt>{t("Base version")}</dt>
-          <dd>{draft.base ? `v${draft.base.version}` : "—"}</dd>
-          <dt>{t("Current target")}</dt>
-          <dd>
-            {draft.current_target ? `v${draft.current_target.version}` : "—"}
-          </dd>
-        </dl>
-      </DisclosureSection>
       {draft.target_conflict && (
         <p role="alert" className={styles.notice}>
           {t(
@@ -184,18 +180,48 @@ export function DraftReview({ draftId }: { draftId: string }) {
         </p>
       )}
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      {draft.latest_application_receipt && (
-        <Receipt receipt={draft.latest_application_receipt} />
-      )}
-      <ApplicationHistory draftId={draft.id} />
-      {draft.creation_metadata && <h3>{draft.creation_metadata.name}</h3>}
       {draft.config ? (
         <>
-          <p>
-            {t("Model")}: <strong>{draft.config.model.model_key}</strong>
-          </p>
+          <RailSection>
+            {draft.creation_metadata && (
+              <RailRow label={t("Agent name")}>
+                <span>{draft.creation_metadata.name}</span>
+              </RailRow>
+            )}
+            <RailRow label={t("Model")}>
+              <span title={draft.config.model.model_key}>
+                {draft.config.model.model_key}
+              </span>
+            </RailRow>
+            <RailRow label={t("Source revision")}>
+              <span>
+                {draft.source ? `v${draft.source.version}` : t("Empty")}
+              </span>
+            </RailRow>
+            <RailRow label={t("Base version")}>
+              <span>{draft.base ? `v${draft.base.version}` : "—"}</span>
+            </RailRow>
+            <RailRow label={t("Current target")}>
+              <span>
+                {draft.current_target
+                  ? `v${draft.current_target.version}`
+                  : "—"}
+              </span>
+            </RailRow>
+            <RailRow label={t("Validation")}>
+              {draft.latest_validation ? (
+                <Timestamp
+                  value={draft.latest_validation.checked_at}
+                  relative
+                />
+              ) : (
+                <span>{t("Not validated")}</span>
+              )}
+            </RailRow>
+          </RailSection>
+          {actions}
           <DisclosureSection title={t("Instructions")} defaultOpen>
-            <p className="whitespace-pre-wrap">
+            <p className={styles.instructions}>
               {draft.config.instructions || "—"}
             </p>
           </DisclosureSection>
@@ -224,15 +250,18 @@ export function DraftReview({ draftId }: { draftId: string }) {
           </DisclosureSection>
         </>
       ) : (
-        <div className={styles.draftEmpty}>
-          <FileTextIcon size={28} aria-hidden="true" />
-          <h3>{t("Your draft will take shape here")}</h3>
-          <p>
-            {t(
-              "Describe your agent in the conversation. Review its configuration here before applying it.",
-            )}
-          </p>
-        </div>
+        <>
+          <div className={styles.draftEmpty}>
+            <FileTextIcon size={24} aria-hidden="true" />
+            <h3>{t("Your draft will take shape here")}</h3>
+            <p>
+              {t(
+                "Describe your agent in the conversation. Review its configuration here before applying it.",
+              )}
+            </p>
+          </div>
+          {actions}
+        </>
       )}
       {draft.latest_validation && (
         <section
@@ -272,15 +301,22 @@ export function DraftReview({ draftId }: { draftId: string }) {
           )}
         </section>
       )}
-      {draft.status === "open" && (
-        <DraftActions
-          draft={draft}
-          etag={query.data.etag}
-          refresh={async () => {
-            await query.refetch();
-          }}
-        />
+      {draft.latest_application_receipt && (
+        <Receipt receipt={draft.latest_application_receipt} />
       )}
+      <ApplicationHistory draftId={draft.id} />
+      <DisclosureSection title={t("Draft details")}>
+        <dl className={styles.summaryFields}>
+          <div>
+            <dt>{t("Draft")}</dt>
+            <dd className={styles.technicalValue}>{draft.id}</dd>
+          </div>
+          <div>
+            <dt>{t("Content digest (SHA-256)")}</dt>
+            <dd className={styles.technicalValue}>{draft.content_digest}</dd>
+          </div>
+        </dl>
+      </DisclosureSection>
     </aside>
   );
 }
@@ -389,32 +425,15 @@ function DraftActions({
   const allowed = can(
     draft.mode === "create" ? "agent.create" : "agent.revision.create",
   );
+  const applyLabel = t(
+    draft.mode === "create" ? "Create agent" : "Apply reviewed configuration",
+  );
   return (
     <>
       <ErrorNotice error={save.error ?? discard.error} retry={refresh} />
       <div className={styles.actions}>
         <Button
-          variant="outline"
-          disabled={!allowed}
-          onClick={() => setEditing({ draft, etag })}
-        >
-          {t("Edit draft")}
-        </Button>
-        <Button
-          variant="outline"
-          loading={save.isPending}
-          disabled={!draft.config || !allowed}
-          onClick={() =>
-            save.mutate({
-              expected_version: draft.version,
-              expected_digest: draft.content_digest,
-              operations: [{ op: "set", path: [], value: draft.config }],
-            })
-          }
-        >
-          {t("Validate candidate")}
-        </Button>
-        <Button
+          variant="default"
           disabled={
             !allowed || !draft.latest_validation || draft.target_conflict
           }
@@ -428,12 +447,33 @@ function DraftActions({
           {t("Review and apply")}
         </Button>
         <Button
+          variant="outline"
+          loading={save.isPending}
+          disabled={!draft.config || !allowed}
+          onClick={() =>
+            save.mutate({
+              expected_version: draft.version,
+              expected_digest: draft.content_digest,
+              operations: [{ op: "set", path: [], value: draft.config }],
+            })
+          }
+        >
+          {t("Validate")}
+        </Button>
+        <Button
+          variant="outline"
+          disabled={!allowed}
+          onClick={() => setEditing({ draft, etag })}
+        >
+          {t("Edit draft")}
+        </Button>
+        <Button
           variant="ghost"
           disabled={!allowed}
           loading={discard.isPending}
           onClick={() => discard.mutate()}
         >
-          {t("Discard draft")}
+          {t("Discard")}
         </Button>
       </div>
       <ModalFrame
@@ -442,6 +482,9 @@ function DraftActions({
           if (!open && !save.isPending) setEditing(undefined);
         }}
         title={t("Edit configuration draft")}
+        description={t(
+          "Edit the candidate configuration directly. Saving replaces the draft; it does not change your agent.",
+        )}
         closeLabel={t("Close")}
         size="lg"
       >
@@ -463,50 +506,61 @@ function DraftActions({
           if (!open && !apply.isPending) setReviewed(undefined);
         }}
         title={t("Apply reviewed draft")}
+        description={t(
+          "These are the exact changes that become a new agent version.",
+        )}
         closeLabel={t("Close")}
         size="lg"
+        footer={
+          reviewed && (
+            <>
+              <Button
+                variant="outline"
+                disabled={apply.isPending}
+                onClick={() => setReviewed(undefined)}
+              >
+                {t("Cancel")}
+              </Button>
+              <Button
+                disabled={!reason.trim()}
+                loading={apply.isPending}
+                onClick={() => apply.mutate()}
+              >
+                {applyLabel}
+              </Button>
+            </>
+          )
+        }
       >
         {reviewed && (
-          <div className="space-y-4">
-            <p>
-              {t("Draft version")}: {reviewed.version}
+          <div className={styles.applyForm}>
+            <p className={styles.reviewNote}>
+              {t("Draft version")} v{reviewed.version} ·{" "}
+              <span className={styles.technicalValue}>
+                {reviewed.content_digest}
+              </span>
             </p>
-            <code className="break-all text-xs">{reviewed.content_digest}</code>
             <Differences
               title={t("Changes to apply")}
               changes={reviewed.current_target_to_candidate}
             />
-            <FormField label={t("Version note")}>
-              <Textarea
-                value={changeSummary}
-                maxLength={2048}
-                onChange={(event) => setChangeSummary(event.target.value)}
-              />
-            </FormField>
-            <p>
-              {t(
+            <TextAreaField
+              label={t("Version note")}
+              value={changeSummary}
+              rows={2}
+              hint={t("Shown in the agent's version history.")}
+              onChange={setChangeSummary}
+            />
+            <TextAreaField
+              label={t("Reason for applying without verification")}
+              value={reason}
+              rows={2}
+              hint={t(
                 "This candidate has not been execution-verified. Explain why you are applying it without verification.",
               )}
-            </p>
-            <FormField label={t("Reason for applying without verification")}>
-              <Textarea
-                value={reason}
-                maxLength={2048}
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </FormField>
+              onChange={setReason}
+            />
             <ErrorNotice error={apply.error} />
-            <Button
-              disabled={!reason.trim()}
-              loading={apply.isPending}
-              onClick={() => apply.mutate()}
-            >
-              {t(
-                reviewed.mode === "create"
-                  ? "Create agent from reviewed draft"
-                  : "Apply reviewed configuration",
-              )}
-            </Button>
           </div>
         )}
       </ModalFrame>
@@ -574,7 +628,7 @@ function DraftEditor({
     },
   });
   return (
-    <div className="space-y-4">
+    <div className={styles.editorForm}>
       {draft.mode === "create" && (
         <>
           <FormField label={t("Agent name")}>
@@ -583,30 +637,23 @@ function DraftEditor({
               onChange={(event) => setName(event.target.value)}
             />
           </FormField>
-          <FormField label={t("Description")}>
-            <Textarea
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-          </FormField>
+          <TextAreaField
+            label={t("Description")}
+            value={description}
+            rows={2}
+            onChange={setDescription}
+          />
         </>
       )}
-      <FormField label={t("Complete configuration JSON")}>
-        <Textarea
-          className="font-mono text-xs"
-          rows={18}
-          value={text}
-          onChange={(event) => setText(event.target.value)}
-        />
-      </FormField>
+      <TextAreaField
+        label={t("Complete configuration JSON")}
+        code
+        rows={16}
+        value={text}
+        onChange={setText}
+      />
       <ErrorNotice error={mutation.error} />
-      <div className={styles.actions}>
-        <Button
-          loading={mutation.isPending}
-          onClick={() => mutation.mutate(false)}
-        >
-          {t("Save draft")}
-        </Button>
+      <div className={styles.editorActions} data-a13n-form-actions>
         {draft.target_conflict && (
           <Button
             variant="outline"
@@ -616,6 +663,12 @@ function DraftEditor({
             {t("Use edited candidate and rebase")}
           </Button>
         )}
+        <Button
+          loading={mutation.isPending}
+          onClick={() => mutation.mutate(false)}
+        >
+          {t("Save draft")}
+        </Button>
       </div>
     </div>
   );

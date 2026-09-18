@@ -8,6 +8,7 @@ export {
   DirectoryList,
   DirectoryRow,
 } from "./catalog";
+export { ConflictNotice, type ConflictAction } from "./conflict-notice";
 export { Confirm } from "./confirm";
 export {
   useResourceEditorState,

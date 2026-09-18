@@ -16,7 +16,10 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 vi.mock("../connectors/setup", () => ({ ConnectionSetup: () => null }));
 vi.mock("../mcp/tools", () => ({ MCPTools: () => null }));
@@ -56,7 +59,6 @@ it("submits a renamed Connection from the bottom action row", async () => {
     <QueryClientProvider client={cache}>
       <ConnectionDetails
         connectionId={resource.id}
-        controlledOpen
         onClose={vi.fn()}
         onCleanup={vi.fn()}
       />
@@ -123,21 +125,19 @@ for (const kind of ["connector", "mcp"] as const) {
           {kind === "connector" ? (
             <ConnectionDetails
               connectionId={resource.id}
-              controlledOpen
               onClose={vi.fn()}
               onCleanup={vi.fn()}
             />
           ) : (
             <ConnectionDetails
               connectionId={resource.id}
-              controlledOpen
               onClose={vi.fn()}
               onCleanup={vi.fn()}
             />
           )}
         </QueryClientProvider>,
       );
-      await screen.findByRole("button", { name: action });
+      await screen.findByRole("button", { name: "Connection actions" });
       if (kind === "mcp" && action === "Enable") {
         await user.clear(screen.getByRole("textbox", { name: "Name" }));
         await user.type(
@@ -153,7 +153,10 @@ for (const kind of ["connector", "mcp"] as const) {
       await act(async () => {
         cache.setQueryData(queryKey, { ...resource, version: 3 });
       });
-      await user.click(screen.getByRole("button", { name: action }));
+      await user.click(
+        screen.getByRole("button", { name: "Connection actions" }),
+      );
+      await user.click(await screen.findByRole("menuitem", { name: action }));
       await user.click(
         screen.getByRole("button", {
           name:

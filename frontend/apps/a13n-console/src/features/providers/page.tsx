@@ -1,14 +1,15 @@
-import { Tabs, TabsList, TabsTab, TabsPanel } from "a13n-ui";
+import { Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { useAccess } from "../../layout/workspace";
-import { providerCategories, providerCategory } from "./categories";
 import { Empty } from "../../shared/collection";
+import { ConnectorProviders } from "../connectors/providers";
+import { EnvironmentProviders } from "../environments/providers";
+import { MemoryProviders } from "../memory/providers";
 import { Providers } from "../models/providers";
 import { WebProviders } from "../web/page";
-import { MemoryProviders } from "../memory/providers";
-import { EnvironmentProviders } from "../environments/providers";
-import { ConnectorProviders } from "../connectors/providers";
+import { providerCategories, providerCategory } from "./categories";
+import styles from "./providers.module.css";
 
 const components = {
   models: Providers,
@@ -39,13 +40,10 @@ export function ProvidersPage({
       value={category.value}
       onValueChange={(value) => update("category", String(value))}
     >
-      <TabsList
-        aria-label={t("Provider category")}
-        className="flex h-auto flex-wrap justify-start"
-      >
+      <TabsList variant="underline" aria-label={t("Provider category")}>
         {providerCategories.map(({ value, label, icon: Icon }) => (
           <TabsTab key={value} value={value}>
-            <Icon className="size-4" />
+            <Icon size={14} />
             {t(label)}
           </TabsTab>
         ))}
@@ -53,7 +51,7 @@ export function ProvidersPage({
       {providerCategories.map(({ value }) => {
         const Component = components[value];
         return (
-          <TabsPanel key={value} value={value} className="mt-4">
+          <TabsPanel key={value} value={value} className={styles.panel}>
             {kind === "organization" && !organizationAdmin ? (
               <Empty
                 title={t("Access unavailable")}

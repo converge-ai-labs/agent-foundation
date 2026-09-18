@@ -8,7 +8,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { ImportSkill } from "./import";
+import { ImportSkill } from "./import-dialog";
 import type { Schema } from "../../shared/api";
 
 const http = vi.hoisted(() => ({ POST: vi.fn() }));
@@ -36,30 +36,30 @@ function setup(skill?: Schema["Skill"]) {
   return userEvent.setup();
 }
 
-it("uses source tabs with keyboard selection and retains the GitHub draft", async () => {
+it("switches source with the keyboard and retains the GitHub draft", async () => {
   const user = setup();
   await user.click(screen.getByRole("button", { name: "Import skill" }));
   const dialog = within(await screen.findByRole("dialog"));
   expect(dialog.queryByRole("combobox")).toBeNull();
-  await user.click(dialog.getByRole("tab", { name: "ZIP file" }));
+  await user.click(dialog.getByRole("button", { name: "ZIP file" }));
   await user.keyboard("{ArrowRight}{Enter}");
   const repository = await dialog.findByRole("textbox", {
     name: "Repository URL",
   });
   await user.click(repository);
   await user.paste("https://github.com/example/skill");
-  await user.click(dialog.getByRole("tab", { name: "ZIP file" }));
+  await user.click(dialog.getByRole("button", { name: "ZIP file" }));
   await waitFor(() =>
     expect(
       dialog.queryByRole("textbox", { name: "Repository URL" }),
     ).toBeNull(),
   );
   expect(
-    (dialog.getByRole("button", { name: "Import skill" }) as HTMLButtonElement)
+    (dialog.getByRole("button", { name: "Import" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
   expect(http.POST).not.toHaveBeenCalled();
-  await user.click(dialog.getByRole("tab", { name: "GitHub" }));
+  await user.click(dialog.getByRole("button", { name: "GitHub" }));
   expect(
     (
       dialog.getByRole("textbox", {
@@ -82,10 +82,10 @@ it("publishes a new version using the chosen GitHub source and current version",
   const user = setup(skill);
   await user.click(screen.getByRole("button", { name: "New version" }));
   const dialog = within(
-    await screen.findByRole("dialog", { name: "New version" }),
+    await screen.findByRole("dialog", { name: /New version of/ }),
   );
   expect(dialog.queryByRole("textbox", { name: "Display name" })).toBeNull();
-  await user.click(dialog.getByRole("tab", { name: "GitHub" }));
+  await user.click(dialog.getByRole("button", { name: "GitHub" }));
   await user.click(dialog.getByRole("textbox", { name: "Repository URL" }));
   await user.paste("https://github.com/example/skill");
   await user.click(dialog.getByRole("button", { name: "Advanced settings" }));

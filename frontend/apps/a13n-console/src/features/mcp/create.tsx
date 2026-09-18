@@ -1,6 +1,6 @@
 import { requireCompletedAuthorization } from "../connections/authorization-context";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChoiceField, FormField, Input } from "a13n-ui";
+import { ChoiceField, FormField, Input, ReadOnlyField } from "a13n-ui";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -190,20 +190,19 @@ export function CreateMCP({
         />
       </FormField>
       {preset ? (
-        <FormField
+        <ReadOnlyField
           label={t("Authentication")}
-          className="w-full min-w-0 [&_[data-slot=field-label]]:opacity-100 [&_[data-slot=input-control]]:opacity-100 [&_input]:text-foreground [&_input]:[-webkit-text-fill-color:var(--foreground)]"
-          labelAction={
-            preset.documentation_url && (
+          description={
+            preset.documentation_url ? (
               <ProviderKeyLink
                 href={preset.documentation_url}
                 label="Setup guide"
               />
-            )
+            ) : undefined
           }
         >
-          <Input value={t(`auth.${mode}`)} disabled />
-        </FormField>
+          {t(`auth.${mode}`)}
+        </ReadOnlyField>
       ) : (
         <ChoiceField
           placeholder={t("Select authentication")}

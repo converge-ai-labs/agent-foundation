@@ -1,23 +1,15 @@
-import { useResourceRows } from "../../shared/dialogs";
-import { data, type Schema } from "../../shared/api";
-import { ProviderIcon } from "../../shared/identity";
-import { ResourceIdentity } from "../../shared/collection";
-import { ScopeBadge } from "../../shared/identity";
 import { useQuery } from "@tanstack/react-query";
-import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty } from "../../shared/collection";
-import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
-import { PageActions } from "../../shared/page";
-import styles from "../../shared/shared.module.css";
+import { data, type Schema } from "../../shared/api";
+import { useCursor } from "../../shared/collection";
+import { useResourceRows } from "../../shared/dialogs";
+import { ProviderTable } from "../providers";
 import { webProviderApi, type WebProviderScope } from "./api";
-import { WebProviderEditor } from "./editor";
+import { AddWebProvider, WebProviderEditor } from "./editor";
 
 export function WebProviders({ scope }: { scope: WebProviderScope }) {
   const client = useClient(),
-    { t } = useTranslation(),
     { can, organizationAdmin } = useAccess(),
     page = useCursor();
   const rows = useResourceRows<Schema["WebProvider"]>();
@@ -35,9 +27,11 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
     scope.kind === "organization"
       ? organizationAdmin
       : can("web_provider.manage");
+  const add = manage ? <AddWebProvider scope={scope} /> : undefined;
+  const definitionFor = (type: string) =>
+    definitions.data?.items.find((item) => item.type === type);
   return (
-    <div className={styles.stack}>
-      <PageActions>{manage && <WebProviderEditor scope={scope} />}</PageActions>
+    <>
       {rows.selected && (
         <WebProviderEditor
           key={rows.selected.id}
@@ -53,66 +47,30 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
           {...rows.control}
         />
       )}
-      {query.isPending ? (
-        <Loading variant="table" columns={4} />
-      ) : query.error ? (
-        <ErrorNotice error={query.error} />
-      ) : query.data?.items.length ? (
-        <>
-          <ResourceTable
-            items={query.data.items}
-            onRowActivate={rows.activate}
-            columns={[
-              {
-                label: t("Provider"),
-                tone: "primary",
-                render: (item) => (
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProviderIcon key={item.type} type={item.type} />
-                    <ResourceIdentity
-                      name={item.name}
-                      description={item.type}
-                      resourceId={item.id}
-                    />
-                  </div>
-                ),
-              },
-              {
-                label: t("Scope"),
-                tone: "muted",
-                render: (item) => (
-                  <ScopeBadge workspaceId={item.workspace_id} />
-                ),
-              },
-              {
-                label: t("Credentials"),
-                render: (item) =>
-                  t(
-                    definitions.data?.items.find(
-                      (definition) => definition.type === item.type,
-                    )?.credential_required === false
-                      ? "Not required"
-                      : item.credential_configured
-                        ? "Configured"
-                        : "Not configured",
-                  ),
-              },
-              {
-                label: t("Status"),
-                render: (item) => (
-                  <StatePill state={item.enabled ? "enabled" : "disabled"} />
-                ),
-              },
-            ]}
-          />
-          <Pagination page={page} next={query.data.next_cursor} />
-        </>
-      ) : (
-        <Empty
-          title={t("No Web Providers yet")}
-          description={t("Add a Web Provider, then select it in your agent.")}
-        />
-      )}
-    </div>
+      <ProviderTable
+        category="web"
+        items={query.data?.items}
+        isPending={query.isPending}
+        error={query.error}
+        page={page}
+        nextCursor={query.data?.next_cursor}
+        action={add}
+        onRowActivate={rows.activate}
+        row={(item) => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          definition: definitionFor(item.type)?.display_name,
+          workspaceId: item.workspace_id,
+          credentials:
+            definitionFor(item.type)?.credential_required === false
+              ? "not_required"
+              : item.credential_configured
+                ? "configured"
+                : "not_configured",
+          state: item.enabled ? "enabled" : "disabled",
+        })}
+      />
+    </>
   );
 }

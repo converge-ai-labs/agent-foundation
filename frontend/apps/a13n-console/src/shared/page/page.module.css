@@ -324,3 +324,110 @@
     flex-basis: 100%;
   }
 }
+
+/* Side panel ------------------------------------------------------------ */
+.panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  max-width: 100vw;
+  background: var(--a13n-elevated);
+  box-shadow: -18px 0 40px color-mix(in srgb, var(--a13n-text) 10%, transparent);
+}
+.panelResizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 7px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.panelResizer:hover,
+.panelResizer:active {
+  background: color-mix(in srgb, var(--a13n-text) 8%, transparent);
+}
+.panelHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex: none;
+  padding: 14px 12px 12px 20px;
+}
+.panelTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 15px;
+  font-weight: 500;
+}
+.panelTitle strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.panelActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+}
+.panelBody {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 20px 32px;
+}
+@media (max-width: 760px) {
+  .panel {
+    width: 100vw !important;
+  }
+  .panelResizer {
+    display: none;
+  }
+}
+/* Inline panel: the same anatomy inside a layout slot the owner sizes. */
+.panelInline {
+  position: static;
+  z-index: auto;
+  width: 100%;
+  height: 100%;
+  background: var(--a13n-surface);
+  box-shadow: none;
+}
+.panelInline .panelResizer {
+  left: 0;
+  transform: translateX(-50%);
+  width: 13px;
+}
+.panelInline .panelResizer::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--a13n-border-soft);
+}
+.panelInline .panelResizer:hover,
+.panelInline .panelResizer:active {
+  background: transparent;
+}
+.panelInline .panelResizer:hover::after,
+.panelInline .panelResizer:focus-visible::after {
+  width: 2px;
+  background: color-mix(in srgb, var(--a13n-text) 18%, transparent);
+}
+@media (max-width: 760px) {
+  .panelInline {
+    width: 100% !important;
+  }
+}

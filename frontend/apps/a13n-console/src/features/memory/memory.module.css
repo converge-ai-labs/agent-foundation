@@ -1,0 +1,163 @@
+/* Selector row ----------------------------------------------------------- */
+.selector {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.selectorFields {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 1.2fr) minmax(0, 0.9fr) minmax(0, 1.2fr)
+    auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.selectorFields:disabled {
+  opacity: 0.55;
+}
+.selectorField {
+  min-width: 0;
+}
+.selectorHint {
+  align-self: center;
+  min-width: 0;
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.selectorAction {
+  justify-self: end;
+}
+.note {
+  margin: 0;
+  padding: 0 2px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* Records ---------------------------------------------------------------- */
+.records {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.searchForm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.searchInput {
+  width: 300px;
+  max-width: 100%;
+}
+.options {
+  display: grid;
+  gap: 16px;
+  width: 260px;
+}
+.recordsTable td:first-child,
+.recordsTable th:first-child {
+  width: 100%;
+}
+.excerpt {
+  max-width: 82ch;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.count {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  min-width: 0;
+}
+.footnote {
+  color: var(--a13n-muted);
+  font-size: 11.5px;
+}
+
+/* Agent memory selection -------------------------------------------------- */
+.selectionForm {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.selectionAlert {
+  margin: 0;
+  color: var(--destructive-foreground);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.selectionLinks {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Record panel ----------------------------------------------------------- */
+.recordForm {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding-top: 8px;
+}
+.recordText {
+  max-height: 60vh;
+  overflow: auto;
+  margin: 0;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.observed {
+  max-height: 200px;
+  overflow: auto;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1100px) {
+  .selectorFields {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .selectorFields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .searchInput {
+    width: 100%;
+  }
+}

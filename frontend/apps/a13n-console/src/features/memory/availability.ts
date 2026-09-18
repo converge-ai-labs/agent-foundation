@@ -28,3 +28,11 @@ export function useMemoryProviders() {
     !canRead || providers.isError || (providers.data?.length ?? 0) > 0;
   return { providers, visible };
 }
+
+/** A provider can serve content only while it is enabled and configured. */
+export function memoryProviderUsable(provider: {
+  enabled?: boolean | null;
+  credential_configured?: boolean | null;
+}) {
+  return !!provider.enabled && !!provider.credential_configured;
+}

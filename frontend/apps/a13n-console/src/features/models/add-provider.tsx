@@ -1,17 +1,12 @@
-import { PlusIcon } from "@phosphor-icons/react";
-import { Button, FormField, Input, ModalFrame } from "a13n-ui";
+import { FormField, Input } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
-import {
-  BrandTitle,
-  CatalogStep,
-  CatalogTile,
-  CatalogTiles,
-} from "../../shared/dialogs";
-import { ErrorNotice, Loading } from "../../shared/feedback";
+import { BrandTitle, CatalogStep } from "../../shared/dialogs";
+import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, ProviderKeyLink, SchemaFields } from "../../shared/forms";
 import { ProviderIcon } from "../../shared/identity";
+import { AddProviderDialog, ProviderCatalog } from "../providers";
 import { type ModelScope } from "./api";
 import {
   ProviderConnection,
@@ -55,6 +50,13 @@ function hint(definition: Definition) {
   );
 }
 
+/** What the model catalog looks like wherever it appears. */
+export const modelCatalog = {
+  featured,
+  hint,
+  note: "Using a gateway or an OpenAI-compatible endpoint? Choose OpenAI and set its base URL under Advanced settings.",
+};
+
 export function connectStepTitle(
   definition: Definition,
   t: (key: string, options?: Record<string, unknown>) => string,
@@ -77,13 +79,33 @@ export function connectStepDescription(
   );
 }
 
+/** The model catalog, prefilled with the model hints and ordering. */
+export function ModelProviderCatalog({
+  definitions,
+  onChoose,
+}: {
+  definitions: Definition[];
+  onChoose: (type: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ProviderCatalog
+      definitions={definitions}
+      featured={featured}
+      hint={hint}
+      note={t(modelCatalog.note)}
+      onChoose={onChoose}
+    />
+  );
+}
+
 /** Catalog-first provider creation, used for both workspace and organization. */
 export function AddProvider({ scope }: { scope: ModelScope }) {
   const [open, setOpen] = useState(false),
     [generation, setGeneration] = useState(0);
   const definitions = useModelProviderDefinitions();
   return (
-    <AddProviderDialog
+    <AddProviderCatalogDialog
       key={generation}
       scope={scope}
       definitions={definitions.data?.items}
@@ -97,7 +119,7 @@ export function AddProvider({ scope }: { scope: ModelScope }) {
   );
 }
 
-function AddProviderDialog({
+function AddProviderCatalogDialog({
   scope,
   definitions,
   error,
@@ -117,101 +139,28 @@ function AddProviderDialog({
     initialType: "",
     close: () => onOpenChange(false),
   });
-  const chosen = draft.definition;
   return (
-    <ModalFrame
+    <AddProviderDialog<Definition>
+      definitions={definitions}
+      error={error}
       open={open}
       onOpenChange={onOpenChange}
-      size="lg"
-      placement="top"
-      closeLabel={t("Close")}
-      trigger={
-        <Button type="button">
-          <PlusIcon aria-hidden="true" />
-          {t("Add provider")}
-        </Button>
-      }
-      title={chosen ? connectStepTitle(chosen, t) : t("Add provider")}
-      description={
-        chosen
-          ? connectStepDescription(chosen, t)
-          : t("Choose the service that hosts your models.")
-      }
+      description={t("Choose the service that hosts your models.")}
+      featured={featured}
+      hint={hint}
+      note={t(modelCatalog.note)}
+      onChoose={draft.chooseType}
+      connectTitle={(definition) => connectStepTitle(definition, t)}
+      connectDescription={(definition) => connectStepDescription(definition, t)}
     >
-      {open &&
-        (error ? (
-          <ErrorNotice error={error} />
-        ) : !definitions ? (
-          <Loading variant="form" rows={3} />
-        ) : chosen ? (
-          <ProviderConnectForm
-            draft={draft}
-            definition={chosen}
-            onBack={() => draft.chooseType("")}
-          />
-        ) : (
-          <ProviderCatalog
-            definitions={definitions}
-            onChoose={draft.chooseType}
-          />
-        ))}
-    </ModalFrame>
-  );
-}
-
-/** Tile grid of model services, shared by the dialog and the model form. */
-export function ProviderCatalog({
-  definitions,
-  onChoose,
-}: {
-  definitions: Definition[];
-  onChoose: (type: string) => void;
-}) {
-  const { t } = useTranslation();
-  const [query, setQuery] = useState("");
-  const term = query.trim().toLocaleLowerCase();
-  const rank = (definition: Definition) => {
-    const index = featured.indexOf(definition.type);
-    return index === -1 ? featured.length : index;
-  };
-  const visible = definitions
-    .filter(
-      (definition) =>
-        !term ||
-        `${definition.display_name} ${definition.type}`
-          .toLocaleLowerCase()
-          .includes(term),
-    )
-    .sort((a, b) => rank(a) - rank(b));
-  return (
-    <CatalogTiles
-      search={
-        <Input
-          type="search"
-          autoFocus
-          aria-label={t("Search providers…")}
-          placeholder={t("Search providers…")}
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
+      {(definition, back) => (
+        <ProviderConnectForm
+          draft={draft}
+          definition={definition}
+          onBack={back}
         />
-      }
-      empty={t("No matching providers")}
-      note={t(
-        "Using a gateway or an OpenAI-compatible endpoint? Choose OpenAI and set its base URL under Advanced settings.",
       )}
-    >
-      {visible.length
-        ? visible.map((definition) => (
-            <CatalogTile
-              key={definition.type}
-              icon={<ProviderIcon type={definition.type} />}
-              name={definition.display_name}
-              detail={t(hint(definition))}
-              onClick={() => onChoose(definition.type)}
-            />
-          ))
-        : undefined}
-    </CatalogTiles>
+    </AddProviderDialog>
   );
 }
 

@@ -67,11 +67,6 @@ export function AccountCredentials({
         save.mutate();
       }}
     >
-      <p className={styles.muted}>
-        {t(
-          "Existing credentials are never displayed. Supply a complete replacement.",
-        )}
-      </p>
       <ErrorNotice error={definitions.error} />
       {definition && (
         <SchemaFields

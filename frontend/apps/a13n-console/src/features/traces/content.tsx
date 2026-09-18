@@ -17,8 +17,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-import { decodeContent } from "./preview";
-export { decodeContent } from "./preview";
+/** Decode JSON containers without losing large integers in retained content. */
+export function decodeContent(value: unknown): unknown {
+  if (typeof value !== "string" || !/^[\s]*[\[{]/.test(value)) return value;
+  try {
+    let unsafeNumber = false;
+    const parsed: unknown = JSON.parse(value, (_key, item: unknown) => {
+      if (
+        typeof item === "number" &&
+        (!Number.isFinite(item) ||
+          (Number.isInteger(item) && !Number.isSafeInteger(item)))
+      )
+        unsafeNumber = true;
+      return item;
+    });
+    return unsafeNumber ? value : parsed;
+  } catch {
+    return value;
+  }
+}
 
 function CodeText({ text, language }: { text: string; language: string }) {
   if (text.length > 100_000)

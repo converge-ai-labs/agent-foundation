@@ -73,7 +73,7 @@ it("previews before creation and retries the same request without losing advance
   ).mockResolvedValueOnce({ data: { agent: { key: "imported" } } });
   await user.click(screen.getByLabelText("Agent YAML"));
   await user.paste(source);
-  await user.click(screen.getByRole("button", { name: "Review import" }));
+  await user.click(screen.getByRole("button", { name: "Review" }));
   await waitFor(() =>
     expect(
       (
@@ -102,7 +102,7 @@ it("blocks missing dependencies and requires an explicit replacement", async () 
   const { user } = setup();
   await user.click(screen.getByLabelText("Agent YAML"));
   await user.paste(source.replace("model_key: research", "model_key: missing"));
-  await user.click(screen.getByRole("button", { name: "Review import" }));
+  await user.click(screen.getByRole("button", { name: "Review" }));
   await screen.findByText(
     "Dependency unavailable. Choose a resource in this workspace.",
   );
@@ -124,7 +124,7 @@ it("blocks missing dependencies and requires an explicit replacement", async () 
       ).disabled,
     ).toBe(false),
   );
-  await user.click(screen.getByRole("button", { name: "Edit YAML" }));
+  await user.click(screen.getByRole("button", { name: "Back" }));
   expect(
     (screen.getByLabelText("Agent YAML") as HTMLTextAreaElement).value,
   ).toContain("model_key: research");
@@ -167,7 +167,7 @@ it("blocks an unavailable root Environment template until mapped in the destinat
   );
   await user.click(screen.getByLabelText("Agent YAML"));
   await user.paste(sourceWithTemplate);
-  await user.click(screen.getByRole("button", { name: "Review import" }));
+  await user.click(screen.getByRole("button", { name: "Review" }));
   await screen.findByText(
     "Dependency unavailable. Choose a resource in this workspace.",
   );
@@ -191,7 +191,7 @@ it("blocks an unavailable root Environment template until mapped in the destinat
       ).disabled,
     ).toBe(false),
   );
-  await user.click(screen.getByRole("button", { name: "Edit YAML" }));
+  await user.click(screen.getByRole("button", { name: "Back" }));
   expect(
     (screen.getByLabelText("Agent YAML") as HTMLTextAreaElement).value,
   ).toContain("default_environment_template_id: et_fedcba9876543210");
@@ -215,7 +215,7 @@ it("uploads a file, validates its contents, and rejects unsupported versions wit
       (screen.getByLabelText("Agent YAML") as HTMLTextAreaElement).value,
     ).toBe("schema_version: 9"),
   );
-  await user.click(screen.getByRole("button", { name: "Review import" }));
+  await user.click(screen.getByRole("button", { name: "Review" }));
   await screen.findByText(
     "Unsupported Agent file version. Expected schema_version: 1.",
   );

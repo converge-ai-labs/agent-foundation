@@ -13,7 +13,10 @@ const http = vi.hoisted(() => ({
 }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 const account = {
   id: "acct_test",

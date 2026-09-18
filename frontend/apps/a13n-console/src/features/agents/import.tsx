@@ -27,7 +27,8 @@ import { ErrorNotice } from "../../shared/feedback";
 import { FileUpload } from "../../shared/forms";
 import { FormActions, TextAreaField } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
-import styles from "../../shared/shared.module.css";
+import shared from "../../shared/shared.module.css";
+import styles from "./agents.module.css";
 import { AgentFilePreview } from "./export";
 import {
   agentDependencies,
@@ -50,27 +51,44 @@ export function AgentCreationMenu() {
   const [busy, setBusy] = useState(false);
   return (
     <>
-      <Menu>
-        <MenuTrigger render={<Button ref={triggerRef} variant="default" />}>
-          <PlusIcon size={15} />
+      <div className={styles.splitButton}>
+        <Button
+          ref={triggerRef}
+          variant="default"
+          onClick={() => navigate("new")}
+        >
+          <PlusIcon size={15} aria-hidden="true" />
           {t("Create agent")}
-          <CaretDownIcon size={14} />
-        </MenuTrigger>
-        <MenuPopup align="end" className="min-w-48">
-          <MenuItem onClick={() => navigate(`${basePath}/configuration/new`)}>
-            <SparkleIcon size={16} aria-hidden="true" />
-            {t("Configure with assistant")}
-          </MenuItem>
-          <MenuItem onClick={() => navigate("new")}>
-            <PlusIcon size={16} />
-            {t("New agent")}
-          </MenuItem>
-          <MenuItem onClick={() => setOpen(true)}>
-            <FileArrowUpIcon size={16} />
-            {t("Import from YAML")}
-          </MenuItem>
-        </MenuPopup>
-      </Menu>
+        </Button>
+        <Menu>
+          <MenuTrigger
+            render={
+              <Button
+                variant="default"
+                size="icon"
+                aria-label={t("More ways to create an agent")}
+                title={t("More ways to create an agent")}
+              />
+            }
+          >
+            <CaretDownIcon size={14} aria-hidden="true" />
+          </MenuTrigger>
+          <MenuPopup align="end" className="min-w-56">
+            <MenuItem onClick={() => navigate("new")}>
+              <PlusIcon size={16} aria-hidden="true" />
+              {t("New agent")}
+            </MenuItem>
+            <MenuItem onClick={() => navigate(`${basePath}/configuration/new`)}>
+              <SparkleIcon size={16} aria-hidden="true" />
+              {t("Configure with assistant")}
+            </MenuItem>
+            <MenuItem onClick={() => setOpen(true)}>
+              <FileArrowUpIcon size={16} aria-hidden="true" />
+              {t("Import from YAML")}
+            </MenuItem>
+          </MenuPopup>
+        </Menu>
+      </div>
       <ModalFrame
         open={open}
         onOpenChange={(value) => {
@@ -205,7 +223,7 @@ export function ImportAgentForm({
   }
   return (
     <form
-      className={styles.form}
+      className={shared.form}
       onSubmit={(event) => {
         event.preventDefault();
         if (!draft) {
@@ -263,10 +281,14 @@ export function ImportAgentForm({
               setError(undefined);
             }}
           />
-          {reading && <p role="status">{t("Reading file…")}</p>}
+          {reading && (
+            <p role="status" className={styles.importStatus}>
+              {t("Reading file…")}
+            </p>
+          )}
           <ErrorNotice error={error} />
           <FormActions
-            label={t("Review import")}
+            label={t("Review")}
             pending={reading}
             disabled={!source.trim()}
             onCancel={onCancel}
@@ -276,7 +298,7 @@ export function ImportAgentForm({
         <>
           <fieldset
             disabled={create.isPending}
-            className="fieldset-reset flex flex-col gap-4"
+            className={`fieldset-reset ${styles.importReview}`}
           >
             <FormField label={t("Agent name")}>
               <Input
@@ -297,17 +319,20 @@ export function ImportAgentForm({
                 create.reset();
               }}
             />
-            <section className="space-y-4" aria-label={t("Dependencies")}>
-              <div>
-                <h3 className="text-sm font-semibold">{t("Dependencies")}</h3>
-                <p className="mt-1 text-xs text-muted-foreground">
+            <section
+              className={styles.dependencies}
+              aria-label={t("Dependencies")}
+            >
+              <div className={styles.dependenciesIntro}>
+                <h3>{t("Dependencies")}</h3>
+                <p>
                   {t(
                     "Match each reference to a resource in this workspace. Pinned versions and settings are preserved.",
                   )}
                 </p>
               </div>
               {dependencies.isFetching && (
-                <p role="status" className="text-sm text-muted-foreground">
+                <p role="status" className={styles.importStatus}>
                   {t("Checking dependencies…")}
                 </p>
               )}
@@ -316,13 +341,11 @@ export function ImportAgentForm({
                   (item) => item.path === ref.path,
                 );
                 return (
-                  <div key={ref.path} className="space-y-1.5">
-                    <div className="flex flex-wrap items-baseline justify-between gap-2">
-                      <span className="break-all text-xs text-muted-foreground">
-                        {ref.path}
-                      </span>
+                  <div key={ref.path} className={styles.dependency}>
+                    <div className={styles.dependencyHead}>
+                      <span title={ref.path}>{ref.path}</span>
                       {ref.version != null && (
-                        <span className="text-xs text-muted-foreground">
+                        <span>
                           {t("Pinned version {{version}}", {
                             version: ref.version,
                           })}
@@ -348,7 +371,7 @@ export function ImportAgentForm({
                       }}
                     />
                     {check?.issue && (
-                      <p role="alert" className="text-xs text-destructive">
+                      <p role="alert" className={styles.dependencyIssue}>
                         {t(check.issue)}
                       </p>
                     )}
@@ -363,19 +386,16 @@ export function ImportAgentForm({
             <DisclosureSection title={t("Configuration preview")}>
               <AgentFilePreview file={draft} />
             </DisclosureSection>
-            <p className="text-xs text-muted-foreground">
+            <p className={styles.importNote}>
               {t(
                 "Creates a new agent. Service validates the configuration on creation; plugin availability and secret access also depend on the execution environment.",
               )}
             </p>
           </fieldset>
           <ErrorNotice error={error ?? create.error} />
-          <div
-            data-a13n-form-actions
-            className="flex flex-wrap justify-between gap-3"
-          >
+          <div data-a13n-form-actions className={styles.importActions}>
             <Button
-              variant="outline"
+              variant="ghost"
               disabled={create.isPending}
               onClick={() => {
                 setSource(serializeAgentFile(draft));
@@ -385,9 +405,9 @@ export function ImportAgentForm({
                 create.reset();
               }}
             >
-              {t("Edit YAML")}
+              {t("Back")}
             </Button>
-            <div className="flex gap-3">
+            <div className={styles.importActionsEnd}>
               <Button
                 variant="ghost"
                 disabled={create.isPending}

@@ -1,43 +1,51 @@
-import { Button, ChoiceField, FormField, ModalFrame } from "a13n-ui";
-
-import { SearchPicker } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  FormField,
+  MenuItem,
+  ModalFrame,
+  SearchPicker,
+} from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { PageActions } from "../../shared/page";
 
 import { ApiError } from "../../service-client";
-import { PlusIcon } from "@phosphor-icons/react";
+import {
+  PlusIcon,
+  UserMinusIcon,
+  UsersIcon,
+  UserSwitchIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { UserAvatar as Avatar } from "../../layout/avatar";
+import { UserAvatar } from "../../layout/avatar";
 import { useAccess } from "../../layout/workspace";
 import { allPages, data, representation, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty } from "../../shared/collection";
-import { ErrorNotice, Loading } from "../../shared/feedback";
-import { Confirm } from "../../shared/dialogs";
+import {
+  CollectionFooter,
+  Empty,
+  Pagination,
+  ResourceIdentity,
+  ResourceTable,
+  useCursor,
+} from "../../shared/collection";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import { ConflictNotice, Confirm } from "../../shared/dialogs";
 import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
+import settings from "./settings.module.css";
+import { InvitationEditor } from "./invitations";
+import { roleOptions, roles, type MembershipScope, type Role } from "./roles";
 
-export type MembershipScope = {
-  kind: "workspace" | "organization";
-  id: string;
-};
-type Role = Schema["ChangeRoleRequest"]["role"];
-const roles: Role[] = ["member", "viewer", "runner", "builder", "admin"];
-export function roleOptions(kind: MembershipScope["kind"]) {
-  return roles.filter((role) =>
-    kind === "organization"
-      ? ["member", "admin"].includes(role)
-      : role !== "member",
-  );
-}
+export type { MembershipScope };
+export { roleOptions };
 
 export function Members({ scope }: { scope: MembershipScope }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { organization, organizationAdmin } = useAccess(),
+    { organization, organizationAdmin, can } = useAccess(),
     page = useCursor();
   const members = useQuery({
     queryKey: ["members", scope.kind, scope.id],
@@ -87,6 +95,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
             })
             .then(data),
   });
+  /* A role binding is only safe to change from the version the reader saw. */
   const readVersion = async (item: Schema["RoleBinding"]) => {
     const latest = representation(
       await client.http.GET("/api/v1/role-bindings/{binding_id}", {
@@ -103,91 +112,154 @@ export function Members({ scope }: { scope: MembershipScope }) {
       );
     return latest.etag;
   };
+  /* A workspace also grants roles to service accounts; name those too. */
+  const accounts = useQuery({
+    queryKey: ["service-account-directory", scope.id],
+    enabled: scope.kind === "workspace" && can("service_account.manage"),
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        client.http
+          .GET("/api/v1/workspaces/{workspace}/service-accounts", {
+            params: {
+              path: { workspace: scope.id },
+              query: { cursor, limit: 100 },
+            },
+            signal,
+          })
+          .then(data),
+      ),
+  });
+  const person = (item: Schema["RoleBinding"]) => {
+    const user = members.data?.find((user) => user.id === item.principal_id);
+    if (user)
+      return { name: user.name, secondary: user.email, image: user.image_url };
+    const account = accounts.data?.find(
+      (account) => account.id === item.principal_id,
+    );
+    if (account) return { name: account.name, secondary: t("Service account") };
+    return { name: item.principal_id, secondary: item.principal_type };
+  };
+  const items = bindings.data?.items ?? [];
+  const action =
+    scope.kind === "workspace" ? (
+      organizationAdmin && (
+        <AddMember scope={scope} organizationId={organization.id} />
+      )
+    ) : (
+      <InvitationEditor scope={scope} />
+    );
   return (
     <div className={styles.stack}>
-      <PageActions>
-        {scope.kind === "workspace" && organizationAdmin && (
-          <AddMember scope={scope} organizationId={organization.id} />
-        )}
-      </PageActions>
+      <PageActions>{action}</PageActions>
       {members.isPending || bindings.isPending ? (
         <Loading variant="table" columns={3} rows={5} />
       ) : members.error || bindings.error ? (
         <ErrorNotice error={members.error ?? bindings.error} />
-      ) : bindings.data?.items.length ? (
+      ) : items.length ? (
         <>
           <ResourceTable
-            items={bindings.data.items}
+            items={items}
+            caption={t("Members")}
+            rowMenuLabel={t("Member actions")}
+            rowMenu={(item) => (
+              <>
+                <ChangeRole
+                  item={item}
+                  scope={scope}
+                  readVersion={readVersion}
+                  triggerElement={
+                    <MenuItem closeOnClick={false}>
+                      <UserSwitchIcon size={14} />
+                      {t("Change role")}
+                    </MenuItem>
+                  }
+                />
+                <Confirm
+                  subject={`${person(item).name} · ${t(
+                    `role.${item.role_key}`,
+                    {
+                      defaultValue: item.role_key,
+                    },
+                  )}`}
+                  title={t("Remove member")}
+                  description={t(
+                    "This removes the selected role. Other explicit grants may still allow access.",
+                  )}
+                  triggerElement={
+                    <MenuItem closeOnClick={false} variant="destructive">
+                      <UserMinusIcon size={14} />
+                      {t("Remove")}
+                    </MenuItem>
+                  }
+                  danger
+                  action={async () => {
+                    const etag = await readVersion(item);
+                    await client.http.DELETE(
+                      "/api/v1/role-bindings/{binding_id}",
+                      {
+                        params: {
+                          path: { binding_id: item.id },
+                          header: { "If-Match": etag },
+                        },
+                      },
+                    );
+                  }}
+                />
+              </>
+            )}
             columns={[
               {
                 label: t("Member"),
                 tone: "primary",
                 render: (item) => {
-                  const user = members.data?.find(
-                    (user) => user.id === item.principal_id,
-                  );
+                  const identity = person(item);
                   return (
-                    <div className={styles.actions}>
-                      <Avatar
-                        name={user?.name ?? item.principal_type}
-                        url={user?.image_url}
-                      />
-                      <span>
-                        {user?.name ?? item.principal_id}
-                        <small>{user?.email ?? item.principal_type}</small>
-                      </span>
-                    </div>
+                    <ResourceIdentity
+                      icon={
+                        <UserAvatar
+                          name={identity.name}
+                          url={identity.image}
+                          className="size-8 rounded-[8px]"
+                        />
+                      }
+                      name={identity.name}
+                      description={identity.secondary}
+                      resourceId={item.principal_id}
+                    />
                   );
                 },
               },
               {
                 label: t("Role"),
-                render: (item) =>
-                  t(`role.${item.role_key}`, { defaultValue: item.role_key }),
+                render: (item) => (
+                  <span className={settings.chip}>
+                    {t(`role.${item.role_key}`, {
+                      defaultValue: item.role_key,
+                    })}
+                  </span>
+                ),
               },
               {
-                label: t("Actions"),
-                align: "right",
+                label: t("Joined"),
+                tone: "muted",
                 render: (item) => (
-                  <div className={styles.actions}>
-                    <ChangeRole
-                      item={item}
-                      scope={scope}
-                      readVersion={readVersion}
-                    />
-                    <Confirm
-                      subject={`${members.data?.find((user) => user.id === item.principal_id)?.email ?? item.principal_id} · ${t(`role.${item.role_key}`, { defaultValue: item.role_key })}`}
-                      triggerVariant="ghost"
-                      title={t("Remove member")}
-                      description={t(
-                        "This removes the selected role. Other explicit grants may still allow access.",
-                      )}
-                      trigger={t("Remove")}
-                      danger
-                      action={async () => {
-                        const etag = await readVersion(item);
-                        await client.http.DELETE(
-                          "/api/v1/role-bindings/{binding_id}",
-                          {
-                            params: {
-                              path: { binding_id: item.id },
-                              header: { "If-Match": etag },
-                            },
-                          },
-                        );
-                      }}
-                    />
-                  </div>
+                  <Timestamp value={item.created_at} relative />
                 ),
               },
             ]}
           />
-          <Pagination page={page} next={bindings.data.next_cursor} />
+          <CollectionFooter
+            count={t("{{count}} members", { count: items.length })}
+          >
+            <Pagination page={page} next={bindings.data?.next_cursor} />
+          </CollectionFooter>
         </>
       ) : (
         <Empty
+          icon={<UsersIcon aria-hidden="true" />}
           title={t("No members")}
           description={t("Invite a teammate to start collaborating.")}
+          action={action}
         />
       )}
     </div>
@@ -197,10 +269,12 @@ function ChangeRole({
   item,
   scope,
   readVersion,
+  triggerElement,
 }: {
   item: Schema["RoleBinding"];
   scope: MembershipScope;
   readVersion: (basis: Schema["RoleBinding"]) => Promise<string>;
+  triggerElement?: ReactElement;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -236,6 +310,8 @@ function ChangeRole({
       change.reset();
     },
   });
+  const conflict =
+    change.error instanceof ApiError && change.error.status === 412;
   return (
     <ModalFrame
       onOpenChange={(value) => {
@@ -249,11 +325,13 @@ function ChangeRole({
         }
       }}
       trigger={
-        <Button size="sm" variant="outline" type="button">
-          {t("Change role")}
-        </Button>
+        triggerElement ?? (
+          <Button size="sm" variant="outline" type="button">
+            {t("Change role")}
+          </Button>
+        )
       }
-      size={"md"}
+      size="md"
       title={t("Change role")}
       description={t("The new role takes effect when you save.")}
       closeLabel={t("Close")}
@@ -279,10 +357,24 @@ function ChangeRole({
             label: t(`role.${value}`, { defaultValue: value }),
           }))}
         />
-        <ErrorNotice
-          error={reload.error ?? change.error}
-          retry={() => reload.mutate()}
-        />
+        {conflict ? (
+          <ConflictNotice
+            title={t("This member changed")}
+            description={t(
+              "Someone updated this role while the dialog was open. Load the current role before saving.",
+            )}
+            recover={{
+              label: t("Load current role"),
+              onClick: () => reload.mutate(),
+              pending: reload.isPending,
+            }}
+          />
+        ) : (
+          <ErrorNotice
+            error={reload.error ?? change.error}
+            retry={() => reload.mutate()}
+          />
+        )}
         <FormActions
           onCancel={() => setOpen(false)}
           pending={change.isPending}
@@ -335,12 +427,12 @@ function AddMember({
     <ModalFrame
       onOpenChange={setOpen}
       trigger={
-        <Button variant="outline" type="button">
-          {<PlusIcon size={14} />}
+        <Button variant="default" type="button">
+          <PlusIcon size={14} />
           {t("Add member")}
         </Button>
       }
-      size={"md"}
+      size="md"
       title={t("Add existing member")}
       description={t(
         "Choose someone who already belongs to your organization.",

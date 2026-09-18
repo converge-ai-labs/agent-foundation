@@ -1,4 +1,3 @@
-import { PlugsConnectedIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -6,7 +5,15 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import {
+  ErrorNotice,
+  Loading,
+  StatePill,
+  Timestamp,
+} from "../../shared/feedback";
+import { CopyableId } from "../../shared/identity";
+import { Section } from "../../shared/page";
+import { usePlatformName } from "../integrations/platform";
 import styles from "./bots.module.css";
 
 const checkErrors: Record<string, string> = {
@@ -25,19 +32,27 @@ const checkErrors: Record<string, string> = {
     "The provider response could not be verified. No access has been confirmed.",
 };
 
-export function BotChecks({
+export function checkErrorMessage(code: string) {
+  return (
+    checkErrors[code] ??
+    "The check could not be completed. Review the account settings and try again."
+  );
+}
+
+/**
+ * The single "check connection" behaviour. Every surface that verifies a bot
+ * against its platform reads and runs the check through this hook.
+ */
+export function useBotCheck({
   account,
   conversationId,
-  showAccountLink = false,
 }: {
   account: Schema["Account"];
   conversationId?: string;
-  showAccountLink?: boolean;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
-    { can, workspace, basePath } = useWorkspace(),
-    { t } = useTranslation();
+    { workspace } = useWorkspace();
   const key = [
     "bot-check",
     workspace.id,
@@ -85,85 +100,83 @@ export function BotChecks({
   });
   const result =
     !query.error && !query.isFetching ? query.data?.latest : undefined;
+  return {
+    query,
+    check,
+    result,
+    running: check.isPending || query.isFetching,
+  };
+}
+
+/** Label used by every control that runs the platform check. */
+export function useCheckLabel() {
+  const { t } = useTranslation();
+  return (running: boolean) => t(running ? "Checking…" : "Check connection");
+}
+
+export function BotChecks({
+  account,
+  conversationId,
+  showAccountLink = false,
+}: {
+  account: Schema["Account"];
+  conversationId?: string;
+  showAccountLink?: boolean;
+}) {
+  const { can, basePath } = useWorkspace(),
+    { t } = useTranslation(),
+    platformName = usePlatformName();
+  const { query, check, result, running } = useBotCheck({
+    account,
+    conversationId,
+  });
+  const label = useCheckLabel();
   const identity = result?.installation,
     conversation = result?.conversation;
   return (
-    <section
-      className={styles.checkSection}
-      aria-label={t(
+    <Section
+      title={t(conversationId ? "Conversation access" : "Platform connection")}
+      description={t(
         conversationId
-          ? "Group connection check"
-          : "Platform connection status",
+          ? "Checks whether the bot can access this conversation. No message is sent."
+          : "Checks the bot identity, connected organization, and whether the app is enabled. No message is sent.",
       )}
-    >
-      <div className={styles.memoryHeading}>
-        <div>
-          <h2 className={styles.sectionTitle}>
-            <PlugsConnectedIcon aria-hidden="true" />
-            {t(
-              conversationId
-                ? "Group connection check"
-                : "Platform connection status",
-            )}
-          </h2>
-          <p>
-            {t(
-              conversationId
-                ? "Checks whether the bot can access this conversation. No message is sent."
-                : "Checks the bot identity, connected workspace or enterprise, and whether the app is enabled. No message is sent.",
-            )}
-          </p>
-        </div>
-        {can("application_account.manage") && (
+      actions={
+        can("application_account.manage") && (
           <Button
             type="button"
             variant="outline"
-            disabled={check.isPending || query.isFetching}
+            size="sm"
+            disabled={running}
+            loading={check.isPending}
             onClick={() => check.mutate()}
           >
-            {t(check.isPending ? "Checking…" : "Check now")}
+            {label(check.isPending)}
           </Button>
-        )}
-      </div>
+        )
+      }
+    >
       <ErrorNotice
         error={query.error || check.error}
         retry={() => void query.refetch()}
       />
-      {query.isPending && <Loading />}
-      {check.isPending && (
-        <p role="status">
-          {t("Checking the provider. This may take a few seconds.")}
-        </p>
-      )}
+      {query.isPending && <Loading variant="list" rows={2} />}
       {result ? (
         <div className={styles.checkResult}>
-          <p>
-            <strong>{t("Last checked")}</strong>{" "}
-            <time dateTime={result.checked_at}>
-              {new Date(result.checked_at).toLocaleString()}
-            </time>
-          </p>
           {result.error_code && (
-            <p role="status">
-              {t(
-                checkErrors[result.error_code] ??
-                  "The check could not be completed. Review the account settings and try again.",
-              )}
+            <p className={styles.notice} data-tone="danger" role="status">
+              {t(checkErrorMessage(result.error_code))}
             </p>
           )}
           {identity && (
-            <dl className={styles.overviewFacts}>
+            <dl className={styles.facts}>
               <div>
                 <dt>
-                  {t(
-                    account.provider_key === "slack"
-                      ? "Slack workspace"
-                      : "Feishu enterprise",
-                  )}
+                  {t("Organization")} · {platformName(account.provider_key)}
                 </dt>
                 <dd>
                   <strong>{identity.organization_name}</strong>
-                  <code>{identity.organization_id}</code>
+                  <CopyableId value={identity.organization_id} />
                 </dd>
               </div>
               <div>
@@ -171,17 +184,15 @@ export function BotChecks({
                 <dd>
                   {showAccountLink ? (
                     <Link
-                      className={styles.factLink}
                       to={`${basePath}/application-accounts/${account.id}`}
                       title={t("View application account")}
                     >
                       <strong>{identity.bot_name}</strong>
-                      <ArrowRightIcon aria-hidden="true" />
                     </Link>
                   ) : (
                     <strong>{identity.bot_name}</strong>
-                  )}{" "}
-                  <code>{identity.bot_id}</code>
+                  )}
+                  <CopyableId value={identity.bot_id} />
                 </dd>
               </div>
               <div>
@@ -196,11 +207,12 @@ export function BotChecks({
             </dl>
           )}
           {conversation && (
-            <dl className={styles.overviewFacts}>
+            <dl className={styles.facts}>
               <div>
                 <dt>{t("Conversation")}</dt>
                 <dd>
-                  {conversation.name} <code>{conversation.id}</code>
+                  <strong>{conversation.name}</strong>
+                  <CopyableId value={conversation.id} />
                 </dd>
               </div>
               <div>
@@ -230,7 +242,10 @@ export function BotChecks({
               </div>
             </dl>
           )}
-          <p>
+          <p className={styles.hint}>
+            {t("Last checked")} <Timestamp value={result.checked_at} relative />
+          </p>
+          <p className={styles.hint}>
             {t(
               "This result reflects the last check. It does not confirm that messages reach the bot, the agent runs, or replies are delivered.",
             )}
@@ -239,9 +254,11 @@ export function BotChecks({
       ) : (
         !query.isPending &&
         !query.error && (
-          <p>{t("No check is available for the current credentials.")}</p>
+          <p className={styles.hint}>
+            {t("No check is available for the current credentials.")}
+          </p>
         )
       )}
-    </section>
+    </Section>
   );
 }
