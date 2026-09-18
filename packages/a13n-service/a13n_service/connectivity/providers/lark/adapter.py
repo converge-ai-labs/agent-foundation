@@ -32,7 +32,7 @@ from .wire import LarkIdentity, authenticate_and_normalize, lark_acknowledgement
 _CONFIG_VERSION = "lark_http_v1"
 _REQUEST_MAX_BYTES = 1024 * 1024
 _DEDUP_HORIZON_SECONDS = 24 * 60 * 60
-_NATIVE_ACTIONS = ("lark.reply", "lark.list_members", "lark.read_messages")
+_NATIVE_ACTIONS = ("lark.reply", "lark.send_file", "lark.list_members", "lark.read_messages")
 _OFFICIAL_ORIGINS = frozenset({"https://open.feishu.cn", "https://open.larksuite.com"})
 _BRAND_ORIGIN = {
     "feishu": "https://open.feishu.cn",

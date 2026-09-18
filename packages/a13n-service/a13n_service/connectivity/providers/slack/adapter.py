@@ -44,7 +44,7 @@ _SIGNATURE_MAX_AGE_SECONDS = 5 * 60
 _DEDUP_HORIZON_SECONDS = 24 * 60 * 60
 _EVENT_KINDS = frozenset({"app_mention", "message"})
 _CONVERSATION_KINDS = frozenset({"channel", "group", "im", "mpim"})
-_NATIVE_ACTIONS = ("slack.reply", "slack.list_members", "slack.read_messages")
+_NATIVE_ACTIONS = ("slack.reply", "slack.send_file", "slack.list_members", "slack.read_messages")
 _JSON_OBJECT = TypeAdapter(JsonObject)
 
 
@@ -261,15 +261,22 @@ def _normalize_event(
     if user_id == config.bot_user_id or event.get("bot_id") is not None:
         return None
     subtype = event.get("subtype")
-    if subtype is not None:
+    if subtype not in {None, "file_share"}:
         return None
-    text = event.get("text")
+    text = event.get("text", "")
     if not isinstance(text, str):
         return None
     mention_pattern = re.compile(rf"<@{re.escape(config.bot_user_id)}(?:\|[^>]+)?>")
     mentioned = mention_pattern.search(text) is not None
     normalized_text = " ".join(mention_pattern.sub(" ", text).split())
-    if not normalized_text:
+    files = event.get("files", [])
+    attachments: list[JsonValue] = []
+    if isinstance(files, list):
+        for file in files[:100]:
+            identifier = file.get("id") if isinstance(file, dict) else None
+            if isinstance(identifier, str) and 0 < len(identifier) <= 256:
+                attachments.append({"id": identifier})
+    if not normalized_text and not attachments:
         return None
     root_thread_ts = event.get("thread_ts")
     if not isinstance(root_thread_ts, str) or not root_thread_ts:
@@ -303,7 +310,7 @@ def _normalize_event(
                 id=f"{config.team_id}:{channel_id}:{message_ts}",
             ),
         },
-        data={},
+        data={"attachments": attachments} if attachments else {},
         ordering_key=f"{message_ts}:{event_id}",
     )
 

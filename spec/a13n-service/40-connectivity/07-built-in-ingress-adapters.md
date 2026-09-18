@@ -14,7 +14,7 @@ All adapters reject unknown configuration versions and request bodies beyond the
 
 `provider_key = "slack"` and `provider_config_version = "slack_http_v1"` select this profile. The immutable Account provider configuration contains `api_app_id`, exactly one installed `team_id`, optional `enterprise_id`, verified `bot_user_id`. The mutable `event_transport` is `http` (default, including omitted legacy values) or `websocket`. A changed App, installation, enterprise scope, or bot identity creates another Application Account.
 
-The Slack Account owns write-only credential fields `signing_secret`, `bot_token`, and optional `app_token`. HTTP requires the signing secret; Socket Mode requires an app-level token with `connections:write`. Both require the bot token. The signing secret authenticates webhooks. The bot token is used only for the enabled native Slack operations against `https://slack.com`; it never authenticates inbound delivery.
+The Slack Account owns write-only credential fields `signing_secret`, `bot_token`, and optional `app_token`. HTTP requires the signing secret; Socket Mode requires an app-level token with `connections:write`. Both require the bot token. The signing secret authenticates webhooks. The bot token is used only for enabled Slack API operations against `https://slack.com` and authenticated file downloads from `https://files.slack.com`; it never authenticates inbound delivery.
 
 ### Authentication and events
 
@@ -30,7 +30,9 @@ The supported input events are:
 
 Slack `app_mention` events may omit `channel_type`; these normalize as channel traffic. Ordinary `message` events require an explicit supported conversation kind. This routing classification does not establish public/private audience or grant memory access; current provider verification owns that authority.
 
-The adapter ignores its verified `bot_user_id`, messages with a `bot_id`, the `bot_message` subtype, edited or deleted message subtypes, message bodies containing no content after the exact App mention is removed, and every unsupported event or subtype. Ignored events are acknowledged without admission.
+The adapter ignores its verified `bot_user_id`, messages with a `bot_id`, the `bot_message` subtype, edited or deleted message subtypes, message bodies containing neither text nor file references after the exact App mention is removed, and every unsupported event or subtype. Ignored events are acknowledged without admission.
+
+The `file_share` message subtype is supported under the same reception policy. Normalization retains only bounded file IDs from authenticated message events, never event-supplied download URLs.
 
 Safe normalization exposes bounded user and conversation IDs, display labels when already present, conversation kind, timestamp, thread relationship, mention facts, and text with the App mention removed. It does not fetch profile or history data during receipt. Stable references are:
 
@@ -44,11 +46,12 @@ An irrelevant, challenge, or already-known delivery returns HTTP `200`. A newly 
 
 ### Native actions
 
-The installation requests only scopes required by enabled events and actions. These can include `app_mentions:read`, the matching `channels:history`, `groups:history`, `im:history`, or `mpim:history` scopes, `chat:write`, the corresponding conversation read scopes, and `users:read`. Disabling an action removes it from later Run selections even if the token still has its scope.
+The installation requests only scopes required by enabled events and actions. These can include `app_mentions:read`, the matching `channels:history`, `groups:history`, `im:history`, or `mpim:history` scopes, `chat:write`, the corresponding conversation read scopes, `users:read`, and `files:read` / `files:write` for attachment input / file delivery. Existing installations must be reauthorized after scope changes. Disabling an action removes it from later Run selections even if the token still has its scope.
 
 | Action key            | Model arguments                                                                         | Hidden current-context binding    | Provider operation                                                   |
 | --------------------- | --------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------- |
 | `slack.reply`         | bounded `text`; bounded placement enum only when reception policy is `auto`             | channel and root thread timestamp | `chat.postMessage`; `chat.update` for an existing Bot task message   |
+| `slack.send_file`     | current-run published `asset_id`                                                        | channel and root thread timestamp | external upload URL, bounded byte upload, and upload completion      |
 | `slack.list_members`  | `limit` from 1 through 100 and opaque cursor                                            | current channel                   | `conversations.members`, with bounded cached `users.info` enrichment |
 | `slack.read_messages` | `scope` in `conversation` or `discussion`, `limit` from 1 through 15, and opaque cursor | current channel and thread        | the applicable conversations history or replies operation            |
 
@@ -74,7 +77,9 @@ The raw body is limited to 1 MiB. When `encrypt_key` is configured, the adapter 
 
 The adapter then verifies the v2 event header token, `app_id`, and `tenant_key` against the Account. URL verification returns the exact bounded challenge only after those checks and creates no admission. `header.event_id` is the durable external event identity; reuse with different canonical payload evidence fails closed. Deduplication evidence is retained for 24 hours.
 
-The supported input event is `im.message.receive_v1`. The installation enables only the application permissions needed by configured behavior: message receive/read, send-as-bot, and chat-member read. Safe normalization accepts text and post messages as bounded text projections. Image, file, audio, video, and other message types expose only bounded type and attachment metadata and cannot materialize binary content. The view can include bounded sender ID and kind, message ID, root, parent and thread IDs, chat ID and type, exact mentions, message type, text, and provider creation time.
+The supported input event is `im.message.receive_v1`. The installation enables only the application permissions needed by configured behavior: message receive/read, send-as-bot, and chat-member read. Safe normalization accepts text and post messages as bounded text projections. Image and file messages, including images in rich posts, retain bounded resource keys for deferred attachment import. Audio, video, and other unsupported types retain metadata and yield an explicit unread-attachment notice rather than claiming analysis. No binary download runs in receipt normalization. The view can include bounded sender ID and kind, message ID, root, parent and thread IDs, chat ID and type, exact mentions, message type, text, and provider creation time.
+
+Standalone group file messages have no bot mention. Receiving them requires the provider permission `im:message.group_msg` and an interaction mode that admits unmentioned messages. This sensitive permission exposes messages from groups the bot joins; attachment support does not enable it automatically or bypass exact-target admission. Mention-only installations can process images included in mentioned rich posts.
 
 Stable references are:
 
@@ -91,6 +96,7 @@ An irrelevant or duplicate delivery returns HTTP `200` with the bounded success 
 | Action key           | Model arguments                                                             | Hidden current-context binding       | Provider operation                                         |
 | -------------------- | --------------------------------------------------------------------------- | ------------------------------------ | ---------------------------------------------------------- |
 | `lark.reply`         | bounded text or post content; bounded placement enum only for `auto` policy | message, chat, and discussion policy | reply to the current message or create in the current chat |
+| `lark.send_file`     | current-run published `asset_id`                                            | message, chat, and discussion policy | upload an IM file, then send a native file message         |
 | `lark.list_members`  | bounded limit and opaque page token                                         | current chat                         | list current chat members                                  |
 | `lark.read_messages` | bounded scope, time/order options, and opaque page token                    | current chat or discussion           | list messages for the bound container                      |
 
@@ -101,6 +107,18 @@ The model cannot provide an App, tenant, chat, thread, message, token, or Accoun
 Feishu task controls use the `card.action.trigger` callback subscription with the same HTTP or long-connection method as message reception. HTTP callbacks require the existing token, optional encryption/signature, and App/tenant checks. Long-connection callbacks use the authenticated App connection and tenant route. Recognized controls contain a bounded Run reference, action token, operator Open ID, card message ID, and chat ID. Only `im_message` hosts and the versioned stop action are supported. Malformed recognized controls fail closed; unrelated card controls are acknowledged without execution.
 
 An application contribution validates task ownership and durably accepts control intent according to [Bot task progress](../../frontend/bots.md#task-progress-and-control). No ingress event or AgentInput is created. HTTP returns the contribution's bounded toast directly. Long connections return that object as base64-encoded JSON in the successful protocol response's `data` field after durable commit. Delivery replay is safe because control is idempotent for the exact Run. The callback performs no provider API call.
+
+## Message attachments and file results
+
+After durable admission and before canonical input acceptance, Slack and Feishu resolve image, PDF, and UTF-8 text/Markdown/CSV/JSON attachments through authenticated provider reads. Slack resolves `files.info` and downloads only from HTTPS `files.slack.com`; Feishu reads the resource under the authenticated source message ID and resource key. Download redirects, arbitrary event URLs, external Slack files, empty files, unsupported types, and oversized files are rejected. Feishu requires message-resource access for download and `im:resource` (or an existing `im:resource:upload` grant) for file upload; changed application permissions must be published. Attachment import does not change mention/discussion/chat activation rules: attachments must be part of an eligible message, not inferred from unrelated earlier chat traffic.
+
+At most five attachments per accepted batch and 20 MiB per attachment are processed, subject to stricter Asset limits. One bounded 15-second import budget covers the batch. Downloads and Asset publication run outside database sessions. Live Account scope/version, execution Principal, and Asset permissions are checked before download; canonical acceptance rechecks admission authority. Assets use the existing upload validation, private storage, retention and idempotency contract. The batch ID and attachment ordinal define an import idempotency key, so a retry cannot create another Asset for the same immutable content. Previously accepted input is replayed before importing files again.
+
+Images and PDFs become Asset-backed binary parts in [AgentInput](../17-agent-input.md), using its existing model-content/environment-path resolution. UTF-8 text is projected as named text content with an Asset reference, bounded to 100,000 characters. An unavailable or unsupported attachment adds an explicit unread-file notice to input; the Agent must not represent it as analyzed. Binary content still requires a compatible model or Environment; ingress does not silently enable new execution capabilities.
+
+The native `slack.send_file` and `lark.send_file` actions accept only an Asset ID published by `service.publish_asset` in the current Run and Workspace. They verify readable, undeleted content and the existing Asset provenance before upload. They expose no URL, local path, Account, channel, chat or thread argument. Existing native context and reply policy bind delivery to the original conversation or thread; fresh Attempt and Account authority is checked again before final send. File delivery uses native attachments alongside the existing task card/message. It does not insert raw binaries into cards or automatically publish every generated artifact.
+
+Slack uploads bytes without the bot token to the provider-issued HTTPS upload URL and completes the upload in the bound channel/thread. Feishu uploads an IM file and sends its key through the bound reply/create operation. A confirmed provider receipt yields `succeeded`; lost or malformed responses after possible dispatch yield `outcome_unknown`. No automatic retry occurs after an uncertain write. Staged local content is removed after success, rejection, cancellation or uncertainty. GitHub file delivery and audio/video interpretation are outside this contract.
 
 ## Persistent event connections
 

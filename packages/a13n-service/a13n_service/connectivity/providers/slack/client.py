@@ -307,17 +307,30 @@ class SlackNativeClient:
         response = await self._request("users.conversations", payload, bot_token=bot_token, method="GET")
         return inspection.conversations(response, limit=limit)
 
+    async def file_request(self, operation: str, payload: JsonObject, *, bot_token: str) -> JsonObject:
+        if operation not in {"files.info", "files.getUploadURLExternal", "files.completeUploadExternal"}:
+            raise SlackNativeActionError("invalid_arguments")
+        return await self._request(
+            operation, payload, bot_token=bot_token, method="GET" if operation == "files.info" else "POST"
+        )
+
     async def _request(
         self, operation: str, payload: JsonObject, *, bot_token: str, method: Literal["GET", "POST"] = "POST"
     ) -> JsonObject:
         if not bot_token or len(bot_token) > 4096:
             raise SlackNativeActionError("credential_unavailable")
+        # This endpoint rejects JSON fields on some Slack deployments.
+        form = operation == "files.getUploadURLExternal"
         try:
             async with self._http_client.stream(
                 method,
                 f"{self._api_origin}/api/{operation}",
-                headers={"authorization": f"Bearer {bot_token}", "content-type": "application/json"},
-                json=payload if method == "POST" else None,
+                headers={
+                    "authorization": f"Bearer {bot_token}",
+                    "content-type": "application/x-www-form-urlencoded" if form else "application/json",
+                },
+                json=payload if method == "POST" and not form else None,
+                data={key: str(value) for key, value in payload.items()} if form else None,
                 params={key: str(value) for key, value in payload.items()} if method == "GET" else None,
                 follow_redirects=False,
             ) as response:
@@ -339,6 +352,8 @@ class SlackNativeClient:
             raise SlackNativeActionError("invalid_provider_response") from error
         if value.get("ok") is not True:
             error_code = value.get("error")
+            if operation == "files.completeUploadExternal" and error_code in {"internal_error", "fatal_error"}:
+                raise SlackNativeActionError("provider_unavailable")
             if error_code == "ratelimited":
                 raise SlackNativeActionError("rate_limited", retry_after_seconds=retry_after)
             raise SlackNativeActionError("provider_rejected")

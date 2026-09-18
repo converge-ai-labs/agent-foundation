@@ -45,6 +45,7 @@ from .connectors.registry import ConnectorProviderRegistry
 from .connectors.tool_discovery import discover_tools, mcp_tool
 from .connectors.tool_errors import rejected_tool_outcome
 from .domain import JsonObject
+from .file_delivery import FileDelivery
 from .mcp.management import require_connection as require_mcp_connection
 from .mcp.refresh import OAuthCredentialRefresh
 from .mcp.transport import RemoteTransport
@@ -85,6 +86,7 @@ class ExternalToolRuntime:
         http_client: httpx2.AsyncClient,
         oauth_refresh: OAuthCredentialRefresh,
         observations: NativeObservationFactory | None = None,
+        files: FileDelivery | None = None,
     ) -> None:
         self._sessions = sessions
         self._protector = protector
@@ -94,6 +96,7 @@ class ExternalToolRuntime:
         self._http = http_client
         self._oauth_refresh = oauth_refresh
         self._observations = observations
+        self._files = files
         self._selections = ConnectivitySelectionResolver(sessions)
 
     async def _scope(
@@ -260,6 +263,7 @@ class ExternalToolRuntime:
                     self._http,
                     attempt=attempt,
                     observations=self._observations,
+                    files=self._files,
                 )
                 if capability is not None:
                     capabilities.append(capability)
