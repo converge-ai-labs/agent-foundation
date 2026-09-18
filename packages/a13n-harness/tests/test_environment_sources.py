@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 from a13n_environment import (
+    FILE_READ_ACTIONS,
     DirectLocalEnvironment,
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
@@ -14,7 +15,6 @@ from a13n_environment import (
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
-    EnvironmentAccess,
     EnvironmentMount,
     HarnessBuilder,
     RunBindings,
@@ -41,11 +41,11 @@ def _executable():
     )
 
 
-def _environment(root: Path, environment_id: str, *, read_only: bool = False) -> Environment:
+def _environment(root: Path, environment_id: str) -> Environment:
     provider = DirectLocalEnvironmentProvider()
     return provider.create_environment(
         configuration=DirectLocalProviderConfiguration(
-            root=DirectLocalRootConfiguration(path=root, read_only=read_only),
+            root=DirectLocalRootConfiguration(path=root),
         ),
         state=None,
         environment_id=environment_id,
@@ -180,7 +180,7 @@ async def test_environment_mount_exposes_an_explicit_aggregate_path(tmp_path: Pa
     assert (tmp_path / "value.txt").read_text() == "preserved"
 
 
-async def test_multiple_environments_apply_access_and_explicit_default(tmp_path: Path) -> None:
+async def test_multiple_environments_apply_permission_ceiling_and_explicit_default(tmp_path: Path) -> None:
     build_root = tmp_path / "build"
     data_root = tmp_path / "data"
     build_root.mkdir()
@@ -209,7 +209,7 @@ async def test_multiple_environments_apply_access_and_explicit_default(tmp_path:
             "build": _environment(build_root, "build"),
             "data": EnvironmentMount(
                 _environment(data_root, "data"),
-                access=EnvironmentAccess.READ_ONLY,
+                permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
             ),
         },
         default_environment="build",
@@ -354,17 +354,17 @@ async def test_entered_environments_close_in_reverse_order_when_later_preparatio
     ]
 
 
-@pytest.mark.parametrize("explicit_access", [False, True])
-async def test_runtime_accepts_environments_with_exact_mount_policy(tmp_path: Path, explicit_access: bool) -> None:
+@pytest.mark.parametrize("explicit_ceiling", [False, True])
+async def test_runtime_accepts_environments_with_exact_mount_policy(tmp_path: Path, explicit_ceiling: bool) -> None:
     (tmp_path / "value.txt").write_text("preserved")
     environment = _TrackingEnvironment(tmp_path, "runtime-input")
     permissions = EnvironmentPermissionSet(operations=frozenset({EnvironmentAction.FILE_READ_TEXT}))
-    mount = EnvironmentMount(environment, access=permissions) if explicit_access else environment
+    mount = EnvironmentMount(environment, permission_ceiling=permissions) if explicit_ceiling else environment
     runtime = create_environment_runtime(mounts={"workspace": mount}, default_mount="workspace")
 
     async def prepare(context) -> str:
         assert (await context.environment.files.read_text("/workspace/value.txt")).text == "preserved"
-        if explicit_access:
+        if explicit_ceiling:
             assert context.environment.snapshot.mounts[0].permission_ceiling == permissions
             with pytest.raises(EnvironmentError) as denied:
                 await context.environment.files.write_text("/workspace/other.txt", "denied", mode="create")

@@ -16,9 +16,9 @@ The [complete generated field reference](configuration-reference.md) covers buil
 
 ## Direct Local
 
-`DirectLocalProviderConfiguration` requires an absolute `root.path`; `root.read_only` defaults to false. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
+`DirectLocalProviderConfiguration` requires an absolute `root.path`. The root is always writable; a reference-only mount withholds write actions through the Harness permission ceiling instead. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
 
-To enable one executable, follow the [complete command example](commands.md). For shell syntax, configure an absolute shell executable and profile ID, optional fixed arguments, dialect `posix` or `powershell`, and explicit login permission. Profile IDs are unique. A read-only root cannot enable process execution; PowerShell profiles cannot enable login mode.
+To enable one executable, follow the [complete command example](commands.md). For shell syntax, configure an absolute shell executable and profile ID, optional fixed arguments, dialect `posix` or `powershell`, and explicit login permission. Profile IDs are unique. PowerShell profiles cannot enable login mode.
 
 `inherit_environment` defaults to false. `allowed_environment_keys` defaults to an empty set; choose an explicit allowlist or the supported `None` meaning deliberately. Model-authored environment changes do not bypass this policy. Absolute paths and null/control-character restrictions are validated before target use.
 
@@ -54,7 +54,7 @@ E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop use the same ba
 
 ### E2B
 
-`E2BProviderConfiguration` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true and read-only defaults to false.
+`E2BProviderConfiguration` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true.
 
 Sandbox timeout defaults to 3,600 seconds (30–86,400); request timeout defaults to 30 seconds (up to 300). Neither is a per-command execution deadline. File values default to 16 MiB, observation bytes to 1 MiB, active observations to 128, total retained output to 128 MiB, and query entries to 10,000. [Runtime limitations](providers.md#e2b-runtime) explains text-based observation and supported command control.
 

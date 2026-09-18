@@ -184,8 +184,8 @@ class E2BEnvironment(Environment):
         self._processes = processes
         self._operations = EnvironmentOperations(
             files=files,
-            shell=processes if not self._configuration.read_only else None,
-            processes=processes if not self._configuration.read_only else None,
+            shell=processes,
+            processes=processes,
             ports=GuestPorts(commands),
         )
         self._descriptor = descriptor(self._configuration, commands.generation, sandbox.sandbox_id)
@@ -291,24 +291,12 @@ def descriptor(
 ) -> EnvironmentDescriptor:
     actions = {action for action in EnvironmentAction if not action.value.startswith("environment.state.")}
     actions -= {EnvironmentAction.PROCESS_SIGNAL, EnvironmentAction.OUTPUT_READ, EnvironmentAction.OUTPUT_RELEASE}
-    if configuration.read_only:
-        actions = {
-            EnvironmentAction.FILE_STAT,
-            EnvironmentAction.FILE_READ_TEXT,
-            EnvironmentAction.FILE_READ_BYTES,
-            EnvironmentAction.FILE_LIST,
-            EnvironmentAction.FILE_QUERY,
-            EnvironmentAction.FILE_SEARCH_TEXT,
-            EnvironmentAction.FILE_COPY_SOURCE,
-            EnvironmentAction.PORT_INSPECT,
-            EnvironmentAction.PORT_WAIT,
-        }
     return EnvironmentDescriptor(
         generation=generation,
         backing_identity=identity,
         operation_families=frozenset(ENVIRONMENT_ACTION_DISPATCH[action].family for action in actions),
         permissions=EnvironmentPermissionSet(operations=frozenset(actions)),
-        mounts=(EnvironmentMountDescriptor(name="root", path="/", read_only=configuration.read_only),),
+        mounts=(EnvironmentMountDescriptor(name="root", path="/"),),
         limits={
             "max_value_bytes": configuration.max_file_bytes,
             "max_observation_bytes": configuration.max_observation_bytes,

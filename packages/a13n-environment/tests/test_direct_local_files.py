@@ -11,10 +11,9 @@ from a13n_environment.models import EnvironmentError
 pytestmark = pytest.mark.anyio
 
 
-def _files(root: Path, budget: int) -> LocalFileOperator:
+def _files(root: Path, budget: int = 1024) -> LocalFileOperator:
     return LocalFileOperator(
         root=root,
-        read_only=True,
         policy=_DirectLocalFilePolicy(max_value_bytes=budget),
         mount_id="workspace",
         generation="test",
@@ -28,16 +27,6 @@ async def test_small_file_accepts_large_requested_page(tmp_path: Path) -> None:
     assert result.lines_read == 2
     assert result.has_more is False
     assert result.truncated_lines == ()
-
-
-def _writable_files(root: Path) -> LocalFileOperator:
-    return LocalFileOperator(
-        root=root,
-        read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=1024),
-        mount_id="workspace",
-        generation="test",
-    )
 
 
 @pytest.mark.parametrize("destination_kind", ["empty-directory", "nonempty-directory", "file"])
@@ -56,7 +45,7 @@ async def test_replacement_move_preserves_incompatible_entries(tmp_path: Path, d
         str(path.relative_to(tmp_path)): path.read_bytes() if path.is_file() else None for path in tmp_path.rglob("*")
     }
     with pytest.raises(EnvironmentError) as error:
-        await _writable_files(tmp_path).move("/source", "/destination", replace=True)
+        await _files(tmp_path).move("/source", "/destination", replace=True)
     assert error.value.code == "environment_request_invalid"
     assert {
         str(path.relative_to(tmp_path)): path.read_bytes() if path.is_file() else None for path in tmp_path.rglob("*")
@@ -66,26 +55,20 @@ async def test_replacement_move_preserves_incompatible_entries(tmp_path: Path, d
 async def test_replacement_move_publishes_complete_file_without_backup(tmp_path: Path) -> None:
     (tmp_path / "source").write_bytes(b"new")
     (tmp_path / "destination").write_bytes(b"old")
-    await _writable_files(tmp_path).move("/source", "/destination", replace=True)
+    await _files(tmp_path).move("/source", "/destination", replace=True)
     assert list(tmp_path.iterdir()) == [tmp_path / "destination"]
     assert (tmp_path / "destination").read_bytes() == b"new"
 
 
 async def test_remove_missing_file_reports_absence(tmp_path: Path) -> None:
     with pytest.raises(EnvironmentError) as error:
-        await _writable_files(tmp_path).remove("/missing")
+        await _files(tmp_path).remove("/missing")
     assert error.value.code == "environment_not_found"
     assert not list(tmp_path.iterdir())
 
 
 async def test_ensuring_existing_root_allows_child_writes_without_mutating_root(tmp_path: Path) -> None:
-    files = LocalFileOperator(
-        root=tmp_path,
-        read_only=False,
-        policy=_DirectLocalFilePolicy(max_value_bytes=64),
-        mount_id="workspace",
-        generation="test",
-    )
+    files = _files(tmp_path, 64)
     root_identity = tmp_path.stat().st_ino
     await files.mkdir("/", parents=True, exist_ok=True)
     await files.write_text("/download.txt", "downloaded", mode="create")
@@ -93,8 +76,6 @@ async def test_ensuring_existing_root_allows_child_writes_without_mutating_root(
     assert tmp_path.stat().st_ino == root_identity
     with pytest.raises(EnvironmentError, match="root cannot be mutated"):
         await files.mkdir("/", exist_ok=False)
-    with pytest.raises(EnvironmentError, match="read-only"):
-        await _files(tmp_path, 64).mkdir("/", exist_ok=True)
     (tmp_path / "download.txt").unlink()
     tmp_path.rmdir()
     with pytest.raises(EnvironmentError):
@@ -178,7 +159,7 @@ async def test_default_value_budget_accepts_larger_files_but_rejects_actual_over
 @pytest.mark.parametrize("action", ["read", "stat", "write"])
 async def test_closed_file_facet_rejects_native_access(tmp_path: Path, action: str) -> None:
     (tmp_path / "file").write_bytes(b"original")
-    files = _writable_files(tmp_path)
+    files = _files(tmp_path)
     files.close()
     with pytest.raises(EnvironmentError) as error:
         if action == "read":

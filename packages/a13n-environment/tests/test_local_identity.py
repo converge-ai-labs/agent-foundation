@@ -21,7 +21,7 @@ def test_backing_identity_binds_provider_host_and_policy(tmp_path: Path, monkeyp
     first = identity()
     assert first is not None
     assert identity(provider="second") != first
-    assert identity(policy={"read_only": True}) != first
+    assert identity(policy={"max_value_bytes": 1024}) != first
     monkeypatch.setattr(identity_module.platform, "node", lambda: "another-host")
     assert identity() != first
     monkeypatch.setattr(identity_module.platform, "node", lambda: "")

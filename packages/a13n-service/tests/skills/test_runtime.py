@@ -705,7 +705,6 @@ async def test_runtime_rejects_tampered_lock_and_stale_fence(
 def _files(tmp_path: Path) -> LocalFileOperator:
     return LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=64 * 1024 * 1024),
         mount_id="workspace",
         generation="generation-1",

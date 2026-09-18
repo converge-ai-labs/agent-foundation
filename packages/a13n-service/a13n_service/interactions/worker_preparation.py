@@ -8,11 +8,11 @@ from dataclasses import replace
 from functools import partial
 from typing import Any
 
+from a13n_environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     DeferredToolResume,
-    EnvironmentAccess,
     EnvironmentMount,
     RunBindings,
     RunInputValue,
@@ -219,7 +219,10 @@ class WorkerAttemptPreparer:
                     invocation,
                     environment=MountedHarnessEnvironments(
                         entries={
-                            "builtin-skills": EnvironmentMount(environment, access=EnvironmentAccess("read_only"))
+                            "builtin-skills": EnvironmentMount(
+                                environment,
+                                permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
+                            )
                         },
                         default_environment="builtin-skills",
                     ),

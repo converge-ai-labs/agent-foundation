@@ -14,7 +14,6 @@ from .file_contract import (
     MISSING,
     READS,
     WRONG_TYPES,
-    assert_read_only_files,
     assert_traversal_rejected,
     read_stream,
 )
@@ -123,22 +122,6 @@ async def test_e2b_file_symlink_escape_and_link_entry_operations(file_sandbox):
     await files.remove(BASE + "/moved-link")
     await files.remove(BASE + "/escape")
     assert await sandbox.python("print(json.dumps((outside / 'sentinel').read_text()))") == "OUTSIDE_UNCHANGED"
-
-
-async def test_e2b_read_only_facet_rejects_every_mutation_without_consuming_upload(file_sandbox):
-    sandbox = file_sandbox
-    writable = sandbox.environment
-    readonly = sandbox.pool.adapter(
-        state=writable.dump_state(),
-        identity=writable.environment_id,
-        configuration=writable._configuration.model_copy(update={"read_only": True}),
-    )
-    await sandbox.pool.prepare(readonly)
-    files = readonly.operations.files
-    assert readonly.operations.shell is None and readonly.operations.processes is None
-    before = await sandbox.snapshot()
-    await assert_read_only_files(files, "environment_denied", failure)
-    assert await sandbox.snapshot() == before
 
 
 @pytest.mark.parametrize("name,operation", MISSING, ids=[name for name, _ in MISSING])

@@ -103,7 +103,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         _require_provider(provider, DirectLocalEnvironmentProvider, profile.provider_schema_version)
         shell = _host_shell()
         value: dict[str, JsonValue] = {
-            "root": {"path": str(root), "read_only": False},
+            "root": {"path": str(root)},
             "shell_profiles": (
                 []
                 if shell is None

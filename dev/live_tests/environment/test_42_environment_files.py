@@ -36,6 +36,8 @@ def read_only():
 
 @pytest.fixture
 async def file_backend(file_backend_kind, tmp_path, read_only):
+    if read_only and file_backend_kind == "direct-local":
+        pytest.skip("Direct Local roots are always writable; envd owns read-only workspaces")
     async with FileBackend(file_backend_kind, tmp_path, read_only=read_only).open() as backend:
         yield backend
 
@@ -96,9 +98,8 @@ async def test_file_symlink_escape_and_provider_link_replacement_semantics(file_
 @pytest.mark.parametrize("read_only", [True])
 async def test_file_read_only_rejects_all_mutations_before_consuming_upload(file_backend):
     backend, files = file_backend, file_backend.environment.operations.files
-    code = "environment_denied" if backend.kind == "direct-local" else "environment_unsupported"
     before = backend.snapshot()
-    await assert_read_only_files(files, code, failure)
+    await assert_read_only_files(files, "environment_unsupported", failure)
     assert backend.snapshot() == before
 
 

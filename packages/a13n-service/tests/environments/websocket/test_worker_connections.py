@@ -8,8 +8,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_environment import EnvironmentAction, EnvironmentError
-from a13n_harness import EnvironmentAccess
+from a13n_environment import FILE_READ_ACTIONS, EnvironmentAction, EnvironmentError
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.interactions.attempts import AttemptContext, AttemptLease
@@ -17,7 +16,7 @@ from a13n_service.temporal import utc_now
 
 pytestmark = pytest.mark.anyio
 FULL = frozenset(EnvironmentAction)
-READ_ONLY = EnvironmentAccess("read_only").permission_set().operations
+READ_ONLY = FILE_READ_ACTIONS
 
 
 @pytest.fixture

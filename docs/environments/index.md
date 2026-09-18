@@ -196,7 +196,8 @@ A suspended or failed Run still closes its adapter non-destructively. Harness ne
 Pass multiple fresh adapters with explicit Run-local policy:
 
 ```python
-from a13n_harness import EnvironmentAccess, EnvironmentMount
+from a13n_environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
+from a13n_harness import EnvironmentMount
 
 result = await executable.run(
     "Read the source data and write the build output",
@@ -204,7 +205,7 @@ result = await executable.run(
         "build": build_environment,
         "data": EnvironmentMount(
             data_environment,
-            access=EnvironmentAccess.READ_ONLY,
+            permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
         ),
     },
     default_environment="build",

@@ -12,7 +12,7 @@ from a13n_environment import (
     EnvironmentProviderError,
 )
 from a13n_environment.management import EnvironmentScope
-from a13n_harness import EnvironmentAccess, EnvironmentEntry, EnvironmentMount
+from a13n_harness import EnvironmentEntry, EnvironmentMount
 from a13n_logging import get_logger
 from pydantic import JsonValue, TypeAdapter
 
@@ -56,13 +56,10 @@ class EnvironmentObserver:
         if event == "ready":
             self._emit_ready()
         elif event == "started":
-            access = self._mount.access
-            projection: JsonValue = (
-                access.value
-                if isinstance(access, EnvironmentAccess)
-                else {"operations": _JSON_LIST.validate_python(sorted(item.value for item in access.operations))}
+            ceiling = _JSON_LIST.validate_python(
+                sorted(item.value for item in self._mount.permission_ceiling.operations)
             )
-            self._emit("environment.preparation.started", {"access": projection})
+            self._emit("environment.preparation.started", {"permission_ceiling": ceiling})
         elif event == "failed":
             assert error is not None
             self._emit("environment.preparation.failed", {"failure": _safe_failure(error, phase="preparation")})
@@ -77,7 +74,7 @@ class EnvironmentObserver:
             descriptor = self._mount.environment.descriptor
             availability = self._mount.environment.availability
             operation_families = _JSON_LIST.validate_python(sorted(descriptor.operation_families), strict=True)
-            effective_permissions = descriptor.permissions.operations & self._mount.permissions.operations
+            effective_permissions = descriptor.permissions.operations & self._mount.permission_ceiling.operations
             permissions = _JSON_LIST.validate_python(sorted(item.value for item in effective_permissions), strict=True)
             ready_families = _JSON_LIST.validate_python(sorted(availability.ready_families), strict=True)
             self._emit(

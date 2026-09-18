@@ -36,10 +36,9 @@ All six cloud providers use the same configuration, backend, and private-credent
 
 ## `DirectLocalRootConfiguration`
 
-| Field       | Required | Type / choices | Constraints and default |
-| ----------- | -------- | -------------- | ----------------------- |
-| `path`      | true     | string         | format="path"           |
-| `read_only` | false    | boolean        | default=false           |
+| Field  | Required | Type / choices | Constraints and default |
+| ------ | -------- | -------------- | ----------------------- |
+| `path` | true     | string         | format="path"           |
 
 ## `DirectLocalShellProfile`
 
@@ -128,7 +127,6 @@ Choices: `"host", "deny"`.
 | `timeout_seconds`           | false    | integer        | minimum=30; maximum=86400; default=3600                   |
 | `request_timeout_seconds`   | false    | number         | maximum=300; exclusiveMinimum=0; default=30               |
 | `allow_internet_access`     | false    | boolean        | default=true                                              |
-| `read_only`                 | false    | boolean        | default=false                                             |
 | `max_file_bytes`            | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=16777216  |
 | `max_observation_bytes`     | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576     |
 | `max_active_observations`   | false    | integer        | maximum=1024; exclusiveMinimum=0; default=128             |
@@ -142,7 +140,6 @@ Choices: `"host", "deny"`.
 | `root`                    | false    | string         | default="/home/daytona"                                |
 | `python`                  | false    | string         | default="python3"                                      |
 | `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `read_only`               | false    | boolean        | default=false                                          |
 | `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
 | `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
 | `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
@@ -159,7 +156,6 @@ Choices: `"host", "deny"`.
 | `root`                    | false    | string         | default="/"                                            |
 | `python`                  | false    | string         | default="/usr/local/bin/python3"                       |
 | `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `read_only`               | false    | boolean        | default=false                                          |
 | `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
 | `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
 | `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
@@ -176,7 +172,6 @@ Choices: `"host", "deny"`.
 | `root`                    | false    | string         | default="/vercel/sandbox"                              |
 | `python`                  | false    | string         | default="/vercel/runtimes/python/bin/python3"          |
 | `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `read_only`               | false    | boolean        | default=false                                          |
 | `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
 | `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
 | `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
@@ -192,7 +187,6 @@ Choices: `"host", "deny"`.
 | `root`                    | false    | string         | default="/home/sprite"                                 |
 | `python`                  | false    | string         | default="python3"                                      |
 | `shell`                   | false    | string         | default="/bin/bash"                                    |
-| `read_only`               | false    | boolean        | default=false                                          |
 | `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
 | `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
 | `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
@@ -206,7 +200,6 @@ Choices: `"host", "deny"`.
 | `root`                    | false    | string                                           | default="/home/user"                                   |
 | `python`                  | false    | string                                           | default="python3"                                      |
 | `shell`                   | false    | string                                           | default="/bin/bash"                                    |
-| `read_only`               | false    | boolean                                          | default=false                                          |
 | `request_timeout_seconds` | false    | number                                           | maximum=600; exclusiveMinimum=0; default=120           |
 | `max_file_bytes`          | false    | integer                                          | maximum=67108864; exclusiveMinimum=0; default=16777216 |
 | `max_query_entries`       | false    | integer                                          | maximum=100000; exclusiveMinimum=0; default=10000      |

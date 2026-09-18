@@ -17,31 +17,17 @@ Each Toolset owns the mapping from its tool arguments to canonical authorization
 The public values are:
 
 ```python
-class EnvironmentAccess(StrEnum):
-    READ_ONLY = "read_only"
-    READ_WRITE = "read_write"
-    FULL = "full"
-
-
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
     environment: Environment
-    access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
+    permission_ceiling: EnvironmentPermissionSet = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
     working_directory: str | None = "/"
     mount_path: str | None = None
 ```
 
 `EnvironmentMount` is a Run input/configuration value. It contains one already constructed adapter plus Run-local policy. It has no independent identity, lifecycle, durable serialization, or Provider discovery behavior.
 
-`EnvironmentMount.access` accepts an `EnvironmentAccess` preset or an exact `EnvironmentPermissionSet` action ceiling. Explicit permission sets are detached at construction. The presets are:
-
-- `READ_ONLY` permits provider-neutral file observation and file-copy source access;
-- `READ_WRITE` adds file mutation;
-- `FULL` permits every Agent-facing operation family offered by the Provider, including command/process behavior;
-- provider descriptors always narrow these ceilings;
-- state dump and local close remain trusted lifecycle operations and are not model-authored permissions.
-
-An exact permission set can expose a narrower combination, such as text read, text write, and remove without other file operations. Both forms are intersected with the Provider descriptor; neither can grant an operation the Provider does not offer.
+`EnvironmentMount.permission_ceiling` is an exact `EnvironmentPermissionSet` action ceiling. It defaults to every `EnvironmentAction`, so a mount offers whatever the Provider descriptor offers unless the Host narrows it. A narrower ceiling can expose any combination, such as text read, text write, and remove without other file operations; `FILE_READ_ACTIONS` is the shared constant for file actions that only observe. The ceiling is intersected with the Provider descriptor and can never grant an operation the Provider does not offer. State dump and local close remain trusted lifecycle operations and are not model-authored permissions.
 
 `working_directory` is `None` or a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
 

@@ -758,7 +758,7 @@ Private S3 configuration remains in ignored `providers.local.toml` (mode 600), w
 
 ### E2B file boundaries and OS failures
 
-`environment/test_35_e2b_files.py` adds 26 real-sandbox cases, selected with the same `--live-environments` opt-in and private E2B configuration. No Service lab or model account is required:
+`environment/test_35_e2b_files.py` adds 25 real-sandbox cases, selected with the same `--live-environments` opt-in and private E2B configuration. No Service lab or model account is required:
 
 ```sh
 uv run --locked python -m pytest dev/live_tests/environment/test_35_e2b_files.py --live-environments
@@ -767,7 +767,6 @@ uv run --locked python -m pytest dev/live_tests/environment/test_35_e2b_files.py
 The cases cover:
 
 - malformed/traversing paths and symlinks that leave the configured root, across byte/text/stream reads and mutation destinations; moving/removing the symlink entry itself must preserve its outside target;
-- a fresh `read_only=True` adapter over the same sandbox rejecting file writes, copy, move, remove, mkdir and patch, without consuming a streamed upload;
 - missing-file errors for stat, list, byte/text/stream reads, remove, move, copy, replace and patch, plus successful append to a new file;
 - file/directory type mismatches, preserving both source and destination;
 - real filesystem permissions, with root-owned fixtures and operations executed as the configured non-root user, including native SDK uploads/downloads;

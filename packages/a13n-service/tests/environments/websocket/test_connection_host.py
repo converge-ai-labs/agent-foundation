@@ -11,10 +11,9 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-from a13n_environment import EnvironmentAction, EnvironmentError
+from a13n_environment import FILE_READ_ACTIONS, EnvironmentAction, EnvironmentError
 from a13n_environment.commands import ArgvCommand, CommandRequest
 from a13n_environment.retention import EnvironmentOutputPolicy
-from a13n_harness import EnvironmentAccess
 from a13n_service.environments.websocket.authority import UseIdentity
 from a13n_service.environments.websocket.connection_host import ClientConnectionHost
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
@@ -53,7 +52,7 @@ async def host_server(environment_service, target, relay_redis):
         if name in {None, "workspace", "writer"}:
             return frozenset(EnvironmentAction)
         if name == "reader":
-            return EnvironmentAccess("read_only").permission_set().operations
+            return FILE_READ_ACTIONS
         raise EnvironmentError("No accepted mount", code="environment_forbidden")
 
     host = ClientConnectionHost(service, relay_redis, authorize)

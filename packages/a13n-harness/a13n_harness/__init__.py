@@ -9,7 +9,6 @@ os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")
 from a13n_harness.context import AgentContext, RunBindings
 from a13n_harness.environment import (
     Environment,
-    EnvironmentAccess,
     EnvironmentEntry,
     EnvironmentMount,
 )
@@ -77,7 +76,6 @@ __all__ = [
     "DefinitionError",
     "DelegationContextPolicy",
     "Environment",
-    "EnvironmentAccess",
     "EnvironmentEntry",
     "EnvironmentMount",
     "ExecutableAgent",

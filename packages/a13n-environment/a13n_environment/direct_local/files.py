@@ -194,13 +194,11 @@ class LocalFileOperator:
         self,
         *,
         root: Path,
-        read_only: bool,
         policy: _DirectLocalFilePolicy,
         mount_id: str,
         generation: str,
     ) -> None:
         self._root = root.resolve(strict=True)
-        self._read_only = read_only
         self._policy = policy
         self._mount_id = mount_id
         self._generation = generation
@@ -300,8 +298,6 @@ class LocalFileOperator:
 
     def _require_writable(self, path: Path) -> None:
         self._require_open()
-        if self._read_only:
-            raise EnvironmentError("Direct Local root is read-only.", code="environment_denied")
         if path == self._root:
             raise EnvironmentError("The provider root cannot be mutated.", code="environment_denied")
 
@@ -558,7 +554,7 @@ class LocalFileOperator:
             path=logical_path,
             kind=kind,
             size=metadata.st_size if kind == "file" else None,
-            writable=not self._read_only and native != self._root,
+            writable=native != self._root,
         )
 
     async def list(
@@ -721,7 +717,7 @@ class LocalFileOperator:
     async def mkdir(self, path: str, *, parents: bool = False, exist_ok: bool = False) -> FileMutationResult:
         native = await asyncio.to_thread(self._resolve, path, follow_final=False, require_exists=False)
         # Ensuring the existing writable root is a no-op, not root creation.
-        if native == self._root and exist_ok and not self._read_only and await asyncio.to_thread(native.is_dir):
+        if native == self._root and exist_ok and await asyncio.to_thread(native.is_dir):
             return FileMutationResult(path=path, receipt=self._receipt())
         self._require_writable(native)
         try:

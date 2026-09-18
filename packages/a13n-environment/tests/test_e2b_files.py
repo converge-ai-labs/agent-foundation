@@ -21,7 +21,6 @@ def filesystem(tmp_path):
             {
                 "configuration": {
                     "root": str(tmp_path),
-                    "read_only": False,
                     "max_query_entries": 100,
                     "max_file_bytes": 4096,
                 },
@@ -135,7 +134,7 @@ def test_stream_resolution_authorizes_read_before_returning_native_path(tmp_path
         filesystem("resolve", path="/private", regular_file=True)
 
 
-def test_upload_stage_creation_is_exclusive_and_honors_read_only(tmp_path, filesystem):
+def test_upload_stage_creation_is_exclusive(tmp_path, filesystem):
     result = filesystem("stage", path="/stage")
     assert result == {"path": str(tmp_path / "stage")}
     assert (tmp_path / "stage").read_bytes() == b""
@@ -143,15 +142,6 @@ def test_upload_stage_creation_is_exclusive_and_honors_read_only(tmp_path, files
     with pytest.raises(FileExistsError):
         filesystem("stage", path="/stage")
     assert (tmp_path / "stage").read_text() == "EXISTING"
-    with pytest.raises(PermissionError):
-        files.execute(
-            {
-                "configuration": {"root": str(tmp_path), "read_only": True},
-                "action": "stage",
-                "arguments": {"path": "/new"},
-            }
-        )
-    assert not (tmp_path / "new").exists()
 
 
 @pytest.mark.anyio

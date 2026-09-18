@@ -28,7 +28,6 @@ def _write_skill(root: Path, directory: str, name: str, description: str = "A sk
 def _files(root: Path) -> LocalFileOperator:
     return LocalFileOperator(
         root=root,
-        read_only=True,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="skills",
         generation="generation-1",

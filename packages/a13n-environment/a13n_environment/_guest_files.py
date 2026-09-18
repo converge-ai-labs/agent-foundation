@@ -103,8 +103,6 @@ class GuestFiles:
     async def write_bytes_stream(
         self, path: str, stream: AsyncIterable[bytes], *, mode: FileWriteMode
     ) -> FileWriteResult:
-        if self.commands.configuration.read_only:
-            raise EnvironmentError("Guest files are read-only.", code="environment_denied")
         if mode not in {"create", "replace", "upsert", "append"}:
             raise EnvironmentError("Invalid Guest write mode.", code="environment_request_invalid")
         # Keep local memory bounded even for SDK uploads; publish only a finished transfer.
