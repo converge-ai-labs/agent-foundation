@@ -32,7 +32,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from tests.hooks.support import hook_actor, seed_hook_actor_access
 from tests.lifecycle_support import test_lifecycle_writer
-from tests.web.test_adapters import transport
+from tests.web.conftest import provider_transport as transport
 
 from .conftest import NOW, USER_ID, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker

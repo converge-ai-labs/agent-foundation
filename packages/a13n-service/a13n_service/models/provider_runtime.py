@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.credentials import CredentialSnapshot
-from a13n_service.endpoint_policy import EndpointPolicyError
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session

@@ -3,8 +3,8 @@
 from datetime import timedelta
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.database.metadata import service_metadata
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.provider_service import ModelProviderService

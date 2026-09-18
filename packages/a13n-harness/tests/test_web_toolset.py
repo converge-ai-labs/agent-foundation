@@ -395,7 +395,7 @@ async def test_response_cleanup_releases_completed_tasks(behavior: str) -> None:
     ],
 )
 def test_domain_restrictions_cover_apex_and_subdomains_and_deny_wins(url: str, allowed: bool) -> None:
-    from a13n_harness.toolsets.domains import DomainRestrictions
+    from a13n_harness.providers.web.domains import DomainRestrictions
 
     restrictions = DomainRestrictions(allow_domains=("EXAMPLE.COM.",), deny_domains=("private.example.com",))
     assert restrictions.allows(url) is allowed
@@ -406,7 +406,7 @@ def test_domain_restrictions_cover_apex_and_subdomains_and_deny_wins(url: str, a
     "domain", ["https://example.com", "example.com:443", "user@example.com", "foo.*.example.com", "bad domain"]
 )
 def test_invalid_domain_configuration_is_rejected(domain: str) -> None:
-    from a13n_harness.toolsets.domains import DomainRestrictions
+    from a13n_harness.providers.web.domains import DomainRestrictions
 
     with pytest.raises(ValueError):
         DomainRestrictions(allow_domains=(domain,))

@@ -1,4 +1,4 @@
-"""Canonical outbound endpoint and redirect policy for a13n Service."""
+"""Canonical outbound endpoint and redirect policy for Provider hosts."""
 
 from __future__ import annotations
 

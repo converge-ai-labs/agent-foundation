@@ -6,10 +6,9 @@ from typing import Any
 
 import httpx2
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from anyio import CancelScope, to_thread
 from pydantic_ai.models import Model as PydanticModel
-
-from a13n_service.endpoint_policy import EndpointPolicyError
 
 from .domain import ModelExecutionSnapshot
 from .model_apis import BUILT_IN_MODEL_APIS

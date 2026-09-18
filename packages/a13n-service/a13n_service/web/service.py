@@ -72,9 +72,9 @@ class WebProviderService:
                 )
                 now = self.clock()
                 configuration = self._validate_configuration(request.type, request.configuration)
-                registration = self.registry.require(request.type)
-                if registration.credential_required != (request.credential is not None) or (
-                    not registration.credential_required and "credential" in request.model_fields_set
+                definition = self.registry.require(request.type)
+                if definition.credential_required != (request.credential is not None) or (
+                    not definition.credential_required and "credential" in request.model_fields_set
                 ):
                     raise WebProviderError(
                         "web_provider_credential_invalid",

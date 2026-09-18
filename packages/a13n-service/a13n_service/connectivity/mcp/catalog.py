@@ -6,6 +6,7 @@ from importlib.resources import files
 from typing import Annotated, Literal
 from urllib.parse import urlsplit
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
 from a13n_service.application_errors import ErrorCategory
@@ -17,7 +18,6 @@ from a13n_service.collection_cursors import (
 )
 from a13n_service.configuration.sections import MCPServerSettings
 from a13n_service.connectivity.browser_urls import split_browser_url
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
 from .errors import MCPConnectionError
 

@@ -5,7 +5,7 @@ import httpx2
 import pytest
 from a13n_harness.capabilities.web import WebProviderError, WebRequest
 from a13n_harness.errors import RunError
-from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.web.web import WebTransport, WebTransportPolicy
 
 pytestmark = pytest.mark.anyio
@@ -173,7 +173,7 @@ async def test_real_http_connection_uses_pinned_address_and_original_host(monkey
 
 async def test_domain_restriction_is_rechecked_before_redirect_network_io(public_dns):
     from a13n_harness.capabilities.web import WebDomainPolicy
-    from a13n_harness.toolsets.domains import DomainRestrictions
+    from a13n_harness.providers.web.domains import DomainRestrictions
 
     requests = []
 

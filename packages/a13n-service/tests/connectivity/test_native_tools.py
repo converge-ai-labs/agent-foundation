@@ -5,9 +5,9 @@ from dataclasses import replace
 
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.providers.registry import require_native_provider
 from a13n_service.connectivity.toolsets import selected_tools
-from a13n_service.endpoint_policy import EndpointPolicy
 from pydantic import ValidationError
 
 pytestmark = pytest.mark.anyio

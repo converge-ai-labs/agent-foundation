@@ -2,20 +2,11 @@
 
 from __future__ import annotations
 
-import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 
 from a13n_environment import EnvironmentProvider
-from a13n_harness.capabilities.web import (
-    WebPolicy,
-    WebProviderError,
-    WebScrapeRequest,
-    WebScrapeResult,
-    WebSearchRequest,
-    WebSearchResponse,
-)
 from a13n_harness.memory_plugins import MemoryBackendPlugin
 from pydantic import BaseModel
 
@@ -25,59 +16,6 @@ from a13n_service.connectivity.domain import JsonObject
 from a13n_service.models.provider_adapters.base import ProviderIntegration
 
 PROVIDER_EXTENSION_API_VERSION = 1
-
-
-class WebProviderResponseError(WebProviderError):
-    """Safe explicit provider response that can be eligible for bounded retry."""
-
-    def __init__(self, code: str, *, retry_after: float | None = None) -> None:
-        if retry_after is not None and (
-            type(retry_after) not in {int, float} or math.isnan(retry_after) or retry_after < 0
-        ):
-            raise ValueError("retry_after must be a non-negative number")
-        super().__init__(code)
-        self.retry_after = retry_after
-
-
-class WebProviderRuntime(Protocol):
-    """One operation-scoped Web adapter constructed by a registered factory."""
-
-    async def search(
-        self,
-        *,
-        configuration: BaseModel,
-        credentials: BaseModel,
-        request: WebSearchRequest,
-        max_results: int,
-        allow_domains: tuple[str, ...],
-        deny_domains: tuple[str, ...],
-    ) -> WebSearchResponse: ...
-
-    async def scrape(
-        self,
-        *,
-        configuration: BaseModel,
-        credentials: BaseModel,
-        request: WebScrapeRequest,
-        policy: WebPolicy,
-        max_content_bytes: int,
-    ) -> WebScrapeResult: ...
-
-    async def aclose(self) -> None: ...
-
-
-@dataclass(frozen=True, slots=True)
-class WebProviderRegistration:
-    type: str
-    display_name: str
-    configuration_model: type[BaseModel]
-    credential_model: type[BaseModel]
-    setup_url: str
-    factory: Callable[[], WebProviderRuntime]
-    supports_search: bool = False
-    supports_scrape: bool = False
-    supports_restricted_scrape: bool = False
-    credential_required: bool = True
 
 
 ConnectorSetupValidator = Callable[[JsonObject, str, object], JsonObject]
@@ -128,7 +66,6 @@ class ProviderPluginRegistry:
         self.connector = _DomainRegistry[ConnectorProviderRegistration](
             "Connector", ConnectorProviderRegistration, lambda item: item.type
         )
-        self.web = _DomainRegistry[WebProviderRegistration]("Web", WebProviderRegistration, lambda item: item.type)
         self.memory = _DomainRegistry[MemoryBackendPlugin[Any, Any]](
             "Memory", MemoryBackendPlugin, lambda item: item.key
         )

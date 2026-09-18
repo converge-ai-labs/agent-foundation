@@ -4,8 +4,8 @@ import json
 from unittest.mock import Mock
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import CreateManagedEnvironmentRequest
 from a13n_service.environments.local_directory import ManagedLocalDirectory
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord

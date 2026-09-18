@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness import SafeFailure
-from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService
 from a13n_service.interactions.attempts import (

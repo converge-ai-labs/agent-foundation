@@ -3,6 +3,7 @@
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.connections.access import ConnectionError
 from a13n_service.connectivity.connections.authorization import AuthorizationService
 from a13n_service.connectivity.connections.domain import (
@@ -16,7 +17,6 @@ from a13n_service.connectivity.connections.handoff import digest
 from a13n_service.connectivity.connections.models import AuthorizationRecord
 from a13n_service.connectivity.connections.service import ConnectionService
 from a13n_service.connectivity.mcp.errors import MCPConnectionError
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.storage import transaction

@@ -11,6 +11,7 @@ from functools import partial
 import httpx2
 from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from anyio import create_task_group, to_thread
 from pydantic_ai import prices
 
@@ -21,7 +22,6 @@ from a13n_service.bots.memory.behavior import ConversationMemory
 from a13n_service.bots.memory.verification import BotMemoryVerifier
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle

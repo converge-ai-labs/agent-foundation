@@ -1,3 +1,5 @@
+import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
+import { CredentialEditor } from "../../shared/credential-editor";
 import { useSuggestedName } from "../../shared/suggested-name";
 import { FormSection, formSectionStyles } from "../../shared/form-section";
 import { ResourceReference } from "../../shared/resource-reference";
@@ -161,7 +163,10 @@ export function WebProviderForm({
       resource?.value.type ?? definitions[0]?.type ?? "",
     ),
     { name, setName, suggestName } = useSuggestedName(resource?.value.name),
-    [credential, setCredential] = useState(""),
+    [credential, setCredential] = useState<Record<string, unknown>>({}),
+    [configuration, setConfiguration] = useState<Record<string, unknown>>(
+      resource?.value.configuration ?? {},
+    ),
     [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
   const [reconciling, setReconciling] = useState(false),
     [existing, setExisting] = useState<Schema["WebProvider"][]>(),
@@ -195,21 +200,23 @@ export function WebProviderForm({
     mutationFn: async () => {
       if (!name.trim() || !definition)
         throw new Error(t("Choose a provider type and name."));
-      if (
-        definition.credential_required &&
-        (!original || credential) &&
-        (!credential.trim() ||
-          new TextEncoder().encode(credential).length > 4096)
-      )
-        throw new Error(t("Enter a nonblank API key of at most 4096 bytes."));
+      const config = withSchemaValues(
+        definition.configuration_schema,
+        configuration,
+      );
+      const replacingCredential = Object.keys(credential).length > 0;
+      const credentialValue = withSchemaValues(
+        definition.credential_schema,
+        credential,
+      );
       if (!original) {
         return api.createProvider({
           type,
           name,
           ...(definition.credential_required
-            ? { credential: { api_key: credential } }
+            ? { credential: credentialValue }
             : {}),
-          configuration: {},
+          configuration: config,
           enabled,
         });
       }
@@ -220,11 +227,12 @@ export function WebProviderForm({
       return api.updateProvider(original.value.id, original.etag, {
         name,
         enabled,
-        ...(credential ? { credential: { api_key: credential } } : {}),
+        configuration: config,
+        ...(replacingCredential ? { credential: credentialValue } : {}),
       });
     },
     onSuccess: (provider) => {
-      setCredential("");
+      setCredential({});
       void cache.invalidateQueries({ queryKey: ["web-providers"] });
       void cache.invalidateQueries({ queryKey: ["web-provider"] });
       onSaved(provider);
@@ -282,11 +290,12 @@ export function WebProviderForm({
           readOnly={!!original}
           onValueChange={(value) => {
             setType(value);
+            setConfiguration({});
             suggestName(
               definitions.find((item) => item.type === value)?.display_name ??
                 value,
             );
-            setCredential("");
+            setCredential({});
           }}
           labelAction={
             definition?.credential_required && (
@@ -294,29 +303,28 @@ export function WebProviderForm({
             )
           }
         />
+        {definition && (
+          <SchemaFields
+            key={`${type}-configuration`}
+            schema={definition.configuration_schema}
+            value={configuration}
+            onChange={setConfiguration}
+          />
+        )}
         {definition?.credential_required && (
-          <FormField
-            label={t("API Key")}
-            description={t(
-              original
-                ? "Leave empty to keep the current credential."
-                : "The key is stored securely and cannot be read back.",
-            )}
-          >
-            <Input
-              type="password"
-              placeholder={
-                original?.value.credential_configured
-                  ? t("Saved credential · enter to replace")
-                  : undefined
+          <CredentialEditor configured={original?.value.credential_configured}>
+            <SchemaFields
+              key={`${type}-credential`}
+              schema={definition.credential_schema}
+              requireFields={
+                !original?.value.credential_configured ||
+                Object.keys(credential).length > 0
               }
-              autoComplete="new-password"
-              name="search-api-key"
-              required={!original}
               value={credential}
-              onChange={(event) => setCredential(event.target.value)}
+              onChange={setCredential}
+              secret
             />
-          </FormField>
+          </CredentialEditor>
         )}
       </FormSection>
       <ErrorNotice error={reloadError ?? save.error ?? reconcileError} />
@@ -372,7 +380,7 @@ export function WebProviderForm({
                 type="button"
                 variant="outline"
                 onClick={() => {
-                  setCredential("");
+                  setCredential({});
                   onSaved(item);
                 }}
               >

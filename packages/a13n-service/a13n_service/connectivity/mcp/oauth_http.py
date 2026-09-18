@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 from a13n_service.connectivity.http import ConnectivityHttpError, cookie_free_bounded_request
-from a13n_service.endpoint_policy import EndpointPolicy
 
 
 class OAuthTransport(httpx2.AsyncBaseTransport):

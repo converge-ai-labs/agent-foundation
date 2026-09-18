@@ -3,9 +3,9 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.durable_operations.models import OutboxRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookSubscriptionInput, InlineHookValidator, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.domain import PrincipalRef, PrincipalType

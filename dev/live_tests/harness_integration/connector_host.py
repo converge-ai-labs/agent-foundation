@@ -3,9 +3,9 @@
 from contextlib import asynccontextmanager
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.providers.composio.configuration import COMPOSIO_ENDPOINT
-from a13n_service.endpoint_policy import EndpointPolicy
 
 from ..infrastructure.fixture_peer import certificate_context
 

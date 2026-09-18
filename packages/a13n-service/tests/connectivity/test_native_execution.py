@@ -6,13 +6,13 @@ from dataclasses import replace
 import httpx2
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.connectivity.native_context import AccountRunContext, bind_account_tools, parse_native_contexts
 from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.storage import transaction
 from pydantic import ValidationError

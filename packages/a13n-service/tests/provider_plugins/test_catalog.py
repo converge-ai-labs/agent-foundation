@@ -4,15 +4,13 @@ from dataclasses import dataclass
 from typing import cast
 
 import pytest
+from a13n_harness.providers.plugins import ProviderManifest
+from a13n_harness.providers.web import WebProviderDefinition
 from a13n_service.provider_plugins import (
     ProviderPluginError,
-    ProviderPluginRegistry,
-    WebProviderRegistration,
     load_provider_catalogs,
     provider_plugin,
 )
-from a13n_service.web.registry import WebProviderRegistry
-from anyio import current_time, fail_after, sleep_forever
 from pydantic import BaseModel, ConfigDict
 
 
@@ -26,26 +24,18 @@ class Credential(BaseModel):
     token: str
 
 
-class Runtime:
-    async def search(self, **kwargs):
-        raise NotImplementedError
-
-    async def scrape(self, **kwargs):
-        raise NotImplementedError
-
-    async def aclose(self) -> None:
-        pass
+async def search(configuration, credentials, request, options, transport):
+    raise NotImplementedError
 
 
-def registration(provider_type: str = "custom_web") -> WebProviderRegistration:
-    return WebProviderRegistration(
+def registration(provider_type: str = "custom_web") -> WebProviderDefinition:
+    return WebProviderDefinition(
         type=provider_type,
         display_name="Custom Web",
         configuration_model=Configuration,
         credential_model=Credential,
         setup_url="https://example.com/setup",
-        factory=Runtime,
-        supports_search=True,
+        search=search,
     )
 
 
@@ -84,9 +74,7 @@ def install(monkeypatch: pytest.MonkeyPatch, *entry_points: EntryPoint) -> None:
 
 
 def test_only_selected_entry_point_is_imported(monkeypatch: pytest.MonkeyPatch) -> None:
-    @compatible
-    def selected(registry) -> None:
-        registry.web.register(registration())
+    selected = ProviderManifest(api_version=1, web=(registration(),))
 
     def broken(_registry) -> None:
         raise AssertionError("unselected entry point was imported")
@@ -137,9 +125,7 @@ def test_incompatible_api_duplicate_type_and_bad_schema_fail(monkeypatch: pytest
     with pytest.raises(ProviderPluginError, match="TypeError"):
         load_provider_catalogs(("incompatible",))
 
-    @compatible
-    def duplicate(registry) -> None:
-        registry.web.register(registration("brave"))
+    duplicate = ProviderManifest(api_version=1, web=(registration("brave"),))
 
     install(monkeypatch, EntryPoint("duplicate", duplicate))
     with pytest.raises(ProviderPluginError, match="ValueError"):
@@ -151,23 +137,15 @@ def test_incompatible_api_duplicate_type_and_bad_schema_fail(monkeypatch: pytest
             del args, kwargs
             return {"type": "array"}
 
-    @compatible
-    def bad_schema(registry) -> None:
-        registry.web.register(
-            WebProviderRegistration(
-                type="bad_schema",
-                display_name="Bad",
-                configuration_model=BadSchema,
-                credential_model=Credential,
-                setup_url="https://example.com",
-                factory=Runtime,
-                supports_search=True,
-            )
+    with pytest.raises(ValueError, match="invalid schema"):
+        WebProviderDefinition(
+            type="bad_schema",
+            display_name="Bad",
+            configuration_model=BadSchema,
+            credential_model=Credential,
+            setup_url="https://example.com",
+            search=search,
         )
-
-    install(monkeypatch, EntryPoint("bad_schema", bad_schema))
-    with pytest.raises(ProviderPluginError, match="invalid schema"):
-        load_provider_catalogs(("bad_schema",))
 
 
 def test_declared_old_api_is_rejected_before_callback_on_newer_service(
@@ -196,23 +174,15 @@ def test_schema_exporter_must_be_a_pydantic_model(monkeypatch: pytest.MonkeyPatc
         def model_json_schema(cls) -> dict[str, str]:
             return {"type": "object"}
 
-    @compatible
-    def fake_schema(registry) -> None:
-        registry.web.register(
-            WebProviderRegistration(
-                type="fake_schema",
-                display_name="Fake Schema",
-                configuration_model=cast(type[BaseModel], FakeSchema),
-                credential_model=Credential,
-                setup_url="https://example.com",
-                factory=Runtime,
-                supports_search=True,
-            )
+    with pytest.raises(ValueError, match="invalid schema"):
+        WebProviderDefinition(
+            type="fake_schema",
+            display_name="Fake Schema",
+            configuration_model=cast(type[BaseModel], FakeSchema),
+            credential_model=Credential,
+            setup_url="https://example.com",
+            search=search,
         )
-
-    install(monkeypatch, EntryPoint("fake_schema", fake_schema))
-    with pytest.raises(ProviderPluginError, match="invalid schema"):
-        load_provider_catalogs(("fake_schema",))
 
 
 def test_registration_shape_is_checked_before_type_attribute() -> None:
@@ -221,91 +191,15 @@ def test_registration_shape_is_checked_before_type_attribute() -> None:
         def type(self) -> str:
             raise AssertionError("registration attributes must not be read")
 
-    plugin_registry = ProviderPluginRegistry(api_version=1)
-
-    with pytest.raises(TypeError, match="invalid type"):
-        plugin_registry.web.register(cast(WebProviderRegistration, FakeRegistration()))
+    with pytest.raises(TypeError, match="immutable tuple"):
+        ProviderManifest(api_version=1, web=(cast(WebProviderDefinition, FakeRegistration()),))
 
 
-@pytest.mark.anyio
-async def test_web_runtime_hanging_cleanup_is_bounded_and_preserves_operation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cleanup_started = 0
-
-    class HangingRuntime(Runtime):
-        async def aclose(self) -> None:
-            nonlocal cleanup_started
-            cleanup_started += 1
-            await sleep_forever()
-
-    monkeypatch.setattr("a13n_service.web.registry._RUNTIME_CLEANUP_TIMEOUT_SECONDS", 0.01)
-    runtimes = [HangingRuntime(), HangingRuntime(), HangingRuntime()]
-    provider = registration()
-    registry = WebProviderRegistry(
-        (
-            WebProviderRegistration(
-                type=provider.type,
-                display_name=provider.display_name,
-                configuration_model=provider.configuration_model,
-                credential_model=provider.credential_model,
-                setup_url=provider.setup_url,
-                factory=runtimes.pop,
-                supports_search=True,
-            ),
-        )
-    )
-
-    started = current_time()
-    async with registry.runtime("custom_web"):
-        result = "paid operation completed"
-    assert result == "paid operation completed"
-    assert current_time() - started < 0.5
-
-    original_error = RuntimeError("operation failed")
-    with pytest.raises(RuntimeError, match="operation failed") as raised:
-        async with registry.runtime("custom_web"):
-            raise original_error
-    assert raised.value is original_error
-
-    with pytest.raises(TimeoutError):
-        with fail_after(0.01):
-            async with registry.runtime("custom_web"):
-                await sleep_forever()
-
-    assert cleanup_started == 3
-    assert runtimes == []
-    assert current_time() - started < 0.5
-
-
-@pytest.mark.anyio
-async def test_web_runtime_cleanup_log_excludes_external_error_details(caplog: pytest.LogCaptureFixture) -> None:
-    class FailingRuntime(Runtime):
-        async def aclose(self) -> None:
-            raise RuntimeError("credential=must-not-appear")
-
-    provider = registration()
-    registry = WebProviderRegistry(
-        (
-            WebProviderRegistration(
-                type=provider.type,
-                display_name=provider.display_name,
-                configuration_model=provider.configuration_model,
-                credential_model=provider.credential_model,
-                setup_url=provider.setup_url,
-                factory=FailingRuntime,
-                supports_search=True,
-            ),
-        )
-    )
-
-    with caplog.at_level("WARNING", logger="a13n_service.web.registry"):
-        async with registry.runtime("custom_web"):
-            result = "operation completed"
-
-    assert result == "operation completed"
-    assert "credential=must-not-appear" not in caplog.text
-    assert caplog.records[0].cleanup_error_type == "RuntimeError"
+def test_manifest_rejects_version_and_duplicate_definitions():
+    with pytest.raises(ValueError, match="API version"):
+        ProviderManifest(api_version=2)
+    with pytest.raises(ValueError, match="duplicate"):
+        ProviderManifest(api_version=1, web=(registration(), registration()))
 
 
 def test_memory_registration_reuses_shared_plugin_and_rejects_builtin_collision(monkeypatch):

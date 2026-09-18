@@ -1,5 +1,7 @@
 """Compose configuration authoring over the shared Agent and Run authorities."""
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+
 from a13n_service.agent_configuration.application import ConfigurationApplication
 from a13n_service.agent_configuration.conversations import ConfigurationConversations
 from a13n_service.agent_configuration.definition import load_definition
@@ -12,7 +14,6 @@ from a13n_service.agent_configuration.service import ConfigurationService
 from a13n_service.agent_configuration.system_agent import SystemConfigurationAgent
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.assets.catalog import AssetCatalog
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService

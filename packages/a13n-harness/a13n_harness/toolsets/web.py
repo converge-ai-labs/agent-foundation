@@ -25,6 +25,7 @@ from a13n_harness.environment.files import FileOperator
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.environment.providers import FileScopeProvider
 from a13n_harness.errors import DefinitionError, RunError
+from a13n_harness.providers.web.contracts import _validate_headers
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolEffect, ToolOutputPolicy
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
@@ -75,7 +76,6 @@ from .web_contracts import (
     _FallbackBlockingWebPolicy,
     _select_scrape_backend_bindings,
     _select_search_backend_bindings,
-    _validate_headers,
     _validate_scrape_backend_bindings,
     _validate_search_backend_bindings,
     _WebPolicyFailure,

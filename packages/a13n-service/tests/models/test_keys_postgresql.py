@@ -5,8 +5,8 @@ from collections.abc import AsyncIterator
 
 import anyio
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest
 from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.providers import built_in_provider_registry

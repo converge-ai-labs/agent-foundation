@@ -5,14 +5,13 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from a13n_harness.toolsets.domains import DomainRestrictions
+from a13n_harness.providers.web.domains import DomainRestrictions
+from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES as MAX_SCRAPE_CONTENT_BYTES
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId
 from a13n_service.names import DisplayName
-
-MAX_SCRAPE_CONTENT_BYTES = 4 * 1024 * 1024
 
 
 class SearchSelection(DomainRestrictions):

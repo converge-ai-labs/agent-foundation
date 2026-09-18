@@ -12,6 +12,7 @@ from urllib.parse import urljoin
 import anyio
 import httpx2
 from a2a.types import a2a_pb2 as a2a
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy import and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -28,7 +29,6 @@ from a13n_service.durable_operations.http_delivery import (
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.outbox import OutboxClaim, complete_outbox, fail_outbox
 from a13n_service.durable_operations.publication import dispatch_outbox_batch
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import (
     AuthorizationError,
     PrincipalRef,

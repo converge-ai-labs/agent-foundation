@@ -347,7 +347,7 @@ async def test_native_endpoint_validation_closes_bedrock_client_on_rejection():
     import threading
     from unittest.mock import patch
 
-    from a13n_service.endpoint_policy import EndpointPolicyError
+    from a13n_harness.providers.endpoint_policy import EndpointPolicyError
     from a13n_service.models.provider_adapters import aws_bedrock
 
     main_thread = threading.get_ident()

@@ -8,11 +8,11 @@ from typing import TYPE_CHECKING
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.observation import record_tool_outcome_unknown
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic import JsonValue
 from pydantic_ai.capabilities import MCP
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session

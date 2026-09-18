@@ -12,6 +12,7 @@ from typing import Annotated, Literal, Protocol
 
 import rfc8785
 from a13n_harness import HarnessModelCharacteristics, ModelCapability, RunInputValue
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from jsonschema import Draft202012Validator
 from pydantic import (
     AfterValidator,
@@ -29,7 +30,6 @@ from pydantic_ai.messages import UserContent
 
 from a13n_service.agents.domain import InputAdapterConfig
 from a13n_service.assets.domain import Asset, normalize_asset_filename, normalize_media_type
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.secrets.domain import AgentSecretBinding
 
 from .domain import BoundedKey, JsonObject, ObjectId, StrictModel

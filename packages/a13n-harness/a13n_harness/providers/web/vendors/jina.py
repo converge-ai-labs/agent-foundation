@@ -4,29 +4,34 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from a13n_harness.capabilities.web import (
+from a13n_harness.providers.web.contracts import (
     WebProviderError,
     WebScrapeRequest,
     WebScrapeResult,
     WebSearchRequest,
     WebSearchResponse,
 )
+from a13n_harness.providers.web.options import ScrapeOptions, SearchOptions
 
-from a13n_service.web.domain import ScrapeSelection, SearchSelection
-
+from ..configuration import ApiKeyCredential, EmptyConfiguration
+from ..contracts import WebPolicy
 from .common import SEARCH_RESPONSE_BYTES, scrape_response_bytes, scrape_result, search_response
 
 if TYPE_CHECKING:
-    from a13n_service.web.adapters import WebProviderTransport
+    from a13n_harness.providers.web.transport import WebProviderTransport
 
 SEARCH_URL = "https://s.jina.ai/"
 SCRAPE_URL = "https://r.jina.ai/"
 
 
 async def search(
-    transport: WebProviderTransport, key: str, request: WebSearchRequest, selection: SearchSelection
+    configuration: EmptyConfiguration,
+    credential: ApiKeyCredential,
+    request: WebSearchRequest,
+    options: SearchOptions,
+    transport: WebProviderTransport,
 ) -> WebSearchResponse:
-    limit = min(request.limit, selection.max_results)
+    key = credential.api_key.get_secret_value()
     payload = await transport.exchange_json(
         lambda client: client.build_request(
             "GET",
@@ -34,7 +39,6 @@ async def search(
             headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
             params={"q": request.query},
         ),
-        endpoint=SEARCH_URL,
         operation="search",
         max_response_bytes=SEARCH_RESPONSE_BYTES,
     )
@@ -42,23 +46,26 @@ async def search(
         raise WebProviderError("web_search_response_invalid")
     return search_response(
         payload.get("data"),
-        selection,
-        limit,
         lambda item: (item.get("title") or "", item["url"], item.get("content") or ""),
     )
 
 
 async def scrape(
-    transport: WebProviderTransport, key: str, request: WebScrapeRequest, selection: ScrapeSelection
+    configuration: EmptyConfiguration,
+    credential: ApiKeyCredential,
+    request: WebScrapeRequest,
+    options: ScrapeOptions,
+    transport: WebProviderTransport,
+    policy: WebPolicy,
 ) -> WebScrapeResult:
-    limit = min(request.max_content_bytes, selection.max_content_bytes)
+    key = credential.api_key.get_secret_value()
+    limit = min(request.max_content_bytes, options.max_content_bytes)
     payload = await transport.exchange_json(
         lambda client: client.build_request(
             "GET",
             f"{SCRAPE_URL}{request.url}",
             headers={"Authorization": f"Bearer {key}", "Accept": "application/json"},
         ),
-        endpoint=SCRAPE_URL,
         operation="scrape",
         max_response_bytes=scrape_response_bytes(limit),
     )
@@ -70,5 +77,4 @@ async def scrape(
         canonical_url=item.get("url", request.url),
         title=item.get("title"),
         request=request,
-        selection=selection,
     )

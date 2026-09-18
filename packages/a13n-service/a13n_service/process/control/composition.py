@@ -7,8 +7,8 @@ from functools import partial
 
 import httpx2
 from a13n_environment import EnvironmentProviderCatalog
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.mounts import RunEnvironmentMountService
 from a13n_service.environments.websocket.admission import OnlineAdmission
 from a13n_service.environments.websocket.coordination import ConnectionCoordination

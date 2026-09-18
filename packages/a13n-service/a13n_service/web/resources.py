@@ -48,14 +48,14 @@ def require_eligible(record: WebProviderRecord, registry: WebProviderRegistry) -
     if not record.enabled:
         raise WebProviderError("web_provider_disabled", "Web Provider is disabled.", category=ErrorCategory.conflict)
     try:
-        registration = registry.require(record.type)
+        definition = registry.require(record.type)
     except ValueError:
         raise WebProviderError(
             "web_provider_unavailable",
             "Web Provider implementation is unavailable.",
             category=ErrorCategory.unavailable,
         ) from None
-    if registration.credential_required and record.ciphertext is None:
+    if definition.credential_required and record.ciphertext is None:
         raise WebProviderError(
             "web_provider_credential_missing",
             "Web Provider requires a credential.",

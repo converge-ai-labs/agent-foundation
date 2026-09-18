@@ -8,6 +8,7 @@ from typing import Any, Literal, cast
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from authlib.oauth2 import OAuth2Client
@@ -36,7 +37,6 @@ from a13n_service.connectivity.http import (
     ConnectivityHttpError,
     cookie_free_bounded_request,
 )
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 
 from .domain import MCP_PROTOCOL_REVISION, MCPOAuthClientInput, OAuthGrantType, OAuthTokenAuthMethod
 from .oauth_http import OAuthTransport

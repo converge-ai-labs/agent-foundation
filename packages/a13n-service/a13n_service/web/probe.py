@@ -2,6 +2,7 @@
 
 from a13n_harness.capabilities.web import WebProviderError as HarnessWebProviderError
 from a13n_harness.capabilities.web import WebScrapeRequest, WebSearchRequest
+from a13n_harness.providers.web.transport import WebProviderTransport
 from anyio import fail_after
 
 from a13n_service.application_errors import ErrorCategory
@@ -10,7 +11,6 @@ from a13n_service.iam import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.storage import transaction
 
-from .adapters import WebProviderTransport
 from .domain import ScrapeSelection, SearchSelection, WebProviderTestResult
 from .execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
 from .registry import built_in_web_provider_registry
@@ -64,11 +64,11 @@ async def test_account(
     async def reauthorize() -> None:
         await acquire()
 
-    registration = service.registry.require(initial.provider_type)
+    definition = service.registry.require(initial.provider_type)
     registry = service.registry if transport is None else built_in_web_provider_registry(transport=transport)
     code: str | None = None
     try:
-        if registration.supports_search:
+        if definition.supports_search:
             search = AuthorizedSearch(
                 selection=SearchSelection(provider_id=provider_id, max_results=1),
                 acquire=acquire_for_dispatch,

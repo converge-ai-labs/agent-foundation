@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from anyio import fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
@@ -25,7 +26,6 @@ from a13n_service.connectivity.connections.router import router as connection_ro
 from a13n_service.connectivity.connectors.router import router as connector_router
 from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
 from a13n_service.connectivity.mcp.router import router as mcp_router
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.router import router as environment_router
 from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.router import router as gateway_router

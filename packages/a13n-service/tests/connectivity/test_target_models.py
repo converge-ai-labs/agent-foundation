@@ -3,11 +3,11 @@
 from dataclasses import replace
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.domain import ModelOverride
 from a13n_service.connectivity.accounts.reception import InputOverride
 from a13n_service.connectivity.accounts.targets import ReplaceTargetRequest, TargetConfig
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest

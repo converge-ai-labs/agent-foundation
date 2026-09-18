@@ -5,6 +5,7 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.bots.connectivity.models import BotReplyRecord
 from a13n_service.bots.connectivity.replies import BotReplyObserver
 from a13n_service.bots.connectivity.reply_queries import list_bot_replies
@@ -12,7 +13,6 @@ from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.native_context import InboundRunContext
 from a13n_service.connectivity.providers.registry import require_native_provider
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.attempts import AttemptAuthorityError
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord

@@ -6,9 +6,9 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from anyio import to_thread
 
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.models.model_apis import BUILT_IN_MODEL_APIS
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver

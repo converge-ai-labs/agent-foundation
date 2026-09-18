@@ -6,8 +6,8 @@ from typing import Literal
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.domain import EffectiveAgentConfig
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import ExistingEnvironmentSelection
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator

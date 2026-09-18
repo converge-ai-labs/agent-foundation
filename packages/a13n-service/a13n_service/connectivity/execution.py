@@ -11,6 +11,7 @@ from typing import Protocol
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.observation import record_tool_outcome_unknown
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from anyio import to_thread
 from jsonschema import Draft202012Validator, ValidationError
 from pydantic import JsonValue, TypeAdapter
@@ -20,7 +21,6 @@ from pydantic_ai.mcp import CallToolFunc, MCPToolset, ToolResult
 from pydantic_core import to_jsonable_python
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_agent
 from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.iam.domain import PrincipalRef, PrincipalType

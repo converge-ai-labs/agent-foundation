@@ -12,11 +12,12 @@ from a13n_harness.capabilities.web import (
     WebSearchRequest,
     WebSearchResponse,
 )
+from a13n_harness.providers.web.definition import WebProvider
+from a13n_harness.providers.web.errors import WebProviderResponseError
+from a13n_harness.providers.web.options import ScrapeOptions, SearchOptions
 from anyio import current_time, fail_after, sleep
-from pydantic import BaseModel
 
 from a13n_service.credentials import CredentialSnapshot
-from a13n_service.provider_plugins.api import WebProviderResponseError, WebProviderRuntime
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 
 from .domain import ScrapeSelection, SearchSelection
@@ -38,7 +39,9 @@ async def _dispatch[ResultT](
     reauthorize: Callable[[], Awaitable[None]],
     protector: SecretProtector,
     registry: WebProviderRegistry,
-    operation: Callable[[WebProviderRuntime, BaseModel, BaseModel], Awaitable[ResultT]],
+    operation: Callable[[WebProvider], Awaitable[ResultT]],
+    search_options: SearchOptions | None = None,
+    scrape_options: ScrapeOptions | None = None,
     unexpected_error_code: str,
     retry_codes: frozenset[str],
     max_dispatches: int,
@@ -50,19 +53,25 @@ async def _dispatch[ResultT](
             if snapshot.provider_id != provider_id:
                 raise RuntimeError("Web Provider binding changed")
             try:
-                registration = registry.require(snapshot.provider_type)
+                definition = registry.require(snapshot.provider_type)
                 credential_value = (
-                    json.loads(snapshot.credential.decrypt(protector)) if registration.credential_required else {}
+                    json.loads(snapshot.credential.decrypt(protector)) if definition.credential_required else {}
                 )
                 credentials = registry.validate_credentials(snapshot.provider_type, credential_value)
-                configuration = registration.configuration_model.model_validate(snapshot.configuration)
+                configuration = definition.configuration_model.model_validate(snapshot.configuration)
             except (SecretProtectionError, ValueError, TypeError, json.JSONDecodeError) as error:
                 raise WebProviderError("web_provider_unavailable") from error
             failure: WebProviderError | None = None
             result: ResultT | None = None
             try:
-                async with registry.runtime(snapshot.provider_type) as runtime:
-                    result = await operation(runtime, configuration, credentials)
+                async with definition.open(
+                    configuration,
+                    credentials,
+                    search_options=search_options,
+                    scrape_options=scrape_options,
+                    transport=registry.transport,
+                ) as runtime:
+                    result = await operation(runtime)
             except WebProviderError as error:
                 failure = error
             except Exception as error:
@@ -112,10 +121,8 @@ class AuthorizedSearch:
             reauthorize=self._reauthorize,
             protector=self._protector,
             registry=self._registry,
-            operation=lambda runtime, configuration, credentials: runtime.search(
-                configuration=configuration,
-                credentials=credentials,
-                request=request,
+            operation=lambda runtime: runtime.search(request),
+            search_options=SearchOptions(
                 max_results=self._selection.max_results,
                 allow_domains=self._selection.allow_domains,
                 deny_domains=self._selection.deny_domains,
@@ -154,12 +161,11 @@ class AuthorizedScrape:
             reauthorize=self._reauthorize,
             protector=self._protector,
             registry=self._registry,
-            operation=lambda runtime, configuration, credentials: runtime.scrape(
-                configuration=configuration,
-                credentials=credentials,
-                request=request,
-                policy=policy,
+            operation=lambda runtime: runtime.scrape(request, policy=policy),
+            scrape_options=ScrapeOptions(
                 max_content_bytes=self._selection.max_content_bytes,
+                allow_domains=self._selection.allow_domains,
+                deny_domains=self._selection.deny_domains,
             ),
             unexpected_error_code="web_scrape_unavailable",
             retry_codes=frozenset({"web_scrape_rate_limited", "web_scrape_unavailable"}),

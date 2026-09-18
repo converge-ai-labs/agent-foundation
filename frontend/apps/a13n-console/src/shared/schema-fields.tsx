@@ -73,12 +73,14 @@ export function SchemaFields({
   onChange,
   secret = false,
   descriptions = true,
+  requireFields = true,
 }: {
   schema: Record<string, unknown>;
   value: Record<string, unknown>;
   onChange: (value: Record<string, unknown>) => void;
   secret?: boolean;
   descriptions?: boolean;
+  requireFields?: boolean;
 }) {
   const { t } = useTranslation();
   const properties = object(schema.properties) ? schema.properties : {};
@@ -94,7 +96,9 @@ export function SchemaFields({
         const field = fieldSchema(definition, schema),
           label = t(typeof field.title === "string" ? field.title : key),
           required =
-            Array.isArray(schema.required) && schema.required.includes(key);
+            requireFields &&
+            Array.isArray(schema.required) &&
+            schema.required.includes(key);
         const description =
           descriptions && typeof field.description === "string"
             ? t(field.description)
@@ -145,6 +149,7 @@ export function SchemaFields({
                 onChange={(next) => change(key, next)}
                 secret={secret}
                 descriptions={descriptions}
+                requireFields={requireFields}
               />
             </fieldset>
           );

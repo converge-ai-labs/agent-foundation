@@ -1,46 +1,38 @@
-"""Immutable Web Provider definitions and operation-scoped runtime dispatch."""
+"""Service catalog projection and secret-preserving input validation."""
 
 from __future__ import annotations
 
-import logging
-from collections.abc import AsyncIterator, Iterable
-from contextlib import asynccontextmanager
-from dataclasses import replace
+from collections.abc import Iterable
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
-from anyio import move_on_after
+from a13n_harness.providers.web.definition import WebProviderDefinition as Definition
+from a13n_harness.providers.web.transport import WebProviderTransport
 from pydantic import BaseModel
 
 from a13n_service.credentials import credential_payload
-from a13n_service.provider_plugins.api import WebProviderRegistration, WebProviderRuntime
 
 from .domain import WebProviderDefinition
 
-if TYPE_CHECKING:
-    from .adapters import WebProviderTransport
-
-logger = logging.getLogger("a13n_service.web.registry")
-_RUNTIME_CLEANUP_TIMEOUT_SECONDS = 1
-
 
 class WebProviderRegistry:
-    def __init__(self, registrations: Iterable[WebProviderRegistration]) -> None:
-        indexed: dict[str, WebProviderRegistration] = {}
-        for registration in registrations:
-            if registration.type in indexed:
-                raise ValueError(f"duplicate Web Provider type {registration.type!r}")
-            indexed[registration.type] = registration
-        self._registrations = MappingProxyType(indexed)
+    def __init__(self, definitions: Iterable[Definition], *, transport: WebProviderTransport | None = None) -> None:
+        self.transport = transport
+        indexed: dict[str, Definition] = {}
+        for definition in definitions:
+            if definition.type in indexed:
+                raise ValueError(f"duplicate Web Provider type {definition.type!r}")
+            indexed[definition.type] = definition
+        self._definitions = MappingProxyType(indexed)
 
-    def require(self, provider_type: str) -> WebProviderRegistration:
+    def require(self, provider_type: str) -> Definition:
         try:
-            return self._registrations[provider_type]
+            return self._definitions[provider_type]
         except KeyError as error:
             raise ValueError(f"unknown Web Provider type {provider_type!r}") from error
 
     def definitions(self) -> tuple[WebProviderDefinition, ...]:
-        return tuple(self._definition(self._registrations[key]) for key in sorted(self._registrations))
+        return tuple(self._definition(self._definitions[key]) for key in sorted(self._definitions))
 
     def validate_configuration(self, provider_type: str, value: object) -> dict[str, object]:
         return self._validated_json(self.require(provider_type).configuration_model, value)
@@ -53,71 +45,33 @@ class WebProviderRegistry:
 
         return credential_payload(self.validate_credentials(provider_type, value))
 
-    @asynccontextmanager
-    async def runtime(self, provider_type: str) -> AsyncIterator[WebProviderRuntime]:
-        runtime = self.require(provider_type).factory()
-        try:
-            yield runtime
-        finally:
-            try:
-                with move_on_after(_RUNTIME_CLEANUP_TIMEOUT_SECONDS, shield=True) as cleanup_scope:
-                    await runtime.aclose()
-            except Exception as error:
-                logger.warning(
-                    "Web Provider runtime cleanup failed",
-                    extra={"provider_type": provider_type, "cleanup_error_type": type(error).__name__},
-                )
-            else:
-                if cleanup_scope.cancel_called:
-                    logger.warning("Web Provider runtime cleanup timed out", extra={"provider_type": provider_type})
-
     @staticmethod
     def _validated_json(model: type[BaseModel], value: object) -> dict[str, object]:
         parsed = model.model_validate(value)
         return parsed.model_dump(mode="json", by_alias=True, exclude_none=False)
 
     @staticmethod
-    def _definition(registration: WebProviderRegistration) -> WebProviderDefinition:
+    def _definition(definition: Definition) -> WebProviderDefinition:
         operations: list[Literal["search", "scrape"]] = []
-        if registration.supports_search:
+        if definition.supports_search:
             operations.append("search")
-        if registration.supports_scrape:
+        if definition.supports_scrape:
             operations.append("scrape")
-        credential_schema = registration.credential_model.model_json_schema()
+        credential_schema = definition.credential_model.model_json_schema()
         credential_schema["writeOnly"] = True
         return WebProviderDefinition(
-            type=registration.type,
-            display_name=registration.display_name,
-            configuration_schema=registration.configuration_model.model_json_schema(),
+            type=definition.type,
+            display_name=definition.display_name,
+            configuration_schema=definition.configuration_model.model_json_schema(),
             credential_schema=credential_schema,
-            credential_required=registration.credential_required,
-            setup_url=registration.setup_url,
+            credential_required=definition.credential_required,
+            setup_url=definition.setup_url,
             operations=tuple(operations),
-            supports_restricted_scrape=registration.supports_restricted_scrape,
+            supports_restricted_scrape=definition.supports_restricted_scrape,
         )
 
 
 def built_in_web_provider_registry(*, transport: WebProviderTransport | None = None) -> WebProviderRegistry:
-    """Build the canonical built-in snapshot, optionally with a test transport."""
+    from a13n_harness.providers.web.builtins import built_in_web_providers
 
-    from a13n_service.provider_plugins import load_provider_catalogs
-    from a13n_service.web.adapters import BoundWebProviderRuntime, WebProviderTransport
-
-    registrations = load_provider_catalogs(()).web
-    if transport is not None:
-        if not isinstance(transport, WebProviderTransport):
-            raise TypeError("transport must be a WebProviderTransport")
-        selected_transport = transport
-        registrations = tuple(
-            replace(
-                registration,
-                factory=lambda registration=registration: BoundWebProviderRuntime(
-                    registration.type, selected_transport
-                ),
-            )
-            for registration in registrations
-        )
-    return WebProviderRegistry(registrations)
-
-
-__all__ = ["WebProviderRegistry", "built_in_web_provider_registry"]
+    return WebProviderRegistry(built_in_web_providers(), transport=transport)

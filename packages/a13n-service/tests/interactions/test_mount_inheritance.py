@@ -3,7 +3,7 @@
 from datetime import timedelta
 
 import pytest
-from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.environments.mount_inheritance import inherit_run_mounts
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord
 from a13n_service.hooks import InlineHookValidator

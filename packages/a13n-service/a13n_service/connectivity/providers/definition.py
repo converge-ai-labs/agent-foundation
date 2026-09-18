@@ -4,8 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 import httpx2
-
-from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 from ..adapters import IngressAdapter
 from ..domain import JsonObject

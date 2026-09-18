@@ -7,13 +7,13 @@ from unittest.mock import AsyncMock, Mock
 import httpx2
 import pytest
 from a13n_harness import AgentContext
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.connectivity.selection_domain import ConnectionRunSelection
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionError, FrozenRunConnectivity
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.storage import transaction
 from pydantic_ai import Agent
 from pydantic_ai.models.test import TestModel

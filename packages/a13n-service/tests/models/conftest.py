@@ -5,7 +5,7 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
-from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.models.catalog import DEFAULT_RELEASED_SINCE

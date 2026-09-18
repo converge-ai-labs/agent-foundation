@@ -2,6 +2,7 @@ from dataclasses import replace
 from unittest.mock import AsyncMock
 
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agent_configuration.definition import load_definition
 from a13n_service.agent_configuration.inputs import ConfigurationInputRequest, ConfigurationInputs
 from a13n_service.agent_configuration.knowledge import KnowledgeFiles
@@ -10,7 +11,6 @@ from a13n_service.agent_configuration.runtime import validate_configuration_defi
 from a13n_service.agent_configuration.system_agent import SystemConfigurationAgent
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.application_errors import ApplicationError
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService

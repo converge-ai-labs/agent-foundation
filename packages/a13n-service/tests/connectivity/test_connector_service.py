@@ -84,9 +84,9 @@ async def create_connection(
     connector_provider_id: str,
     idempotency_key: str,
 ):
+    from a13n_harness.providers.endpoint_policy import EndpointPolicy
     from a13n_service.connectivity.connections.domain import CreateConnectionRequest
     from a13n_service.connectivity.connections.service import ConnectionService
-    from a13n_service.endpoint_policy import EndpointPolicy
 
     return await ConnectionService(service._sessions, EndpointPolicy(), clock=service._clock).create(
         actor=actor(),
@@ -580,12 +580,12 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     rejection,
 ):
     from a13n_harness import AgentSpec, HarnessBuilder, HarnessInstrumentation, HarnessTraceContent
+    from a13n_harness.providers.endpoint_policy import EndpointPolicy
     from a13n_service.connectivity.connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
     from a13n_service.connectivity.execution import AttemptToolScope
     from a13n_service.connectivity.mcp.transport import RemoteTransport
     from a13n_service.connectivity.selection_domain import ConnectionRunSelection
     from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
-    from a13n_service.endpoint_policy import EndpointPolicy
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter

@@ -1,39 +1,31 @@
-# Deployment Provider plugin example
+# Installed Web Provider example
 
-This independently installable package registers Web, native Pydantic AI Model, and Memory Providers through one selected deployment entry point. It uses the supported `a13n_service.provider_plugins` extension surface and the shared `a13n_harness.memory_plugins.MemoryBackendPlugin` contract. The Memory implementation reuses the native Mem0 OSS adapter, not an example-only storage mirror.
+This independent package depends on Harness and Pydantic. It exports an immutable `ProviderManifest` through the `a13n.providers` entry-point group. Installation makes it discoverable; a host must explicitly select `acme` to load it. Importing its definition does not import Service, Agent orchestration, or vendor SDKs.
 
-Build and install the package into the same pinned Service image, then select its entry-point name:
+A Web author supplies two input models, an async operation, and a `WebProviderDefinition`. There is no forwarding backend, factory, or empty cleanup method. The same definition works directly with a transport for the vendor:
+
+```python
+from acme_provider.plugin import acme_web
+from a13n_harness.providers.web import WebSearchRequest
+
+async with acme_web.open({"index": "guides"}, {"token": "example-token"}, transport=transport) as web:
+    result = await web.search(WebSearchRequest(query="plugins", limit=2))
+```
+
+Acme is fictional. Tests supply a `WebProviderTransport` backed by `httpx2.MockTransport`, validating the outgoing index and bearer credential without a vendor account. Real integrations replace the fictional endpoint and use the default bounded transport, whose HTTP clients are owned and closed per exchange. An explicitly supplied HTTP client remains caller-owned. Operations that acquire other resources own their cleanup inside the callback.
+
+Service selects the same installed manifest at application setup:
 
 ```toml
 [provider_plugins]
 enabled = ["acme"]
 ```
 
-The distribution name (`a13n-provider-acme-example`), selected entry-point name (`acme`), and registered Provider types (`acme_web`, `acme_model`, `acme.memory`) are intentionally distinct. Its callable uses `@provider_plugin(api_version=1)` to declare the extension contract it was authored against; the literal must not be derived from the installed Service version. Registration creates only immutable metadata and factories. Account validation and operation-scoped runtime construction happen later through the existing Web, Model, and Memory management/runtime paths.
+Create a Web account with type `acme_web`, configuration `{"index": "guides"}`, and credential `{"token": "example-token"}`. Console renders these fields from the definition's schemas. Service owns encrypted persistence, scope authorization, ETags, enabled state, fresh credential acquisition, and disclosure checks. Neither configuration nor an installed plugin grants runtime authority.
 
-Web runtimes raise `WebProviderResponseError` only after receiving an explicit rate-limit or temporary-unavailable Provider response that can safely authorize Service's bounded retry. Transport loss, timeouts, invalid responses, and unexpected implementation errors must not be converted to that type; their dispatch outcome can be unknown and Service will not replay them.
+`WebProviderResponseError` is reserved for an explicit retry-safe upstream response. Timeouts, transport loss, and unknown effects must not be converted to this error to obtain a retry.
 
-## Memory: the same plugin in Service and embedded Harness
-
-The public extension point is the provider-neutral `MemoryBackendPlugin`, and storage implements `MemoryBackend`. Neither contract copies Mem0 request payloads or exposes its SDK to custom Agent behavior. Implement these contracts directly for another storage service; `MemoryCapability` and the hosted resource API stay unchanged.
-
-This example deliberately reuses one concrete adapter: `AcmeMemoryPlugin` subclasses `Mem0OSSBackendPlugin` only to give the deployment its own key, `acme.memory`. `register()` passes that object directly to `registry.memory.register()`. There is no second Service factory or behavior plugin. An embedded host can put the same object in `MemoryBackendCatalog((AcmeMemoryPlugin(),))` and own its `open(configuration, credential)` context manager. Configuration and credential validation are pure; backend construction and cleanup belong to the operation's host.
-
-After installing and selecting `acme`, create a Workspace Memory Provider through `POST /api/v1/workspaces/{workspace}/memory-providers`:
-
-```json
-{
-  "type": "acme.memory",
-  "name": "Acme memories",
-  "configuration": {"base_url": "http://127.0.0.1:18888"},
-  "credential": {"api_key": "local-mem0-api-key"},
-  "enabled": true
-}
-```
-
-Use the returned `memprov_...` ID in the Agent revision's `config.memory.provider_id`. The credential is write-only and encrypted by Service; neither it nor a live client enters the Agent snapshot. To connect a different storage target, create another Provider rather than editing its immutable configuration. See the [runnable local workflow](../../dev/mem0/README.md) for startup, Agent configuration, and content operations. The OSS adapter uses only native public APIs, explicit non-inference writes, and bounded listing; installing this package does not configure a remote server.
-
-Run the installed entry-point conformance tests, including inert Memory adapter construction, without vendor credentials:
+Run the installed entry-point tests:
 
 ```bash
 uv sync --project examples/provider-plugin --locked

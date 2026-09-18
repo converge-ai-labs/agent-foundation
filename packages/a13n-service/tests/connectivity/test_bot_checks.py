@@ -2,6 +2,7 @@
 
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.bots.connectivity.domain import BotCheckRequest
 from a13n_service.bots.connectivity.service import BotService
 from a13n_service.connectivity.accounts.domain import CreateAccountRequest, ReplaceAccountCredentialsRequest
@@ -9,7 +10,6 @@ from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.providers.slack.adapter import SlackIngressAdapter
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 
 from .conftest import WORKSPACE_ID, actor

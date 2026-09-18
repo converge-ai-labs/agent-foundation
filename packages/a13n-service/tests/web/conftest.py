@@ -25,3 +25,18 @@ async def web_sessions(service_database: PostgreSQLConfig) -> AsyncIterator[asyn
 @pytest.fixture
 def web_service(web_sessions) -> WebProviderService:
     return WebProviderService(web_sessions, protector(), WebProviderRegistry(load_provider_catalogs(()).web))
+
+
+def provider_transport(handler):
+    import httpx2
+    from a13n_harness.providers.web import WebProviderTransport
+
+    class EndpointPolicy:
+        async def validate(self, endpoint):
+            assert endpoint in {"https://api.exa.ai/search", "https://api.exa.ai/contents"}
+            return endpoint
+
+    return WebProviderTransport(
+        client_factory=lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+        endpoint_policy=EndpointPolicy(),
+    )

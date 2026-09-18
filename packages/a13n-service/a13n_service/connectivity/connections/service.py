@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,7 +16,6 @@ from a13n_service.durable_operations.idempotency import (
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
 )
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
 from a13n_service.storage import transaction

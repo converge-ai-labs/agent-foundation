@@ -7,8 +7,8 @@ from unittest.mock import Mock
 import pytest
 from a13n_environment import build_environment_provider_catalog
 from a13n_environment.direct_local.files import LocalFileOperator
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.digests import digest_request
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import ExistingEnvironmentSelection
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService

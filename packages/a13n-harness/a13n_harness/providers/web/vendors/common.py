@@ -4,16 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from a13n_harness.capabilities.web import (
+from a13n_harness.providers.usage import ProviderUsage
+from a13n_harness.providers.web.contracts import (
     WebProviderError,
     WebScrapeRequest,
     WebScrapeResult,
     WebSearchResponse,
     WebSearchResult,
 )
-from a13n_harness.usage import ProviderUsage
-
-from a13n_service.web.domain import MAX_SCRAPE_CONTENT_BYTES, ScrapeSelection, SearchSelection
+from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES
 
 SEARCH_RESPONSE_BYTES = 1024 * 1024
 SCRAPE_RESPONSE_OVERHEAD_BYTES = 256 * 1024
@@ -28,8 +27,6 @@ def scrape_response_bytes(content_bytes: int) -> int:
 
 def search_response(
     rows: object,
-    selection: SearchSelection,
-    limit: int,
     extract: Callable[[dict[str, object]], tuple[object, object, object]],
     *,
     usage: tuple[ProviderUsage, ...] = (),
@@ -45,9 +42,8 @@ def search_response(
             if not isinstance(title, str) or not isinstance(url, str) or not isinstance(snippet, str):
                 raise ValueError("invalid search fields")
             result = WebSearchResult(title=title[:4096], url=url, snippet=snippet[: 16 * 1024])
-            if selection.allows(result.url):
-                results.append(result)
-        return WebSearchResponse(results=tuple(results[:limit]), usage=usage)
+            results.append(result)
+        return WebSearchResponse(results=tuple(results), usage=usage)
     except (ValueError, TypeError, KeyError) as error:
         raise WebProviderError("web_search_response_invalid") from error
 
@@ -58,7 +54,6 @@ def scrape_result(
     canonical_url: object,
     title: object,
     request: WebScrapeRequest,
-    selection: ScrapeSelection,
     usage: tuple[ProviderUsage, ...] = (),
 ) -> WebScrapeResult:
     try:
@@ -66,14 +61,11 @@ def scrape_result(
             raise ValueError("invalid scrape content or URL")
         if title is not None and not isinstance(title, str):
             raise ValueError("invalid scrape title")
-        encoded = content.encode("utf-8")
-        limit = min(request.max_content_bytes, selection.max_content_bytes)
         return WebScrapeResult(
-            content=encoded[:limit].decode("utf-8", errors="ignore"),
+            content=content,
             source_url=request.url,
             canonical_url=canonical_url,
             title=title,
-            truncated=len(encoded) > limit,
             usage=usage,
         )
     except (ValueError, TypeError, KeyError) as error:

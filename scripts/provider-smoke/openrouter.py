@@ -13,7 +13,7 @@ from time import monotonic
 from typing import cast
 
 import httpx2
-from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.models.domain import ModelExecutionSnapshot
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_operations import NativeProviderOperations

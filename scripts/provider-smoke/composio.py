@@ -9,6 +9,7 @@ from time import monotonic
 from uuid import uuid4
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     ConnectionBinding,
@@ -27,7 +28,6 @@ from a13n_service.connectivity.connectors.providers.discovery import DirectoryBu
 from a13n_service.connectivity.connectors.tool_discovery import ToolCatalog, discover_tools
 from a13n_service.connectivity.connectors.validation import required_object, required_string
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.endpoint_policy import EndpointPolicy
 from common import required_input, run_cli, show
 from jsonschema import Draft202012Validator
 from pydantic import TypeAdapter

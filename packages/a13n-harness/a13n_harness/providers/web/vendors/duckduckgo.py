@@ -6,34 +6,34 @@ from html.parser import HTMLParser
 from typing import TYPE_CHECKING
 from urllib.parse import parse_qs, urljoin, urlsplit
 
-from a13n_harness.capabilities.web import WebProviderError, WebSearchRequest, WebSearchResponse, WebSearchResult
+from a13n_harness.providers.web.contracts import WebProviderError, WebSearchRequest, WebSearchResponse, WebSearchResult
+from a13n_harness.providers.web.options import SearchOptions
 
-from a13n_service.web.domain import SearchSelection
-
+from ..configuration import EmptyConfiguration
 from .common import SEARCH_RESPONSE_BYTES
 
 if TYPE_CHECKING:
-    from a13n_service.web.adapters import WebProviderTransport
+    from a13n_harness.providers.web.transport import WebProviderTransport
 
 SEARCH_URL = "https://html.duckduckgo.com/html/"
 
 
 async def search(
-    transport: WebProviderTransport, _key: str, request: WebSearchRequest, selection: SearchSelection
+    configuration: EmptyConfiguration,
+    credential: EmptyConfiguration,
+    request: WebSearchRequest,
+    options: SearchOptions,
+    transport: WebProviderTransport,
 ) -> WebSearchResponse:
     content = await transport.exchange(
         lambda client: client.build_request("GET", SEARCH_URL, params={"q": request.query}),
-        endpoint=SEARCH_URL,
         operation="search",
         max_response_bytes=SEARCH_RESPONSE_BYTES,
     )
     try:
         parser = DuckDuckGoParser()
         parser.feed(content.decode("utf-8"))
-        limit = min(request.limit, selection.max_results)
-        return WebSearchResponse(
-            results=tuple(result for result in parser.results if selection.allows(result.url))[:limit]
-        )
+        return WebSearchResponse(results=tuple(parser.results))
     except (UnicodeError, ValueError) as error:
         raise WebProviderError("web_search_response_invalid") from error
 

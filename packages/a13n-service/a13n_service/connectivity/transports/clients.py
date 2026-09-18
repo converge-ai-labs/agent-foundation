@@ -14,12 +14,12 @@ from collections.abc import Awaitable, Callable
 from urllib.parse import parse_qs, urlsplit
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic import TypeAdapter
 from websockets.asyncio.client import connect
 
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.providers.lark.frame_pb2 import Frame, Header
-from a13n_service.endpoint_policy import EndpointPolicy
 
 EventHandler = Callable[[JsonObject], Awaitable[None]]
 ConnectedHandler = Callable[[], Awaitable[None]]

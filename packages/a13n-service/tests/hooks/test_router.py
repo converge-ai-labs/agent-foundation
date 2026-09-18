@@ -4,8 +4,8 @@ from collections.abc import AsyncIterator
 
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.api import install_api_conventions
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks.management import HookSubscriptionService
 from a13n_service.hooks.router import router
 from fastapi import FastAPI, Request

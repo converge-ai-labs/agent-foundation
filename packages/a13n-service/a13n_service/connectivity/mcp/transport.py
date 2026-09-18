@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from anyio import fail_after, to_thread
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
@@ -14,7 +15,6 @@ from mcp.types import Tool
 from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.tool_validation import validate_tools
-from a13n_service.endpoint_policy import EndpointPolicy
 
 from .domain import MCP_PROTOCOL_REVISION
 

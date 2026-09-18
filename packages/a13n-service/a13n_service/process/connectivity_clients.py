@@ -3,12 +3,12 @@
 from dataclasses import dataclass
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
 from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 from a13n_service.secrets import SecretProtector
 from a13n_service.settings import Settings
