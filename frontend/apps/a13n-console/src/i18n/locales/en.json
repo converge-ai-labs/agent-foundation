@@ -468,7 +468,6 @@
   "File not found in this version.": "File not found in this version.",
   "File view": "File view",
   "Files": "Files",
-  "Files and processes on the target will be lost. Environment history is retained. This cannot be undone.": "Files and processes on the target will be lost. Environment history is retained. This cannot be undone.",
   "Files uploaded by your team and published by agent runs.": "Files uploaded by your team and published by agent runs.",
   "Find a member…": "Find a member…",
   "Find an agent…": "Find an agent…",
@@ -2749,5 +2748,18 @@
   "Platform account details": "Platform account details",
   "Advanced response settings": "Advanced response settings",
   "Choose who responds and which identity runs the agent.": "Choose who responds and which identity runs the agent.",
-  "Local memory": "Local memory"
+  "Local memory": "Local memory",
+  "Effective retention policy": "Effective retention policy",
+  "Externally owned: Service does not automatically stop or delete this target.": "Externally owned: Service does not automatically stop or delete this target.",
+  "Frozen at allocation. Later template changes do not affect this environment.": "Frozen at allocation. Later template changes do not affect this environment.",
+  "Stop after idle": "Stop after idle",
+  "Delete after idle": "Delete after idle",
+  "{{seconds}} seconds": "{{seconds}} seconds",
+  "Activity since": "Activity since",
+  "Idle time starts when no runs actively use this environment. Stopping does not reset the deletion timer.": "Idle time starts when no runs actively use this environment. Stopping does not reset the deletion timer.",
+  "After target deletion, the next use creates a fresh target from the frozen template revision. Old files are not restored.": "After target deletion, the next use creates a fresh target from the frozen template revision. Old files are not restored.",
+  "Files and processes on the target will be lost. The next use automatically creates a fresh target from the frozen template revision; old files are not restored. Environment identity and history are retained.": "Files and processes on the target will be lost. The next use automatically creates a fresh target from the frozen template revision; old files are not restored. Environment identity and history are retained.",
+  "Create from template": "Create from template",
+  "Reuse existing": "Reuse existing",
+  "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped managed target resumes; a deleted managed target is recreated without old files.": "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped managed target resumes; a deleted managed target is recreated without old files."
 }

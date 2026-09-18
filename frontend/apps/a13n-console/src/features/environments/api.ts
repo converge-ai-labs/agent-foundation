@@ -1,5 +1,6 @@
+import { queryOptions } from "@tanstack/react-query";
 import type { Client } from "../../service-client";
-import { data, type Schema } from "../../shared/api";
+import { data, representation, type Schema } from "../../shared/api";
 export type EnvironmentScope = {
   kind: "workspace" | "organization";
   id: string;
@@ -83,4 +84,17 @@ export function environmentApi(client: Client, scope: EnvironmentScope) {
             })
             .then(data),
   };
+}
+
+export function environmentQuery(client: Client, id: string) {
+  return queryOptions({
+    queryKey: ["environment", id],
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/environments/{resource_id}", {
+          params: { path: { resource_id: id } },
+          signal,
+        })
+        .then(representation),
+  });
 }

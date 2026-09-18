@@ -42,6 +42,16 @@ Provider management lives in Workspace or Organization settings under `section=p
 
 Organization settings live at `/organization/settings`; personal settings live at `/settings/profile`. Profile images, active sessions, password/email changes, and security activity belong to their identity settings, not Agent configuration.
 
+## Reuse an Environment across Sessions
+
+In conversation **Options**, choose **Create from template** to allocate a new Environment, or **Reuse existing** to use an Environment that already exists. Existing choices include the name and ID. To continue work on files from another Session, select that same Environment; choosing its template creates a different one.
+
+Open Run details to see the selected Environment's name and copyable ID. Its **Details** action opens the current status, generation, activity, and effective retention policy. Managed retention is frozen when the Environment is allocated, so editing the template affects new Environments only. **Disabled** means that automatic action is off. Externally owned targets have no Service-managed stop/delete policy.
+
+Idle time starts when no Runs actively use the Environment. Both automatic stop and delete deadlines count from that time; stopping does not restart the deletion timer. A stopped target resumes when used again, retaining its files according to the Provider's storage behavior. A deleted managed target is automatically created fresh on its next use, using the frozen template revision. Its Environment ID and history remain, but old files are not restored.
+
+Manual **Stop target** and **Delete target** require management permission and no active users. Their command status can remain pending after the request is accepted. Keep the details dialog open to see completion or failure and the refreshed Environment state. Deletion is destructive even though a later Run can create a fresh target.
+
 ## Set up and manage memory
 
 1. Open Workspace settings → Providers → Memory. Organization administrators can instead create a shared Provider in Organization settings.

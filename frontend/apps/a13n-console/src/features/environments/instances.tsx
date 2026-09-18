@@ -1,14 +1,11 @@
-import { EnvironmentNameEditor } from "./instance-name";
+import { EnvironmentDetails } from "./instance-details";
 import { ResourceIdentity } from "../../shared/collection";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { CopyableId } from "../../shared/copy";
 import {
   Button,
   ChoiceField,
   DisclosureSection,
   FormField,
   Input,
-  ReadOnlyField,
   ModalFrame,
 } from "a13n-ui";
 
@@ -19,23 +16,16 @@ import { PageActions } from "../../shared/page-actions";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import {
-  allPages,
-  commandHeaders,
-  data,
-  representation,
-  type Schema,
-} from "../../shared/api";
+import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
-  ErrorToast,
   Loading,
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm, FormActions, TextAreaField } from "../../shared/form";
+import { FormActions, TextAreaField } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, jsonValue } from "../../shared/validation";
@@ -126,202 +116,6 @@ export function EnvironmentInstances() {
         )
       )}
     </div>
-  );
-}
-function EnvironmentDetails({
-  environment,
-}: {
-  environment: Schema["Environment"];
-}) {
-  const client = useClient(),
-    { workspace, can } = useWorkspace(),
-    { t } = useTranslation(),
-    [open, setOpen] = useState(false),
-    [nameEditorKey, setNameEditorKey] = useState(0),
-    [commandId, setCommandId] = useState<string>(),
-    key = useIdempotency();
-  const detail = useQuery({
-    queryKey: ["environment", environment.id],
-    enabled: open,
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/environments/{resource_id}", {
-          params: { path: { resource_id: environment.id } },
-          signal,
-        })
-        .then(representation),
-  });
-  const provider = useQuery({
-    queryKey: ["environment-provider", environment.provider_id],
-    enabled: open,
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/environment-providers/{resource_id}", {
-          params: { path: { resource_id: environment.provider_id } },
-          signal,
-        })
-        .then(data),
-  });
-  const command = useQuery({
-    queryKey: ["environment-command", commandId],
-    enabled: !!commandId,
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/environment-commands/{command_id}", {
-          params: { path: { command_id: commandId! } },
-          signal,
-        })
-        .then(data),
-    refetchInterval: (query) =>
-      query.state.data?.status === "pending" ? 2000 : false,
-  });
-  async function act(action: "stop" | "delete") {
-    const params = {
-      path: { environment_id: environment.id },
-      header: commandHeaders(
-        workspace.id,
-        key.forBody({ action, id: environment.id }),
-      ),
-    };
-    const receipt =
-      action === "stop"
-        ? data(
-            await client.http.POST(
-              "/api/v1/environments/{environment_id}/stop",
-              { params },
-            ),
-          )
-        : data(
-            await client.http.POST(
-              "/api/v1/environments/{environment_id}/delete",
-              { params },
-            ),
-          );
-    setCommandId(receipt.id);
-  }
-  return (
-    <ModalFrame
-      onOpenChange={setOpen}
-      trigger={
-        <Button size="sm" variant="outline" type="button">
-          {t("Details")}
-        </Button>
-      }
-      size={"md"}
-      title={t("Environment details")}
-      closeLabel={t("Close")}
-      open={open}
-    >
-      <div className={styles.stack}>
-        <ErrorNotice error={detail.error} />
-        <ErrorToast error={command.error} />
-        {detail.isPending ? (
-          <Loading variant="form" rows={5} />
-        ) : (
-          detail.data && (
-            <>
-              <ResourceIdentity
-                name={detail.data.value.name}
-                resourceId={detail.data.value.id}
-              />
-              {can("environment.manage") && (
-                <EnvironmentNameEditor
-                  key={nameEditorKey}
-                  environment={detail.data.value}
-                  etag={detail.data?.etag}
-                  reload={async () => {
-                    const result = await detail.refetch();
-                    if (result.isSuccess)
-                      setNameEditorKey((value) => value + 1);
-                  }}
-                />
-              )}
-              <div className={styles.twoColumns}>
-                <ReadOnlyField label={t("Status")}>
-                  <StateBadge state={detail.data.value.status} />
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Activity")}>
-                  <StateBadge state={detail.data.value.retention_condition} />
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Generation")}>
-                  {detail.data.value.generation}
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Access permissions")}>
-                  {t(
-                    detail.data.value.access === "full"
-                      ? "Full access"
-                      : detail.data.value.access === "read_only"
-                        ? "Read only"
-                        : "Read and write",
-                  )}
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Updated")}>
-                  <Timestamp value={detail.data.value.updated_at} />
-                </ReadOnlyField>
-              </div>
-              <div className={`${styles.stack} border-t border-border pt-4`}>
-                <ReadOnlyField label={t("Ownership")}>
-                  {t(
-                    detail.data.value.ownership === "managed"
-                      ? "Managed"
-                      : "External",
-                  )}
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Provider")}>
-                  {provider.data ? (
-                    <ResourceIdentity
-                      name={provider.data.name}
-                      resourceId={provider.data.id}
-                      icon={<ProviderIcon type={provider.data.type} />}
-                    />
-                  ) : (
-                    <CopyableId value={detail.data.value.provider_id} />
-                  )}
-                </ReadOnlyField>
-                {detail.data.value.template_revision_id && (
-                  <ReadOnlyField label={t("Template revision")}>
-                    <CopyableId
-                      value={detail.data.value.template_revision_id}
-                    />
-                  </ReadOnlyField>
-                )}
-              </div>
-            </>
-          )
-        )}
-        {command.data && (
-          <div role="status">
-            <strong>{t("Lifecycle command")}</strong>{" "}
-            <StateBadge state={command.data.status} />
-            <small>{command.data.id}</small>
-          </div>
-        )}
-        {can("environment.manage") && environment.ownership === "managed" && (
-          <div className={`${styles.actions} border-t border-border pt-4`}>
-            <Confirm
-              subject={environment.id}
-              title={t("Stop environment target")}
-              description={t(
-                "This stops the target when it has no active users. A later run can resume it.",
-              )}
-              trigger={t("Stop target")}
-              action={() => act("stop")}
-            />
-            <Confirm
-              subject={environment.id}
-              title={t("Delete environment target")}
-              description={t(
-                "Files and processes on the target will be lost. Environment history is retained. This cannot be undone.",
-              )}
-              trigger={t("Delete target")}
-              danger
-              triggerVariant="outline"
-              action={() => act("delete")}
-            />
-          </div>
-        )}
-      </div>
-    </ModalFrame>
   );
 }
 function CreateEnvironment() {

@@ -705,6 +705,9 @@ async def _accept_root(
     objects: ObjectStore,
     *,
     config: EffectiveAgentConfig | None = None,
+    session_id: str = SESSION_ID,
+    thread_id: str = THREAD_ID,
+    run_id: str = "run_5555555555555555",
     max_attempts: int = 3,
     execution_policy_version: str = "1",
     execution_deadline_at: datetime | None = None,
@@ -715,18 +718,18 @@ async def _accept_root(
 ) -> tuple[RunStateStore, Run, RunCheckpoint]:
     config = config or effective_agent_config()
     seed = RunStateSeed(
-        run_id="run_5555555555555555",
+        run_id=run_id,
         agent_id=AGENT_ID,
         agent_revision_id=AGENT_REVISION_ID,
         effective_agent_config=config,
     )
-    state = initialize_start_state(seed, thread_id=THREAD_ID)
+    state = initialize_start_state(seed, thread_id=thread_id)
     run = Run(
         id=seed.run_id,
         version=1,
         organization_id=ORGANIZATION_ID,
         authority_principal=PrincipalRef(principal_type=PrincipalType.user, principal_id=USER_ID),
-        session_id=SESSION_ID,
+        session_id=session_id,
         thread_id=state.thread_id,
         lineage_kind=RunLineageKind.root,
         trigger_type="user_input",
@@ -769,7 +772,7 @@ async def _accept_root(
         coordination=coordination,
     ).accept_new_thread(
         session=Session(
-            id=SESSION_ID,
+            id=session_id,
             organization_id=ORGANIZATION_ID,
             workspace_id=WORKSPACE_ID,
             created_at=NOW,
@@ -780,7 +783,7 @@ async def _accept_root(
             version=1,
             queue_version=0,
             organization_id=ORGANIZATION_ID,
-            session_id=SESSION_ID,
+            session_id=session_id,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
             current_run_id=run.id,

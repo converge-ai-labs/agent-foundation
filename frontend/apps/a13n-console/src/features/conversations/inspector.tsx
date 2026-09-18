@@ -1,3 +1,4 @@
+import { EnvironmentReference } from "../environments/reference";
 import { Button, DisclosureSection } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
@@ -132,8 +133,6 @@ export function RunInspector({
                 <dd>
                   <CopyableId value={run.effective_agent_config_digest} />
                 </dd>
-                <dt>{t("Environment")}</dt>
-                <dd>{run.environment_id ?? t("None")}</dd>
               </dl>
             </DisclosureSection>
             <DisclosureSection title={<>{t("Full run metadata")}</>}>
@@ -178,6 +177,14 @@ function RunFacts({ run }: { run: Schema["RunResource"] }) {
           </AgentLink>
         ) : (
           t("Configuration assistant")
+        )}
+      </dd>
+      <dt>{t("Environment")}</dt>
+      <dd>
+        {run.environment_id ? (
+          <EnvironmentReference id={run.environment_id} />
+        ) : (
+          t("None")
         )}
       </dd>
       <dt>{t("Started")}</dt>

@@ -251,6 +251,8 @@ retention:
 
 `idle.stop_after` and `idle.delete_after` are explicitly supplied, with null disabling that action. No example duration is an implicit product default. The two-field policy is fixed by the template revision. If both actions are enabled, deletion must be later than stopping. Zero permits immediate action. Unsupported stop/delete capabilities fail configuration validation; no silent conversion of stop to delete is allowed.
 
+`GET /environments/{environment_id}` includes `retention`, the effective policy from the Environment's frozen template revision. External Environments return null because Service does not own their retention. Each null action within a managed policy means that action is disabled. This read requires only `environment.read`, not template or Provider read authority, and exposes no creation configuration or credentials. Collections retain the compact Environment representation.
+
 Retention conditions are aggregate facts about the Environment, separate from whether its target is running or stopped:
 
 | Condition | Meaning                                                                                       |

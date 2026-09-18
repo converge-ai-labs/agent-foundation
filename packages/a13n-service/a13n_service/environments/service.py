@@ -28,6 +28,7 @@ from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import next_updated_at, utc_now
 
 from .access import authorize_environment_resource, authorize_environment_workspace, environment_actor_scope
+from .configuration import load_configuration
 from .cursors import decode_cursor, encode_cursor
 from .domain import (
     Collection,
@@ -39,6 +40,7 @@ from .domain import (
     Environment,
     EnvironmentCommand,
     EnvironmentCommandRequest,
+    EnvironmentDetail,
     EnvironmentProvider,
     EnvironmentProviderDefinition,
     EnvironmentTemplate,
@@ -839,9 +841,14 @@ class EnvironmentService:
                 next_cursor=encode_cursor(rows[limit - 1].id, scope=scope) if len(rows) > limit else None,
             )
 
-    async def get_environment(self, *, actor: AuthenticatedActor, resource_id: str) -> Environment:
+    async def get_environment(self, *, actor: AuthenticatedActor, resource_id: str) -> EnvironmentDetail:
         async with short_session(self.sessions) as session:
-            return (await self.require_environment(session, actor, resource_id)).to_resource()
+            row = await self.require_environment(session, actor, resource_id)
+            configuration = await load_configuration(session, row)
+            return EnvironmentDetail(
+                **row.to_resource().model_dump(),
+                retention=configuration.retention if isinstance(configuration, TemplateConfiguration) else None,
+            )
 
     async def list_environments(
         self,

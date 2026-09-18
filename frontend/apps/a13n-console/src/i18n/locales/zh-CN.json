@@ -467,7 +467,6 @@
   "File not found in this version.": "此版本中没有该文件。",
   "File view": "文件视图",
   "Files": "文件",
-  "Files and processes on the target will be lost. Environment history is retained. This cannot be undone.": "目标中的文件和进程将丢失，环境历史会保留。此操作无法撤销。",
   "Files uploaded by your team and published by agent runs.": "团队上传的文件和 Agent 运行发布的文件。",
   "Find a member…": "查找成员…",
   "Find an agent…": "查找 Agent…",
@@ -2749,5 +2748,18 @@
   "Platform account details": "应用账号详情",
   "Advanced response settings": "高级响应设置",
   "Choose who responds and which identity runs the agent.": "选择负责回复的 Agent 及其执行身份。",
-  "Local memory": "本群记忆"
+  "Local memory": "本群记忆",
+  "Effective retention policy": "实际保留策略",
+  "Externally owned: Service does not automatically stop or delete this target.": "目标由外部管理：Service 不会自动停止或删除此目标。",
+  "Frozen at allocation. Later template changes do not affect this environment.": "策略在分配环境时固定，后续模板变更不会影响此环境。",
+  "Stop after idle": "空闲后停止",
+  "Delete after idle": "空闲后删除",
+  "{{seconds}} seconds": "{{seconds}} 秒",
+  "Activity since": "当前活动状态开始于",
+  "Idle time starts when no runs actively use this environment. Stopping does not reset the deletion timer.": "当没有运行正在使用此环境时，开始计算空闲时间。停止目标不会重置删除计时。",
+  "After target deletion, the next use creates a fresh target from the frozen template revision. Old files are not restored.": "目标删除后，下次使用会根据已固定的模板版本创建新目标，不会恢复旧文件。",
+  "Files and processes on the target will be lost. The next use automatically creates a fresh target from the frozen template revision; old files are not restored. Environment identity and history are retained.": "目标上的文件和进程将丢失。下次使用会根据已固定的模板版本自动创建新目标，不会恢复旧文件。环境标识和历史记录会保留。",
+  "Create from template": "从模板创建",
+  "Reuse existing": "复用已有环境",
+  "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped managed target resumes; a deleted managed target is recreated without old files.": "从模板创建会分配新环境。复用已有环境会继续使用同一环境及其保留的文件，也可跨会话复用。已停止的托管目标会恢复；已删除的托管目标会重新创建，但不会恢复旧文件。"
 }

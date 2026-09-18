@@ -10,6 +10,8 @@ import pytest
 from a13n_environment import build_environment_provider_catalog
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
+from a13n_service.iam import authorization as iam_authorization
+from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.settings import Settings
 from a13n_service.storage import transaction
@@ -289,3 +291,93 @@ async def test_template_and_environment_labels_http_contract(environment_api_cli
         f"{collection}/environments",
         immutable_fields=["generation", "template_revision_id", "provider_id"],
     )
+
+
+@pytest.mark.anyio
+async def test_environment_detail_returns_frozen_retention_and_external_ownership(environment_api_client, tmp_path):
+    client = environment_api_client
+    template = await create_template(client, tmp_path)
+    base = f"/api/v1/workspaces/{WORKSPACE_ID}"
+    revisions = f"/api/v1/environment-templates/{template['id']}/revisions"
+    original = {"idle": {"stop_after": 600, "delete_after": 86400}}
+    disabled = {"idle": {"stop_after": None, "delete_after": None}}
+    revision = await client.get(f"/api/v1/environment-template-revisions/{template['current_revision_id']}")
+    revision_body = {
+        "provider_id": revision.json()["provider_id"],
+        "configuration": {"root": {"path": str(tmp_path)}},
+        "retention": original,
+        "expected_version": 1,
+    }
+    enabled_revision = await client.post(revisions, json=revision_body)
+    assert enabled_revision.status_code == 201, enabled_revision.text
+    allocated = await client.post(
+        f"{base}/environments",
+        headers={"Idempotency-Key": "frozen-retention"},
+        json={"template_id": template["id"]},
+    )
+    assert allocated.status_code == 201, allocated.text
+    environment = allocated.json()
+    revision_body.update(expected_version=2, retention=disabled)
+    changed = await client.post(revisions, json=revision_body)
+    assert changed.status_code == 201, changed.text
+    detail = await client.get(f"/api/v1/environments/{environment['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["retention"] == original
+    assert detail.json()["template_revision_id"] == enabled_revision.json()["id"]
+    assert detail.headers["etag"]
+    assert "configuration" not in detail.json()
+
+    later = await client.post(
+        f"{base}/environments",
+        headers={"Idempotency-Key": "disabled-retention"},
+        json={"template_id": template["id"]},
+    )
+    assert later.status_code == 201, later.text
+    detail = await client.get(f"/api/v1/environments/{later.json()['id']}")
+    assert detail.json()["retention"] == disabled
+    external = await client.post(
+        f"{base}/environments",
+        headers={"Idempotency-Key": "external-retention"},
+        json={"provider_id": revision_body["provider_id"], "configuration": revision_body["configuration"]},
+    )
+    assert external.status_code == 201, external.text
+    detail = await client.get(f"/api/v1/environments/{external.json()['id']}")
+    assert detail.json()["ownership"] == "external"
+    assert detail.json()["retention"] is None
+
+
+@pytest.mark.anyio
+async def test_environment_retention_read_does_not_require_template_or_provider_read(
+    environment_api_client, tmp_path, monkeypatch
+):
+    client = environment_api_client
+    template = await create_template(client, tmp_path)
+    revision = await client.get(f"/api/v1/environment-template-revisions/{template['current_revision_id']}")
+    assert revision.status_code == 200
+    provider_id = revision.json()["provider_id"]
+    allocated = await client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/environments",
+        headers={"Idempotency-Key": "read-only-projection"},
+        json={"template_id": template["id"]},
+    )
+    assert allocated.status_code == 201, allocated.text
+    environment_url = f"/api/v1/environments/{allocated.json()['id']}"
+    # Narrow the fixture's role grants; the actual persisted actor, scope lookup,
+    # permission evaluation and HTTP authorization remain in use.
+    monkeypatch.setitem(
+        iam_authorization._WORKSPACE_ROLE_ACTIONS,
+        "builder",
+        frozenset({WorkspaceAction.environment_read}),
+    )
+    detail = await client.get(environment_url)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["retention"] == {"idle": {"stop_after": None, "delete_after": None}}
+    assert not {"configuration", "external_configuration", "credential", "state"}.intersection(detail.json())
+    for url in (
+        f"/api/v1/environment-providers/{provider_id}",
+        f"/api/v1/environment-templates/{template['id']}",
+        f"/api/v1/environment-template-revisions/{template['current_revision_id']}",
+    ):
+        assert (await client.get(url)).status_code == 404
+    monkeypatch.setitem(iam_authorization._WORKSPACE_ROLE_ACTIONS, "builder", frozenset())
+    assert (await client.get(environment_url)).status_code == 404

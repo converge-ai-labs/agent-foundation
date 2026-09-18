@@ -249,14 +249,19 @@ export function RunOptions({
             { value: "none", label: t("No environment") },
             ...(choices.data?.templates ?? []).map((template) => ({
               value: `template:${template.id}`,
-              label: `${t("Template")}: ${template.name}`,
+              label: `${t("Create from template")}: ${template.name}`,
             })),
             ...(choices.data?.environments ?? []).map((environment) => ({
               value: `instance:${environment.id}`,
-              label: `${t("Instance")}: ${environment.name}`,
+              label: `${t("Reuse existing")}: ${environment.name} (${environment.id})`,
             })),
           ]}
         />
+        <p className="text-sm text-muted-foreground">
+          {t(
+            "Create from template allocates a new environment. Reuse existing keeps the same environment and its retained files, including across sessions. A stopped managed target resumes; a deleted managed target is recreated without old files.",
+          )}
+        </p>
         <Label className="flex items-center gap-2">
           <Checkbox
             checked={options.overrideInstructions}

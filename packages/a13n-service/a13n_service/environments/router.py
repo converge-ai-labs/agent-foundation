@@ -24,6 +24,7 @@ from .domain import (
     Environment,
     EnvironmentCommand,
     EnvironmentCommandRequest,
+    EnvironmentDetail,
     EnvironmentProvider,
     EnvironmentProviderDefinition,
     EnvironmentTemplate,
@@ -277,7 +278,7 @@ async def list_environments(
 
 
 @router.get("/environments/{resource_id}")
-async def get_environment(request: Request, response: Response, actor: Actor, resource_id: str) -> Environment:
+async def get_environment(request: Request, response: Response, actor: Actor, resource_id: str) -> EnvironmentDetail:
     resource = await _service(request).get_environment(actor=actor, resource_id=resource_id)
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
     return resource

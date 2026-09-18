@@ -6976,6 +6976,55 @@ export interface components {
        */
       status: "pending" | "completed" | "failed";
     };
+    /** EnvironmentDetail */
+    EnvironmentDetail: {
+      access: components["schemas"]["EnvironmentAccess"];
+      /**
+       * Condition Since
+       * Format: date-time
+       */
+      condition_since: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Generation */
+      generation: number;
+      /** Id */
+      id: string;
+      /** Labels */
+      labels?: {
+        [key: string]: string;
+      };
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /**
+       * Ownership
+       * @enum {string}
+       */
+      ownership: "managed" | "external";
+      /** Provider Id */
+      provider_id: string;
+      retention: components["schemas"]["RetentionPolicy"] | null;
+      /**
+       * Retention Condition
+       * @enum {string}
+       */
+      retention_condition: "active" | "idle";
+      status: components["schemas"]["EnvironmentStatus"];
+      /** Template Revision Id */
+      template_revision_id: string | null;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Workspace Id */
+      workspace_id: string;
+    };
     /** EnvironmentProvider */
     EnvironmentProvider: {
       /** Configuration */
@@ -16415,7 +16464,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Environment"];
+          "application/json": components["schemas"]["EnvironmentDetail"];
         };
       };
       /** @description Invalid request. */

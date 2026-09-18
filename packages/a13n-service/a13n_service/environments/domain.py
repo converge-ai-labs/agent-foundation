@@ -140,6 +140,10 @@ class Environment(DomainModel):
     updated_at: datetime
 
 
+class EnvironmentDetail(Environment):
+    retention: RetentionPolicy | None
+
+
 class ExistingEnvironmentSelection(DomainModel):
     environment_id: ObjectId
 
