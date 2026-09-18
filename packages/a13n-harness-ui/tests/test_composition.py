@@ -228,6 +228,18 @@ async def test_resolves_complete_credential_free_run_composition(tmp_path: Path)
     }
 
 
+async def test_reconstruction_disables_request_limit_for_root_and_children(tmp_path: Path) -> None:
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    reconstructed = AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    definition = reconstructed.executable.definition
+
+    assert definition.agent.usage_limits.request_limit is None
+    assert len(definition.subagents) == 2
+    for child in definition.subagents:
+        assert child.agent.agent.usage_limits.request_limit is None
+
+
 async def test_resolves_release_owned_sandbox_profile_without_configuration_resource(tmp_path: Path) -> None:
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     selection = replace(_selection(), environment_profile_id=SANDBOX_PROFILE_ID)
