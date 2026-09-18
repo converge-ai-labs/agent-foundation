@@ -78,6 +78,16 @@ When `process.pricing_auto_update` is enabled, the App owns Pydantic AI's backgr
 
 A source change triggers a stable complete-tree candidate load. Invalid intermediate saves do not replace the accepted generation. Module import starts no task, process, listener, or database connection.
 
+## Planned Update Maintenance
+
+WebUI-mode Apps expose `maintenance_status`, `prepare_update`, `cancel_update`, and `dismiss_update` through the same application boundary as execution commands. The authenticated HTTP routes are `GET /api/maintenance` and `POST /api/maintenance/{prepare,cancel,dismiss}`. Dismissal requires `previous_instance_stopped: true`. These operations neither install packages nor terminate the server. Ordinary cancellation and SIGTERM do not implicitly prepare an update.
+
+Preparation closes admission for new root input, steering, and deferred answers, including cross-Thread submissions. An already executing model request and its tool batch finish; any child admitted by that batch joins preparation. Each root or child pauses before its next outer canonical model request, after context transformations, retaining a complete Harness state. Parent waits on children wake for maintenance so a paused child cannot deadlock its parent's pause. Auxiliary model requests are not mistaken for an outer continuation boundary. Preparation has no timeout that promotes unfinished work to safe status or force-cancels a tool.
+
+The maintenance projection distinguishes `idle`, `draining`, `paused`, `stopping`, `restoring`, `finished`, and `blocked`, with per-Thread progress and available cancel/dismiss actions. It does not replace root receipt or child persisted statuses. Cancel preparation releases the original in-memory Runs without repeating input or their completed tool batch. Pending human-decision timers are removed when preparation begins and are not rearmed by cancelling preparation; their saved requests remain manually answerable. Cancel a task explicitly to exclude it from the handoff.
+
+Once the operator stops a fully paused App normally, finalization publishes the [planned update handoff](03-local-storage-and-recovery.md#planned-update-handoff). The same-data-root WebUI startup claims and stages that exact task forest before releasing models. A partially restored family stays blocked with inspectable diagnostics. Ordinary admissions do not bypass an unresolved preparing, ready, claimed, or blocked handoff. The browser observes and refetches these facts; reconnect, refresh, and page navigation never submit recovery input.
+
 ## Observation
 
 `open_harness_ui_app()` resolves one observation selection for the App lifetime. Its optional `instrumentation` argument accepts the existing `HarnessInstrumentation`, explicit `None` to disable UI/Harness observation, or the default `"environment"` selection. Root, resumed-root, and async-child reconstruction use that same captured selection. Harness and Pydantic AI retain their [single instrumentation ownership](../a13n-harness/19-observation-model.md); the App creates no duplicate model/tool spans or telemetry-derived continuation authority.

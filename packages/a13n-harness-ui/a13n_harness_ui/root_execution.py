@@ -39,6 +39,7 @@ from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.composition import (
     AgentReconstructor,
     CompositionAcceptanceService,
+    PublishedRunComposition,
     ResolvedRunComposition,
     RunCompositionService,
     ThreadCompositionSelection,
@@ -50,6 +51,8 @@ from a13n_harness_ui.display_history import DisplayHistoryCollector, saved_displ
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
+from a13n_harness_ui.maintenance import UpdateMaintenance, UpdatePauseCapability
+from a13n_harness_ui.maintenance_models import RestartItem
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
     phase,
@@ -114,8 +117,10 @@ class RootRunExecutor:
         cleanup_timeout_seconds: float = 30.0,
         thread_files: ThreadFiles | None = None,
         work: ThreadWorkService | None = None,
+        maintenance: UpdateMaintenance | None = None,
     ) -> None:
         self._store = store
+        self._maintenance = maintenance
         self._threads = threads
         self._configurations = configurations
         self._compositions = compositions
@@ -150,6 +155,7 @@ class RootRunExecutor:
         thread_id: str,
         prompt: RunInputValue | None = None,
         response: ThreadDeferredResponse | None = None,
+        restart: RestartItem | None = None,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         environment_profile_id: str | None = None,
@@ -164,9 +170,9 @@ class RootRunExecutor:
                     "prepare.configuration_mutation": mutation is not None,
                 },
             )
-            if (prompt is None) == (response is None):
+            if sum(value is not None for value in (prompt, response, restart)) != 1:
                 raise RunCoordinationError(
-                    "A root operation requires exactly one prompt or deferred response.",
+                    "A root operation requires one prompt, deferred response, or planned continuation.",
                     code="run_input_invalid",
                 )
             if prompt is not None:
@@ -180,6 +186,8 @@ class RootRunExecutor:
             if mutation is not None:
                 thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
             preparation_span.set_attribute("a13n.phase.step", "continuation")
+            if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
+                raise RunCoordinationError("The saved update continuation changed.", code="maintenance_conflict")
             previous_state, deferred, previous_composition = await self._load_run_state(thread)
             display = DisplayHistoryCollector(previous_state.message_history, saved_display_history(previous_state))
             deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
@@ -200,10 +208,15 @@ class RootRunExecutor:
                 captured = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
                 environment_profile_id = captured.environment_profile.profile_id
             preparation_span.set_attribute("a13n.phase.step", "configuration")
-            source = await self._required_configuration()
-            published = await self._compositions.publish(
-                source, _selection(thread, environment_profile_id), model_overrides=model_overrides
-            )
+            if restart is None:
+                source = await self._required_configuration()
+                published = await self._compositions.publish(
+                    source, _selection(thread, environment_profile_id), model_overrides=model_overrides
+                )
+            else:
+                captured = await self._store.objects.read_model(restart.composition, ResolvedRunComposition)
+                source = await self._configurations.load(captured.generation_digest)
+                published = PublishedRunComposition(value=captured, reference=restart.composition)
             if on_composition is not None:
                 await on_composition(published.reference)
             base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
@@ -238,6 +251,7 @@ class RootRunExecutor:
                 root_capabilities=(
                     display,
                     RootCheckpointCapability(save_checkpoint),
+                    *((UpdatePauseCapability(self._maintenance, thread_id),) if self._maintenance is not None else ()),
                     *(
                         ()
                         if self._root_capability_factory is None
@@ -378,7 +392,36 @@ class RootRunExecutor:
                         failure=result.failure.model_copy(update={"message": f"{result.failure.message}\n{feedback}"})
                     )
                 finalization_span.set_attribute("a13n.phase.step", "continuation")
-                if result is not None:
+                paused_state = self._maintenance.saved_state(thread_id) if self._maintenance is not None else None
+                if paused_state is not None:
+                    continuation = await self._select_state(
+                        thread=thread,
+                        composition=published.reference,
+                        state=paused_state,
+                        display=display,
+                        excerpt=checkpoint_excerpt(thread.excerpt, paused_state.message_history),
+                        activity_changed=True,
+                    )
+                    if (
+                        continuation.reference is not None
+                        and continuation.status == "selected"
+                        and finalization is not None
+                        and not finalization.cleanup_errors
+                        and all(publication.status != "failed" for publication in finalization.state_publications)
+                        and finalization_error is None
+                        and stream is not None
+                    ):
+                        assert self._maintenance is not None
+                        self._maintenance.saved(
+                            RestartItem(
+                                thread_id=thread_id,
+                                root_thread_id=thread_id,
+                                run_id=stream.run_id,
+                                composition=published.reference,
+                                checkpoint=continuation.reference,
+                            )
+                        )
+                elif result is not None:
                     continuation = await self._select_state(
                         thread=thread,
                         composition=published.reference,

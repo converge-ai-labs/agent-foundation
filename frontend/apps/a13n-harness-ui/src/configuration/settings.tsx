@@ -17,6 +17,7 @@ import {
   DraftLinks,
 } from "./sources";
 import type { ResourceKind } from "./documents";
+import { MaintenanceSettings } from "../shell/maintenance";
 import { InstallSettings } from "../shell/install";
 import styles from "../shell/workbench.module.css";
 
@@ -108,6 +109,7 @@ export function GeneralSettings() {
           <Link to="/setup">Start setup</Link>
         </Panel>
       )}
+      <MaintenanceSettings />
       <InstallSettings />
       <details className={styles.details}>
         <summary>Setup & diagnostics</summary>

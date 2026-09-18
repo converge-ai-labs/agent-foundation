@@ -64,6 +64,16 @@ class ResourceIndexRecord(Base):
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
 
 
+class PlannedRestartRecord(Base):
+    """The only prepared/claimed update handoff for this local data root."""
+
+    __tablename__ = "planned_restart"
+    __table_args__ = (CheckConstraint("singleton_id = 1", name="singleton"),)
+
+    singleton_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    payload: Mapped[str] = mapped_column(Text, nullable=False)
+
+
 class WebPushKeyRecord(Base):
     __tablename__ = "web_push_key"
     __table_args__ = (CheckConstraint("singleton_id = 1", name="singleton"),)

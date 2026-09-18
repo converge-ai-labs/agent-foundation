@@ -122,6 +122,88 @@
         }
       }
     },
+    "/api/maintenance": {
+      "get": {
+        "summary": "Maintenance Status",
+        "operationId": "maintenance_status_api_maintenance_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/maintenance/prepare": {
+      "post": {
+        "summary": "Prepare Update",
+        "operationId": "prepare_update_api_maintenance_prepare_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/maintenance/cancel": {
+      "post": {
+        "summary": "Cancel Update",
+        "operationId": "cancel_update_api_maintenance_cancel_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/maintenance/dismiss": {
+      "post": {
+        "summary": "Dismiss Update",
+        "operationId": "dismiss_update_api_maintenance_dismiss_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DismissUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintenanceView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/status": {
       "get": {
         "summary": "Status",
@@ -7854,6 +7936,144 @@
         ],
         "title": "LoginStatus"
       },
+      "MaintenanceTask": {
+        "properties": {
+          "thread_id": {
+            "type": "string",
+            "title": "Thread Id"
+          },
+          "execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution Id"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draining",
+              "paused",
+              "restoring",
+              "restored",
+              "blocked"
+            ],
+            "title": "State"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "resumed_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumed Run Id"
+          },
+          "resumed_execution_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resumed Execution Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_id",
+          "state"
+        ],
+        "title": "MaintenanceTask"
+      },
+      "MaintenanceView": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled"
+          },
+          "phase": {
+            "type": "string",
+            "enum": [
+              "idle",
+              "draining",
+              "paused",
+              "stopping",
+              "restoring",
+              "finished",
+              "blocked"
+            ],
+            "title": "Phase",
+            "default": "idle"
+          },
+          "batch_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Batch Id"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/MaintenanceTask"
+            },
+            "type": "array",
+            "title": "Tasks",
+            "default": []
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message"
+          },
+          "can_cancel": {
+            "type": "boolean",
+            "title": "Can Cancel",
+            "default": false
+          },
+          "can_dismiss": {
+            "type": "boolean",
+            "title": "Can Dismiss",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "enabled"
+        ],
+        "title": "MaintenanceView"
+      },
       "MarkdownSubagentSource": {
         "properties": {
           "kind": {
@@ -13671,6 +13891,21 @@
           "origin"
         ],
         "title": "PushSubscriptionInput"
+      },
+      "DismissUpdate": {
+        "properties": {
+          "previous_instance_stopped": {
+            "type": "boolean",
+            "const": true,
+            "title": "Previous Instance Stopped"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "previous_instance_stopped"
+        ],
+        "title": "DismissUpdate"
       },
       "TerminalCreate": {
         "properties": {

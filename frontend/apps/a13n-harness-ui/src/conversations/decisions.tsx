@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
-import { useTransport } from "../transport/context";
+import { useMaintenanceBlocked, useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
@@ -58,6 +58,7 @@ export function DecisionForm({
   reconcile: () => void;
 }) {
   const { client } = useTransport();
+  const maintenanceBlocked = useMaintenanceBlocked();
   const { tracker: results } = useResults();
   const [responses, setResponses] = useState<Partial<Record<string, Response>>>(
     {},
@@ -135,7 +136,12 @@ export function DecisionForm({
         <fieldset
           className={styles.responseInputs}
           disabled={
-            send.isPending || unknown || stale || send.isSuccess || expired
+            maintenanceBlocked ||
+            send.isPending ||
+            unknown ||
+            stale ||
+            send.isSuccess ||
+            expired
           }
         >
           {batch.requests.map((request) => (
@@ -183,6 +189,7 @@ export function DecisionForm({
             <Button
               type="submit"
               disabled={
+                maintenanceBlocked ||
                 unknown ||
                 expired ||
                 send.isSuccess ||

@@ -67,6 +67,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/maintenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Maintenance Status */
+        get: operations["maintenance_status_api_maintenance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/prepare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare Update */
+        post: operations["prepare_update_api_maintenance_prepare_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Cancel Update */
+        post: operations["cancel_update_api_maintenance_cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/maintenance/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Dismiss Update */
+        post: operations["dismiss_update_api_maintenance_dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/status": {
         parameters: {
             query?: never;
@@ -2645,6 +2713,54 @@ export interface components {
             /** Message */
             message?: string | null;
         };
+        /** MaintenanceTask */
+        MaintenanceTask: {
+            /** Thread Id */
+            thread_id: string;
+            /** Execution Id */
+            execution_id?: string | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "draining" | "paused" | "restoring" | "restored" | "blocked";
+            /** Message */
+            message?: string | null;
+            /** Resumed Run Id */
+            resumed_run_id?: string | null;
+            /** Resumed Execution Id */
+            resumed_execution_id?: string | null;
+        };
+        /** MaintenanceView */
+        MaintenanceView: {
+            /** Enabled */
+            enabled: boolean;
+            /**
+             * Phase
+             * @default idle
+             * @enum {string}
+             */
+            phase?: "idle" | "draining" | "paused" | "stopping" | "restoring" | "finished" | "blocked";
+            /** Batch Id */
+            batch_id?: string | null;
+            /**
+             * Tasks
+             * @default []
+             */
+            tasks?: components["schemas"]["MaintenanceTask"][];
+            /** Message */
+            message?: string | null;
+            /**
+             * Can Cancel
+             * @default false
+             */
+            can_cancel?: boolean;
+            /**
+             * Can Dismiss
+             * @default false
+             */
+            can_dismiss?: boolean;
+        };
         /** MarkdownSubagentSource */
         MarkdownSubagentSource: {
             /**
@@ -4833,6 +4949,14 @@ export interface components {
              */
             thread_ids?: string[];
         };
+        /** DismissUpdate */
+        DismissUpdate: {
+            /**
+             * Previous Instance Stopped
+             * @constant
+             */
+            previous_instance_stopped: true;
+        };
         /** TerminalCreate */
         TerminalCreate: {
             /**
@@ -5329,6 +5453,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    maintenance_status_api_maintenance_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceView"];
+                };
+            };
+        };
+    };
+    prepare_update_api_maintenance_prepare_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceView"];
+                };
+            };
+        };
+    };
+    cancel_update_api_maintenance_cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceView"];
+                };
+            };
+        };
+    };
+    dismiss_update_api_maintenance_dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DismissUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MaintenanceView"];
                 };
             };
         };

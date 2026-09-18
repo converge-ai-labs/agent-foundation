@@ -68,6 +68,7 @@ from a13n_harness_ui.host_git import (
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
 from a13n_harness_ui.interactive_transport import InteractiveAuthentication, authenticate_interactive, receive_text
 from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
+from a13n_harness_ui.maintenance_models import DismissUpdate, MaintenanceView
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
@@ -552,6 +553,23 @@ def create_webui(
     @server.post("/api/push/subscriptions/{subscription_id}/test", response_model=PushTestResult)
     async def test_push(subscription_id: str) -> PushTestResult:
         return await app().test_push(subscription_id)
+
+    @server.get("/api/maintenance", response_model=MaintenanceView)
+    async def maintenance_status() -> MaintenanceView:
+        return await app().maintenance_status()
+
+    @server.post("/api/maintenance/prepare", response_model=MaintenanceView)
+    async def prepare_update() -> MaintenanceView:
+        return await app().prepare_update()
+
+    @server.post("/api/maintenance/cancel", response_model=MaintenanceView)
+    async def cancel_update() -> MaintenanceView:
+        return await app().cancel_update()
+
+    @server.post("/api/maintenance/dismiss", response_model=MaintenanceView, openapi_extra=_body(DismissUpdate))
+    async def dismiss_update(request: Request) -> MaintenanceView:
+        await _document(request, DismissUpdate)
+        return await app().dismiss_update()
 
     @server.get("/api/status", response_model=ListenerStatus)
     async def status() -> ListenerStatus:

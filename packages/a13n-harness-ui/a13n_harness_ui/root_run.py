@@ -25,6 +25,8 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
+from a13n_harness_ui.maintenance import UpdateMaintenance
+from a13n_harness_ui.maintenance_models import RestartItem
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.root_execution import RootRunExecutor, RootRunOutcome
@@ -76,6 +78,7 @@ class _RootOperation:
     outcome: RootRunOutcomeView | None = None
     failure: FailureView | None = None
     cancel_requested: bool = False
+    restart: RestartItem | None = None
 
 
 @dataclass(slots=True)
@@ -99,10 +102,12 @@ class RootRunCoordinator:
         touch_thread: Callable[[str], Awaitable[None]] | None = None,
         interaction_timeouts: bool = False,
         notify: Callable[[str, RootOperationNotice], None] | None = None,
+        maintenance: UpdateMaintenance | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
         self._observation = observation or UiObservation()
+        self._maintenance = maintenance
         self._executor = executor
         self._touch_thread = touch_thread
         self._summary_hub = summary_hub
@@ -138,6 +143,10 @@ class RootRunCoordinator:
         for pending in self._interaction_waits.values():
             pending.cancelled.set()
         self._interaction_waits.clear()
+
+    async def pause_interactions(self) -> None:
+        async with self._lock:
+            self._cancel_interactions()
 
     async def interaction_expiry(self, thread_id: str, continuation_id: str) -> datetime | None:
         """Return only the current process's deadline for this exact continuation."""
@@ -253,6 +262,18 @@ class RootRunCoordinator:
             touch=touch,
         )
 
+    async def resume_update(self, item: RestartItem, batch_id: str) -> RootRunReceipt:
+        return await self._submit(
+            thread_id=item.thread_id,
+            prompt=None,
+            response=None,
+            mutation=None,
+            model_overrides=None,
+            touch=False,
+            restart=item,
+            restart_batch_id=batch_id,
+        )
+
     async def _submit(
         self,
         *,
@@ -263,6 +284,8 @@ class RootRunCoordinator:
         model_overrides: RunModelOverrides | None,
         touch: bool,
         timeout: _InteractionWait | None = None,
+        restart: RestartItem | None = None,
+        restart_batch_id: str | None = None,
         environment_profile_id: str | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
@@ -275,8 +298,13 @@ class RootRunCoordinator:
             receipt=receipt,
             status=RootOperationStatus.preparing,
             done=Event(),
+            restart=restart,
         )
         async with self._lock:
+            if self._maintenance is not None:
+                if restart is None:
+                    self._maintenance.require_input()
+                await self._maintenance.repository.require_admission(batch_id=restart_batch_id)
             if not self._accepting or self._task_group is None:
                 raise RunCoordinationError("Root coordination is not accepting work.", code="app_stopping")
             if thread_id in self._active_by_thread:
@@ -310,6 +338,8 @@ class RootRunCoordinator:
                 if matching and pending is not None:
                     self._interaction_waits.pop(thread_id)
                     pending.cancelled.set()
+                if self._maintenance is not None:
+                    self._maintenance.register(thread_id)
                 self._operations[receipt.receipt_id] = operation
                 self._active_by_thread[thread_id] = receipt.receipt_id
                 self._task_group.start_soon(
@@ -412,6 +442,8 @@ class RootRunCoordinator:
             prepared = (
                 await input_files.prepare(message, stream.context.environment) if input_files is not None else message
             )
+            if self._maintenance is not None:
+                self._maintenance.require_input()
             enqueue_id = await stream.steer(prepared)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
@@ -436,6 +468,9 @@ class RootRunCoordinator:
             if operation.status in _TERMINAL:
                 return RootControlResult(receipt_id=receipt_id, accepted=False)
             operation.cancel_requested = True
+            if self._maintenance is not None:
+                self._maintenance.active.pop(operation.receipt.thread_id, None)
+                self._maintenance.signal()
         await self._request_cancel(operation)
         return RootControlResult(receipt_id=receipt_id, accepted=True)
 
@@ -504,6 +539,7 @@ class RootRunCoordinator:
                         thread_id=operation.receipt.thread_id,
                         prompt=prompt,
                         response=response,
+                        restart=operation.restart,
                         mutation=mutation,
                         model_overrides=model_overrides,
                         environment_profile_id=environment_profile_id,
@@ -579,6 +615,8 @@ class RootRunCoordinator:
                         pending.cancelled.set()
                 if operation.status is RootOperationStatus.suspended and outcome is not None:
                     self._start_interaction(operation, outcome)
+                if self._maintenance is not None:
+                    self._maintenance.finished(operation.receipt.thread_id, failed=failure is not None)
                 operation.done.set()
             # Notify only after the Host has settled execution and continuation selection.
             # Projection and delivery are best effort, never part of execution success.
@@ -596,6 +634,8 @@ class RootRunCoordinator:
 
     def _start_interaction(self, operation: _RootOperation, outcome: RootRunOutcome) -> None:
         """Arm once, under the admission lock, after successful continuation selection."""
+        if self._maintenance is not None and (self._maintenance.requested or self._maintenance.restoring):
+            return
         if not self._interaction_timeouts or not self._accepting or self._task_group is None:
             return
         reference, requests = outcome.continuation.reference, outcome.result.deferred
