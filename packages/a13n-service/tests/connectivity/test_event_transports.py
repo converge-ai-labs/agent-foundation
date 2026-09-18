@@ -107,18 +107,20 @@ class Socket:
 def _connect(monkeypatch, socket):
     @asynccontextmanager
     async def connect(*args, **kwargs):
+        assert kwargs["proxy"] is True
         yield socket
 
     monkeypatch.setattr(clients, "FixedEndpointConnect", connect)
     monkeypatch.setattr(clients, "_validate_endpoint", AsyncMock())
 
 
-async def test_slack_ack_follows_admission_and_storage_failure_is_not_acked(monkeypatch):
+@pytest.mark.parametrize("envelope_type", ["events_api", "interactive"])
+async def test_slack_ack_follows_admission_and_storage_failure_is_not_acked(monkeypatch, envelope_type):
     payload = json.loads(_event_payload())
     socket = Socket(
         [
             json.dumps({"type": "hello", "connection_info": {"app_id": "A123"}}),
-            json.dumps({"type": "events_api", "envelope_id": "envelope", "payload": payload}),
+            json.dumps({"type": envelope_type, "envelope_id": "envelope", "payload": payload}),
         ]
     )
     _connect(monkeypatch, socket)
@@ -145,7 +147,7 @@ async def test_slack_ack_follows_admission_and_storage_failure_is_not_acked(monk
         socket.messages = iter(
             [
                 json.dumps({"type": "hello", "connection_info": {"app_id": "A123"}}),
-                json.dumps({"type": "events_api", "envelope_id": "failed", "payload": payload}),
+                json.dumps({"type": envelope_type, "envelope_id": "failed", "payload": payload}),
             ]
         )
         with pytest.raises(RuntimeError):
@@ -159,7 +161,8 @@ async def test_slack_ack_follows_admission_and_storage_failure_is_not_acked(monk
         assert len(socket.sent) == 1
 
 
-async def test_feishu_success_frame_only_after_admission(monkeypatch):
+@pytest.mark.parametrize("callback_result", [None, {"toast": {"type": "info", "content": "Stop requested"}}])
+async def test_feishu_success_frame_only_after_admission(monkeypatch, callback_result):
     socket = Socket([_frame(b'{"schema":"2.0"}').SerializeToString()])
     _connect(monkeypatch, socket)
     monkeypatch.setattr(
@@ -171,13 +174,19 @@ async def test_feishu_success_frame_only_after_admission(monkeypatch):
     async def admit(value):
         assert value == {"schema": "2.0"}
         assert len(socket.sent) == 1  # only the initial protocol ping
+        return callback_result
 
     async with httpx2.AsyncClient() as client:
         with pytest.raises(RuntimeError, match="end of fixture"):
             await clients.lark_connection(
                 client, origin="https://open.feishu.cn", app_id="app", secret="test", admit=admit, connected=AsyncMock()
             )
-    assert json.loads(Frame.FromString(socket.sent[1]).payload) == {"code": 200}
+    expected = {"code": 200}
+    if callback_result is not None:
+        import base64
+
+        expected["data"] = base64.b64encode(json.dumps(callback_result).encode()).decode()
+    assert json.loads(Frame.FromString(socket.sent[1]).payload) == expected
 
 
 async def test_socket_admission_dedup_fencing_switch_and_status(connectivity_sessions, credential_protector):
@@ -318,3 +327,48 @@ async def test_drain_interrupts_connection_before_shutdown_wait():
     manager.drain()
     await asyncio.gather(task, return_exceptions=True)
     assert manager.is_draining() and stopped.is_set()
+
+
+async def test_feishu_shared_connection_preserves_owning_callback_response(monkeypatch):
+    from dataclasses import replace
+    from types import SimpleNamespace
+
+    from a13n_service.connectivity.ingress.admission import AccountSnapshot
+    from a13n_service.connectivity.transports import supervisor
+    from a13n_service.connectivity.transports.leases import ConnectionClaim
+
+    from .test_lark import _config, _payload
+
+    config = {**_config(), "event_transport": "websocket"}
+    first = AccountSnapshot("acct_first", "ws_first", 1, 1, "lark", "lark_http_v1", config)
+    second = replace(first, id="acct_second", workspace_id="ws_second")
+    snapshots = {first.id: first, second.id: second}
+
+    async def load(identifier):
+        return snapshots[identifier], {"app_secret": "fixture-secret"}
+
+    expected = {"toast": {"type": "info", "content": "Stop requested"}}
+    ingress = SimpleNamespace(load_socket_account=load, receive_socket=AsyncMock(side_effect=[expected, {}]))
+    manager = supervisor.EventConnectionSupervisor(None, ingress, owner="owner")
+    manager.leases.update = AsyncMock()
+    payload = _payload()
+    payload["header"]["event_type"] = "card.action.trigger"
+    payload["event"] = {
+        "host": "im_message",
+        "operator": {"open_id": "ou_owner"},
+        "context": {"open_chat_id": "oc_chat", "open_message_id": "om_card"},
+        "action": {"value": {"kind": "a13n.task_control.v1", "action": "stop", "run_id": "run_task", "token": "token"}},
+    }
+
+    async def connection(*args, **kwargs):
+        assert await kwargs["admit"](payload) == expected
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(supervisor, "lark_connection", connection)
+    with pytest.raises(asyncio.CancelledError):
+        await manager._reconnect(
+            None,
+            ConnectionClaim("app", "owner", 1),
+            tuple(supervisor.AccountRevision(snapshot.id, 1, 1) for snapshot in snapshots.values()),
+        )
+    assert ingress.receive_socket.await_count == 2

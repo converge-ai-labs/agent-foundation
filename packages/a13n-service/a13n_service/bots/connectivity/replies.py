@@ -10,14 +10,25 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.bots.memory.settings import settings_version
+from a13n_service.bots.progress.replies import CardReplies
 from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord
 from a13n_service.connectivity.native_context import InboundRunContext, NativeToolContext, parse_native_contexts
 from a13n_service.connectivity.providers.github.actions import GitHubAddCommentOutcomeUnknown, GitHubAddCommentSucceeded
-from a13n_service.connectivity.providers.lark.actions import LarkReplyOutcomeUnknown, LarkReplySucceeded
-from a13n_service.connectivity.providers.slack.client import SlackReplyOutcomeUnknown, SlackReplySucceeded
+from a13n_service.connectivity.providers.lark.actions import (
+    LarkAutoReplyArguments,
+    LarkForcedReplyArguments,
+    LarkReplyOutcomeUnknown,
+    LarkReplySucceeded,
+)
+from a13n_service.connectivity.providers.slack.client import (
+    SlackAutoReplyArguments,
+    SlackForcedReplyArguments,
+    SlackReplyOutcomeUnknown,
+    SlackReplySucceeded,
+)
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.storage import transaction
@@ -42,6 +53,7 @@ class BotReplyObserver:
         account_version: int,
         credential_generation: int,
         clock: Clock = utc_now,
+        cards: CardReplies | None = None,
     ) -> None:
         self._sessions = sessions
         self._attempt = attempt
@@ -50,13 +62,36 @@ class BotReplyObserver:
         self._account_version = account_version
         self._generation = credential_generation
         self._clock = clock
+        self._cards = cards
 
     async def __call__(
         self, invoke: Callable[[], Awaitable[BaseModel]], arguments: BaseModel | None = None
     ) -> BaseModel:
         identity = await self._begin(arguments)
         try:
-            result = await invoke()
+            result = None
+            if (
+                self._cards is not None
+                and self._context.provider_key in {"lark", "slack"}
+                and isinstance(
+                    arguments,
+                    (
+                        LarkAutoReplyArguments,
+                        LarkForcedReplyArguments,
+                        SlackAutoReplyArguments,
+                        SlackForcedReplyArguments,
+                    ),
+                )
+            ):
+                result = await self._cards.reply(
+                    attempt=self._attempt,
+                    context=self._context,
+                    arguments=arguments,
+                    account_version=self._account_version,
+                    credential_generation=self._generation,
+                )
+            if result is None:
+                result = await invoke()
         except BaseException as error:
             code = (
                 error.code if isinstance(error, ConnectivityHttpError) and error.code in _DEFINITE_REJECTION else None
@@ -189,8 +224,9 @@ class BotReplyObserver:
 
 
 class ReplyObservations:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], *, cards: CardReplies | None = None) -> None:
         self.sessions = sessions
+        self.cards = cards
 
     def __call__(
         self,
@@ -215,4 +251,5 @@ class ReplyObservations:
             workspace_id=workspace_id,
             account_version=account_version,
             credential_generation=credential_generation,
+            cards=self.cards,
         )

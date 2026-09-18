@@ -199,6 +199,19 @@ class SlackNativeClient:
         except ValidationError:
             return SlackReplyOutcomeUnknown(request_id=request_id)
 
+    async def publish_progress(self, payload: JsonObject, *, bot_token: str, message_id: str | None) -> str:
+        operation = "chat.update" if message_id is not None else "chat.postMessage"
+        response = await self._request(operation, payload, bot_token=bot_token)
+        identifier = response.get("ts")
+        if (
+            response.get("channel") != payload.get("channel")
+            or not isinstance(identifier, str)
+            or not 0 < len(identifier) <= 128
+            or (message_id is not None and identifier != message_id)
+        ):
+            raise SlackNativeActionError("invalid_provider_response")
+        return identifier
+
     async def list_members(
         self,
         binding: SlackActionBinding,

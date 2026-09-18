@@ -1,0 +1,52 @@
+{
+  "accepted": {
+    "title": "等待执行",
+    "description": "任务已接收，正在等待执行。",
+    "color": "blue"
+  },
+  "running": {
+    "title": "正在处理",
+    "description": "任务正在执行，完成后会在此会话回复。",
+    "color": "blue"
+  },
+  "waiting": {
+    "title": "需要处理",
+    "description": "任务需要补充信息、审批或外部工具结果，请查看详情。",
+    "color": "orange"
+  },
+  "stopping": {
+    "title": "正在停止",
+    "description": "已收到停止请求，正在确认执行状态。",
+    "color": "orange"
+  },
+  "completed": {
+    "title": "执行完成",
+    "description": "执行已完成。此状态不代表结果消息已成功送达。",
+    "color": "green"
+  },
+  "failed": {
+    "title": "执行失败",
+    "description": "任务未能完成，请查看详情。",
+    "color": "red"
+  },
+  "cancelled": {
+    "title": "已停止",
+    "description": "任务已取消；已经完成的外部操作不会自动撤销。",
+    "color": "grey"
+  },
+  "stop": "停止任务",
+  "confirm_title": "停止此任务？",
+  "confirm_body": "仅任务发起人可操作。已完成的操作不会撤销。",
+  "details": "查看详情",
+  "toasts": {
+    "This action is unavailable. Only the original requester can stop this task.": "此操作不可用，只有任务发起人可以停止原任务。",
+    "This task has already ended.": "任务已结束，无需停止。",
+    "Task control is no longer authorized.": "当前已无权控制此任务，请联系管理员。",
+    "A stop request is already pending.": "已收到停止请求，请稍候。",
+    "Stop requested. Checking execution status.": "已收到停止请求，正在确认执行状态。",
+    "This task needs input. Open details to continue.": "任务需要补充信息或处理待办，请查看详情。",
+    "Unable to stop this task. Open details to try again.": "暂时无法停止此任务，请打开详情重试。"
+  },
+  "answered_title": "已完成",
+  "answered_description": "任务已完成。"
+}
