@@ -26,6 +26,7 @@ from a13n_service.bots.progress.delivery import CardDelivery
 from a13n_service.bots.progress.replies import CardReplies
 from a13n_service.bots.progress.service import ProgressService
 from a13n_service.connectivity.http import cookie_free_jar
+from a13n_service.connectivity.ingress.attachments import AttachmentInputs
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.file_access import ExistingEnvironmentFiles
@@ -240,8 +241,10 @@ async def open_process_runtime(
             if owns_connectivity_data(settings.service.role) and input_acceptor is None:
                 if control is not None:
                     commands = control.gateway.commands
+                    attachment_uploads = control.asset_uploads
                 else:
                     assets = await build_asset_bundle(settings, shared)
+                    attachment_uploads = assets.uploads
                     commands = build_input_commands(
                         settings,
                         shared,
@@ -249,10 +252,20 @@ async def open_process_runtime(
                         assets.catalog,
                         InlineHookValidator(EndpointPolicy()),
                     )
+                attachment_http = await stack.enter_async_context(
+                    httpx2.AsyncClient(cookies=cookie_free_jar(), follow_redirects=False, timeout=15)
+                )
                 input_acceptor = IngressInputAcceptor(
                     storage.sessions,
                     commands,
                     contributions={"slack": BotIngress(), "lark": BotIngress(), "github": BotIngress()},
+                    attachments=AttachmentInputs(
+                        storage.sessions,
+                        attachment_uploads,
+                        protector,
+                        attachment_http,
+                        settings.connectivity_endpoint_policy(),
+                    ),
                 )
             connectivity, connectivity_background = await build_connectivity_runtime(
                 settings,

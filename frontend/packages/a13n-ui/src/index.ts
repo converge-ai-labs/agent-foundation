@@ -37,6 +37,7 @@ export { Wordmark } from "./brand/wordmark";
 export { BrandIcon, type BrandIconProps } from "./brand/brand-icon";
 export { brands, resolveBrand, type Brand } from "./brand/brands";
 export { cn } from "./lib/utils";
+export { useMediaQuery } from "./hooks/use-media-query";
 export * from "./components/toggle-group";
 export * from "./components/fieldset";
 

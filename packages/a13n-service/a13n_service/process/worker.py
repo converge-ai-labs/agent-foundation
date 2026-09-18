@@ -21,6 +21,7 @@ from a13n_service.assets.staging import AssetStaging
 from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
+from a13n_service.connectivity.file_delivery import FileDelivery
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.native_actions import NativeObservationFactory
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -163,6 +164,8 @@ async def build_worker_runtime(
         response_max_bytes=settings.connectivity.response_max_bytes,
         timeout_seconds=settings.connectivity.total_timeout_seconds,
     )
+    staging = await AssetStaging.create(shared.storage.files_root, limiter=shared.storage.file_limiter)
+    assets = AssetObjectStore(shared.storage.objects, staging)
     external_tools = ExternalToolRuntime(
         shared.storage.sessions,
         shared.secret_protector,
@@ -172,11 +175,10 @@ async def build_worker_runtime(
         http,
         clients.credentials,
         observations=observations,
+        files=FileDelivery(AssetCatalog(shared.storage.sessions, assets)),
     )
 
     skills = SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store)
-    staging = await AssetStaging.create(shared.storage.files_root, limiter=shared.storage.file_limiter)
-    assets = AssetObjectStore(shared.storage.objects, staging)
     asset_publication = AssetRuntime(
         shared.storage.sessions, AssetPublisher(assets, staging, max_size_bytes=settings.assets.max_size_bytes), assets
     )

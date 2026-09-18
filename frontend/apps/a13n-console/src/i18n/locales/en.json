@@ -2848,5 +2848,9 @@
   "Personal preference settings": "Personal preference settings",
   "Project memory settings": "Project memory settings",
   "Custom memory": "Custom memory",
-  "Add custom memory": "Add custom memory"
+  "Add custom memory": "Add custom memory",
+  "For image and file input, grant files:read; for generated file replies, grant files:write. Reauthorize existing installations after adding these scopes.": "For image and file input, grant files:read; for generated file replies, grant files:write. Reauthorize existing installations after adding these scopes.",
+  "To receive standalone group file messages, Feishu requires im:message.group_msg and a reception mode that accepts messages without a mention. This permission gives the app access to all messages in groups it joins; enable it only when needed.": "To receive standalone group file messages, Feishu requires im:message.group_msg and a reception mode that accepts messages without a mention. This permission gives the app access to all messages in groups it joins; enable it only when needed.",
+  "Enable message-resource access to read attachments. To send generated files, grant im:resource (or an existing im:resource:upload permission), then publish the updated Feishu app permissions.": "Enable message-resource access to read attachments. To send generated files, grant im:resource (or an existing im:resource:upload permission), then publish the updated Feishu app permissions.",
+  "Attach images, PDFs, or UTF-8 text files to a message that triggers the bot (up to 5 files, 20 MiB each). Image and PDF reading depends on the selected model or environment. To return generated files, the agent needs an environment and the Publish asset tool.": "Attach images, PDFs, or UTF-8 text files to a message that triggers the bot (up to 5 files, 20 MiB each). Image and PDF reading depends on the selected model or environment. To return generated files, the agent needs an environment and the Publish asset tool."
 }

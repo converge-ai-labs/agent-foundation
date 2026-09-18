@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
@@ -37,6 +43,20 @@ it("ticks the exact current receipt and paints live context without waiting for 
     context_window: 1000,
     latest_request_tokens: 100,
   });
+  const usageKey = ["thread", "one", "usage"];
+  const usage = {
+    first_observed_at: "2026-01-01T00:00:00Z",
+    root: {
+      model_requests: 2,
+      unknown_model_costs: 0,
+      model_cost_usd: "0.025",
+      tokens: [
+        ["input_tokens", 10000],
+        ["output_tokens", 2345],
+      ],
+    },
+  };
+  queries.setQueryData(usageKey, usage);
   const transport = {
     client: {
       GET: vi.fn(async (path: string) => ({
@@ -68,6 +88,9 @@ it("ticks the exact current receipt and paints live context without waiting for 
   );
   const view = render(content(250, true));
   expect(screen.getByText("25%")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Tokens details" }).textContent,
+  ).toBe("Tokens 12.3K");
   expect(screen.getByText("0s")).toBeTruthy();
   expect(screen.queryByText("On")).toBeNull();
   act(() =>
@@ -84,6 +107,36 @@ it("ticks the exact current receipt and paints live context without waiting for 
   expect(screen.getByText("Off")).toBeTruthy();
   view.rerender(content(400, true));
   expect(screen.getByText("40%")).toBeTruthy();
+  expect(screen.getByText("12.3K")).toBeTruthy();
+  act(() =>
+    queries.setQueryData(usageKey, {
+      ...usage,
+      root: {
+        ...usage.root,
+        tokens: [
+          ["input_tokens", 11000],
+          ["output_tokens", 2345],
+        ],
+      },
+    }),
+  );
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+  expect(screen.getByText("13.3K")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Tokens details" }));
+  expect(screen.getByText("13,345")).toBeTruthy();
+  expect(screen.getByText("11,000")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+  expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Token usage" })).toBeNull();
+  expect(screen.getByText("400")).toBeTruthy();
+  expect(screen.getByText("1,000")).toBeTruthy();
+  expect(screen.getByText("600")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
+  expect(screen.getByRole("heading", { name: "Token usage" })).toBeTruthy();
+  expect(screen.getByText("13,345")).toBeTruthy();
+  fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   expect(screen.getByText("Off")).toBeTruthy();
   operation.status = "completed";
   operation.completed_at = "2026-01-01T00:00:02Z";

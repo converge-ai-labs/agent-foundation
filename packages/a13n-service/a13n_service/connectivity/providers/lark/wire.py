@@ -243,7 +243,20 @@ def _message_content(
             raise ValueError("invalid text content")
         return _remove_mentions(text, bot_mention_keys), {}
     if message_type == "post":
-        return _post_text(content, bot_mention_keys, bot_open_id=bot_open_id), {}
+        text = _post_text(content, bot_mention_keys, bot_open_id=bot_open_id)
+        localized = [value for key, value in sorted(content.items()) if isinstance(value, dict)]
+        body = localized[0] if localized else content
+        paragraphs = body.get("content")
+        attachments: list[JsonValue] = []
+        if isinstance(paragraphs, list):
+            for paragraph in paragraphs:
+                if not isinstance(paragraph, list):
+                    continue
+                for node in paragraph:
+                    key = node.get("image_key") if isinstance(node, dict) and node.get("tag") == "img" else None
+                    if isinstance(key, str) and 0 < len(key) <= 2048:
+                        attachments.append({"type": "image", "image_key": key})
+        return text, {"attachments": attachments} if attachments else {}
     if message_type in _ATTACHMENT_TYPES:
         metadata = {
             key: value

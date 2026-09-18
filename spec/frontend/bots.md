@@ -251,3 +251,9 @@ Memory management is owned by [Bot Memory](bot-memory.md). Backend content and c
 ## Memory Settings API Boundary
 
 Console reads and updates the [Bot-owned settings resource](../a13n-service/42-memory.md#bot-memory-configuration), using its `expected_version` independently of Account version. Bot summaries supply separate Account and Memory settings projections. Existing-account selection uses the Bot collection endpoint. Generic Application Account forms neither read nor write memory configuration. This changes API ownership without changing the administrator-only management boundary or document browsing behavior.
+
+## Images and files
+
+Slack and Feishu setup explains the attachment permissions, input limits and model/Environment prerequisites defined by [built-in adapters](../a13n-service/40-connectivity/07-built-in-ingress-adapters.md#message-attachments-and-file-results). The Slack manifest includes `files:read` and `files:write`, with an explicit reauthorization reminder for existing installations. Feishu setup calls out message-resource/upload permissions and publishing the updated application.
+
+Users attach images, PDFs or text files to messages that activate the Bot. Generated files are returned as native attachments in the original conversation/thread, alongside the task progress message. File generation requires an Agent Environment and the explicit Publish asset capability; enabling Bot reception does not implicitly grant code execution or publication. Unknown file-send outcomes must not be presented as confirmed delivery.

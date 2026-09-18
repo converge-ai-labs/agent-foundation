@@ -17,6 +17,7 @@ import {
   useContextUsage,
   useThreadUsage,
 } from "./usage";
+import { ContextDetails, CostDetails, TokenDetails } from "./usage-details";
 import styles from "./composer-status.module.css";
 
 export function ComposerStatus({
@@ -70,6 +71,7 @@ export function ComposerStatus({
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
   const [now, setNow] = useState(Date.now);
+  const [detail, setDetail] = useState<string | null>(null);
   useEffect(() => {
     if (!active) return;
     setNow(Date.now());
@@ -92,89 +94,82 @@ export function ComposerStatus({
   );
   return (
     <div className={styles.bar}>
-      <Popover>
-        <PopoverTrigger
-          render={<button type="button" className={styles.metrics} />}
-          aria-label="Conversation usage details"
-        >
-          <span>
-            Context <strong>{summary.context}</strong>
-          </span>
-          <span>
-            Cost <strong>{summary.cost}</strong>
-          </span>
-          <span>
-            Cache <strong>{summary.cache}</strong>
-          </span>
-          <span>
-            Time <strong>{elapsedTime(operation, now)}</strong>
-          </span>
-          <span title="Captured Run request setting, not guaranteed provider speed. Changing the toggle only affects the next run.">
-            Fast <strong>{fastLabel}</strong>
-          </span>
-          {stale && <span className={styles.stale}>Update unavailable</span>}
-        </PopoverTrigger>
-        <PopoverPopup side="top" align="start" className={styles.popup}>
-          <PopoverTitle>Conversation usage</PopoverTitle>
-          <dl>
-            <dt>Context</dt>
-            <dd>
-              {tokens?.toLocaleString() ?? "Unknown"} /{" "}
-              {context.data?.context_window?.toLocaleString() ?? "unknown"}{" "}
-              tokens reported by the latest root request. Updates during
-              execution, not cumulative usage; live edits are not included.
-            </dd>
-            <dt>Model cost</dt>
-            <dd>
-              Recorded root-agent model cost for this conversation, matching the
-              CLI status bar.{" "}
-              {usage.data?.root.unknown_model_costs
-                ? `${usage.data.root.unknown_model_costs} responses have unknown cost; + marks a partial subtotal.`
-                : "Provider charges are separate; this is not an invoice."}
-            </dd>
-            <dt>Cache</dt>
-            <dd>
-              Cache-read tokens / (input + output tokens), matching the CLI
-              status bar. Root agent only.
-            </dd>
-            <dt>Fast</dt>
-            <dd>
-              {fastLabel}. Captured request setting for the active or saved Run,
-              not confirmation of provider speed. Default leaves the choice to
-              the Model or provider. The composer toggle applies to the next
-              run.
-            </dd>
-            <dt>Time</dt>
-            <dd>
-              Elapsed time for the current or latest operation. Unavailable
-              timings are not estimated.
-            </dd>
-          </dl>
-          <ErrorNotice
-            error={
-              usage.error ||
-              context.error ||
-              inspection.error ||
-              observed.error ||
-              activity.error
+      <div className={styles.metrics}>
+        {(
+          [
+            ["Tokens", summary.tokens, "Token usage"],
+            ["Context", summary.context, "Context usage"],
+            ["Cost", summary.cost, "Model costs"],
+            ["Cache", summary.cache, "Token usage"],
+          ] as const
+        ).map(([label, value, title]) => (
+          <Popover
+            key={label}
+            open={detail === label}
+            onOpenChange={(open) =>
+              setDetail((current) =>
+                open ? label : current === label ? null : current,
+              )
             }
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            loading={usage.isFetching || context.isFetching}
-            onClick={() => {
-              void usage.refetch();
-              void context.refetch();
-              void inspection.refetch();
-              if (receipt) void observed.refetch();
-              else void activity.refetch();
-            }}
           >
-            Refresh usage
-          </Button>
-        </PopoverPopup>
-      </Popover>
+            <PopoverTrigger
+              className={styles.metric}
+              aria-label={`${label} details`}
+            >
+              {label} <strong>{value}</strong>
+            </PopoverTrigger>
+            <PopoverPopup side="top" align="start" className={styles.popup}>
+              <PopoverTitle>{title}</PopoverTitle>
+              {label === "Context" ? (
+                <ContextDetails
+                  used={tokens}
+                  capacity={context.data?.context_window}
+                />
+              ) : label === "Cost" ? (
+                <CostDetails usage={usage.data} />
+              ) : (
+                <TokenDetails usage={usage.data} />
+              )}
+              <ErrorNotice
+                error={
+                  usage.error ||
+                  context.error ||
+                  inspection.error ||
+                  observed.error ||
+                  activity.error
+                }
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                loading={usage.isFetching || context.isFetching}
+                onClick={() => {
+                  void usage.refetch();
+                  void context.refetch();
+                  void inspection.refetch();
+                  if (receipt) void observed.refetch();
+                  else void activity.refetch();
+                }}
+              >
+                Refresh usage
+              </Button>
+            </PopoverPopup>
+          </Popover>
+        ))}
+        <span
+          className={styles.metric}
+          title="Elapsed time for the current or latest operation."
+        >
+          Time <strong>{elapsedTime(operation, now)}</strong>
+        </span>
+        <span
+          className={styles.metric}
+          title="Captured Run request setting, not guaranteed provider speed. Changing the toggle only affects the next run."
+        >
+          Fast <strong>{fastLabel}</strong>
+        </span>
+        {stale && <span className={styles.stale}>Update unavailable</span>}
+      </div>
     </div>
   );
 }
