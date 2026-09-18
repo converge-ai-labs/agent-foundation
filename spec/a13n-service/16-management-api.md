@@ -212,6 +212,8 @@ class Thread:
     head_run_id: str | None
     current_run_id: str | None
     default_environment_id: EnvironmentId | None
+    default_environment_working_directory: str | None
+    default_environment_access: EnvironmentAccess | None
     created_at: datetime
     updated_at: datetime
 ```

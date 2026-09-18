@@ -155,8 +155,8 @@ The built-in catalog keys are:
 | Key                   | Target                                                                   |
 | --------------------- | ------------------------------------------------------------------------ |
 | `direct-local`        | One Host-selected local root using direct operating-system access        |
-| `a13n.local-envd`     | One Host-selected workspace served by a fresh local envd process         |
-| `docker`              | One Docker container running envd                                        |
+| `a13n.local-envd`     | Host-selected folders in a fresh Session on a Host-owned local daemon    |
+| `docker`              | One Docker container using native Docker Engine operations               |
 | `e2b`                 | One native E2B sandbox                                                   |
 | `daytona`             | One native Daytona sandbox                                               |
 | `modal`               | One Modal sandbox with internal filesystem snapshots for stop/resume     |

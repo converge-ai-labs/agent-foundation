@@ -2,9 +2,9 @@
 
 ## Design Position
 
-A Project is the optional Harness UI concept for grouping local roots and organizing project-bound root Threads. It owns a mutable named ordered root list and Project-scoped creation configuration for project-bound conversations. Threads can run without selecting a Project. Harness UI defines no separate Workspace resource, Workspace root collection, or `WorkspaceBinding` input.
+A Project is the optional Harness UI concept for grouping working context and organizing project-bound root Threads. It may select remote [Environment bindings](04a-devices-and-environment-bindings.md) without any local roots. It owns a mutable named ordered root list and Project-scoped creation configuration for project-bound conversations. Threads can run without selecting a Project. Harness UI defines no separate Workspace resource, Workspace root collection, or `WorkspaceBinding` input.
 
-A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, optional default Model, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent Project or Thread changes do not affect the admitted Run.
+A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, optional default Model, local Environment profile, additional Environment bindings and default mount, Harness Plugins, Environment Run Extensions and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent Project or Thread changes do not affect the admitted Run.
 
 ## Projects
 
@@ -35,7 +35,7 @@ class Project(BaseModel):
     position: int
 ```
 
-Source loading expands home paths and canonicalizes absolute roots without requiring the directories to exist. Roots are ordered, unique, bounded, and NUL-free. Retained configuration decoding validates their structure without resolving paths or consulting current filesystem availability. Missing or moved roots do not prevent catalog inspection, accepted-generation recovery, or unrelated Project use. Selected Run Environment preparation resolves and verifies every captured root as an accessible directory and rejects unavailable or duplicate normalized roots without falling back to projectless execution. The first root is the default working directory and receives mount alias `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are Run-local mount names, not opaque Harness mount IDs or Workspace resources. The selected profile's approved Host adapter determines whether those mounts preserve canonical Host paths or use virtual aggregate routes. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
+Source loading expands home paths and canonicalizes absolute roots without requiring the directories to exist. Roots are ordered, unique, bounded, and NUL-free. Retained configuration decoding validates their structure without resolving paths or consulting current filesystem availability. Missing or moved roots do not prevent catalog inspection, accepted-generation recovery, or unrelated Project use. Selected Run Environment preparation resolves and verifies every captured root as an accessible directory and rejects unavailable or duplicate normalized roots without falling back to projectless execution. When present, the first local root is the compatible local default unless an explicit Environment default selects another mount, and receives alias `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are Run-local mount names, not opaque Harness mount IDs or Workspace resources. The selected profile's approved Host adapter determines whether those mounts preserve canonical Host paths or use virtual aggregate routes. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
 
 Changing Project roots affects later Runs of every Thread selecting the Project. A Run already admitted retains its captured roots. Removing a Project file removes it from the next accepted generation. Existing Threads retain the unresolved ID and reject later Runs until explicitly reassigned; no global fallback silently changes their local authority.
 
@@ -43,7 +43,7 @@ Changing Project roots affects later Runs of every Thread selecting the Project.
 
 A Project combines working roots with resource selections for creating conversations: Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. These selections refer to the existing resource catalog; they are not embedded copies of Provider implementations, credentials, or runtime objects. Agent-owned Model and Capability choices retain their own composition authority.
 
-Each Project owns one `defaults` combination in its file-backed resource, not a collection of named presets. Its optional fields are `agent`, `environment_profile`, `harness_plugins`, `environment_run_extensions`, and `mcp_servers`; null has the same fallback meaning as omission. Lists contain ordered, unique IDs and retain explicit empty selections. Old files without `defaults` remain valid. New root Threads selecting that Project automatically use it through the [configuration default rules](01-configuration-and-resource-catalog.md#global-defaults), with explicit creation choices taking precedence. Omitted selections retain the ordinary creation fallback behavior; an explicitly empty collection selects none, and nonempty collections replace lower layers as a whole. The resulting Thread stores exact values, not a live inheritance link. A new Thread's selected Project and effective configuration are inspectable before execution.
+Each Project owns one `defaults` combination in its file-backed resource, not a collection of named presets. Its optional fields are `agent`, `environment_profile`, `environment_bindings`, `default_environment`, `harness_plugins`, `environment_run_extensions`, and `mcp_servers`; null has the same fallback meaning as omission. Lists contain ordered, unique IDs and retain explicit empty selections. Old files without `defaults` remain valid. New root Threads selecting that Project automatically use it through the [configuration default rules](01-configuration-and-resource-catalog.md#global-defaults), with explicit creation choices taking precedence. Omitted selections retain the ordinary creation fallback behavior; an explicitly empty collection selects none, and nonempty collections replace lower layers as a whole. The resulting Thread stores exact values, not a live inheritance link. A new Thread's selected Project and effective configuration are inspectable before execution.
 
 Editing a Project's creation configuration does not rewrite existing Thread selections. Applying current Project selections to an existing Thread previews and updates only the axes explicitly present in the Project's default combination, including explicit empty collections. Unspecified axes retain the Thread's values. The action uses an explicit expected-version configuration mutation; it does not alter an admitted Run. Its preview includes the Thread configuration version, current and proposed exact configurations, a patch containing only Project-specified axes, and the canonical digest of that Project's default combination. Apply names the reviewed version and defaults digest. Changed Thread selection or defaults rejects apply as stale; unrelated source edits do not invalidate the defaults digest. An empty combination produces an unchanged preview and cannot be applied. Preview allocates no Thread, Run, or continuation. Editing a selected shared resource's content or the Project's roots retains its independently specified later-Run effects.
 
@@ -63,7 +63,7 @@ Resolution returns a configured Project or an unmatched or ambiguous outcome. It
 
 When neither creation input nor an explicitly configured global Project default selects a Project, the App creates a Thread with `project_id: null`. An explicit null creation selection suppresses the global Project default; an omitted selection can use it. Collaboration-created Threads preserve their source Thread's optional Project, including null. No placeholder Project or Project roots are created. Its Run composition captures an empty Project root list and adds no `workspace` mount or Project Skill sources. Global guidance, global Skills when selected, installed content, and the selected configuration directory remain available under their ordinary contracts.
 
-The default working mount is `thread-files`, with `tmp/` as its working directory. This applies to relative file paths and omitted shell cwd; built-in modes retain their selected execution policy. A custom adapter's file-only Thread mount does not acquire shell support. Child Threads inherit the parent's optional Project selection and receive their own scratch area. Explicitly selected but missing Projects still fail; they never silently turn into projectless execution. Existing project-bound Threads and CLI exact-cwd selection remain unchanged.
+Without an explicitly selected Environment default, the default working mount is `thread-files`, with `tmp/` as its working directory. This applies to relative file paths and omitted shell cwd; built-in modes retain their selected execution policy. A custom adapter's file-only Thread mount does not acquire shell support. Child Threads inherit the parent's optional Project selection and receive their own scratch area. Explicitly selected but missing Projects still fail; they never silently turn into projectless execution. Existing project-bound Threads and CLI exact-cwd selection remain unchanged.
 
 ## Thread Identity
 
@@ -111,6 +111,8 @@ class ThreadConfiguration(BaseModel):
     agent_source: AgentSource
     default_model_id: ModelId | None
     environment_profile_id: EnvironmentProfileId
+    environment_bindings: tuple[EnvironmentBindingSelection, ...]
+    default_environment: str | None
     harness_plugin_ids: tuple[PluginId, ...]
     environment_run_extension_ids: tuple[RunExtensionId, ...]
     mcp_server_ids: tuple[McpServerId, ...]
@@ -132,6 +134,8 @@ class ThreadConfigurationPatch(BaseModel):
     agent_source: AgentSource | Unset
     default_model_id: ModelId | None | Unset
     environment_profile_id: EnvironmentProfileId | Unset
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] | Unset
+    default_environment: str | None | Unset
     harness_plugin_ids: tuple[PluginId, ...] | Unset
     environment_run_extension_ids: tuple[RunExtensionId, ...] | Unset
     mcp_server_ids: tuple[McpServerId, ...] | Unset
@@ -153,8 +157,8 @@ Every non-empty patch, including one admitted with Run input, requires `expected
 2. rejects a non-empty patch whose required expected version differs;
 3. applies and validates the patch;
 4. commits the new exact configuration and incremented version;
-5. captures the accepted file generation and current Project roots;
-6. resolves and publishes the immutable Run composition;
+5. captures the accepted generation, Project roots and complete Device/Environment binding inputs before returning an admission receipt or scheduling preparation;
+6. resolves and publishes the immutable Run composition from those detached inputs;
 7. closes all transactions before native construction or external I/O;
 8. starts the Harness Run with the selected continuation's `HarnessState`, or the Thread's immutable `initial_state` when no continuation is selected.
 
@@ -174,14 +178,14 @@ Project recency is the maximum `updated_at` over every associated non-archived T
 
 ## Environment Profile and Binding
 
-A Thread selects exactly one Environment profile defined by [Extension Discovery and Management](01a-extension-discovery-and-management.md#environment-provider-discovery-and-profile-resources). A profile chooses one installed Provider plus Harness UI Host adapter configuration; it does not represent the runtime `Environment.environment_id`.
+A Thread selects one local-root Environment profile defined by [Extension Discovery and Management](01a-extension-discovery-and-management.md#environment-provider-discovery-and-profile-resources), plus optional [Device Environment bindings](04a-devices-and-environment-bindings.md). The latter contract owns normalization, remote-only Projects and explicit default selection. A profile chooses one installed Provider plus Harness UI Host adapter configuration; it does not represent the runtime `Environment.environment_id`.
 
 Harness UI owns two built-in modes:
 
-| Mode             | Stable profile ID     | Project Provider    | Execution semantics                                                                                                    |
-| ---------------- | --------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| **Full Control** | `environment-native`  | Direct Local        | Commands run directly as the Host user with ambient filesystem and Host networking                                     |
-| **Sandbox**      | `environment-sandbox` | Local Envd over EIP | Commands require native filesystem/process isolation and denied networking; setup failure is terminal with no fallback |
+| Mode             | Stable profile ID     | Project Provider    | Execution semantics                                                                                        |
+| ---------------- | --------------------- | ------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **Full Control** | `environment-native`  | Direct Local        | Commands run directly as the Host user with ambient filesystem and Host networking                         |
+| **Sandbox**      | `environment-sandbox` | Local Envd over EIP | Host launches the whole daemon in an outer filesystem/process boundary with denied networking; no fallback |
 
 Full Control is the omission fallback only while creating a root Thread for compatibility. A later missing or failed selected profile never falls back. Both built-in modes are fixed release-owned recipes and cannot be shadowed by configured profile resources.
 
@@ -204,9 +208,9 @@ The Provider configuration and adapter do not own the Project root list. The ada
 
 The Full Control and Sandbox adapters preserve Host paths. Harness UI assigns each Project mount an explicit Harness `mount_path` equal to the captured root's canonical Host path. The first and later roots are therefore addressed by their real paths in model context, file tools, returned file results, explicit shell working directories, File Context, and Skill sources. They do not also publish `/workspace` or `/environment/workspace-N` routes.
 
-This shared spelling does not merge execution authority. Full Control translates the aggregate suffix to a Project-root-confined Direct Local file operation or initial command working directory; after a Host command starts, the ordinary Host shell and descendants remain unrestricted and can use `cd ..`, absolute paths, Host networking, and other ambient Host-user authority. Sandbox translates the same aggregate suffix to a Provider-local EIP path; Local Envd resolves it back to the exact Host workspace path only inside required native containment, so `pwd` reports the canonical Host path while parent or absolute traversal cannot escape the sandbox's granted paths and networking remains denied.
+This shared spelling does not merge execution authority. Full Control translates the aggregate suffix to a Project-root-confined Direct Local file operation or initial command working directory; after a Host command starts, the ordinary Host shell and descendants remain unrestricted and can use `cd ..`, absolute paths, Host networking, and other ambient Host-user authority. Sandbox translates the same aggregate suffix to a Provider-local EIP path; Local Envd resolves it inside the Host-launched outer sandbox. The Host preserves the mapped path spelling and denies networking at launch; the Session working directory restricts neither file nor shell access.
 
-An explicit shell `cwd` is an aggregate mount selector in both modes. It must resolve within an available route and cannot contain `..` traversal segments. Relative or omitted `cwd` starts from the selected mount's working directory: the Project root for a Project mount, or `tmp/` for the Thread file mount. This selector rule does not claim to confine a Full Control command after launch: a script such as `cd .. && pwd` runs with ordinary Host semantics. In Sandbox the same script remains subject to `a13n-envd` isolation.
+An explicit shell `cwd` is an aggregate mount selector in both modes. It must resolve within an available route and cannot contain `..` traversal segments. Relative or omitted `cwd` starts from the selected mount's working directory: the Project root for a Project mount, or `tmp/` for the Thread file mount. This selector rule does not claim to confine a Full Control command after launch: a script such as `cd .. && pwd` runs with ordinary Host semantics. In Sandbox the same script remains subject to the Host's outer launch boundary, not an envd per-command policy.
 
 An approved custom adapter that explicitly preserves Host paths receives the same aggregate layout. Other adapters omit `mount_path`, so Harness compatibility routing presents the first root at `/workspace` and later roots at `/environment/workspace-N`. A canonical-looking aggregate route is presentation and routing metadata, never proof of Provider authority.
 
@@ -224,7 +228,7 @@ The directory is not a Project and does not contribute Project Skills or change 
 
 Each App-prepared root or child Run receives a `thread-files` mount for its own Thread file area. The [storage contract](03-local-storage-and-recovery.md#thread-files-and-automatic-scratch-cleanup) owns its persistence and cleanup. The mount contains `tmp/` for scratch work and `attachments/` for submitted inputs. Built-in Full Control and Sandbox modes bind this area as a separate root using the selected adapter and profile; model-facing paths follow the same canonical-host-path rule as Project roots. Scratch files are usable through real Environment file operations and shell cwd selection, not merely through a path mentioned in a prompt. This mount's default working directory is `tmp/`; it is the default mount when no Project is selected.
 
-A Sandbox command selected in a Project root does not gain access to the Thread file mount. To process an attachment with a shell, select a cwd under the Thread file root; that sandbox can access its own scratch and attachments, not arbitrary Project or Host paths. Custom adapters receive a Host Direct Local file-only mount rather than silently interpreting a Host directory as a remote Provider workspace. Availability and permission ceilings remain authoritative. Release-owned guidance tells the model to preserve attachments and to copy valuable results out of scratch.
+Sandbox shell access follows the shared daemon's Host-provided launch boundary, not its selected cwd. A Host may group captured Project roots and that Thread's file area in one outer launch to permit attachment processing; unrelated Host paths remain outside that boundary. Separate launches are required when different native isolation boundaries are intended. Custom adapters receive a Host Direct Local file-only mount rather than silently interpreting a Host directory as a remote Provider workspace. Availability and permission ceilings remain authoritative. Release-owned guidance tells the model to preserve attachments and to copy valuable results out of scratch.
 
 When an Agent selects `native_image_generation`, UI instantiation supplies the Harness Capability with a saver that writes a uniquely named image under the current Run's `thread-files/tmp/` through the Environment file boundary. This applies to roots and children, with or without a Project, and to Host-path and virtual-path layouts. It returns the aggregate file path only after the write succeeds. Generated images are scratch outputs, not submitted attachments; transcripts and continuation messages contain the saved references rather than generated image bytes. Scratch retention and pruning apply unchanged. Keeping an image long-term requires copying or publishing it outside scratch.
 
@@ -232,7 +236,7 @@ This mount is not a Project binding or a durable shell-process recovery store. I
 
 ## Host-authoritative Environment State
 
-Full Control and Sandbox bind Project roots directly as Provider configuration, preserve their Host paths in the Harness aggregate namespace, and ordinarily retain no portable re-entry state. Their identical path presentation does not change their distinct Direct Local and isolated EIP execution authority. A stateful Provider can return `EnvironmentState` for one root.
+Full Control and Sandbox bind local Project roots as Provider configuration, preserve their Host paths in the Harness aggregate namespace, and ordinarily retain no portable re-entry state. Additional Device bindings use the separate [binding-state identity](04a-devices-and-environment-bindings.md#state-and-connection-ownership), not the local-root key below. Their identical path presentation does not change their distinct Direct Local and isolated EIP execution authority. A stateful Provider can return `EnvironmentState` for one root.
 
 Harness UI uses one private binding identity:
 
@@ -281,15 +285,15 @@ Each segment receives fresh Provider runtime collaborators, adapters, and Enviro
 
 Harness UI reads the installed `a13n-envd-client` distribution version through `importlib.metadata` when managed acquisition is requested. The client is co-versioned with the native daemon. A stable Python version selects the same canonical native version; a PEP 440 RC such as `0.0.5rc1` selects `0.0.5-rc.1`. The application derives the GitHub Release tag and archive name from that version and the current OS/architecture; it has no packaged native version resource, latest-release lookup, or per-target hashes, sizes, or asset catalog.
 
-Source version `0.0.0`, missing distribution metadata, and unsupported or invalid version metadata fail managed acquisition without selecting a release. They do not prevent Full Control or an explicit validated executable override. Sandbox resolves only the managed executable or that override, which still passes executable-version, isolation, and EIP compatibility checks. It does not search ambient `PATH` or download a binary for Full Control execution.
+Source version `0.0.0`, missing distribution metadata, and unsupported or invalid version metadata fail managed acquisition without selecting a release. They do not prevent Full Control or an explicit validated executable override. Sandbox resolves only the managed executable or that override, which still passes executable-version and EIP compatibility checks; its Host launcher separately validates the outer sandbox. It does not search ambient `PATH` or download a binary for Full Control execution.
 
 Acquisition uses HTTPS from the repository-owned release location. Download and extracted executable sizes are bounded by the runtime acquisition limit. Only the named executable is copied out of an archive; archive paths and links are not installed. A candidate must report the selected version through `--version` before atomic publication to the version-and-target cache. A cached executable is reusable only when it is a regular executable reporting that version. Failed acquisition leaves no selected candidate and does not replace an existing cache entry.
 
 This is version-based selection, not byte-level identity verification. Harness UI trusts the release source and does not detect replacement bytes that report the same version. Checksums published alongside native releases remain available to standalone installers and other consumers; Harness UI does not embed or require them.
 
-Every Sandbox Project root uses a fresh Local Envd adapter and private EIP daemon generation. Harness UI configures denied execution networking, and Local Envd requires the native isolation probe to prove filesystem containment, process containment, and network isolation before admitting the EIP session. Unsupported Hosts or failed prerequisites make Sandbox unavailable for that Run; Harness UI neither weakens the policy nor substitutes Full Control.
+The App lazily owns a Local Envd runtime and reuses its stdio Device connection across roots and Runs with the same Host launch boundary. Each adapter opens an independent Session. For Sandbox, the App launcher contains the entire daemon and its children, exposes the intended native roots and denies networking. Changing that outer boundary requires a separately prepared launch; it is not a Session permission change. Unsupported Hosts or failed prerequisites make Sandbox unavailable without Full Control fallback.
 
-The executable cache carries no Thread, Project, root, or Environment authority. Daemons, transports, process handles, and output cursors remain process-local to fresh adapters and never enter `EnvironmentState` or Thread storage.
+Run cleanup closes Sessions, not the shared daemon. App shutdown joins/cancels Runs, closes remaining Sessions and then shuts down its owned local runtimes. There is no cross-App daemon adoption or persisted process recovery. The executable cache carries no Thread, Project, root or Environment authority; connections, generations, process handles and output references remain process-local.
 
 ## Thread Tools and Project Authority
 
@@ -328,5 +332,5 @@ Model-visible root Thread tools can list and inspect Threads, start or continue 
 12. Steering never changes an active Run's captured composition.
 13. Destructive Provider lifecycle remains outside ordinary Run cleanup.
 14. A selected Skills Capability adds only Environment-routed Skill sources and, unless an exact Host-path-preserving Project mount already covers it, the dedicated user Skill mount; it does not broaden a Project Provider's Host paths.
-15. Full Control and Sandbox preserve the same canonical Host path spelling while retaining Direct Local versus required-isolation EIP execution authority.
+15. Full Control and Sandbox preserve the same canonical Host path spelling while retaining Direct Local versus Host-sandboxed whole-daemon execution authority.
 16. Sandbox failure never falls back to Full Control or disabled isolation.

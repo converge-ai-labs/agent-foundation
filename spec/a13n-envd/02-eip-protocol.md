@@ -2,475 +2,193 @@
 
 ## Design Position
 
-The Environment Interaction Protocol (EIP) is the transport-neutral wire contract between a trusted requester and `a13n-envd`. EIP 0.1 uses JSON-RPC 2.0 for bounded control operations and correlated raw file transfer. One versioned contract owns method names, payloads, transfer lifecycles, operation replay, typed errors, selectors, limits, and side-effect evidence across trusted stdio, Host-dialed HTTP, and outbound reverse WebSocket.
+EIP 1.0 separates a Device connection from the independent Sessions it carries. JSON-RPC 2.0 carries control; typed transfers carry raw file bytes. HTTP, reverse WebSocket and stdio share method, ownership and cleanup semantics. Provider provisioning and product authorization remain outside EIP.
 
-EIP is a semantic Environment protocol rather than a remote syscall interface. Canonical path resolution, bounded search, complete-candidate publication, command-tree control, command-output reads, and local-port observation execute beside the native resources. Client validation improves errors but never replaces envd enforcement.
-
-## Boundaries
-
-| Concern                                                                                 | Owner                                                                                  | Relationship                                       |
-| --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- | -------------------------------------------------- |
-| JSON-RPC methods, params/results, operation identity, transfers, errors, and versioning | This document                                                                          | Identical on every carrier                         |
-| Canonical IDL and generated Rust/Python realization                                     | [Protocol Source, Client, and Generation](08-protocol-source-client-and-generation.md) | Encodes this contract without semantic drift       |
-| Framing, attachment authentication, carrier direction, sessions, and liveness           | [Transports and Sessions](03-transports-and-sessions.md)                               | Establishes a trusted session before dispatch      |
-| Multi-Environment routing and Harness policy                                            | Harness and Host                                                                       | Selects one trusted Environment adapter before EIP |
-| Native filesystem, process, isolation, output, and receipt evidence                     | `a13n-envd` resource owners                                                            | Executes accepted operations                       |
-| Environment lifecycle policy, current state, and durable Agent completion               | Host; lifecycle effects use a fresh Provider-specific Environment adapter              | Outside EIP                                        |
-
-Carrier headers, stdio pipes, attachment credentials, and WebSocket upgrade fields never appear in ordinary EIP params. Carrier direction cannot change a method, result, retry rule, or side-effect classification.
+The [canonical IDL](08-protocol-source-client-and-generation.md) generates Rust/Python wire types and fixtures.
 
 ## Control Envelope
 
-Every control message is one UTF-8 JSON object conforming to JSON-RPC 2.0. EIP 0.1 supports correlated request/response only, not batch arrays or application notifications. Request IDs are strings or signed 64-bit integers; booleans and wider integers are invalid. A response carries the same nullable ID and exactly one of `result` or `error`.
+Each message is one JSON-RPC request/response, without batches or application notifications. IDs are strings or signed 64-bit integers, never booleans. A response echoes its request ID and contains exactly one result/error. Session-scoped messages carry and echo `eip_session`; `initialize`, `device.describe`, `directory.list` and `session.open` omit it. This field is a route selector, not a credential.
 
-Raw file bytes are not control messages. They use the bounded data-frame profile after a correlated `file.open_reader` or `file.open_writer` establishes a typed transfer. A binary frame cannot name a path, create authority, commit a mutation, or invoke another method.
-
-Small byte values that inherently belong in a JSON control method use:
-
-```python
-class EncodedBytes(BaseModel):
-    encoding: Literal["base64"]
-    data: str
-```
-
-`data` is canonical unpadded base64 and is decoded under the owning field's byte ceiling.
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": "req-42",
-  "method": "shell.exec",
-  "params": {
-    "context": {
-      "operation_id": "op-01J...",
-      "timeout_ms": 30000
-    },
-    "request": {
-      "command": {
-        "kind": "argv",
-        "executable_spec": {"kind": "name", "name": "git"},
-        "arguments": ["status", "--short"]
-      },
-      "cwd": {"mount_id": "workspace", "path": "/repo"}
-    }
-  }
-}
-```
-
-JSON bytes, nesting, strings, collections, paths, arguments, environment maps, identifiers, and encoded-byte values are bounded before domain validation. Small binary values inherent to a control method, such as one stdin chunk, use unpadded base64 in typed `EncodedBytes`. Native file content never uses JSON/base64.
-
-Unknown JSON-RPC envelope fields are handled only as JSON-RPC permits and cannot use reserved `eip_` names. Unknown fields in typed EIP requests fail closed unless a negotiated minor explicitly permits them. Numeric byte counts, offsets, generations, ports, and durations are non-negative bounded integers.
+Framing, JSON sizes and typed values are bounded. Validate required types, method availability, route ownership and native operation inputs at their owning boundary. There is no additional per-resource authorization lattice. Small inherent bytes such as stdin use `EncodedBytes(encoding="base64", data=...)` with canonical unpadded base64. Native file content uses the raw data plane.
 
 ## Initialization
 
-`initialize` is the requester's first EIP request on every stdio, HTTP, or reverse-WebSocket session. No other method, binary data frame, or HTTP transfer body is admitted first.
-
-The serialized wire shape is:
+These conceptual shapes are realized by the IDL:
 
 ```python
-class EIPClientInfo(BaseModel):
-    name: str
-    version: str
-
-
 class InitializeParams(BaseModel):
     supported_protocol_versions: tuple[str, ...]
     client: EIPClientInfo
-    expected_environment_id: str
-    required_methods: tuple[str, ...] = ()
+    expected_device_id: str | None
 
 
-class EIPServerInfo(BaseModel):
-    name: Literal["a13n-envd"]
-    version: str
-
-
-class EIPLimits(BaseModel):
-    max_request_bytes: int
-    max_response_bytes: int
-    max_concurrent_operations: int
-    max_processes: int
-    max_operation_duration_ms: int
-    max_output_preview_bytes: int
-    max_output_bytes_per_stream: int
-    max_transfer_frame_bytes: int
-    max_concurrent_file_transfers: int
-    max_file_transfer_bytes: int
-
-
-class ExecutionFeatures(BaseModel):
-    process_count_limit: bool
-    memory_bytes_limit: bool
-    cpu_time_limit: bool
-    per_command_network_deny: bool
-    signal_interrupt: bool
-    signal_terminate: bool
-
-
-class EnvironmentDescriptor(BaseModel):
-    environment_id: str
+class DeviceDescriptor(BaseModel):
+    device_id: str
     generation: int
-    mounts: tuple[MountDescriptor, ...]
-    shell_profiles: tuple[ShellProfileDescriptor, ...]
-    limits: EIPLimits
-    isolation: IsolationPosture
-    root_mount_id: str | None
+    display_name: str | None
+    description: str | None
+    path_style: Literal["posix", "windows"]
+    default_working_directory: str
+    directory_discovery: bool
     available_methods: tuple[str, ...]
-    execution_features: ExecutionFeatures
+    limits: EIPLimits
+    lifecycle: SessionLifecyclePolicy
 
 
 class InitializeResult(BaseModel):
     protocol_version: str
     server: EIPServerInfo
-    descriptor: EnvironmentDescriptor
-```
-
-Versions use `<major>.<minor>`. The server selects the highest mutually supported minor in a mutually supported major. The prerelease EIP 0.1 contract selects binary data-frame profile version 1; the profile retains its fixed major-1 compatibility tag independently of the prerelease control-contract version. No binary attachment is legal before initialization.
-
-`expected_environment_id` is mandatory trusted initialization input. A mismatch fails initialization without publishing a usable descriptor. `required_methods` contains exact JSON-RPC names. Initialization fails if any required name is absent from `available_methods`. The list does not grant a method; it asserts compatibility with the daemon's configured policy and truthful platform support.
-
-The descriptor contains configured logical mounts only. `root_mount_id`, when present, identifies exactly one descriptor mount and is never inferred from ordering. A provider requiring broad native access configures ordinary trusted roots explicitly. There is no session-selectable resource-authority mode or synthesized server filesystem.
-
-`available_methods` is the sole callable-method availability surface. It permits independent platform truth: omission of one unsupported mutation or process control does not hide unrelated operations. A method absent from the negotiated protocol returns `method_not_found`; a method defined by the protocol but absent from the descriptor returns `unsupported` without native dispatch.
-
-`execution_features` qualifies only concrete optional values already present in `CommandRequest` and `ProcessSignalParams`; it is not a method catalog, authority grant, or capability family. The three limit booleans state whether `process_count`, `memory_bytes`, and `cpu_time_ms` are enforceable for every available method carrying `CommandRequest`. `per_command_network_deny` states whether `network="deny"` is accepted and enforced for this generation. Signal booleans are the accepted `process.signal` action set: the method is present exactly when at least one is true, and an action whose boolean is false returns `unsupported` before backend control dispatch. `process.kill` remains a separate exact method. Baseline wall-time and stdin/output bounds are mandatory semantics and need no optional support flag.
-
-Only limits a client needs before constructing or dispatching work are serialized. Internal record, staging, transfer, spool, queue, and shutdown capacity remains finite daemon configuration and produces typed runtime outcomes. An absolute `expires_at` in a result is an observation, not a compatibility lease.
-
-Initialization has no `EIPCallContext`, performs no native resource mutation, and cannot repeat within a live session. Successful initialization establishes protocol identity and a descriptor but does not yet make the Session requester-ready. Until the first successful `environment.readiness` observation, envd admits only that method and `session.close`; every other post-initialization method fails without domain dispatch.
-
-## Readiness Foundation
-
-`environment.readiness` is the mandatory, transport-neutral readiness operation for every EIP Session. It is the first post-initialization operation issued by a conforming requester and remains callable later while the Session is active.
-
-```python
-class EnvironmentReadinessParams(BaseModel):
-    context: EIPCallContext
+    descriptor: DeviceDescriptor
 
 
-class EnvironmentReadinessResult(BaseModel):
-    ready: bool
-    environment_id: str
+class SessionOpenParams(BaseModel):
+    expected_device_id: str
+    expected_generation: int
+    protocol_version: str
+    working_directory: str | None = None
+    required_methods: tuple[str, ...]
+
+
+class SessionDescriptor(BaseModel):
+    device_id: str
     generation: int
+    session_id: str
+    working_directory: str
+    available_methods: tuple[str, ...]
+    limits: EIPLimits
+    shell_profiles: tuple[ShellProfileDescriptor, ...]
+    execution_features: ExecutionFeatures
+    lifecycle: SessionLifecyclePolicy
+
+
+class SessionOpenResult(BaseModel):
+    descriptor: SessionDescriptor
 ```
 
-The initial readiness request uses a fresh operation ID and finite timeout. Envd returns `ready=true` only after trusted configuration, generation-private owners, mounts, execution enforcement, selected carrier admission, initialization, and operation-ledger admission are usable for the configured Environment and generation. A drain that wins before the readiness snapshot can return `ready=false`; if the carrier or daemon can no longer publish a response, the requester instead observes the ordinary bounded transport or process failure. Readiness does not probe arbitrary files, commands, network destinations, capacity for a particular future operation, or external dependencies.
+`initialize` verifies the Device and negotiates protocol without creating a Session. A null expected identity is for explicit trusted registration only. `device.describe` returns the current Device descriptor. `directory.list` provides optional [directory discovery](04-resource-operations.md#directory-discovery) without a Session.
 
-A requester validates that `environment_id` and `generation` exactly match the initialization descriptor. A false observation, identity/generation mismatch, timeout, malformed response, or carrier loss prevents initial Session publication and fences that carrier unless its profile proves a clean independent replacement. After a successful initial observation, a later readiness check is an ordinary point-in-time observation: it uses a new operation ID, and `ready=false` stops new application dispatch on that Session without reclassifying already accepted operations.
+`session.open` checks the observed identity/generation/version and required methods, resolves its working directory and reserves one Session. Omitted/null `working_directory` selects the advertised Device default; an explicit path overrides it. Missing or inaccessible directories fail without creation or fallback. The result contains the exact resolved working directory, immutable for that Session. A working directory is not a filesystem access boundary.
 
-`environment.readiness` is `active_only`. Its operation ID follows the common active-duplicate, cancellation, timeout, and response-handoff rules and retains no historical result. A caller that wants a new observation always uses a new operation ID. JSON-RPC request correlation remains separate from operation identity.
+The Host is trusted for all daemon-account-accessible folders; admission does not intersect a startup filesystem ceiling. `required_methods` is a compatibility assertion, not a grant. Host/Harness tool policy controls what the model may invoke. Limits describe actual finite operation capacity, not a separate security policy.
 
-A Provider or control service can establish readiness without inventing another health API by opening a short-lived EIP Session, completing initialize plus the initial readiness operation, and cleanly calling `session.close`. A Provider-specific Environment adapter uses the same sequence before making its provider-neutral operations ready for Harness. This readiness Session is a real, bounded protocol Session rather than a filesystem marker, transport-specific probe, or provider-native operation.
+Device methods and Session lifecycle controls are bounded and ledger-external. An uncertain open is not automatically retried; an unclaimed Session expires. Changing the Session default requires a new Session. Per-command cwd overrides do not mutate it. Host Run acceptance captures an explicit directory before execution; retries and recovery never reselect a mutable Device default.
+
+## Readiness and Session Control
+
+Before initial readiness, a Session admits readiness, keepalive and close only. `environment.readiness` returns `ready`, `device_id`, `generation` and `session_id`; the requester checks them before publishing operations. `environment.describe` returns the Session descriptor. Readiness proves the current operation scope works, not future capacity or sandbox enforcement.
+
+`session.keepalive` maintains the one owning scope during quiet periods. `session.attach`, on a newly initialized framed carrier, reattaches that same Host's detached Session before its deadline and returns its unchanged descriptor. HTTP ownership is independent of TCP connections and needs no reattachment. `session.close` begins cleanup of that Session only. Once cleanup starts, attach/keepalive fail rather than revive it.
+
+[Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns inactivity, disconnect grace and collection. No cross-Session resource import, resource-retain method or command lease exists. A client never sends keepalive for a scope whose owner has ended.
 
 ## Common Operation Context and Replay
 
-Every method other than `initialize` carries:
+Ordinary Session operations carry:
 
 ```python
 class EIPCallContext(BaseModel):
     operation_id: str
     timeout_ms: int | None = None
+
+
+class OperationReference(BaseModel):
+    device_id: str
+    generation: int
+    session_id: str
+    operation_id: str
 ```
 
-`operation_id` is the one active-cancellation identity for every post-initialization EIP operation and the sole replay/receipt identity for a `terminal_evidence` operation. It is a client-generated unpredictable value of at most 128 Unicode scalar values and 512 UTF-8 bytes. The client does not intentionally assign one ID to different logical operations within a daemon generation.
+Operation identity includes its Session. The client supplies a fresh bounded unpredictable operation ID. Cancellation, receipt lookup and replay address only the current Session; an ID cannot retarget work into another Session.
 
-The canonical IDL assigns each post-initialization method one private replay class. `initialize` has no operation context and never enters the operation ledger:
+Methods are `terminal_evidence` or `active_only`. Mutations and command controls retain bounded terminal results/errors/receipts. Observations track active duplicates/cancellation but do not retain every response page. The canonical digest includes protocol, method and typed params, excluding operation ID and relative timeout. Session identity fixes the default working directory. Native operands remain part of each operation's digest.
 
-- `terminal_evidence`: operations whose side effects or controls require cross-response reconciliation retain a bounded terminal result or typed error and any receipt;
-- `active_only`: observations and session-ephemeral operations use the ledger for active duplicate detection and cancellation but do not retain their response after delivery ends.
+| Existing operation | Request                 | Result                                         |
+| ------------------ | ----------------------- | ---------------------------------------------- |
+| None               | New valid request       | Reserve and register before dispatch           |
+| Running            | Same method/digest      | `operation_in_progress`; no duplicate dispatch |
+| Retained terminal  | Same method/digest      | Replay retained result/error                   |
+| Retained ID        | Different method/digest | `conflict`; no dispatch                        |
 
-A method that produces and returns an `OperationReceipt` for its own current operation is `terminal_evidence`. `receipt.get` only observes another operation's existing receipt and remains `active_only`. `output.read` and other pure observations are also `active_only`; otherwise reading a large spool would copy every response page into the replay ledger and make output release ineffective. Session resources created by an `active_only` method remain bounded and cleaned by their session/transfer owner if the response is lost.
+Response handoff and evidence publication are bounded and atomic at the operation owner. Replay does not restore released/collected resources. Clients do not retry ambiguous mutations merely because evidence was collected or a new Session exists.
 
-At admission, envd computes a canonical semantic request digest from:
-
-- the selected EIP protocol version;
-- the exact JSON-RPC method name;
-- generated canonical JSON for typed params after excluding `context.operation_id` and `context.timeout_ms`.
-
-Canonical JSON sorts object keys, emits UTF-8 without insignificant whitespace, uses EIP timestamp/integer/base64 rules, and omits absent values, schema defaults, and empty non-presence-sensitive collections. It never depends on JSON-RPC request ID, carrier data, object-key order, or a caller clock.
-
-The ledger applies these rules atomically:
-
-| Existing operation ID      | Method and digest | Result                                                    |
-| -------------------------- | ----------------- | --------------------------------------------------------- |
-| None                       | Any valid request | Insert a running entry before handler work starts         |
-| Running                    | Same              | `operation_in_progress`; no duplicate dispatch            |
-| Retained terminal evidence | Same              | Replay the same bounded result or typed error and receipt |
-| Any retained entry         | Different         | `conflict`; no dispatch                                   |
-
-A handler whose work ended but whose response is being published remains running. Response handoff ends only when the encoded response is accepted by the carrier's bounded writer path or that carrier is conclusively lost; handler return alone is not handoff, and handoff does not claim remote receipt. For a `terminal_evidence` method, terminal publication atomically stores exactly one replayable result or error. For an `active_only` method, the entry remains running through that handoff and is then removed without retaining response content. A terminal entry with missing evidence is never visible.
-
-This single identity replaces a separate idempotency key or receipt selector. Exact replay reproduces the original serialized evidence but does not resurrect or extend a domain selector: a replayed handle or output reference can already be explicitly released, and every later use still revalidates its lifecycle. Retained terminal evidence normally follows finite internal reclamation policy, and its absence never proves non-dispatch. The one exception is originating `shell.exec` or `process.start` evidence that contains a selector for a still-live process or output record: envd keeps that entry replayable until every such referenced record has been explicitly released. This prevents a lost creation response from making its command owner or spool objects unreachable without retaining unrelated control history. A caller reconciles native state or accepts ambiguity rather than repeating an uncertain mutation blindly. A new observation always uses a new operation ID.
-
-`timeout_ms`, when present, is a positive relative budget. Envd derives a monotonic deadline after admission and narrows it with the method and daemon ceiling. A retry of a retained `terminal_evidence` operation can supply another local wait budget without changing the semantic digest or extending already accepted native work. Expiry before dispatch is pre-dispatch timeout. Expiry after dispatch requests method-specific cancellation/reconciliation and does not prove a side effect absent.
+`timeout_ms` is a daemon-monotonic operation deadline narrowed by method limits. A pre-dispatch timeout proves no dispatch; later timeout requests cancellation or reconciliation, not rollback. A local wait timeout alone does not terminate a remote command.
 
 ## Method Availability and Catalog
 
-The canonical IDL defines the EIP 0.1 method set:
+| Domain                      | Methods                                                                                                                                                  | Replay class                        |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Device                      | `initialize`, `device.describe`, `directory.list`, `session.open`                                                                                        | Ledger-external                     |
+| Session lifecycle           | `session.attach`, `session.keepalive`, `session.close`                                                                                                   | Ledger-external                     |
+| Session observation         | `environment.readiness`, `environment.describe`                                                                                                          | `active_only`                       |
+| Evidence/control            | `operation.cancel`, `receipt.get`                                                                                                                        | `active_only`                       |
+| File observations/transfers | `file.stat`, `file.read_text`, `file.open_reader`, `file.close_reader`, `file.list`, `file.find`, `file.search`, `file.open_writer`, `file.abort_writer` | `active_only`                       |
+| File mutations              | `file.write_text`, `file.commit_writer`, `file.mkdir`, `file.patch_text`, `file.copy`, `file.move`, `file.remove`                                        | `terminal_evidence`                 |
+| Foreground command          | `shell.exec`                                                                                                                                             | `terminal_evidence`                 |
+| Background observations     | `process.inspect`, `process.wait`                                                                                                                        | `active_only`                       |
+| Background controls         | `process.start`, `process.write_stdin`, `process.close_stdin`, `process.signal`, `process.kill`, `process.release`                                       | `terminal_evidence`                 |
+| Ports                       | `port.inspect`, `port.wait`                                                                                                                              | `active_only`                       |
+| Output                      | `output.read` / `output.release`                                                                                                                         | `active_only` / `terminal_evidence` |
 
-| Domain                      | Methods                                                                                                                                                  | Replay class        | Owning contract                                                      |
-| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------- |
-| Environment/session         | `environment.readiness`, `environment.describe`, `session.close`                                                                                         | `active_only`       | This document and [Transports](03-transports-and-sessions.md)        |
-| Operation evidence          | `operation.cancel`, `receipt.get`                                                                                                                        | `active_only`       | This document                                                        |
-| File observations/transfers | `file.stat`, `file.read_text`, `file.open_reader`, `file.close_reader`, `file.list`, `file.find`, `file.search`, `file.open_writer`, `file.abort_writer` | `active_only`       | [Resource Operations](04-resource-operations.md)                     |
-| File mutations              | `file.write_text`, `file.commit_writer`, `file.mkdir`, `file.patch_text`, `file.copy`, `file.move`, `file.remove`                                        | `terminal_evidence` | [Resource Operations](04-resource-operations.md)                     |
-| Foreground command          | `shell.exec`                                                                                                                                             | `terminal_evidence` | [Command and Process Execution](05-command-and-process-execution.md) |
-| Background observations     | `process.inspect`, `process.wait`                                                                                                                        | `active_only`       | [Command and Process Execution](05-command-and-process-execution.md) |
-| Background controls         | `process.start`, `process.write_stdin`, `process.close_stdin`, `process.signal`, `process.kill`, `process.release`                                       | `terminal_evidence` | [Command and Process Execution](05-command-and-process-execution.md) |
-| Port observation            | `port.inspect`, `port.wait`                                                                                                                              | `active_only`       | [Resource Operations](04-resource-operations.md)                     |
-| Command-output read         | `output.read`                                                                                                                                            | `active_only`       | [Command Output Spool](06-output-retention.md)                       |
-| Command-output release      | `output.release`                                                                                                                                         | `terminal_evidence` | [Command Output Spool](06-output-retention.md)                       |
-
-The descriptor lists each available method exactly. No capability family asserts all-or-nothing support. Optional behavior inside one method is accepted only when the method's request contract and descriptor posture report it truthfully; unsupported options fail before dispatch.
-
-The catalog contains no provider provisioning, container lifecycle, daemon shutdown, credential rotation, arbitrary native PID/path access, URL fetching, product-user authorization, or shell-evaluated administration.
-
-## Descriptor Refresh and Generation
-
-`environment.readiness` is mandatory in every EIP 0.1 descriptor and cannot be removed by configured resource policy. `environment.describe` returns the current session's descriptor. Within one initialized session, runtime policy can only remove `available_methods` and lower numeric `EIPLimits`. Environment identity, generation, mount descriptors and ordering, root mount, shell profiles, isolation posture, and execution-feature support are immutable. A refresh that re-adds a removed method, raises a prior limit, changes topology/posture/features, or contains an unknown method is a terminal protocol violation; a client never replaces its effective descriptor with that observation. A fault that changes those generation-fixed facts drains or terminates the daemon and destroys its sessions.
-
-A daemon restart creates a new unpredictable nonzero generation. Operation records, process handles, transfer handles, output references, receipts, and private spool data from the old generation are invalid and never restored or adopted. A selector that safely identifies another generation returns `stale_generation`; otherwise it returns its non-disclosing invalid/not-found error.
-
-```python
-class EnvironmentDescribeParams(BaseModel):
-    context: EIPCallContext
-
-
-class EnvironmentDescribeResult(BaseModel):
-    descriptor: EnvironmentDescriptor
-
-
-class OperationCancelParams(BaseModel):
-    context: EIPCallContext
-    target_operation_id: str
-
-
-class OperationCancelResult(BaseModel):
-    status: Literal[
-        "not_found",
-        "already_terminal",
-        "cancellation_requested",
-        "not_cancellable",
-    ]
-```
+Unknown methods return `method_not_found`; known unavailable methods return `unsupported` before dispatch. Exact available methods determine support. `ExecutionFeatures` advertises optional native resource limits and signals, not per-command sandbox/network policy.
 
 ## Opaque Selectors
 
-The base protocol has four opaque selector families:
+ProcessHandle and OutputReference identify records owned by one Session in one Device generation. FileReaderHandle and FileWriterHandle additionally bind to their current transfer attachment. Opaque IDs expose no PID, path or storage key. Every use resolves through the selected Session; sibling handles are invalid even when both Sessions use the same working directory.
 
-```python
-class ProcessHandle(RootModel[str]): ...
-class FileReaderHandle(RootModel[str]): ...
-class FileWriterHandle(RootModel[str]): ...
-class OutputReference(RootModel[str]): ...
-```
+Same-Session reattachment preserves retained process/output/evidence references, not incomplete transfer handles or pending response delivery. Session cleanup and daemon restart invalidate them. Host Run-local process references remain a separate, shorter-lived projection.
 
-Private records bind Environment identity, generation, daemon user, object kind, creating operation, lifecycle, and facts required for safe follow-up. File transfer handles additionally bind the exact initialized session, direction, attachment, next offset, and expiry.
+## File Transfer Semantics
 
-Selectors expose no native PID, path, descriptor, storage key, package SID, or credential. Possession is insufficient: every use repeats carrier trust, method availability, generation, kind, state, and policy checks. Server-created values use concise kind-prefixed generation-local identities where entropy is not a security property. Operation IDs remain unpredictable because they identify replay across reconnects.
+Reader open reserves a Session reader for a path/range. Producer END is not acceptance: successful `file.close_reader` requires full consumer drain and byte-count/SHA-256 verification. Readers have no END_ACK. Early reset/close/expiry cannot report a complete download.
 
-Receipts are addressed by operation ID. Retained and process output use client-owned explicit byte offsets against an output reference or process handle; neither read path creates another server selector.
-
-## Binary File-Transfer Control
-
-[Resource Operations](04-resource-operations.md) owns file semantics. EIP control and the binary data plane establish these lifecycles:
-
-### Reader
-
-1. `file.open_reader` authorizes a path and optional byte range and returns a session-owned reader plus observed metadata.
-2. The carrier attaches one server-to-client binary stream with exact contiguous offsets and finite bounds.
-3. Envd sends `END` after clean producer termination. Readers do not use `END_ACK`.
-4. After the public consumer drains all chunks, `file.close_reader` is the sole successful acceptance action. It returns produced-byte count and SHA-256 digest.
-5. Early exit, cancellation, reset, expiry, or carrier loss closes the reader without acceptance.
-
-`file.close_reader` has no boolean acceptance choice. It succeeds only for a clean, fully consumed reader. A successful high-level reader compares envd count and digest with locally observed bytes. This proves transfer integrity for the held stream, not an immutable pathname or file snapshot.
-
-### Writer
-
-1. `file.open_writer` authorizes a destination and reserves one bounded destination-local candidate without mutating the target.
-2. The carrier attaches one client-to-server stream. Envd writes exact contiguous chunks while counting, hashing, and reserving staging capacity.
-3. Client `END` plus envd `END_ACK` seals the uploaded stream but does not publish it.
-4. `file.commit_writer` verifies count and digest, atomically hands candidate ownership to the operation, revalidates publication intent, and performs the only destination mutation.
-5. `file.abort_writer` or pre-handoff session teardown deletes the candidate when cleanup can be proven.
-
-A data frame is not independently retryable. Interrupted readers open a new explicit observation. Interrupted writers use a new candidate. Only a possibly dispatched commit has mutation ambiguity, reconciled by its operation ID and receipt evidence.
+Writer open creates a destination-local candidate without changing the destination. Contiguous chunks are counted and hashed; END_ACK seals the upload. Commit takes ownership of the candidate and frozen destination before publication. Session cleanup aborts only pre-handoff candidates; an accepted commit settles with strongest observed evidence. Reattachment does not resume uploads/downloads.
 
 ## Operation Ledger and Cancellation
 
-Envd keeps one bounded generation-scoped ledger containing running operations and retained terminal evidence. A running entry can carry a cancellation-requested flag and the latest envd-observed receipt. A retained terminal entry contains exactly one bounded result or typed error plus its final receipt when the method produces one. `unknown_outcome` is a terminal typed error, not another lifecycle state. Completed `active_only` entries are removed rather than becoming terminal replay records.
+Each Session owns its bounded operation ledger; aggregate limits cover all ledgers. Running operations are not evicted. Evidence for live command resources stays with them; completed history is eligible for finite or pressure-driven collection. Missing evidence is not proof of non-dispatch.
 
-After typed validation and capacity checks, envd inserts the operation entry synchronously before scheduling handler work. This ordering prevents a later cancellation from overtaking an earlier accepted request. The operation ledger does not own process trees, file transfers, staged candidates, or spool files; their domain records own those resources.
+Lifecycle, cancellation and release must still make progress when ordinary admission is full. Use the existing bounded control path rather than introducing a separate recovery subsystem. `operation.cancel` returns not_found/already_terminal/cancellation_requested/not_cancellable and never equates an acknowledgement with completed cleanup.
 
-For `terminal_evidence`, terminal publication stores the response/error and receipt atomically. A terminal entry with missing evidence is never visible, and response-waiter or carrier loss neither cancels the operation nor removes its evidence. Running entries are never capacity-reclaimed; retained terminal entries normally follow finite internal record policy. An originating `shell.exec` or `process.start` entry whose result or typed error contains a selector for a still-live process or output record is pinned until every referenced record is explicitly released. Command admission reserves capacity for that one pinned origin entry together with its finite process/output records, so the exception remains bounded by command-resource capacity rather than by the number of later controls. `active_only` response content is never stored in this ledger. Once reclaimable side-effect evidence is gone, absence cannot prove non-dispatch.
+## Receipts and Errors
 
-The ledger is one bounded pool with its configured ordinary-record capacity plus one reconciliation reserve. Ordinary work and pinned command-origin entries can use only ordinary capacity and cannot consume the reserve. `operation.cancel`, `receipt.get`, `process.inspect`, `process.kill`, `process.release`, `output.read`, and `output.release` are reconciliation operations: they can use every unused ordinary slot as well as the reserve, so the reserve guarantees minimum progress without imposing a separate serial concurrency limit. The global concurrent-operation limit still bounds running work. At total capacity, reconciliation admission can reclaim eligible completed reconciliation evidence. Ordinary admission first reclaims eligible completed reconciliation evidence beyond the one reserved slot, then ordinary terminal evidence, so completed borrowers cannot starve later ordinary work. Running entries, owned native work, and pinned command-origin evidence are never reclaimed. `receipt.get` snapshots its target evidence before its own capacity admission, so admitting the observation cannot erase the result it is about to return. Existing retained entries remain directly replayable without acquiring another record. Consequently callers can concurrently reconcile independent processes and outputs during normal operation, while at least one bounded cleanup path remains available when ordinary capacity is full.
+OperationReceipt contains operation identity, method, request digest, observed timestamp, stage and optional outcome. Stages are accepted/dispatched/exec_confirmed/completed/unknown; outcomes are succeeded/failed/cancelled/timed_out/unknown. These are native observations, not durable Agent completion.
 
-`operation.cancel` is deliberately `active_only`. It targets an operation ID in the same generation, sets the running entry's cancellation request, and asks the domain owner to stop safely. Acceptance of that request is not terminal proof, and repeating the cancel with a new operation ID can observe `already_terminal` or `not_found`. A `terminal_evidence` target publishes its strongest completed, cancelled, timed-out, or unknown result and retains receipt evidence for later `receipt.get`. Cancellation of an `active_only` target affects only its running entry; once that response handoff ends, no terminal receipt is promised, and a caller that lost the response performs a new observation with a new operation ID. Carrier close never requests cancellation automatically.
+Errors carry a bounded type, retry hint, dispatch stage and optional operation/command/output evidence. They exclude secrets, native paths/PIDs and complete output. Retry hints are never/same_request/after_refresh/after_capacity/reconcile_first. Dispatch stages are pre_dispatch/dispatching/dispatched/completed/unknown. Generated codecs own exact code/type pairs.
 
-Writer commit still has one atomic ownership boundary: either session close retains cleanup responsibility for the staged candidate, or accepted commit owns publication. This domain rule does not require a generic operation ownership framework.
+|   Code | Type                    |
+| -----: | ----------------------- |
+| -32700 | `parse_error`           |
+| -32600 | `invalid_request`       |
+| -32601 | `method_not_found`      |
+| -32602 | `invalid_params`        |
+| -32603 | `internal_error`        |
+| -32001 | `not_initialized`       |
+| -32002 | `already_initialized`   |
+| -32003 | `protocol_incompatible` |
+| -32010 | `denied`                |
+| -32011 | `not_found_or_denied`   |
+| -32012 | `unsupported`           |
+| -32020 | `stale_generation`      |
+| -32021 | `invalid_handle`        |
+| -32022 | `session_expired`       |
+| -32030 | `busy`                  |
+| -32031 | `quota_exceeded`        |
+| -32032 | `output_limit_exceeded` |
+| -32040 | `timeout`               |
+| -32041 | `cancelled`             |
+| -32042 | `unknown_outcome`       |
+| -32043 | `operation_in_progress` |
+| -32050 | `provider_unavailable`  |
+| -32052 | `cleanup_failed`        |
+| -32053 | `command_start_failed`  |
+| -32060 | `conflict`              |
+| -32061 | `integrity_mismatch`    |
 
-## Receipts and Side-Effect Evidence
+Expired/collected selectors return invalid/not-found or Session-expired errors; permanent tombstones are unnecessary. An error after command ownership commits preserves available opaque resource references and bounded evidence while that Session exists.
 
-A mutating operation can return:
+## Retry, Observation and Compatibility
 
-```python
-class OperationReceipt(BaseModel):
-    operation_id: str
-    method: str
-    environment_id: str
-    generation: int
-    request_digest: str
-    stage: Literal[
-        "accepted",
-        "dispatched",
-        "exec_confirmed",
-        "completed",
-        "unknown",
-    ]
-    outcome: Literal[
-        "succeeded",
-        "failed",
-        "cancelled",
-        "timed_out",
-        "unknown",
-    ] | None
-    observed_at: datetime
+The client never automatically replays possibly dispatched work after carrier loss, recreates it in another Session or chooses another operation ID to hide ambiguity. Exact retained same-Session replay is the only replay facility. Process inspect/wait, receipt lookup and output reads provide explicit bounded observation.
 
-
-class ReceiptGetParams(BaseModel):
-    context: EIPCallContext
-    operation_id: str
-
-
-class ReceiptGetResult(BaseModel):
-    receipt: OperationReceipt
-```
-
-A receipt states only facts envd directly observed. `accepted` proves no native dispatch. `dispatched` proves the native boundary was crossed, not completion. `exec_confirmed` proves the requested executable passed the exec handshake. `completed` has a terminal outcome. `unknown` preserves lost certainty.
-
-Receipt evidence is attached to a `terminal_evidence` operation record, has no independent selector or quota, and shares that record's bounded lifetime and reclamation rule, including the command-origin pin while disclosed process/output records remain live. Missing evidence never becomes proof of non-dispatch, mutation failure, Host durability, provider billing, or Agent completion.
-
-## Error Contract
-
-A method error has bounded `error.data`:
-
-```python
-type RetryHint = Literal[
-    "never",
-    "same_request",
-    "after_refresh",
-    "after_capacity",
-    "reconcile_first",
-]
-
-
-type DispatchStage = Literal[
-    "pre_dispatch",
-    "dispatching",
-    "dispatched",
-    "completed",
-    "unknown",
-]
-
-
-class EIPErrorData(BaseModel):
-    error_type: str
-    retry_hint: RetryHint
-    dispatch_stage: DispatchStage
-    operation_id: str | None = None
-    environment_id: str | None = None
-    generation: int | None = None
-    field: str | None = None
-    handle_kind: str | None = None
-    produced_bytes: int | None = None
-    emitted_items: int | None = None
-    dropped_items: int | None = None
-    process_status: ProcessStatus | None = None
-    process: ProcessInfo | None = None
-    output: ProcessOutput | None = None
-    receipt: OperationReceipt | None = None
-    safe_detail: str | None = None
-```
-
-Stable code/type pairs are:
-
-|     Code | `error_type`                 | Meaning                                                                    |
-| -------: | ---------------------------- | -------------------------------------------------------------------------- |
-| `-32700` | `parse_error`                | Invalid JSON before an EIP envelope                                        |
-| `-32600` | `invalid_request`            | Invalid JSON-RPC envelope, batch, or notification                          |
-| `-32601` | `method_not_found`           | Method absent from selected protocol version                               |
-| `-32602` | `invalid_params`             | Typed params fail validation                                               |
-| `-32603` | `internal_error`             | Bounded unexpected fault with no narrower class                            |
-| `-32001` | `not_initialized`            | Method used before initialization                                          |
-| `-32002` | `already_initialized`        | Initialization repeated in one session                                     |
-| `-32003` | `protocol_incompatible`      | Version or required-method agreement fails                                 |
-| `-32010` | `denied`                     | Configured policy denies the action                                        |
-| `-32011` | `not_found_or_denied`        | Object absent or intentionally indistinguishable                           |
-| `-32012` | `unsupported`                | Protocol method/option unavailable in current descriptor/posture           |
-| `-32020` | `stale_generation`           | Selector belongs to another generation                                     |
-| `-32021` | `invalid_handle`             | Handle kind, state, or use is invalid                                      |
-| `-32030` | `busy`                       | Bounded admission capacity unavailable                                     |
-| `-32031` | `quota_exceeded`             | Finite resource quota cannot reserve capacity                              |
-| `-32032` | `output_limit_exceeded`      | A bounded non-command result cannot fit its hard output ceiling            |
-| `-32040` | `timeout`                    | Relative deadline expired with known timeout result                        |
-| `-32041` | `cancelled`                  | Provider proves cancellation                                               |
-| `-32042` | `unknown_outcome`            | Possible effect cannot be classified safely                                |
-| `-32043` | `operation_in_progress`      | Same operation ID and digest is active                                     |
-| `-32050` | `provider_unavailable`       | Native/provider resource unavailable                                       |
-| `-32051` | `execution_isolation_failed` | Required isolation or pre-exec identity failed                             |
-| `-32052` | `cleanup_failed`             | Required native cleanup cannot be proven                                   |
-| `-32053` | `command_start_failed`       | Selected executable did not execute after preparation                      |
-| `-32060` | `conflict`                   | Operation-ID digest, topology, publication, or state precondition conflict |
-| `-32061` | `integrity_mismatch`         | Transfer count or SHA-256 evidence differs                                 |
-
-Carrier authentication and upgrade failures happen before JSON-RPC dispatch. Once a valid request is admitted in an initialized session, method failure uses this contract.
-
-The generated codec validates every code/type pair. Counts and status contain bounded evidence, never native identities. After command selectors have been committed, a command terminal error can include `process` for a background owner or `process_status` plus `output` for foreground execution. Those shapes contain only opaque selectors, status, counts, and bounded previews; complete bytes remain solely in the output spool. Clients branch on code and `error_type`, not message text.
-
-## Retry and Unknown Outcomes
-
-A new `active_only` observation uses a new operation ID and is never terminal-replayed. Repeating a retained `terminal_evidence` operation ID with the same method/digest asks for replay of the original result. Mutations can repeat safely only when:
-
-- failure proves `dispatch_stage="pre_dispatch"` and the caller deliberately starts a new operation; or
-- the same operation ID, method, and digest still has retained replay evidence; or
-- receipt/resource reconciliation proves a terminal fact that makes a new operation safe.
-
-A timeout, cancellation race, carrier close, or response loss after possible dispatch yields `unknown_outcome` unless stronger evidence exists. The client never switches carrier, reconnects, or assigns a new operation ID to repeat an ambiguous mutation automatically.
-
-## Observation Without Push
-
-EIP 0.1 has no application notifications. Clients observe process and output changes through bounded `process.inspect`, `process.wait`, and `output.read`. Explicit offsets and `next_offset` support non-draining reads; each call remains an independently bounded request. `wait_ms` and `timeout_ms` provide bounded long polling where supported.
-
-Binary file data is not state notification. It exists only for one session-owned reader or writer and has no subscription, replay, fan-out, or independent authority.
-
-## Compatibility and Versioning
-
-EIP version is independent of package version, readiness state, and provider profile. Before the first externally supported release, the checked `0.0.0` IDL remains an atomic pre-release snapshot, but every removed field number and name is reserved so stale generated values cannot be reinterpreted accidentally.
-
-Within one supported major:
-
-- additive result fields are compatible when older clients can ignore them safely;
-- a new method is compatible only in a negotiated minor and appears explicitly in `available_methods`;
-- an optional request field requires a negotiated minor and a non-widening default;
-- method names, operation-ID replay scope, timeout meaning, error meaning, selector scope, explicit output offsets, transfer integrity, and writer publication boundary remain stable.
-
-Removing or repurposing a field, changing a method's side-effect boundary, making a selector authoritative, changing replay digest semantics, resuming transfers across sessions, reintroducing reader `END_ACK`, or turning an absolute observation timestamp into a lease requires an incompatible revision.
-
-Common fixtures exercise generated Python against the Rust daemon over stdio, HTTP, and reverse WebSocket. Carrier tests add framing or resource mapping, attachment authentication, reconnect where applicable, liveness, concurrency, streaming, and size cases without redefining protocol results.
-
-## Invariants
-
-01. Every control message contains one correlated JSON-RPC envelope; batches and notifications are invalid, and native file bytes use only the carrier's typed binary-frame or HTTP streaming-body mapping.
-02. `initialize` is the first request, verifies Environment identity and exact required methods, and publishes configured mounts, root mount, actionable limits, method availability, generation, and isolation posture.
-03. Every later method carries one operation ID; operation ID is the sole active-cancellation identity and, for `terminal_evidence` methods, the sole replay and receipt identity.
-04. Same operation ID plus same method/digest reports active progress or replays retained terminal evidence; `active_only` responses are not retained, and another method/digest conflicts while an entry exists.
-05. `timeout_ms` is a relative bounded wait/operation budget converted to a monotonic daemon deadline; caller wall-clock timestamps do not govern execution.
-06. Exact `available_methods`, not capability families, determines callable support.
-07. Opaque selectors grant no authority and none survives daemon restart; file transfer handles are additionally session-scoped.
-08. Receipts are addressed only by operation ID and state only envd-observed evidence.
-09. Cancellation is a request; only owner evidence establishes terminal cancellation.
-10. Reader success requires `file.close_reader` after full consumption and digest verification; readers do not use `END_ACK`.
-11. Writer open and upload do not mutate the destination; only integrity-checked commit can publish, and ambiguous commit is reconciled by operation ID.
-12. Command output uses stable stdout/stderr references, append-only explicit offsets, and next offsets; there are no output cursor objects or duplicate process-output read method.
-13. Errors preserve pre-dispatch, dispatched, completed, and unknown distinctions without exposing secrets or native internals.
-14. Carrier choice and reconnect cannot change method, replay, transfer, output, receipt, or compatibility semantics.
+EIP 1.0 requires binary profile 2 and Session addressing. Other protocol versions and profiles fail negotiation. Removed IDL field names and numbers remain reserved.

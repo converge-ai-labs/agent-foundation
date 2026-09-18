@@ -23,6 +23,7 @@ Harness UI depends on the [Harness](../a13n-harness/README.md), [Environment pac
 | [02b-environment-skill-sources.md](02b-environment-skill-sources.md)                             | Host-path-preserving and virtual multi-mount Skill sources, user Skill mount, precedence, and per-Run freezing                      |
 | [03-local-storage-and-recovery.md](03-local-storage-and-recovery.md)                             | Thread metadata/configuration heads, immutable Run/checkpoint values, Environment state, output-comment storage, and local recovery |
 | [04-projects-threads-and-environments.md](04-projects-threads-and-environments.md)               | Project roots, Full Control and Sandbox modes, path layouts, Thread configuration, Environment binding, and state publication       |
+| [04a-devices-and-environment-bindings.md](04a-devices-and-environment-bindings.md)               | Device connections, directory discovery, binding selection, admission capture and WebUI Add environment                             |
 | [05-runtime-subagents-and-surfaces.md](05-runtime-subagents-and-surfaces.md)                     | `HarnessUiApp`, detached projections, root operations, async children, Web listener access, tools, and live presentation            |
 | [06-setup-and-environment-readiness.md](06-setup-and-environment-readiness.md)                   | First-use discovery, reviewed starter files, explicit defaults, and selected Environment preflight/recovery                         |
 | [07-interactive-cli.md](07-interactive-cli.md)                                                   | Full-terminal ownership, commands, display modes, startup, cwd sessions, and context choices                                        |
@@ -41,7 +42,7 @@ Read `01`, `01a`, `01b`, `02`, `02a`, and `02b`, then [Harness Capability Model]
 
 ### Integrate Environments
 
-Read `01a`, `02b`, and `04`, then [Provider Specifications and Catalog](../a13n-environment/01-provider-specs-and-catalog.md) and [Environment Re-entry Lifecycle](../a13n-environment/02-environment-lifecycle.md).
+Read `01a`, `02b`, `04`, and `04a`, then [Provider Specifications and Catalog](../a13n-environment/01-provider-specs-and-catalog.md) and [Environment Re-entry Lifecycle](../a13n-environment/02-environment-lifecycle.md).
 
 ### Implement a Surface
 
@@ -69,8 +70,8 @@ Read `05`. A surface calls `HarnessUiApp` commands and queries and consumes deta
 
 - Python-like schemas are conceptual unless explicitly described as serialized configuration.
 - A Thread is one continuation-backed conversation identity. A root Thread has no parent; an async child Thread records its parent and can contain several linked execution segments.
-- A Project is an optional file-defined mutable named ordered list of local roots with conversation creation configuration for organizing project-bound root Threads. Its first root anchors current-directory launch resolution and receives mount alias `workspace`; later roots are additional Run mounts with distinct aliases. Harness UI defines no Workspace resource.
-- A Thread configuration is a sticky selection of optional Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. It is not a Harness Run or immutable history.
+- A Project is optional file-defined working context with local roots and conversation creation configuration; a remote-only Project can have no local roots. Its first root anchors current-directory launch resolution and receives mount alias `workspace`; later roots are additional Run mounts with distinct aliases. Harness UI defines no Workspace resource.
+- A Thread configuration is a sticky selection of optional Project, Agent, local Environment profile, additional Environment bindings/default, Harness Plugins, Environment Run Extensions and MCP servers. It is not a Harness Run or immutable history.
 - A Run composition is the immutable resolved value captured at admission from one configuration generation and one Thread configuration version.
 - An Environment profile selects Provider and Host-adapter configuration for Project-root execution. Harness UI owns the fixed Full Control and Sandbox profiles; extension YAML can define advanced custom profiles under other IDs. A profile is distinct from a runtime `Environment` identity and does not own the roots.
 - Presentation values are strict detached projections. Only selected `HarnessState` checkpoints authorize continuation.

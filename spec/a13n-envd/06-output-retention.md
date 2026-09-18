@@ -24,7 +24,7 @@ Envd does not accept a per-request fail/truncate/retain policy. Its job is to pr
 
 The following shapes are serialized EIP JSON:
 
-`OutputReference` is the generation-scoped opaque selector defined by [EIP Protocol](02-eip-protocol.md#opaque-selectors).
+`OutputReference` is the Session-owned, generation-fenced opaque selector defined by [EIP Protocol](02-eip-protocol.md#opaque-selectors).
 
 ```python
 class OutputInfo(BaseModel):
@@ -74,11 +74,11 @@ Before payload release, envd reserves:
 - one complete configured byte allowance for each stream under the daemon-wide spool ceiling; and
 - bounded preview and bookkeeping memory.
 
-This is a logical capacity guarantee, not a promise that the filesystem cannot fail. It prevents another command from consuming capacity already needed to retain this command's output. When both producers become terminal, envd releases the unused portion and keeps only actual retained bytes charged until output release. Daemon-wide spool bytes and records remain finite. When capacity is unavailable, command admission fails before the payload starts; envd does not evict an existing reference.
+This is a logical capacity guarantee, not a promise that the filesystem cannot fail. It prevents another command from consuming capacity already needed to retain this command's output. When both producers become terminal, envd releases the unused portion and keeps only actual retained bytes charged until output release. Daemon-wide spool bytes and records remain finite. When capacity is unavailable, envd first collects eligible completed history. If capacity is still insufficient, command admission fails before payload start; live command output is never evicted.
 
 After start, stdout and stderr are drained concurrently. Raw bytes append to their respective private spool files, while only each bounded prefix preview and small bookkeeping remain in memory. Normal pipe backpressure therefore depends on drain throughput rather than on a large in-memory result buffer.
 
-`EnvironmentDescriptor.limits.max_output_bytes_per_stream` is the maximum bytes retained independently for stdout and stderr. `max_output_preview_bytes` bounds each returned preview. A finite daemon-wide spool disk ceiling bounds aggregate retained data across commands. If either stream ceiling is crossed, envd:
+`SessionDescriptor.limits.max_output_bytes_per_stream` is the maximum bytes retained independently for stdout and stderr. `max_output_preview_bytes` bounds each returned preview. A finite daemon-wide spool disk ceiling bounds aggregate retained data across commands. If either stream ceiling is crossed, envd:
 
 1. preserves the retained prefixes already written;
 2. requests strongest command-tree termination;
@@ -98,20 +98,22 @@ A spool write failure after payload start follows the same safe drain and cleanu
 - If the producer completes while waiting, the response can be empty with `producer_complete=true`.
 - If `start_offset > retained_bytes`, the request is invalid; envd never skips forward or fabricates zero-filled data.
 
-`wait_ms` is a non-negative long-poll bound narrowed by the call's relative timeout and daemon ceiling. Reads are non-draining: several clients can read the same reference independently, and reading does not change retention lifetime.
+`wait_ms` is a non-negative long-poll bound narrowed by the call's relative timeout and daemon ceiling. Reads are non-draining within the owning Session. Explicit access updates terminal history's last-use time under [Resource Lifetime](09-resource-lifetime-and-reclamation.md). An admitted read prevents deletion during that bounded observation.
 
 ## Lifetime and Release
 
-Output belongs to the daemon generation, not the protocol session. Carrier loss and `session.close` do not release it. A new initialized session for the same Environment and generation can continue reading from any valid offset.
+Output belongs to its command's Session. Carrier loss preserves it only during the same-Session grace; Session close/expiry cleans it along with other owned resources. It cannot be imported into another Session. Completed output is finite history, eligible for inactivity or pressure collection.
 
-A reference remains valid until one of these explicit boundaries:
+A reference remains valid until one of these boundaries:
 
 - `output.release` succeeds after its producer is complete and, for a background stream, after `process.release` has detached it; or
+- terminal history is collected under inactivity or pressure policy; or
+- its Session is cleaned; or
 - the daemon generation ends.
 
 `process.release` removes only the terminal process record. It atomically detaches both output objects but leaves their references, bytes, and quota charges intact, so stdout and stderr can then be released independently without a two-file deletion transaction.
 
-There is no idle expiry or capacity eviction of a valid output object. A caller that keeps references consumes its finite spool allocation and can cause later command admission to fail. This makes retention predictable and keeps reclamation explicit.
+[Resource Lifetime](09-resource-lifetime-and-reclamation.md) owns terminal-history collection and its races with reads/releases. Session keepalive does not retain all old output. Collection fences references and deletes bytes; failed physical deletion remains charged. A Host needing durable output must export it while available.
 
 Releasing an active stream or one still attached to a process record is a conflict. Release is idempotent while its bounded terminal operation evidence remains. Logical invalidation and physical deletion of that one spool object complete as one reclaim action; if envd cannot prove deletion, it returns `cleanup_failed`, keeps the capacity charged, and does not report successful release. Release reclaims the spool object; it cannot revoke bytes already delivered to a client and is not secure erasure of the bounded preview retained in an earlier terminal command result.
 
@@ -119,7 +121,7 @@ No output reference survives daemon restart, becomes Harness continuation state,
 
 ## Storage and Security
 
-Spool files live under the fresh generation-private runtime subtree. They are outside configured EIP mounts and required-isolation command grants, including when an intentionally broad mount is configured. Resource path enforcement and command isolation each protect that boundary independently. Native permissions or ACLs are defense in depth.
+Spool files live in daemon-owned runtime storage, not user workspace data. Native permissions and the Host's outer deployment boundary govern access. File operations or arbitrary same-account code can access paths allowed by that boundary; envd promises no protected-path subtraction.
 
 References reveal no path or storage key and grant no authority by possession. Each read and release repeats session trust, generation, kind, method availability, and lifecycle checks. Output content never enters normal logs, metrics, traces, or receipts. A terminal command error emitted after ownership commit can carry only the same bounded prefix previews and opaque references allowed in a successful command result; complete output remains solely in the spool.
 
@@ -129,7 +131,7 @@ At-rest encryption is provider storage policy. Envd does not add a second storag
 
 | Failure                                     | Observable result                                                     | Guarantee                                                |
 | ------------------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------- |
-| Spool records or reserved bytes unavailable | `busy` or `quota_exceeded` before payload release                     | No command starts and no valid reference is evicted      |
+| Spool records or reserved bytes unavailable | `busy` or `quota_exceeded` before payload release                     | No command starts; active output is not evicted          |
 | Either per-stream output ceiling is crossed | Command terminates with `output_limit`; affected output is incomplete | Retained prefix remains readable and pipes keep draining |
 | Spool write fails after start               | Provider/cleanup failure plus command and receipt evidence            | No false completeness or hidden dispatch                 |
 | Offset exceeds current retained length      | `invalid_params`                                                      | No skipped or fabricated bytes                           |
@@ -148,6 +150,6 @@ Raw-byte counting, separate stdout/stderr references, append-only range semantic
 3. Only bounded previews and bookkeeping remain in memory; complete large output is stored in disk-backed spool files.
 4. Each output has one readable range `[0, retained_bytes)` and explicit client-owned offsets; there are no rings, gaps, or output cursor objects.
 5. Crossing the hard output ceiling terminates the command and reports incompleteness rather than returning a false complete result.
-6. Existing references are never evicted to admit another command.
-7. Output survives session reconnect only within the same daemon generation and remains until explicit release or generation end.
-8. Spool paths and content never enter EIP selectors, command authority, normal observability, or portable Harness state.
+6. Active command output is not pressure-evicted; unused completed history is reclaimable.
+7. Output survives disconnect only within its Session's finite grace; same-Session reattachment does not restore collected bytes.
+8. Spool paths and content never enter EIP selectors, normal observability or portable Harness state.

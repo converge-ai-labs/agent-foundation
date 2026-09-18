@@ -2,117 +2,91 @@
 
 ## Design Position
 
-`a13n.http-envd` and `a13n.websocket-envd` connect to externally operated daemons. They implement the same provider-neutral EIP operations as Local Envd without provisioning, starting, stopping, deleting, or renewing the remote infrastructure. Both declare `supports_managed=False`, `supports_stop=False`, `supports_destroy=False`, and `requires_keepalive=False`.
+`a13n.http-envd` and `a13n.websocket-envd` connect to externally operated Devices. They do not provision, start, stop, delete or renew remote infrastructure. Both declare `supports_managed=False`, `supports_stop=False`, `supports_destroy=False` and `requires_keepalive=False`. EIP Session keepalive is separate from Provider target renewal.
 
-HTTP is Host-dialed. WebSocket is reverse: envd connects to a Host-owned listener while remaining the EIP responder. The WebSocket integration SDK accepts authenticated connections from Host code; it never starts a listener or supplies a default product ingress route.
+HTTP is Host-dialed; reverse WebSocket is daemon-dialed, with envd always the responder. A Host-owned Device connection serves multiple fresh adapter-owned Sessions. Independent Runs never share an Environment adapter or initialized EIP Session.
 
 ## Boundaries
 
-| Concern                                                                           | Owner                                                                         |
-| --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| Daemon deployment, outer isolation, mounts, bootstrap and credentials             | External operator and Host                                                    |
-| Listener, authentication, trusted daemon selection, tenant routing                | Host                                                                          |
-| Framework-neutral WebSocket message interface and EIP framing                     | Low-level EIP client                                                          |
-| Bounded online connections and exclusive local session acquisition                | Host-owned Provider SDK instance                                              |
-| External state codec, operation scope and semantic EIP conversion                 | Remote Provider                                                               |
-| Cross-process routing, durable Environment records and conflicting Run scheduling | Host                                                                          |
-| EIP session admission, generation and operation outcomes                          | [Envd transport/session contract](../a13n-envd/03-transports-and-sessions.md) |
+| Concern                                                                           | Owner                     |
+| --------------------------------------------------------------------------------- | ------------------------- |
+| Daemon deployment and outer security boundary                                     | Operator or Host          |
+| Device registration, endpoint, credentials, listener and trusted folder selection | Host                      |
+| Framing, multiplexing, Session controls and transfers                             | Low-level EIP client      |
+| Bounded process-local Device connection registry                                  | Host-owned connection SDK |
+| Fresh adapter, folder configuration and provider-neutral operation translation    | Remote Provider           |
+| Cross-process routing, durable records and product policy                         | Host                      |
 
-A Session is not a tenant isolation boundary. One Host can operate many separate daemons; one daemon admits only one active initialized Session. Independent Runs do not share an Environment adapter or concurrently acquire that daemon. Concurrent requests within an admitted Session remain supported. No connection credential or untrusted URL authorizes selecting another Environment.
+A Session is a resource owner, not a tenant sandbox. Device and working-directory selection are trusted inputs; the model receives only the resulting operation routes. The SDK owns no listener, global registry, credential issuer or distributed relay.
 
 ## Configuration and State
 
-Both Providers accept configuration schema `1`, represented by `RemoteEnvdProviderConfiguration`. Its `required_methods` is a bounded tuple of exact EIP method names, canonicalized to a sorted unique tuple. The Provider always requires description, readiness and clean session close in addition to these methods. This compatibility requirement is not an access grant; the live descriptor and Host access ceiling determine available operations.
+The Provider's credential-free configuration contains `working_directory` and exact `required_methods`. Paths use the [Device path model](../a13n-envd/04-resource-operations.md#path-model), never the requester's filesystem. An omitted working directory resolves from Device info at preparation; Hosts with immutable Run acceptance resolve and capture it before acceptance. Validation is structural and inert; Session opening checks availability.
 
-The configured descriptor advertises the EIP operation upper bound without I/O. The initialized live descriptor narrows it. External daemon configuration owns actual mounts, shell profiles, command executable roots and limits; the recipe cannot modify that configuration.
+The adapter's provider-local `/` is the Device filesystem namespace, not the selected directory. Device paths translate directly to provider-local paths; relative inputs and omitted command cwd use the captured working directory. Host aliases prefix this namespace without restricting it to cwd. Required methods assert compatibility, not permissions.
 
-Both require `EnvironmentState` version `1` with this exact provider payload:
+External state contains the stable native `device_id` under the Provider's versioned state envelope. Unsupported state versions fail validation. Host logical resource identity is independent of native Device identity and Session working-directory configuration.
 
-```python
-class RemoteEnvdStateData(BaseModel):
-    daemon_environment_id: str
-```
-
-The payload is a bounded native daemon selector. The envelope key must match the selected Provider. Missing, malformed or incompatible state fails before connection; it never requests creation or discovery of an arbitrary daemon. A Host logical Environment ID can differ from this native ID. Initialization and wire receipts validate the native ID; Harness process and output references carry the logical ID. A daemon restart retains its configured native ID but changes generation, invalidating old generation-bound references.
-
-State contains no endpoint, credential, connection, Session, generation, lease or Host Run policy. `dump_state()` returns the supplied detached validated state after preparation, failure and close. `target_identity()` returns the native daemon ID, namespaced by the Host's immutable backend selection.
+State excludes endpoints, credentials, sockets, Sessions, generations, heartbeat state and Run policy. `dump_state()` returns detached validated target state after preparation/failure/close. `target_identity()` identifies the Device within the Host's immutable backend selection, not one folder binding. The Host owns resource deduplication; distinct accepted folder bindings retain independent Session scopes.
 
 ### HTTP backend and runtime
 
-`HttpEnvdBackendConfiguration` supplies one credential-free EIP HTTP origin, explicit private-link plaintext opt-in, finite initialization and request timeouts, and a bounded in-flight limit. It is Host backend configuration, not an Environment recipe or portable state. One configured backend selects one origin; multiple origins use separately configured backends. Changing the target-defining origin creates another Host backend rather than silently retargeting an existing Environment.
+`HttpEnvdBackendConfiguration` supplies a credential-free origin, explicit private-link plaintext choice, finite connection/request timeouts and bounded concurrency. Runtime collaborators supply the current credential and TLS configuration. Public origins use verified HTTPS; plaintext requires an explicitly trusted local/private deployment. Credentials never appear in URLs or portable state.
 
-`HttpEnvdCredential` supplies a write-only secret `token`. `HttpEnvdProviderRuntime` combines validated backend settings, the current credential and optional trusted TLS configuration. TLS verification cannot be disabled. Origin validation is deterministic and follows the client's `normalize_http_endpoint()` policy without constructing a network client. Public network origins use verified HTTPS; plaintext is limited to loopback or an explicitly trusted provider-private link. Credentials cannot appear in origins.
-
-Embedded Hosts can construct the typed runtime directly. Hosts using `create_runtime()` supply an external `ProviderRuntimeContext`; a managed context fails before I/O.
+One backend selects one origin. Changing that origin is an explicit Host target change. Construction does not connect. Preparation initializes the expected Device, opens a fresh Session with the captured working directory and validates readiness. TCP pooling has no ownership significance.
 
 ### WebSocket backend and runtime
 
-`WebSocketEnvdBackendConfiguration` supplies a finite connection-acquisition timeout. It contains no listener address, attachment credential, server or native socket. The Host supplies `WebSocketEnvdConnections` through `WebSocketEnvdProviderRuntime`, or explicitly constructs a `WebSocketEnvdEnvironmentProvider` wired to that SDK for its runtime factory. An unwired catalog instance remains inert and rejects runtime creation with `provider_runtime_required` rather than opening a listener or accessing global state.
+`WebSocketEnvdBackendConfiguration` supplies a finite connection-acquisition timeout. The Host supplies `WebSocketEnvdConnections` through its runtime, not a listener address or socket in Provider configuration. An unwired Provider remains inert and fails runtime creation explicitly.
 
-The Host authenticates each accepted upgrade, negotiates `eip.v1`, and resolves the expected native daemon identity from trusted routing before handing the connection to the SDK. `WebSocketConnection` is the client's structural async interface for send, receive, close, closure observation and negotiated subprotocol. The `websockets` server connection implements it directly; other frameworks adapt their own accepted connection. Disconnects are normalized by that adapter and closure observation does not consume messages concurrently with EIP.
+The Host authenticates the upgrade, negotiates `eip.v1` and resolves expected Device identity before handing an accepted `WebSocketConnection` to the SDK. This structural async interface provides send, receive, close and non-consuming closure observation; framework adapters normalize disconnects without adding another socket reader.
 
-One SDK instance represents one Host-selected backend/trust scope. It is process-local, explicitly owned and bounded; it is neither a durable registry nor a cross-worker relay. Hosts route the requesting Run to the connection-owning process or supply their own integration. Merely enabling a Provider key does not solve cross-process routing.
+One SDK instance is a bounded process-local Host trust scope. At most one active connection represents a Device; duplicates are rejected without replacing the active owner. Different Devices can be online simultaneously. Hosts own cross-process placement and routing.
+
+## Device Discovery
+
+The connection SDK exposes authenticated Device info and bounded directory listing without opening an Environment adapter or Session. HTTP uses the same EIP methods directly. Host product authorization applies before discovery; no Run is required. Discovery failure affects that request, not sibling Sessions or Device connection ownership.
 
 ## Lifecycle
-
-### HTTP
-
-Construction and scope entry perform no I/O. `prepare()` opens a fresh authenticated transport, initializes the expected native identity and required methods, verifies readiness and publishes EIP operation facets. Scope rebinding after eager preparation performs no network I/O.
-
-`close()` cleans only adapter-owned process/output resources, closes the EIP Session and releases the HTTP client. It does not stop the daemon or delete files. A later fresh adapter can reconnect to the same generation after clean Session closure.
-
-Transport loss is not clean EIP Session closure. An abandoned HTTP Session can remain admitted until daemon idle expiry or operator recovery. A second attachment is rejected while that Session remains active. The Provider does not steal it, restart the daemon, replay initialization indefinitely, infer absence or replay possibly dispatched mutations. Failed connection preparation consumes that adapter's attempt; the Host constructs a fresh adapter for a subsequent attempt.
-
-### Reverse WebSocket
 
 ```mermaid
 sequenceDiagram
     participant Daemon as External envd
-    participant Host as Host listener and policy
-    participant SDK as Host-owned connection SDK
-    participant Env as Fresh Environment
-    Daemon->>Host: Authenticated reverse upgrade
-    Host->>SDK: attach(native identity, accepted connection)
-    SDK->>Daemon: initialize and readiness
-    Note over SDK,Daemon: Ready while waiting for a Run
-    Env->>SDK: Bounded exclusive session acquisition
-    SDK->>Daemon: Recheck readiness
-    SDK-->>Env: Ready EIP Session
-    Env->>Daemon: EIP operations
-    Env->>SDK: Close local operation scope
-    SDK->>Daemon: session.close and carrier close
-    SDK-->>Host: Attachment handler completes
-    Daemon->>Host: Later fresh reverse connection
+    participant Host as Host listener
+    participant SDK as Device connection SDK
+    participant Env as Fresh Environment adapter
+    Daemon->>Host: Authenticated reverse connection
+    Host->>SDK: Attach expected Device
+    SDK->>Daemon: Device initialize
+    Note over SDK,Daemon: Online with zero Sessions
+    Env->>SDK: Acquire Device connection
+    SDK->>Daemon: session.open with captured working_directory
+    SDK->>Daemon: Session readiness
+    SDK-->>Env: Independent ready Session
+    Env->>Daemon: Session operations and keepalive
+    Env->>Daemon: session.close
+    Note over SDK,Daemon: Other Sessions remain usable
 ```
 
-Attachment immediately initializes and verifies readiness, including while no Run needs the daemon. Waiting for a Run before initialization would violate the daemon's finite initialization deadline. No Environment construction or scope entry triggers this Host-directed attachment work.
+Attachment performs the Device handshake immediately, even when no Run is waiting. The Host awaits the attachment handler for the carrier lifetime. Acquisition waits for the matching Device under a finite deadline; cancellation of a waiter does not consume or close the connection.
 
-The Host awaits `attach()` for the connection lifetime. At most one connection per native identity is admitted. Duplicates and excess connections are rejected and closed without replacing an active lease. Acquisition waits only for a matching online connection, under a finite deadline; a concurrent lease fails busy rather than silently sharing or queueing Run authority. Cancelling a waiting acquisition does not consume a connection.
+`prepare()` opens one independent Session, checks required methods and readiness, and exposes operation facets. The client maintains Session keepalive for this adapter's lifetime. Cancelling preparation or closing the adapter stops keepalive and closes only that Session. It neither closes a borrowed carrier nor stops the remote daemon. HTTP uses the identical Session flow over its request transport.
 
-An Environment lease rechecks readiness and required methods before exposing operations. Lease close cleans its operation resources and ends the Session/carrier. Reconnection establishes a fresh Session; it never revives old transfer handles or replays requests. Disconnect, failed initialization, handler cancellation and SDK shutdown remove the exact old connection and wake waiting acquirers. An old handler cannot erase a subsequently admitted connection. SDK shutdown fences admission and releases its connection tasks and Sessions; it does not stop remote envd processes.
+A lost framed carrier detaches its Sessions for the EIP disconnect grace. An existing owning runtime may explicitly reattach the same Session in the same generation while it remains valid. Pending requests still have unknown outcomes when dispatch may have occurred; reattachment never replays work or resumes transfers. If the Session expired, a fresh adapter/Session is required and old resource references stay invalid. There is no cross-Session resource import or durable adapter recovery.
+
+SDK shutdown fences acquisition, closes owned Sessions and connections, and joins attachment handlers boundedly. An old handler removes only its exact connection, never a later replacement. Remote infrastructure remains external. Provider `keepalive()` is a no-op for target lifetime, distinct from the low-level Session heartbeat.
 
 ## Failure Semantics
 
-| Condition                                    | Result                                             |
-| -------------------------------------------- | -------------------------------------------------- |
-| Missing state or native identity mismatch    | Reject; never adopt another target                 |
-| Missing Host WebSocket runtime               | Typed runtime-required failure, no listener        |
-| Offline daemon or acquisition deadline       | Unavailable/timeout, not target absence            |
-| Duplicate connection or concurrent lease     | Conflict; preserve the active owner                |
-| Incompatible required methods                | Reject before Agent operation dispatch             |
-| HTTP Session still admitted                  | Fail without forced takeover or daemon restart     |
-| Carrier loss after possible dispatch         | Unknown operation outcome; no automatic replay     |
-| Local cleanup failure                        | Report cleanup separately; preserve external state |
-| Stop, destroy or provisioning reconciliation | Unsupported; never implicitly prepare              |
+| Condition                                            | Result                                             |
+| ---------------------------------------------------- | -------------------------------------------------- |
+| Missing state, mismatched Device or stale generation | Reject; do not adopt another target                |
+| Offline Device or acquisition deadline               | Unavailable/timeout, not authoritative absence     |
+| Invalid folder or unsupported required method        | Reject that Session; preserve siblings             |
+| Duplicate active Device connection                   | Preserve the existing attachment                   |
+| Carrier loss after possible dispatch                 | Unknown outcome; no automatic mutation retry       |
+| Close/expiry                                         | Clean the selected Session's native resources only |
+| Native cleanup failure                               | Report and retain truthful accounting              |
+| Stop, destroy or provisioning reconciliation         | Unsupported; never implicitly prepare              |
 
-The Providers cannot authoritatively distinguish a stopped external machine from an unreachable one and do not provide provisioning reconciliation. Keepalive is a no-op under the declared no-renewal capability, not a promise about externally configured machine expiry.
-
-## Compatibility and Invariants
-
-1. Native target identity, logical Environment identity and process-local Session identity remain distinct.
-2. External configuration and portable state cannot become infrastructure-management authority.
-3. HTTP and reverse WebSocket reuse one EIP operation implementation and the same wire semantics.
-4. The library owns no listener, credential issuer, global registry, tenant policy or distributed routing.
-5. Framework integration changes message delivery, not EIP framing, resource authority or replay policy.
-6. Close ends local scope and connection resources, never the external daemon or its workspace.
-7. Eleven Provider choices share two operation routes and one set of file/process contracts; the [built-in matrix](03-built-in-providers.md#design-position) owns their classification.
+Remote Providers cannot distinguish an unreachable machine from a stopped one authoritatively.

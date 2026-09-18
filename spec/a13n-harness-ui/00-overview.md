@@ -8,7 +8,7 @@ Human-editable files remain the desired-resource authority so Harness UI can be 
 
 Harness UI persists complete continuation boundaries and independently published comments, not shared editing drafts, page presence, or accepted-work intent. Process loss can discard a root receipt, submitted message or deferred response, partial output, an active child segment, live events, and Run-local shell observations. Native command survival is Provider-owned. A later operation resumes only from a previously selected complete checkpoint.
 
-Harness UI owns two built-in local execution modes. **Full Control** uses the Direct Local Provider and runs commands as the Host user. **Sandbox** uses Local Envd over EIP with required native filesystem and process isolation plus denied networking; it never falls back to Direct Local. Both preserve the local machine's canonical Project-root paths in Harness aggregate routing and model context while retaining different execution authority. Other adapters use provider-neutral virtual routes unless they explicitly declare that their path space preserves Host paths.
+Harness UI owns two built-in local execution modes. **Full Control** uses the Direct Local Provider and runs commands as the Host user. **Sandbox** uses Local Envd over EIP with the entire daemon launched inside a Host-provided filesystem/process boundary with denied networking; it never falls back to Direct Local. Both preserve the local machine's canonical Project-root paths in Harness aggregate routing and model context while retaining different execution authority. Other adapters use provider-neutral virtual routes unless they explicitly declare that their path space preserves Host paths.
 
 ## Product Model
 

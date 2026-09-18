@@ -56,7 +56,7 @@ class Environment(ABC):
 
 The same object exposes provider-neutral file, shell, process, output, readiness and port operations. Lifecycle methods are trusted Host operations, not Agent tools. One Provider implementation supplies this whole contract; separate attachment or retention Provider registrations are unnecessary. Unsupported lifecycle operations raise typed errors and are advertised through the Provider's small capability declaration, so Hosts validate requested policy before effects.
 
-One fresh object serves one independent Run or one bounded Host lifecycle operation. It is not shared across independent Runs, retained after close, or stored in a database. Several fresh objects can refer to the same backing environment when the Provider supports shared use.
+One fresh object serves one independent Run or one bounded Host lifecycle operation. It is not shared across independent Runs, retained after close, or stored in a database. Several fresh objects can refer to the same backing environment when the Provider supports shared use. Envd-backed adapters share a Host-owned Device connection, not an initialized Session: each owns a fresh Session with a fixed default working directory and owned native resources. Device connections are runtime collaborators, not a fourth shared lifecycle entity. Their Session heartbeat is not the target-renewal `keepalive()` method. Closing an envd adapter cleans its Session's commands/output/transfers while preserving the daemon and workspace; native Providers retain their own close semantics.
 
 ### Construction and scope entry
 

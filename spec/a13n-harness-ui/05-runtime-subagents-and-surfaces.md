@@ -130,7 +130,7 @@ Explicit saved-comment capture uses the same retained-input owner: a complete pu
 
 `touch_thread(thread_id)` and authenticated `POST /api/threads/{thread_id}/touch` explicitly advance root [navigation recency](03-local-storage-and-recovery.md#navigation-recency) and return a refreshed Thread summary. They publish the ordinary Thread invalidation hint without changing conversation content or starting a Run. Surface prompt/deferred-response admission and accepted human steering apply this recency policy internally; browsers do not need a second touch request and do not touch on navigation or refetch.
 
-One App admits at most one root operation for a Thread. Another root submission while that operation is preparing or running is rejected rather than queued. Admission returns a detached receipt immediately; the receipt ID is unpredictable, unique within the App lifetime, and is the exact correlation used by active queries, waits, steering, and cancellation.
+One App admits at most one root operation for a Thread. Another root submission while that operation is preparing or running is rejected rather than queued. Admission returns a detached receipt after freezing its accepted generation, Thread version, Project roots and complete Device/Environment binding inputs, but before external preparation. Background composition/preparation uses only that capture, not mutable current selections. The receipt ID is unpredictable, unique within the App lifetime, and is the exact correlation used by active queries, waits, steering and cancellation.
 
 A root operation progresses from `preparing` to `running`, then to `completed`, `suspended`, `failed`, or `cancelled`. Preparation failure is `failed`; `completed` or `suspended` requires the corresponding acceptable continuation to be selected. Its view can acquire a Harness Run ID after native stream construction and retains separate Harness execution, continuation-selection, Environment-state, and cleanup facts. The App retains the detached terminal view for the remainder of its lifetime, but does not persist the receipt or a replayable root-input queue. Retained attachments follow the separate [Thread file lifecycle](03-local-storage-and-recovery.md#thread-files-and-automatic-scratch-cleanup); authored conversation input is recovered through selected checkpoints, not through the receipt. A process restart therefore exposes the Thread and its last selected continuation but no prior operation, wait target, or control authority.
 
@@ -179,7 +179,7 @@ Human response and expiry share the root admission boundary. A matching response
 
 ### Admission and Identity
 
-The Harness resolves the selected child roster entry before calling the operator. The operator creates a child Thread whose discriminated Agent-resource or Markdown-subagent source comes from that entry. Project, Environment profile, and Environment Run Extensions initialize from the parent Run capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the parent capture's exact Plugin and MCP lists.
+The Harness resolves the selected child roster entry before calling the operator. The operator creates a child Thread whose discriminated Agent-resource or Markdown-subagent source comes from that entry. Project, local Environment profile, Environment bindings/default and Environment Run Extensions initialize from the parent Run capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the parent capture's exact Plugin and MCP lists.
 
 `delegate`:
 
@@ -251,7 +251,9 @@ A root-Thread summary page computes its bounded summaries without requiring the 
 
 A current-directory Project query accepts one absolute local directory and applies the [first-root matching contract](04-projects-threads-and-environments.md#current-directory-resolution). It returns a discriminated selected, unmatched, or ambiguous projection; a selected result contains the detached Project summary used for new-Thread creation. It does not create a Project, return filesystem authority, or reorder the configured roots.
 
-The Environment-profile query returns the two release-owned modes first, followed by accepted custom profiles. Each item is a detached value:
+Device and binding queries expose registered identities, working directories and bounded online/readiness observations under [Devices and Environment Bindings](04a-devices-and-environment-bindings.md). Resource save and expected-version Thread mutations own Add environment; the App supplies authenticated Device attachment, info, bounded directory-discovery and connection-check operations without exposing credentials or raw Sessions to the browser. Device availability is distinct from a successfully prepared Run binding.
+
+The Environment-profile query returns the two release-owned local modes first, followed by accepted custom profiles. Each item is a detached value:
 
 ```python
 class EnvironmentProfileSummary:
@@ -264,7 +266,7 @@ class EnvironmentProfileSummary:
     canonical_host_paths: bool
 ```
 
-The release-owned descriptions state their material authority difference: Full Control commands have ambient Host-user filesystem and network access, while Sandbox commands require Local Envd filesystem/process containment and denied networking. `canonical_host_paths` describes aggregate path presentation only and never implies Full Control. Surfaces select and persist `profile_id`; display names and mode labels do not become Thread identity.
+The release-owned descriptions state their material authority difference: Full Control commands have ambient Host-user filesystem and network access, while Sandbox commands run with the whole daemon inside the Host-provided filesystem/process boundary and denied networking. `canonical_host_paths` describes aggregate path presentation only and never implies Full Control. Surfaces select and persist `profile_id`; display names and mode labels do not become Thread identity.
 
 Configuration-source queries expose an accepted-generation view for the root YAML or an approved immediate resource source. The conceptual projection includes `relative_path`, `resource_kind`, `resource_ids`, `source_digest`, `generation_digest`, `writable`, `content_available`, and nullable `content`. It does not expose the current invalid on-disk candidate or promise candidate diagnostics; MCP bodies are unavailable (`content_available: false`, `content: null`). A repair caller supplies complete replacement content through the validated mutation operation.
 
@@ -427,7 +429,7 @@ Finite `/api` routes map strict request documents to one `HarnessUiApp` command 
 
 The adapter publishes a versioned OpenAPI document derived from its strict request and projection models. Its authenticated status projection identifies the API schema, App status, listener bind address, and whether listener access uses an API key or the explicit dangerous bypass. Repository generation retains an OpenAPI snapshot for contract drift checks. The browser consumes the public API and treats incompatible or unavailable operations as explicit failures rather than inventing server behavior.
 
-Configuration inspection distinguishes sticky next-Run Thread selections from an exact captured composition. While a root operation is active, its own composition publication supplies the captured reference; before that publication the capture is explicitly unavailable, never substituted with the previous selected continuation. An exact receipt can inspect its capture while retained by this App. Without an active root operation, selected-continuation inspection uses that continuation's stored composition. Neither path reconstructs historical configuration from current desired resources.
+Configuration inspection distinguishes sticky next-Run Thread selections from an exact captured composition. While a root operation is active, its own composition publication supplies the captured reference; before that publication the composition projection is explicitly unavailable, never substituted with the previous selected continuation. This does not permit late selection capture: admission has already detached its complete inputs before returning the receipt. An exact receipt can inspect its capture while retained by this App. Without an active root operation, selected-continuation inspection uses that continuation's stored composition. Neither path reconstructs historical configuration from current desired resources.
 
 These detached projections allowlist identity, model/capability/source selections, Environment identity, tool selections, and captured Tool Proxy grouping. They omit credentials, transport settings, arbitrary configuration payloads, instructions, and internal object access. Immediate child summaries are bounded to 100 with an omitted count; they are not a recursive executable recipe. Static Agent Tool Proxy inspection uses Agent defaults, whereas next-Run Thread inspection uses its exact selected source IDs. Neither static view contacts MCP servers or claims tool readiness.
 
