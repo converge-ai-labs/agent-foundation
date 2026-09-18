@@ -34,8 +34,10 @@ The shared [batching contract](01-ingress-and-routing.md#input-batching-and-freq
 
 ## Outbound Boundary
 
-Reception never sends a reply automatically. The Agent calls an authorized native action through the [Run-bound tool context](04-agent-facing-tools.md). Current-conversation actions expose no model-selected destination, Account, credential, or Run ID.
+Reception does not generate an Agent answer automatically. Bot-owned task progress notices are a separate, fixed status projection described in [Bots](../../frontend/bots.md#task-progress-and-control). The Agent calls an authorized native action through the [Run-bound tool context](04-agent-facing-tools.md). Current-conversation actions expose no model-selected destination, Account, credential, or Run ID.
 
 `thread` and `main` force provider-native placement and omit a placement argument. `auto` permits a bounded provider choice: top-level group tasks normally use an available thread/topic/reply chain, while direct messages remain in their main flow. Placement cannot change the Binding. A main-flow notification does not migrate the current Discussion.
 
 Closing Account or target reception blocks new admission; already acknowledged batches continue processing while accepted replies retain their bounded context. Account disablement or lost execution authority blocks subsequent dispatch.
+
+Feishu/Lark and Slack Bot task messages combine status projection with explicitly authorized native replies. `lark.reply` and `slack.reply` may update the existing task card through the Bot contribution; it must preserve fresh Attempt/source authority and provider-confirmed reply observations. Raw model completion is never a reply trigger.

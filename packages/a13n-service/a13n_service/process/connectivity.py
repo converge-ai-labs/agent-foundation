@@ -11,6 +11,7 @@ from a13n_harness.memory_plugins import MemoryBackendCatalog
 
 from a13n_service.bots.connectivity.setup_tests import SetupObservations
 from a13n_service.bots.memory.lifecycle import invalidate_conversation
+from a13n_service.bots.progress.actions import ProgressActions
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_service import AccountTargetService
 from a13n_service.connectivity.adapters import IngressAdapter
@@ -305,6 +306,7 @@ async def _build_data_runtime(
         batch_max_bytes=settings.connectivity.batch_max_bytes,
         dedup_horizon_seconds=settings.connectivity.dedup_horizon_seconds,
         observations=SetupObservations(),
+        actions=ProgressActions(),
     )
     if input_acceptor is None:
         raise RuntimeError("Canonical Connectivity input commands were not constructed")

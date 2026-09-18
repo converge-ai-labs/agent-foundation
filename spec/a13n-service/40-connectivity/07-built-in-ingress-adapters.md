@@ -48,11 +48,17 @@ The installation requests only scopes required by enabled events and actions. Th
 
 | Action key            | Model arguments                                                                         | Hidden current-context binding    | Provider operation                                                   |
 | --------------------- | --------------------------------------------------------------------------------------- | --------------------------------- | -------------------------------------------------------------------- |
-| `slack.reply`         | bounded `text`; bounded placement enum only when reception policy is `auto`             | channel and root thread timestamp | `chat.postMessage`                                                   |
+| `slack.reply`         | bounded `text`; bounded placement enum only when reception policy is `auto`             | channel and root thread timestamp | `chat.postMessage`; `chat.update` for an existing Bot task message   |
 | `slack.list_members`  | `limit` from 1 through 100 and opaque cursor                                            | current channel                   | `conversations.members`, with bounded cached `users.info` enrichment |
 | `slack.read_messages` | `scope` in `conversation` or `discussion`, `limit` from 1 through 15, and opaque cursor | current channel and thread        | the applicable conversations history or replies operation            |
 
-The model cannot provide a team, channel, thread, message, token, or Account identifier. Forced `conversation` or `discussion` reply policy omits placement from model arguments. A reply receipt contains only the returned channel, message timestamp, root thread timestamp, and safe request correlation. A lost response after possible write dispatch is `outcome_unknown` and is not retried automatically. Reads surface bounded rate-limit evidence and do not sleep through a long `Retry-After` inside one tool call.
+The model cannot provide a team, channel, thread, message, token, or Account identifier. Forced `conversation` or `discussion` reply policy omits placement from model arguments. A reply receipt contains only the returned channel, message timestamp, root thread timestamp, and safe request correlation. A lost response after possible write dispatch is `outcome_unknown`. Ordinary reply writes and initial task-message writes are not retried automatically; known task-message updates follow the bounded delivery contract below. Reads surface bounded rate-limit evidence and do not sleep through a long `Retry-After` inside one tool call.
+
+### Task messages and interactions
+
+Slack Bot progress uses `chat.postMessage` once and `chat.update` after receiving its timestamp, with the existing `chat:write` authority. Explicit `slack.reply` calls append to the same message through the Bot contribution, under the authority and delivery contract in [Bots](../../frontend/bots.md#task-progress-and-control). Unknown initial write outcomes are not automatically retried because Slack supplies no documented durable deduplication guarantee for this method; known-message updates are retryable.
+
+Interactivity is enabled for the installed App. HTTP interactions use the same reception URL as events, authenticate the exact raw signed body, then parse the form-encoded `payload`. Socket Mode accepts `interactive` envelopes and acknowledges the envelope only after durable control acceptance. Both validate the App, team, and enterprise against the owning Account before normalizing `block_actions`. Only the versioned stop button on a non-ephemeral message is a control action; it binds the original requester, channel, exact message timestamp, Run reference, and unguessable token. Unrelated buttons are acknowledged without execution; malformed recognized actions fail closed. Interaction payloads never become Agent input, and `response_url` is never fetched or persisted.
 
 ## Lark/Feishu HTTP v1
 
@@ -89,6 +95,12 @@ An irrelevant or duplicate delivery returns HTTP `200` with the bounded success 
 | `lark.read_messages` | bounded scope, time/order options, and opaque page token                    | current chat or discussion           | list messages for the bound container                      |
 
 The model cannot provide an App, tenant, chat, thread, message, token, or Account identifier. Write calls carry a stable provider UUID derived from the tool effect identity. Receipts expose only bounded message or member projections and provider message identity. A provider response lost after possible dispatch is reconciled only through that UUID or authoritative provider evidence; otherwise the result is `outcome_unknown`.
+
+### Interactive task callbacks
+
+Feishu task controls use the `card.action.trigger` callback subscription with the same HTTP or long-connection method as message reception. HTTP callbacks require the existing token, optional encryption/signature, and App/tenant checks. Long-connection callbacks use the authenticated App connection and tenant route. Recognized controls contain a bounded Run reference, action token, operator Open ID, card message ID, and chat ID. Only `im_message` hosts and the versioned stop action are supported. Malformed recognized controls fail closed; unrelated card controls are acknowledged without execution.
+
+An application contribution validates task ownership and durably accepts control intent according to [Bot task progress](../../frontend/bots.md#task-progress-and-control). No ingress event or AgentInput is created. HTTP returns the contribution's bounded toast directly. Long connections return that object as base64-encoded JSON in the successful protocol response's `data` field after durable commit. Delivery replay is safe because control is idempotent for the exact Run. The callback performs no provider API call.
 
 ## Persistent event connections
 

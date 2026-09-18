@@ -87,6 +87,7 @@ def service_metadata() -> MetaData:
     """OSS artifact: shared models plus explicit Bot application contributions."""
     from a13n_service.bots.connectivity import models as bot_models
     from a13n_service.bots.memory import bindings, models, settings
+    from a13n_service.bots.progress import models as progress_models
 
-    del bot_models, bindings, models, settings
+    del bot_models, bindings, models, settings, progress_models
     return core_metadata()

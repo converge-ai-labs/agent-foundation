@@ -1,7 +1,7 @@
 """add session purpose.
 
 Revision ID: f2abf114c374
-Revises: e0bca206450c
+Revises: 6def9609e6b6
 Create Date: 2026-09-18 09:48:02.461044+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f2abf114c374"
-down_revision: str | Sequence[str] | None = "e0bca206450c"
+down_revision: str | Sequence[str] | None = "6def9609e6b6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

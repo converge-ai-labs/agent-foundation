@@ -37,10 +37,22 @@ type LarkReplyContent = Annotated[LarkTextContent | LarkPostContent, Field(discr
 
 
 class LarkForcedReplyArguments(_StrictModel):
+    """Reply to the bound conversation. Bot tasks append to the task card; keep answers concise.
+
+    The combined card has a bounded encoded size. Split extensive results into a concise
+    answer with a link to the full result instead of retrying an oversized payload.
+    """
+
     content: LarkReplyContent
 
 
 class LarkAutoReplyArguments(_StrictModel):
+    """Reply to the bound conversation. Existing Bot task cards keep their initial placement.
+
+    Omit placement to update the task card. Keep the combined answer concise;
+    oversized cards are rejected without truncation.
+    """
+
     content: LarkReplyContent
     placement: Literal["thread", "main"] | None = None
 

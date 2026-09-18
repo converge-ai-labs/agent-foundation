@@ -6,10 +6,11 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.accounts.models import AccountRecord
+from a13n_service.connectivity.domain import JsonObject
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, SteerReceipt
 
 from .admission_domain import BatchConfiguration, PreparedIngressBatch
-from .provider import InboundEvent
+from .provider import InboundEvent, ProviderActionDecision
 
 
 class PreparedIngressContribution(Protocol):
@@ -53,3 +54,9 @@ class IngressObservations(Protocol):
         now: datetime,
     ) -> None: ...
     async def rejected(self, database: AsyncSession, *, batch_id: str, reason_code: str) -> None: ...
+
+
+class ProviderActionHandler(Protocol):
+    async def handle(
+        self, session: AsyncSession, account: AccountRecord, action: ProviderActionDecision
+    ) -> JsonObject: ...
