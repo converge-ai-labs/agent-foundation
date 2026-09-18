@@ -148,23 +148,6 @@ async def main() -> None:
         async def model(messages, info):
             nonlocal attempts
             attempts += 1
-            if "--update" in sys.argv:
-                returned = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
-                with (root / "update-requests.jsonl").open("a") as log:
-                    log.write(json.dumps({"returns": len(returned)}) + "\n")
-                if not returned:
-                    while not (root / "release-update").exists():
-                        await asyncio.sleep(0.01)
-                    yield {
-                        0: DeltaToolCall(
-                            name="note_write",
-                            tool_call_id="update-once",
-                            json_args='{"key":"update","value":"Saved once"}',
-                        )
-                    }
-                else:
-                    yield "Continued after planned update."
-                return
             if "--execution-layout" in sys.argv:
                 # Long, multi-page turns for independent conversation/execution QA.
                 step = attempts % 41

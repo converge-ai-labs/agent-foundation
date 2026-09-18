@@ -26,7 +26,7 @@ import {
 } from "./inline-attachments";
 import { ImagePreview } from "./image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
-import { useMaintenanceBlocked, useTransport } from "../transport/context";
+import { useTransport } from "../transport/context";
 import {
   ApiError,
   result,
@@ -330,7 +330,6 @@ export function Composer({
   leadingControls?: ReactNode;
   modelId?: string;
 }) {
-  const maintenanceBlocked = useMaintenanceBlocked();
   const draft = useDraft(threadId);
   const { tracker: results } = useResults();
   const [preparing, setPreparing] = useState(false);
@@ -481,7 +480,6 @@ export function Composer({
     local ||
     (draft.status === "Connected" && !draft.replacement && !draft.error);
   const canSteer =
-    !maintenanceBlocked &&
     !cancellation.request &&
     busy &&
     ready &&
@@ -492,23 +490,15 @@ export function Composer({
     !!activity.available_actions?.includes("steer");
   const stopAction = busy && !hasInput;
   const canSend =
-    !maintenanceBlocked &&
-    canRun &&
-    !busy &&
-    ready &&
+    canRun && !busy && ready && !preparing && !pending && !unknown && valid;
+  const blockedReason =
+    hasInput &&
     !preparing &&
     !pending &&
     !unknown &&
-    valid;
-  const blockedReason = maintenanceBlocked
-    ? "Messages are paused for a planned server update."
-    : hasInput &&
-        !preparing &&
-        !pending &&
-        !unknown &&
-        !cancellation.request &&
-        !draft.error &&
-        !draft.replacement
+    !cancellation.request &&
+    !draft.error &&
+    !draft.replacement
       ? missing
         ? uploading
           ? "Waiting for attachments…"

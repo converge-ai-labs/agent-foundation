@@ -416,7 +416,7 @@ class ThreadRepository:
             return {record.thread_id: value for record in records if (value := _read_model(record)) is not None}
 
     async def missing_read_models(self, *, after: str = "", limit: int = 16) -> tuple[tuple[str, ObjectRef], ...]:
-        """Keyset batch for maintenance, including heads advanced by older writers."""
+        """Keyset batch for restart_coordinator, including heads advanced by older writers."""
         async with short_session(self._sessions) as session:
             records = await session.scalars(
                 select(ThreadRecord)
@@ -587,13 +587,13 @@ class ChildExecutionRepository:
                 raise StoreIntegrityError("Previous child execution does not exist.", code="child_execution_missing")
             planned = False
             if restart_batch_id is not None:
-                from a13n_harness_ui.maintenance_models import RestartBatch
+                from a13n_harness_ui.restart_models import RestartBatch
 
                 record_batch = await session.get(PlannedRestartRecord, 1)
                 batch = None if record_batch is None else RestartBatch.model_validate_json(record_batch.payload)
                 planned = (
                     batch is not None
-                    and batch.state == "claimed"
+                    and batch.state == "consumed"
                     and batch.batch_id == restart_batch_id
                     and any(
                         item.execution_id == previous_execution_id
@@ -609,7 +609,7 @@ class ChildExecutionRepository:
                 )
                 if not planned or successor is not None:
                     raise StoreIntegrityError(
-                        "The child update handoff is stale or already used.", code="maintenance_conflict"
+                        "The child update handoff is stale or already used.", code="restart_conflict"
                     )
             if (previous.status != "succeeded" and not planned) or previous.selected_checkpoint_digest is None:
                 raise StoreIntegrityError(

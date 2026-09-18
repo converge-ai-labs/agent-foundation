@@ -51,8 +51,6 @@ from a13n_harness_ui.display_history import DisplayHistoryCollector, saved_displ
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
-from a13n_harness_ui.maintenance import UpdateMaintenance, UpdatePauseCapability
-from a13n_harness_ui.maintenance_models import RestartItem
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
     phase,
@@ -61,6 +59,8 @@ from a13n_harness_ui.observation import (
     record_phase_result,
     record_skill_event,
 )
+from a13n_harness_ui.restart import GracefulRestart, RestartPauseCapability
+from a13n_harness_ui.restart_models import RestartItem
 from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import (
@@ -117,10 +117,10 @@ class RootRunExecutor:
         cleanup_timeout_seconds: float = 30.0,
         thread_files: ThreadFiles | None = None,
         work: ThreadWorkService | None = None,
-        maintenance: UpdateMaintenance | None = None,
+        restart_coordinator: GracefulRestart | None = None,
     ) -> None:
         self._store = store
-        self._maintenance = maintenance
+        self._restart = restart_coordinator
         self._threads = threads
         self._configurations = configurations
         self._compositions = compositions
@@ -187,7 +187,7 @@ class RootRunExecutor:
                 thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
             preparation_span.set_attribute("a13n.phase.step", "continuation")
             if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
-                raise RunCoordinationError("The saved update continuation changed.", code="maintenance_conflict")
+                raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
             previous_state, deferred, previous_composition = await self._load_run_state(thread)
             display = DisplayHistoryCollector(previous_state.message_history, saved_display_history(previous_state))
             deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
@@ -251,7 +251,7 @@ class RootRunExecutor:
                 root_capabilities=(
                     display,
                     RootCheckpointCapability(save_checkpoint),
-                    *((UpdatePauseCapability(self._maintenance, thread_id),) if self._maintenance is not None else ()),
+                    *((RestartPauseCapability(self._restart, thread_id),) if self._restart is not None else ()),
                     *(
                         ()
                         if self._root_capability_factory is None
@@ -392,7 +392,7 @@ class RootRunExecutor:
                         failure=result.failure.model_copy(update={"message": f"{result.failure.message}\n{feedback}"})
                     )
                 finalization_span.set_attribute("a13n.phase.step", "continuation")
-                paused_state = self._maintenance.saved_state(thread_id) if self._maintenance is not None else None
+                paused_state = self._restart.saved_state(thread_id) if self._restart is not None else None
                 if paused_state is not None:
                     continuation = await self._select_state(
                         thread=thread,
@@ -411,8 +411,8 @@ class RootRunExecutor:
                         and finalization_error is None
                         and stream is not None
                     ):
-                        assert self._maintenance is not None
-                        self._maintenance.saved(
+                        assert self._restart is not None
+                        self._restart.saved(
                             RestartItem(
                                 thread_id=thread_id,
                                 root_thread_id=thread_id,

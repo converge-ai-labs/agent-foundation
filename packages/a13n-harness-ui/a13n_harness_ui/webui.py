@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
@@ -68,7 +68,6 @@ from a13n_harness_ui.host_git import (
 from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
 from a13n_harness_ui.interactive_transport import InteractiveAuthentication, authenticate_interactive, receive_text
 from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
-from a13n_harness_ui.maintenance_models import DismissUpdate, MaintenanceView
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
@@ -558,23 +557,6 @@ def create_webui(
     @server.post("/api/push/subscriptions/{subscription_id}/test", response_model=PushTestResult)
     async def test_push(subscription_id: str) -> PushTestResult:
         return await app().test_push(subscription_id)
-
-    @server.get("/api/maintenance", response_model=MaintenanceView)
-    async def maintenance_status() -> MaintenanceView:
-        return await app().maintenance_status()
-
-    @server.post("/api/maintenance/prepare", response_model=MaintenanceView)
-    async def prepare_update() -> MaintenanceView:
-        return await app().prepare_update()
-
-    @server.post("/api/maintenance/cancel", response_model=MaintenanceView)
-    async def cancel_update() -> MaintenanceView:
-        return await app().cancel_update()
-
-    @server.post("/api/maintenance/dismiss", response_model=MaintenanceView, openapi_extra=_body(DismissUpdate))
-    async def dismiss_update(request: Request) -> MaintenanceView:
-        await _document(request, DismissUpdate)
-        return await app().dismiss_update()
 
     @server.get("/api/status", response_model=ListenerStatus)
     async def status() -> ListenerStatus:
@@ -1530,7 +1512,7 @@ def create_webui(
             # A stalled connection cannot retain channel tasks indefinitely.
             with fail_after(10):
                 async with sending:
-                    if closing:
+                    if closing or socket.application_state is WebSocketState.DISCONNECTED:
                         raise WebSocketDisconnect(code=1001)
                     await socket.send_text(frame.model_dump_json())
 
@@ -1543,7 +1525,10 @@ def create_webui(
                     # The transport marks itself disconnected before its close
                     # send completes; observers must share this lock and state.
                     closing = True
-                    await socket.close(code=code, reason=reason)
+                    # A failed transport send also disconnects Starlette, before
+                    # its observer's exception cancels the heartbeat task.
+                    if socket.application_state is not WebSocketState.DISCONNECTED:
+                        await socket.close(code=code, reason=reason)
 
         try:
             async with create_task_group() as group:

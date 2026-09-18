@@ -66,7 +66,7 @@ def test_planned_handoff_migration_requires_resolution_before_downgrade(tmp_path
     try:
         with engine.begin() as connection:
             connection.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
-        with pytest.raises(RuntimeError, match="resolve maintenance first"):
+        with pytest.raises(RuntimeError, match="retained restart data"):
             migrator._run(  # pyright: ignore[reportPrivateUsage]
                 lambda config: command.downgrade(config, "63e8be47c2e2"), write=True
             )

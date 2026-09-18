@@ -68,7 +68,7 @@ One App lifetime:
 3. loads or restores the last accepted file-and-Content-Plugin generation and reports current source diagnostics;
 4. initializes Capability and extension catalogs plus release-owned Model, MCP, and Environment adapter integrations;
 5. starts bounded configuration change observation;
-6. attaches the CLI, WebUI, or embedding adapter;
+6. stages any eligible WebUI restart handoff, then attaches the CLI, WebUI, or embedding adapter;
 7. serves commands until shutdown;
 8. stops new admissions, requests cancellation after a bounded graceful-drain interval, joins owned tasks, and then closes collaborators.
 
@@ -78,15 +78,15 @@ When `process.pricing_auto_update` is enabled, the App owns Pydantic AI's backgr
 
 A source change triggers a stable complete-tree candidate load. Invalid intermediate saves do not replace the accepted generation. Module import starts no task, process, listener, or database connection.
 
-## Planned Update Maintenance
+## Graceful WebUI Restart
 
-WebUI-mode Apps expose `maintenance_status`, `prepare_update`, `cancel_update`, and `dismiss_update` through the same application boundary as execution commands. The authenticated HTTP routes are `GET /api/maintenance` and `POST /api/maintenance/{prepare,cancel,dismiss}`. Dismissal requires `previous_instance_stopped: true`. These operations neither install packages nor terminate the server. Ordinary cancellation and SIGTERM do not implicitly prepare an update.
+Normal WebUI App exit, including the server's SIGTERM/SIGINT lifespan shutdown, owns continuation for a sequential restart. There is no prepare/cancel/dismiss maintenance API. CLI exit and abnormal App context unwinding retain ordinary cancellation and checkpoint behavior; neither publishes a restart handoff. The server continues to own signal handling and connection shutdown, without doing checkpoint I/O in signal handlers.
 
-Preparation closes admission for new root input, steering, and deferred answers, including cross-Thread submissions. An already executing model request and its tool batch finish; any child admitted by that batch joins preparation. Each root or child pauses before its next outer canonical model request, after context transformations, retaining a complete Harness state. Parent waits on children wake for maintenance so a paused child cannot deadlock its parent's pause. Auxiliary model requests are not mistaken for an outer continuation boundary. Preparation has no timeout that promotes unfinished work to safe status or force-cancels a tool.
+The App stops external root/input admission and removes pending human-decision timers before requesting safe-boundary pauses. Already executing model requests and tool batches may finish, including child delegation from those batches. Roots and children pause before the next outer canonical model request, after context transformations, retaining complete Harness state. Parent waits on children wake so a paused child cannot deadlock its parent. Auxiliary model requests are not outer continuation boundaries. Only after drain completes or times out does the App stop child admission and cancel/join its Runs for finalization.
 
-The maintenance projection distinguishes `idle`, `draining`, `paused`, `stopping`, `restoring`, `finished`, and `blocked`, with per-Thread progress and available cancel/dismiss actions. It does not replace root receipt or child persisted statuses. Cancel preparation releases the original in-memory Runs without repeating input or their completed tool batch. Pending human-decision timers are removed when preparation begins and are not rearmed by cancelling preparation; their saved requests remain manually answerable. Cancel a task explicitly to exclude it from the handoff.
+The existing `shutdown_timeout_seconds` bounds waiting for these safe boundaries, not total process exit. A timeout does not promote unfinished tools to safely replayable work. Checkpoint publication, Environment cleanup, and structured joins still finish before storage closes; the process supervisor owns any hard kill deadline. Only successful draining and finalization publish the [graceful restart handoff](03-local-storage-and-recovery.md#graceful-restart-handoff).
 
-Once the operator stops a fully paused App normally, finalization publishes the [planned update handoff](03-local-storage-and-recovery.md#planned-update-handoff). The same-data-root WebUI startup claims and stages that exact task forest before releasing models. A partially restored family stays blocked with inspectable diagnostics. Ordinary admissions do not bypass an unresolved preparing, ready, claimed, or blocked handoff. The browser observes and refetches these facts; reconnect, refresh, and page navigation never submit recovery input.
+The same-data-root WebUI startup consumes and stages that exact task forest before accepting normal work. A failed family does not release models, but recovery failure never locks unrelated admission or requires an operator reset. The browser observes disconnection and refetches saved and live state after reconnect; it never resubmits recovery input. The App neither installs packages nor starts its replacement process.
 
 ## Observation
 

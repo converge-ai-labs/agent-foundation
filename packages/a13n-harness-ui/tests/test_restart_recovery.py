@@ -7,7 +7,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.storage import StoredContinuation, open_local_store
-from anyio import Event, fail_after, sleep
+from anyio import CancelScope, Event, create_task_group, fail_after, sleep
 from pydantic_ai.messages import ModelResponse, TextPart, ToolCallPart, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -16,29 +16,27 @@ from .test_app import _settings, _write_configuration
 pytestmark = pytest.mark.anyio
 
 
-async def maintenance_phase(app, phase):
-    with fail_after(15):
-        while (view := await app.maintenance_status()).phase != phase:
-            if view.phase == "blocked":
-                pytest.fail(str(view))
-            await sleep(0.01)
-    return view
+async def release_during_shutdown(app, release, receipt_id=None):
+    await app._restart.pause_requested.wait()
+    if receipt_id is not None:
+        assert not (await app._root_runs.steer(receipt_id=receipt_id, message="Not accepted")).accepted
+    release.set()
 
 
 def test_update_instructions_belong_only_to_the_restored_run():
     from unittest.mock import Mock
 
-    from a13n_harness_ui.maintenance import UpdateMaintenance, UpdatePauseCapability
+    from a13n_harness_ui.restart import GracefulRestart, RestartPauseCapability
     from a13n_harness_ui.storage.restarts import RestartRepository
 
-    maintenance = UpdateMaintenance(Mock(spec=RestartRepository), enabled=True)
-    maintenance.continued_threads.add("parent")
-    maintenance.successors["parent"] = {"old-child": "new-child"}
-    restored = UpdatePauseCapability(maintenance, "parent")
-    maintenance.continued_threads.clear()
-    maintenance.successors.clear()
+    restart_coordinator = GracefulRestart(Mock(spec=RestartRepository), enabled=True)
+    restart_coordinator.continued_threads.add("parent")
+    restart_coordinator.successors["parent"] = {"old-child": "new-child"}
+    restored = RestartPauseCapability(restart_coordinator, "parent")
+    restart_coordinator.continued_threads.clear()
+    restart_coordinator.successors.clear()
     assert "old-child -> new-child" in restored.get_instructions()
-    assert UpdatePauseCapability(maintenance, "parent").get_instructions() is None
+    assert RestartPauseCapability(restart_coordinator, "parent").get_instructions() is None
 
 
 def install_model(monkeypatch, function):
@@ -117,7 +115,10 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_pat
         return ModelResponse(parts=[TextPart("Finished after update")])
 
     install_model(monkeypatch, model)
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+    async with (
+        create_task_group() as group,
+        open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app,
+    ):
         thread = await app.create_thread()
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Read and report")
         with fail_after(10):
@@ -125,21 +126,14 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_pat
         assert (
             await app.steer_root_operation(receipt_id=receipt.receipt_id, message="Keep the report concise")
         ).accepted
-        assert (await app.prepare_update()).phase == "draining"
-        assert not (await app.steer_root_operation(receipt_id=receipt.receipt_id, message="Not accepted")).accepted
-        with pytest.raises(RunCoordinationError, match="maintenance"):
-            await app.submit_thread(thread_id=thread.thread_id, prompt="Not accepted")
-        release.set()
-        await maintenance_phase(app, "paused")
-        assert len(requests) == 1
+        group.start_soon(release_during_shutdown, app, release, receipt.receipt_id)
         if finalization_failure:
             fail_environment_finalization(monkeypatch, finalization_failure)
     if finalization_failure:
         async with open_local_store(settings.storage) as store:
             batch = await store.restarts.get()
-            assert batch is not None and batch.state == "blocked"
+            assert batch is None
         async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-            assert (await app.maintenance_status()).phase == "blocked"
             await sleep(0.05)
         assert len(requests) == 1
         return
@@ -154,7 +148,6 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_pat
             for p in m.parts
         )
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        await maintenance_phase(app, "finished")
         with fail_after(10):
             while (await app.get_thread(thread.thread_id)).thread.completion is None:
                 await sleep(0.01)
@@ -186,35 +179,35 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_pat
     assert len(requests) == 2
 
 
-async def test_cancel_preparation_releases_original_run(tmp_path, monkeypatch):
+@pytest.mark.parametrize("exit_kind", ["error", "cancel", "cli"])
+async def test_abnormal_exit_and_cli_do_not_arm_recovery(tmp_path, monkeypatch, exit_kind):
     root = _write_configuration(tmp_path)
     settings = _settings(tmp_path / "state")
-    requests = 0
-    started, release = Event(), Event()
+    started = Event()
 
     async def model(messages, info):
-        nonlocal requests
-        requests += 1
-        if requests == 1:
-            started.set()
-            await release.wait()
-            return ModelResponse(parts=[ToolCallPart("store", {"key": "saved-result", "value": "Saved tool result"})])
-        return ModelResponse(parts=[TextPart("Done")])
+        started.set()
+        await Event().wait()
+        return ModelResponse(parts=[TextPart("Never")])
 
     install_model(monkeypatch, model)
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        thread = await app.create_thread()
-        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Read")
-        with fail_after(10):
-            await started.wait()
-        await app.prepare_update()
-        release.set()
-        await maintenance_phase(app, "paused")
-        assert (await app.cancel_update()).phase == "idle"
-        with fail_after(10):
-            outcome = await app.wait_root_operation(receipt.receipt_id)
-        assert outcome.status == "completed"
-        assert requests == 2
+    try:
+        with CancelScope() as cancellation:
+            async with open_harness_ui_app(
+                settings, configuration_path=root, host_mode="cli" if exit_kind == "cli" else "webui"
+            ) as app:
+                thread = await app.create_thread()
+                await app.submit_thread(thread_id=thread.thread_id, prompt="Wait")
+                with fail_after(10):
+                    await started.wait()
+                if exit_kind == "error":
+                    raise ValueError("Abnormal context exit")
+                if exit_kind == "cancel":
+                    cancellation.cancel()
+                    await sleep(0)
+    except BaseExceptionGroup as exc:
+        assert exit_kind == "error"
+        assert "Abnormal context exit" in str(exc.exceptions[0])
     async with open_local_store(settings.storage) as store:
         assert await store.restarts.get() is None
 
@@ -238,12 +231,9 @@ async def test_stop_before_pause_never_arms_recovery(tmp_path, monkeypatch):
         await app.submit_thread(thread_id=thread.thread_id, prompt="Wait")
         with fail_after(10):
             await started.wait()
-        await app.prepare_update()
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         await sleep(0.05)
-        assert (await app.maintenance_status()).phase == "blocked"
         assert requests == 1
-        assert (await app.dismiss_update()).phase == "idle"
 
 
 @pytest.mark.parametrize("parent_completes", [False, True])
@@ -293,7 +283,10 @@ async def test_child_restores_with_active_or_completed_parent(
         return ModelResponse(parts=[TextPart("Parent finished")])
 
     install_model(monkeypatch, model)
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+    async with (
+        create_task_group() as group,
+        open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app,
+    ):
         thread = await app.create_thread()
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Delegate work")
         with fail_after(10):
@@ -302,19 +295,14 @@ async def test_child_restores_with_active_or_completed_parent(
                 assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
             else:
                 await parent_waiting.wait()
-        await app.prepare_update()
-        release_child.set()
-        paused = await maintenance_phase(app, "paused")
-        assert len(paused.tasks) == (1 if parent_completes else 2)
-        assert calls["child"] == 1
+        group.start_soon(release_during_shutdown, app, release_child)
         if finalization_failure:
             fail_environment_finalization(monkeypatch, finalization_failure)
     if finalization_failure:
         async with open_local_store(settings.storage) as store:
             batch = await store.restarts.get()
-            assert batch is not None and batch.state == "blocked"
+            assert batch is None
         async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-            assert (await app.maintenance_status()).phase == "blocked"
             await sleep(0.05)
         assert calls["child"] == 1
         return
@@ -324,8 +312,9 @@ async def test_child_restores_with_active_or_completed_parent(
         assert len(batch.items) == (1 if parent_completes else 2)
         child_item = next(item for item in batch.items if item.execution_id is not None)
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        recovered = await maintenance_phase(app, "finished")
-        child = next(task for task in recovered.tasks if task.execution_id is not None)
+        recovered = await app._store.restarts.get()
+        assert recovered is not None and recovered.state == "consumed"
+        child = next(task for task in recovered.results if task.execution_id is not None)
         assert child.resumed_execution_id != child_item.execution_id
         assert child.resumed_run_id != child_item.run_id
         with fail_after(10):
@@ -372,13 +361,7 @@ async def test_questions_stay_waiting_without_timeout_or_automatic_answer(tmp_pa
         assert (await app.wait_root_operation(receipt.receipt_id)).status == "suspended"
         before = await app.thread_decisions(thread_id=thread.thread_id)
         assert before is not None and before.expires_at is not None
-        assert (await app.prepare_update()).phase == "paused"
-        await sleep(0.4)
-        waiting = await app.thread_decisions(thread_id=thread.thread_id)
-        assert waiting is not None and waiting.expires_at is None
-        assert waiting.continuation_id == before.continuation_id
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        await maintenance_phase(app, "finished")
         await sleep(0.4)
         waiting = await app.thread_decisions(thread_id=thread.thread_id)
         assert waiting is not None and waiting.expires_at is None
@@ -386,31 +369,31 @@ async def test_questions_stay_waiting_without_timeout_or_automatic_answer(tmp_pa
     assert requests == 1
 
 
-async def test_handoff_claim_is_single_use_and_requires_explicit_resolution(tmp_path):
-    from a13n_harness_ui.maintenance_models import RestartBatch
-    from anyio import create_task_group
+async def test_handoff_consumption_is_atomic_and_does_not_require_reset(tmp_path):
+    from a13n_harness_ui.restart_models import RestartBatch
 
     settings = _settings(tmp_path / "state")
     async with open_local_store(settings.storage) as first, open_local_store(settings.storage) as second:
-        batch = RestartBatch(batch_id="restart-test", owner_id="old", state="preparing")
-        await first.restarts.begin(batch)
-        assert await second.restarts.claim("new") is None
-        ready = batch.model_copy(update={"state": "ready"})
-        await first.restarts.replace(batch, ready)
+        batch = RestartBatch(batch_id="restart-test", state="ready")
+        await first.restarts.publish(batch)
         claimed = []
 
-        async def claim(store, owner):
-            claimed.append(await store.restarts.claim(owner))
+        async def claim(store):
+            claimed.append(await store.restarts.claim())
 
         async with create_task_group() as group:
-            group.start_soon(claim, first, "one")
-            group.start_soon(claim, second, "two")
+            group.start_soon(claim, first)
+            group.start_soon(claim, second)
         assert sum(item is not None for item in claimed) == 1
-        assert await first.restarts.claim("three") is None
+        assert await first.restarts.claim() is None
+        consumed = await first.restarts.get()
+        assert consumed.state == "consumed"
         with pytest.raises(RunCoordinationError):
-            await first.restarts.require_admission()
-        with pytest.raises(RunCoordinationError):
-            await first.restarts.clear(ready)
+            await first.restarts.replace(batch, consumed)
+        # A consumed attempt is historical data, not an operator lock.
+        next_batch = RestartBatch(batch_id="restart-next", state="ready")
+        await first.restarts.publish(next_batch)
+        assert (await first.restarts.claim()).batch_id == "restart-next"
 
 
 async def test_cancelled_task_is_excluded_from_planned_handoff(tmp_path, monkeypatch):
@@ -432,15 +415,13 @@ async def test_cancelled_task_is_excluded_from_planned_handoff(tmp_path, monkeyp
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Wait")
         with fail_after(10):
             await started.wait()
-        await app.prepare_update()
         assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
         assert (await app.wait_root_operation(receipt.receipt_id)).status == "cancelled"
-        assert (await app.maintenance_status()).phase == "paused"
     async with open_local_store(settings.storage) as store:
         batch = await store.restarts.get()
-        assert batch is not None and batch.state == "ready" and not batch.items
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        await maintenance_phase(app, "finished")
+        assert batch is None
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui"):
+        await sleep(0.05)
     assert calls == 1
 
 
@@ -458,24 +439,158 @@ async def test_incompatible_reconstruction_is_blocked_and_never_retried(tmp_path
         return ModelResponse(parts=[ToolCallPart("store", {"key": "once", "value": 1})])
 
     install_model(monkeypatch, model)
-    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+    async with (
+        create_task_group() as group,
+        open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app,
+    ):
         thread = await app.create_thread()
         await app.submit_thread(thread_id=thread.thread_id, prompt="Work")
         with fail_after(10):
             await started.wait()
-        await app.prepare_update()
-        release.set()
-        await maintenance_phase(app, "paused")
+        group.start_soon(release_during_shutdown, app, release)
+
+    async def finished_model():
+        return ModelResponse(parts=[TextPart("Normal admission remains usable")])
 
     async def unavailable(self, context, model_id):
         raise ValueError("Synthetic incompatible model implementation")
 
     monkeypatch.setattr(HarnessUiModelResolver, "__call__", unavailable)
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        blocked = await maintenance_phase(app, "blocked")
+        report = await app._store.restarts.get()
+        assert report is not None and report.state == "consumed" and report.error
         assert calls == 1
-        assert blocked.can_dismiss
+        install_model(monkeypatch, lambda messages, info: finished_model())
+        unrelated = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=unrelated.thread_id, prompt="Ordinary work")
+        assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
-        assert (await app.maintenance_status()).phase == "blocked"
         await sleep(0.05)
         assert calls == 1
+
+
+@pytest.mark.parametrize("startup", ["success", "parent_failure", "timeout", "cancel"])
+async def test_children_admitted_during_drain_require_complete_family_staging(tmp_path, monkeypatch, startup):
+    import yaml
+    from a13n_harness_ui.root_run import RootRunCoordinator
+    from anyio import move_on_after
+
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+    parent_path = tmp_path / "agents/assistant.yaml"
+    parent = yaml.safe_load(parent_path.read_text())
+    parent["subagents"] = [{"agent": "agent-worker"}]
+    parent_path.write_text(yaml.safe_dump(parent))
+    (tmp_path / "agents/worker.yaml").write_text(
+        yaml.safe_dump(
+            {"schema_version": "1", "kind": "agent", "id": "agent-worker", "name": "Worker", "model": "model-primary"}
+        )
+    )
+    started = Event()
+    calls = {"root": 0, "child": 0}
+
+    async def model(messages, info):
+        role = "root" if "delegate" in {tool.name for tool in info.function_tools} else "child"
+        calls[role] += 1
+        if role == "root" and calls[role] == 1:
+            started.set()
+            # The model finishes its current request after shutdown begins. Its
+            # delegation must still be admitted, then join the same safe drain.
+            await app._restart.pause_requested.wait()
+            return ModelResponse(
+                parts=[ToolCallPart("delegate", {"subagent_name": "agent-worker", "prompt": "Bounded work"})]
+            )
+        return ModelResponse(parts=[TextPart("Completed")])
+
+    install_model(monkeypatch, model)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        thread = await app.create_thread()
+        await app.submit_thread(thread_id=thread.thread_id, prompt="Delegate at shutdown")
+        with fail_after(10):
+            await started.wait()
+    assert calls == {"root": 1, "child": 0}
+    async with open_local_store(settings.storage) as store:
+        batch = await store.restarts.get()
+        assert batch is not None and batch.state == "ready"
+        assert len(batch.items) == 2
+
+    resume = RootRunCoordinator.resume_restart
+
+    async def resume_parent(self, item):
+        if startup == "parent_failure":
+            raise ValueError("Synthetic incompatible parent")
+        if startup == "timeout":
+            await Event().wait()
+        if startup == "cancel":
+            cancellation.cancel()
+            await sleep(0)
+        return await resume(self, item)
+
+    monkeypatch.setattr(RootRunCoordinator, "resume_restart", resume_parent)
+    if startup == "timeout":
+        # Exercise the entire reconstruction budget, not merely the final
+        # boundary wait. The public startup must not hang inside resume_parent.
+        monkeypatch.setattr("a13n_harness_ui.restart_recovery.move_on_after", lambda seconds: move_on_after(0.2))
+    with fail_after(10), CancelScope() as cancellation:
+        async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+            assert startup != "cancel", "Interrupted staging must not yield a ready App"
+            with fail_after(5):
+                while (await app.active_work_summary()).child_executions:
+                    await sleep(0.01)
+            if startup == "success":
+                with fail_after(5):
+                    while (await app.get_thread(thread.thread_id)).thread.completion is None:
+                        await sleep(0.01)
+                assert calls == {"root": 2, "child": 1}
+            else:
+                assert calls == {"root": 1, "child": 0}
+                report = await app._store.restarts.get()
+                assert report is not None and report.error
+                assert all(result.state == "blocked" for result in report.results)
+                # A failed forest is not an admission lock.
+                unrelated = await app.create_thread()
+                receipt = await app.submit_thread(thread_id=unrelated.thread_id, prompt="Ordinary work")
+                assert (await app.wait_root_operation(receipt.receipt_id)).status == "completed"
+    before = dict(calls)
+    monkeypatch.setattr(RootRunCoordinator, "resume_restart", resume)
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        report = await app._store.restarts.get()
+        assert report is not None and report.state == "consumed"
+        await sleep(0.05)
+    assert calls == before
+
+
+async def test_restart_boundary_is_not_stale_when_shutdown_immediately_follows_startup():
+    from unittest.mock import Mock
+
+    from a13n_harness import HarnessState
+    from a13n_harness_ui.restart import GracefulRestart
+    from a13n_harness_ui.storage.restarts import RestartRepository
+
+    coordinator = GracefulRestart(Mock(spec=RestartRepository), enabled=True)
+    coordinator.register("thread")
+    coordinator.restoring = True
+    coordinator.restoration_pending.add("thread")
+    state = HarnessState.new()
+    reached_provider = Event()
+
+    async def run():
+        await coordinator.checkpoint("thread", state)
+        reached_provider.set()
+
+    async with create_task_group() as group:
+        group.start_soon(run)
+        with fail_after(2):
+            while coordinator.active["thread"].state is None:
+                await coordinator.changed.wait()
+        # Exactly the release cutover used by startup, followed by shutdown
+        # before the paused task gets an event-loop turn.
+        coordinator.restoring = False
+        coordinator.restoration_pending.clear()
+        coordinator.active["thread"].state = None
+        coordinator.active["thread"].release.set()
+        await coordinator.drain(1)
+        assert coordinator.committing
+        assert coordinator.saved_state("thread") is state
+        assert not reached_provider.is_set()
+        group.cancel_scope.cancel()

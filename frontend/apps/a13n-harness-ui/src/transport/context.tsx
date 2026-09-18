@@ -15,27 +15,6 @@ export function useStatus() {
     queryFn: ({ signal }) => result(client.GET("/api/status", { signal })),
   });
 }
-export function useMaintenance() {
-  const { client } = useTransport();
-  return useQuery({
-    queryKey: ["maintenance"],
-    queryFn: ({ signal }) => result(client.GET("/api/maintenance", { signal })),
-    refetchInterval: (query) =>
-      query.state.data &&
-      !["idle", "finished", "blocked"].includes(
-        query.state.data.phase ?? "idle",
-      )
-        ? 1000
-        : 5000,
-  });
-}
-export function useMaintenanceBlocked() {
-  const maintenance = useMaintenance();
-  return (
-    !!maintenance.data &&
-    !["idle", "finished"].includes(maintenance.data.phase ?? "idle")
-  );
-}
 export function useSources() {
   const { client } = useTransport();
   return useQuery({

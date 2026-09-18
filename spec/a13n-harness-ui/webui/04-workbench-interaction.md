@@ -212,12 +212,6 @@ Disconnect shows a disconnected state rather than an apparently usable prompt. R
 
 Terminal search operates on retained screen output, with previous/next matches; Ctrl/Cmd+F opens it without intercepting shell control sequences such as Ctrl+C. Copy selection leaves terminal input unchanged. HTTP links open separately; deterministic absolute path:line references open Host files, without guessing the shell's current directory or ambiguous wrapped/wide-character positions. Add selection to prompt appends attributed text to the current synchronized Thread draft for review, never auto-sends, and preserves existing input. A Return to conversation action focuses that draft. Terminal focus otherwise receives its native key bindings; browser-wide command shortcuts do not intercept shell control sequences. File-save shortcuts operate only in the file editor, not the shared prompt or terminal.
 
-## Planned Server Update
-
-General settings provides an explicit prepare-update confirmation affecting the whole instance. A workbench-wide notice reports draining, in-memory paused, restoring, finished, or blocked maintenance, links to details, and distinguishes a paused task from a saved handoff. New message, steering, and decision-submit controls are disabled while maintenance is active; saved history stays readable and task cancellation remains explicit. Settings shows per-task progress, successor correlations, cancel preparation before shutdown, and explicit handoff dismissal after confirming the previous instance has stopped.
-
-The App owns [maintenance and restart continuation](../05-runtime-subagents-and-surfaces.md#planned-update-maintenance). The interface explains that normal external shutdown must finish before updating and restarting sequentially with the same data directory. It never calls a package installer, forces shutdown, or resubmits input on reconnect. A finished restoration report does not imply successful completion of every continued task.
-
 ## Empty, Disabled, and Failure States
 
 | Situation                                     | User-facing behavior                                                                                                                                      |

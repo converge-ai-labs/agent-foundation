@@ -92,8 +92,6 @@ from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentRunPlan, EnvironmentRunService
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError, StoreError
 from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
-from a13n_harness_ui.maintenance import UpdateMaintenance, UpdatePauseCapability
-from a13n_harness_ui.maintenance_models import RestartItem, RestartPrincipal
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
     UiObservation,
@@ -103,6 +101,8 @@ from a13n_harness_ui.observation import (
     record_output,
     record_skill_event,
 )
+from a13n_harness_ui.restart import GracefulRestart, RestartPauseCapability
+from a13n_harness_ui.restart_models import RestartItem, RestartPrincipal
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ChildExecutionHead,
@@ -247,10 +247,10 @@ class HarnessUiSubagentOperator(SubagentOperator):
         summary_hub: HarnessUiSummaryHub | None = None,
         cleanup_timeout_seconds: float = 30.0,
         observation: UiObservation | None = None,
-        maintenance: UpdateMaintenance | None = None,
+        restart_coordinator: GracefulRestart | None = None,
     ) -> None:
         self._observation = observation or UiObservation()
-        self._maintenance = maintenance
+        self._restart = restart_coordinator
         self._store = store
         self._configurations = configurations
         self._compositions = compositions
@@ -426,8 +426,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
             root_capabilities=()
-            if self._maintenance is None
-            else (UpdatePauseCapability(self._maintenance, state.thread_id),),
+            if self._restart is None
+            else (RestartPauseCapability(self._restart, state.thread_id),),
         )
         environment = await self._environments.prepare(published.value)
         initial = await self._store.objects.publish_model(
@@ -645,8 +645,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             active_ids = frozenset(self._active)
             changed = self._changed
         if any(item.local_status == "active" and item.execution_id in active_ids for item in page.executions):
-            if self._maintenance is not None:
-                await self._maintenance.wait_child(changed, timeout)
+            if self._restart is not None:
+                await self._restart.wait_child(changed, timeout)
             else:
                 with move_on_after(timeout):
                     await changed.wait()
@@ -692,8 +692,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             head = await self._require_execution_for_parent(parent_thread_id, execution_id)
             if head.status == "running":
                 event = await self._wait_event(head.execution_id)
-                if self._maintenance is not None:
-                    await self._maintenance.wait_child(event, timeout)
+                if self._restart is not None:
+                    await self._restart.wait_child(event, timeout)
                 else:
                     with move_on_after(timeout):
                         await event.wait()
@@ -713,8 +713,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             active_ids = frozenset(self._active)
             changed = self._changed
         if any(head.status == "running" and head.execution_id in active_ids for head in heads):
-            if self._maintenance is not None:
-                await self._maintenance.wait_child(changed, timeout)
+            if self._restart is not None:
+                await self._restart.wait_child(changed, timeout)
             else:
                 with move_on_after(timeout):
                     await changed.wait()
@@ -755,8 +755,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
         if active is None:
             return SubagentSteerResult(execution_id=execution_id, accepted=False)
         try:
-            if self._maintenance is not None:
-                self._maintenance.require_input()
+            if self._restart is not None:
+                self._restart.require_input()
             enqueue_id = await active.stream.steer(message)
         except Exception:
             return SubagentSteerResult(execution_id=execution_id, accepted=False)
@@ -797,9 +797,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 accepted=False,
                 status=head.status,
             )
-        if self._maintenance is not None:
-            self._maintenance.active.pop(head.child_thread_id, None)
-            self._maintenance.signal()
+        if self._restart is not None:
+            self._restart.active.pop(head.child_thread_id, None)
+            self._restart.signal()
         active.stream.cancel()
         return SubagentCancelResult(
             execution_id=execution_id,
@@ -845,8 +845,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
             root_capabilities=()
-            if self._maintenance is None
-            else (UpdatePauseCapability(self._maintenance, thread.thread_id),),
+            if self._restart is None
+            else (RestartPauseCapability(self._restart, thread.thread_id),),
         )
         environment = await self._environments.prepare(published.value)
         execution_id = _public_id("execution")
@@ -916,15 +916,15 @@ class HarnessUiSubagentOperator(SubagentOperator):
             child_definition_id=reconstructed.executable.definition.definition_id,
         )
 
-    async def cancel_update(self, thread_id: str) -> None:
+    async def cancel_restart(self, thread_id: str) -> None:
         async with self._lock:
             active = tuple(entry for entry in self._active.values() if entry.stream.thread_id == thread_id)
         for entry in active:
             entry.stream.cancel()
             await entry.done.wait()
 
-    async def resume_update(self, item: RestartItem, batch_id: str) -> tuple[str, str]:
-        """Reconstruct only a claimed, exact update checkpoint; no active parent is fabricated."""
+    async def resume_restart(self, item: RestartItem, batch_id: str) -> tuple[str, str]:
+        """Reconstruct only a consumed, exact restart checkpoint; no active parent is fabricated."""
         assert item.execution_id is not None and item.parent_thread_id is not None
         if (
             item.parent_composition is None
@@ -932,18 +932,18 @@ class HarnessUiSubagentOperator(SubagentOperator):
             or item.parent_identity is None
             or item.parent_run_id is None
         ):
-            raise RunCoordinationError("The child handoff is incomplete.", code="maintenance_incompatible")
+            raise RunCoordinationError("The child handoff is incomplete.", code="restart_incompatible")
         previous = await self._require_execution_for_parent(item.parent_thread_id, item.execution_id)
         if previous.selected_checkpoint != item.checkpoint:
-            raise RunCoordinationError("The child handoff checkpoint changed.", code="maintenance_conflict")
+            raise RunCoordinationError("The child handoff checkpoint changed.", code="restart_conflict")
         checkpoint = await self._read_checkpoint(previous)
         if checkpoint.deferred_requests is not None:
-            raise RunCoordinationError("A child handoff contains deferred requests.", code="maintenance_incompatible")
+            raise RunCoordinationError("A child handoff contains deferred requests.", code="restart_incompatible")
         composition = await self._store.objects.read_model(item.composition, ResolvedRunComposition)
         parent_composition = await self._store.objects.read_model(item.parent_composition, ResolvedRunComposition)
         parent_thread = await self._store.threads.get(item.parent_thread_id)
         if parent_thread is None:
-            raise RunCoordinationError("The child parent is missing.", code="maintenance_incompatible")
+            raise RunCoordinationError("The child parent is missing.", code="restart_incompatible")
         identity = AgentIdentityRef(issuer=item.identity.issuer, subject=item.identity.subject, **item.identity.claims)
         parent_identity = AgentIdentityRef(
             issuer=item.parent_identity.issuer, subject=item.parent_identity.subject, **item.parent_identity.claims
@@ -962,9 +962,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             pricing_catalog=pricing,
             subagent_operator=self,
             subscription_sources=self._subscription_sources,
-            root_capabilities=()
-            if self._maintenance is None
-            else (UpdatePauseCapability(self._maintenance, item.thread_id),),
+            root_capabilities=() if self._restart is None else (RestartPauseCapability(self._restart, item.thread_id),),
         )
         environment = await self._environments.prepare(composition)
         execution_id, agent_instance_id = _public_id("execution"), _public_id("agent")
@@ -1058,8 +1056,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             task_group = self._task_group
             assert task_group is not None
             self._active[prepared.head.execution_id] = active
-            if self._maintenance is not None:
-                self._maintenance.register(prepared.state.thread_id, prepared.head.execution_id)
+            if self._restart is not None:
+                self._restart.register(prepared.state.thread_id, prepared.head.execution_id)
             try:
                 task_group.start_soon(self._run_segment, prepared, active)
             except BaseException:
@@ -1089,7 +1087,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
         try:
             while True:
                 result, display, terminal_events = await self._consume_run(current, active)
-                if await self._finish_update(current, active, expected_checkpoint):
+                if await self._finish_restart(current, active, expected_checkpoint):
                     return
                 if result.status == "suspended":
                     state = result.state
@@ -1166,7 +1164,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
             if isinstance(exc, (KeyboardInterrupt, SystemExit)):
                 raise
             with CancelScope(shield=True):
-                if await self._finish_update(current, active, expected_checkpoint):
+                if await self._finish_restart(current, active, expected_checkpoint):
                     return
                 checkpoint: ObjectRef | None = None
                 try:
@@ -1202,25 +1200,25 @@ class HarnessUiSubagentOperator(SubagentOperator):
             with CancelScope(shield=True):
                 async with self._lock:
                     self._active.pop(current.head.execution_id, None)
-                    if self._maintenance is not None:
-                        self._maintenance.finished(current.state.thread_id)
+                    if self._restart is not None:
+                        self._restart.finished(current.state.thread_id)
                     active.done.set()
                     self._signal_change_locked()
                 # Persisted terminal status precedes cleanup; publish again only
                 # after process-local activity is no longer observable as active.
                 await self._publish_summary_by_execution(current.head.execution_id)
 
-    async def _finish_update(
+    async def _finish_restart(
         self,
         prepared: _PreparedSegment,
         active: _ActiveSegment,
         expected: ObjectRef | None,
     ) -> bool:
-        maintenance = self._maintenance
-        state = maintenance.saved_state(prepared.state.thread_id) if maintenance is not None else None
+        restart_coordinator = self._restart
+        state = restart_coordinator.saved_state(prepared.state.thread_id) if restart_coordinator is not None else None
         if state is None or not active.cleanup_succeeded:
             return False
-        assert maintenance is not None
+        assert restart_coordinator is not None
         checkpoint = await self._publish_checkpoint_object(
             head=prepared.head,
             run_id=prepared.stream.run_id,
@@ -1234,13 +1232,13 @@ class HarnessUiSubagentOperator(SubagentOperator):
             status="cancelled",
             expected_checkpoint=expected,
             checkpoint=checkpoint,
-            failure=SafeFailure(code="planned_update", message="Paused for a planned update."),
+            failure=SafeFailure(code="graceful_restart", message="Paused for a graceful restart."),
         )
         parent_composition = await self._store.objects.publish_model(
             object_kind=ObjectKind.run_composition,
             value=prepared.scope.composition,
         )
-        maintenance.saved(
+        restart_coordinator.saved(
             RestartItem(
                 thread_id=prepared.state.thread_id,
                 root_thread_id=prepared.scope.root_thread_id,

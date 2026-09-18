@@ -319,7 +319,7 @@ The profile digest reuses the accepted generation's canonical normalized content
 
 ## Recovery
 
-Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. Committed comments remain available through ordinary queries, without restoring page presence or shared drafts. Ordinary startup does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display. The explicitly prepared, single-use [planned update handoff](#planned-update-handoff) is the only automatic task-continuation path.
+Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. Committed comments remain available through ordinary queries, without restoring page presence or shared drafts. Ordinary startup does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display. The completely finalized, single-use [graceful restart handoff](#graceful-restart-handoff) is the only automatic task-continuation path.
 
 An ordinary Thread admission resumes from its selected continuation using its current sticky configuration unless the next admission applies a patch. A Thread with no selected continuation starts its first Run from the immutable empty `HarnessState` created with `HarnessState.new()` when the Thread was inserted. The generated Harness `thread_id` is the Harness UI Thread ID. If selected resources are missing from the current accepted generation or cannot reconstruct against installed dependencies, the Run fails before dispatch; recovery does not fall back to the composition that produced the prior continuation.
 
@@ -334,35 +334,29 @@ An ordinary Thread admission resumes from its selected continuation using its cu
 
 External model, tool, and Environment effects can be unknown and may repeat after explicit retry or linked resume.
 
-## Planned Update Handoff
+## Graceful Restart Handoff
 
-A WebUI operator can explicitly prepare a sequential application update. This authorizes continuation of tasks captured at a cooperative model-request boundary, not recovery of arbitrary interrupted work. The [App maintenance commands](05-runtime-subagents-and-surfaces.md#planned-update-maintenance) own admission and in-memory pausing. An external operator or process supervisor owns stopping, installing, and starting the application. Only one execution-owning App participates at a time; overlapping or mixed-version execution owners are not supported for this workflow.
+A normal WebUI shutdown saves eligible work for a sequential restart. The [App lifecycle](05-runtime-subagents-and-surfaces.md#graceful-webui-restart) owns cooperative draining and finalization; the server owns signals and connections. No preparation API or UI action is required. An external operator or process supervisor owns stopping, installing, and starting the application. Only one execution-owning App participates at a time; overlapping or mixed-version execution owners are not supported for this workflow.
 
-One local handoff record references existing immutable compositions and checkpoints. It contains a generated batch identity, the preparing or claiming App identity, lifecycle state, task references, safe diagnostics, and the final restoration report. Each task reference identifies the original Thread and Run, root lineage, exact checkpoint and composition; a child also retains its execution, parent scope/composition, execution identities, and usage limits needed for reconstruction. It does not duplicate conversation history, store credentials, or become a root-input queue.
+One local handoff record references existing immutable compositions and checkpoints. It contains a generated batch identity, lifecycle state, task references, safe diagnostics, and restoration results. Each task reference identifies the original Thread and Run, root lineage, exact checkpoint and composition; a child also retains its execution, parent scope/composition, execution identities, and usage limits needed for reconstruction. It does not duplicate conversation history, store credentials, or become a root-input queue.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> preparing: Explicit prepare
-    preparing --> [*]: Cancel before stopping
-    preparing --> ready: Every pause checkpoint and Environment finalization saved
-    preparing --> blocked: Stop too early or finalization failure
-    ready --> claimed: Atomic startup claim
-    claimed --> finished: Persist restoration results before releasing models
-    blocked --> [*]: Explicit dismissal
-    claimed --> [*]: Explicit dismissal after stopped instance is reconciled
-    finished --> [*]: Dismiss report
-    finished --> preparing: Prepare next update
+    [*] --> ready: Normal shutdown fully finalizes paused work
+    ready --> consumed: Atomic startup consumption before reconstruction
+    consumed --> consumed: Save restoration results before model release
+    consumed --> ready: A later graceful shutdown saves new work
 ```
 
-`paused` is an in-memory observation, not a durable `ready` fact. Normal shutdown saves each paused root continuation and each paused child checkpoint, completes Environment cleanup and state publication, then publishes `ready` only after all participating work has finalized. Cleanup failure, failed Environment state publication, missing checkpoint, or stopping while any task is still draining blocks the entire handoff. A forced kill before this final publication leaves no automatically recoverable handoff. Tasks which completed, suspended for a human decision, or were explicitly cancelled before shutdown are excluded. The additive table migration preserves existing Threads and objects; downgrade refuses to discard a retained handoff until it is explicitly resolved.
+Pausing is an in-memory observation, not a durable `ready` fact. Normal shutdown saves each paused root continuation and each paused child checkpoint, completes Environment cleanup and state publication, then publishes `ready` only after all participating work has finalized. Drain timeout, cleanup failure, failed Environment state publication, or a missing checkpoint prevents publication of the entire batch; logs and ordinary saved history remain available. Abnormal context exit and forced termination do not authorize automatic recovery. Tasks which completed, suspended for a human decision, or were explicitly cancelled are excluded. The additive table migration preserves existing Threads and objects.
 
-The next WebUI startup atomically changes `ready` to `claimed` before staging work. A second opener cannot claim the same batch. A `preparing`, `blocked`, or previously `claimed` record never automatically executes. A claim interrupted by crash or shutdown remains consumed for automatic-retry purposes, even if no model request was sent. Dismissal requires explicit confirmation that the previous instance stopped; it clears the handoff, not history, external effects, or task outcomes.
+The next WebUI startup atomically changes `ready` to `consumed` before reconstructing work. A second opener cannot consume the same batch. An interrupted attempt never automatically retries, even if no model request was sent. Consumption and its results are diagnostic history, never a global admission lock: no administrative reset is required, and a later graceful shutdown may replace the record.
 
-Recovery reconstructs fresh native collaborators from the captured compositions and exact saved checkpoints, with current credentials and compatible installed implementations. It does not substitute the latest Thread selection or synthesize a user “continue” prompt. Root tasks receive new process-local receipts and Run IDs on their original Threads. Child tasks receive new linked execution segments on their original child Threads; their old cancelled segment records a planned-update reason and identifies its successor. This exception requires a matching claimed handoff and cannot enable ordinary resume of cancelled or lost children.
+Recovery reconstructs fresh native collaborators from the captured compositions and exact saved checkpoints, with current credentials and compatible installed implementations. It does not substitute the latest Thread selection or synthesize a user “continue” prompt. Root tasks receive new process-local receipts and Run IDs on their original Threads. Child tasks receive new linked execution segments on their original child Threads; their old cancelled segment records a graceful-restart reason and identifies its successor. This internal exception requires the matching consumed handoff, exact checkpoint/composition, and no existing successor; it cannot enable ordinary resume of cancelled or lost children.
 
-The entire task forest is staged at its first model boundary before any restored model request is released. Descendants can reconstruct a historical parent scope without rerunning a completed parent. Parents receive only their own child-successor mapping and can inspect/control those successor IDs. Failure to reconstruct or reach the startup boundary blocks that root family, cancels its staged work, and leaves other successfully staged families eligible. Restoration results, including safe blocked reasons and successor correlations, are persisted before model release. They remain inspectable after another restart; `finished` means the handoff was consumed, not that the continued tasks completed successfully.
+The task forest is staged at its first model boundary before any restored model request is released and before App startup completes. A finite budget covers both reconstruction and reaching those boundaries. Descendants can reconstruct a historical parent scope without rerunning a completed parent. Parents receive only their own child-successor mapping and can inspect/control those successor IDs. Failure to reconstruct or reach the startup boundary cancels that root family's staged work while leaving other successfully staged families eligible. Restoration results, including safe failure reasons and successor correlations, are persisted before model release. They remain saved after another restart; `consumed` does not mean the continued tasks completed successfully.
 
-A pending human request remains at its saved deferred continuation without an invented answer or restarted timeout. Saved steering remains part of the Harness checkpoint; a new message or answer rejected during maintenance has no durable acceptance. Browser drafts, live streams, native terminals, and Run-local shell references are outside the handoff. Model, tool, and Environment effects retain their native uncertainty; this workflow provides neither exactly-once external effects nor crash recovery.
+A pending human request remains at its saved deferred continuation without an invented answer or restarted timeout. Saved steering remains part of the Harness checkpoint; a new message or answer rejected during shutdown has no durable acceptance. Browser drafts, live streams, native terminals, and Run-local shell references are outside the handoff. Model, tool, and Environment effects retain their native uncertainty; this workflow provides neither exactly-once external effects nor crash recovery.
 
 ## Private Failure Diagnostics
 
@@ -392,7 +386,7 @@ The terminal failure presentation identifies the report path and the repository'
 06. Root receipts, input, and active Runs are not durable work records.
 07. Deferred response authority is the exact selected suspended continuation.
 08. Compact display never becomes Harness continuation state.
-09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery. Only an explicitly prepared and completely finalized update handoff authorizes single-use automatic continuation.
+09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery. Only a completely finalized graceful restart handoff authorizes single-use automatic continuation.
 10. Transactions remain short and outside file or external execution I/O.
 11. Published comments retain their original saved targets independently of the selected continuation; they never become continuation or execution authority.
 12. Comment schema upgrades preserve existing conversation data, and no successful publication falls back to transient storage.

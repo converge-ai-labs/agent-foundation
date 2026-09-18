@@ -1,9 +1,7 @@
 """One locally coordinated planned restart, with a single atomic startup claim."""
 
-from sqlalchemy import delete
-
 from a13n_harness_ui.errors import RunCoordinationError
-from a13n_harness_ui.maintenance_models import RestartBatch
+from a13n_harness_ui.restart_models import RestartBatch
 
 from .database import DatabaseSessions, short_session, transaction
 from .models import PlannedRestartRecord
@@ -18,12 +16,10 @@ class RestartRepository:
             record = await session.get(PlannedRestartRecord, 1)
             return None if record is None else RestartBatch.model_validate_json(record.payload)
 
-    async def begin(self, batch: RestartBatch) -> None:
+    async def publish(self, batch: RestartBatch) -> None:
         async with transaction(self._sessions) as session:
             previous = await session.get(PlannedRestartRecord, 1)
             if previous is not None:
-                if RestartBatch.model_validate_json(previous.payload).state != "finished":
-                    raise RunCoordinationError("An update handoff already exists.", code="maintenance_conflict")
                 previous.payload = batch.model_dump_json()
             else:
                 session.add(PlannedRestartRecord(singleton_id=1, payload=batch.model_dump_json()))
@@ -32,10 +28,10 @@ class RestartRepository:
         async with transaction(self._sessions) as session:
             record = await session.get(PlannedRestartRecord, 1)
             if record is None or RestartBatch.model_validate_json(record.payload) != expected:
-                raise RunCoordinationError("The update handoff changed.", code="maintenance_conflict")
+                raise RunCoordinationError("The update handoff changed.", code="restart_conflict")
             record.payload = replacement.model_dump_json()
 
-    async def claim(self, owner_id: str) -> RestartBatch | None:
+    async def claim(self) -> RestartBatch | None:
         async with transaction(self._sessions) as session:
             record = await session.get(PlannedRestartRecord, 1)
             if record is None:
@@ -43,24 +39,6 @@ class RestartRepository:
             batch = RestartBatch.model_validate_json(record.payload)
             if batch.state != "ready":
                 return None
-            claimed = batch.model_copy(update={"owner_id": owner_id, "state": "claimed"})
+            claimed = batch.model_copy(update={"state": "consumed", "error": "Startup recovery did not finish."})
             record.payload = claimed.model_dump_json()
             return claimed
-
-    async def clear(self, expected: RestartBatch) -> None:
-        async with transaction(self._sessions) as session:
-            record = await session.get(PlannedRestartRecord, 1)
-            if record is None or RestartBatch.model_validate_json(record.payload) != expected:
-                raise RunCoordinationError("The update handoff changed.", code="maintenance_conflict")
-            await session.execute(delete(PlannedRestartRecord).where(PlannedRestartRecord.singleton_id == 1))
-
-    async def require_admission(self, *, batch_id: str | None = None) -> None:
-        batch = await self.get()
-        if batch is None or batch.state == "finished":
-            return
-        if batch_id == batch.batch_id and batch.state == "claimed":
-            return
-        raise RunCoordinationError(
-            "The App is preparing an update or has an unresolved handoff. Resolve maintenance before submitting work.",
-            code="maintenance_active",
-        )

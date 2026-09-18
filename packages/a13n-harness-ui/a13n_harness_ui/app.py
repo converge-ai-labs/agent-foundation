@@ -125,8 +125,6 @@ from a13n_harness_ui.live import (
     SummaryCursor,
     SummarySubscription,
 )
-from a13n_harness_ui.maintenance import UpdateMaintenance
-from a13n_harness_ui.maintenance_models import MaintenanceView
 from a13n_harness_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_SCOPE,
     AccountProjection,
@@ -179,6 +177,8 @@ from a13n_harness_ui.page_presence import (
     WorkbenchPage,
 )
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
+from a13n_harness_ui.restart import GracefulRestart
+from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunExecutor
 from a13n_harness_ui.root_input import append_surface_hint, detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -257,7 +257,6 @@ from a13n_harness_ui.thread_files import (
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
 from a13n_harness_ui.thread_work import ThreadWorkService
-from a13n_harness_ui.update_recovery import recover_update
 from a13n_harness_ui.web_push import WebPush
 
 
@@ -344,10 +343,10 @@ class HarnessUiApp:
         candidate_error: HarnessUiError | None = None,
         share_computer: bool = False,
         web_push: WebPush | None = None,
-        maintenance: UpdateMaintenance,
+        restart_coordinator: GracefulRestart,
     ) -> None:
         self._settings = settings
-        self._maintenance = maintenance
+        self._restart = restart_coordinator
         self._web_push = web_push
         self._store = store
         self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
@@ -390,24 +389,6 @@ class HarnessUiApp:
         self._operation_scopes: set[CancelScope] = set()
         self._operations_idle = Event()
         self._operations_idle.set()
-
-    async def maintenance_status(self) -> MaintenanceView:
-        async with self._operation():
-            return await self._maintenance.view()
-
-    async def prepare_update(self) -> MaintenanceView:
-        async with self._operation():
-            result = await self._maintenance.prepare()
-            await self._root_runs.pause_interactions()
-            return result
-
-    async def cancel_update(self) -> MaintenanceView:
-        async with self._operation():
-            return await self._maintenance.cancel()
-
-    async def dismiss_update(self) -> MaintenanceView:
-        async with self._operation():
-            return await self._maintenance.dismiss()
 
     def _push(self) -> WebPush:
         if self._web_push is None:
@@ -2264,15 +2245,16 @@ class HarnessUiApp:
                 code="app_stopping",
             )
 
-    async def _stop(self) -> None:
+    async def _stop(self, *, graceful: bool = False) -> None:
         get_logger(__name__).debug("Stopping App: finishing admitted operations…")
         async with self._operation_lock:
             if self._state is not AppState.ready:
                 return
             self._state = AppState.stopping
             idle = self._operations_idle
-        self._maintenance.shutdown()
         await self._root_runs.stop_admission()
+        if graceful:
+            await self._restart.drain(self._settings.shutdown_timeout_seconds)
         await self._subagent_operator.stop_admission()
 
         with move_on_after(self._settings.shutdown_timeout_seconds) as drain_scope:
@@ -2459,9 +2441,9 @@ async def open_harness_ui_app(
                     refresh=grok_refresh,
                 )
 
-            maintenance = UpdateMaintenance(store.restarts, enabled=host_mode == "webui")
+            restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
             operator = HarnessUiSubagentOperator(
-                maintenance=maintenance,
+                restart_coordinator=restart_coordinator,
                 observation=observation,
                 store=store,
                 configurations=configurations,
@@ -2479,7 +2461,7 @@ async def open_harness_ui_app(
             )
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
-                maintenance=maintenance,
+                restart_coordinator=restart_coordinator,
                 work=work,
                 store=store,
                 threads=threads,
@@ -2502,7 +2484,7 @@ async def open_harness_ui_app(
                 web_push = WebPush(store, push_client)
             root_runs = RootRunCoordinator(
                 root_executor,
-                maintenance=maintenance,
+                restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
                 summary_hub=summary_hub,
                 observation=observation,
@@ -2573,7 +2555,7 @@ async def open_harness_ui_app(
                 candidate_error=candidate_error,
                 share_computer=share_computer,
                 web_push=web_push,
-                maintenance=maintenance,
+                restart_coordinator=restart_coordinator,
             )
             if host_mode == "webui":
                 thread_tools = ThreadToolController(
@@ -2598,21 +2580,23 @@ async def open_harness_ui_app(
                     app._logins = LoginSessions(background, app._account)
                     background.start_soon(app._prune_thread_files_periodically)
                     background.start_soon(app._maintain_read_models)
-                    await background.start(recover_update, maintenance, root_runs, operator)
+                    await recover_restart(restart_coordinator, root_runs, operator)
                     if web_push is not None:
                         background.start_soon(web_push.run)
                     if configuration_path is not None:
                         background.start_soon(app._observe_configuration)
+                    graceful = False
                     try:
                         yield app
+                        graceful = True
                     finally:
                         with CancelScope(shield=True):
-                            await app._stop()
+                            await app._stop(graceful=graceful)
                         background.cancel_scope.cancel()
             finally:
                 await app._close_collaborators()
                 with CancelScope(shield=True):
-                    await maintenance.commit()
+                    await restart_coordinator.commit()
                 app._state = AppState.closed
     finally:
         if app is not None:

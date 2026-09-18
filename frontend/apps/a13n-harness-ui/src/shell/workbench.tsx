@@ -1,4 +1,3 @@
-import { MaintenanceBanner } from "./maintenance";
 import { ModelsPage } from "../configuration/models";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -249,7 +248,6 @@ function WorkbenchContent({
       <div className={styles.workspace}>
         <main id="main-content" className={styles.main}>
           {disconnected && <ConnectionNotice retry={live.retrySummary} />}
-          <MaintenanceBanner />
           {(results.storageError || results.lookupError) && (
             <div role="alert" className={styles.notice}>
               <p>{results.storageError || results.lookupError}</p>
