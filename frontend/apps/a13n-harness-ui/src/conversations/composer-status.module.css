@@ -9,28 +9,31 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  max-width: 100%;
-  padding: 5px 8px;
+  gap: 0 4px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.metric {
+  padding: 5px 6px;
+  min-height: 28px;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--a13n-secondary);
+  color: inherit;
   font: inherit;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  cursor: pointer;
-  text-align: left;
-}
-.metrics:hover,
-.metrics[data-popup-open] {
-  background: var(--a13n-surface);
-}
-.metrics:focus-visible {
-  outline: 1px solid var(--ring);
-}
-.metrics > span {
   white-space: nowrap;
+}
+button.metric {
+  cursor: pointer;
+}
+button.metric:hover,
+.metric[data-popup-open] {
+  background: var(--a13n-surface);
+  color: var(--a13n-text);
+}
+.metric:focus-visible {
+  outline: 1px solid var(--ring);
 }
 .metrics strong {
   margin-left: 3px;
@@ -44,17 +47,57 @@
   width: min(380px, calc(100vw - 24px));
   font-size: 13px;
   line-height: 1.6;
+  font-variant-numeric: tabular-nums;
 }
-.popup dt {
-  margin-top: 12px;
-  font-weight: 500;
+.numbers {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  margin: 16px 0;
 }
-.popup dd {
-  margin: 3px 0 0;
+.numbers dt {
   color: var(--a13n-secondary);
 }
-@media (max-width: 400px) {
-  .metrics {
-    gap: 4px 10px;
-  }
+.numbers dd {
+  margin: 0;
+  text-align: right;
+  font-weight: 500;
+}
+.scope {
+  display: block;
+  margin: 8px 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.sectionTitle {
+  margin: 16px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+}
+.models {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+}
+.models li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(80px, auto);
+  align-items: start;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--a13n-border);
+}
+.modelName {
+  overflow-wrap: anywhere;
+}
+.modelCost {
+  text-align: right;
+}
+.modelCost strong {
+  font-weight: 500;
+}
+.models .scope,
+.numbers .scope {
+  margin: 2px 0 0;
 }

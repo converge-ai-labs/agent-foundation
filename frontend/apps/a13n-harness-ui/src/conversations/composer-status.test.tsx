@@ -88,7 +88,9 @@ it("ticks the exact current receipt and paints live context without waiting for 
   );
   const view = render(content(250, true));
   expect(screen.getByText("25%")).toBeTruthy();
-  expect(screen.getByText("Tokens").textContent).toBe("Tokens 12.3K");
+  expect(
+    screen.getByRole("button", { name: "Tokens details" }).textContent,
+  ).toBe("Tokens 12.3K");
   expect(screen.getByText("0s")).toBeTruthy();
   expect(screen.queryByText("On")).toBeNull();
   act(() =>
@@ -122,12 +124,18 @@ it("ticks the exact current receipt and paints live context without waiting for 
     await vi.advanceTimersByTimeAsync(0);
   });
   expect(screen.getByText("13.3K")).toBeTruthy();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Conversation usage details" }),
-  );
-  expect(
-    screen.getByText(/13,345 cumulative input \+ output tokens/),
-  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Tokens details" }));
+  expect(screen.getByText("13,345")).toBeTruthy();
+  expect(screen.getByText("11,000")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Context details" }));
+  expect(screen.getByRole("heading", { name: "Context usage" })).toBeTruthy();
+  expect(screen.queryByRole("heading", { name: "Token usage" })).toBeNull();
+  expect(screen.getByText("400")).toBeTruthy();
+  expect(screen.getByText("1,000")).toBeTruthy();
+  expect(screen.getByText("600")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Cache details" }));
+  expect(screen.getByRole("heading", { name: "Token usage" })).toBeTruthy();
+  expect(screen.getByText("13,345")).toBeTruthy();
   fireEvent.keyDown(document.activeElement!, { key: "Escape" });
   expect(screen.getByText("Off")).toBeTruthy();
   operation.status = "completed";
