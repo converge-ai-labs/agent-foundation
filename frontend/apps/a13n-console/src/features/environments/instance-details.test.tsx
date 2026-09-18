@@ -1,14 +1,15 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { EnvironmentDetails } from "./instance-details";
 
 const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
+const access = vi.hoisted(() => ({ can: vi.fn((_action: string) => true) }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
+  useWorkspace: () => ({ workspace: { id: "ws_test" }, can: access.can }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -17,6 +18,11 @@ vi.mock("react-i18next", () => ({
     i18n: { resolvedLanguage: "en" },
   }),
 }));
+
+beforeEach(() => {
+  access.can.mockImplementation(() => true);
+});
+const capabilities = { supports_stop: true, supports_destroy: true };
 
 const environment: Schema["Environment"] = {
   id: "env_test",
@@ -58,6 +64,7 @@ it.each([
       return {
         data: {
           ...environment,
+          ...capabilities,
           status: finished ? status : "running",
           retention: { idle: { stop_after: 600, delete_after: null } },
         },
@@ -111,7 +118,13 @@ it.each([
     http.GET.mockImplementation(async (path: string) => ({
       data: path.includes("environment-providers")
         ? { id: "envp_test", name: "Local", type: "direct-local" }
-        : { ...environment, ownership, retention },
+        : {
+            ...environment,
+            ownership,
+            retention,
+            supports_stop: ownership === "managed",
+            supports_destroy: ownership === "managed",
+          },
       response: new Response(null, { headers: { ETag: '"v1"' } }),
     }));
     const cache = new QueryClient({
@@ -195,6 +208,7 @@ it.each([false, true])(
         return {
           data: {
             ...environment,
+            ...capabilities,
             status,
             retention: { idle: { stop_after: null, delete_after: null } },
           },
@@ -248,6 +262,53 @@ it.each([false, true])(
       http.POST.mock.calls.at(-1)![1].params.header["Idempotency-Key"],
     ).not.toBe(http.POST.mock.calls[0][1].params.header["Idempotency-Key"]);
     expect(http.POST).toHaveBeenCalledTimes(loseAcknowledgement ? 3 : 2);
+    cache.clear();
+  },
+);
+
+it.each([
+  [false, true],
+  [true, false],
+  [false, false],
+])(
+  "shows only supported lifecycle actions without provider-read access (stop=%s, destroy=%s)",
+  async (supports_stop, supports_destroy) => {
+    access.can.mockImplementation(
+      (action: string) => action !== "environment_provider.read",
+    );
+    http.GET.mockClear();
+    http.GET.mockResolvedValue({
+      data: {
+        ...environment,
+        supports_stop,
+        supports_destroy,
+        retention: { idle: { stop_after: null, delete_after: null } },
+      },
+      response: new Response(null, { headers: { ETag: '"v1"' } }),
+    });
+    const cache = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={cache}>
+        <EnvironmentDetails environment={environment} />
+      </QueryClientProvider>,
+    );
+    await userEvent
+      .setup()
+      .click(screen.getByRole("button", { name: "Details" }));
+    await screen.findByText("Effective retention policy");
+    expect(!!screen.queryByRole("button", { name: "Stop target" })).toBe(
+      supports_stop,
+    );
+    expect(!!screen.queryByRole("button", { name: "Delete target" })).toBe(
+      supports_destroy,
+    );
+    expect(
+      http.GET.mock.calls.every(
+        ([path]) => !path.includes("environment-provider"),
+      ),
+    ).toBe(true);
     cache.clear();
   },
 );

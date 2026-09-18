@@ -10,7 +10,7 @@ The package owns:
 - single-use `Environment` adapters with creation or re-entry, readiness, provider-neutral operations, cached state, non-destructive close, and explicit destruction;
 - portable provider-owned `EnvironmentState` soft references;
 - typed Provider errors with bounded safe projections;
-- Native Direct Local/Docker/E2B and Envd Local/HTTP/WebSocket built-ins;
+- Native Direct Local/Docker and six cloud providers (E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop), plus Envd Local/HTTP/WebSocket built-ins;
 - EIP session sources and reusable stdio-carrier values shared with managed sandbox Providers.
 
 Embedding code resolves a trusted Provider, validates configuration, supplies current state and fresh runtime collaborators, and constructs one new adapter per independent Harness Run:
@@ -37,7 +37,7 @@ Provider validation and adapter construction perform no external I/O. Harness en
 
 The package does not own durable storage, Host authorization or scheduling, Harness Runs, model-facing tools, mount names, access ceilings, or target retention policy. The Host persists authoritative `EnvironmentState`; Harness owns only Run-local aggregate routing and state mapping.
 
-Direct Local exposes an existing Host directory and never deletes, tags, locks, or claims ownership of it. Local Envd launches one compatible Host-selected `a13n-envd` generation for each fresh adapter and removes only its private runtime on close. Docker creates or re-enters a native container, uses Engine exec for operations, and preserves the container and background commands on close. Explicit destruction removes its private filesystem and preserves external host mounts. E2B implements native SDK operations with bounded command-local byte capture, state re-entry, pause/resume, keepalive and explicit destruction; it requires no envd installation or custom template. The catalog contains no placeholder or fallback selection.
+Direct Local exposes an existing Host directory and never deletes, tags, locks, or claims ownership of it. Local Envd launches one compatible Host-selected `a13n-envd` generation for each fresh adapter and removes only its private runtime on close. Docker creates or re-enters a native container, uses Engine exec for operations, and preserves the container and background commands on close. Explicit destruction removes its private filesystem and preserves external host mounts. The six cloud peers (E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop) use native transports without envd. All support files, shell commands, and portable target state; process/output capabilities and stop/renewal guarantees are provider-specific. See the [cloud comparison](../../docs/a13n-environment/providers.md#cloud-providers). The catalog contains no placeholder or fallback selection.
 
 ## Choose a Provider
 
@@ -45,6 +45,11 @@ Direct Local exposes an existing Host directory and never deletes, tags, locks, 
 | ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
 | Native | `direct-local`        | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
 | Native | `e2b`                 | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Native | `daytona`             | Cloud sandbox                            | Native stop/start and preserved files                       |
+| Native | `modal`               | Cloud sandbox                            | Snapshot-backed stop/resume; fixed running lifetime         |
+| Native | `vercel`              | Cloud sandbox                            | Named persistent sandbox with native sessions               |
+| Native | `sprites`             | Cloud sandbox                            | Persistent disk and automatic sleep/wake                    |
+| Native | `runloop`             | Cloud sandbox                            | Devbox suspend/resume and idle keepalive                    |
 | Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
 | Native | `docker`              | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
 | Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |

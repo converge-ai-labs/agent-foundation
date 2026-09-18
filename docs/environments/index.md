@@ -14,6 +14,11 @@ Use no Environment when the Agent needs only ordinary tools or remote APIs. Othe
 | ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
 | Native | `direct-local`        | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
 | Native | `e2b`                 | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Native | `daytona`             | Cloud sandbox                            | Native stop/start and preserved files                       |
+| Native | `modal`               | Cloud sandbox                            | Snapshot-backed stop/resume; fixed running lifetime         |
+| Native | `vercel`              | Cloud sandbox                            | Named persistent sandbox with native sessions               |
+| Native | `sprites`             | Cloud sandbox                            | Persistent disk and automatic sleep/wake                    |
+| Native | `runloop`             | Cloud sandbox                            | Devbox suspend/resume and idle keepalive                    |
 | Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
 | Native | `docker`              | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
 | Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
@@ -29,7 +34,7 @@ flowchart LR
     Provider --> Environment[Fresh Environment adapter]
     Environment --> Harness[Agent Harness Run]
     Harness --> Tools[Selected model-facing tools]
-    Environment --> Direct[Native Local or E2B operations]
+    Environment --> Direct[Native Local, Docker or cloud operations]
     Environment --> EIP[EIP operations]
     EIP --> Envd[a13n-envd or remote backend]
 ```

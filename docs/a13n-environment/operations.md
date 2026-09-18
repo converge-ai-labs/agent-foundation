@@ -59,7 +59,7 @@ For commands and process observation, follow the complete [command example and t
 
 ## File search patterns
 
-File query patterns and text-search `include` filters use the same path syntax on Direct Local, E2B, and envd-backed Providers:
+File query patterns and text-search `include` filters use the same path syntax on Direct Local, Docker, all six cloud providers, and envd-backed Providers:
 
 | Pattern                    | Selection                                        |
 | -------------------------- | ------------------------------------------------ |
@@ -70,7 +70,7 @@ File query patterns and text-search `include` filters use the same path syntax o
 
 Brace groups are non-nested, with at least two nonempty alternatives and at most 256 expanded patterns. Patterns accept at most 16 KiB. Backslash escapes and numeric ranges are not shell-expanded. Use a complete `**` path segment for recursive matching.
 
-Text search defaults to literal matching at the Environment API. The model-facing Harness `grep` tool instead defaults to `regex=true`; it also exposes `regex=false` and `case_sensitive=false`. Prefer literal mode for code fragments containing punctuation. Portable regular expressions use literals, classes, grouping, alternation, anchors, and quantifiers. Direct Local and E2B use Python `re`; envd uses Rust `regex`, which rejects lookaround and backreferences. Engine-specific extensions and Unicode edge cases can differ.
+Text search defaults to literal matching at the Environment API. The model-facing Harness `grep` tool instead defaults to `regex=true`; it also exposes `regex=false` and `case_sensitive=false`. Prefer literal mode for code fragments containing punctuation. Portable regular expressions use literals, classes, grouping, alternation, anchors, and quantifiers. Direct Local, Docker, and all six cloud providers use Python `re`; envd uses Rust `regex`, which rejects lookaround and backreferences. Engine-specific extensions and Unicode edge cases can differ.
 
 Invalid patterns produce an `environment_request_invalid` error with a safe field, reason, and correction hint. Zero results are successful. Continue bounded pages using the returned offset while keeping filters and filesystem stable. A per-file match limit caps returned matches from that file; an eligible-file scan ceiling raises a limit error rather than silently claiming a complete result. Narrow the root and include filter before increasing limits.
 
@@ -84,4 +84,4 @@ Output records report provenance, available ranges, offsets, and incomplete obse
 
 A process reference belongs to its current adapter/Run observation. Reusing target state does not make old process handles valid. A fresh adapter can discover only what its Provider retained and supports discovering; never restart a missing command automatically.
 
-See [Provider-specific limits](providers.md#e2b-runtime) and [Harness Environment tools](../a13n-harness/environments.md) for model-facing signatures and policy.
+See [Provider-specific limits](providers.md#cloud-providers) and [Harness Environment tools](../a13n-harness/environments.md) for model-facing signatures and policy.

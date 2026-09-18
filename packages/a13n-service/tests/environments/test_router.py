@@ -125,7 +125,9 @@ async def environment_api_client(
         config,
         components=Components(
             request_authenticator=authenticate,
-            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=(PROVIDER_KEY, "docker")),
+            environment_provider_catalog=build_environment_provider_catalog(
+                builtin_keys=(PROVIDER_KEY, "docker", "sprites")
+            ),
         ),
     )
     async with app.router.lifespan_context(app):
@@ -344,6 +346,8 @@ async def test_environment_detail_returns_frozen_retention_and_external_ownershi
     detail = await client.get(f"/api/v1/environments/{external.json()['id']}")
     assert detail.json()["ownership"] == "external"
     assert detail.json()["retention"] is None
+    assert detail.json()["supports_stop"] is False
+    assert detail.json()["supports_destroy"] is False
 
 
 @pytest.mark.anyio
@@ -372,6 +376,8 @@ async def test_environment_retention_read_does_not_require_template_or_provider_
     detail = await client.get(environment_url)
     assert detail.status_code == 200, detail.text
     assert detail.json()["retention"] == {"idle": {"stop_after": None, "delete_after": None}}
+    assert detail.json()["supports_stop"] is True
+    assert detail.json()["supports_destroy"] is True
     assert not {"configuration", "external_configuration", "credential", "state"}.intersection(detail.json())
     for url in (
         f"/api/v1/environment-providers/{provider_id}",
@@ -381,3 +387,40 @@ async def test_environment_retention_read_does_not_require_template_or_provider_
         assert (await client.get(url)).status_code == 404
     monkeypatch.setitem(iam_authorization._WORKSPACE_ROLE_ACTIONS, "builder", frozenset())
     assert (await client.get(environment_url)).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_environment_detail_excludes_unsupported_native_lifecycle_actions(environment_api_client):
+    client = environment_api_client
+    base = f"/api/v1/workspaces/{WORKSPACE_ID}"
+    provider = await client.post(
+        f"{base}/environment-providers",
+        json={
+            "type": "sprites",
+            "name": "Persistent files",
+            "configuration": {"organization": "fixture"},
+            "credential": {"api_key": "fixture"},
+        },
+    )
+    assert provider.status_code == 201, provider.text
+    template = await client.post(
+        f"{base}/environment-templates",
+        headers={"Idempotency-Key": "sprites-template"},
+        json={
+            "name": "Persistent files",
+            "provider_id": provider.json()["id"],
+            "configuration": {},
+            "retention": {"idle": {"stop_after": None, "delete_after": None}},
+        },
+    )
+    assert template.status_code == 201, template.text
+    allocated = await client.post(
+        f"{base}/environments",
+        headers={"Idempotency-Key": "sprites-environment"},
+        json={"template_id": template.json()["id"]},
+    )
+    assert allocated.status_code == 201, allocated.text
+    detail = await client.get(f"/api/v1/environments/{allocated.json()['id']}")
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["supports_stop"] is False
+    assert detail.json()["supports_destroy"] is True

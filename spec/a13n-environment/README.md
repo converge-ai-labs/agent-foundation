@@ -2,7 +2,7 @@
 
 ## Overview
 
-This directory defines `a13n-environment`, distributed as `a13n-environment`. It owns the shared single-Environment operation contracts, the three core lifecycle entities, provider discovery, and the Native (Direct Local and E2B) and Envd (Local, Docker, HTTP and WebSocket) providers.
+This directory defines `a13n-environment`, distributed as `a13n-environment`. It owns the shared single-Environment operation contracts, the three core lifecycle entities, provider discovery, and Native providers (Direct Local, Docker, and six cloud peers: E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop) and Envd providers (Local, HTTP, and WebSocket).
 
 The core model is:
 
@@ -23,9 +23,8 @@ The package performs no durable storage and owns no Agent loop, model-facing Too
 | [00-overview.md](00-overview.md)                                     | Package position, architecture, boundaries, end-to-end flow, dependency direction, and stable principles                                             |
 | [01-provider-specs-and-catalog.md](01-provider-specs-and-catalog.md) | Provider configuration schemas, inert factory contract, catalog, discovery, authorization, and evolution                                             |
 | [02-environment-lifecycle.md](02-environment-lifecycle.md)           | `Environment`, `EnvironmentState`, eager/lazy preparation, stop/keepalive/destroy, local scope, process/output observations, failure and concurrency |
-| [03-built-in-providers.md](03-built-in-providers.md)                 | Direct Local, Local Envd, Docker, and E2B configuration, state, entry, close, and destruction behavior                                               |
-
-| [04-remote-envd.md](04-remote-envd.md) | External HTTP/WebSocket configuration and state, connect-only lifecycle, and Host-owned reverse WebSocket SDK |
+| [03-built-in-providers.md](03-built-in-providers.md)                 | Direct Local, Local Envd, Docker, and all six cloud providers: configuration, state, entry, close, and destruction                                   |
+| [04-remote-envd.md](04-remote-envd.md)                               | External HTTP/WebSocket configuration and state, connect-only lifecycle, and Host-owned reverse WebSocket SDK                                        |
 
 ## Reading Paths
 
@@ -52,7 +51,7 @@ Read `01` and `02`. A third-party Provider registers one namespaced key, validat
 
 ## Specification Conventions
 
-- Provider keys use a namespaced lowercase form such as `docker`.
+- Extension keys use a namespaced lowercase form such as `acme.sandbox`; built-ins reserve their documented keys.
 - Configuration and state versions are explicit and independently owned.
 - Configuration and state contain canonical JSON only; live collaborators and credentials remain process-local.
 - Cancellation never proves that an external operation did not occur.

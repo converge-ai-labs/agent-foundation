@@ -194,30 +194,36 @@ export function EnvironmentDetails({
             <small>{command.data.id}</small>
           </div>
         )}
-        {can("environment.manage") && environment.ownership === "managed" && (
-          <div className={`${styles.actions} border-t border-border pt-4`}>
-            <Confirm
-              subject={environment.id}
-              title={t("Stop environment target")}
-              description={t(
-                "This stops the target when it has no active users. A later run can resume it.",
+        {can("environment.manage") &&
+          (detail.data?.value.supports_stop ||
+            detail.data?.value.supports_destroy) && (
+            <div className={`${styles.actions} border-t border-border pt-4`}>
+              {detail.data.value.supports_stop && (
+                <Confirm
+                  subject={environment.id}
+                  title={t("Stop environment target")}
+                  description={t(
+                    "This stops the target when it has no active users. A later run can resume it.",
+                  )}
+                  trigger={t("Stop target")}
+                  action={() => act("stop")}
+                />
               )}
-              trigger={t("Stop target")}
-              action={() => act("stop")}
-            />
-            <Confirm
-              subject={environment.id}
-              title={t("Delete environment target")}
-              description={t(
-                "Files and processes on the target will be lost. The next use automatically creates a fresh target from the frozen template revision; old files are not restored. Environment identity and history are retained.",
+              {detail.data.value.supports_destroy && (
+                <Confirm
+                  subject={environment.id}
+                  title={t("Delete environment target")}
+                  description={t(
+                    "Files and processes on the target will be lost. The next use automatically creates a fresh target from the frozen template revision; old files are not restored. Environment identity and history are retained.",
+                  )}
+                  trigger={t("Delete target")}
+                  danger
+                  triggerVariant="outline"
+                  action={() => act("delete")}
+                />
               )}
-              trigger={t("Delete target")}
-              danger
-              triggerVariant="outline"
-              action={() => act("delete")}
-            />
-          </div>
-        )}
+            </div>
+          )}
       </div>
     </ModalFrame>
   );

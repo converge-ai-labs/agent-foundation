@@ -90,6 +90,6 @@ This fragment assumes the workspace still exists and `executable` was built with
 ## Where to go next
 
 - [Choose a backend](../environments/index.md) before adding isolation or remote execution.
-- [Lifecycle and state](lifecycle.md) explains retained Docker/E2B targets and explicit destruction.
+- [Lifecycle and state](lifecycle.md) explains retained Docker and cloud-provider targets and explicit destruction.
 - [Operations](operations.md) explains search syntax, output limits, and process handles.
 - [Harness integration](../a13n-harness/environments.md) adds model-facing tools and multiple mounts.

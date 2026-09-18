@@ -148,15 +148,20 @@ A supported readiness recovery can report `environment_connection_refreshed` or 
 
 Provider capability declarations tell a Host which maintenance paths it may select:
 
-| Built-in Provider            | Managed selection    | Resumable stop | Destroy | Keepalive required |
-| ---------------------------- | -------------------- | -------------- | ------- | ------------------ |
-| Direct Local                 | Yes, stateless       | No             | No      | No                 |
-| Local Envd                   | Yes, stateless       | No             | No      | No                 |
-| Docker                       | Yes                  | Yes            | Yes     | No                 |
-| E2B                          | Yes                  | Yes            | Yes     | Yes                |
-| Remote HTTP / WebSocket Envd | No, externally owned | No             | No      | No                 |
+| Built-in Provider            | Managed selection    | Resumable stop                    | Destroy | Keepalive required       |
+| ---------------------------- | -------------------- | --------------------------------- | ------- | ------------------------ |
+| Direct Local                 | Yes, stateless       | No                                | No      | No                       |
+| Local Envd                   | Yes, stateless       | No                                | No      | No                       |
+| Docker                       | Yes                  | Yes                               | Yes     | No                       |
+| E2B                          | Yes                  | Yes                               | Yes     | Yes                      |
+| Daytona                      | Yes                  | Yes                               | Yes     | No                       |
+| Modal                        | Yes                  | Managed only, filesystem snapshot | Yes     | Yes, fixed deadline only |
+| Vercel Sandbox               | Yes                  | Yes                               | Yes     | Yes                      |
+| Fly.io Sprites               | Yes                  | No; automatic native sleep        | Yes     | No                       |
+| Runloop                      | Yes                  | Yes                               | Yes     | Yes                      |
+| Remote HTTP / WebSocket Envd | No, externally owned | No                                | No      | No                       |
 
-Managed selection does not mean every Provider creates storage or owns the Host directory. Unsupported base methods are not usable merely because they appear on the abstract interface. Schedule keepalive from the Provider's `keepalive_horizon` and actual target policy; do not treat the base default as a universal cloud TTL.
+See the [six-cloud comparison](providers.md#reconnection-and-lifecycle) for filesystem, memory, and expiry differences. Managed selection does not mean every Provider creates storage or owns the Host directory. Unsupported base methods are not usable merely because they appear on the abstract interface. Schedule keepalive from the Provider's `keepalive_horizon` and actual target policy; do not treat the base default as a universal cloud TTL.
 
 ## Handle typed failures
 

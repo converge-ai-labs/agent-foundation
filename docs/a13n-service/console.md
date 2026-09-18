@@ -50,7 +50,7 @@ Open Run details to see the selected Environment's name and copyable ID. Its **D
 
 Idle time starts when no Runs actively use the Environment. Both automatic stop and delete deadlines count from that time; stopping does not restart the deletion timer. A stopped target resumes when used again, retaining its files according to the Provider's storage behavior. A deleted managed target is automatically created fresh on its next use, using the frozen template revision. Its Environment ID and history remain, but old files are not restored.
 
-Manual **Stop target** and **Delete target** require management permission and no active users. Their command status can remain pending after the request is accepted. Keep the details dialog open to see completion or failure and the refreshed Environment state. Deletion is destructive even though a later Run can create a fresh target.
+Manual **Stop target** and **Delete target** appear only when the Provider supports the action. They require management permission and no active users. Sprites automatically sleep when idle and do not offer manual stop. Command status can remain pending after the request is accepted. Keep the details dialog open to see completion or failure and the refreshed Environment state. Deletion is destructive even though a later Run can create a fresh target.
 
 ## Set up and manage memory
 

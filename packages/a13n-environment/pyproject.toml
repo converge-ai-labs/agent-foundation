@@ -11,9 +11,12 @@ dependencies = [
     "anyio>=4,<5",
     "docker>=7.2,<8",
     "e2b>=2.46.4,<3",
+    "httpx2>=2.5,<3",
+    "modal>=1.5.5,<2",
     "pathspec>=1.1,<2",
     "pydantic>=2.12,<3",
     "pydantic-core>=2.41,<3",
+    "websockets>=15,<16",
 ]
 
 [dependency-groups]

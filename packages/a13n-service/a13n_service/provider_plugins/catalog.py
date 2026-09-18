@@ -31,6 +31,11 @@ _ENVIRONMENT_BUILTINS = frozenset(
         "direct-local",
         "docker",
         "e2b",
+        "daytona",
+        "modal",
+        "vercel",
+        "sprites",
+        "runloop",
         "a13n.http-envd",
         "a13n.websocket-envd",
     }

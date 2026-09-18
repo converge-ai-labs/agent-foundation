@@ -8567,6 +8567,14 @@
           "status": {
             "$ref": "#/components/schemas/EnvironmentStatus"
           },
+          "supports_destroy": {
+            "title": "Supports Destroy",
+            "type": "boolean"
+          },
+          "supports_stop": {
+            "title": "Supports Stop",
+            "type": "boolean"
+          },
           "template_revision_id": {
             "anyOf": [
               {
@@ -8607,7 +8615,9 @@
           "condition_since",
           "created_at",
           "updated_at",
-          "retention"
+          "retention",
+          "supports_stop",
+          "supports_destroy"
         ],
         "title": "EnvironmentDetail",
         "type": "object"
@@ -8804,7 +8814,7 @@
           "provider_key": {
             "maxLength": 128,
             "minLength": 3,
-            "pattern": "^(?:docker|e2b|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$",
+            "pattern": "^(?:docker|e2b|sprites|daytona|modal|vercel|runloop|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$",
             "title": "Provider Key",
             "type": "string"
           },

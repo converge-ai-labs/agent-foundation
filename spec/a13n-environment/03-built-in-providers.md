@@ -2,16 +2,21 @@
 
 ## Design Position
 
-`a13n-environment` supplies two operation routes and six Provider choices:
+`a13n-environment` supplies two operation routes and eleven Provider choices:
 
-| Route  | Provider key          | Backing target                              | Operation backend            | Lifecycle boundary                              |
-| ------ | --------------------- | ------------------------------------------- | ---------------------------- | ----------------------------------------------- |
-| Native | `direct-local`        | Existing Host directory                     | Local OS file/process APIs   | Caller-owned directory                          |
-| Native | `e2b`                 | Native E2B sandbox                          | E2B SDK and bounded commands | Sandbox create, pause/resume, renew and destroy |
-| Envd   | `a13n.local-envd`     | Local workspace and private daemon          | EIP over stdio               | Adapter-owned daemon; caller-owned workspace    |
-| Native | `docker`              | Docker container                            | Docker Engine API            | Managed container; close preserves target       |
-| Envd   | `a13n.http-envd`      | External daemon at a configured origin      | EIP over HTTP(S)             | Connect-only                                    |
-| Envd   | `a13n.websocket-envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket  | Connect-only; Host-integrated SDK               |
+| Route  | Provider key          | Backing target                              | Operation backend            | Lifecycle boundary                                  |
+| ------ | --------------------- | ------------------------------------------- | ---------------------------- | --------------------------------------------------- |
+| Native | `direct-local`        | Existing Host directory                     | Local OS file/process APIs   | Caller-owned directory                              |
+| Native | `e2b`                 | Native E2B sandbox                          | E2B SDK and bounded commands | Sandbox create, pause/resume, renew and destroy     |
+| Native | `daytona`             | Daytona sandbox                             | Toolbox commands             | Create, stop/start and destroy                      |
+| Native | `modal`               | Modal sandbox                               | Async SDK commands           | Create, filesystem snapshot stop/resume and destroy |
+| Native | `vercel`              | Named Vercel sandbox                        | Native command stream        | Create, stop/resume, renew and destroy              |
+| Native | `sprites`             | Persistent Sprite                           | Native WebSocket exec        | Create, automatic sleep/wake and destroy            |
+| Native | `runloop`             | Runloop Devbox                              | Native commands              | Create, suspend/resume, keepalive and shutdown      |
+| Envd   | `a13n.local-envd`     | Local workspace and private daemon          | EIP over stdio               | Adapter-owned daemon; caller-owned workspace        |
+| Native | `docker`              | Docker container                            | Docker Engine API            | Managed container; close preserves target           |
+| Envd   | `a13n.http-envd`      | External daemon at a configured origin      | EIP over HTTP(S)             | Connect-only                                        |
+| Envd   | `a13n.websocket-envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket  | Connect-only; Host-integrated SDK                   |
 
 Native Docker uses the key `docker`. Local Envd serves CLI and local Agent use; Docker supplies container-backed execution for single-host self-hosting. Multi-tenant authorization and allocation remain Host responsibilities. Remote Envd supports network-reachable environments through HTTP or outbound-only environments through reverse WebSocket. A connection Session is not a tenant boundary.
 
@@ -23,7 +28,7 @@ This document owns native and provider-launched target behavior. [Remote Envd Pr
 
 Each Provider owns an exact versioned Pydantic configuration model. Configuration is desired behavior and contains no API key, Docker socket, container/sandbox ID, PID, resolved endpoint, EIP credential, live client, or session.
 
-Provider discovery, configuration validation, Provider construction, `create_environment()` and scope `enter()` are inert. They do not inspect the filesystem, invoke a subprocess, connect to Docker or E2B, allocate bootstrap material, or open EIP.
+Provider discovery, configuration validation, Provider construction, `create_environment()` and scope `enter()` are inert. They do not inspect the filesystem, invoke a subprocess, connect to Docker or a cloud backend, allocate bootstrap material, or open EIP.
 
 Fresh Host runtime collaborators supply stable per-Environment creation/ownership correlation, current credentials, SDK boundaries, executable selection, bootstrap storage, and private runtime allocation. Providers never discover ambient credentials or executables unless the Host explicitly invokes a separate convenience resolver and passes its result.
 
@@ -216,9 +221,34 @@ Commands use native Docker exec, with a configured shell or explicit argv. The P
 
 Output observations are scoped to the current adapter. Per-stream and aggregate limits bound captured data; excess bytes are discarded and reported as incomplete. Shell results can retain bounded output in Host-local temporary storage. Rebinding a known exec identity can inspect native status but does not reconstruct lost output or stdin. Native command output is never replayed after a Worker restart. An Agent inspects uncertain work and decides what to do next.
 
-## E2B
+## Cloud Providers
 
-### Configuration and runtime
+E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Sprites (`sprites`), and Runloop (`runloop`) use the existing Provider/Environment/EnvironmentState model. Each has typed backend settings, a private credential model, and configuration schema version `1`. Service enables all six cloud built-ins by default and derives Console authoring schemas from the same models. All six expose files and shell execution through native transports. E2B additionally exposes native process observations, stdin, retained SDK text output, and loopback ports. The other providers expose bounded foreground execution only; unsupported process, output, port, resource and network features fail explicitly.
+
+Daytona, Modal, Vercel Sandbox, Sprites, and Runloop share command composition that reuses the canonical file helper, with staged file publication and a bounded one-shot guest command runner. Each adapter owns its native transport and lifecycle; the common operation layer never dispatches by provider key. REST uses the canonical async HTTP client, Sprites exec uses binary WebSocket frames, and Modal uses its async SDK and explicitly detaches sandbox command-router resources on local close. A command's dispatched unknown outcome is never replayed.
+
+State validates the provider key, exact codec version, recipe fingerprint, and native target ownership before managed use. Names and labels correlate allocation to the Environment, never a Session. Confirmed missing managed targets may be rebuilt; external state is mandatory and external adapters never allocate; the five command-only providers also refuse destruction of externally owned targets. Native names that can be reused retain backing identity evidence separately, so a stale state cannot silently delete a different target at the same name. State and templates never contain credentials, resolved toolbox endpoints, WebSocket URLs, SDK clients, or live native session handles.
+
+| Provider       | Native lifecycle                                                                               | Stop guarantees                                                                      | Lifetime                                                                                                                                        |
+| -------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| E2B            | Native SDK create/connect/pause/resume/kill                                                    | Native pause preserves memory and files                                              | Renewable whole-sandbox TTL; expiry is observed from the native service                                                                         |
+| Daytona        | Create/get/start/stop/delete through the control API; exec through the validated toolbox proxy | Files survive native stop/archive/start; memory is not promised                      | Automatic deletion and hard TTL are disabled at creation; organization-enforced hard TTL fails readiness                                        |
+| Modal          | Named sandbox discovery, filesystem snapshot/terminate, snapshot-backed creation               | Files survive explicit managed stop; memory does not; resume changes native identity | Fixed running timeout up to 24 hours; keepalive cannot extend it. Internal snapshots have no expiry and are ownership-validated before deletion |
+| Vercel Sandbox | Named persistent sandbox with native running sessions, stop/resume/delete                      | Native stop preserves files; memory is not promised                                  | Session renewal is bounded by the recipe's total timeout; internal native snapshots have no expiry                                              |
+| Sprites        | Named Sprite creation/discovery/deletion; automatic wake on exec                               | Explicit stop is unsupported; native automatic sleep preserves disk                  | No adapter-owned renewal; native durable filesystem                                                                                             |
+| Runloop        | Devbox creation/discovery/suspend/resume/shutdown                                              | Suspend preserves disk, not memory                                                   | Idle policy suspends; acknowledged keepalive resets the configured idle interval                                                                |
+
+Managed creation is recoverable through deterministic native names or ownership metadata, including interrupted allocation. Native metadata is revalidated before adopting a recovered target. Unknown existence, transient errors, and ambiguous control-plane states fail closed. Reconciliation does not allocate, start, stop, or delete a target. Close only fences local operations and releases transport resources. Cancellation does not claim immediate remote process termination. Daytona, Modal, Vercel, Sprites, and Runloop foreground execution remains bounded by its guest deadline, with process-group cleanup rather than sandbox-wide descendant containment; E2B follows its native observation and sandbox-expiry semantics below.
+
+The [user provider guide](../../docs/a13n-environment/providers.md#cloud-providers) documents configuration fields, native limits, and explicit cloud-test opt-ins. Deterministic tests exercise real guest code over the native HTTP/WebSocket formats and the actual Modal SDK over fixture-owned gRPC services. Service tests cover configured Provider credentials, frozen Template allocation, and Worker construction through the standard lifecycle path.
+
+Native lookup names and backing identities are distinct. Sprites state retains its native ID and Vercel state retains name plus creation timestamp; `target_identity()` exposes that backing evidence to Host persistence. Reconnecting preserves Host generation; confirmed replacement advances it even when the lookup name is unchanged.
+
+Native local rejection is `not_dispatched`; observed command completion is `known`, including nonzero exits. Malformed or oversized mutation acknowledgements and lost responses remain `unknown`. HTTP deletion waits for authoritative absence or the provider's terminal destroyed/shutdown state before state is discarded. Timeout or polling failure retains state and uncertainty. Modal awaits native termination before deleting known owned snapshots.
+
+### E2B
+
+#### Configuration and runtime
 
 `e2b` configuration schema version `1` selects `template` (default `base`), logical filesystem `root` (default `/home/user`), sandbox `user`, the Python executable used by file/port helpers, sandbox and request timeouts, sandbox-wide internet access, read-only access, finite file/traversal bounds and local observation limits. `timeout_seconds` defaults to 3600 seconds for sandbox TTL; `request_timeout_seconds` defaults to 30 seconds for native requests. `max_active_observations` defaults to 128 concurrent native attachments, `max_observation_bytes` to 1 MiB cumulative combined stdout/stderr per observed command, and `max_retained_output_bytes` to 128 MiB retained text across the adapter. Configuration contains no credential, sandbox ID, endpoint or live SDK object.
 
@@ -226,7 +256,7 @@ Output observations are scoped to the current adapter. Per-stream and aggregate 
 
 Commands use the official asynchronous E2B SDK's public `run`, `list`, `connect`, `kill`, `send_stdin` and `close_stdin` operations. File and port helpers use bounded Python standard-library commands. No guest command supervisor, PID registry, capture files, pidfd support, `a13n-envd`, executable upload or template build is required. The selected template provides Linux, Python 3.11 or later, Bash, the selected account and existing root. Git-ignore queries additionally require Git.
 
-### State and lifecycle
+#### State and lifecycle
 
 State version `1` contains `sandbox_id`, owning `environment_id` and `configuration_fingerprint`. The fingerprint covers target-compatible template, root, user and internet-access configuration, not local observation budgets. Target metadata carries the same ownership and fingerprint, plus optional create correlation. No command inventory, SDK handle, text buffer, model reference or cursor is persisted.
 
@@ -236,7 +266,7 @@ A successful create is cached before operation readiness. Generation derives fro
 
 `close()` disconnects SDK observations and fences local facets without killing commands or the sandbox. A fresh adapter restored from state can discover running commands that the sandbox still exposes. Unchanged sandbox identity does not prove command survival; an exited command absent from the native inventory has no invented exit result. `stop()` pauses the exact validated sandbox with memory preservation. `destroy()` kills only the validated sandbox. Neither action prepares or resumes the target. Keepalive rejects paused or missing targets, never shortens an existing deadline and reports observed expiry. Creation uses finite kill-on-timeout behavior with automatic resume disabled. Host delete deadlines remain effective while paused.
 
-### Operation guarantees and limits
+#### Operation guarantees and limits
 
 Files support bounded raw reads, streamed SDK transfers, UTF-8 text, shared unified-diff semantics, traversal, search, atomic staged publication, copy, move and deletion. Logical paths resolve beneath the configured root; that is a file-API boundary, not shell confinement. Append and patch are read/modify/write operations, not concurrent compare-and-swap transactions. Port operations inspect or wait for loopback TCP listeners only.
 
@@ -256,13 +286,33 @@ A transient connection loss before the cap permits explicit output/wait reattach
 
 Native listing is not paginated by the locked SDK. The adapter bounds its returned projection and reports `has_more` without claiming a server-side cursor. It projects no native environment variables or arbitrary argv and does not attach every listed command. Complete durable logs require the application to write files deliberately.
 
+### Daytona
+
+The recipe defaults to writable `/home/daytona` and guest-PATH `python3`. Native stop/start preserves files only with confirmed disabled auto-deletion; stop fails before dispatch otherwise. Delete acknowledgement is fire-and-forget, so destruction polls until `destroyed` or absence.
+
+### Modal
+
+Modal external registrations reject stop because snapshot-based resume would require allocation. A managed Modal stop caches its snapshot selector before terminating the sandbox. Resume retains that selector until readiness succeeds, and deletion retains pending snapshot cleanup state until cleanup succeeds. Native ownership tags must agree before deleting snapshot images. Modal uses an existing deployed App; the adapter does not create Apps or delete caller-supplied base images. If an upstream snapshot response is lost before its image ID is known, the provider cannot enumerate that orphan image: this is an upstream limitation, not permission to infer completion or replay a command.
+
+### Vercel Sandbox
+
+The recipe uses Python 3.13 and `/vercel/sandbox`. Persistent named target identity survives session stop/resume; session identity fences local observations. Destruction verifies target absence and requests native orphan-snapshot deletion, which the provider performs asynchronously without deleting snapshots still used elsewhere.
+
+### Fly.io Sprites
+
+The recipe defaults to `/home/sprite` and guest-PATH `python3`. Automatic native sleep/wake retains disk. There is no supported explicit stop operation; capability declarations prevent Hosts from presenting it as an available action. Destruction verifies absence of the exact named backing target.
+
+### Runloop
+
+The recipe defaults to the unprivileged user's writable `/home/user` and guest-PATH `python3`. Suspend/resume preserves disk. Keepalive uses the returned target idle policy, not an assumed template interval; shutdown is complete only after confirmed native shutdown or absence.
+
 ## Harness Semantics
 
 Harness receives already constructed native or Envd-backed Environment instances. It never receives a Provider, discovers the catalog, acquires an attachment, or owns an ephemeral target lifetime.
 
 A singular Environment becomes mount `workspace`. Named mounts can combine built-ins. Harness supplies Run-local access ceilings and working directories, binds local scopes atomically without target I/O, routes operations through ready or lazy objects, snapshots each non-`None` state directly into `HarnessState.environment_states`, and closes adapters non-destructively.
 
-Direct Local and Local Envd normally contribute no state entry. Docker, E2B and Remote Envd contribute their provider envelope under the selected mount name. Async child Runs receive fresh adapters selected from Host state; inline children borrow the current entered Harness facade.
+Direct Local and Local Envd normally contribute no state entry. Docker, all six cloud providers, and Remote Envd contribute their provider envelope under the selected mount name. Async child Runs receive fresh adapters selected from Host state; inline children borrow the current entered Harness facade.
 
 ## Dependencies and Public Surface
 
@@ -277,23 +327,23 @@ The package root exports:
 - explicit Host convenience resolvers such as `resolve_a13n_envd_executable()`;
 - bounded provider-specific discovery needed for Host-authorized prune where supported.
 
-It does not export Docker SDK models, E2B SDK models, EIP native sessions, Resource/attachment/binding types, Harness mount types, Host persistence models, or unscoped native-client escape hatches.
+It does not export Docker or cloud SDK models, EIP native sessions, Resource/attachment/binding types, Harness mount types, Host persistence models, or unscoped native-client escape hatches.
 
 ## Failure Semantics
 
-| Failure                                              | Required behavior                                              |
-| ---------------------------------------------------- | -------------------------------------------------------------- |
-| Invalid configuration or state                       | Fail before provider effects                                   |
-| Direct Local root/workspace inaccessible             | Fail unavailable; do not create or retarget                    |
-| Local Envd executable/probe incompatible             | Fail before daemon launch where possible                       |
-| Local Envd startup/readiness fails                   | Terminate owned process tree and remove private runtime        |
-| Docker/E2B state target compatible                   | Re-enter exact target                                          |
-| Docker/E2B target authoritatively absent             | Create replacement only under documented policy                |
-| Docker/E2B target unavailable, ambiguous, or unknown | Fail without speculative replacement                           |
-| Docker/E2B metadata incompatible                     | Fail conflict; do not adopt, mutate, or destroy                |
-| Create/replacement succeeds then readiness fails     | Preserve changed state                                         |
-| Close fails                                          | Report local cleanup failure without destroying backing target |
-| Destroy outcome unknown                              | Preserve state for Host retry or prune                         |
+| Failure                                                | Required behavior                                              |
+| ------------------------------------------------------ | -------------------------------------------------------------- |
+| Invalid configuration or state                         | Fail before provider effects                                   |
+| Direct Local root/workspace inaccessible               | Fail unavailable; do not create or retarget                    |
+| Local Envd executable/probe incompatible               | Fail before daemon launch where possible                       |
+| Local Envd startup/readiness fails                     | Terminate owned process tree and remove private runtime        |
+| Docker/cloud state target compatible                   | Re-enter exact target                                          |
+| Docker/cloud target authoritatively absent             | Create replacement only under documented policy                |
+| Docker/cloud target unavailable, ambiguous, or unknown | Fail without speculative replacement                           |
+| Docker/cloud metadata incompatible                     | Fail conflict; do not adopt, mutate, or destroy                |
+| Create/replacement succeeds then readiness fails       | Preserve changed state                                         |
+| Close fails                                            | Report local cleanup failure without destroying backing target |
+| Destroy outcome unknown                                | Preserve state for Host retry or prune                         |
 
 ## Compatibility
 
@@ -307,11 +357,11 @@ Hosts construct fresh operation objects from authoritative state and choose eage
 02. Direct Local and Local Envd can omit portable state.
 03. Local Envd state never contains a PID or private runtime path.
 04. Docker state contains the exact container ID and compatibility evidence.
-05. E2B state contains the exact sandbox identity and compatibility evidence.
+05. Cloud state contains exact backing identity and compatibility evidence, separate from reusable names.
 06. EIP-backed providers use EIP for Agent operations.
 07. Confirmed absence and unknown evidence are distinct.
 08. Known state is retained before later readiness failure.
-09. Close never removes a Docker container or terminates an E2B sandbox.
+09. Close never removes a Docker container or a cloud backing target.
 10. Destroy validates and removes only the exact represented target.
 11. External workspaces, bind sources, and named volumes are not provider-owned cleanup targets.
 12. Host prune policy and bookkeeping remain outside the shared model.

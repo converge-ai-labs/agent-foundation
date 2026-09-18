@@ -115,4 +115,4 @@ The Providers cannot authoritatively distinguish a stopped external machine from
 4. The library owns no listener, credential issuer, global registry, tenant policy or distributed routing.
 5. Framework integration changes message delivery, not EIP framing, resource authority or replay policy.
 6. Close ends local scope and connection resources, never the external daemon or its workspace.
-7. Six Provider choices are two operation routes, not six incompatible file/process APIs; the [built-in matrix](03-built-in-providers.md#design-position) owns their classification.
+7. Eleven Provider choices share two operation routes and one set of file/process contracts; the [built-in matrix](03-built-in-providers.md#design-position) owns their classification.

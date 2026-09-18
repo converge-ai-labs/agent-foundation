@@ -20,19 +20,19 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `iam`
 
-| Setting                   | Environment variable                   | Type / choices    | Constraints and default                                                         |
-| ------------------------- | -------------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
-| `iam.public_origin`       | `A13N_SERVICE_IAM_PUBLIC_ORIGIN`       | string            | default="http://127.0.0.1:8000"                                                 |
-| `iam.session_cookie_name` | `A13N_SERVICE_IAM_SESSION_COOKIE_NAME` | string            | minLength=1; maxLength=128; pattern="^[A-Za-z0-9\_-]+$"; default="a13n_session" |
-| `iam.initial_admin_email` | `A13N_SERVICE_IAM_INITIAL_ADMIN_EMAIL` | string or null    | default=null                                                                    |
-| `iam.session_days`        | `A13N_SERVICE_IAM_SESSION_DAYS`        | integer           | minimum=1; maximum=90; default=7                                                |
-| `iam.invitation_days`     | `A13N_SERVICE_IAM_INVITATION_DAYS`     | integer           | minimum=1; maximum=30; default=7                                                |
-| `iam.smtp_host`           | `A13N_SERVICE_IAM_SMTP_HOST`           | string or null    | default=null                                                                    |
-| `iam.smtp_port`           | `A13N_SERVICE_IAM_SMTP_PORT`           | integer           | minimum=1; maximum=65535; default=587                                           |
-| `iam.smtp_username`       | `A13N_SERVICE_IAM_SMTP_USERNAME`       | string or null    | default=null                                                                    |
-| `iam.smtp_password`       | `A13N_SERVICE_IAM_SMTP_PASSWORD`       | string or null    | default=null                                                                    |
-| `iam.smtp_sender`         | `A13N_SERVICE_IAM_SMTP_SENDER`         | string or null    | default=null                                                                    |
-| `iam.smtp_tls`            | `A13N_SERVICE_IAM_SMTP_TLS`            | "starttls", "tls" | default="starttls"                                                              |
+| Setting                   | Environment variable                   | Type / choices    | Constraints and default                                                          |
+| ------------------------- | -------------------------------------- | ----------------- | -------------------------------------------------------------------------------- |
+| `iam.public_origin`       | `A13N_SERVICE_IAM_PUBLIC_ORIGIN`       | string            | default="http://127.0.0.1:8000"                                                  |
+| `iam.session_cookie_name` | `A13N_SERVICE_IAM_SESSION_COOKIE_NAME` | string            | minLength=1; maxLength=128; `pattern="^[A-Za-z0-9_-]+$"`; default="a13n_session" |
+| `iam.initial_admin_email` | `A13N_SERVICE_IAM_INITIAL_ADMIN_EMAIL` | string or null    | default=null                                                                     |
+| `iam.session_days`        | `A13N_SERVICE_IAM_SESSION_DAYS`        | integer           | minimum=1; maximum=90; default=7                                                 |
+| `iam.invitation_days`     | `A13N_SERVICE_IAM_INVITATION_DAYS`     | integer           | minimum=1; maximum=30; default=7                                                 |
+| `iam.smtp_host`           | `A13N_SERVICE_IAM_SMTP_HOST`           | string or null    | default=null                                                                     |
+| `iam.smtp_port`           | `A13N_SERVICE_IAM_SMTP_PORT`           | integer           | minimum=1; maximum=65535; default=587                                            |
+| `iam.smtp_username`       | `A13N_SERVICE_IAM_SMTP_USERNAME`       | string or null    | default=null                                                                     |
+| `iam.smtp_password`       | `A13N_SERVICE_IAM_SMTP_PASSWORD`       | string or null    | default=null                                                                     |
+| `iam.smtp_sender`         | `A13N_SERVICE_IAM_SMTP_SENDER`         | string or null    | default=null                                                                     |
+| `iam.smtp_tls`            | `A13N_SERVICE_IAM_SMTP_TLS`            | "starttls", "tls" | default="starttls"                                                               |
 
 ## `plugins`
 
@@ -71,18 +71,18 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `environments`
 
-| Setting                                     | Environment variable                                    | Type / choices  | Constraints and default                      |
-| ------------------------------------------- | ------------------------------------------------------- | --------------- | -------------------------------------------- |
-| `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["e2b", "a13n.http-envd"]            |
-| `environments.client_public_origin`         | `A13N_SERVICE_ENVIRONMENT_CLIENT_PUBLIC_ORIGIN`         | string or null  | default=null                                 |
-| `environments.client_max_connections`       | `A13N_SERVICE_ENVIRONMENT_CLIENT_MAX_CONNECTIONS`       | integer         | minimum=1; maximum=1000; default=128         |
-| `environments.local_providers`              | `A13N_SERVICE_ENVIRONMENT_LOCAL_PROVIDERS`              | object          | —                                            |
-| `environments.maintenance_interval_seconds` | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | number          | maximum=300; exclusiveMinimum=0; default=5   |
-| `environments.operation_timeout_seconds`    | `A13N_SERVICE_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | number          | maximum=3600; exclusiveMinimum=0; default=60 |
-| `environments.max_targets_per_workspace`    | `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE`    | integer         | minimum=1; default=1000                      |
-| `environments.max_active_per_workspace`     | `A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE`     | integer         | minimum=1; default=100                       |
-| `environments.maintenance_batch_size`       | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_BATCH_SIZE`       | integer         | minimum=1; maximum=10000; default=64         |
-| `environments.maintenance_concurrency`      | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_CONCURRENCY`      | integer         | minimum=1; maximum=128; default=4            |
+| Setting                                     | Environment variable                                    | Type / choices  | Constraints and default                                                               |
+| ------------------------------------------- | ------------------------------------------------------- | --------------- | ------------------------------------------------------------------------------------- |
+| `environments.provider_builtins`            | `A13N_SERVICE_ENVIRONMENT_PROVIDER_BUILTINS`            | array of string | default=["e2b", "daytona", "modal", "vercel", "sprites", "runloop", "a13n.http-envd"] |
+| `environments.client_public_origin`         | `A13N_SERVICE_ENVIRONMENT_CLIENT_PUBLIC_ORIGIN`         | string or null  | default=null                                                                          |
+| `environments.client_max_connections`       | `A13N_SERVICE_ENVIRONMENT_CLIENT_MAX_CONNECTIONS`       | integer         | minimum=1; maximum=1000; default=128                                                  |
+| `environments.local_providers`              | `A13N_SERVICE_ENVIRONMENT_LOCAL_PROVIDERS`              | object          | —                                                                                     |
+| `environments.maintenance_interval_seconds` | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_INTERVAL_SECONDS` | number          | maximum=300; exclusiveMinimum=0; default=5                                            |
+| `environments.operation_timeout_seconds`    | `A13N_SERVICE_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS`    | number          | maximum=3600; exclusiveMinimum=0; default=60                                          |
+| `environments.max_targets_per_workspace`    | `A13N_SERVICE_ENVIRONMENT_MAX_TARGETS_PER_WORKSPACE`    | integer         | minimum=1; default=1000                                                               |
+| `environments.max_active_per_workspace`     | `A13N_SERVICE_ENVIRONMENT_MAX_ACTIVE_PER_WORKSPACE`     | integer         | minimum=1; default=100                                                                |
+| `environments.maintenance_batch_size`       | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_BATCH_SIZE`       | integer         | minimum=1; maximum=10000; default=64                                                  |
+| `environments.maintenance_concurrency`      | `A13N_SERVICE_ENVIRONMENT_MAINTENANCE_CONCURRENCY`      | integer         | minimum=1; maximum=128; default=4                                                     |
 
 ## `pricing`
 
@@ -99,7 +99,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | `observability.query.logfire_base_url`     | `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_BASE_URL`     | string or null             | default=null                                                |
 | `observability.query.logfire_read_token`   | `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_READ_TOKEN`   | string or null             | default=null                                                |
 | `observability.query.logfire_history_from` | `A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_HISTORY_FROM` | string or null             | default=null                                                |
-| `observability.query.provider`             | `A13N_SERVICE_OBSERVABILITY_QUERY_PROVIDER`             | string                     | maxLength=64; pattern="^[a-z][a-z0-9\_]\*$"; default="none" |
+| `observability.query.provider`             | `A13N_SERVICE_OBSERVABILITY_QUERY_PROVIDER`             | string                     | maxLength=64; `pattern="^[a-z][a-z0-9_]*$"`; default="none" |
 | `observability.query.langfuse_base_url`    | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_BASE_URL`    | string or null             | default=null                                                |
 | `observability.query.langfuse_public_key`  | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_PUBLIC_KEY`  | string or null             | default=null                                                |
 | `observability.query.langfuse_secret_key`  | `A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_SECRET_KEY`  | string or null             | default=null                                                |
@@ -258,7 +258,7 @@ The complete machine-readable validation schema, including named enum/union defi
 | `gateway.notification_maximum_lifetime_seconds`   | `A13N_SERVICE_GATEWAY_NOTIFICATION_MAXIMUM_LIFETIME_SECONDS`   | number         | maximum=86400; exclusiveMinimum=0; default=3600                  |
 | `gateway.run_execution_max_attempts`              | `A13N_SERVICE_GATEWAY_RUN_EXECUTION_MAX_ATTEMPTS`              | integer        | minimum=0; maximum=100; default=3                                |
 | `gateway.run_max_handoffs`                        | `A13N_SERVICE_GATEWAY_RUN_MAX_HANDOFFS`                        | integer        | minimum=0; maximum=100; default=2                                |
-| `gateway.run_queue_name`                          | `A13N_SERVICE_GATEWAY_RUN_QUEUE_NAME`                          | string         | pattern="^[A-Za-z\_][A-Za-z0-9\_.:-]{0,127}$"; default="default" |
+| `gateway.run_queue_name`                          | `A13N_SERVICE_GATEWAY_RUN_QUEUE_NAME`                          | string         | `pattern="^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$"`; default="default" |
 | `gateway.run_priority`                            | `A13N_SERVICE_GATEWAY_RUN_PRIORITY`                            | integer        | minimum=-1000000; maximum=1000000; default=0                     |
 | `gateway.a2a_enabled`                             | `A13N_SERVICE_A2A_ENABLED`                                     | boolean        | default=true                                                     |
 | `gateway.a2a_public_origin`                       | `A13N_SERVICE_A2A_PUBLIC_ORIGIN`                               | string or null | default=null                                                     |

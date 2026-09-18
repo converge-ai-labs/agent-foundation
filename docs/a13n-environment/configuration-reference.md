@@ -4,6 +4,19 @@ Generated from the current built-in Provider Pydantic models by `scripts/docs/re
 
 Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these template configuration objects.
 
+## Cloud providers
+
+All six cloud providers use the same configuration, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud provider guide](providers.md#cloud-providers).
+
+| Provider       | Recipe                                                | Backend                                                     | Credential                          |
+| -------------- | ----------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------- |
+| E2B            | [E2BProviderConfiguration](#e2bproviderconfiguration) | [E2BBackendConfiguration](#e2bbackendconfiguration)         | [E2BCredential](#e2bcredential)     |
+| Daytona        | [DaytonaConfiguration](#daytonaconfiguration)         | [DaytonaBackendConfiguration](#daytonabackendconfiguration) | [TokenCredential](#tokencredential) |
+| Modal          | [ModalConfiguration](#modalconfiguration)             | [ModalBackendConfiguration](#modalbackendconfiguration)     | [ModalCredential](#modalcredential) |
+| Vercel Sandbox | [VercelConfiguration](#vercelconfiguration)           | [VercelBackendConfiguration](#vercelbackendconfiguration)   | [TokenCredential](#tokencredential) |
+| Fly.io Sprites | [SpritesConfiguration](#spritesconfiguration)         | [SpritesBackendConfiguration](#spritesbackendconfiguration) | [TokenCredential](#tokencredential) |
+| Runloop        | [RunloopConfiguration](#runloopconfiguration)         | [RunloopBackendConfiguration](#runloopbackendconfiguration) | [TokenCredential](#tokencredential) |
+
 ## `DirectLocalProviderConfiguration`
 
 | Field                      | Required | Type / choices                   | Constraints and default                 |
@@ -110,7 +123,7 @@ Choices: `"host", "deny"`.
 | --------------------------- | -------- | -------------- | --------------------------------------------------------- |
 | `template`                  | false    | string         | minLength=1; maxLength=256; default="base"                |
 | `root`                      | false    | string         | default="/home/user"                                      |
-| `user`                      | false    | string         | pattern="^[a-z\_][a-z0-9\_-]{0,63}$"; default="user"      |
+| `user`                      | false    | string         | `pattern="^[a-z_][a-z0-9_-]{0,63}$"`; default="user"      |
 | `python`                    | false    | string         | default="/usr/bin/python3"                                |
 | `timeout_seconds`           | false    | integer        | minimum=30; maximum=86400; default=3600                   |
 | `request_timeout_seconds`   | false    | number         | maximum=300; exclusiveMinimum=0; default=30               |
@@ -121,6 +134,86 @@ Choices: `"host", "deny"`.
 | `max_active_observations`   | false    | integer        | maximum=1024; exclusiveMinimum=0; default=128             |
 | `max_retained_output_bytes` | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000         |
+
+## `DaytonaConfiguration`
+
+| Field                     | Required | Type / choices | Constraints and default                                |
+| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
+| `root`                    | false    | string         | default="/home/daytona"                                |
+| `python`                  | false    | string         | default="python3"                                      |
+| `shell`                   | false    | string         | default="/bin/bash"                                    |
+| `read_only`               | false    | boolean        | default=false                                          |
+| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `snapshot`                | false    | string or null | default=null                                           |
+| `cpu`                     | false    | integer        | minimum=1; maximum=32; default=2                       |
+| `memory`                  | false    | integer        | minimum=1; maximum=128; default=4                      |
+| `disk`                    | false    | integer        | minimum=1; maximum=1024; default=10                    |
+
+## `ModalConfiguration`
+
+| Field                     | Required | Type / choices | Constraints and default                                |
+| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
+| `root`                    | false    | string         | default="/"                                            |
+| `python`                  | false    | string         | default="/usr/local/bin/python3"                       |
+| `shell`                   | false    | string         | default="/bin/bash"                                    |
+| `read_only`               | false    | boolean        | default=false                                          |
+| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `image`                   | false    | string         | minLength=1; maxLength=256; default="python:3.13-slim" |
+| `timeout_seconds`         | false    | integer        | minimum=300; maximum=86400; default=86400              |
+| `cpu`                     | false    | number         | maximum=64; exclusiveMinimum=0; default=1              |
+| `memory`                  | false    | integer        | minimum=128; maximum=262144; default=1024              |
+
+## `VercelConfiguration`
+
+| Field                     | Required | Type / choices | Constraints and default                                |
+| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
+| `root`                    | false    | string         | default="/vercel/sandbox"                              |
+| `python`                  | false    | string         | default="/vercel/runtimes/python/bin/python3"          |
+| `shell`                   | false    | string         | default="/bin/bash"                                    |
+| `read_only`               | false    | boolean        | default=false                                          |
+| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `runtime`                 | false    | string         | minLength=1; maxLength=128; default="python3.13"       |
+| `timeout_seconds`         | false    | integer        | minimum=300; maximum=18000; default=3600               |
+| `vcpus`                   | false    | integer        | minimum=2; maximum=8; default=2                        |
+
+## `SpritesConfiguration`
+
+| Field                     | Required | Type / choices | Constraints and default                                |
+| ------------------------- | -------- | -------------- | ------------------------------------------------------ |
+| `root`                    | false    | string         | default="/home/sprite"                                 |
+| `python`                  | false    | string         | default="python3"                                      |
+| `shell`                   | false    | string         | default="/bin/bash"                                    |
+| `read_only`               | false    | boolean        | default=false                                          |
+| `request_timeout_seconds` | false    | number         | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer        | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `region`                  | false    | string or null | default=null                                           |
+
+## `RunloopConfiguration`
+
+| Field                     | Required | Type / choices                                   | Constraints and default                                |
+| ------------------------- | -------- | ------------------------------------------------ | ------------------------------------------------------ |
+| `root`                    | false    | string                                           | default="/home/user"                                   |
+| `python`                  | false    | string                                           | default="python3"                                      |
+| `shell`                   | false    | string                                           | default="/bin/bash"                                    |
+| `read_only`               | false    | boolean                                          | default=false                                          |
+| `request_timeout_seconds` | false    | number                                           | maximum=600; exclusiveMinimum=0; default=120           |
+| `max_file_bytes`          | false    | integer                                          | maximum=67108864; exclusiveMinimum=0; default=16777216 |
+| `max_query_entries`       | false    | integer                                          | maximum=100000; exclusiveMinimum=0; default=10000      |
+| `max_output_bytes`        | false    | integer                                          | maximum=16777216; exclusiveMinimum=0; default=1048576  |
+| `blueprint_id`            | false    | string or null                                   | default=null                                           |
+| `resource_size`           | false    | "X_SMALL", "SMALL", "MEDIUM", "LARGE", "X_LARGE" | default="SMALL"                                        |
+| `idle_timeout_seconds`    | false    | integer                                          | minimum=300; maximum=172800; default=3600              |
 
 ## `RemoteEnvdProviderConfiguration`
 
@@ -142,12 +235,59 @@ Choices: `"host", "deny"`.
 
 ## `E2BBackendConfiguration`
 
-| Field     | Required | Type / choices | Constraints and default                                                          |
-| --------- | -------- | -------------- | -------------------------------------------------------------------------------- |
-| `domain`  | false    | string         | pattern="^[a-zA-Z0-9](?:%5Ba-zA-Z0-9.-%5D*%5Ba-zA-Z0-9%5D)?$"; default="e2b.dev" |
-| `api_url` | false    | string or null | default=null                                                                     |
+| Field     | Required | Type / choices | Constraints and default                                                    |
+| --------- | -------- | -------------- | -------------------------------------------------------------------------- |
+| `domain`  | false    | string         | `pattern="^[a-zA-Z0-9](?:[a-zA-Z0-9.-]*[a-zA-Z0-9])?$"`; default="e2b.dev" |
+| `api_url` | false    | string or null | default=null                                                               |
 
 ## `E2BCredential`
+
+| Field     | Required | Type / choices | Constraints and default        |
+| --------- | -------- | -------------- | ------------------------------ |
+| `api_key` | true     | string         | minLength=1; format="password" |
+
+## `DaytonaBackendConfiguration`
+
+| Field             | Required | Type / choices | Constraints and default                 |
+| ----------------- | -------- | -------------- | --------------------------------------- |
+| `organization_id` | true     | string         | minLength=1; maxLength=128              |
+| `target`          | false    | string         | minLength=1; maxLength=64; default="us" |
+
+## `ModalBackendConfiguration`
+
+| Field              | Required | Type / choices | Constraints and default                    |
+| ------------------ | -------- | -------------- | ------------------------------------------ |
+| `workspace`        | true     | string         | minLength=1; maxLength=128                 |
+| `app_name`         | true     | string         | minLength=1; maxLength=128                 |
+| `environment_name` | false    | string         | minLength=1; maxLength=128; default="main" |
+
+## `ModalCredential`
+
+| Field          | Required | Type / choices | Constraints and default        |
+| -------------- | -------- | -------------- | ------------------------------ |
+| `token_id`     | true     | string         | minLength=1; format="password" |
+| `token_secret` | true     | string         | minLength=1; format="password" |
+
+## `VercelBackendConfiguration`
+
+| Field        | Required | Type / choices | Constraints and default    |
+| ------------ | -------- | -------------- | -------------------------- |
+| `team_id`    | true     | string         | minLength=1; maxLength=128 |
+| `project_id` | true     | string         | minLength=1; maxLength=128 |
+
+## `SpritesBackendConfiguration`
+
+| Field          | Required | Type / choices | Constraints and default    |
+| -------------- | -------- | -------------- | -------------------------- |
+| `organization` | true     | string         | minLength=1; maxLength=128 |
+
+## `RunloopBackendConfiguration`
+
+| Field          | Required | Type / choices | Constraints and default    |
+| -------------- | -------- | -------------- | -------------------------- |
+| `organization` | true     | string         | minLength=1; maxLength=128 |
+
+## `TokenCredential`
 
 | Field     | Required | Type / choices | Constraints and default        |
 | --------- | -------- | -------------- | ------------------------------ |

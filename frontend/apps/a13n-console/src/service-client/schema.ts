@@ -7015,6 +7015,10 @@ export interface components {
        */
       retention_condition: "active" | "idle";
       status: components["schemas"]["EnvironmentStatus"];
+      /** Supports Destroy */
+      supports_destroy: boolean;
+      /** Supports Stop */
+      supports_stop: boolean;
       /** Template Revision Id */
       template_revision_id: string | null;
       /**

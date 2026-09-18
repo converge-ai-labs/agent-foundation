@@ -158,6 +158,11 @@ The built-in catalog keys are:
 | `a13n.local-envd`     | One Host-selected workspace served by a fresh local envd process         |
 | `docker`              | One Docker container running envd                                        |
 | `e2b`                 | One native E2B sandbox                                                   |
+| `daytona`             | One native Daytona sandbox                                               |
+| `modal`               | One Modal sandbox with internal filesystem snapshots for stop/resume     |
+| `vercel`              | One named Vercel Sandbox with native persistent stop/resume              |
+| `sprites`             | One Fly.io Sprite with durable filesystem and automatic sleep            |
+| `runloop`             | One Runloop Devbox with native suspend/resume                            |
 | `a13n.http-envd`      | One externally operated daemon through HTTP(S)                           |
 | `a13n.websocket-envd` | One externally operated daemon through a Host-accepted reverse WebSocket |
 

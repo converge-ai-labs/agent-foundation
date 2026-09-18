@@ -294,13 +294,23 @@ class EnvironmentReadinessRequirement(BaseModel):
         return self
 
 
+_PROVIDER_KEY_PATTERN = (
+    r"^(?:docker|e2b|sprites|daytona|modal|vercel|runloop|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$"
+)
+
+
 class EnvironmentProviderSpec(BaseModel):
     """Credential-free desired configuration for one Environment Provider."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     provider_key: Annotated[
-        str, Field(min_length=3, max_length=128, pattern=r"^(?:docker|e2b|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$")
+        str,
+        Field(
+            min_length=3,
+            max_length=128,
+            pattern=_PROVIDER_KEY_PATTERN,
+        ),
     ]
     schema_version: Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
     configuration: JsonValue
@@ -320,7 +330,12 @@ class EnvironmentState(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     provider_key: Annotated[
-        str, Field(min_length=3, max_length=128, pattern=r"^(?:docker|e2b|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$")
+        str,
+        Field(
+            min_length=3,
+            max_length=128,
+            pattern=_PROVIDER_KEY_PATTERN,
+        ),
     ]
     state_version: Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
     state: JsonValue

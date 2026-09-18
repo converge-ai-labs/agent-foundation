@@ -28,6 +28,11 @@ _BUILTIN_PROVIDER_KEYS = frozenset(
         "a13n.local-envd",
         "docker",
         "e2b",
+        "sprites",
+        "daytona",
+        "modal",
+        "vercel",
+        "runloop",
         "a13n.http-envd",
         "a13n.websocket-envd",
     }
@@ -306,6 +311,26 @@ def _load_builtin_provider(
         from .docker.factory import DockerEnvironmentProvider
 
         provider_type = DockerEnvironmentProvider
+    elif provider_key == "daytona":
+        from .daytona import DaytonaEnvironmentProvider
+
+        provider_type = DaytonaEnvironmentProvider
+    elif provider_key == "modal":
+        from .modal import ModalEnvironmentProvider
+
+        provider_type = ModalEnvironmentProvider
+    elif provider_key == "vercel":
+        from .vercel import VercelEnvironmentProvider
+
+        provider_type = VercelEnvironmentProvider
+    elif provider_key == "runloop":
+        from .runloop import RunloopEnvironmentProvider
+
+        provider_type = RunloopEnvironmentProvider
+    elif provider_key == "sprites":
+        from .sprites import SpritesEnvironmentProvider
+
+        provider_type = SpritesEnvironmentProvider
     elif provider_key == "e2b":
         from .e2b.factory import E2BEnvironmentProvider
 

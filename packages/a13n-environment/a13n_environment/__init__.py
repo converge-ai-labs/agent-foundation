@@ -42,6 +42,7 @@ from .commands import (
     ShellCommand,
     ShellExecResult,
 )
+from .daytona.provider import DaytonaBackendConfiguration, DaytonaConfiguration, DaytonaEnvironmentProvider
 from .direct_local.configuration import (
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
@@ -110,6 +111,7 @@ from .local_envd import (
     resolve_a13n_envd_executable,
 )
 from .management import Environment, EnvironmentProvider
+from .modal.provider import ModalBackendConfiguration, ModalConfiguration, ModalCredential, ModalEnvironmentProvider
 from .models import (
     DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
@@ -134,6 +136,8 @@ from .models import (
     EnvironmentSnapshot,
     EnvironmentState,
 )
+from .native.configuration import TokenCredential
+from .native.factory import NativeRuntime
 from .operations import EnvironmentOperations
 from .remote_envd import (
     HttpEnvdBackendConfiguration,
@@ -160,6 +164,9 @@ from .retention import (
     OpaqueProcessHandle,
     ProviderOutputOperations,
 )
+from .runloop.provider import RunloopBackendConfiguration, RunloopConfiguration, RunloopEnvironmentProvider
+from .sprites.provider import SpritesBackendConfiguration, SpritesConfiguration, SpritesEnvironmentProvider
+from .vercel.provider import VercelBackendConfiguration, VercelConfiguration, VercelEnvironmentProvider
 
 try:
     __version__ = version("a13n-environment")
@@ -183,6 +190,9 @@ __all__ = [
     "CommandEnvironment",
     "CommandLimits",
     "CommandRequest",
+    "DaytonaBackendConfiguration",
+    "DaytonaConfiguration",
+    "DaytonaEnvironmentProvider",
     "DirectLocalEnvironment",
     "DirectLocalEnvironmentProvider",
     "DirectLocalProviderConfiguration",
@@ -265,6 +275,11 @@ __all__ = [
     "LocalEnvdRuntimeAllocator",
     "LocalEnvdShellProfile",
     "LocalEnvdWorkspaceConfiguration",
+    "ModalBackendConfiguration",
+    "ModalConfiguration",
+    "ModalCredential",
+    "ModalEnvironmentProvider",
+    "NativeRuntime",
     "OpaqueOutputCursor",
     "OpaqueOutputReference",
     "OpaqueProcessHandle",
@@ -288,11 +303,21 @@ __all__ = [
     "RemoteEnvdConnectionConfiguration",
     "RemoteEnvdProviderConfiguration",
     "RemoteEnvdStateData",
+    "RunloopBackendConfiguration",
+    "RunloopConfiguration",
+    "RunloopEnvironmentProvider",
     "ShellCommand",
     "ShellExecResult",
+    "SpritesBackendConfiguration",
+    "SpritesConfiguration",
+    "SpritesEnvironmentProvider",
     "StdioEIPCarrier",
     "StdioEIPSessionSource",
     "TemporaryLocalEnvdRuntimeAllocator",
+    "TokenCredential",
+    "VercelBackendConfiguration",
+    "VercelConfiguration",
+    "VercelEnvironmentProvider",
     "WebSocketEnvdBackendConfiguration",
     "WebSocketEnvdConnections",
     "WebSocketEnvdEnvironmentProvider",

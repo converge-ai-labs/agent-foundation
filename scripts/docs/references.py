@@ -7,18 +7,24 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from a13n_environment.daytona.provider import DaytonaBackendConfiguration, DaytonaConfiguration
 from a13n_environment.direct_local.configuration import DirectLocalProviderConfiguration
 from a13n_environment.docker.configuration import DockerProviderConfiguration
 from a13n_environment.docker.factory import DockerBackendConfiguration
 from a13n_environment.e2b.configuration import E2BBackendConfiguration, E2BCredential, E2BProviderConfiguration
 from a13n_environment.local_envd.configuration import LocalEnvdProviderConfiguration
 from a13n_environment.management import HostLocalProviderConfiguration
+from a13n_environment.modal.provider import ModalBackendConfiguration, ModalConfiguration, ModalCredential
+from a13n_environment.native.configuration import TokenCredential
 from a13n_environment.remote_envd.configuration import (
     HttpEnvdBackendConfiguration,
     HttpEnvdCredential,
     RemoteEnvdProviderConfiguration,
     WebSocketEnvdBackendConfiguration,
 )
+from a13n_environment.runloop.provider import RunloopBackendConfiguration, RunloopConfiguration
+from a13n_environment.sprites.provider import SpritesBackendConfiguration, SpritesConfiguration
+from a13n_environment.vercel.provider import VercelBackendConfiguration, VercelConfiguration
 from a13n_service.configuration.sources import configuration_fields
 from a13n_service.settings import Settings
 
@@ -59,7 +65,13 @@ def constraints(schema: dict[str, Any]) -> str:
         "format",
         "default",
     )
-    return "; ".join(f"{key}={json.dumps(schema[key], ensure_ascii=False)}" for key in keys if key in schema) or "—"
+    values = []
+    for key in keys:
+        if key in schema:
+            value = f"{key}={json.dumps(schema[key], ensure_ascii=False)}"
+            # Regex brackets followed by parentheses otherwise become Markdown links.
+            values.append(f"`{value}`" if key == "pattern" else value)
+    return "; ".join(values) or "—"
 
 
 def render_configuration() -> str:
@@ -176,11 +188,23 @@ ENVIRONMENT_CONFIGURATION_MODELS = (
     LocalEnvdProviderConfiguration,
     DockerProviderConfiguration,
     E2BProviderConfiguration,
+    DaytonaConfiguration,
+    ModalConfiguration,
+    VercelConfiguration,
+    SpritesConfiguration,
+    RunloopConfiguration,
     RemoteEnvdProviderConfiguration,
     HostLocalProviderConfiguration,
     DockerBackendConfiguration,
     E2BBackendConfiguration,
     E2BCredential,
+    DaytonaBackendConfiguration,
+    ModalBackendConfiguration,
+    ModalCredential,
+    VercelBackendConfiguration,
+    SpritesBackendConfiguration,
+    RunloopBackendConfiguration,
+    TokenCredential,
     HttpEnvdBackendConfiguration,
     HttpEnvdCredential,
     WebSocketEnvdBackendConfiguration,
@@ -193,6 +217,19 @@ def render_environment_configuration() -> str:
 Generated from the current built-in Provider Pydantic models by `scripts/docs/references.py`. Do not independently edit the rows. Use [Configure Providers](configuration.md) for authoring, configuration/runtime/state boundaries, and cross-field restrictions. These are Provider settings, not standalone daemon JSON defaults.
 
 Required means no default. Fields backed by a factory have a model-computed default; no Host environment or credential store is read while generating this page. Named schema sections below include nested roots, mounts, and shell profiles. Runtime clients and authoritative target state do not belong in these template configuration objects.
+
+## Cloud providers
+
+All six cloud providers use the same configuration, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud provider guide](providers.md#cloud-providers).
+
+| Provider | Recipe | Backend | Credential |
+| --- | --- | --- | --- |
+| E2B | [E2BProviderConfiguration](#e2bproviderconfiguration) | [E2BBackendConfiguration](#e2bbackendconfiguration) | [E2BCredential](#e2bcredential) |
+| Daytona | [DaytonaConfiguration](#daytonaconfiguration) | [DaytonaBackendConfiguration](#daytonabackendconfiguration) | [TokenCredential](#tokencredential) |
+| Modal | [ModalConfiguration](#modalconfiguration) | [ModalBackendConfiguration](#modalbackendconfiguration) | [ModalCredential](#modalcredential) |
+| Vercel Sandbox | [VercelConfiguration](#vercelconfiguration) | [VercelBackendConfiguration](#vercelbackendconfiguration) | [TokenCredential](#tokencredential) |
+| Fly.io Sprites | [SpritesConfiguration](#spritesconfiguration) | [SpritesBackendConfiguration](#spritesbackendconfiguration) | [TokenCredential](#tokencredential) |
+| Runloop | [RunloopConfiguration](#runloopconfiguration) | [RunloopBackendConfiguration](#runloopbackendconfiguration) | [TokenCredential](#tokencredential) |
 
 """
     emitted: set[str] = set()

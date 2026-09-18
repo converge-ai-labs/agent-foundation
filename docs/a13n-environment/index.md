@@ -10,6 +10,7 @@ Environment (`a13n-environment`) is a Python library for portable files, command
 | Choose local, sandbox, container, or remote execution       | [Choose a backend](../environments/index.md)           |
 | Understand close, state, re-entry, and destruction          | [Lifecycle and state](lifecycle.md)                    |
 | Configure built-ins, credentials, and runtime collaborators | [Provider configuration](configuration.md)             |
+| Compare the six cloud providers                             | [Cloud providers](providers.md#cloud-providers)        |
 | Implement a Provider or supply Host runtimes                | [Providers](providers.md)                              |
 | Run commands, inspect processes, and read retained output   | [Commands and processes](commands.md)                  |
 | Understand paths, search patterns, and output limits        | [Operations](operations.md)                            |
@@ -53,5 +54,6 @@ These guides track `main`; the [source quickstart](getting-started.md) uses the 
 | <span id="local-envd-runtime"></span>Local Envd runtime                                     | [Local Envd runtime](providers.md#local-envd-runtime)                                     |
 | <span id="docker-runtime"></span>Docker runtime                                             | [Docker runtime](providers.md#docker-runtime)                                             |
 | <span id="environment-operations-and-tools"></span>Environment operations and tools         | [Environment operations and tools](operations.md#environment-operations-and-tools)        |
+| Cloud providers: E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, Runloop               | [Cloud providers](providers.md#cloud-providers)                                           |
 | <span id="e2b-runtime"></span>E2B runtime                                                   | [E2B runtime](providers.md#e2b-runtime)                                                   |
 | <span id="file-search-patterns"></span>File search patterns                                 | [File search patterns](operations.md#file-search-patterns)                                |

@@ -2046,10 +2046,10 @@ Responses:
 
 Cancel Image Test.
 
-| Parameter     | Location | Required | Type / schema | Constraints and default           |
-| ------------- | -------- | -------- | ------------- | --------------------------------- |
-| `provider_id` | path     | true     | string        | —                                 |
-| `request_id`  | path     | true     | string        | pattern="^envtest\_[0-9a-f]{32}$" |
+| Parameter     | Location | Required | Type / schema | Constraints and default            |
+| ------------- | -------- | -------- | ------------- | ---------------------------------- |
+| `provider_id` | path     | true     | string        | —                                  |
+| `request_id`  | path     | true     | string        | `pattern="^envtest_[0-9a-f]{32}$"` |
 
 Request body: required.
 

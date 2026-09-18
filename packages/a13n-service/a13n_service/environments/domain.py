@@ -142,6 +142,8 @@ class Environment(DomainModel):
 
 class EnvironmentDetail(Environment):
     retention: RetentionPolicy | None
+    supports_stop: bool
+    supports_destroy: bool
 
 
 class ExistingEnvironmentSelection(DomainModel):

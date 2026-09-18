@@ -462,6 +462,11 @@
         "provider_builtins": {
           "default": [
             "e2b",
+            "daytona",
+            "modal",
+            "vercel",
+            "sprites",
+            "runloop",
             "a13n.http-envd"
           ],
           "items": {

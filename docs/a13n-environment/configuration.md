@@ -48,13 +48,39 @@ Advanced options include user, shell, Python executable, stop grace (ten seconds
 
 Use **Test image** beside the template image field before saving when checking a custom image. The test runs on the selected Worker Engine and returns the exact image ID used by the temporary container plus file, command/output, and process-control checks. It omits the init script and external mounts; leaving the editor or changing the draft sends an explicit cancellation request. The Provider details show Engine connectivity separately from whether the Provider is enabled. Normal Environment creation still checks requirements even if no manual test ran.
 
-## E2B
+## Cloud providers
+
+E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop use the same backend/credential/template separation. See the [configuration comparison](providers.md#cloud-providers) and [generated schema reference](configuration-reference.md) for all six peers.
+
+### E2B
 
 `E2BProviderConfiguration` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true and read-only defaults to false.
 
 Sandbox timeout defaults to 3,600 seconds (30–86,400); request timeout defaults to 30 seconds (up to 300). Neither is a per-command execution deadline. File values default to 16 MiB, observation bytes to 1 MiB, active observations to 128, total retained output to 128 MiB, and query entries to 10,000. [Runtime limitations](providers.md#e2b-runtime) explains text-based observation and supported command control.
 
 `E2BBackendConfiguration.domain` defaults to `e2b.dev`; `E2BCredential.api_key` is a separate protected value. The Host supplies runtime credentials, maintains keepalive while retention requires it, and persists sandbox state after lifecycle outcomes. A new adapter can reconnect the exact retained sandbox; it does not reconstruct lost output or broaden access.
+
+### Daytona
+
+`DaytonaConfiguration` selects snapshot and resources, defaulting to writable `/home/daytona`. `DaytonaBackendConfiguration` supplies organization and target region; `TokenCredential` supplies the API key.
+
+### Modal
+
+`ModalConfiguration` selects image, resources and bounded lifetime. `ModalBackendConfiguration` names the workspace and existing deployed App; `ModalCredential` contains token ID and secret. Filesystem snapshot stop/resume is managed-only.
+
+### Vercel Sandbox
+
+`VercelConfiguration` selects runtime, vCPUs, and session lifetime, with root `/vercel/sandbox`. `VercelBackendConfiguration` names team and project; `TokenCredential` holds the Vercel access token. Persistent native lifecycle is intrinsic to the adapter.
+
+### Fly.io Sprites
+
+`SpritesConfiguration` selects region and defaults to `/home/sprite`. `SpritesBackendConfiguration` identifies the organization; `TokenCredential` holds the Sprites token. Disable explicit stop retention because Sprites sleep automatically.
+
+### Runloop
+
+`RunloopConfiguration` selects blueprint, resource size, and idle suspension interval, with root `/home/user`. `RunloopBackendConfiguration` identifies the organization; `TokenCredential` supplies the API key.
+
+Daytona, Sprites, and Runloop select `python3` on the guest PATH. Modal uses `/usr/local/bin/python3` and Vercel its runtime Python path. Custom guest images must supply their configured root, Python, and shell; these paths do not refer to the Host filesystem. Shared command/file limits are listed in each generated recipe schema.
 
 ## Remote HTTP / WebSocket Envd
 

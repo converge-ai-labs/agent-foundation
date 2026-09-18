@@ -107,9 +107,9 @@ The Provider package owns provider-neutral single-Environment contracts for:
 - operation receipts and typed errors;
 - state dump, local close, and explicit destruction.
 
-Direct Local implements these contracts over the embedding operating system. Local Envd, HTTP Envd and WebSocket Envd implement them through `a13n-envd` and EIP after provider-specific preparation. Native Docker uses the Docker Engine API and bounded one-shot command helpers. E2B implements them through its native asynchronous SDK and bounded command-local wrappers. Harness adds mount names, access ceilings, routing, stale-incarnation fencing, aggregate projection, and model Toolsets.
+Direct Local implements these contracts over the embedding operating system. Local Envd, HTTP Envd and WebSocket Envd implement them through `a13n-envd` and EIP after provider-specific preparation. Native Docker uses the Docker Engine API and bounded one-shot command helpers. The six cloud providers—E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop—use native APIs. All expose files and shell commands; their advertised process, output, port, and lifecycle capabilities differ as defined in [Cloud Providers](03-built-in-providers.md#cloud-providers). Harness adds mount names, access ceilings, routing, stale-incarnation fencing, aggregate projection, and model Toolsets.
 
-The [built-in matrix](03-built-in-providers.md#design-position) classifies six choices into Native and Envd routes. [Remote Envd](04-remote-envd.md) connects externally operated daemons without owning their infrastructure. Its reverse WebSocket SDK integrates accepted Host connections and starts no listener.
+The [built-in matrix](03-built-in-providers.md#design-position) classifies eleven choices into Native and Envd routes. [Remote Envd](04-remote-envd.md) connects externally operated daemons without owning their infrastructure. Its reverse WebSocket SDK integrates accepted Host connections and starts no listener.
 
 ## Dependency and Release Direction
 
@@ -130,7 +130,7 @@ The package belongs to the Harness release group under the [repository release c
 - State is a selector, not authorization. Preparation revalidates provider key, codec version, configuration compatibility, and target metadata.
 - Provider denial narrows Harness policy; Harness permission never bypasses provider enforcement.
 - Direct Local is an explicit embedding trust choice and does not claim native sandbox isolation.
-- Docker and E2B credentials remain in Host runtime collaborators; EIP credentials remain process-local.
+- Docker and cloud-provider credentials remain in Host runtime collaborators; EIP credentials remain process-local.
 - Public errors and observations redact provider-native secrets and unnecessary Host identifiers.
 
 ## Stable Principles

@@ -845,9 +845,13 @@ class EnvironmentService:
         async with short_session(self.sessions) as session:
             row = await self.require_environment(session, actor, resource_id)
             configuration = await load_configuration(session, row)
+            provider = await session.get_one(EnvironmentProviderRecord, row.provider_id)
+            implementation = self.catalog.get(provider.type) if row.ownership == "managed" else None
             return EnvironmentDetail(
                 **row.to_resource().model_dump(),
                 retention=configuration.retention if isinstance(configuration, TemplateConfiguration) else None,
+                supports_stop=implementation.supports_stop if implementation else False,
+                supports_destroy=implementation.supports_destroy if implementation else False,
             )
 
     async def list_environments(

@@ -13,16 +13,18 @@ It covers the common Provider lifecycle:
 7. read `dump_state()` and close the adapter non-destructively;
 8. for Docker, give the state to a fresh adapter and destroy the target explicitly.
 
-## Choose a route
+## Demonstrated routes
 
 | Route  | Provider                 | Use it for                               | Operation and ownership boundary                            |
 | ------ | ------------------------ | ---------------------------------------- | ----------------------------------------------------------- |
 | Native | `direct-local`           | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
 | Native | `e2b`                    | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
 | Envd   | `a13n.local-envd`        | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
-| Envd   | `docker` (Native Docker) | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
+| Native | `docker` (Native Docker) | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
 | Envd   | `a13n.http-envd`         | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `a13n.websocket-envd`    | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
+
+The cloud demos here exercise E2B only. The complete [cloud-provider catalog](../../docs/a13n-environment/providers.md#cloud-providers) also includes the peer Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop implementations; their opt-in checks are documented there.
 
 ## Try remote providers in one command
 

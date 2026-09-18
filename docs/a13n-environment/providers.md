@@ -58,12 +58,17 @@ There are two operation routes: **Native** uses the host OS or vendor APIs direc
 | ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
 | Native | `direct-local`        | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
 | Native | `e2b`                 | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Native | `daytona`             | Cloud sandbox                            | Native stop/start and preserved files                       |
+| Native | `modal`               | Cloud sandbox                            | Snapshot-backed stop/resume; fixed running lifetime         |
+| Native | `vercel`              | Cloud sandbox                            | Named persistent sandbox with native sessions               |
+| Native | `sprites`             | Cloud sandbox                            | Persistent disk and automatic sleep/wake                    |
+| Native | `runloop`             | Cloud sandbox                            | Devbox suspend/resume and idle keepalive                    |
 | Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
 | Native | `docker`              | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
 | Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
-Direct Local shares the Host account. Docker uses native Engine operations; E2B uses its sandbox SDK. Neither requires Envd. Local and remote Envd Providers use EIP for Agent operations.
+Direct Local shares the Host account. Docker uses native Engine operations; all six cloud providers use native vendor transports. None requires Envd. Local and remote Envd Providers use EIP for Agent operations.
 
 Multi-tenant authorization and container allocation remain Host responsibilities. One daemon admits one active Session; Sessions are not tenant partitions. To work with multiple remote environments, register separate daemon identities and coordinate their use.
 
@@ -110,7 +115,41 @@ The native Provider overrides the image entrypoint, enables Docker init support 
 
 Use `make image-docker-environment docker-provider-live-test` for a real Engine test, or follow the [Docker lifecycle example](examples.md#docker). The [single-host Compose deployment](../a13n-service/configuration.md) uses the host Docker Engine through its Unix socket.
 
-## E2B runtime
+## Cloud providers
+
+E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Fly.io Sprites (`sprites`), and Runloop (`runloop`) provide cloud execution without installing envd. All support files and shell commands; E2B additionally supports process observations, stdin, retained SDK text output, and loopback ports. Select them in the Service Console's Environment Providers page, enter the backend settings and write-only credentials, and create a template. The Console renders the backend and template schemas supplied by the same provider catalog used by Workers.
+
+| Provider       | Backend settings                                                               | Credential fields               | Common template settings                                                       |
+| -------------- | ------------------------------------------------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------ |
+| E2B            | `domain`, optional `api_url`                                                   | `api_key`                       | `template`, `user`, `root`, `allow_internet_access`, `timeout_seconds`         |
+| Daytona        | `organization_id`, `target` (default `us`)                                     | `api_key`                       | `snapshot`, `cpu`, `memory`, `disk`                                            |
+| Modal          | `workspace`, existing deployed `app_name`, `environment_name` (default `main`) | `token_id`, `token_secret`      | `image` (default `python:3.13-slim`), `cpu`, `memory` (MiB), `timeout_seconds` |
+| Vercel Sandbox | `team_id`, `project_id`                                                        | `api_key` (Vercel access token) | `runtime` (default `python3.13`), `vcpus`, `timeout_seconds`                   |
+| Fly.io Sprites | `organization`                                                                 | `api_key` (Sprites token)       | `region`                                                                       |
+| Runloop        | `organization`                                                                 | `api_key`                       | `blueprint_id`, `resource_size`, `idle_timeout_seconds`                        |
+
+Use the organization/workspace owning the supplied credentials; these fields describe backend namespaces, not permission grants. Credentials are never part of a template or reconnect state. All six cloud types are enabled in the default Service catalog; deployments can restrict `environments.provider_builtins`.
+
+Daytona, Modal, Vercel, Sprites, and Runloop recipes accept `root`, `python`, `shell`, `read_only`, and bounded request/file/output settings. `python` names an executable on the guest PATH or an absolute guest path; it never discovers a Host executable. Custom images and snapshots must include Linux, Python 3 with the standard library, and the selected shell. The root maps file paths such as `/notes.txt` into that guest directory; shell execution retains the authority of the native guest user. The default Modal image uses `/usr/local/bin/python3`; Vercel defaults to `/vercel/sandbox` as its root. Those five providers do not advertise process handles, ports, retained output, interactive stdin, per-command network denial, or resource limits other than wall time. Unsupported requests fail before command execution.
+
+### Reconnection and lifecycle
+
+Keep the latest `EnvironmentState` in Host storage and supply it to each fresh adapter. A Session is a consumer of that state. Closing an adapter only releases local transports. Managed allocation uses stable ownership metadata or a native name; confirmed loss can rebuild the frozen recipe. Timeouts, permission failures, and unknown responses never count as absence. Rebuilding changes the backing identity and does not recover lost files.
+
+| Provider       | Explicit stop/resume                                                            | Memory                    | Expiry and retention                                                                                                                                                                                                          |
+| -------------- | ------------------------------------------------------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| E2B            | Native pause/resume preserves files                                             | Preserved by native pause | Renewable whole-sandbox TTL; keepalive reports observed expiry without resuming a paused sandbox.                                                                                                                             |
+| Daytona        | Native stop/start, including archived sandboxes                                 | Not promised              | Requests disabled automatic stop/delete and no hard TTL. Organization-enforced hard TTL is rejected during readiness.                                                                                                         |
+| Modal          | Filesystem snapshot, then terminate; resume creates a sandbox from the snapshot | Not preserved             | Running sandbox has a fixed maximum of 24 hours. Keepalive reports the conservative known deadline and refuses to promise an extension. Stop snapshots have no expiry and are deleted after successful resume or destruction. |
+| Vercel Sandbox | Named native sandbox stop/resume with filesystem preservation                   | Not preserved             | Running sessions have a bounded timeout. Renewal verifies the returned deadline and respects the configured total limit. Native stop snapshots are configured without expiry.                                                 |
+| Fly.io Sprites | No explicit stop API; idle Sprites sleep and wake on exec                       | Not promised              | Durable filesystem survives native automatic sleep. Disable the template's explicit stop deadline; destruction is separate.                                                                                                   |
+| Runloop        | Native suspend/resume preserves disk                                            | Not preserved             | Idle policy suspends the Devbox. Keepalive acknowledges a new idle interval; it cannot start a suspended target.                                                                                                              |
+
+Stop is never implemented as unprotected deletion. Modal's internal snapshots are provider state, not a user-facing snapshot resource. Their deletion requires matching native ownership tags. Modal external registrations cannot use snapshot-based stop/resume, because restoring would allocate another native sandbox. All external registrations require provider state and never allocate implicitly. Daytona, Modal, Vercel, Sprites, and Runloop also refuse adapter destruction of externally owned targets.
+
+An interrupted create is reconciled through the native name or ownership metadata. Unknown dispatched commands are not replayed. For Daytona, Modal, Vercel, Sprites, and Runloop, each foreground command has a bounded guest-side deadline; losing or cancelling its transport does not prove the command stopped immediately. Cancellation closes local transport resources; the guest command runner bounds the foreground command and kills its process group. This is not sandbox-wide process containment: descendants that deliberately detach into a new session require native target lifecycle cleanup. Timeout output is partial and has no invented producer total. Modal's SDK retries native commands with a stable exec ID and filesystem snapshots with a stable snapshot request ID.
+
+### E2B runtime
 
 E2B executes commands directly through its native asynchronous SDK. Bounded Python helpers implement files and port checks only. The default `base` template works without installing `a13n-envd`, uploading an executable, or building a custom template. Custom templates need Linux, Python 3.11+, Bash and the configured account/root; Git-ignore queries also need Git.
 
@@ -158,3 +197,65 @@ The example explicitly destroys its sandbox in `finally`. Live integration tests
 ```bash
 A13N_TEST_E2B_API_KEY="$E2B_API_KEY" make e2b-provider-test
 ```
+
+### Daytona
+
+Default file root: `/home/daytona`. The standard sandbox supplies Python; commands select `python3` on the guest PATH. Custom snapshots must supply the selected root and executables. Stop requires confirmed disabled auto-delete; delete waits for terminal destruction rather than accepting the initial acknowledgement. See [Daytona's workspace example](https://www.daytona.io/docs/en/guides/openai/openai-agents-sdk-with-sandboxes/) and [delete semantics](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/).
+
+### Modal
+
+Default image: `python:3.13-slim`, with `/usr/local/bin/python3`; root `/` is writable by that image's root user. Use an existing deployed App. Managed stop snapshots files before termination; resume replaces the native sandbox, and successful readiness permits snapshot cleanup. Running sandbox TTL cannot be extended beyond its known deadline.
+
+### Vercel Sandbox
+
+Default runtime: `python3.13`; workspace: `/vercel/sandbox`. Named persistent sandboxes use native stop/resume. Target identity includes native creation time; a new running session alone does not replace the persistent filesystem identity. Delete also requests native asynchronous cleanup of orphan snapshots.
+
+### Fly.io Sprites
+
+Default workspace: `/home/sprite`; Python: guest-PATH `python3`. [Sprites' environment guide](https://docs.sprites.dev/working-with-sprites/) documents the writable home and preinstalled tools. Native automatic sleep preserves disk; explicit stop is unsupported. Destruction waits for confirmed absence.
+
+### Runloop
+
+Default workspace: `/home/user`; Python: guest-PATH `python3`. Runloop documents its [default unprivileged user](https://docs.runloop.ai/docs/devboxes/configuration/user-parameters) and [preinstalled Python stack](https://docs.runloop.ai/docs/devboxes/overview). Keepalive uses the returned target idle interval. Shutdown completion is checked before clearing state.
+
+### Embedded configuration
+
+Use the same catalog and typed runtime construction as Service:
+
+```python
+from pathlib import Path
+from a13n_environment import build_environment_provider_catalog
+from a13n_environment.management import ProviderRuntimeContext
+
+provider = build_environment_provider_catalog(builtin_keys=["daytona"]).require("daytona")
+recipe = provider.validate_configuration(schema_version="1", value={})
+backend = provider.provider_configuration_model(organization_id="your-organization")
+# Read this value from your Host's private credential storage.
+credential = provider.credential_model(api_key=api_key)
+runtime = await provider.create_runtime(
+    configuration=backend,
+    credential=credential,
+    context=ProviderRuntimeContext("env-workspace", "operation-prepare", Path("/tmp/a13n")),
+)
+environment = provider.create_environment(
+    configuration=recipe, environment_id="env-workspace", state=saved_state, runtime=runtime,
+)
+try:
+    await environment.prepare()
+    saved_state = environment.dump_state()
+finally:
+    await environment.close()
+```
+
+### Cloud validation
+
+Deterministic tests run the adapters through catalog construction, native HTTP responses, Sprites WebSocket frames, and Modal's real async SDK against local gRPC fixtures. They execute the actual file and shell helpers. Cloud tests are separate and opt-in:
+
+```sh
+A13N_TEST_CLOUD_PROVIDERS=daytona make test \
+  PYTHON_TEST_DIRS=packages/a13n-environment/tests/test_cloud_live.py
+```
+
+Provide `A13N_TEST_DAYTONA_BACKEND_JSON` and `A13N_TEST_DAYTONA_CREDENTIAL_JSON` through your private test environment; the corresponding uppercase provider prefixes work for the other four. Optional `A13N_TEST_<PROVIDER>_RECIPE_JSON` overrides the recipe. The fixture allocates billable targets and attempts deletion in cleanup, including after failures. Never commit credential JSON. Missing opt-in or credentials produces a skip, not live validation.
+
+Native API references: [E2B](https://e2b.dev/docs), [Daytona](https://www.daytona.io/docs/en/python-sdk/async/async-sandbox/), [Modal snapshots](https://modal.com/docs/guide/sandbox-snapshots), [Vercel Sandbox SDK](https://github.com/vercel/sandbox), [Sprites exec](https://docs.sprites.dev/api/dev-latest/exec/), and [Runloop async Devbox](https://runloopai.github.io/api-client-python/sdk/async/devbox.html).
