@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator, AsyncIterable, Callable
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, AsyncExitStack
 from dataclasses import dataclass
 from typing import Any
+
+from a13n_environment.files import FileCommitOperator, FileCommitRequest
 
 from .files import (
     FileCopyResult,
@@ -42,6 +44,41 @@ class VirtualFileOperator:
     def __init__(self, resolve: ResolvePath, prepare: PrepareFile) -> None:
         self._resolve = resolve
         self._prepare = prepare
+
+    async def commit(self, request: FileCommitRequest) -> FileMutationResult:
+        selected = self._resolve(request.root)
+
+        def routed(path: str) -> str:
+            resolved = self._resolve(path)
+            if resolved.mount_id != selected.mount_id:
+                raise EnvironmentError("Commit paths must share one mount", code="environment_denied")
+            return resolved.path
+
+        async with AsyncExitStack() as stack:
+            prepared = None
+            for action in (
+                EnvironmentAction.FILE_READ_BYTES,
+                EnvironmentAction.FILE_WRITE_TEXT,
+                EnvironmentAction.FILE_MKDIR,
+                EnvironmentAction.FILE_REMOVE,
+            ):
+                prepared = await stack.enter_async_context(self._prepare(selected, action))
+            assert prepared is not None
+            if not isinstance(prepared.backend, FileCommitOperator):
+                raise EnvironmentError("Conditional publication is unavailable", code="environment_unsupported")
+            result = await prepared.backend.commit(
+                FileCommitRequest(
+                    root=selected.path,
+                    conditions=tuple(
+                        item.model_copy(update={"path": routed(item.path)}) for item in request.conditions
+                    ),
+                    directories=tuple(routed(path) for path in request.directories),
+                    writes=tuple(item.model_copy(update={"path": routed(item.path)}) for item in request.writes),
+                    removals=tuple(routed(path) for path in request.removals),
+                )
+            )
+            prepared.validate_result(result)
+            return result.model_copy(update={"path": request.root})
 
     async def read_text(self, path: str, **kwargs: Any) -> FileTextResult:
         async with self._prepare(self._resolve(path), EnvironmentAction.FILE_READ_TEXT) as prepared:

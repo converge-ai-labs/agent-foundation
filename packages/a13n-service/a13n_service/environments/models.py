@@ -12,6 +12,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
     String,
@@ -271,3 +272,14 @@ class EnvironmentCommandRecord(Base):
                 completed_at=assume_utc(self.completed_at) if self.completed_at else None,
             )
         )
+
+
+class EnvironmentFileUseRecord(Base):
+    """A short content-operation lease prevents target retention cleanup."""
+
+    __tablename__ = "environment_file_uses"
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    environment_id: Mapped[str] = mapped_column(
+        String(72), ForeignKey("environments.id", ondelete="CASCADE"), index=True
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

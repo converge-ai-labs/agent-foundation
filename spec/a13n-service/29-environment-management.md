@@ -255,10 +255,12 @@ retention:
 
 Retention conditions are aggregate facts about the Environment, separate from whether its target is running or stopped:
 
-| Condition | Meaning                                                                                       |
-| --------- | --------------------------------------------------------------------------------------------- |
-| `active`  | At least one running Run has acquired Environment use, including recovery/backoff of that Run |
-| `idle`    | No running Run has acquired Environment use                                                   |
+| Condition | Meaning                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------------------- |
+| `active`  | At least one running Run has acquired Environment use, or an authorized file operation holds an unexpired use lease |
+| `idle`    | Neither a running Run nor an unexpired file-use lease holds Environment use                                         |
+
+Authorized retained-memory management acquires a bounded file-use lease under the Environment lock before file I/O. It requires the current running backing generation and Environment-use permission, never creates or replaces a target, and releases use after completion. Expired leases cease to protect retention after process loss. Target replacement and lifecycle commands reject these active uses. Model extraction runs outside file access and reacquires current authority before publication.
 
 Waiting for approval or any other external result is idle unless another Run still has active use. Selection alone, queued input, a never-used lazy Run and Thread existence do not acquire use or start a target. An existing target continues its retention schedule while a lazy Run has not used it. Approval details and historical waiting Runs are not retention inputs; target-dependent approvals still require revalidation after recovery.
 

@@ -631,11 +631,11 @@ it.each([
   },
 );
 
-it("hides unconfigured memory without changing the submitted configuration", async () => {
+it("offers file memory without a managed provider and preserves an untouched configuration", async () => {
   memoryAvailability.visible = false;
   const user = userEvent.setup();
   const { submit } = editor();
-  expect(screen.queryByRole("heading", { name: "Memory" })).toBeNull();
+  expect(screen.getByRole("heading", { name: "Memory" })).toBeTruthy();
   await user.type(
     screen.getByRole("textbox", { name: "System instructions" }),
     " More detail.",

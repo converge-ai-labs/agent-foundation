@@ -18,10 +18,14 @@ from a13n_service.bots.connectivity.ingress import BotIngress
 from a13n_service.bots.connectivity.replies import ReplyObservations
 from a13n_service.bots.connectivity.service import BotService
 from a13n_service.bots.memory.behavior import ConversationMemory
+from a13n_service.bots.memory.files import authorize_management
+from a13n_service.bots.memory.organization import authorize_organization
 from a13n_service.bots.memory.verification import BotMemoryVerifier
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.environments.file_access import ExistingEnvironmentFiles
+from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle
@@ -29,6 +33,7 @@ from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.memory.behaviors import MemoryBehaviors
 from a13n_service.memory.composition import build_memory_service
 from a13n_service.memory.ordinary import OrdinaryMemory
+from a13n_service.memory.organization import admit_organization
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
@@ -112,9 +117,9 @@ async def open_process_runtime(
             shared = SharedRuntime(
                 storage=storage,
                 lifecycle=LifecycleWriter(
-                    (write_hook_lifecycle, append_matching_a2a_push_outbox)
+                    (write_hook_lifecycle, append_matching_a2a_push_outbox, admit_organization)
                     if settings.gateway.a2a_enabled
-                    else (write_hook_lifecycle,)
+                    else (write_hook_lifecycle, admit_organization)
                 ),
                 secret_protector=protector,
                 memories=build_memory_service(
@@ -132,6 +137,9 @@ async def open_process_runtime(
                 protector,
                 memory_catalog,
             )
+            memory_service.authorize_conversation = authorize_management
+            memory_service.authorize_organization = authorize_organization
+            memory_service.verify_organization = bot_verifier.verify_organization if bot_verifier else None
             shared = replace(
                 shared,
                 memory_behaviors=MemoryBehaviors(
@@ -140,6 +148,21 @@ async def open_process_runtime(
                     behaviors=(ConversationMemory(memory_service, bot_verifier),),
                 ),
             )
+            environment_catalog = (
+                build_environment_catalog(settings, components, provider_catalogs)
+                if owns_control(settings.service.role) or owns_worker(settings.service.role)
+                else None
+            )
+            if environment_catalog is not None:
+                memory_service.files = ExistingEnvironmentFiles(
+                    EnvironmentLifecycle(
+                        storage.sessions,
+                        environment_catalog,
+                        protector,
+                        storage.files_root,
+                        timeout_seconds=settings.environments.operation_timeout_seconds,
+                    )
+                )
             agent_resources = build_agent_resources(
                 components,
                 shared,
@@ -154,11 +177,6 @@ async def open_process_runtime(
                     model_endpoint_policy,
                     stack,
                 )
-                if owns_control(settings.service.role) or owns_worker(settings.service.role)
-                else None
-            )
-            environment_catalog = (
-                build_environment_catalog(settings, components, provider_catalogs)
                 if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None
             )

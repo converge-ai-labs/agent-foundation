@@ -35,6 +35,7 @@ from a13n_service.ids import new_object_id
 from a13n_service.interactions.queue_drain import QueueDrain
 from a13n_service.interactions.scheduling import AttemptScheduler
 from a13n_service.interactions.worker import WorkerExecutionLoop
+from a13n_service.memory.organization import MemoryOrganizer
 from a13n_service.observability import ObservabilityRuntime
 from a13n_service.process.attempts import WorkerAttempts
 from a13n_service.process.background import BackgroundTask
@@ -259,7 +260,21 @@ async def build_worker_runtime(
                 shutdown=image_test_worker.shutdown,
             ),
         )
+    organization_tasks: tuple[BackgroundTask, ...] = ()
+    if shared.memories is not None:
+        organizer = MemoryOrganizer(
+            shared.memories, shared.storage.objects, execution.native_model_factory, execution.live_model_providers
+        )
+        organization_tasks = (
+            BackgroundTask(
+                "memory_organization",
+                organizer.run,
+                organizer.is_draining,
+                partial(organizer.shutdown, timeout_seconds=125),
+            ),
+        )
     background_tasks = [
+        *organization_tasks,
         execution_task,
         *image_test_tasks,
         BackgroundTask(

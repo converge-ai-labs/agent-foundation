@@ -40,7 +40,7 @@ from .media import (
     MediaReadRequest,
     MediaResource,
 )
-from .memory import MemoryCapability, MemoryScope
+from .memory import MemoryCapability, MemoryEntry, MemoryScope
 from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
 from .skills import (
     BoundSkillCatalog,
@@ -186,6 +186,7 @@ __all__ = [
     "MediaReader",
     "MediaResource",
     "MemoryCapability",
+    "MemoryEntry",
     "MemoryScope",
     "NativeImageGenerationCapability",
     "NativeImageSaver",

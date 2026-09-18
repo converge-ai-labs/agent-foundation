@@ -294,49 +294,51 @@ export function MemoryProviderForm({
             />
           )}
         </FormSection>
-        <FormSection title={t("Credentials")}>
-          {readOnly ? (
-            <ReadOnlyField label={t("Credentials")}>
-              {t(
-                original?.value.credential_configured
-                  ? "Configured"
-                  : "Not configured",
-              )}
-            </ReadOnlyField>
-          ) : original ? (
-            <CredentialEditor
-              configured={original.value.credential_configured}
-              removing={removeCredential}
-              onRemovingChange={(value) => {
-                setRemoveCredential(value);
-                setCredential({});
-              }}
-            >
-              {definition ? (
-                <SchemaFields
-                  secret
-                  schema={{ ...credentialSchema, required: [] }}
-                  value={credential}
-                  onChange={setCredential}
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    "The backend definition is unavailable. Credential replacement requires its installed schema.",
-                  )}
-                </p>
-              )}
-            </CredentialEditor>
-          ) : (
-            <SchemaFields
-              secret
-              key={`${type}-credentials`}
-              schema={credentialSchema}
-              value={credential}
-              onChange={setCredential}
-            />
-          )}
-        </FormSection>
+        {definition?.requires_credential !== false && (
+          <FormSection title={t("Credentials")}>
+            {readOnly ? (
+              <ReadOnlyField label={t("Credentials")}>
+                {t(
+                  original?.value.credential_configured
+                    ? "Configured"
+                    : "Not configured",
+                )}
+              </ReadOnlyField>
+            ) : original ? (
+              <CredentialEditor
+                configured={original.value.credential_configured}
+                removing={removeCredential}
+                onRemovingChange={(value) => {
+                  setRemoveCredential(value);
+                  setCredential({});
+                }}
+              >
+                {definition ? (
+                  <SchemaFields
+                    secret
+                    schema={{ ...credentialSchema, required: [] }}
+                    value={credential}
+                    onChange={setCredential}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      "The backend definition is unavailable. Credential replacement requires its installed schema.",
+                    )}
+                  </p>
+                )}
+              </CredentialEditor>
+            ) : (
+              <SchemaFields
+                secret
+                key={`${type}-credentials`}
+                schema={credentialSchema}
+                value={credential}
+                onChange={setCredential}
+              />
+            )}
+          </FormSection>
+        )}
         {original && (
           <FormSection>
             {readOnly ? (

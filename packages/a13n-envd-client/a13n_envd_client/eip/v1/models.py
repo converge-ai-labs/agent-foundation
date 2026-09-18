@@ -428,6 +428,16 @@ class FileByteRange(EIPModel):
     length: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)] | None = None
 
 
+class FileCommitCondition(EIPModel):
+    path: EIPPath
+    digest: ContentDigest | None = None
+
+
+class FileCommitWrite(EIPModel):
+    path: EIPPath
+    text: StrictStr
+
+
 class FileCopyParams(EIPModel):
     context: EIPCallContext
     source: EIPPath
@@ -816,6 +826,20 @@ class EnvironmentDescriptor(EIPModel):
     execution_features: ExecutionFeatures
 
 
+class FileCommitParams(EIPModel):
+    context: EIPCallContext
+    root: EIPPath
+    conditions: tuple[FileCommitCondition, ...] = ()
+    directories: tuple[EIPPath, ...] = ()
+    writes: tuple[FileCommitWrite, ...] = ()
+    removals: tuple[EIPPath, ...] = ()
+
+
+class FileCommitResult(EIPModel):
+    files_written: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
+    receipt: OperationReceipt
+
+
 class FileCopyResult(EIPModel):
     destination: FileInfo
     bytes_copied: Annotated[StrictInt, Field(ge=0, le=18446744073709551615)]
@@ -1058,6 +1082,8 @@ ExecutableName.model_rebuild()
 ExecutablePath.model_rebuild()
 ExecutionFeatures.model_rebuild()
 FileByteRange.model_rebuild()
+FileCommitCondition.model_rebuild()
+FileCommitWrite.model_rebuild()
 FileCopyParams.model_rebuild()
 FileFindParams.model_rebuild()
 FileInfo.model_rebuild()
@@ -1111,6 +1137,8 @@ ShellCommand.model_rebuild()
 ShellProfileDescriptor.model_rebuild()
 ArgvCommand.model_rebuild()
 EnvironmentDescriptor.model_rebuild()
+FileCommitParams.model_rebuild()
+FileCommitResult.model_rebuild()
 FileCopyResult.model_rebuild()
 FileFindResult.model_rebuild()
 FileMkdirResult.model_rebuild()
@@ -1177,6 +1205,10 @@ __all__ = [
     "ExecutableSpec",
     "ExecutionFeatures",
     "FileByteRange",
+    "FileCommitCondition",
+    "FileCommitParams",
+    "FileCommitResult",
+    "FileCommitWrite",
     "FileCopyParams",
     "FileCopyResult",
     "FileFindParams",

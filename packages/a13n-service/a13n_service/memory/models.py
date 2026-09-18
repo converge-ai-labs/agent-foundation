@@ -9,9 +9,12 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
+    ForeignKey,
     ForeignKeyConstraint,
     Index,
+    Integer,
     String,
+    Text,
     text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
@@ -23,6 +26,39 @@ from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc
 
 from .domain import MemoryProvider
+
+
+class MemoryStorageRecord(Base):
+    """Exact file corpus identity; no document bodies are retained in SQL."""
+
+    __tablename__ = "memory_storage_bindings"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ("workspace_id", "organization_id"), ("workspaces.id", "workspaces.organization_id"), ondelete="CASCADE"
+        ),
+        Index("uq_memory_storage_target", "target_digest", unique=True),
+    )
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    target_digest: Mapped[str] = mapped_column(String(64))
+    organization_id: Mapped[str] = mapped_column(String(72))
+    workspace_id: Mapped[str] = mapped_column(String(72))
+    provider_identity: Mapped[str] = mapped_column(String(128))
+    subject: Mapped[str] = mapped_column(String(128))
+    scope_kind: Mapped[str | None] = mapped_column(String(32))
+    subject_id: Mapped[str | None] = mapped_column(String(72))
+    environment_id: Mapped[str] = mapped_column(String(72))
+    root: Mapped[str] = mapped_column(Text)
+    backing_identity: Mapped[str] = mapped_column(String(256))
+    initialized: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class RunMemoryStorageRecord(Base):
+    __tablename__ = "run_memory_storage_bindings"
+
+    run_id: Mapped[str] = mapped_column(String(72), ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    selection_digest: Mapped[str] = mapped_column(String(64), primary_key=True)
+    organization_policy: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    storage_id: Mapped[str] = mapped_column(String(72), ForeignKey("memory_storage_bindings.id", ondelete="RESTRICT"))
 
 
 class MemoryProviderRecord(ResourceCredential[str | None], Base):
@@ -90,3 +126,21 @@ class MemoryProviderRecord(ResourceCredential[str | None], Base):
 
 def _principal(principal_type: str, principal_id: str) -> PrincipalRef:
     return PrincipalRef(principal_type=PrincipalType(principal_type), principal_id=principal_id)
+
+
+class MemoryOrganizationRecord(Base):
+    __tablename__ = "memory_organization_work"
+    __table_args__ = (Index("ix_memory_organization_pending", "status", "available_at"),)
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    run_id: Mapped[str] = mapped_column(String(72), ForeignKey("runs.id", ondelete="CASCADE"))
+    storage_id: Mapped[str] = mapped_column(String(72), ForeignKey("memory_storage_bindings.id", ondelete="RESTRICT"))
+    policy: Mapped[dict[str, object]] = mapped_column(JSON)
+    plan_digest: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    owner: Mapped[str | None] = mapped_column(String(72))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    result: Mapped[dict[str, object] | None] = mapped_column(JSON)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

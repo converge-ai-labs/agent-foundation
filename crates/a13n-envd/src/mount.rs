@@ -21,6 +21,7 @@ use crate::{
 const READ_OPERATIONS: &[&str] = &["stat", "read_text", "open_reader", "list"];
 const WRITE_OPERATIONS: &[&str] = &[
     "write_text",
+    "commit",
     "open_writer",
     "mkdir",
     "patch_text",
@@ -169,6 +170,44 @@ impl MountRegistry {
 
     pub(crate) fn get(&self, mount_id: &str) -> Option<Arc<Mount>> {
         self.mounts.get(mount_id).cloned()
+    }
+
+    pub(crate) fn scoped(&self, path: &EIPPath) -> Result<Self, MountPathError> {
+        let mount = self.get(&path.mount_id).ok_or(MountPathError::Denied)?;
+        let relative = mount.resolve_followed_relative(path)?;
+        let root = mount
+            .root
+            .open_dir(&relative)
+            .map_err(MountPathError::from_io)?;
+        let protected_roots = mount
+            .protected_roots
+            .iter()
+            .filter_map(|protected| {
+                if relative == Path::new(".") {
+                    Some(protected.clone())
+                } else {
+                    protected
+                        .strip_prefix(&relative)
+                        .ok()
+                        .map(Path::to_path_buf)
+                }
+            })
+            .collect();
+        let scoped = Arc::new(Mount {
+            mount_id: mount.mount_id.clone(),
+            native_root: mount.native_root.join(&relative),
+            root: Arc::new(root),
+            writable: mount.writable,
+            allow_command_execution: false,
+            max_file_bytes: mount.max_file_bytes,
+            allowed_operations: mount.allowed_operations.clone(),
+            protected_roots,
+            staging_quota: mount.staging_quota.clone(),
+        });
+        Ok(Self {
+            mounts: BTreeMap::from([(mount.mount_id.clone(), scoped)]),
+            root_mount_id: Some(mount.mount_id.clone()),
+        })
     }
 
     pub(crate) fn descriptors(&self) -> Vec<MountDescriptor> {
@@ -355,6 +394,13 @@ impl Drop for StagingReservation {
 
 impl Mount {
     pub(crate) fn allows(&self, operation: &str) -> bool {
+        if operation == "commit" {
+            return cfg!(unix)
+                && self.writable
+                && ["commit", "open_reader", "write_text", "mkdir", "remove"]
+                    .iter()
+                    .all(|name| self.allowed_operations.contains(*name));
+        }
         self.allowed_operations.contains(operation)
     }
 
@@ -499,6 +545,24 @@ impl Mount {
         } else {
             Ok(())
         }
+    }
+
+    pub(crate) fn sync_ancestors(&self, path: &EIPPath) -> Result<(), MountPathError> {
+        let relative = self.resolve_followed_relative(path)?;
+        for ancestor in relative.ancestors() {
+            let directory = if ancestor.as_os_str().is_empty() {
+                Path::new(".")
+            } else {
+                ancestor
+            };
+            self.root
+                .open_dir(directory)
+                .map_err(MountPathError::from_io)?
+                .into_std_file()
+                .sync_all()
+                .map_err(MountPathError::from_io)?;
+        }
+        Ok(())
     }
 
     pub(crate) fn create_dir(&self, relative: &Path) -> Result<(), MountPathError> {

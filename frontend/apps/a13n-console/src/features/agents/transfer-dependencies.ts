@@ -122,7 +122,7 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
       });
   }
   const memory = config.memory;
-  if (memory)
+  if (memory && "provider_id" in memory)
     refs.push({
       path: "memory.provider_id",
       kind: "memory",
@@ -132,6 +132,26 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         memory: { ...memory, provider_id: value },
       }),
     });
+  if (memory && "entries" in memory) {
+    memory.entries.forEach((entry, index) => {
+      if ("provider_id" in entry.backend)
+        refs.push({
+          path: `memory.entries.${index}.backend.provider_id`,
+          kind: "memory",
+          value: entry.backend.provider_id,
+          replace: (provider_id) => ({
+            ...config,
+            memory: {
+              entries: memory.entries.map((current, i) =>
+                i === index
+                  ? { ...current, backend: { provider_id } }
+                  : current,
+              ),
+            },
+          }),
+        });
+    });
+  }
   const web = config.toolsets?.web;
   for (const operation of ["search", "scrape"] as const) {
     const tool = web?.tools?.[operation];

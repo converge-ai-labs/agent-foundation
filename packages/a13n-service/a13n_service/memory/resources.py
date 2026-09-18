@@ -8,6 +8,7 @@ from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam.resource_scope import visible_workspace
 
+from .domain import InlineMemoryBackend, MemoryConfiguration, MemoryEntries, memory_provider_ids
 from .models import MemoryProviderRecord
 
 
@@ -50,7 +51,7 @@ def require_eligible(record: MemoryProviderRecord, catalog: MemoryBackendCatalog
         raise MemoryProviderError(
             "memory_provider_disabled", "Memory Provider is disabled.", category=ErrorCategory.conflict
         )
-    if record.ciphertext is None:
+    if record.ciphertext is None and (record.type not in catalog or catalog[record.type].requires_credential):
         raise MemoryProviderError(
             "memory_provider_credential_missing",
             "Memory Provider requires a credential.",
@@ -88,4 +89,49 @@ def require_etag(record: MemoryProviderRecord, if_match: str) -> None:
             "Memory Provider changed after it was read.",
             category=ErrorCategory.stale_version,
             details={"current_etag": current},
+        )
+
+
+async def require_memory_configuration(
+    session: AsyncSession,
+    *,
+    selection: MemoryConfiguration,
+    organization_id: str,
+    workspace_id: str,
+    catalog: MemoryBackendCatalog,
+) -> None:
+    providers = {}
+    for provider_id in memory_provider_ids(selection):
+        providers[provider_id] = await require_provider(
+            session,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            provider_id=provider_id,
+            eligible=True,
+            catalog=catalog,
+        )
+    if isinstance(selection, MemoryEntries):
+        for entry in selection.entries:
+            key = (
+                entry.backend.type
+                if isinstance(entry.backend, InlineMemoryBackend)
+                else providers[entry.backend.provider_id].type
+            )
+            plugin = catalog.get(key)
+            supported = plugin is not None and (
+                plugin.supports_records
+                if entry.mode == "records"
+                else key == "a13n.filesystem" and plugin.supports_documents
+            )
+            if not supported:
+                raise MemoryProviderError(
+                    "memory_mode_unsupported",
+                    "The selected backend is unavailable for this memory mode.",
+                    category=ErrorCategory.invalid_request,
+                )
+    elif not catalog[providers[selection.provider_id].type].supports_records:
+        raise MemoryProviderError(
+            "memory_mode_unsupported",
+            "This backend requires a documents entry.",
+            category=ErrorCategory.invalid_request,
         )

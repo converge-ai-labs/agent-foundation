@@ -13,11 +13,11 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     eip::{
-        EIPPath, FileCopyParams, FileFindParams, FileFindResult, FileInfo, FileKind, FileListEntry,
-        FileListParams, FileListResult, FileMkdirParams, FileMoveParams, FilePatchTextParams,
-        FileReadTextParams, FileReadTextResult, FileRemoveParams, FileSearchMatch,
-        FileSearchParams, FileSearchResult, FileStatParams, FileStatResult, FileWriteMode,
-        FileWriteTextParams, SearchMode,
+        EIPPath, FileCommitParams, FileCopyParams, FileFindParams, FileFindResult, FileInfo,
+        FileKind, FileListEntry, FileListParams, FileListResult, FileMkdirParams, FileMoveParams,
+        FilePatchTextParams, FileReadTextParams, FileReadTextResult, FileRemoveParams,
+        FileSearchMatch, FileSearchParams, FileSearchResult, FileStatParams, FileStatResult,
+        FileWriteMode, FileWriteTextParams, SearchMode,
     },
     mount::{Mount, MountPathError, MountRegistry, StagedCandidate},
     operation::{OperationInterruption, OperationLedger},
@@ -372,6 +372,187 @@ impl ResourceRegistry {
             has_more,
             omitted_unrepresentable_entries: omitted,
         })
+    }
+
+    /// Ordered publication for cooperating writers; ordinary file operations
+    /// remain independent observations of the filesystem.
+    pub(crate) fn commit(
+        &self,
+        mounts: &MountRegistry,
+        params: &FileCommitParams,
+    ) -> Result<u64, ResourceError> {
+        let mount = write_mount(mounts, &params.root, "commit")?;
+        for operation in ["open_reader", "write_text", "mkdir", "remove"] {
+            if !mount.allows(operation) {
+                return Err(ResourceError::Denied);
+            }
+        }
+        let count = params.conditions.len()
+            + params.directories.len()
+            + params.writes.len()
+            + params.removals.len();
+        if count > 256
+            || params
+                .writes
+                .iter()
+                .map(|write| write.text.len())
+                .sum::<usize>()
+                > 2 * 1024 * 1024
+        {
+            return Err(ResourceError::Limit);
+        }
+        let relative = |path: &EIPPath| -> Result<EIPPath, ResourceError> {
+            mount.relative_path(path).map_err(map_mount_error)?;
+            let prefix = format!("{}/", params.root.path.trim_end_matches('/'));
+            let suffix = path
+                .path
+                .strip_prefix(&prefix)
+                .filter(|value| !value.is_empty())
+                .ok_or(ResourceError::Denied)?;
+            if path.mount_id != params.root.mount_id {
+                return Err(ResourceError::Denied);
+            }
+            Ok(EIPPath {
+                mount_id: path.mount_id.clone(),
+                path: format!("/{suffix}"),
+            })
+        };
+        let mut conditions = BTreeMap::new();
+        for condition in &params.conditions {
+            relative(&condition.path)?;
+            if conditions
+                .insert(condition.path.path.clone(), condition.digest.as_ref())
+                .is_some()
+            {
+                return Err(ResourceError::Invalid);
+            }
+        }
+        let mut writes = std::collections::BTreeSet::new();
+        for write in &params.writes {
+            relative(&write.path)?;
+            if !conditions.contains_key(&write.path.path)
+                || !writes.insert(&write.path.path)
+                || write.text.contains('\0')
+            {
+                return Err(ResourceError::Invalid);
+            }
+            if write.text.len() as u64 > mount.max_file_bytes {
+                return Err(ResourceError::Limit);
+            }
+        }
+        for path in params.directories.iter().chain(&params.removals) {
+            relative(path)?;
+        }
+        // Lock a retained directory inode, never a removable lock file.
+        let lock = mount
+            .root
+            .open_dir(".")
+            .map_err(|_| ResourceError::Io)?
+            .into_std_file();
+        loop {
+            self.check_cancelled(&params.context.operation_id)?;
+            match fs2::FileExt::try_lock_exclusive(&lock) {
+                Ok(()) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::sleep(std::time::Duration::from_millis(10))
+                }
+                Err(_) => return Err(ResourceError::Unsupported),
+            }
+        }
+        self.mkdir(
+            mounts,
+            &FileMkdirParams {
+                context: params.context.clone(),
+                path: params.root.clone(),
+                parents: true,
+                exist_ok: true,
+            },
+        )?;
+        mount
+            .sync_ancestors(&params.root)
+            .map_err(map_mount_error)?;
+        let scoped = mounts.scoped(&params.root).map_err(map_mount_error)?;
+        let scope = scoped
+            .get(&params.root.mount_id)
+            .ok_or(ResourceError::Denied)?;
+        let mut observed_bytes = 0_u64;
+        for condition in &params.conditions {
+            let path = relative(&condition.path)?;
+            let current = match scope.open_regular(&path) {
+                Ok(opened) => {
+                    if opened.metadata.len() > 2 * 1024 * 1024 {
+                        return Err(ResourceError::Limit);
+                    }
+                    let mut bytes = Vec::new();
+                    opened
+                        .file
+                        .take(2 * 1024 * 1024 + 1)
+                        .read_to_end(&mut bytes)
+                        .map_err(|_| ResourceError::Io)?;
+                    observed_bytes += bytes.len() as u64;
+                    if bytes.len() > 2 * 1024 * 1024 || observed_bytes > 8 * 1024 * 1024 {
+                        return Err(ResourceError::Limit);
+                    }
+                    Some(format!("{:x}", Sha256::digest(&bytes)))
+                }
+                Err(MountPathError::NotFound) => None,
+                Err(error) => return Err(map_mount_error(error)),
+            };
+            if current.as_deref()
+                != condition
+                    .digest
+                    .as_ref()
+                    .map(|digest| digest.value.as_str())
+            {
+                return Err(ResourceError::Conflict);
+            }
+        }
+        let publish = || -> Result<(), ResourceError> {
+            for path in &params.directories {
+                self.mkdir(
+                    &scoped,
+                    &FileMkdirParams {
+                        context: params.context.clone(),
+                        path: relative(path)?,
+                        parents: true,
+                        exist_ok: true,
+                    },
+                )?;
+                scope
+                    .sync_ancestors(&relative(path)?)
+                    .map_err(map_mount_error)?;
+            }
+            for write in &params.writes {
+                self.write_text(
+                    &scoped,
+                    &FileWriteTextParams {
+                        context: params.context.clone(),
+                        path: relative(&write.path)?,
+                        mode: FileWriteMode::Upsert,
+                        text: write.text.clone(),
+                        executable: None,
+                    },
+                )?;
+            }
+            for path in &params.removals {
+                match self.remove(
+                    &scoped,
+                    &FileRemoveParams {
+                        context: params.context.clone(),
+                        path: relative(path)?,
+                        expected_kind: FileKind::Directory,
+                        recursive: true,
+                        max_entries: MAX_TRAVERSAL_ENTRIES as u64,
+                    },
+                ) {
+                    Ok(_) | Err(ResourceError::NotFound) => {}
+                    Err(error) => return Err(error),
+                }
+            }
+            Ok(())
+        };
+        publish().map_err(|_| ResourceError::UnknownOutcome)?;
+        Ok(params.writes.len() as u64)
     }
 
     pub(crate) fn write_text(
@@ -2126,6 +2307,77 @@ mod tests {
             mount_id: "workspace".to_owned(),
             path: value.to_owned(),
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn conditional_commit_serializes_writers_and_rejects_stale_batches() {
+        use crate::eip::{FileCommitCondition, FileCommitParams, FileCommitWrite};
+        let fixture = Fixture::new();
+        let request = FileCommitParams {
+            context: context("op-commit"),
+            root: path("/memory"),
+            conditions: vec![FileCommitCondition {
+                path: path("/memory/head"),
+                digest: None,
+            }],
+            directories: vec![],
+            writes: vec![FileCommitWrite {
+                path: path("/memory/head"),
+                text: "one".into(),
+            }],
+            removals: vec![],
+        };
+        let results = std::thread::scope(|scope| {
+            let workers: Vec<_> = (0..8)
+                .map(|_| scope.spawn(|| fixture.resources.commit(&fixture.mounts, &request)))
+                .collect();
+            workers
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(results.iter().filter(|result| **result == Ok(1)).count(), 1);
+        assert_eq!(
+            results
+                .iter()
+                .filter(|result| **result == Err(ResourceError::Conflict))
+                .count(),
+            7
+        );
+        assert_eq!(
+            fs::read_to_string(fixture.native.join("memory/head")).unwrap(),
+            "one"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn conditional_commit_confines_links_to_selected_subtree() {
+        use crate::eip::{FileCommitCondition, FileCommitParams, FileCommitWrite};
+        let fixture = Fixture::new();
+        fs::create_dir(fixture.native.join("memory")).unwrap();
+        fs::create_dir(fixture.native.join("outside")).unwrap();
+        std::os::unix::fs::symlink("../outside", fixture.native.join("memory/link")).unwrap();
+        let request = FileCommitParams {
+            context: context("op-commit"),
+            root: path("/memory"),
+            conditions: vec![FileCommitCondition {
+                path: path("/memory/link/head"),
+                digest: None,
+            }],
+            directories: vec![],
+            writes: vec![FileCommitWrite {
+                path: path("/memory/link/head"),
+                text: "bad".into(),
+            }],
+            removals: vec![],
+        };
+        assert_eq!(
+            fixture.resources.commit(&fixture.mounts, &request),
+            Err(ResourceError::Denied)
+        );
+        assert!(!fixture.native.join("outside/head").exists());
     }
 
     #[test]
