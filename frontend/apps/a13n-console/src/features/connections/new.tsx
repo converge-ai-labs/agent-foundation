@@ -9,6 +9,7 @@ import {
 } from "a13n-ui";
 import { ArrowLeftIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import type { TFunction } from "i18next";
 import { useWorkspace } from "../../layout/workspace";
 import { ErrorToast, Loading } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
@@ -18,13 +19,108 @@ import { ConnectorToolPreview } from "../connectors/tools";
 import { CreateMCP } from "../mcp/create";
 import { useConnectionDirectory } from "./directory";
 
-type Selection =
+export type Selection =
   | {
       kind: "connector";
       connector: Schema["Connector"];
       provider: Schema["ConnectorProvider"];
     }
   | { kind: "mcp"; preset?: Schema["MCPServer"] };
+
+export function sourceName(selected: Selection, t: TFunction) {
+  return selected.kind === "connector"
+    ? selected.connector.name
+    : (selected.preset?.name ?? t("Custom Remote MCP"));
+}
+export function sourceOrigin(selected: Selection, t: TFunction) {
+  return selected.kind === "connector"
+    ? selected.provider.name
+    : t("Remote MCP");
+}
+export function SourceIcon({
+  selected,
+  size,
+}: {
+  selected: Selection;
+  size?: number;
+}) {
+  return selected.kind === "connector" ? (
+    <BrandIcon
+      alias={selected.connector.key}
+      logo={selected.connector.logo_url}
+      size={size}
+    />
+  ) : (
+    <BrandIcon
+      identity={selected.preset?.key}
+      endpoint={selected.preset?.endpoint_url}
+      logo={selected.preset?.logo_url}
+      fallbackIdentity="mcp"
+      size={size}
+    />
+  );
+}
+/** Setup form for a chosen source: connector authorization or MCP creation. */
+export function SourceSetup({
+  selected,
+  onStarted,
+  onCancel,
+  onConnected,
+}: {
+  selected: Selection;
+  onStarted: () => void;
+  onCancel: () => void;
+  onConnected: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  if (selected.kind === "mcp")
+    return (
+      <CreateMCP
+        onCancel={onCancel}
+        preset={selected.preset}
+        onStarted={onStarted}
+        onSuccess={(connection) => onConnected(connection.id)}
+      />
+    );
+  return (
+    <>
+      <ConnectionSetup connector={selected.connector} onStarted={onStarted} />
+      {selected.provider.type === "composio" && (
+        <div className="space-y-3 text-sm text-muted-foreground">
+          {selected.connector.authentication_methods.includes("OAUTH2") && (
+            <DisclosureSection title={t("Use your own OAuth app")}>
+              <ol className="list-decimal space-y-2 pl-5">
+                <li>
+                  {t(
+                    "In Composio Dashboard, create an auth config for this application and select custom credentials.",
+                  )}
+                </li>
+                <li>
+                  {t(
+                    "Enter your client ID, client secret and scopes there. Register the redirect URI shown by Composio with your OAuth app.",
+                  )}
+                </li>
+                <li>
+                  {t(
+                    "Return here, refresh configurations, and select your new config.",
+                  )}
+                </li>
+              </ol>
+            </DisclosureSection>
+          )}
+          <a
+            href="https://dashboard.composio.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t("Manage auth configs in Composio Dashboard")}
+          </a>
+        </div>
+      )}
+      <ConnectorToolPreview connector={selected.connector} />
+    </>
+  );
+}
 export function NewConnection({
   onConnected,
 }: {
@@ -138,82 +234,20 @@ function ConnectionChoice({
           </Button>
         )}
         <div className="flex items-center gap-3">
-          {selected.kind === "connector" ? (
-            <BrandIcon
-              alias={selected.connector.key}
-              logo={selected.connector.logo_url}
-            />
-          ) : (
-            <BrandIcon
-              identity={selected.preset?.key}
-              endpoint={selected.preset?.endpoint_url}
-              logo={selected.preset?.logo_url}
-              fallbackIdentity="mcp"
-            />
-          )}
+          <SourceIcon selected={selected} />
           <div>
-            <h3 className="font-medium">
-              {selected.kind === "connector"
-                ? selected.connector.name
-                : (selected.preset?.name ?? t("Custom Remote MCP"))}
-            </h3>
+            <h3 className="font-medium">{sourceName(selected, t)}</h3>
             <p className="text-sm text-muted-foreground">
-              {selected.kind === "connector"
-                ? selected.provider.name
-                : t("Remote MCP")}
+              {sourceOrigin(selected, t)}
             </p>
           </div>
         </div>
-        {selected.kind === "connector" ? (
-          <>
-            <ConnectionSetup
-              connector={selected.connector}
-              onStarted={() => setStarted(true)}
-            />
-            {selected.provider.type === "composio" && (
-              <div className="space-y-3 text-sm text-muted-foreground">
-                {selected.connector.authentication_methods.includes(
-                  "OAUTH2",
-                ) && (
-                  <DisclosureSection title={t("Use your own OAuth app")}>
-                    <ol className="list-decimal space-y-2 pl-5">
-                      <li>
-                        {t(
-                          "In Composio Dashboard, create an auth config for this application and select custom credentials.",
-                        )}
-                      </li>
-                      <li>
-                        {t(
-                          "Enter your client ID, client secret and scopes there. Register the redirect URI shown by Composio with your OAuth app.",
-                        )}
-                      </li>
-                      <li>
-                        {t(
-                          "Return here, refresh configurations, and select your new config.",
-                        )}
-                      </li>
-                    </ol>
-                  </DisclosureSection>
-                )}
-                <a
-                  href="https://dashboard.composio.dev"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {t("Manage auth configs in Composio Dashboard")}
-                </a>
-              </div>
-            )}
-            <ConnectorToolPreview connector={selected.connector} />
-          </>
-        ) : (
-          <CreateMCP
-            onCancel={onCancel}
-            preset={selected.preset}
-            onStarted={() => setStarted(true)}
-            onSuccess={(connection) => onConnected(connection.id)}
-          />
-        )}
+        <SourceSetup
+          selected={selected}
+          onStarted={() => setStarted(true)}
+          onCancel={onCancel}
+          onConnected={onConnected}
+        />
       </div>
     );
   return (

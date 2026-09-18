@@ -31,14 +31,18 @@ type Selection = Connections[number];
 type Connection = Schema["Connection"];
 type CatalogTool = { name: string; description: string; unavailable?: boolean };
 
-function displayName(connection: Connection) {
+export function displayName(connection: Connection) {
   const suffix = ` · ${connection.status}`;
   return connection.name.endsWith(suffix)
     ? connection.name.slice(0, -suffix.length)
     : connection.name;
 }
 
-function ConnectionBrandIcon({ connection }: { connection: Connection }) {
+export function ConnectionBrandIcon({
+  connection,
+}: {
+  connection: Connection;
+}) {
   return (
     <span className={styles.connectionBrandIcon} aria-hidden="true">
       {connection.source.kind === "connector" ? (
@@ -198,7 +202,7 @@ export function AgentConnections({
   );
 }
 
-function ConnectionGroup({
+export function ConnectionGroup({
   connection,
   selection,
   readOnly,

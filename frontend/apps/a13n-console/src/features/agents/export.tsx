@@ -7,7 +7,7 @@ import {
   TabsPanel,
   TabsTab,
 } from "a13n-ui";
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { CopyButton } from "../../shared/copy";
@@ -82,10 +82,12 @@ export function ExportAgent({
   agent,
   config,
   version,
+  trigger,
 }: {
   agent: Schema["Agent"];
   config: AgentConfig;
   version: number;
+  trigger?: ReactElement;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -96,10 +98,12 @@ export function ExportAgent({
       open={open}
       onOpenChange={setOpen}
       trigger={
-        <Button variant="ghost">
-          <DownloadSimpleIcon size={14} />
-          {t("Export agent")}
-        </Button>
+        trigger ?? (
+          <Button variant="ghost">
+            <DownloadSimpleIcon size={14} />
+            {t("Export agent")}
+          </Button>
+        )
       }
       title={t("Export agent")}
       description={t(

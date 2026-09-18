@@ -14,7 +14,7 @@ import {
   DotsThreeIcon,
   PowerIcon,
 } from "@phosphor-icons/react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useClient } from "../../auth/context";
@@ -185,9 +185,13 @@ export function AgentDetails({
 export function AgentActions({
   resource,
   reload,
+  leading,
+  triggerVariant = "ghost",
 }: {
   resource: { value: Schema["Agent"]; etag?: string };
   reload: () => void;
+  leading?: ReactNode;
+  triggerVariant?: "ghost" | "outline";
 }) {
   const { value: agent, etag } = resource,
     client = useClient(),
@@ -226,8 +230,8 @@ export function AgentActions({
       <MenuTrigger
         render={
           <Button
-            variant="ghost"
-            size="icon-sm"
+            variant={triggerVariant}
+            size={triggerVariant === "outline" ? "icon" : "icon-sm"}
             aria-label={t("More agent actions")}
             title={t("More agent actions")}
           />
@@ -236,6 +240,7 @@ export function AgentActions({
         <DotsThreeIcon size={16} />
       </MenuTrigger>
       <MenuPopup align="end">
+        {leading}
         {can("agent.lifecycle") && (
           <>
             <Confirm

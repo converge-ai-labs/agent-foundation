@@ -49,6 +49,11 @@ const AgentDetail = lazy(() =>
     default: module.AgentDetail,
   })),
 );
+const AgentDetailNext = lazy(() =>
+  import("./features/agents/next/page").then((module) => ({
+    default: module.AgentDetailNext,
+  })),
+);
 const CreateAgent = lazy(() =>
   import("./features/agents/detail").then((module) => ({
     default: module.CreateAgent,
@@ -263,6 +268,10 @@ function AppContent() {
                       <Route
                         path="agents/:agentKey"
                         element={<AgentDetail />}
+                      />
+                      <Route
+                        path="agents/:agentKey/next"
+                        element={<AgentDetailNext />}
                       />
                       <Route path="sessions" element={<ConversationsPage />}>
                         <Route path="new" element={<NewConversation />} />

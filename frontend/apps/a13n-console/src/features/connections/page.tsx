@@ -18,6 +18,8 @@ import { ConnectionDetails } from "./editor";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
 import { NewConnection } from "./new";
+import { NewConnectionNext } from "./next/new-connection";
+import { useNextPreview } from "../../shared/next-preview";
 import { MCPConnectionIcon } from "./mcp-icon";
 
 export function ConnectionsPage() {
@@ -25,6 +27,7 @@ export function ConnectionsPage() {
     { workspace, can } = useWorkspace(),
     { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
+  const next = useNextPreview();
   const finalFocus = useRef<HTMLElement | null>(null);
   const [cleanup, setCleanup] = useState<Schema["ConnectionCleanupReceipt"]>();
   const connections = useInfiniteQuery({
@@ -73,7 +76,12 @@ export function ConnectionsPage() {
       actions={
         <>
           <ManageProvidersLink category="connectors" scope="workspace" />
-          {can("connection.manage") && <NewConnection onConnected={select} />}
+          {can("connection.manage") &&
+            (next ? (
+              <NewConnectionNext onConnected={select} />
+            ) : (
+              <NewConnection onConnected={select} />
+            ))}
         </>
       }
     >

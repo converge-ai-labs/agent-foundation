@@ -804,3 +804,66 @@
     width: 100%;
   }
 }
+
+/* Sectioned layout used by the agent editor when EditorLayoutContext.card is set. */
+.cardSection {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.cardSection + .cardSection {
+  margin-top: 8px;
+}
+.cardSectionHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cardSectionHeader h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+.cardSectionHeader p {
+  margin: 2px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--a13n-secondary);
+  text-wrap: pretty;
+}
+.cardSectionBody {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.cardSection .instructions {
+  padding: 0;
+  background: transparent;
+}
+.cardSection .instructions textarea {
+  min-height: 200px;
+  padding: 18px 20px;
+  border-color: transparent;
+  background: var(--a13n-surface);
+  box-shadow: none;
+  transition: background-color 120ms ease;
+}
+.cardSection .instructions textarea:hover {
+  background: color-mix(in srgb, var(--a13n-surface) 140%, transparent);
+}
+.cardSection .instructions textarea:focus-visible {
+  background: var(--a13n-elevated);
+  border-color: var(--a13n-border);
+  box-shadow: none;
+}
+.toolsetPermissionLabel {
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  height: 26px;
+  padding: 0 9px;
+  gap: 5px;
+  font-size: 12px;
+}

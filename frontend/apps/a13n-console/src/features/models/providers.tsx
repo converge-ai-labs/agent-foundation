@@ -21,6 +21,8 @@ import { requiresProviderCredential } from "./provider-credentials";
 import { ProviderForm } from "./provider-form";
 import { ProviderIcon } from "../../shared/provider-icon";
 import { useModelProviderDefinitions } from "./provider-definitions";
+import { useNextPreview } from "../../shared/next-preview";
+import { AddProviderNext } from "./next/add-provider";
 
 export function Providers({ scope }: { scope: ModelScope }) {
   const client = useClient(),
@@ -35,11 +37,19 @@ export function Providers({ scope }: { scope: ModelScope }) {
     queryFn: ({ signal }) => api.providers(signal, page.cursor),
   });
   const definitions = useModelProviderDefinitions();
+  const next = useNextPreview();
   const manage =
     scope.kind === "organization" ? organizationAdmin : can("models.manage");
   return (
     <div className={styles.stack}>
-      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+      <PageActions>
+        {manage &&
+          (next ? (
+            <AddProviderNext scope={scope} />
+          ) : (
+            <ProviderEditor scope={scope} />
+          ))}
+      </PageActions>
       {selected && (
         <ProviderEditor
           key={selected.id}
