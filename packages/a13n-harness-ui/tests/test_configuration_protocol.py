@@ -81,6 +81,7 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert preview.json()["provenance"] == {
                 "project_id": "global",
                 "agent_source": "global",
+                "default_model_id": "agent",
                 "environment_profile_id": "builtin",
                 "harness_plugin_ids": "global",
                 "environment_run_extension_ids": "global",
@@ -91,7 +92,8 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             prefix = f"/api/threads/{thread_id}"
             before = (await api.get(prefix + "/configuration")).json()
             assert before["captured"] is None and before["capture_source"] == "none"
-            assert set(before["next_run"]["provenance"].values()) == {"thread"}
+            assert before["next_run"]["provenance"]["default_model_id"] == "agent"
+            assert set(before["next_run"]["provenance"].values()) == {"thread", "agent"}
             static = await api.get("/api/agents/agent-assistant/tool-proxy")
             assert static.status_code == 200, static.text
             assert static.json()["sources"][0]["presentation"] == "dormant"
@@ -227,7 +229,7 @@ async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_
             first = (await api.post(prefix + "/submit", json={"prompt": "Inspect settings"})).json()["receipt_id"]
             with fail_after(10):
                 await started.wait()
-            assert "Sidekick is enabled" in seen[0] and "agent_id='agent-assistant'" in seen[0]
+            assert "Sidekick is enabled" in seen[0] and "Agent 'agent-assistant'" in seen[0]
             captured = (await api.get(f"/api/operations/{first}/configuration")).json()
             assert captured["webui_sidekick"] == {"agent": "agent-assistant", "model": None}
             invalid = {**document, "webui": {"sidekick": {"agent": "agent-missing"}}}

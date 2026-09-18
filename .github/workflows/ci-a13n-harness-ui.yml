@@ -186,7 +186,7 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.tests == 'true'
     runs-on: ubuntu-24.04-8core
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -222,14 +222,18 @@ jobs:
           scripts/prepare_a13n_harness_ui_assets.py
           scripts/release_version.py
 
+      # Successful full-suite steps take about two minutes; do not spend the
+      # whole job budget waiting for one stuck test or fixture teardown.
       - name: Test UI
+        timeout-minutes: 5
         env:
-          PYTEST_ADDOPTS: --durations=20
+          PYTEST_ADDOPTS: -v --durations=20 -o faulthandler_timeout=45 --timeout=60 --timeout-method=thread --max-worker-restart=0
         run: >-
           /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 7
           packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
+        timeout-minutes: 2
         run: >-
           uv run --locked --no-sync python -m pytest
           packages/a13n-environment/tests/test_direct_local.py
@@ -273,7 +277,7 @@ jobs:
     needs: changes
     if: github.event_name == 'workflow_dispatch' || needs.changes.outputs.distribution == 'true'
     runs-on: ubuntu-24.04-8core
-    timeout-minutes: 12
+    timeout-minutes: 8
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -319,6 +323,7 @@ jobs:
           pnpm --dir frontend --filter a13n-harness-ui-webui run check
 
       - name: Test WebUI
+        timeout-minutes: 4
         run: /usr/bin/time -p pnpm --dir frontend --filter a13n-harness-ui-webui run test
 
       - name: Build WebUI assets
@@ -380,6 +385,8 @@ jobs:
       (github.event_name == 'pull_request' && needs.changes.outputs.tests == 'true')
     runs-on: windows-2025
     timeout-minutes: 12
+    env:
+      PYTEST_ADDOPTS: -v -o faulthandler_timeout=90 --timeout=120 --timeout-method=thread
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -405,6 +412,7 @@ jobs:
         run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
 
       - name: Test Windows native UI integration
+        timeout-minutes: 5
         if: github.event_name == 'pull_request'
         # Keep real subprocess, filesystem, shell, and input-backend coverage.
         # Mocked platform-policy tests still run in the full Linux suite.
@@ -426,6 +434,7 @@ jobs:
         run: uv run --locked --no-sync python -m pytest --durations=20 packages/a13n-harness-ui/tests
 
       - name: Test native command lifecycle
+        timeout-minutes: 2
         run: >-
           uv run --locked --no-sync python -m pytest --durations=20
           packages/a13n-environment/tests/test_direct_local.py

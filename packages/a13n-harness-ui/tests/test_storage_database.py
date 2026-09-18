@@ -316,3 +316,45 @@ def test_project_model_preference_migration_round_trip(tmp_path: Path) -> None:
         migrator.verify_current()
     finally:
         engine.dispose()
+
+
+def test_default_model_migration_preserves_populated_configuration(tmp_path: Path) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(lambda config: command.upgrade(config, "768a6a993a59"), write=True)
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text(
+                    "INSERT INTO thread (thread_id, title, archived, metadata_version, created_at, updated_at, "
+                    "initial_state_schema_version, initial_state_digest) "
+                    "VALUES ('thread-existing', 'Existing', 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, '1', :digest)"
+                ),
+                {"digest": "1" * 64},
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO thread_configuration (thread_id, version, project_id, agent_source_kind, "
+                    "agent_source_id, environment_profile_id, harness_plugin_ids_json, "
+                    "environment_run_extension_ids_json, mcp_server_ids_json) "
+                    "VALUES ('thread-existing', 3, NULL, 'agent', 'agent-assistant', 'environment-native', '[]', '[]', '[]')"
+                )
+            )
+            before = dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one())
+        migrator.upgrade()
+        with engine.begin() as connection:
+            after = dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one())
+            assert after.pop("default_model_id") is None
+            assert after == before
+            assert connection.execute(text("SELECT initial_state_digest FROM thread")).scalar_one() == "1" * 64
+            connection.execute(text("UPDATE thread_configuration SET default_model_id = 'model-secondary'"))
+        migrator.upgrade()
+        with engine.connect() as connection:
+            assert (
+                connection.execute(text("SELECT default_model_id FROM thread_configuration")).scalar_one()
+                == "model-secondary"
+            )
+        migrator.verify_current()
+    finally:
+        engine.dispose()

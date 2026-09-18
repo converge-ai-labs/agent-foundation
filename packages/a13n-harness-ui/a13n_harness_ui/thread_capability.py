@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Literal, Protocol, cast
 
@@ -15,6 +16,7 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness_ui.composition import CompositionAcceptanceService, ResolvedRunComposition
 from a13n_harness_ui.configuration.discovery import ResourceKind, resource_page
+from a13n_harness_ui.configuration_inspection import ThreadConfigurationInspection
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError, ThreadError
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.surfaces import NewThreadDefaults, RunModelOverrides, ThreadSummary
@@ -43,11 +45,13 @@ class ThreadToolController:
         root_runs: RootRunCoordinator,
         create_thread: ThreadCreator,
         configurations: CompositionAcceptanceService,
+        inspect_configuration: Callable[[str], Awaitable[ThreadConfigurationInspection]] | None = None,
     ) -> None:
         self._projections = projections
         self._root_runs = root_runs
         self._create_thread = create_thread
         self._configurations = configurations
+        self._inspect_configuration = inspect_configuration
 
     async def resources(
         self, *, kind: ResourceKind, query: str | None, cursor: str | None, limit: int
@@ -99,10 +103,14 @@ class ThreadToolController:
             cursor=history_cursor,
             limit=history_limit,
         )
-        return {
+        result = {
             "thread": detail.model_dump(mode="json"),
             "transcript": transcript.model_dump(mode="json"),
         }
+        if self._inspect_configuration is not None:
+            inspection = await self._inspect_configuration(thread_id)
+            result["configuration"] = inspection.model_dump(mode="json")
+        return result
 
     async def run_thread(self, *, thread_id: str, prompt: str, model_id: str | None = None) -> dict[str, Any]:
         receipt = await self._root_runs.submit_prompt(
@@ -127,10 +135,21 @@ class ThreadToolController:
         model_overrides = RunModelOverrides(model_id=model_id) if model_id is not None else None
         source = await self._projections.detail(source_thread_id)
         configuration = source.thread.configuration
+        sidekick = source_composition.webui_sidekick if source_composition is not None else None
+        if sidekick is not None and agent_id is None:
+            assert source_composition is not None
+            agent_id = sidekick.agent
+            if agent_id is None and (
+                project_id != "current" or configuration.agent_source.id != source_composition.root.source_id
+            ):
+                # Inherit the calling Run's Agent, not a concurrently edited Thread selection.
+                agent_id = source_composition.root.source_id
+        default_model_id = None if sidekick is None else sidekick.model
         if project_id == "current" and agent_id is None:
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id,
                 agent_id=configuration.agent_source.id,
+                default_model_id=(default_model_id if sidekick is not None else configuration.default_model_id),
                 environment_profile_id=configuration.environment_profile_id,
                 harness_plugin_ids=configuration.harness_plugin_ids,
                 environment_run_extension_ids=configuration.environment_run_extension_ids,
@@ -141,6 +160,7 @@ class ThreadToolController:
             defaults = NewThreadDefaults(
                 project_id=configuration.project_id if project_id == "current" else project_id,
                 agent_id=agent_id,
+                default_model_id=default_model_id,
             )
         created = await self._create_thread(defaults=defaults, title=title)
         requester_project = (
@@ -222,6 +242,7 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         instructions = identity + (
             "Use get_thread() to inspect saved history and status; current_run describes the captured "
             "configuration, while thread.configuration describes next-Run selections. "
+            "The configuration inspection exposes the target's next_model_id and captured Model separately. "
             "list_projects, list_agents and list_models discover accepted resources, not proven model connectivity. "
             "Cross-Thread work creates independent root conversations, not delegated child executions. "
             "create_thread and run_thread return admission receipts, not completed work. Inspect progress with get_thread. "
@@ -240,9 +261,11 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
                 "keep that work in the current Thread rather than creating a Sidekick as a fallback. "
                 "Create a separate Thread only for coordination work that needs human attention, decisions, or "
                 "follow-up in its own conversation. For that work, use "
-                f"create_thread(agent_id={agent_id!r}{model_selection}, prompt=...). "
-                "An omitted Sidekick Agent inherits your current Agent; its Model "
-                "override applies only to the requested Run. Give a bounded task and necessary context; inspect "
+                "create_thread(prompt=...). The Host applies the captured Sidekick defaults "
+                f"(Agent {agent_id!r}{model_selection}) when arguments are omitted. "
+                "Its configured Model becomes the new Thread's default for later turns. "
+                "Explicit agent_id selects another Agent; explicit model_id overrides only the first Run. "
+                "Give a bounded task and necessary context; inspect "
                 "results before integrating them. Other configured Agents and Models remain selectable. "
                 "The created task identifies your Thread and Project and tells the worker how to ask you questions "
                 "and report back through send_thread_message. Answer its questions through that same tool. "
@@ -372,9 +395,11 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         """Create independent work with a return address and return immediately after run admission.
 
         project_id='current' keeps this Project; null selects no Project; an ID selects another Project.
-        With neither Project nor Agent changed, inherit this Thread's selections. Explicit selections
-        use normal Project/Agent defaults instead. model_id overrides the first Run only; it never edits
-        the Agent or sticky Thread selections. Discover IDs using list_projects, list_agents and list_models.
+        Enabled Sidekick defaults are applied by the Host: omitted agent_id uses its Agent (or inherits
+        the caller); its configured Model initializes the new Thread's persistent default_model_id.
+        Explicit agent_id wins. model_id overrides the first Run only, never the saved default.
+        Without Sidekick, unchanged Project/Agent inherits this Thread's selections; explicit selections
+        use normal Project/Agent defaults. Discover IDs using list_projects, list_agents and list_models.
 
         The returned receipt is not completion. Use get_thread to inspect progress.
         If admission fails after creation, the returned thread_id remains valid; do not create a duplicate.

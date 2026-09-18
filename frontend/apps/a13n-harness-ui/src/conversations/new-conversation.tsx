@@ -14,7 +14,7 @@ import {
   useSearchParams,
 } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Robot, Folder, Monitor } from "@phosphor-icons/react";
+import { Robot, Folder } from "@phosphor-icons/react";
 import { SearchPicker } from "a13n-ui";
 import {
   useProjects,
@@ -33,7 +33,7 @@ import type { Profile } from "../shell/presence";
 import { Composer, ComposerDrafts, useDraft } from "./composer";
 import { NewDraftStore, type NewDraft } from "./new-draft";
 import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
-import { EnvironmentMode, ThreadRunChoices } from "./thread-run-choices";
+import { EnvironmentPicker, ThreadRunChoices } from "./thread-run-choices";
 import { refreshThreadLists } from "./queries";
 import { ConversationTranscript } from "./transcript";
 import { ConversationOpening, useInitialReady } from "./opening";
@@ -309,43 +309,6 @@ function NewConversation({
                 ]}
               />
             </div>
-            <div className={styles.location}>
-              <Monitor aria-hidden="true" />
-              <SearchPicker
-                label="Environment"
-                popupClassName={styles.choicePopup}
-                placeholder={
-                  effectiveEnvironment?.name ?? "Default environment"
-                }
-                emptyMessage="No environments found."
-                disabled={preparing || draft.attempted}
-                value={defaults.environment_profile_id ?? ""}
-                onValueChange={(value) =>
-                  change({ environment_profile_id: value || null })
-                }
-                groups={[
-                  {
-                    label: "Environments",
-                    options: [
-                      {
-                        value: "",
-                        label:
-                          !defaults.environment_profile_id &&
-                          effectiveEnvironment
-                            ? `Default · ${effectiveEnvironment.name}`
-                            : "Default environment",
-                        description: "Follow the project or app default.",
-                      },
-                      ...(selectors.data?.environments ?? []).map((item) => ({
-                        value: item.profile_id,
-                        label: item.name,
-                        description: item.description,
-                      })),
-                    ],
-                  },
-                ]}
-              />
-            </div>
           </fieldset>
           <Composer
             autoFocus={pageReady}
@@ -372,7 +335,16 @@ function NewConversation({
             onReviewOutcome={openConversation}
             modelId={composerDraft.modelId}
             leadingControls={
-              <EnvironmentMode environment={effectiveEnvironment} />
+              <EnvironmentPicker
+                catalog={selectors.data}
+                defaultProfileId={effectiveEnvironment?.profile_id}
+                value={composerDraft.environmentProfileId}
+                disabled={choicesDisabled}
+                onChange={(value) => {
+                  composerDraft.environmentProfileId = value;
+                  composerDraft.notify();
+                }}
+              />
             }
             controls={(expanded) => (
               <ThreadRunChoices

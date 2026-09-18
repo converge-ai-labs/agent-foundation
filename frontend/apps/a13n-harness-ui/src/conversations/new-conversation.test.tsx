@@ -8,6 +8,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { Link, MemoryRouter, Route, Routes, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
@@ -215,8 +216,14 @@ beforeEach(() => {
             environments: [
               {
                 profile_id: "environment-native",
-                name: "Local",
+                name: "Full Control",
                 mode: "full-control",
+              },
+              {
+                profile_id: "environment-sandbox",
+                name: "Sandbox",
+                mode: "sandbox",
+                description: "Isolated local execution without networking.",
               },
             ],
           });
@@ -1061,8 +1068,8 @@ it("waits for project, catalog and the selected defaults before exposing the new
   expect(document.activeElement).toBe(editor);
   expect(screen.getByRole("heading").textContent).toContain("Example project");
   expect(
-    screen.getByRole("combobox", { name: "Environment" }).textContent,
-  ).toContain("Local");
+    screen.getByRole("combobox", { name: "Execution mode" }).textContent,
+  ).toContain("Full Control");
   expect(screen.queryByText("Preparing your conversation…")).toBeNull();
   expect(writes).toHaveLength(0);
 });
@@ -1513,3 +1520,42 @@ it("returns to the latest window when New output is clicked from a historical in
   expect(screen.queryByText("Earlier answer")).toBeNull();
   expect(screen.queryByRole("button", { name: "Back to latest" })).toBeNull();
 });
+
+it.each(["new", "existing"])(
+  "selects an environment for Send on a %s conversation without patching defaults",
+  async (kind) => {
+    mount(kind === "new" ? path : `/threads/${id}`);
+    if (kind === "new") await fill();
+    else {
+      await screen.findByRole("button", { name: "Send" });
+      act(() => drafts.get(id)!.doc.getText("text").insert(0, "Continue"));
+    }
+    const picker = await screen.findByRole("combobox", {
+      name: "Execution mode",
+    });
+    await waitFor(() => expect(picker.hasAttribute("disabled")).toBe(false));
+    const user = userEvent.setup();
+    await user.click(picker);
+    await user.click(await screen.findByRole("option", { name: /Sandbox/ }));
+    expect(drafts.get(id)!.environmentProfileId).toBe("environment-sandbox");
+    await waitFor(() => expect(picker.textContent).toContain("Sandbox"));
+    expect(writes).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await waitFor(() =>
+      expect(writes.some((request) => request.url.endsWith("/submit"))).toBe(
+        true,
+      ),
+    );
+    const submit = writes.find((request) => request.url.endsWith("/submit"))!;
+    expect(await submit.json()).toMatchObject({
+      environment_profile_id: "environment-sandbox",
+    });
+    expect(writes.some((request) => request.method === "PATCH")).toBe(false);
+    if (kind === "new") {
+      const created = await writes
+        .find((request) => new URL(request.url).pathname === "/api/threads")!
+        .json();
+      expect(created.defaults).not.toHaveProperty("environment_profile_id");
+    }
+  },
+);

@@ -366,7 +366,9 @@ def test_start_only_shell_is_one_row_before_arguments_arrive() -> None:
 
 @pytest.mark.parametrize("name", ["shell_exec", "shell_wait"])
 @pytest.mark.parametrize("width", [28, 80, 120])
-@pytest.mark.parametrize("output", ["", "captured line\n", "captured line\n" * 100])
+@pytest.mark.parametrize(
+    "output", ["", "captured line\n", "captured line\n" * 100], ids=["empty", "one-line", "many-lines"]
+)
 def test_shell_exec_and_wait_wrap_summary_without_dumping_capture(name: str, width: int, output: str) -> None:
     renderer = StreamRenderer(Status())
     if name == "shell_wait":

@@ -742,6 +742,7 @@ def _configuration(value: ThreadConfiguration) -> ThreadConfigurationView:
         version=value.version,
         project_id=value.project_id,
         agent_source=AgentSourceView.from_stored(value.agent_source),
+        default_model_id=value.default_model_id,
         environment_profile_id=value.environment_profile_id,
         harness_plugin_ids=value.harness_plugin_ids,
         environment_run_extension_ids=value.environment_run_extension_ids,

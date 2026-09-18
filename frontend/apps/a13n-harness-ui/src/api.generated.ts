@@ -1967,6 +1967,12 @@ export interface components {
              */
             agent_source: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
             /**
+             * Default Model Id
+             * @default agent
+             * @enum {string}
+             */
+            default_model_id?: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
+            /**
              * Environment Profile Id
              * @enum {string}
              */
@@ -3005,6 +3011,8 @@ export interface components {
             /** Project Id */
             project_id?: string | null;
             agent_source?: components["schemas"]["AgentSource"] | null;
+            /** Default Model Id */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Harness Plugin Ids */
@@ -3870,6 +3878,8 @@ export interface components {
             /** Project Id */
             project_id?: string | null;
             agent_source: components["schemas"]["AgentSource"];
+            /** Default Model Id */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id: string;
             /**
@@ -3928,6 +3938,11 @@ export interface components {
              */
             project_id?: string | null;
             agent_source: components["schemas"]["AgentSourceView"];
+            /**
+             * Default Model Id
+             * @default null
+             */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id: string;
             /**
@@ -4982,6 +4997,8 @@ export interface components {
             project_id?: string | null;
             /** Agent Id */
             agent_id?: string | null;
+            /** Default Model Id */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Harness Plugin Ids */
@@ -4997,6 +5014,8 @@ export interface components {
             project_id?: string | null;
             /** Agent Id */
             agent_id?: string | null;
+            /** Default Model Id */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Harness Plugin Ids */
@@ -5167,6 +5186,8 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            /** Environment Profile Id */
+            environment_profile_id?: string | null;
             /** Model Id */
             model_id?: string | null;
             thinking?: components["schemas"]["ThinkingSelection"] | null;

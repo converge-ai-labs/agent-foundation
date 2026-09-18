@@ -152,6 +152,7 @@ class RootRunExecutor:
         response: ThreadDeferredResponse | None = None,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
+        environment_profile_id: str | None = None,
         on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
         on_composition: Callable[[ObjectRef], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
@@ -178,13 +179,8 @@ class RootRunExecutor:
                 raise ThreadError("An archived Thread cannot run.", code="thread_archived")
             if mutation is not None:
                 thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
-            preparation_span.set_attribute("a13n.phase.step", "configuration")
-            source = await self._required_configuration()
-            published = await self._compositions.publish(source, _selection(thread), model_overrides=model_overrides)
-            if on_composition is not None:
-                await on_composition(published.reference)
             preparation_span.set_attribute("a13n.phase.step", "continuation")
-            previous_state, deferred = await self._load_run_state(thread)
+            previous_state, deferred, previous_composition = await self._load_run_state(thread)
             display = DisplayHistoryCollector(previous_state.message_history, saved_display_history(previous_state))
             deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
             if prompt is not None and deferred is not None:
@@ -192,6 +188,24 @@ class RootRunExecutor:
                     "The selected Thread continuation has unresolved deferred tool requests.",
                     code="thread_deferred_pending",
                 )
+            # Answering a deferred request (including an automatic timeout) must
+            # not silently drop a Run-only Sandbox selection. An explicit
+            # Environment mutation still has the ordinary next-admission effect.
+            if (
+                response is not None
+                and environment_profile_id is None
+                and not (mutation and "environment_profile_id" in mutation.patch.model_fields_set)
+            ):
+                assert previous_composition is not None
+                captured = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
+                environment_profile_id = captured.environment_profile.profile_id
+            preparation_span.set_attribute("a13n.phase.step", "configuration")
+            source = await self._required_configuration()
+            published = await self._compositions.publish(
+                source, _selection(thread, environment_profile_id), model_overrides=model_overrides
+            )
+            if on_composition is not None:
+                await on_composition(published.reference)
             base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
 
             async def save_checkpoint(state: HarnessState) -> str:
@@ -490,21 +504,25 @@ class RootRunExecutor:
             )
         return source
 
-    async def _load_run_state(self, thread: Thread) -> tuple[HarnessState, DeferredToolRequests | None]:
+    async def _load_run_state(
+        self, thread: Thread
+    ) -> tuple[HarnessState, DeferredToolRequests | None, ObjectRef | None]:
         if thread.continuation is None:
             stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
             state = stored.harness_state
             deferred = None
+            composition = None
         else:
             stored_continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
             state = stored_continuation.harness_state
             deferred = stored_continuation.deferred_requests
+            composition = stored_continuation.run_composition
         if state.thread_id != thread.thread_id:
             raise ThreadError(
                 "The selected Thread state belongs to another Thread.",
                 code="thread_continuation_incompatible",
             )
-        return state, deferred
+        return state, deferred, composition
 
     async def _select_state(
         self,
@@ -679,7 +697,7 @@ def _validate_question_result(arguments: object, value: object) -> dict[str, obj
     return answers.model_dump(mode="json", exclude_none=True)
 
 
-def _selection(thread: Thread) -> ThreadCompositionSelection:
+def _selection(thread: Thread, environment_profile_id: str | None = None) -> ThreadCompositionSelection:
     source = thread.configuration.agent_source
     return ThreadCompositionSelection(
         thread_id=thread.thread_id,
@@ -687,7 +705,10 @@ def _selection(thread: Thread) -> ThreadCompositionSelection:
         project_id=thread.configuration.project_id,
         agent_source_kind=source.kind,
         agent_source_id=source.id,
-        environment_profile_id=thread.configuration.environment_profile_id,
+        default_model_id=thread.configuration.default_model_id,
+        environment_profile_id=(
+            thread.configuration.environment_profile_id if environment_profile_id is None else environment_profile_id
+        ),
         harness_plugin_ids=thread.configuration.harness_plugin_ids,
         environment_run_extension_ids=thread.configuration.environment_run_extension_ids,
         mcp_server_ids=thread.configuration.mcp_server_ids,

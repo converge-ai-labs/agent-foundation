@@ -76,6 +76,7 @@ class SessionBackend:
         self.thinking_control: ThinkingControl | None = None
         self.fast_control: FastControl | None = None
         self._model_preference_project_id: str | None = None
+        self._model_from_preference = False
         self.environment = request.environment_profile_id or (
             environment_profile_id_for_mode(request.environment_mode) if request.environment_mode else None
         )
@@ -121,6 +122,7 @@ class SessionBackend:
             model_id = None
         self.overrides = RunModelOverrides(model_id=model_id)
         self._model_preference_project_id = scope
+        self._model_from_preference = True
 
     async def refresh(self, *, thread: ThreadSummary | None = None) -> bool:
         configuration = await self.app.current_configuration()
@@ -163,7 +165,12 @@ class SessionBackend:
             self.environment = thread.configuration.environment_profile_id
         agent = configuration.agents.get(agent_id or "")
         self.status.agent = "not configured" if agent is None else agent.name
-        model_id = self.overrides.model_id or (None if agent is None else agent.model)
+        selected = thread.configuration if thread is not None else draft
+        model_id = (
+            self.overrides.model_id
+            or (None if selected is None else selected.default_model_id)
+            or (None if agent is None else agent.model)
+        )
         model = configuration.models.get(model_id or "")
         self.status.environment = (
             draft.environment_profile_id
@@ -271,6 +278,7 @@ class SessionBackend:
         # Publish memory before changing the local selection; failed writes retain it.
         # Switching models drops model-specific reasoning, not the selected Agent.
         self.overrides = RunModelOverrides(model_id=model_id)
+        self._model_from_preference = False
         self.status.context_tokens = None
         await self.refresh()
         scope = (
@@ -396,7 +404,13 @@ class SessionBackend:
                     patch=ThreadConfigurationPatch(project_id=project_id),
                 ),
             )
-        await self._restore_project_model(thread.configuration.project_id)
+        if thread.configuration.default_model_id is None:
+            await self._restore_project_model(thread.configuration.project_id)
+        elif self._model_from_preference:
+            self.overrides = RunModelOverrides()
+            self._model_from_preference = False
+            self._model_preference_project_id = None
+        # A saved default outranks restored Project memory, not an explicit local choice.
         # All fallible I/O precedes the local selection change.
         self.thread_id = selected
         self.status.restore_usage(totals.root)
@@ -404,10 +418,11 @@ class SessionBackend:
         agent = configuration.agents.get(thread.configuration.agent_source.id)
         self.agent_id = thread.configuration.agent_source.id
         if self.overrides.model_id is None:
+            default_model_id = thread.configuration.default_model_id or (None if agent is None else agent.model)
             # Historical usage never restores a temporary model selection.
             self.overrides = RunModelOverrides.model_validate(
                 {
-                    "thinking": usage.thinking if agent is not None and usage.model_id == agent.model else None,
+                    "thinking": usage.thinking if usage.model_id == default_model_id else None,
                     "service_tier": self.overrides.service_tier,
                     "fast": self.overrides.fast,
                 }

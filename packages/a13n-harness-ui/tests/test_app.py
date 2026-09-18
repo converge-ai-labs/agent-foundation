@@ -407,10 +407,19 @@ async def test_configuration_observer_reloads_only_after_metadata_fingerprint_ch
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import a13n_harness_ui.app as app_module
+    from anyio import create_memory_object_stream
 
     root = _write_configuration(tmp_path)
     calls = 0
     original = app_module.load_harness_ui_configuration
+    ticks, waiting = create_memory_object_stream[Event](0)
+
+    async def tick(seconds):
+        if seconds != 0.5:
+            return await sleep(seconds)
+        gate = Event()
+        await ticks.send(gate)
+        await gate.wait()
 
     async def counted(path: Path, *, content_plugin_root: Path | None = None):
         nonlocal calls
@@ -418,21 +427,24 @@ async def test_configuration_observer_reloads_only_after_metadata_fingerprint_ch
         return await original(path, content_plugin_root=content_plugin_root)
 
     monkeypatch.setattr(app_module, "load_harness_ui_configuration", counted)
-    async with open_harness_ui_app(
-        _settings(tmp_path / "state"),
-        configuration_path=root,
-    ):
-        await sleep(1.2)
-        assert calls == 2
-        (tmp_path / "agents/assistant.yaml").write_text(
-            (tmp_path / "agents/assistant.yaml").read_text().replace("Help the user.", "Help carefully.")
-        )
-        with fail_after(3):
-            while calls < 3:
-                await sleep(0.05)
-        stable_calls = calls
-        await sleep(0.7)
-        assert calls == stable_calls
+    monkeypatch.setattr(app_module, "sleep", tick)
+    with fail_after(5):
+        async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root):
+            (await waiting.receive()).set()
+            gate = await waiting.receive()  # The initial fingerprint scan has completed.
+            assert calls == 2
+            gate.set()
+            gate = await waiting.receive()
+            assert calls == 2
+            (tmp_path / "agents/assistant.yaml").write_text(
+                (tmp_path / "agents/assistant.yaml").read_text().replace("Help the user.", "Help carefully.")
+            )
+            gate.set()
+            gate = await waiting.receive()
+            assert calls == 3
+            gate.set()
+            await waiting.receive()
+            assert calls == 3
 
 
 async def test_configuration_observer_invalidates_diagnostic_changes_without_generation_change(
@@ -2189,9 +2201,9 @@ async def test_summary_preserves_display_history_after_checkpoint_and_app_reopen
         assert [part.text for entry in after.entries for part in entry.parts].count("Original answer") == 1
 
 
-async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions(tmp_path):
+async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions(tmp_path, monkeypatch):
     root = _write_configuration(tmp_path)
-    root.write_text(root.read_text() + "tools:\n  interaction_timeout_seconds: 0.3\n")
+    root.write_text(root.read_text() + "tools:\n  interaction_timeout_seconds: 120\n")
     settings = _settings(tmp_path / "state")
     async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
         app._root_runs._executor._agents = _DeferredReconstructor()
@@ -2202,19 +2214,18 @@ async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions
         assert first is not None and first.expires_at is not None and first.server_time is not None
         second = await app.thread_decisions(thread_id=thread.thread_id)
         assert second is not None and second.expires_at == first.expires_at
-        with fail_after(5):
-            while True:
-                latest = await app._root_runs.latest(thread.thread_id)
-                if latest is not None and latest.receipt.receipt_id != receipt.receipt_id:
-                    break
-                await sleep(0.01)
-        assert latest.status is RootOperationStatus.completed
-        assert latest.outcome is not None
-        assert "timed out" in str(latest.outcome.execution.output)
+        pending_wait = app._root_runs._interaction_waits[thread.thread_id]
+        with monkeypatch.context() as clock:
+            clock.setattr("a13n_harness_ui.root_run.monotonic", lambda: pending_wait.deadline + 1)
+            await app._root_runs._expire_interaction(thread.thread_id, pending_wait)
+        latest = await app._root_runs.active(thread.thread_id) or await app._root_runs.latest(thread.thread_id)
+        assert latest is not None and latest.receipt.receipt_id != receipt.receipt_id
+        resumed = await app.wait_root_operation(latest.receipt.receipt_id)
+        assert resumed.status is RootOperationStatus.completed
+        assert resumed.outcome is not None
+        assert "timed out" in str(resumed.outcome.execution.output)
         assert await app.thread_decisions(thread_id=thread.thread_id) is None
 
-        root.write_text(root.read_text().replace("0.3", "120"))
-        await app.reload_configuration()
         pending_thread = await app.create_thread()
         receipt = await app.submit_thread(thread_id=pending_thread.thread_id, prompt="ask")
         await app.wait_root_operation(receipt.receipt_id)

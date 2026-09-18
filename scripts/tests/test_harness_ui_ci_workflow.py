@@ -93,7 +93,13 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert jobs["tests"]["runs-on"] == "ubuntu-24.04-8core"
     assert "packages/a13n-harness-ui/tests" in arguments
     assert not any(arg.startswith("scripts/tests/") for arg in arguments)
-    assert "--durations=20" in tests["env"]["PYTEST_ADDOPTS"]
+    options = shlex.split(tests["env"]["PYTEST_ADDOPTS"])
+    assert {"-v", "--durations=20", "--timeout=60", "--timeout-method=thread", "--max-worker-restart=0"} <= set(options)
+    assert "faulthandler_timeout=45" in options
+    assert tests["timeout-minutes"] == 5
+    assert jobs["tests"]["timeout-minutes"] == 8
+    assert jobs["distribution"]["timeout-minutes"] == 8
+    assert "--timeout=120" in jobs["windows"]["env"]["PYTEST_ADDOPTS"]
     assert "Test native command lifecycle" in by_name
     assert not any("pnpm" in step.get("run", "") for step in steps)
     for name in ("tests", "frontend", "distribution"):

@@ -175,6 +175,7 @@ class ThreadConfigurationRecord(Base):
     project_id: Mapped[str | None] = mapped_column(String(_ID), nullable=True)
     agent_source_kind: Mapped[str] = mapped_column(String(16), nullable=False)
     agent_source_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
+    default_model_id: Mapped[str | None] = mapped_column(String(_ID), nullable=True)
     environment_profile_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
     harness_plugin_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
     environment_run_extension_ids_json: Mapped[str] = mapped_column(Text, nullable=False)

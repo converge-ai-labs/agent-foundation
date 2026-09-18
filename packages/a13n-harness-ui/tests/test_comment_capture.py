@@ -110,7 +110,7 @@ async def test_comment_capture_is_explicit_complete_scoped_and_retained_through_
             assert again.text == captured  # later history never substitutes for the original output
 
 
-@pytest.mark.parametrize("original", ["x" * 65537, "\U0001f600" * 20000])
+@pytest.mark.parametrize("original", ["x" * 65537, "\U0001f600" * 20000], ids=["ascii-byte-limit", "utf8-byte-limit"])
 async def test_comment_capture_rejects_incomplete_or_oversized_utf8_without_truncation(tmp_path, monkeypatch, original):
     configuration = _write_configuration(tmp_path)
 

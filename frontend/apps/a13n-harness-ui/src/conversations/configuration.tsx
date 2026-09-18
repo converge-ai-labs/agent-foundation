@@ -19,6 +19,10 @@ function ConfigurationSummary({
         <dd>{configuration.agent_source.id}</dd>
       </div>
       <div>
+        <dt>Default model</dt>
+        <dd>{configuration.default_model_id ?? "Follow Agent model"}</dd>
+      </div>
+      <div>
         <dt>Environment</dt>
         <dd>{configuration.environment_profile_id}</dd>
       </div>
@@ -297,6 +301,24 @@ export function ThreadSelections({
             value: agent.agent_id,
             label: agent.name,
           }))}
+        />
+        <ChoiceField
+          label="Default model"
+          value={
+            patch.default_model_id === undefined
+              ? (configuration.default_model_id ?? "")
+              : (patch.default_model_id ?? "")
+          }
+          onValueChange={(value) =>
+            setPatch({ ...patch, default_model_id: value || null })
+          }
+          options={[
+            { value: "", label: "Follow Agent model" },
+            ...(selectors.data?.models ?? []).map((model) => ({
+              value: model.model_id,
+              label: model.name,
+            })),
+          ]}
         />
         <ChoiceField
           label="Environment"

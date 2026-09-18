@@ -15,7 +15,9 @@ from pydantic_ai.messages import RetryPromptPart, ToolReturnPart
 
 
 @pytest.mark.parametrize("outcome", ["success", "failed", "denied", "interrupted"])
-@pytest.mark.parametrize("content", ["plain result", None, {"ok": True}, "x" * (128 * 1024)])
+@pytest.mark.parametrize(
+    "content", ["plain result", None, {"ok": True}, "x" * (128 * 1024)], ids=["text", "none", "object", "large-text"]
+)
 def test_saved_tool_result_preserves_native_outcome(
     outcome: Literal["success", "failed", "denied", "interrupted"], content: object
 ) -> None:

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.composition import ResolvedRunComposition
 from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.configuration.discovery import resource_page
 from a13n_harness_ui.errors import ConfigurationError, ThreadError
@@ -47,6 +48,7 @@ def controller(app) -> ThreadToolController:
         root_runs=app._root_runs,
         create_thread=app.create_thread,
         configurations=app._configurations,
+        inspect_configuration=app.inspect_thread_configuration,
     )
 
 
@@ -291,7 +293,7 @@ async def test_invalid_sidekick_configuration_is_rejected(tmp_path: Path, sideki
         ({"agent": "agent-worker", "model": "model-primary"}, "agent-worker", "model-primary"),
     ],
 )
-async def test_sidekick_agent_inheritance_and_model_override_use_normal_run_composition(
+async def test_host_applies_sidekick_defaults_to_creation_and_later_turns(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sidekick, expected_agent, expected_model
 ) -> None:
     root = configuration(tmp_path)
@@ -326,28 +328,82 @@ async def test_sidekick_agent_inheritance_and_model_override_use_normal_run_comp
             "in its own conversation" in instructions[0]
         )
         assert "For useful independent work, prefer create_thread" not in instructions[0]
-        assert f"agent_id={expected_agent!r}" in instructions[0]
+        assert f"Agent {expected_agent!r}" in instructions[0]
+        assert "Host applies the captured Sidekick defaults" in instructions[0]
+        reference = await app._root_runs.composition_reference(first.receipt_id)
+        composition = await app._store.objects.read_model(reference, ResolvedRunComposition)
         if "model" in sidekick:
             assert f"model_id={sidekick['model']!r}" in instructions[0]
         result = await controller(app).create_thread(
             source_thread_id=source.thread_id,
             prompt="Independent work",
             title=None,
-            agent_id=sidekick.get("agent"),
-            model_id=sidekick.get("model"),
+            agent_id=None,
+            source_composition=composition,
         )
         receipt = result["receipt"]["receipt_id"]
         assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
         captured = await app.inspect_operation_configuration(receipt)
         assert captured.agent.source_id == expected_agent
         assert captured.agent.model_id == expected_model
-        # Overrides are per-operation; configured Agents and future plain turns are unchanged.
+        saved = (await app.get_thread(result["thread_id"])).thread.configuration
+        assert saved.default_model_id == sidekick.get("model")
+        # Host defaults are persistent; explicit overrides are still per-operation.
         again = await controller(app).run_thread(thread_id=result["thread_id"], prompt="Follow-up")
         assert (await app.wait_root_operation(again["receipt_id"])).status is RootOperationStatus.completed
         following = await app.inspect_operation_configuration(again["receipt_id"])
-        assert following.agent.model_id == (
-            "model-primary" if expected_agent == "agent-assistant" else "model-secondary"
+        assert following.agent.model_id == expected_model
+        message = await controller(app).send_thread_message(
+            source_thread_id=source.thread_id, thread_id=result["thread_id"], message="Continue via message"
         )
+        receipt = message["receipt"]["receipt_id"]
+        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
+        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == expected_model
+        inspected = await controller(app).get_thread(
+            thread_id=result["thread_id"], history_cursor=None, history_limit=1
+        )
+        assert inspected["configuration"]["next_model_id"] == expected_model
+        assert inspected["configuration"]["captured"]["agent"]["model_id"] == expected_model
+        override = "model-secondary" if expected_model == "model-primary" else "model-primary"
+        explicit = await controller(app).run_thread(
+            thread_id=result["thread_id"], prompt="One-off override", model_id=override
+        )
+        assert (await app.wait_root_operation(explicit["receipt_id"])).status is RootOperationStatus.completed
+        assert (await app.inspect_operation_configuration(explicit["receipt_id"])).agent.model_id == override
+        assert (await app.inspect_thread_configuration(result["thread_id"])).next_model_id == expected_model
+        # Explicit creation Agent and Model win independently; the configured default remains durable.
+        explicit_create = await controller(app).create_thread(
+            source_thread_id=source.thread_id,
+            prompt="Explicit choices",
+            title=None,
+            agent_id="agent-assistant",
+            model_id=override,
+            source_composition=composition,
+        )
+        explicit_receipt = explicit_create["receipt"]["receipt_id"]
+        assert (await app.wait_root_operation(explicit_receipt)).status is RootOperationStatus.completed
+        explicit_capture = await app.inspect_operation_configuration(explicit_receipt)
+        assert explicit_capture.agent.source_id == "agent-assistant"
+        assert explicit_capture.agent.model_id == override
+        assert (
+            await app.get_thread(explicit_create["thread_id"])
+        ).thread.configuration.default_model_id == sidekick.get("model")
+    # Disabling Sidekick and reopening the App must not rewrite existing Threads.
+    document["webui"] = {"sidekick": None}
+    root.write_text(yaml.safe_dump(document))
+    async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
+        resumed = await controller(app).send_thread_message(
+            source_thread_id=source.thread_id, thread_id=result["thread_id"], message="After restart"
+        )
+        receipt = resumed["receipt"]["receipt_id"]
+        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
+        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == expected_model
+        ordinary = await controller(app).send_thread_message(
+            source_thread_id=result["thread_id"], thread_id=source.thread_id, message="Return report"
+        )
+        receipt = ordinary["receipt"]["receipt_id"]
+        assert (await app.wait_root_operation(receipt)).status is RootOperationStatus.completed
+        assert (await app.inspect_operation_configuration(receipt)).agent.model_id == "model-primary"
 
 
 async def test_terminal_does_not_receive_sidekick_instructions(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
