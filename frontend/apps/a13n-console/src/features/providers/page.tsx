@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { useAccess } from "../../layout/workspace";
 import { providerCategories, providerCategory } from "./categories";
-import { Empty } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
 import { Providers } from "../models/providers";
 import { WebProviders } from "../web/page";
 import { MemoryProviders } from "../memory/providers";

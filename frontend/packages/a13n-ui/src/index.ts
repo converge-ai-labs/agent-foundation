@@ -31,6 +31,11 @@ export { ModalFrame } from "./patterns/modal-frame";
 export { ChoiceField } from "./patterns/choice-field";
 export { SearchPicker } from "./patterns/search-picker";
 export { SettingsRow, SettingsSection } from "./patterns/settings";
+export {
+  StatusPill,
+  type StatusPillProps,
+  type StatusPillVariant,
+} from "./patterns/status-pill";
 export { DisclosureSection } from "./patterns/disclosure-section";
 export { Logo, a13nLogoUrl } from "./brand/logo";
 export { Wordmark } from "./brand/wordmark";

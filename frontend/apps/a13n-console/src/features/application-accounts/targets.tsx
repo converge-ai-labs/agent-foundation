@@ -1,4 +1,4 @@
-import { Identifier } from "../../shared/copy";
+import { Identifier } from "../../shared/identity";
 import {
   Button,
   ChoiceField,
@@ -25,16 +25,18 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { Confirm, FormActions, TextAreaField } from "../../shared/form";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { Confirm } from "../../shared/dialogs";
+import { FormActions, TextAreaField } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
-import { SchemaFields } from "../../shared/schema-fields";
+import { SchemaFields } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import {
   inputOverride,
   jsonObject,
   validateSettings,
-} from "../../shared/validation";
+} from "../../shared/forms";
 import { useAccountProviders, useReceptionOptions } from "./data";
 import { BatchingFields } from "./form";
 
@@ -152,7 +154,7 @@ export function AccountTargets({
               {
                 label: t("Reception"),
                 render: (item) => (
-                  <StateBadge
+                  <StatePill
                     state={item.receive_enabled ? "enabled" : "disabled"}
                   />
                 ),

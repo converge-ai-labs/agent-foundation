@@ -1,5 +1,5 @@
 import { Button, FormField, Input, ModalFrame, Textarea } from "a13n-ui";
-import { FileUpload } from "../../shared/file-upload";
+import { FileUpload } from "../../shared/forms";
 
 import { useMutation } from "@tanstack/react-query";
 import { useLayoutEffect, useRef, useState } from "react";
@@ -10,7 +10,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { TextAreaField } from "../../shared/form";
+import { TextAreaField } from "../../shared/forms";
 import styles from "./conversations.module.css";
 
 export function Composer({

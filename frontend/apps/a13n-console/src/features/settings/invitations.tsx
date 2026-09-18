@@ -1,22 +1,23 @@
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ResourceEditorButton } from "../../shared/identity";
 import { ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { PageActions } from "../../shared/page-actions";
+import { PageActions } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm, FormActions } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
+import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { SecretReveal } from "./keys";
 import { roleOptions, type MembershipScope } from "./members";
@@ -86,7 +87,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
               {
                 label: t("Status"),
                 render: (item) => (
-                  <StateBadge
+                  <StatePill
                     state={
                       item.accepted_at
                         ? "accepted"
@@ -225,7 +226,7 @@ function InvitationEditor({
     >
       {mutation.data ? (
         <div className={styles.stack}>
-          <StateBadge state={mutation.data.delivery} />
+          <StatePill state={mutation.data.delivery} />
           {mutation.data.invitation_url ? (
             <SecretReveal value={mutation.data.invitation_url} />
           ) : (

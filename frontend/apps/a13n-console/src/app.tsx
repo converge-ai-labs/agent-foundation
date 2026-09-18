@@ -16,7 +16,9 @@ import { ConnectionAuthorizationCallback } from "./features/connections/callback
 import { AppearanceProvider } from "./layout/appearance";
 import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
-import { Empty, ErrorPage, Loading, Page } from "./shared/feedback";
+import { Empty } from "./shared/collection";
+import { ErrorPage, Loading } from "./shared/feedback";
+import { Page } from "./shared/page";
 
 const ConfigurationPage = lazy(() =>
   import("./features/configuration-assistant/page").then((module) => ({
@@ -47,11 +49,6 @@ const Agents = lazy(() =>
 const AgentDetail = lazy(() =>
   import("./features/agents/detail").then((module) => ({
     default: module.AgentDetail,
-  })),
-);
-const AgentDetailNext = lazy(() =>
-  import("./features/agents/next/page").then((module) => ({
-    default: module.AgentDetailNext,
   })),
 );
 const CreateAgent = lazy(() =>
@@ -268,10 +265,6 @@ function AppContent() {
                       <Route
                         path="agents/:agentKey"
                         element={<AgentDetail />}
-                      />
-                      <Route
-                        path="agents/:agentKey/next"
-                        element={<AgentDetailNext />}
                       />
                       <Route path="sessions" element={<ConversationsPage />}>
                         <Route path="new" element={<NewConversation />} />

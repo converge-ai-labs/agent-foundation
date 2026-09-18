@@ -7,7 +7,9 @@ import { useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data } from "../../shared/api";
-import { Empty, ErrorNotice, Page } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import { providersPath } from "../providers/navigation";
 import { memoryKey, type MemoryTarget } from "./api";
 import { MemoryContents } from "./contents";
@@ -80,8 +82,6 @@ function MemoryPageSelection({
           <a
             className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
             href={providersPath("memory", "workspace", workspace.key)}
-            target="_blank"
-            rel="noopener noreferrer"
           >
             {t("Manage memory providers")}
             <ArrowSquareOutIcon size={14} aria-hidden="true" />

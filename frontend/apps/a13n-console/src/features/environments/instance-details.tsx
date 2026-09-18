@@ -6,17 +6,17 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ResourceIdentity } from "../../shared/collection";
-import { CopyableId } from "../../shared/copy";
+import { CopyableId } from "../../shared/identity";
 import {
   ErrorNotice,
   ErrorToast,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
 import { useIdempotency } from "../../shared/idempotency";
-import { ProviderIcon } from "../../shared/provider-icon";
+import { ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
 import { environmentQuery } from "./api";
 import { EnvironmentNameEditor } from "./instance-name";
@@ -132,10 +132,10 @@ export function EnvironmentDetails({
               )}
               <div className={styles.twoColumns}>
                 <ReadOnlyField label={t("Status")}>
-                  <StateBadge state={detail.data.value.status} />
+                  <StatePill state={detail.data.value.status} />
                 </ReadOnlyField>
                 <ReadOnlyField label={t("Activity")}>
-                  <StateBadge state={detail.data.value.retention_condition} />
+                  <StatePill state={detail.data.value.retention_condition} />
                 </ReadOnlyField>
                 <ReadOnlyField label={t("Activity since")}>
                   <Timestamp value={detail.data.value.condition_since} />
@@ -181,7 +181,7 @@ export function EnvironmentDetails({
         {command.data && (
           <div role="status">
             <strong>{t("Lifecycle command")}</strong>{" "}
-            <StateBadge state={command.data.status} />
+            <StatePill state={command.data.status} />
             <small>{command.data.id}</small>
           </div>
         )}

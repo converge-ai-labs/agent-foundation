@@ -9,14 +9,10 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  StateBadge,
-} from "../../shared/feedback";
-import { Confirm } from "../../shared/form";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { Page } from "../../shared/page";
+import { Confirm } from "../../shared/dialogs";
 import { useIdempotency } from "../../shared/idempotency";
 import { AccountCredentials } from "./credentials";
 import { AccountForm } from "./form";
@@ -97,12 +93,12 @@ export function ApplicationAccountsPage() {
               },
               {
                 label: t("Status"),
-                render: (item) => <StateBadge state={item.status} />,
+                render: (item) => <StatePill state={item.status} />,
               },
               {
                 label: t("Reception"),
                 render: (item) => (
-                  <StateBadge
+                  <StatePill
                     state={item.receive_enabled ? "enabled" : "disabled"}
                   />
                 ),

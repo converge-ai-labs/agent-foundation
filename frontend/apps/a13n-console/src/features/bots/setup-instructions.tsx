@@ -1,6 +1,6 @@
 import { DisclosureSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/identity";
 import styles from "./connect.module.css";
 
 const slackManifest = JSON.stringify(

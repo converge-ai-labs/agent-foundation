@@ -13,7 +13,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { CopyableId } from "../../shared/copy";
+import { CopyableId } from "../../shared/identity";
 import { memoryApi, memoryKey, type MemoryTarget } from "./api";
 
 export function MemoryRecordEditor({

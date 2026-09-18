@@ -2,7 +2,7 @@ import { DisclosureSection } from "a13n-ui";
 
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
-import { JsonView } from "../../shared/form";
+import { JsonView } from "../../shared/forms";
 import styles from "./conversations.module.css";
 
 export function PendingFeedback({

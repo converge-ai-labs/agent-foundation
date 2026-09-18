@@ -9,8 +9,8 @@ import {
   WrenchIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import { StateBadge } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
+import { StatePill } from "../../shared/feedback";
+import { JsonView } from "../../shared/forms";
 import styles from "./conversations.module.css";
 import { MarkdownContent } from "../../shared/markdown";
 import { isObject, type PresentedItem } from "./projection";
@@ -18,7 +18,7 @@ import { inputText } from "./input";
 import { AssetAttachment } from "./attachment";
 import { ToolDetails } from "./tool-details";
 import { AgentAvatar } from "../agents/avatar";
-import { CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/identity";
 export function PresentedItems({
   items,
   runState,
@@ -66,7 +66,7 @@ export function PresentedItems({
                       aria-label={t("Working")}
                     />
                   ) : (
-                    <StateBadge
+                    <StatePill
                       state={
                         item.state === "in_progress"
                           ? ["waiting", "failed", "cancelled"].includes(
@@ -97,7 +97,7 @@ export function PresentedItems({
               <span className={styles.disclosureTitle}>
                 <BrainIcon size={14} />
                 {t("Reasoning summary")}
-                <StateBadge state={item.state} />
+                <StatePill state={item.state} />
               </span>
             }
           >

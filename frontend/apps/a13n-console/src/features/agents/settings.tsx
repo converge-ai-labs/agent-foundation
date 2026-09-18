@@ -27,10 +27,11 @@ import {
 } from "../../shared/api";
 import { changeAgentImage } from "./images";
 import { AgentAvatar } from "./avatar";
-import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/image-picker";
-import { ResourceKeyField } from "../../shared/resource-key";
+import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
+import { ResourceKeyField } from "../../shared/identity";
 import { ErrorNotice } from "../../shared/feedback";
-import { Confirm, FormActions } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
+import { FormActions } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 

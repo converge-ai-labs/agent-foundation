@@ -10,7 +10,7 @@ import {
 import { useState, type ReactElement } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
-import { CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/identity";
 import { downloadBlob } from "../../shared/download";
 import { ErrorToast } from "../../shared/feedback";
 import { agentFile, serializeAgentFile, type AgentFile } from "./transfer";

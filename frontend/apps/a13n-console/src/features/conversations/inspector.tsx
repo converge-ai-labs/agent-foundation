@@ -13,11 +13,11 @@ import type { Schema } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { CopyableId } from "../../shared/copy";
-import { JsonView } from "../../shared/form";
+import { CopyableId } from "../../shared/identity";
+import { JsonView } from "../../shared/forms";
 import { conversationQueries, isActiveRun, runPath } from "./api";
 import styles from "./inspector.module.css";
 import { AgentLink } from "../agents/link";
@@ -104,7 +104,7 @@ export function RunInspector({
                               : "Initial run",
                         )}
                       </Link>
-                      <StateBadge state={entry.status} />
+                      <StatePill state={entry.status} />
                       <small>
                         <Timestamp value={entry.created_at} />
                         <CopyableId value={entry.run_id} />
@@ -167,7 +167,7 @@ function RunFacts({ run }: { run: Schema["RunResource"] }) {
     <dl className={styles.runFacts}>
       <dt>{t("Status")}</dt>
       <dd>
-        <StateBadge state={run.status} />
+        <StatePill state={run.status} />
       </dd>
       <dt>{t("Agent")}</dt>
       <dd>
@@ -232,7 +232,7 @@ function AttemptDetail({
           <>
             <dt>{t("Status")}</dt>
             <dd>
-              <StateBadge state={attempt.status} />
+              <StatePill state={attempt.status} />
             </dd>
           </>
         )}
@@ -280,7 +280,7 @@ function AttemptDetail({
           <span>
             {t("Attempt")} {attempt.attempt_number}
           </span>
-          <StateBadge state={attempt.status} />
+          <StatePill state={attempt.status} />
         </span>
       }
     >

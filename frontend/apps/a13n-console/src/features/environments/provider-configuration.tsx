@@ -1,11 +1,11 @@
 import { Button, DisclosureSection, Tabs, TabsList, TabsTab } from "a13n-ui";
 import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { TextAreaField } from "../../shared/form";
+import { TextAreaField } from "../../shared/forms";
 import type { Schema } from "../../shared/api";
-import { SchemaFields } from "../../shared/schema-fields";
+import { SchemaFields } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
-import { jsonObject } from "../../shared/validation";
+import { jsonObject } from "../../shared/forms";
 
 export function ProviderConfiguration({
   schema,

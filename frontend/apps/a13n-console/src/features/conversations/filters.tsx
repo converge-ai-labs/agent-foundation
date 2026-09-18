@@ -19,7 +19,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
-import { DateTimeField } from "../../shared/date-time-field";
+import { DateTimeField } from "../../shared/forms";
 import { ErrorNotice } from "../../shared/feedback";
 import {
   formatLocalDateTime,

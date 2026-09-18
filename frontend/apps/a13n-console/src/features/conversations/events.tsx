@@ -9,7 +9,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { conversationQueries } from "./api";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
+import { JsonView } from "../../shared/forms";
 import styles from "./inspector.module.css";
 
 export function RunEvents({ runId }: { runId: string }) {

@@ -5,10 +5,10 @@ import { useAccess } from "../../layout/workspace";
 import { workspacePath } from "../../shared/paths";
 import { representation } from "../../shared/api";
 import { ResourceTable } from "../../shared/collection";
-import { CopyableId } from "../../shared/copy";
+import { CopyableId } from "../../shared/identity";
 import { Timestamp } from "../../shared/feedback";
-import { Confirm } from "../../shared/form";
-import { PageActions } from "../../shared/page-actions";
+import { Confirm } from "../../shared/dialogs";
+import { PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
 import { CreateWorkspace } from "./create-workspace";
 export function Workspaces() {

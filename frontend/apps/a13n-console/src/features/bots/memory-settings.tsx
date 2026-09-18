@@ -10,7 +10,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { FormActions } from "../../shared/forms";
 import shared from "../../shared/shared.module.css";
 import styles from "./bots.module.css";
 

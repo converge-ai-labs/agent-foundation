@@ -5,7 +5,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, workspaceHeaders } from "../../shared/api";
-import { CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/identity";
 import { downloadBlob } from "../../shared/download";
 import { ErrorNotice } from "../../shared/feedback";
 import styles from "./attachment.module.css";

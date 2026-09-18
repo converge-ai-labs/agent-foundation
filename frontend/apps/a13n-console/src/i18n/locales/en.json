@@ -2816,5 +2816,9 @@
   "Secret": "Secret",
   "Search applications and MCP servers…": "Search applications and MCP servers…",
   "Applications": "Applications",
-  "Remote MCP servers": "Remote MCP servers"
+  "Remote MCP servers": "Remote MCP servers",
+  "Identity": "Identity",
+  "How this agent appears across the console.": "How this agent appears across the console.",
+  "Saving creates the agent and publishes v1.": "Saving creates the agent and publishes v1.",
+  "Note": "Note"
 }

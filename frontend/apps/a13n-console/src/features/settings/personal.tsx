@@ -3,7 +3,7 @@ import { ResourceTable } from "../../shared/collection";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { CopyableId } from "../../shared/copy";
+import { CopyableId } from "../../shared/identity";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -11,10 +11,10 @@ import { data } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
 import styles from "../../shared/shared.module.css";
 import { Audit } from "./audit";
 import { SettingsLayout } from "./layout";
@@ -78,7 +78,7 @@ function BrowserSessions() {
             {
               label: t("Status"),
               render: (item) => (
-                <StateBadge state={item.revoked_at ? "revoked" : "active"} />
+                <StatePill state={item.revoked_at ? "revoked" : "active"} />
               ),
             },
             {

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 import { initialConfig } from "./configuration";
-import { AgentForm } from "./form";
+import { AgentEditor } from "./editor";
 
 const http = vi.hoisted(() => ({ GET: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
@@ -16,6 +16,13 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("./toolsets", () => ({ AgentToolsets: () => null }));
+vi.mock("../memory/availability", () => ({
+  useMemoryProviders: () => ({ visible: false }),
+}));
+vi.mock("../memory/selection", () => ({ AgentMemorySelection: () => null }));
+vi.mock("../models/provider-definitions", () => ({
+  useModelProviderDefinitions: () => ({ data: { items: [] } }),
+}));
 vi.mock("./choices", () => ({
   useAgentChoices: () => ({
     isPending: false,
@@ -58,19 +65,17 @@ it("saves the environment choice together with other configuration edits", async
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
-        <AgentForm
+        <AgentEditor
           initial={{
             ...initialConfig("Research"),
             model: { model_key: "research" },
             instructions: "Check the evidence.",
           }}
-          name="Research"
           version={7}
           etag='"agent-v1"'
           pending={false}
           error={undefined}
           submit={submit}
-          back="/agents"
         />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -85,14 +90,12 @@ it("saves the environment choice together with other configuration edits", async
   );
   await user.click(await screen.findByRole("option", { name: "Sandbox" }));
   expect(submit).not.toHaveBeenCalled();
-  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await user.click(screen.getByRole("button", { name: /Save as v/ }));
   expect(submit).toHaveBeenCalledWith(
     expect.objectContaining({
       instructions: "Check the evidence. Keep the draft.",
       default_environment_template_id: "et_1234567890abcdef",
     }),
-    "Research",
-    "",
     '"agent-v1"',
     null,
   );

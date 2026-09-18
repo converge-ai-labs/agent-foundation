@@ -22,7 +22,7 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import type { useAgentChoices } from "./choices";
 import type { AgentConfig } from "./configuration";
 import { MCPConnectionIcon } from "../connections/mcp-icon";
-import { EditorSection } from "./section";
+import { Section } from "../../shared/page";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
 import styles from "./agents.module.css";
 
@@ -88,7 +88,7 @@ export function AgentConnections({
     );
   }
   return (
-    <EditorSection
+    <Section
       title={t("Connections")}
       description={t("Connected services this agent can use.")}
     >
@@ -188,7 +188,6 @@ export function AgentConnections({
               </div>
               <Link
                 to={`${basePath}/connections`}
-                target="_blank"
                 rel="noreferrer"
                 className={styles.setupCapability}
               >
@@ -198,7 +197,7 @@ export function AgentConnections({
           </CollapsiblePanel>
         </Collapsible>
       )}
-    </EditorSection>
+    </Section>
   );
 }
 

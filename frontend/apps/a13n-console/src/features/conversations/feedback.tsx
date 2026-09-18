@@ -14,7 +14,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { JsonView, TextAreaField } from "../../shared/form";
+import { JsonView, TextAreaField } from "../../shared/forms";
 import styles from "./conversations.module.css";
 import { QuestionResponse, readQuestions } from "./questions";
 

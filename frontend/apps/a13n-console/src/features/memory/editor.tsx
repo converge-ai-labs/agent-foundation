@@ -11,21 +11,21 @@ import {
   type Schema,
 } from "../../shared/api";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
-import { CredentialEditor } from "../../shared/credential-editor";
+import { CredentialEditor } from "../../shared/forms";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
-import { FormSection, formSectionStyles } from "../../shared/form-section";
-import { ProviderEnabled } from "../../shared/provider-enabled";
-import { ProviderTypeField } from "../../shared/provider-type-field";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { FormActions } from "../../shared/forms";
+import { FormSection, formSectionStyles } from "../../shared/forms";
+import { ProviderEnabled } from "../../shared/forms";
+import { ProviderTypeField } from "../../shared/forms";
+import { ResourceEditorButton } from "../../shared/identity";
 import {
   useResourceEditorState,
   type ResourceEditorControl,
-} from "../../shared/resource-modal";
-import { ResourceReference } from "../../shared/resource-reference";
-import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
-import { useSuggestedName } from "../../shared/suggested-name";
-import { jsonObject, validateSettings } from "../../shared/validation";
+} from "../../shared/dialogs";
+import { ResourceReference } from "../../shared/identity";
+import { SchemaFields, withSchemaValues } from "../../shared/forms";
+import { useSuggestedName } from "../../shared/forms";
+import { jsonObject, validateSettings } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
 

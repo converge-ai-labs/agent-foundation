@@ -1,4 +1,4 @@
-import { CopyableResourceKey, Identifier } from "../../shared/copy";
+import { CopyableResourceKey, Identifier } from "../../shared/identity";
 import {
   Badge,
   FormField,
@@ -23,21 +23,16 @@ import {
   type Schema,
 } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  Timestamp,
-} from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
-import cards from "../../shared/resource-cards.module.css";
 import skillStyles from "./skills.module.css";
 import { ImportSkill } from "./import";
 import { Revisions } from "./revisions";
 import { SkillFiles } from "./files";
 import { RenameSkill, SkillActions } from "./identity";
-import { ResourceReference } from "../../shared/resource-reference";
+import { ResourceReference } from "../../shared/identity";
 
 export function SkillsPage() {
   const { workspace, can } = useWorkspace(),
@@ -112,11 +107,11 @@ export function SkillsPage() {
         <Loading variant="cards" />
       ) : query.data?.items.length ? (
         <>
-          <div className={cards.grid}>
+          <div className={styles.cardGrid}>
             {query.data.items.map((item) => (
               <article
                 key={item.id}
-                className={`${cards.card} ${skillStyles.card}`}
+                className={`${styles.card} ${skillStyles.card}`}
               >
                 <header>
                   <h2>

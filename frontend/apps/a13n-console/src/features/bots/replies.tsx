@@ -5,11 +5,11 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
 import { Pagination, useCursor } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
 import styles from "./bots.module.css";
@@ -87,10 +87,7 @@ function ReplyList({ accountId, runId }: { accountId: string; runId: string }) {
           <ol className={styles.replyList}>
             {query.data.items.map((item) => (
               <li key={item.id}>
-                <StateBadge
-                  state={item.status}
-                  label={t(labels[item.status])}
-                />
+                <StatePill state={item.status} label={t(labels[item.status])} />
                 <dl>
                   <div>
                     <dt>{t("Started")}</dt>

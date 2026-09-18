@@ -11,24 +11,24 @@ import {
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { PageActions } from "../../shared/page-actions";
+import { PageActions } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/form";
+import { FormActions, TextAreaField } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
-import { jsonObject, jsonValue } from "../../shared/validation";
+import { jsonObject, jsonValue } from "../../shared/forms";
 import { environmentApi } from "./api";
 import { useEnvironmentTypes } from "./providers";
 
@@ -78,7 +78,7 @@ export function EnvironmentInstances() {
               },
               {
                 label: t("Status"),
-                render: (item) => <StateBadge state={item.status} />,
+                render: (item) => <StatePill state={item.status} />,
               },
               {
                 label: t("Generation"),
@@ -88,7 +88,7 @@ export function EnvironmentInstances() {
               {
                 label: t("Activity"),
                 render: (item) => (
-                  <StateBadge state={item.retention_condition} />
+                  <StatePill state={item.retention_condition} />
                 ),
               },
               {

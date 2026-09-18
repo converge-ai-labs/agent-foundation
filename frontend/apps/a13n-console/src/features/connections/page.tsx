@@ -7,19 +7,13 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ResourceIdentity, ResourceTable } from "../../shared/collection";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  StateBadge,
-} from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import { ConnectionDetails } from "./editor";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
 import { NewConnection } from "./new";
-import { NewConnectionNext } from "./next/new-connection";
-import { useNextPreview } from "../../shared/next-preview";
 import { MCPConnectionIcon } from "./mcp-icon";
 
 export function ConnectionsPage() {
@@ -27,7 +21,6 @@ export function ConnectionsPage() {
     { workspace, can } = useWorkspace(),
     { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
-  const next = useNextPreview();
   const finalFocus = useRef<HTMLElement | null>(null);
   const [cleanup, setCleanup] = useState<Schema["ConnectionCleanupReceipt"]>();
   const connections = useInfiniteQuery({
@@ -76,12 +69,7 @@ export function ConnectionsPage() {
       actions={
         <>
           <ManageProvidersLink category="connectors" scope="workspace" />
-          {can("connection.manage") &&
-            (next ? (
-              <NewConnectionNext onConnected={select} />
-            ) : (
-              <NewConnection onConnected={select} />
-            ))}
+          {can("connection.manage") && <NewConnection onConnected={select} />}
         </>
       }
     >
@@ -163,7 +151,7 @@ export function ConnectionsPage() {
             },
             {
               label: t("Status"),
-              render: (connection) => <StateBadge state={connection.status} />,
+              render: (connection) => <StatePill state={connection.status} />,
             },
           ]}
         />

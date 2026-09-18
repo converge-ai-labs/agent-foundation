@@ -8,13 +8,9 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  StateBadge,
-} from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import { AgentLink } from "../agents/link";
 import styles from "./bots.module.css";
 
@@ -186,9 +182,7 @@ export function BotsPage() {
                 },
                 {
                   label: t("Availability"),
-                  render: ({ account }) => (
-                    <StateBadge state={account.status} />
-                  ),
+                  render: ({ account }) => <StatePill state={account.status} />,
                 },
                 {
                   label: t("Setup and test"),

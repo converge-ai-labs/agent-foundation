@@ -17,10 +17,10 @@ import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
+import { JsonView } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import { Pagination, useCursor } from "../../shared/collection";
 import { useConfigurationApplications, useConfigurationDraft } from "./api";
@@ -153,7 +153,7 @@ export function DraftReview({ draftId }: { draftId: string }) {
         <h2>
           {t("Configuration draft")} · v{draft.version}
         </h2>
-        <StateBadge state={draft.status} />
+        <StatePill state={draft.status} />
       </div>
       <p>
         {t(

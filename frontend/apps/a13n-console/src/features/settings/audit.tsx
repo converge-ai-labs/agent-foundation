@@ -3,12 +3,13 @@ import { ResourceTable } from "../../shared/collection";
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { CopyableId } from "../../shared/copy";
+import { CopyableId } from "../../shared/identity";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data } from "../../shared/api";
-import { Empty, ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import styles from "../../shared/shared.module.css";
 import type { ProfileTarget } from "./profile";
 export function Audit({ scope }: { scope: ProfileTarget }) {

@@ -7,16 +7,16 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { FormActions } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
-import { ProviderKeyLink } from "../../shared/provider-key-link";
+import { ProviderKeyLink } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { MCPOAuthSetup } from "./oauth-setup";
 import {
   HeaderFields,
   serializeHeaders,
   type HeaderDraft,
-} from "../../shared/header-fields";
+} from "../../shared/forms";
 import { MCPCredentialFields } from "./credentials";
 
 export function CreateMCP({

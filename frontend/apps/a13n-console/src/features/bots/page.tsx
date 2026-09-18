@@ -13,13 +13,9 @@ import {
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  StateBadge,
-} from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import { AccountForm } from "../application-accounts/form";
 import { AccountTargets } from "../application-accounts/targets";
 import { AccountCredentials } from "../application-accounts/credentials";
@@ -110,7 +106,7 @@ export function BotDetail() {
       title={account.name}
       back={`${basePath}/bots`}
       description={`${github ? "GitHub" : account.provider_key === "slack" ? "Slack" : t("Feishu")} · ${summary.external_organization_name ?? summary.external_organization_id ?? t("Organization not verified")}`}
-      actions={<StateBadge state={account.status} />}
+      actions={<StatePill state={account.status} />}
     >
       <Tabs
         value={tab}

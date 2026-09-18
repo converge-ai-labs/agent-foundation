@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
+import { JsonView } from "../../shared/forms";
 
 export function ConnectorToolPreview({
   connector,

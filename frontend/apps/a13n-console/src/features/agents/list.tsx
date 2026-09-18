@@ -16,15 +16,15 @@ import {
   ResourceTable,
   useCursor,
 } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   InlineLoading,
   Loading,
-  Page,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import shared from "../../shared/shared.module.css";
 import styles from "./agents.module.css";
 import { AgentCreationMenu } from "./import";
@@ -152,7 +152,7 @@ export function Agents() {
               {
                 label: t("Status"),
                 render: (agent) => (
-                  <StateBadge
+                  <StatePill
                     state={
                       agent.archived_at
                         ? "archived"

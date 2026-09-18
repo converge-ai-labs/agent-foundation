@@ -76,12 +76,6 @@
   color: var(--a13n-text-supporting);
   font-size: 13px;
 }
-
-.editorPage {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 32px 40px 48px;
-}
 .toolsetCard {
   min-width: 0;
   overflow: hidden;
@@ -473,32 +467,11 @@
 .back:hover {
   color: var(--a13n-text);
 }
-.editor {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
 .identity {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 16px 24px;
   padding-bottom: 12px;
-}
-.identityHeading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  min-width: 0;
-}
-.agentIcon {
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  flex: none;
-  color: var(--a13n-secondary);
-  background: var(--a13n-surface);
-  border-radius: 12px;
 }
 .identity h1 {
   font-size: 26px;
@@ -528,27 +501,6 @@
   font-size: 11px;
   color: var(--a13n-secondary);
 }
-.headerDetails {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-}
-.headerMeta {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px 24px;
-  font-size: 12px;
-  color: var(--a13n-secondary);
-}
-.headerMeta strong {
-  font-weight: 500;
-  color: var(--a13n-text);
-}
 .metadata {
   display: flex;
   align-items: center;
@@ -558,83 +510,6 @@
 }
 .metadata dd {
   margin: 0 12px 0 0;
-}
-.historyActions {
-  grid-column: 1 / -1;
-  align-self: center;
-  justify-self: start;
-}
-.historyActions > fieldset > div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-.historyActions button {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-}
-.editor > fieldset,
-.main {
-  min-width: 0;
-}
-.configurationSections {
-  display: grid;
-  gap: 40px;
-  min-width: 0;
-}
-.main {
-  display: grid;
-  gap: 40px;
-  padding: 24px 0 36px;
-}
-.editorSection {
-  display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  gap: 40px;
-}
-.editorSection > header h2 {
-  margin: 0 0 8px;
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.5;
-}
-.editorSection > header p {
-  margin: 0;
-  font-size: 13px;
-  line-height: 1.65;
-  color: var(--a13n-secondary);
-  text-wrap: pretty;
-}
-.sectionContent,
-.section {
-  display: grid;
-  gap: 18px;
-  min-width: 0;
-  align-content: start;
-}
-.modelProperty {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
-}
-.modelSettings {
-  display: grid;
-  gap: 18px;
-  min-width: 0;
-}
-.modelSettingsFields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16px;
-}
-@media (max-width: 700px) {
-  .modelSettingsFields {
-    grid-template-columns: 1fr;
-  }
-}
-.fieldLabel {
-  font-size: 13px;
-  font-weight: 500;
 }
 .instructions {
   min-width: 0;
@@ -650,107 +525,6 @@
   line-height: 1.75;
   resize: vertical;
   min-height: 210px;
-}
-.identityHeading > fieldset {
-  flex: none;
-}
-.saveBar {
-  position: sticky;
-  bottom: 0;
-  z-index: 10;
-  padding: 16px 0;
-  background: var(--a13n-elevated);
-}
-.savePanel {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.saveStatus {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-right: auto;
-  font-size: 12px;
-  color: var(--a13n-secondary);
-}
-.editorError:empty {
-  display: none;
-}
-.capabilityChoices {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-.selectedCapability {
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--a13n-surface) 65%, var(--a13n-elevated));
-  padding: 12px;
-}
-.selectedCapability > div:not(.choiceHeading) {
-  margin-top: 8px;
-}
-.capabilityIcon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  flex: none;
-  border-radius: 7px;
-  background: var(--a13n-elevated);
-  color: var(--a13n-secondary);
-}
-.capabilityPicker[data-open] {
-  padding: 12px;
-  border-radius: 10px;
-  background: var(--a13n-surface);
-}
-.addCapabilityPanel {
-  padding: 0 4px 4px;
-}
-.choiceList {
-  max-height: 280px;
-  overflow-y: auto;
-  margin-top: 12px;
-  padding: 2px;
-}
-.choice {
-  padding: 8px 0;
-}
-.choiceHeading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-  font-size: 13px;
-}
-.choiceHeading strong {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.choiceHeading > button {
-  margin-left: auto;
-  flex: none;
-}
-.choiceHeading small {
-  color: var(--a13n-secondary);
-}
-.choiceSettings {
-  max-width: 360px;
-}
-.pinnedVersion {
-  display: grid;
-  grid-template-columns: auto 88px;
-  align-items: center;
-  justify-content: start;
-  gap: 12px;
-}
-.pinnedVersion label {
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 400;
 }
 .capabilityEmpty {
   font-size: 13px;
@@ -768,19 +542,7 @@
 .setupCapability:hover {
   color: var(--a13n-text);
 }
-@media (max-width: 1000px) {
-  .editorPage {
-    padding-inline: 28px;
-  }
-  .editorSection {
-    grid-template-columns: 160px minmax(0, 1fr);
-    gap: 28px;
-  }
-}
 @media (max-width: 760px) {
-  .editorPage {
-    padding: 24px 20px 32px;
-  }
   .identity {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -792,72 +554,8 @@
     grid-row: auto;
     align-items: flex-start;
   }
-  .historyActions {
-    grid-column: 1 / -1;
-    justify-self: start;
-  }
-  .editorSection {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
-  }
-  .saveStatus {
-    width: 100%;
-  }
 }
 
-/* Sectioned layout used by the agent editor when EditorLayoutContext.card is set. */
-.cardSection {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-}
-.cardSection + .cardSection {
-  margin-top: 8px;
-}
-.cardSectionHeader {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-}
-.cardSectionHeader h2 {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 500;
-  line-height: 1.5;
-}
-.cardSectionHeader p {
-  margin: 2px 0 0;
-  font-size: 12.5px;
-  line-height: 1.6;
-  color: var(--a13n-secondary);
-  text-wrap: pretty;
-}
-.cardSectionBody {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-}
-.cardSection .instructions {
-  padding: 0;
-  background: transparent;
-}
-.cardSection .instructions textarea {
-  min-height: 200px;
-  padding: 18px 20px;
-  border-color: transparent;
-  background: var(--a13n-surface);
-  box-shadow: none;
-  transition: background-color 120ms ease;
-}
-.cardSection .instructions textarea:hover {
-  background: color-mix(in srgb, var(--a13n-surface) 140%, transparent);
-}
-.cardSection .instructions textarea:focus-visible {
-  background: var(--a13n-elevated);
-  border-color: var(--a13n-border);
-  box-shadow: none;
-}
 .toolsetPermissionLabel {
   display: inline-flex;
   align-items: center;
@@ -866,4 +564,25 @@
   padding: 0 9px;
   gap: 5px;
   font-size: 12px;
+}
+
+/* Agent detail page ------------------------------------------------------ */
+.detailAvatar {
+  width: 44px;
+  height: 44px;
+  flex: none;
+  border-radius: 12px;
+  font-size: 18px;
+}
+.railLink {
+  color: var(--a13n-text);
+  text-decoration: underline;
+  text-decoration-color: var(--a13n-border);
+  text-underline-offset: 3px;
+}
+.railLink:hover {
+  text-decoration-color: currentColor;
+}
+.railDot {
+  color: var(--a13n-border);
 }

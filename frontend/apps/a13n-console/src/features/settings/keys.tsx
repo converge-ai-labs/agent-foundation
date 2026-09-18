@@ -2,8 +2,8 @@ import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { CopyButton, CopyableId } from "../../shared/copy";
-import { PageActions } from "../../shared/page-actions";
+import { CopyButton, CopyableId } from "../../shared/identity";
+import { PageActions } from "../../shared/page";
 
 import { KeyIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -11,14 +11,15 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm, FormActions } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
+import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import {
   expirationOptions,
@@ -120,7 +121,7 @@ export function ApiKeys({
               {
                 label: t("Status"),
                 render: (item) => (
-                  <StateBadge
+                  <StatePill
                     state={
                       item.revoked_at
                         ? "revoked"

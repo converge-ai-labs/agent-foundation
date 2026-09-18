@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
 import styles from "./bots.module.css";
 
 const checkErrors: Record<string, string> = {
@@ -187,7 +187,7 @@ export function BotChecks({
               <div>
                 <dt>{t("App status")}</dt>
                 <dd>
-                  <StateBadge
+                  <StatePill
                     state={identity.enabled ? "active" : "inactive"}
                     label={t(identity.enabled ? "Active" : "Inactive")}
                   />

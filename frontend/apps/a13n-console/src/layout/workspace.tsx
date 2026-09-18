@@ -9,14 +9,14 @@ import { useAuth, useClient } from "../auth/context";
 import { CreateWorkspace } from "../features/settings/create-workspace";
 import { workspacePath } from "../shared/paths";
 import { allPages, data, type Schema } from "../shared/api";
+import { Empty } from "../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   ErrorPage,
   ErrorToast,
   Loading,
-  Page,
 } from "../shared/feedback";
+import { Page } from "../shared/page";
 
 interface WorkspaceContextValue {
   workspace?: Schema["Workspace"];

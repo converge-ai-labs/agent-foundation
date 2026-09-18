@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useAccess, useWorkspace } from "../../layout/workspace";
-import { Empty, Page } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { Page } from "../../shared/page";
 import { EnvironmentTemplates } from "../environments/templates";
 import { ProvidersPage } from "../providers/page";
 import { Models } from "../models/page";

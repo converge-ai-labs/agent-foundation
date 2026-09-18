@@ -26,7 +26,8 @@ import {
   type Schema,
 } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { Confirm, FormActions } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
+import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 
 type SkillResource = ReturnType<typeof representation<Schema["Skill"]>>;

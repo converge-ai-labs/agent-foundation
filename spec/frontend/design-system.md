@@ -2,9 +2,9 @@
 
 ## Design Position and Ownership
 
-`frontend/packages/a13n-ui` provides shared React primitives, compositions, and design tokens for browser applications. The interface uses restrained surfaces, clear typography, readable secondary text, consistent spacing, and visible focus indicators. Hierarchy comes from alignment, spacing, typography, and purposeful color; controls make their behavior recognizable before activation.
+`frontend/packages/a13n-ui` provides shared React primitives, compositions, and design tokens for browser applications. The interface is quiet and precise: hierarchy comes from spacing, type weight, and soft surfaces rather than lines, boxes, and decoration. The product should feel like a mature SaaS console, where every screen follows one anatomy, every control explains itself before activation, and nothing on the page competes with the user's task.
 
-Coss UI registry components provide the visual and interaction foundation, using Base UI for focus, overlays, selection, and menu semantics and DayPicker for calendars. Tailwind CSS owns shared component styling and semantic theme utilities. CSS Modules remain available for application-specific layouts. The [repository model](../repository-model.md#frontend-workspace) owns workspace and packaging boundaries.
+Coss UI registry components provide the interaction foundation, using Base UI for focus, overlays, selection, and menu semantics and DayPicker for calendars. Tailwind CSS owns shared component styling and semantic theme utilities. CSS Modules own application layouts. The [repository model](../repository-model.md#frontend-workspace) owns workspace and packaging boundaries.
 
 Product layouts, navigation, conversation rendering, protocol state, data fetching, persistence, and translations belong to applications. Shared components do not import applications or interpret domain states. Badge variants describe visual meaning; applications map domain states to variants and translated labels.
 
@@ -16,103 +16,115 @@ Product layouts, navigation, conversation rendering, protocol state, data fetchi
 | [Application tokens](../../frontend/packages/a13n-ui/src/styles/tokens.css) | Application aliases, brand typography, and shared scrollbar tokens       |
 | [Typed exports](../../frontend/packages/a13n-ui/src/index.ts)               | Public component signatures                                              |
 | [Source provenance](../../frontend/packages/a13n-ui/coss-source.json)       | Imported registry revision, source paths, license, and local adaptations |
+| [Console patterns](../../frontend/apps/a13n-console/src/shared/README.md)   | Console page, collection, form, and dialog compositions                  |
 | This document                                                               | Observable visual and interaction rules and their ownership              |
 
-`src/components`, `src/hooks`, and `src/lib` contain imported registry sources. Only the MIT-licensed UI registry is included. `src/patterns` contains reusable field, modal, search, disclosure, and settings compositions; `src/brand` contains project identity assets and the shared product and provider brand registry. Applications use public components directly and keep business-specific compositions in their owning feature or shared directory. Recurring control behavior and styling are corrected in their shared owner rather than overridden independently in each screen. Shared defaults remain lower in specificity than component styles so import order cannot override component appearance.
+`src/components`, `src/hooks`, and `src/lib` contain imported registry sources. `src/patterns` contains reusable field, modal, search, disclosure, settings, and status compositions; `src/brand` contains project identity assets and the shared product and provider brand registry. Applications use public components directly and keep business-specific compositions in their owning feature or shared directory. Recurring control behavior and styling are corrected in their shared owner rather than overridden per screen.
 
-## Visual Hierarchy and Layout
+## Principles
 
-The application frame, content canvas, and elevated surfaces have distinct roles. Related controls form recognizable groups through spacing or a quiet surface. Section headings and explanations sit outside their groups. Section boundaries primarily use whitespace. Fine dividers separate adjacent settings rows within a shared surface, tabular rows, and menu groups when the boundary helps scanning. They use a low-contrast semantic border color, align with the content inset, and leave balanced space on both sides. Dividers do not frame every field, repeat an enclosing border, or replace the space between sections. Extra cards, nested borders, and resting shadows do not accumulate around every section or property.
+1. **Surfaces, not outlines.** Grouping uses a soft 4% fill (`--a13n-surface`) on the canvas, or whitespace alone. Outlines are reserved for text inputs and selection triggers. Sections, cards, tables, rails, and dialogs never draw a border around themselves; nested borders and resting shadows do not accumulate.
+2. **One anatomy per screen type.** Every list page, detail page, editor, dialog, and settings page follows the shared anatomy below. A reader who has used one resource can use all of them.
+3. **Names before identifiers.** People recognize resources by name, icon, and status. Identifiers are secondary, sans-serif, muted, and copyable; they never lead a row or a title.
+4. **The primary action is obvious, once.** Each page has at most one filled primary button, aligned with its heading. Everything else is outline, ghost, or lives in a menu.
+5. **State is explicit.** Drafts, saving, saved, failed, disabled, and pending states are visible where the change happens, in words, not only in color.
+6. **Progressive disclosure.** Common settings stay visible; advanced or rare configuration lives in a quiet disclosure with a closed-state summary. Nothing important is hidden behind a hover.
+7. **Density with air.** Rows are compact, but the space between sections is always larger than the space inside them.
 
-Page headings stay proportional to interface text. Interface titles and labels use medium (500) weight; ordinary text uses regular (400). Primary page actions align with the heading. Console resource create/edit triggers share one component for primary creation with a plus icon and compact outline editing. Resource ownership uses the shared ScopeBadge in tables and cards. Resource name and secondary text use ResourceIdentity, and table action columns align right. Search and filters form a separate row above the content with compact, even gaps and matching control heights. Collection search has a bounded width rather than stretching across the page and shrinks to fit narrow screens. Search inputs include a quiet leading search icon. Filter-style ChoiceField places a muted label beside the current value inside one control while preserving its accessible name. Navigation uses compact Sidebar rows, small gaps within groups, and modest separation between groups. Navigation and view selection use neutral surfaces; accent color emphasizes primary actions and active controls. Identity icons may use a restrained color accent. Interface icons use Phosphor with regular weight for ordinary actions and duotone for active primary navigation.
+## Tokens and Surfaces
 
-Settings align short controls beside explanatory copy; long inputs and complex configuration use the available content width. The gap between sections exceeds the spacing within a field or row. Narrow containers stack labels above controls and keep names, explanations, and actions readable without horizontal overflow. Tables use compact rows and align action-column headings with their controls.
+| Role          | Token                       | Use                                                                  |
+| ------------- | --------------------------- | -------------------------------------------------------------------- |
+| Canvas        | `--a13n-canvas`             | Page background                                                      |
+| Surface       | `--a13n-surface` (4% fill)  | Grouping regions, list rows, rails, tiles, code blocks, empty states |
+| Elevated      | `--a13n-elevated`           | Popovers, dialogs, icon tiles and controls placed on a surface       |
+| Hover         | `--a13n-hover`              | Interactive row and tile hover                                       |
+| Selected      | `--a13n-selected`           | Active navigation and selected list rows                             |
+| Hairline      | `--a13n-border-soft` (6–8%) | Row dividers inside a table or settings group only                   |
+| Input border  | `--a13n-input-border`       | Input, Textarea, Select triggers                                     |
+| Text          | `--a13n-text`               | Primary text                                                         |
+| Secondary     | `--a13n-secondary`          | Descriptions, metadata, labels in rails                              |
+| Shadow        | `--a13n-shadow`             | Popovers, floating bars, dialogs                                     |
+| Subtle shadow | `--a13n-shadow-subtle`      | Icon tiles on a surface                                              |
 
-Standard controls serve forms; compact controls serve toolbars, settings rows, and properties. Compact density does not reduce text readability or eliminate keyboard focus. Ghost controls suit named inline actions and editable properties whose context makes interaction clear. Search and ordinary value selection retain visible control boundaries.
+Radii: 12px for grouping surfaces, dialogs, and empty states; 10px for rows, tiles, and inputs; 8px for icon tiles and chips; 999px for pills. Dark mode uses the same roles with inverted alpha fills; every surface must read correctly in both themes.
 
-The package owns the bundled Space Grotesk Bold typeface, its license, and the `--a13n-font-brand` token. `Wordmark` renders the a13n name with shared weight and letter spacing; applications choose its size and placement. A decorative `Logo` can accompany an already named brand. Product body text retains the standard interface font.
+## Typography
 
-## Control Meaning and Configuration
+Interface text uses the system sans-serif family at 13px; prose and message content use 14px with 1.6 line height. Weights are 500 for titles, labels, and names, and 400 for everything else. Bold (600+) is not used in interface chrome.
 
-| Intent               | Affordance and behavior                                                                                                                                                                        |
-| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Enter text           | Input or Textarea has a subtle border and a distinct editable surface, including inside a tinted group.                                                                                        |
-| Select a value       | Select, ChoiceField, or SearchPicker shows the current value with a trailing arrow and a subtle control border. Activation opens an option list.                                               |
-| Expand configuration | DisclosureSection has a leading chevron that rotates with its expanded state. Its trigger and content share one continuous, softly tinted region with coordinated padding and rounded corners. |
-| Add a resource       | A named action button uses a plus icon. An inline selection region stays grouped with its trigger while open.                                                                                  |
-| Edit identity        | An edit action sits beside the identity it changes and has an accessible name.                                                                                                                 |
-| Manage a resource    | A separate action menu groups secondary management operations. Destructive actions remain clearly named and use the applicable confirmation flow.                                              |
+| Element                 | Size / weight   | Color     |
+| ----------------------- | --------------- | --------- |
+| Page title              | 22px / 500      | text      |
+| Dialog title            | 18px / 500      | text      |
+| Section title           | 15px / 500      | text      |
+| Row name, field label   | 13.5px / 500    | text      |
+| Body, table cells       | 13px / 400      | text      |
+| Descriptions, help text | 12.5px / 400    | secondary |
+| Metadata, timestamps    | 12px / 400      | secondary |
+| Rail and group headings | 11px / 500 caps | secondary |
+| Identifiers, keys, URLs | 12px / 400      | secondary |
 
-Simple configuration stays visible beside the item it configures. A single version field or a short scope field does not need a separate disclosure. Disclosures serve optional groups with enough complexity to benefit from progressive disclosure. A concise summary can expose their current state while closed. Collapsing configuration preserves the draft; validation reveals the relevant group and identifies the field.
+Monospace is reserved for code, JSON, commands, and Markdown code. Identifiers use the sans family; a copy affordance appears beside them. Numbers that are compared use tabular figures.
 
-Labels explain purpose and descriptions add useful context without repeating the label or current value. Metadata and editor tools appear when they help the user make a decision or perform a distinct task. Character counts without a meaningful limit, redundant format hints, and preview or expansion controls without a separate editing need do not occupy the default form. Long content is handled by bounded scrolling.
+## Color and Status
 
-Applications distinguish changes saved immediately from changes held in a draft. Save feedback identifies pending, successful, and failed work. Actions requiring persisted configuration expose that dependency when a draft prevents activation. The owning product contract defines which fields save together; shared components do not infer persistence boundaries.
+Neutral surfaces carry the interface. The single accent is the primary button (near-black in light, near-white in dark). Links inside the interface use text color with medium weight and an underline on hover; external links carry a trailing arrow icon and open in a new tab only when leaving the product.
 
-Resource lists distinguish the row identity or summary from supporting references and metadata. Console ResourceTable columns declare a primary or muted tone when needed; ordinary supporting values use a middle-contrast text color. Primary values retain clear emphasis, related names and metrics use regular weight, and timestamps, sources, and technical metadata use muted text. Missing-value placeholders never receive primary emphasis. Numeric comparisons use aligned tabular figures. Status colors remain semantic, with successful completions quieter than failures or waiting states. Cards, histories, and selection lists follow the same hierarchy while keeping selectable names and reading content clear. Do not reduce opacity on entire rows or globally mute all table contents.
+Status is a pill: a 6px dot, 12px medium text, and a 10% tinted background of the same hue. Semantic hues are success (emerald), warning (amber), danger (red), info (blue), and neutral (gray). Successful and idle states stay quieter than failures and waiting states. Color never carries meaning alone; the label always names the state.
 
-Interface labels and values, including IDs, keys, URLs, and file paths, use the system sans-serif family. Compact identifiers use regular 12px text; an identifier serving as the row identity uses 13px supporting text. Truncated identifiers retain their full value for inspection and copying. Monospace is reserved for code, JSON, commands, and Markdown code, including read-only configuration. The brand wordmark retains its dedicated typeface. Numeric alignment uses tabular figures without switching font families.
+## Page Anatomy
 
-## Fields and Focus
+**List page.** Back link (only when nested) → title row (22px title, optional count) with the primary action at the right → one-line description → toolbar (search 300px with leading icon, then filter chips, then secondary actions at the right) → collection → footer (result count at left, pagination at right). Content spans up to 1280px with 28px top and 40px side padding.
 
-Numeric Input fields hide native visual stepper buttons while preserving numeric validation, direct entry, and keyboard stepping.
+**Detail page.** Back link → identity header (44px avatar or brand tile, 22px name, status pill, edit affordance, key chip with copy, one-line description) with primary actions at the right → underline tabs → content up to 1180px, optionally with a 256px sticky summary rail at the right. Sections are titled at 15px with a 12.5px description and separated by 36px; a section that lists items uses surface rows; a section that edits values uses fields.
 
-Input, Textarea, selection triggers, and composers use subtle control borders without stacked resting shadows. Focus adds a fine indicator; error borders and messages remain distinguishable. Buttons, switches, checkboxes, tabs, and other keyboard targets retain visible focus at both control densities. Disabled explanations remain readable. Immutable values and fields unavailable for editing in the current permission context use ReadOnlyField: a label, selectable text, and optional explanation without an input border or dropdown arrow. ChoiceField and FormField provide a readOnly presentation for these cases; temporary pending or prerequisite states retain disabled controls.
+**Editor with drafts.** Edits accumulate in a draft. A floating save bar appears at the bottom center with a pulse dot, "Unsaved changes", a one-line consequence, an optional note field, Discard, and the primary Save. Autosaved settings show an inline status beside the control instead.
 
-A composite input owns its boundary and focus treatment once, on the enclosing control. Inner Input or Textarea instances use their unstyled composition mode when the parent supplies that treatment. Unstyled mode preserves field semantics; the caller owns the visible boundary and focus indicator. Searchable composites apply this rule to their search row, and composers apply it to their text-entry surface.
+**Settings page.** A contextual layout with its own left navigation (Back to workspace, search, grouped entries). Content is a single 760px column: 22px title, then groups on a surface with rows (name and explanation at the left, control at the right, hairline between rows). Groups are separated by whitespace and titled outside the surface.
 
-FormField associates labels, descriptions, and validation messages with Input or Textarea and exposes invalid state. ChoiceField supplies equivalent semantics for Select. Choice options accept text labels and optional decorative icons. Fields and icon-only actions always have an accessible name. Tooltips complement a named trigger and do not provide its only accessible name.
+**Dialog.** 520px for standard forms and 640px for complex ones, vertically stable across steps. Header: 18px title, 13px description. Creation flows start with a catalog (tiles or a searchable list) and continue with a step whose title carries the chosen brand. Fields use 16px gaps; advanced groups use a disclosure; the footer is sticky with Cancel and the primary action. Destructive confirmations name the resource and label the action with its verb.
 
-SettingsSection supports grouped and plain presentations. Grouped settings use the muted surface against the page canvas, with rounded corners and an external secondary heading. Adjacent items share a single fine divider inset by the group padding; there is no leading or trailing rule. The page composition owns spacing between sections so component margins do not add a second gap. Plain sections use whitespace without a surface. SettingsRow pairs a name and optional explanation with a control, stacking in narrow containers. Its `controlId` associates the visible label with the control; its description uses `<controlId>-description`, which callers connect through `aria-describedby`. A Switch uses the associated row label as its accessible name.
+**Empty state.** Centered on a surface: a 40px icon tile, 15px title, 13px explanation, and the primary action. Search results with no matches use a shorter inline message and keep the toolbar.
 
-## Identity Images and Save Feedback
+**Loading.** Skeletons preserve the destination's layout and density; spinners are reserved for gates and explicit actions. Existing content stays visible during background refreshes.
 
-Identity image controls compose one preview with adjacent upload/removal actions and concise format guidance. Keep the preview large enough to inspect, use the product-defined fallback (neutral by default), and preserve the same image across list and detail surfaces. Supporting labels and file guidance belong to the image control rather than separate competing rows.
+## Collections
 
-When automatic and manual saving coexist, identify the automatically saved setting beside that setting using a compact, legible status treatment. Distinguish its idle, saving, saved, and failed states; do not rely on low-contrast descriptive text or color alone. Keep labels short enough for their actual layout.
+One `ResourceTable` serves every resource list. Header cells are 11px medium uppercase secondary text without a fill. Rows are 52–60px with a hairline divider, a 3–4% hover fill, and a pointer cursor when the row opens something. The first column is the identity: a 32px icon tile or avatar, the name at 13.5px medium, and one line of secondary text (key, source, or summary). Supporting columns use 13px text; timestamps and identifiers use 12px secondary text; status uses a pill. Row actions live in an overflow menu at the right that stays visible on touch devices. Long lists load in pages with a footer count and Previous/Next; search and filters query the server, never only the current page.
+
+Selection lists inside pickers use the same row anatomy with a checkbox in place of the tile, sorted with selected items first.
+
+## Forms and Fields
+
+Labels sit above controls at 13.5px medium; descriptions sit below the control at 12.5px secondary; validation replaces the description in the danger color and names the fix. Optional fields say "(optional)" in the label; required fields carry no asterisk. Inputs are 36px tall with a 10px radius and a hairline border; compact inputs in toolbars are 32px. Textareas for long content (instructions, prompts, JSON) use a soft surface with no border, grow to a bounded height, and scroll internally. Selects and pickers show the current value with one trailing chevron. Read-only values use `ReadOnlyField` with no box.
+
+Buttons: primary (filled), outline (secondary), ghost (tertiary and inline), and destructive (only inside confirmations and menus). Icon-only buttons always have a tooltip and an accessible name. Loading preserves size and disables activation. Menu items pair an icon with a label; destructive items sit last after a separator.
+
+## Conversation Rendering
+
+The session view keeps a compact header (title, agent chip, status pill, actions) and a centered 760px transcript. The user's message is a right-aligned soft bubble; the agent's answer is full-width prose with a small avatar and name line. Tool calls, reasoning, and other execution details render as compact rows in one surface group: an icon tile, the tool name, a one-line summary, and the status or duration at the right; expanding a row reveals arguments and results as bounded code blocks. Failures are a quiet danger-tinted notice with a title, a plain-language explanation, and an "Error details" disclosure. The composer floats at the bottom as an elevated surface: a borderless text area, attachment and option chips at the left, and a round primary send button at the right; Enter sends and Shift+Enter inserts a newline. The inspector is a right panel with 12px labels and 13px values grouped under 11px headings; raw payloads stay in disclosures.
+
+## Navigation
+
+The sidebar is a tinted column without a border: workspace switcher at the top, navigation rows at 32px with an 8px radius, active rows on the selected fill with a duotone icon, 11px uppercase group labels, and the account menu at the bottom. It collapses to an icon rail with tooltips. Settings open in the contextual layout with a clear way back. Internal links never open new tabs.
+
+## Overlays and Feedback
+
+Popovers and menus use the elevated surface, an 10px radius, and the shared shadow; no border. Toasts appear at the top center for isolated action results. Inline error notices stay beside the form or collection that owns the failure and offer a recovery action when one exists. Full error pages are reserved for views that cannot function.
 
 ## Scrolling and Long Content
 
-ScrollArea and ScrollBar own shared content scrolling. Native controls and semantic regions that scroll directly use the public `a13n-scrollbar` utility from the same stylesheet. Both presentations consume shared size, thumb, and hover tokens: a thin rounded thumb, transparent track, and stronger hover feedback. Scrolling retains native keyboard, pointer, and touch behavior. ScrollArea's bars appear on hover or scrolling; native bar visibility follows browser and operating-system behavior.
+`ScrollArea` and the `a13n-scrollbar` utility share size, thumb, and hover tokens. Textareas bound their own height; dialogs scroll their body under a fixed header and sticky footer; bounded lists scroll inside their surface. Nothing important hides behind a fixed control.
 
-Textareas honor their row count, bound vertical resizing, and scroll internally when content exceeds their height. The shared Textarea owns the default height limit; applications can choose a smaller bound for compact editors. Typing does not grow a form without limit or push its remaining controls indefinitely downward. Native textareas retain their own scroll viewport rather than nesting inside a second ScrollArea.
+## Accessibility and Motion
 
-Dialogs and bounded collection regions keep content reachable without clipping it behind fixed controls. Scrollable areas remain usable in narrow layouts and both themes.
-
-## Actions and Overlays
-
-Buttons preserve native button semantics and default to a non-submitting button. Disabled or loading buttons do not activate. Idle text buttons have symmetric padding and no empty icon slot. Loading preserves content and dimensions, prevents activation, and exposes busy state. Its overlaid spinner is decorative; standalone loading indicators receive translated status text.
-
-Initial loading for a predictable collection, form, detail view, or content panel uses a skeleton that preserves the destination's layout and density. Table skeletons retain column rhythm, card collections retain their responsive grid, and bounded editors retain enough structure to prevent their surface from collapsing. Skeletons do not fabricate readable values or interactive controls; one surrounding status region exposes translated loading text and busy state while the decorative placeholders remain hidden from assistive technology. Existing content stays visible during background refreshes. Spinners remain appropriate for application and authorization gates, indeterminate workflow transitions, explicitly triggered actions, and loading more into an existing collection.
-
-Toast notifications appear at the top center of the viewport, where they remain noticeable without competing with page navigation or side panels. They use a compact semantic icon, restrained border and shadow, concise copy, and vertical entrance and exit motion. Console error toasts report isolated action failures, such as copying, downloading, signing out, or issuing a command, without duplicating recovery actions; retry and other workflow controls stay on the surface that owns the operation.
-
-Inline error alerts remain beside a form, collection, diagnostic, or connection state whose content is unavailable or needs user attention. They use a compact semantic icon, a quiet tinted surface, and a colored title rather than a large block of destructive color. An available recovery action aligns at the trailing edge on wide layouts and below the message on narrow layouts. Full error pages are reserved for views that cannot function; they center a restrained status mark, concise explanation, optional request ID, and explicit navigation or recovery actions.
-
-ModalFrame composes Dialog parts for resource forms. Modals retain an outer viewport inset, including narrow screens; bottom sheets are an explicit opt-in. A neutral dimmed backdrop keeps the page recognizable without blur. Header, content, and actions share a 24px inset and a single gap below the title; adjacent regions do not double their padding. Standard dialogs are about 520px wide and complex resource forms use about 720px, both bounded by the viewport. Field labels sit close to controls, with 16px between fields and a larger gap before actions; optional groups use quiet surfaces rather than nested borders. Dialog provides a title, description, focus containment, Escape dismissal, and focus restoration. ModalFrame retains its last visible content throughout the exit transition so clearing a caller’s form does not collapse the closing surface; reopening renders current content. Its title and close control remain visible while content scrolls within the rounded surface; an optional footer stays outside that scroll area. A form-owned footer marked `data-a13n-form-actions` remains sticky within the scroll area, retaining native form submission and leaving the last fields reachable. Complex forms use the wide size, with viewport-bounded dimensions at both sizes.
-
-Console modals are vertically centered at every step, including initial resource selection and tab changes, with viewport-bounded scrolling for tall content. They use the same neutral canvas and control density as the surrounding page; complex Console forms are about 640px wide. Quiet disclosure groups and whitespace organize form sections without heavy framing. Sticky form actions continue the modal canvas without a raised shadow or oversized spacer. Switching a configuration tab preserves its unsaved draft until the editor closes or reloads. Model creation defaults to enabled; model editing places the availability switch beside the model identity and keeps connection and parameter settings in disclosure groups. The model's brand takes precedence over its hosting gateway when identifiable.
-
-Confirmation dialogs show the affected resource's name, address, or identifier and label the primary action with its operation. Resource forms expose Cancel alongside their submit action; composer options and attachments expose Done because their changes already belong to the pending message. Credential fields distinguish replacement input from saved configuration and do not request website-login autofill. Console diagnostic modals use one primary vertical scroll region; observation input, output, and metadata have separate full-width tabs, and raw configuration remains available through disclosures.
-
-Resource forms group identity, connection configuration, and availability into compact sections. Complex forms may place section headings beside aligned fields; short forms keep headings above fields and give the name full width. Group spacing is owned by the section container, and empty schema fields occupy no layout space. Connection checks use a compact action row with nearby cost guidance and results shown on demand.
-
-Value selectors use a single downward chevron and open below the trigger when space permits. Select and SearchPicker place selection checks at the trailing edge, with softly rounded option rows and a quiet selected surface. SearchPicker places optional icons before labels; the selected icon also appears in its trigger. Shared product and provider icons use the `a13n-ui` brand registry, including version-pinned LobeHub static SVG URLs from jsDelivr with immutable browser caching, preferring color variants and retaining original monochrome marks when no color variant exists. Failed images fall back to a caller-provided safe HTTPS logo and then a local generic icon. When search is shown, SearchPicker matches option labels, descriptions, group names, and caller-provided aliases. Values are unique across groups; group names identify groups. Search is local to the opened picker and resets when it closes. Its search row spans the popup above a fine divider without a second boxed input. Current selection appears on the trigger and with a check mark in results. Disabled options cannot activate, empty results have an explicit message, and Escape dismisses the innermost overlay first.
-
-Menus support nested action groups and checked current items with Base UI submenu keyboard behavior. Workspace navigation uses a compact menu; search belongs in pickers for longer selectable resource lists. Short, complete option lists use a plain selection menu without a search input. Longer lists retain search; controls that accept remote queries or custom values retain their input regardless of the current result count. Console tabs use the default segmented presentation: a light neutral rounded track and a rounded background-colored selected surface with a subtle shadow, without an underline. Tabs support arrow-key focus and keyboard activation; inactive panels are unavailable after their exit transition.
-
-Calendar, Popover, and ChoiceField provide date and time entry primitives. Console's DateTimeField owns translated labels, active locale, draft until Apply, clearing, dismissal, and validation of local date-time strings. Applications own API timestamp conversion. Nonexistent local times are rejected.
-
-Base UI controls retain keyboard interaction and disabled semantics. Motion respects reduced-motion preferences. Callers supply all user-facing strings.
+Every interactive element keeps a visible focus ring at both densities. Fields and icon-only actions have accessible names; tooltips complement, never replace, them. Base UI controls keep keyboard interaction and disabled semantics. Motion is short (100–200ms), used for hover fills, disclosures, and overlays, and respects reduced-motion preferences.
 
 ## Themes and Language
 
-Applications load the shared stylesheet once and opt into base typography with `a13n-root` on the document body, so portaled overlays inherit the same font, line height, and font smoothing as the application. Light is the default theme. The document element toggles the `dark` class, ensuring portaled Select, Dialog, and Tooltip content inherits the same tokens. Per-subtree mixed themes are outside the supported contract.
-
-Applications own their language scope. Console uses English as the default and fallback and supports Simplified Chinese; it stores a supported language locally, with session-only selection when browser storage is unavailable. Harness UI WebUI uses English only and has no language selector or translation runtime. Shared components receive application-owned strings and have no translation runtime or locale persistence.
+Applications load the shared stylesheet once and opt into base typography with `a13n-root` on the document body. Light is the default theme; the document element toggles the `dark` class so portaled content inherits tokens. Console uses English as the default and fallback and supports Simplified Chinese; shared components receive application-owned strings.
 
 ## Development Showcase and Validation
 
-The showcase lives in `a13n-ui/dev` and runs through its own Vite entry. It imports public components and demonstrates foundations, primitive states, settings, and collection compositions. Value selection, inline configuration, grouped disclosures, focus, and bounded scrolling are represented as interactive examples. Theme and language controls use local demonstration state and responsive layouts. The showcase is neither a Console route nor a public package export; production applications do not import its code or styles.
-
-Package checks type-check sources, exercise interaction contracts, and build the showcase. Application builds verify consumption through workspace exports. Browser checks cover focus, nested overlays, loading dimensions, theme inheritance, translated labels, expanded grouping, bounded scrolling, and narrow layouts.
+The showcase in `a13n-ui/dev` demonstrates foundations, primitive states, settings, and collection compositions through its own Vite entry. Package checks type-check sources, exercise interaction contracts, and build the showcase. Application builds verify consumption through workspace exports. Visual changes are verified on the rendered page in both themes and at a narrow width before handoff.

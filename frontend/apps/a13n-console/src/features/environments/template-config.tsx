@@ -1,4 +1,4 @@
-import { FormSection, formSectionStyles } from "../../shared/form-section";
+import { FormSection, formSectionStyles } from "../../shared/forms";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -14,7 +14,7 @@ import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
-import { jsonObject, validateSettings } from "../../shared/validation";
+import { jsonObject, validateSettings } from "../../shared/forms";
 import { ProviderConfiguration } from "./provider-configuration";
 import { environmentApi, type EnvironmentScope } from "./api";
 import { useEnvironmentTypes } from "./providers";

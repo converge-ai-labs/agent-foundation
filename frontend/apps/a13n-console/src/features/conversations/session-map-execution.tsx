@@ -11,7 +11,7 @@ import {
   DatabaseIcon,
   CodeIcon,
 } from "@phosphor-icons/react";
-import { StateBadge } from "../../shared/feedback";
+import { StatePill } from "../../shared/feedback";
 import { isObject } from "./projection";
 import type { Execution, ExecutionKind, ExecutionStep } from "./execution";
 import styles from "./session-map.module.css";
@@ -83,7 +83,7 @@ export function MapExecution({ execution }: { execution: Execution }) {
             <div className={styles.previewContent}>
               <div className={styles.runTitle}>
                 <strong>{t(label)}</strong>
-                <StateBadge
+                <StatePill
                   state={step.state}
                   label={step.dispatchOnly ? t("Dispatched") : undefined}
                 />

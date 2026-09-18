@@ -1,9 +1,9 @@
-import { Identifier } from "../../shared/copy";
-import { useResourceRows } from "../../shared/resource-modal";
+import { Identifier } from "../../shared/identity";
+import { useResourceRows } from "../../shared/dialogs";
 import type { Schema } from "../../shared/api";
-import { ProviderIcon } from "../../shared/provider-icon";
+import { ProviderIcon } from "../../shared/identity";
 import { ResourceIdentity } from "../../shared/collection";
-import { ScopeBadge } from "../../shared/scope-badge";
+import { ScopeBadge } from "../../shared/identity";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { useState } from "react";
@@ -11,8 +11,9 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { PageActions } from "../../shared/page-actions";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
 import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
 import { MemoryProviderEditor } from "./editor";
@@ -100,7 +101,7 @@ export function MemoryProviders({ scope }: { scope: MemoryProviderScope }) {
               {
                 label: t("Status"),
                 render: (item) => (
-                  <StateBadge state={item.enabled ? "enabled" : "disabled"} />
+                  <StatePill state={item.enabled ? "enabled" : "disabled"} />
                 ),
               },
             ]}

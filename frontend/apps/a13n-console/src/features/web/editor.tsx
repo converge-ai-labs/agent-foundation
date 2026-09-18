@@ -1,14 +1,14 @@
-import { useSuggestedName } from "../../shared/suggested-name";
-import { FormSection, formSectionStyles } from "../../shared/form-section";
-import { ResourceReference } from "../../shared/resource-reference";
-import { Identifier } from "../../shared/copy";
-import { ProviderTypeField } from "../../shared/provider-type-field";
+import { useSuggestedName } from "../../shared/forms";
+import { FormSection, formSectionStyles } from "../../shared/forms";
+import { ResourceReference } from "../../shared/identity";
+import { Identifier } from "../../shared/identity";
+import { ProviderTypeField } from "../../shared/forms";
 import {
   useResourceEditorState,
   type ResourceEditorControl,
-} from "../../shared/resource-modal";
-import { ProviderKeyLink } from "../../shared/provider-key-link";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
+} from "../../shared/dialogs";
+import { ProviderKeyLink } from "../../shared/forms";
+import { ResourceEditorButton } from "../../shared/identity";
 import { ApiError } from "../../service-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -25,7 +25,7 @@ import { useClient } from "../../auth/context";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { ResourceIdentity } from "../../shared/collection";
-import { FormActions } from "../../shared/form";
+import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { webProviderApi, type WebProviderScope } from "./api";
 

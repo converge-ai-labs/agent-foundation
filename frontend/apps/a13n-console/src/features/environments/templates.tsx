@@ -1,7 +1,7 @@
 import { ResourceIdentity } from "../../shared/collection";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { useResourceRows } from "../../shared/resource-modal";
-import { ScopeBadge } from "../../shared/scope-badge";
+import { ProviderIcon } from "../../shared/identity";
+import { useResourceRows } from "../../shared/dialogs";
+import { ScopeBadge } from "../../shared/identity";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -9,14 +9,14 @@ import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   InlineLoading,
   Loading,
-  StateBadge,
+  StatePill,
 } from "../../shared/feedback";
-import { PageActions } from "../../shared/page-actions";
+import { PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
 import { environmentApi, type EnvironmentScope } from "./api";
 import { useEnvironmentTypes } from "./providers";
@@ -149,9 +149,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
               {
                 label: t("Status"),
                 render: (item) => (
-                  <StateBadge
-                    state={item.archived_at ? "archived" : "active"}
-                  />
+                  <StatePill state={item.archived_at ? "archived" : "active"} />
                 ),
               },
             ]}

@@ -7,12 +7,12 @@ import { useId, useState, type FormEvent } from "react";
 
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router";
-import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/image-picker";
-import { ResourceKeyField } from "../../shared/resource-key";
+import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
+import { ResourceKeyField } from "../../shared/identity";
 import { useClient, type IdentityData } from "../../auth/context";
 import { UserAvatar } from "../../layout/avatar";
 import { representation, type Schema } from "../../shared/api";
-import { CopyableId } from "../../shared/copy";
+import { CopyableId } from "../../shared/identity";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import styles from "./settings.module.css";
 

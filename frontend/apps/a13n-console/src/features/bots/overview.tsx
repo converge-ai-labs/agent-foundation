@@ -10,7 +10,7 @@ import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
-import { StateBadge, Timestamp } from "../../shared/feedback";
+import { StatePill, Timestamp } from "../../shared/feedback";
 import { EventConnection } from "./event-connection";
 import { CallbackSetup } from "./connect";
 import { BotChecks } from "./checks";
@@ -144,7 +144,7 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
               <ChatCircleDotsIcon aria-hidden="true" />
               {t("Message responses")}
             </h2>
-            <StateBadge
+            <StatePill
               state={account.receive_enabled ? "enabled" : "disabled"}
             />
           </header>
@@ -245,7 +245,7 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
                 <div>
                   <dt>{t("Refer to memory when answering")}</dt>
                   <dd>
-                    <StateBadge
+                    <StatePill
                       state={account.memory.use_memory ? "enabled" : "disabled"}
                     />
                   </dd>
@@ -253,7 +253,7 @@ export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
                 <div>
                   <dt>{t("Allow saving or deleting memory through chat")}</dt>
                   <dd>
-                    <StateBadge
+                    <StatePill
                       state={
                         account.memory.save_on_request ? "enabled" : "disabled"
                       }

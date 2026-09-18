@@ -1,0 +1,49 @@
+.formActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.codeValue {
+  margin: 0;
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.code [data-slot="textarea"] {
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+}
+.json {
+  margin: 0;
+  padding: 16px;
+  border-radius: var(--a13n-radius-tile);
+  background: var(--a13n-surface);
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+  line-height: 1.7;
+  max-height: 440px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+:global([data-a13n-modal]) .json {
+  max-height: none;
+  border-radius: var(--a13n-radius-group);
+}
+.schemaFields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.schemaFields > :has(textarea) {
+  grid-column: 1 / -1;
+}
+.schemaFields:empty {
+  display: none;
+}

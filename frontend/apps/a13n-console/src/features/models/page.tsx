@@ -1,14 +1,14 @@
-import { useResourceRows } from "../../shared/resource-modal";
-import { CopyableResourceKey } from "../../shared/copy";
-import { ScopeBadge } from "../../shared/scope-badge";
+import { useResourceRows } from "../../shared/dialogs";
+import { CopyableResourceKey } from "../../shared/identity";
+import { ScopeBadge } from "../../shared/identity";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { Button, FormField, Input, SearchPicker } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
-import { ProviderIcon } from "../../shared/provider-icon";
+import { ProviderIcon } from "../../shared/identity";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
-import { PageActions } from "../../shared/page-actions";
+import { PageActions } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -20,14 +20,14 @@ import {
   ResourceTable,
   useCursor,
 } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   InlineLoading,
   Loading,
-  Page,
-  StateBadge,
+  StatePill,
 } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
 import { modelApi, type ModelScope } from "./api";
 import { ModelEditor } from "./model-editor";
@@ -316,7 +316,7 @@ export function Models({ scope }: { scope: ModelScope }) {
                   label: t("Status"),
                   render: (item) => (
                     <div>
-                      <StateBadge
+                      <StatePill
                         state={item.enabled ? "enabled" : "disabled"}
                       />
                       {providerById.get(item.provider_id)?.enabled ===

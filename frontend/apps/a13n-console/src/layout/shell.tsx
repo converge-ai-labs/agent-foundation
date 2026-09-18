@@ -31,6 +31,7 @@ import { Suspense, useState, type CSSProperties } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink, Outlet, useLocation } from "react-router";
 import { Loading } from "../shared/feedback";
+import { routeSkeleton } from "./navigation";
 import { AccountMenu } from "./account-menu";
 import { navigationGroups } from "./navigation";
 import { useMemoryProviders } from "../features/memory/availability";
@@ -38,9 +39,24 @@ import { useWorkspace } from "./workspace";
 import { WorkspaceMenu } from "./workspace-menu";
 const SIDEBAR_STATE_KEY = "a13n-console-sidebar";
 function PageOutlet() {
+  const { pathname } = useLocation();
+  // Route transitions to a known destination keep its layout while it loads.
+  const skeleton = routeSkeleton(pathname);
   return (
     <main id="main-content" className="min-h-0 min-w-0 flex-1">
-      <Suspense fallback={<Loading page />}>
+      <Suspense
+        fallback={
+          skeleton ? (
+            <Loading
+              page
+              variant={skeleton.variant}
+              columns={skeleton.columns}
+            />
+          ) : (
+            <Loading page />
+          )
+        }
+      >
         <Outlet />
       </Suspense>
     </main>
@@ -113,7 +129,7 @@ function WorkspaceNavigation({
         title={t("Main navigation")}
         description={t("Workspace navigation")}
       >
-        <SidebarHeader className="gap-2 px-2 pt-4">
+        <SidebarHeader className="gap-3 px-2 pt-4">
           {rail ? (
             <Button
               variant="ghost"
@@ -134,7 +150,7 @@ function WorkspaceNavigation({
               />
             </Button>
           ) : (
-            <div className="flex items-center gap-2 px-2 text-xl text-foreground">
+            <div className="flex items-center gap-2 px-2 text-foreground text-xl">
               <Logo alt="" width={28} height={28} />
               <Wordmark />
               <Button

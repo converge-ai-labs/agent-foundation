@@ -14,7 +14,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
-import { Empty, ErrorNotice } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice } from "../../shared/feedback";
 
 export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
   const { t } = useTranslation(),

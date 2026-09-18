@@ -2816,5 +2816,9 @@
   "Secret": "密钥",
   "Search applications and MCP servers…": "搜索应用与 MCP 服务器…",
   "Applications": "应用",
-  "Remote MCP servers": "远程 MCP 服务器"
+  "Remote MCP servers": "远程 MCP 服务器",
+  "Identity": "身份",
+  "How this agent appears across the console.": "此智能体在控制台中的呈现方式。",
+  "Saving creates the agent and publishes v1.": "保存将创建该智能体并发布 v1。",
+  "Note": "备注"
 }

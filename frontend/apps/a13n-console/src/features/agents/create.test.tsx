@@ -17,23 +17,21 @@ vi.mock("../../layout/workspace", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-vi.mock("./form", () => ({
-  AgentForm: ({
-    imagePicker,
+vi.mock("./editor", () => ({
+  AgentEditor: ({
+    identity,
     submit,
     pending,
   }: {
-    imagePicker: (name: string) => ReactNode;
-    submit: (config: object, name: string, description: string) => void;
+    identity: ReactNode;
+    submit: (config: object) => void;
     pending: boolean;
   }) => (
     <div>
-      {imagePicker("New agent")}
+      {identity}
       <button
         disabled={pending}
-        onClick={() =>
-          submit({ model: { model_key: "local" } }, "New agent", "")
-        }
+        onClick={() => submit({ model: { model_key: "local" }, protocol: {} })}
       >
         Create agent
       </button>

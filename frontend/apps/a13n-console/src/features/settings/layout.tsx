@@ -8,7 +8,7 @@ import {
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { PageActionsTarget } from "../../shared/page-actions";
+import { PageActionsTarget } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
 import { useSettingsNavigation, type SettingsScope } from "./navigation";

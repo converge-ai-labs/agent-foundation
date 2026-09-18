@@ -3,8 +3,8 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { type Schema } from "../../shared/api";
-import { useSuggestedName } from "../../shared/suggested-name";
-import { validateSettings } from "../../shared/validation";
+import { useSuggestedName } from "../../shared/forms";
+import { validateSettings } from "../../shared/forms";
 import { modelApi, type ModelScope } from "./api";
 import { initialHeaders, serializeHeaders } from "./provider-headers";
 

@@ -1,15 +1,23 @@
-import { ArrowLeftIcon, PlusIcon } from "@phosphor-icons/react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { Button, FormField, SearchPicker } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ProviderIcon } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
+import {
+  ProviderCatalog,
+  ProviderConnectForm,
+  connectStepDescription,
+} from "./add-provider";
 import { type ModelScope } from "./api";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { ProviderForm } from "./provider-form";
-import modelStyles from "./models.module.css";
+import { useProviderDraft } from "./provider-draft";
 
+/**
+ * Provider choice inside the model form. Connecting a new provider reuses the
+ * same catalog and connect form as the Add provider dialog.
+ */
 export function ProviderSetup({
   scope,
   providers,
@@ -35,26 +43,13 @@ export function ProviderSetup({
   if (!providers || !definitions) return <Loading variant="form" rows={3} />;
   if (connecting || !providers.length)
     return (
-      <div className={styles.stack}>
-        {!!providers.length && (
-          <Button
-            type="button"
-            variant="ghost"
-            className={modelStyles.backButton}
-            onClick={() => setConnecting(false)}
-          >
-            <ArrowLeftIcon size={14} />
-            {t("Choose provider")}
-          </Button>
-        )}
-        <ProviderForm
-          scope={scope}
-          definitions={definitions}
-          reload={async () => {}}
-          close={() => (providers.length ? setConnecting(false) : onCancel())}
-          onCreated={onCreated}
-        />
-      </div>
+      <ConnectProvider
+        scope={scope}
+        definitions={definitions}
+        onBack={providers.length ? () => setConnecting(false) : undefined}
+        onCancel={() => (providers.length ? setConnecting(false) : onCancel())}
+        onCreated={onCreated}
+      />
     );
   return (
     <div className={styles.stack}>
@@ -95,6 +90,61 @@ export function ProviderSetup({
           ]}
         />
       </FormField>
+    </div>
+  );
+}
+
+function ConnectProvider({
+  scope,
+  definitions,
+  onBack,
+  onCancel,
+  onCreated,
+}: {
+  scope: ModelScope;
+  definitions: Schema["ModelProviderDefinition"][];
+  onBack?: () => void;
+  onCancel: () => void;
+  onCreated: (provider: Schema["ModelProvider"], modelApi?: string) => void;
+}) {
+  const { t } = useTranslation();
+  const draft = useProviderDraft({
+    scope,
+    definitions,
+    initialType: "",
+    close: onCancel,
+    onCreated,
+  });
+  const chosen = draft.definition;
+  if (!chosen)
+    return (
+      <div className={styles.stack}>
+        {onBack && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="justify-self-start"
+            onClick={onBack}
+          >
+            {t("Choose provider")}
+          </Button>
+        )}
+        <ProviderCatalog
+          definitions={definitions}
+          onChoose={draft.chooseType}
+        />
+      </div>
+    );
+  return (
+    <div className={styles.stack}>
+      <p className={styles.muted}>{connectStepDescription(chosen, t)}</p>
+      <ProviderConnectForm
+        draft={draft}
+        definition={chosen}
+        onBack={() => draft.chooseType("")}
+        submitLabel={t("Connect provider")}
+      />
     </div>
   );
 }

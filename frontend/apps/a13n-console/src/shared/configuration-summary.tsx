@@ -1,6 +1,6 @@
 import { DisclosureSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { JsonView } from "./form";
+import { JsonView } from "./forms";
 
 export function ConfigurationSummary({
   value,

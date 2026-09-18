@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
-import { CopyableId } from "../../shared/copy";
-import { JsonView } from "../../shared/form";
+import { CopyableId } from "../../shared/identity";
+import { JsonView } from "../../shared/forms";
 import { parseItemValue, type PresentedItem } from "./projection";
 import styles from "./conversations.module.css";
 

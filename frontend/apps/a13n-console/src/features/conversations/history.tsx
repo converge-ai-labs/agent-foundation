@@ -11,7 +11,7 @@ import { useWorkspace } from "../../layout/workspace";
 import {
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
 import { useAgent } from "../agents/queries";
@@ -103,7 +103,7 @@ function HistoricalRun({ runId }: { runId: string }) {
         to={runPath(basePath, { ...run, run_id: run.id })}
       >
         {t("View run")} · <Timestamp value={run.created_at} />
-        <StateBadge state={run.status} />
+        <StatePill state={run.status} />
       </Link>
       <article className={styles.inputMessage}>
         <strong>

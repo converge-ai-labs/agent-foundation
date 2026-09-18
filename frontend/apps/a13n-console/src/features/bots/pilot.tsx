@@ -288,7 +288,7 @@ export function BotPilot({
               }
             />
             <p>
-              <Link to={`${basePath}/agents`} target="_blank" rel="noreferrer">
+              <Link to={`${basePath}/agents`}>
                 {t("Open agents in a new tab")}
               </Link>
             </p>

@@ -1,9 +1,9 @@
-import { ResourceModalTitle } from "../../shared/resource-modal-title";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ResourceModalTitle } from "../../shared/dialogs";
+import { ResourceEditorButton } from "../../shared/identity";
 import {
   useResourceEditorState,
   type ResourceEditorControl,
-} from "../../shared/resource-modal";
+} from "../../shared/dialogs";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FormField,
@@ -21,7 +21,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, representation, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/form";
+import { FormActions, TextAreaField } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { type EnvironmentScope } from "./api";
 import { TemplateConfig } from "./template-config";

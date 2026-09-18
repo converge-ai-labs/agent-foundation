@@ -1,9 +1,9 @@
-import { FormSection, formSectionStyles } from "../../shared/form-section";
-import { CredentialEditor } from "../../shared/credential-editor";
-import { ResourceReference } from "../../shared/resource-reference";
-import { ProviderTypeField } from "../../shared/provider-type-field";
-import { ProviderEnabled } from "../../shared/provider-enabled";
-import { ProviderKeyLink } from "../../shared/provider-key-link";
+import { FormSection, formSectionStyles } from "../../shared/forms";
+import { CredentialEditor } from "../../shared/forms";
+import { ResourceReference } from "../../shared/identity";
+import { ProviderTypeField } from "../../shared/forms";
+import { ProviderEnabled } from "../../shared/forms";
+import { ProviderKeyLink } from "../../shared/forms";
 import { providerKeyUrls } from "./provider-key-urls";
 import { requiresProviderCredential } from "./provider-credentials";
 import {
@@ -16,8 +16,8 @@ import { FormField, Input } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
-import { SchemaFields } from "../../shared/schema-fields";
+import { FormActions } from "../../shared/forms";
+import { SchemaFields } from "../../shared/forms";
 import { type ModelScope } from "./api";
 
 export function ProviderForm({

@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
-import { Page } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import { EnvironmentInstances } from "./instances";
 import { EnvironmentTemplates } from "./templates";
 

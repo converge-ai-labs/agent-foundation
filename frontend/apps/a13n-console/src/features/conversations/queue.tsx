@@ -13,10 +13,11 @@ import {
   ErrorNotice,
   ErrorToast,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm, JsonView } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
+import { JsonView } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import { conversationQueries, invalidateConversation, runPath } from "./api";
 import styles from "./conversations.module.css";
@@ -184,7 +185,7 @@ export function ThreadQueue({
               className={styles.queueItem}
             >
               <header>
-                <StateBadge state={item.state} />
+                <StatePill state={item.state} />
                 <Timestamp value={item.created_at} />
               </header>
               <InputContent input={item.submission.input} />

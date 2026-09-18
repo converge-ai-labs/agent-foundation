@@ -3,7 +3,6 @@ import { Tooltip, TooltipPopup, TooltipTrigger } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import styles from "./agents.module.css";
-import { useEditorLayout } from "./section";
 
 export type PermissionChoice = "allow" | "ask" | "deny";
 
@@ -43,7 +42,6 @@ export function ToolPermissions({
   onChange: (permission: PermissionChoice) => void;
 }) {
   const { t } = useTranslation();
-  const { permissionLabels } = useEditorLayout();
   return (
     <div
       className={styles.toolsetPermissions}
@@ -59,9 +57,7 @@ export function ToolPermissions({
                 <button
                   type="button"
                   disabled={readOnly}
-                  className={`${styles.toolsetPermission} ${
-                    permissionLabels ? styles.toolsetPermissionLabel : ""
-                  }`}
+                  className={`${styles.toolsetPermission} ${styles.toolsetPermissionLabel}`}
                   aria-label={t(permission)}
                   aria-pressed={
                     (value === "inherit" ? "allow" : (value ?? "allow")) ===
@@ -71,8 +67,8 @@ export function ToolPermissions({
                 />
               }
             >
-              <Icon size={permissionLabels ? 14 : 17} aria-hidden="true" />
-              {permissionLabels && <span>{t(labels[permission])}</span>}
+              <Icon size={14} aria-hidden="true" />
+              <span>{t(labels[permission])}</span>
             </TooltipTrigger>
             <TooltipPopup>{t(description)}</TooltipPopup>
           </Tooltip>

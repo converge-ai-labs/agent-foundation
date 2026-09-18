@@ -8,7 +8,7 @@ import type { Schema } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
 import { runPath } from "./api";
@@ -102,7 +102,7 @@ export function MapRun({
             <div className={styles.previewContent}>
               <div className={styles.runTitle}>
                 <strong>{label}</strong>
-                <StateBadge state={run.status} />
+                <StatePill state={run.status} />
               </div>
               {branchPoint && (
                 <p className={styles.branchExplanation}>

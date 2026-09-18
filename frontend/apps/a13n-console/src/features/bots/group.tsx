@@ -6,13 +6,9 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  StateBadge,
-} from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import { AgentLink } from "../agents/link";
 import { TargetEditor } from "../application-accounts/targets";
 import {
@@ -211,7 +207,7 @@ function GroupConfiguration({
         <div>
           <dt>{t("Receive messages")}</dt>
           <dd>
-            <StateBadge
+            <StatePill
               state={target.receive_enabled ? "enabled" : "disabled"}
             />
           </dd>

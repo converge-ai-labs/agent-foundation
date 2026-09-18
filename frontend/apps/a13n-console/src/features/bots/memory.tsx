@@ -12,9 +12,10 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { Pagination, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
 import { MarkdownContent } from "../../shared/markdown";
-import { Confirm } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
 import styles from "./bots.module.css";
 import { GroupMemorySettings, MemorySettings } from "./memory-settings";
 import { GroupMemoryActions } from "./memory-toolbar";
@@ -561,7 +562,7 @@ function ScopeDocuments({
               current && (
                 <>
                   <div className={styles.metadata}>
-                    <StateBadge state={current.shared ? "shared" : "active"} />
+                    <StatePill state={current.shared ? "shared" : "active"} />
                     <span>
                       {current.activity_date} · {current.timezone}
                     </span>

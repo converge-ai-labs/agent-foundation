@@ -23,9 +23,10 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, commandHeaders, data } from "../../shared/api";
-import { Empty, ErrorNotice, Loading } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading } from "../../shared/feedback";
 import { SessionList } from "./list";
-import { CopyableId } from "../../shared/copy";
+import { CopyableId } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
 import { conversationQueries, invalidateConversation, runPath } from "./api";
 import { Composer } from "./composer";
@@ -258,8 +259,6 @@ export function SessionLayout() {
                         scope: "thread",
                         subject_id: threadId,
                       })}
-                      target="_blank"
-                      rel="noopener noreferrer"
                     />
                   }
                 >

@@ -13,10 +13,10 @@ import { type Schema } from "../../shared/api";
 import {
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
+import { JsonView } from "../../shared/forms";
 import { conversationQueries, isActiveRun } from "./api";
 import styles from "./conversations.module.css";
 import { HistoryTranscript } from "./history";
@@ -113,7 +113,7 @@ export function RunContent({
     <div className={styles.run}>
       <header className={styles.runHeader}>
         <div>
-          <StateBadge state={run.status} />
+          <StatePill state={run.status} />
           <span>
             <Timestamp value={run.created_at} relative />
           </span>

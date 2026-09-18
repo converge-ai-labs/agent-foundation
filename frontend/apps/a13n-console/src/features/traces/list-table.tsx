@@ -8,7 +8,7 @@ import { Link, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { ResourceTable, type ResourceColumn } from "../../shared/collection";
-import { ResourceReference } from "../../shared/resource-reference";
+import { ResourceReference } from "../../shared/identity";
 import { Timestamp } from "../../shared/feedback";
 import {
   compareObservations,

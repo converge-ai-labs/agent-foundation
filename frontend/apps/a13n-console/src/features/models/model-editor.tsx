@@ -1,8 +1,8 @@
 import {
   useResourceEditorState,
   type ResourceEditorControl,
-} from "../../shared/resource-modal";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
+} from "../../shared/dialogs";
+import { ResourceEditorButton } from "../../shared/identity";
 import { ModalFrame } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";

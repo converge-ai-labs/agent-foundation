@@ -10,7 +10,7 @@ import {
   Input,
   ModalFrame,
 } from "a13n-ui";
-import { FileUpload } from "../../shared/file-upload";
+import { FileUpload } from "../../shared/forms";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -20,7 +20,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, JsonView } from "../../shared/form";
+import { FormActions, JsonView } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 

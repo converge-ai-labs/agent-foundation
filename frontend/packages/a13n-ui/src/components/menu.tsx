@@ -59,7 +59,7 @@ export function MenuPopup({
       >
         <MenuPrimitive.Popup
           className={cn(
-            "relative flex not-[class*='w-']:min-w-32 origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding shadow-lg/5 outline-none before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] focus:outline-none dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative flex not-[class*='w-']:min-w-32 origin-(--transform-origin) rounded-[10px] border-0 bg-popover not-dark:bg-clip-padding shadow-[0_10px_32px_--theme(--color-black/14%),0_1px_3px_--theme(--color-black/8%)] outline-none focus:outline-none dark:shadow-[0_10px_32px_--theme(--color-black/48%),0_0_0_1px_--theme(--color-white/6%)]",
             className,
           )}
           data-slot="menu-popup"

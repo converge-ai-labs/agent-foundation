@@ -4,15 +4,15 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   Loading,
-  Page,
   Timestamp,
-  StateBadge,
+  StatePill,
 } from "../../shared/feedback";
-import { CopyableId } from "../../shared/copy";
+import { Page } from "../../shared/page";
+import { CopyableId } from "../../shared/identity";
 import { conversationQueries, type SessionFilters } from "./api";
 import { SessionFilterBar, readSessionFilters } from "./filters";
 import styles from "./conversations.module.css";
@@ -103,7 +103,7 @@ function SessionResults({ filters }: { filters: SessionFilters }) {
               label: t("Recent run status"),
               render: (session) =>
                 session.preview ? (
-                  <StateBadge state={session.preview.run_status} />
+                  <StatePill state={session.preview.run_status} />
                 ) : (
                   "—"
                 ),

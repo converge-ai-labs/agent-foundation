@@ -1,20 +1,20 @@
-import { useSuggestedName } from "../../shared/suggested-name";
-import { FormSection, formSectionStyles } from "../../shared/form-section";
-import { CredentialEditor } from "../../shared/credential-editor";
+import { useSuggestedName } from "../../shared/forms";
+import { FormSection, formSectionStyles } from "../../shared/forms";
+import { CredentialEditor } from "../../shared/forms";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
-import { ResourceReference } from "../../shared/resource-reference";
-import { ProviderTypeField } from "../../shared/provider-type-field";
-import { ProviderEnabled } from "../../shared/provider-enabled";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { ProviderKeyLink } from "../../shared/provider-key-link";
+import { ResourceReference } from "../../shared/identity";
+import { ProviderTypeField } from "../../shared/forms";
+import { ProviderEnabled } from "../../shared/forms";
+import { ProviderIcon } from "../../shared/identity";
+import { ProviderKeyLink } from "../../shared/forms";
 import {
   useResourceEditorState,
   useResourceRows,
   type ResourceEditorControl,
-} from "../../shared/resource-modal";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
+} from "../../shared/dialogs";
+import { ResourceEditorButton } from "../../shared/identity";
 import { ResourceIdentity } from "../../shared/collection";
-import { ScopeBadge } from "../../shared/scope-badge";
+import { ScopeBadge } from "../../shared/identity";
 import {
   Button,
   FormField,
@@ -26,23 +26,20 @@ import {
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { PageActions } from "../../shared/page-actions";
+import { PageActions } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { FormActions } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
-import { SchemaFields } from "../../shared/schema-fields";
+import { SchemaFields } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
-import {
-  jsonObject,
-  stringValues,
-  validateSettings,
-} from "../../shared/validation";
+import { jsonObject, stringValues, validateSettings } from "../../shared/forms";
 import { connectorApi, type ConnectorScope } from "./api";
 
 export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
@@ -119,7 +116,7 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
               {
                 label: t("Status"),
                 render: (item) => (
-                  <StateBadge
+                  <StatePill
                     state={item.status === "active" ? "enabled" : "disabled"}
                   />
                 ),

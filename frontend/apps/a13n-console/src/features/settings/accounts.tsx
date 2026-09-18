@@ -1,9 +1,9 @@
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ResourceEditorButton } from "../../shared/identity";
 import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { PageActions } from "../../shared/page-actions";
+import { PageActions } from "../../shared/page";
 
 import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -11,8 +11,10 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { Confirm, FormActions } from "../../shared/form";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { Confirm } from "../../shared/dialogs";
+import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { ApiKeys } from "./keys";
 
@@ -85,7 +87,7 @@ export function ServiceAccounts() {
               },
               {
                 label: t("Status"),
-                render: (item) => <StateBadge state={item.status} />,
+                render: (item) => <StatePill state={item.status} />,
               },
               {
                 label: t("Actions"),

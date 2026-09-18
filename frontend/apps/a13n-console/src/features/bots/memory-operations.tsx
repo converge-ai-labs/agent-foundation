@@ -6,7 +6,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
 import { Pagination, useCursor } from "../../shared/collection";
-import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
 import { refreshMemory } from "./memory-actions";
 import styles from "./bots.module.css";
 
@@ -142,7 +142,7 @@ function Operation({
       <div>
         <strong>{entry.title}</strong>
         <small>{entry.id}</small>
-        <StateBadge state={action.data?.state ?? entry.state} />
+        <StatePill state={action.data?.state ?? entry.state} />
       </div>
       <Button
         type="button"

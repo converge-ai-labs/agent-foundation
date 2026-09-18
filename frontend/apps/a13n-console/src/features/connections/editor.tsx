@@ -1,4 +1,4 @@
-import { ResourceModalTitle } from "../../shared/resource-modal-title";
+import { ResourceModalTitle } from "../../shared/dialogs";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
 import {
   BrandIcon,
@@ -22,9 +22,9 @@ import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
   useResourceEditorState,
   type ResourceEditorControl,
-} from "../../shared/resource-modal";
-import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { Confirm } from "../../shared/form";
+} from "../../shared/dialogs";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { Confirm } from "../../shared/dialogs";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import { ConnectionSetup } from "../connectors/setup";
@@ -108,7 +108,7 @@ export function ConnectionDetails({
               ? query.data.source.connector_key
               : query.data?.source.endpoint_url}
           </span>
-          <StateBadge state={query.data?.status ?? "pending"} />
+          <StatePill state={query.data?.status ?? "pending"} />
         </span>
       }
       closeLabel={t("Close")}
@@ -270,7 +270,7 @@ function ConnectionSettings({
                 ? "Provider account check"
                 : "MCP discovery check",
             )}
-            : <StateBadge state={basis.last_check.status} />{" "}
+            : <StatePill state={basis.last_check.status} />{" "}
             {basis.last_check.error_code} ·{" "}
             {new Date(basis.last_check.checked_at).toLocaleString()}
           </p>

@@ -7,11 +7,11 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
+import { Empty } from "../../shared/collection";
 import {
-  Empty,
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
 import { AgentLink } from "../agents/link";
@@ -129,7 +129,7 @@ function ConversationList({
               },
               {
                 label: t("Run status"),
-                render: (item) => <StateBadge state={item.run_status} />,
+                render: (item) => <StatePill state={item.run_status} />,
               },
               {
                 label: t("Updated"),

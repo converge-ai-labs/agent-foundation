@@ -1,7 +1,7 @@
 import { Badge } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
-import { StateBadge } from "../../shared/feedback";
+import { StatePill } from "../../shared/feedback";
 
 /** Presentation only: missing end time does not imply running execution. */
 export function durationMs(observation: Schema["Observation"]): number | null {
@@ -34,7 +34,7 @@ export function TelemetryStatus({
   return observation.status === null ? (
     <>-</>
   ) : (
-    <StateBadge state={observation.status} />
+    <StatePill state={observation.status} />
   );
 }
 

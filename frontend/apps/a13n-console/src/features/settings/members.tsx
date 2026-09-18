@@ -4,7 +4,7 @@ import { SearchPicker } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { PageActions } from "../../shared/page-actions";
+import { PageActions } from "../../shared/page";
 
 import { ApiError } from "../../service-client";
 import { PlusIcon } from "@phosphor-icons/react";
@@ -14,8 +14,10 @@ import { UserAvatar as Avatar } from "../../layout/avatar";
 import { useAccess } from "../../layout/workspace";
 import { allPages, data, representation, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading } from "../../shared/feedback";
-import { Confirm, FormActions } from "../../shared/form";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading } from "../../shared/feedback";
+import { Confirm } from "../../shared/dialogs";
+import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 
 export type MembershipScope = {

@@ -1,7 +1,7 @@
 import { Button, SettingsRow } from "a13n-ui";
 import { useMutation } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ErrorNotice, StateBadge } from "../../shared/feedback";
+import { ErrorNotice, StatePill } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 
 export function ConnectionTest({
@@ -54,7 +54,7 @@ export function ConnectionTest({
       {!dirty && test.data && (
         <div role="status" className="pb-4 text-sm">
           <div className="flex items-center gap-2">
-            <StateBadge state={test.data.success ? "succeeded" : "failed"} />
+            <StatePill state={test.data.success ? "succeeded" : "failed"} />
             <span className="text-xs text-muted-foreground">
               {test.data.elapsed_ms} ms
             </span>

@@ -7,7 +7,7 @@ import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
-import { JsonView } from "../../shared/form";
+import { JsonView } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 import { type EnvironmentScope } from "./api";
 import { TemplateConfig } from "./template-config";

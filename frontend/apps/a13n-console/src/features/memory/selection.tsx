@@ -121,8 +121,6 @@ export function AgentMemorySelection({
         <a
           className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
           href={providersPath("memory", "workspace", workspace.key)}
-          target="_blank"
-          rel="noopener noreferrer"
         >
           {t("Manage memory providers")}
           <ArrowSquareOutIcon size={14} aria-hidden="true" />
@@ -136,8 +134,6 @@ export function AgentMemorySelection({
             subject_id: agentId,
             provider_id: savedProviderId,
           })}
-          target="_blank"
-          rel="noopener noreferrer"
         >
           {t("View agent memories")}
           <ArrowSquareOutIcon size={14} aria-hidden="true" />

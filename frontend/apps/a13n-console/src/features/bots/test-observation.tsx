@@ -12,11 +12,11 @@ import { Link } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
-import { CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/identity";
 import {
   ErrorNotice,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
 import { runPath } from "../conversations/api";
@@ -202,7 +202,7 @@ export function TestObservation({
           <div className={summaryStyles.stepLabel}>
             <strong>{t("Platform reply")}</strong>
             {test.reply && (
-              <StateBadge
+              <StatePill
                 state={test.reply.status}
                 label={t(
                   (

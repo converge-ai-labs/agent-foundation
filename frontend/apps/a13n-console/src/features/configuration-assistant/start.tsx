@@ -22,7 +22,8 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
-import { ErrorNotice, Loading, Page, Timestamp } from "../../shared/feedback";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import { Pagination, useCursor } from "../../shared/collection";
 import { useIdempotency } from "../../shared/idempotency";
 import { useAssistantReadiness } from "./api";

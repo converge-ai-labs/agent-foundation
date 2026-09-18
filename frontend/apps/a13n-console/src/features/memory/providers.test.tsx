@@ -230,7 +230,7 @@ it("preserves all memory options when switching providers and refreshes choices 
   setup(<Draft />);
   await waitFor(() => expect(http.GET).toHaveBeenCalledOnce());
   const link = screen.getByRole("link", { name: "Manage memory providers" });
-  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("target")).toBeNull();
   expect(link.getAttribute("href")).toBe(
     "/workspace/research/settings?section=providers&category=memory",
   );
@@ -283,5 +283,5 @@ it("links to the saved Agent provider even when the selection draft changes", as
   expect(link.getAttribute("href")).toBe(
     "/workspace/research/memories?scope=agent&provider=memprov_old&subject=agt_stable",
   );
-  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("target")).toBeNull();
 });

@@ -18,8 +18,8 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { TextAreaField } from "../../shared/form";
-import { jsonObject, runOverride } from "../../shared/validation";
+import { TextAreaField } from "../../shared/forms";
+import { jsonObject, runOverride } from "../../shared/forms";
 import styles from "./conversations.module.css";
 
 type Options = Omit<Schema["ThreadRunSubmissionIntent-Input"], "input">;

@@ -9,7 +9,7 @@ import {
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
-import { CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/identity";
 import { MarkdownContent } from "../../shared/markdown";
 import styles from "./traces.module.css";
 
