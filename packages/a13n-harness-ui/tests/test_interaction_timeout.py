@@ -13,7 +13,7 @@ from a13n_harness_ui.root_execution import RootContinuationSelection, RootRunOut
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.storage import ObjectKind, ObjectRef
 from a13n_harness_ui.surfaces import ExternalToolResult, RootOperationStatus, ThreadDeferredResponse
-from anyio import Event, create_task_group, fail_after, sleep
+from anyio import Event, create_task_group, fail_after
 from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.usage import RunUsage
@@ -83,22 +83,38 @@ def answer():
     )
 
 
-async def test_timeout_denies_complete_mixed_batch_once_without_a_viewer():
+async def test_timeout_denies_complete_mixed_batch_once_without_a_viewer(monkeypatch):
     seen = []
+    timer_started, expire, timer_finished = Event(), Event(), Event()
 
     async def execute(**kwargs):
         seen.append(kwargs["response"])
-        return suspended_outcome(seconds=0.02) if kwargs["response"] is None else completed_outcome()
+        return suspended_outcome() if kwargs["response"] is None else completed_outcome()
 
     coordinator = RootRunCoordinator(cast(Any, SimpleNamespace(execute=execute)), interaction_timeouts=True)
+    original_expire = coordinator._expire_interaction
+
+    async def controlled_expiry(thread_id, pending):
+        timer_started.set()
+        await expire.wait()
+        with monkeypatch.context() as clock:
+            clock.setattr("a13n_harness_ui.root_run.monotonic", lambda: pending.deadline + 1)
+            await original_expire(thread_id, pending)
+        timer_finished.set()
+
+    monkeypatch.setattr(coordinator, "_expire_interaction", controlled_expiry)
     await coordinator.start()
     try:
         receipt = await coordinator.submit_prompt(thread_id=THREAD, prompt="ask")
         assert (await coordinator.wait(receipt.receipt_id)).status is RootOperationStatus.suspended
-        assert await coordinator.interaction_expiry(THREAD, CONTINUATION) is not None
-        with fail_after(2):
-            while len(seen) < 2 or await coordinator.active(THREAD) is not None:
-                await sleep(0.005)
+        with fail_after(5):
+            await timer_started.wait()  # Admission really scheduled the automatic timer.
+            assert await coordinator.interaction_expiry(THREAD, CONTINUATION) is not None
+            expire.set()
+            await timer_finished.wait()
+            latest = await coordinator.active(THREAD) or await coordinator.latest(THREAD)
+            assert latest is not None and latest.receipt.receipt_id != receipt.receipt_id
+            assert (await coordinator.wait(latest.receipt.receipt_id)).status is RootOperationStatus.completed
         assert len(seen) == 2
         response = seen[1]
         assert response.expected_continuation_id == CONTINUATION
@@ -106,8 +122,6 @@ async def test_timeout_denies_complete_mixed_batch_once_without_a_viewer():
         assert question.denied and question.denial_message == QUESTION_TIMEOUT_MESSAGE
         assert external.denied and not approval.approved
         assert await coordinator.interaction_expiry(THREAD, CONTINUATION) is None
-        await sleep(0.03)
-        assert len(seen) == 2
     finally:
         await coordinator.close(timeout_seconds=1)
 

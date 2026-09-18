@@ -8,7 +8,6 @@ from a13n_harness_ui.composition import ResolvedRunComposition
 from a13n_harness_ui.root_execution import _selection
 from a13n_harness_ui.storage import StoredContinuation, ThreadConfigurationMutation, ThreadConfigurationPatch
 from a13n_harness_ui.surfaces import ExternalToolResult, NewThreadDefaults, RootOperationStatus, ThreadDeferredResponse
-from anyio import fail_after, sleep
 
 from .test_app import _CompletedReconstructor, _DeferredReconstructor, _settings, _write_configuration
 
@@ -125,7 +124,7 @@ async def test_deferred_response_retains_run_environment_unless_explicitly_chang
 
 async def test_automatic_interaction_timeout_retains_run_environment(tmp_path, monkeypatch):
     root = _write_configuration(tmp_path)
-    root.write_text(root.read_text() + "tools:\n  interaction_timeout_seconds: 0.1\n")
+    root.write_text(root.read_text() + "tools:\n  interaction_timeout_seconds: 120\n")
     async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root, host_mode="webui") as app:
         app._root_runs._executor._agents = _DeferredReconstructor()
         thread = await app.create_thread()
@@ -134,12 +133,12 @@ async def test_automatic_interaction_timeout_retains_run_environment(tmp_path, m
             thread_id=thread.thread_id, prompt="Ask", environment_profile_id="environment-sandbox"
         )
         await app.wait_root_operation(receipt.receipt_id)
-        with fail_after(5):
-            while True:
-                latest = await app._root_runs.latest(thread.thread_id)
-                if latest is not None and latest.receipt.receipt_id != receipt.receipt_id:
-                    break
-                await sleep(0.01)
-            assert (await app.wait_root_operation(latest.receipt.receipt_id)).status is RootOperationStatus.completed
+        pending = app._root_runs._interaction_waits[thread.thread_id]
+        with monkeypatch.context() as clock:
+            clock.setattr("a13n_harness_ui.root_run.monotonic", lambda: pending.deadline + 1)
+            await app._root_runs._expire_interaction(thread.thread_id, pending)
+        latest = await app._root_runs.active(thread.thread_id) or await app._root_runs.latest(thread.thread_id)
+        assert latest is not None and latest.receipt.receipt_id != receipt.receipt_id
+        assert (await app.wait_root_operation(latest.receipt.receipt_id)).status is RootOperationStatus.completed
         assert [capture.environment_profile.profile_id for capture in captures] == ["environment-sandbox"] * 2
         assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
