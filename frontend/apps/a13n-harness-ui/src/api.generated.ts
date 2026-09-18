@@ -50,6 +50,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/push/subscriptions/{subscription_id}/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Record Push Activity */
+        post: operations["record_push_activity_api_push_subscriptions__subscription_id__activity_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/push/subscriptions/{subscription_id}/test": {
         parameters: {
             query?: never;
@@ -4943,11 +4960,6 @@ export interface components {
             keys: components["schemas"]["PushKeys"];
             /** Origin */
             origin: string;
-            /**
-             * Thread Ids
-             * @default []
-             */
-            thread_ids?: string[];
         };
         /** DismissUpdate */
         DismissUpdate: {
@@ -5398,6 +5410,35 @@ export interface operations {
         };
     };
     unsubscribe_push_api_push_subscriptions__subscription_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                subscription_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    record_push_activity_api_push_subscriptions__subscription_id__activity_post: {
         parameters: {
             query?: never;
             header?: never;

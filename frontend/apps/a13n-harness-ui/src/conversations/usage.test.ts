@@ -9,6 +9,7 @@ const totals: Schema<"UsageTotals"> = {
     ["input_tokens", 800],
     ["output_tokens", 200],
     ["cache_read_tokens", 600],
+    ["cache_write_tokens", 100],
   ],
   model_cost_usd: "0.025",
   unknown_model_costs: 0,
@@ -21,8 +22,16 @@ const usage: Schema<"ThreadUsageView"> = {
   first_observed_at: "2026-01-01T00:00:00Z",
   observed_through: "2026-01-01T00:01:00Z",
   root: totals,
-  descendants: { ...totals, model_cost_usd: "100" },
-  combined: { ...totals, model_cost_usd: "100.025" },
+  descendants: {
+    ...totals,
+    tokens: [["input_tokens", 9000]],
+    model_cost_usd: "100",
+  },
+  combined: {
+    ...totals,
+    tokens: [["input_tokens", 10000]],
+    model_cost_usd: "100.025",
+  },
   models: [],
   other_models: totals,
   recent_runs: [],
@@ -35,10 +44,22 @@ it("matches root CLI accounting rather than descendant totals or cache/input alo
       latest_request_tokens: 25000,
       context_window: 100000,
     }),
-  ).toEqual({ context: "25%", cost: "$0.0250", cache: "60.0%" });
+  ).toEqual({
+    totalTokens: 1000,
+    tokens: "1.0K",
+    context: "25%",
+    cost: "$0.0250",
+    cache: "60.0%",
+  });
 });
 it("distinguishes missing usage from zero, partial costs and tiny nonzero costs", () => {
-  expect(usageSummary()).toEqual({ context: "—", cost: "—", cache: "—" });
+  expect(usageSummary()).toEqual({
+    totalTokens: undefined,
+    tokens: "—",
+    context: "—",
+    cost: "—",
+    cache: "—",
+  });
   expect(usageSummary({ ...usage, first_observed_at: null }).cost).toBe("—");
   expect(
     usageSummary({ ...usage, root: { ...totals, unknown_model_costs: 2 } })
@@ -65,6 +86,30 @@ it("distinguishes missing usage from zero, partial costs and tiny nonzero costs"
       latest_request_tokens: 1,
     }).context,
   ).toBe("—");
+});
+it.each([
+  [0, "0"],
+  [999, "999"],
+  [1000, "1.0K"],
+  [12345, "12.3K"],
+  [1000000, "1.0M"],
+  [1250000, "1.3M"],
+])("formats %i total tokens like the CLI as %s", (total, text) => {
+  const summary = usageSummary({
+    ...usage,
+    root: { ...totals, tokens: [["input_tokens", total]] },
+  });
+  expect(summary.totalTokens).toBe(total);
+  expect(summary.tokens).toBe(text);
+});
+it("keeps unobserved model usage unavailable without losing observed zero", () => {
+  expect(usageSummary({ ...usage, first_observed_at: null }).tokens).toBe("—");
+  expect(
+    usageSummary({ ...usage, root: { ...totals, model_requests: 0 } }).tokens,
+  ).toBe("—");
+  expect(
+    usageSummary({ ...usage, root: { ...totals, tokens: [] } }).tokens,
+  ).toBe("0");
 });
 const operation: Schema<"RootOperationView"> = {
   receipt: {

@@ -9,13 +9,20 @@ import {
   within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { CopyMessage } from "./copy-message";
 import { InputContent, inputCopyText, type InputPart } from "./input-content";
 import { previewInput } from "./local-input";
 import { ConversationTranscript, LiveOutput } from "./transcript";
 import type { Schema } from "../transport/client";
 
+beforeEach(() => {
+  vi.stubGlobal("matchMedia", () => ({
+    matches: false,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+  }));
+});
 afterEach(() => {
   cleanup();
   vi.useRealTimers();

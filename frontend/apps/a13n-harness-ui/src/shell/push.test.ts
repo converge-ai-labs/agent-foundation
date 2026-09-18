@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { createTransport } from "../transport/client";
-import { disablePush, enablePush, pushSubscriptionId, testPush } from "./push";
+import {
+  disablePush,
+  enablePush,
+  pushSubscriptionId,
+  reportPushActivity,
+  testPush,
+} from "./push";
 import { writePreference } from "./preferences";
 
 const key = "B" + "A".repeat(86);
@@ -88,7 +94,7 @@ afterEach(() => {
 
 it("requires an explicit opt-in, then registers a root worker and persists the authenticated subscription", async () => {
   permission = "default";
-  await enablePush(transport, ["thread-one"]);
+  await enablePush(transport);
   expect(requestPermission).toHaveBeenCalledOnce();
   expect(requestPermission.mock.invocationCallOrder[0]).toBeLessThan(
     fetchMock.mock.invocationCallOrder[0],
@@ -107,16 +113,15 @@ it("requires an explicit opt-in, then registers a root worker and persists the a
   expect(put.headers.get("authorization")).toBe("Bearer test-key");
   expect(await put.json()).toMatchObject({
     origin: window.location.origin,
-    thread_ids: ["thread-one"],
   });
   expect(pushSubscriptionId()).toBe("subscription-one");
 });
 
 it("does not prompt or subscribe merely on restore, and reuses a tracked browser subscription", async () => {
-  await enablePush(transport, [], false);
+  await enablePush(transport, false);
   expect(fetchMock).not.toHaveBeenCalled();
-  await enablePush(transport, ["thread-one"]);
-  await enablePush(transport, ["thread-two"], false);
+  await enablePush(transport);
+  await enablePush(transport, false);
   expect(subscribe).toHaveBeenCalledOnce();
   expect(requestPermission).not.toHaveBeenCalled();
 });
@@ -127,18 +132,18 @@ it("invalidates a newly created subscription after a lost save response", async 
       throw new TypeError("connection lost after save");
     return Response.json({ public_key: key });
   });
-  await expect(enablePush(transport, [])).rejects.toThrow("Unable to reach");
+  await expect(enablePush(transport)).rejects.toThrow("Unable to reach");
   expect(unsubscribe).toHaveBeenCalledOnce();
   expect(pushSubscriptionId()).toBe("");
 });
 
 it("keeps a tracked subscription through a transient refresh failure", async () => {
-  await enablePush(transport, []);
+  await enablePush(transport);
   fetchMock.mockImplementation(async (request: Request) => {
     if (request.method === "PUT") return new Response(null, { status: 503 });
     return Response.json({ public_key: key });
   });
-  await expect(enablePush(transport, [], false)).rejects.toThrow();
+  await expect(enablePush(transport, false)).rejects.toThrow();
   expect(unsubscribe).not.toHaveBeenCalled();
   expect(pushSubscriptionId()).toBe("subscription-one");
 });
@@ -147,7 +152,7 @@ it("rolls back opt-in when browser storage is unavailable", async () => {
   vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
     throw new Error("storage blocked");
   });
-  await expect(enablePush(transport, [])).rejects.toThrow(
+  await expect(enablePush(transport)).rejects.toThrow(
     "Browser storage is unavailable",
   );
   expect(unsubscribe).toHaveBeenCalled();
@@ -157,19 +162,16 @@ it("rolls back opt-in when browser storage is unavailable", async () => {
 });
 
 it("disables locally despite an unreachable server and prevents a queued refresh from re-enabling", async () => {
-  await enablePush(transport, []);
+  await enablePush(transport);
   fetchMock.mockRejectedValue(new TypeError("offline"));
-  await Promise.all([
-    disablePush(transport),
-    enablePush(transport, ["thread-two"], false),
-  ]);
+  await Promise.all([disablePush(transport), enablePush(transport, false)]);
   expect(unsubscribe).toHaveBeenCalledOnce();
   expect(pushSubscriptionId()).toBe("");
   expect(subscribe).toHaveBeenCalledOnce();
 });
 
 it("still removes server state when browser unsubscribe fails, but reports failure when both fail", async () => {
-  await enablePush(transport, []);
+  await enablePush(transport);
   unsubscribe.mockRejectedValue(new Error("browser failed"));
   await disablePush(transport);
   expect(pushSubscriptionId()).toBe("");
@@ -186,43 +188,43 @@ it("does not create a subscription after reminders were disabled during permissi
     permission = "granted";
     return permission;
   });
-  await enablePush(transport, []);
+  await enablePush(transport);
   expect(subscribe).not.toHaveBeenCalled();
 });
 
 it("reports provider acceptance without claiming device delivery", async () => {
-  await enablePush(transport, []);
+  await enablePush(transport);
   await testPush(transport);
   fetchMock.mockResolvedValue(Response.json({ accepted: false }));
   await expect(testPush(transport)).rejects.toThrow("did not accept");
 });
 
 it("requires explicit reconnection when a tracked browser subscription has disappeared", async () => {
-  await enablePush(transport, []);
+  await enablePush(transport);
   current = null;
-  await expect(enablePush(transport, [], false)).rejects.toThrow("expired");
+  await expect(enablePush(transport, false)).rejects.toThrow("expired");
   expect(subscribe).toHaveBeenCalledOnce();
   expect(pushSubscriptionId()).toBe("subscription-one");
-  await enablePush(transport, []);
+  await enablePush(transport);
   expect(subscribe).toHaveBeenCalledTimes(2);
 });
 
 it("does not silently replace a subscription when the server signing key changes", async () => {
-  await enablePush(transport, []);
+  await enablePush(transport);
   Object.assign(current!.options, {
     applicationServerKey: new Uint8Array([1]).buffer,
   });
-  await expect(enablePush(transport, [], false)).rejects.toThrow("expired");
+  await expect(enablePush(transport, false)).rejects.toThrow("expired");
   expect(unsubscribe).not.toHaveBeenCalled();
   expect(subscribe).toHaveBeenCalledOnce();
-  await enablePush(transport, []);
+  await enablePush(transport);
   expect(unsubscribe).toHaveBeenCalledOnce();
   expect(subscribe).toHaveBeenCalledTimes(2);
 });
 
 it("replaces a rejected endpoint on explicit reconnect even if the browser still returns it", async () => {
-  await enablePush(transport, []);
-  await enablePush(transport, []);
+  await enablePush(transport);
+  await enablePush(transport);
   expect(unsubscribe).toHaveBeenCalledOnce();
   expect(subscribe).toHaveBeenCalledTimes(2);
 });
@@ -233,7 +235,7 @@ it("identifies a device push-service registration failure without saving or retr
     "AbortError",
   );
   subscribe.mockRejectedValue(cause);
-  await expect(enablePush(transport, [])).rejects.toMatchObject({
+  await expect(enablePush(transport)).rejects.toMatchObject({
     message: expect.stringContaining(
       "Browser push registration failed before a subscription could be saved to Harness UI",
     ),
@@ -250,9 +252,67 @@ it("preserves permission errors as browser registration failures, not server sen
   subscribe.mockRejectedValue(
     new DOMException("Permission denied", "NotAllowedError"),
   );
-  await expect(enablePush(transport, [])).rejects.toThrow(
+  await expect(enablePush(transport)).rejects.toThrow(
     "Check this site's notification permission",
   );
   expect(subscribe).toHaveBeenCalledOnce();
   expect(pushSubscriptionId()).toBe("");
 });
+
+it("reports only existing visible opt-ins without registering a worker or refreshing keys", async () => {
+  const signal = new AbortController().signal;
+  await reportPushActivity(transport, signal);
+  expect(fetchMock).not.toHaveBeenCalled();
+  writePreference("notifications.push-subscription", "subscription-one");
+  vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+  await reportPushActivity(transport, signal);
+  expect(fetchMock).toHaveBeenCalledOnce();
+  const sent = fetchMock.mock.calls[0][0] as Request;
+  expect(new URL(sent.url).pathname).toBe(
+    "/api/push/subscriptions/subscription-one/activity",
+  );
+  expect(sent.method).toBe("POST");
+  expect(sent.headers.has("authorization")).toBe(true);
+  expect(navigator.serviceWorker.register).not.toHaveBeenCalled();
+  expect(subscribe).not.toHaveBeenCalled();
+});
+
+it.each(["hidden", "disabled", "revoked", "removed", "aborted"])(
+  "rechecks %s after waiting for the subscription mutation lock",
+  async (change) => {
+    writePreference("notifications.push-subscription", "subscription-one");
+    vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    let release!: () => Promise<void>;
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: (_name: string, callback: () => Promise<void>) =>
+          new Promise<void>((resolve, reject) => {
+            release = async () => {
+              try {
+                await callback();
+                resolve();
+              } catch (error) {
+                reject(error);
+              }
+            };
+          }),
+      },
+    });
+    const controller = new AbortController();
+    const pending = reportPushActivity(transport, controller.signal);
+    if (change === "hidden")
+      vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    if (change === "disabled")
+      writePreference("notifications.enabled", "false");
+    if (change === "revoked") permission = "denied";
+    if (change === "removed")
+      writePreference("notifications.push-subscription", "");
+    if (change === "aborted") controller.abort();
+    await release();
+    await pending;
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(subscribe).not.toHaveBeenCalled();
+  },
+);

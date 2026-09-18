@@ -90,7 +90,7 @@ class WebPushSubscriptionRecord(Base):
     p256dh: Mapped[str] = mapped_column(Text, nullable=False)
     auth: Mapped[str] = mapped_column(Text, nullable=False)
     origin: Mapped[str] = mapped_column(Text, nullable=False)
-    thread_ids_json: Mapped[str] = mapped_column(Text, nullable=False)
+    last_active_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 

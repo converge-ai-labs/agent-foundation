@@ -210,7 +210,7 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       ? info.args.edits.filter(record)
       : [info.args];
   return (
-    <div className={styles.details}>
+    <div className={styles.details} data-tool-details>
       {info.errorText && (
         <p role="status" className={styles.error}>
           {info.errorText}
@@ -461,7 +461,7 @@ function CollaborationDetails({ tool }: { tool: ToolView }) {
               ? `${result.total} ${resources} found`
               : `Available ${resources}`}
           </h4>
-          <ul className={styles.resources}>
+          <ul className={styles.resources} data-tool-resources>
             {(result[resources] as unknown[])
               .filter(record)
               .map((resource, index) => {
@@ -563,7 +563,7 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
           onOpenChange={setExpanded}
         >
           {expanded && (
-            <div className={styles.details}>
+            <div className={styles.details} data-tool-details>
               {receipt.questions.map((question, index) => (
                 <section key={index} className={styles.originalQuestion}>
                   {typeof question.header === "string" && (

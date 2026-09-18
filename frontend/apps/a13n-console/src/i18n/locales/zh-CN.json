@@ -2770,5 +2770,9 @@
   "There is no completed state to continue. Retry this run or start a new debug session.": "当前没有可继续的已完成状态。请重试此运行，或新建调试会话。",
   "This session is controlled by its originating application. Use Try agent to start a separate debug session.": "此会话由发起应用控制。可通过“试用 Agent”新建独立调试会话。",
   "Try your agent": "测试 Agent",
-  "Waiting for feedback": "等待反馈"
+  "Waiting for feedback": "等待反馈",
+  "For image and file input, grant files:read; for generated file replies, grant files:write. Reauthorize existing installations after adding these scopes.": "读取图片和文件需要 files:read 权限，回传生成的文件需要 files:write 权限。为已有应用添加权限后，请重新授权。",
+  "To receive standalone group file messages, Feishu requires im:message.group_msg and a reception mode that accepts messages without a mention. This permission gives the app access to all messages in groups it joins; enable it only when needed.": "要接收群内单独发送的文件，飞书需要 im:message.group_msg 权限，并选择允许未 @ 消息的接收模式。此权限允许应用获取其所在群的所有消息，请按需开启。",
+  "Enable message-resource access to read attachments. To send generated files, grant im:resource (or an existing im:resource:upload permission), then publish the updated Feishu app permissions.": "读取附件需要消息资源访问权限。回传生成的文件还需要 im:resource（或已有的 im:resource:upload）权限，修改后请发布飞书应用使权限生效。",
+  "Attach images, PDFs, or UTF-8 text files to a message that triggers the bot (up to 5 files, 20 MiB each). Image and PDF reading depends on the selected model or environment. To return generated files, the agent needs an environment and the Publish asset tool.": "在触发机器人的消息中附上图片、PDF 或 UTF-8 文本文件（最多 5 个，每个不超过 20 MiB）。图片和 PDF 的读取能力取决于所选模型或运行环境。回传生成的文件需要为 Agent 配置运行环境和发布文件工具。"
 }

@@ -40,6 +40,7 @@ from .admission_domain import (
     RejectedInputOutcome,
 )
 from .admission_models import AgentThreadBindingRecord, IngressBatchRecord
+from .attachments import AttachmentInputs
 from .contributions import IngressContribution, PreparedIngressContribution
 
 
@@ -66,7 +67,9 @@ class IngressInputAcceptor:
         *,
         contributions: Mapping[str, IngressContribution] | None = None,
         clock: Clock = utc_now,
+        attachments: AttachmentInputs | None = None,
     ) -> None:
+        self._attachments = attachments
         self._sessions = sessions
         self._commands = commands
         self._clock = clock
@@ -93,6 +96,12 @@ class IngressInputAcceptor:
                         receipt_kind="run" if stored.result_kind == "run" else "steer", receipt_id=stored.result_id
                     )
                 selection = await self._selection(session, batch)
+
+            agent_input = (
+                await self._attachments.materialize(batch, selection.actor)
+                if self._attachments is not None
+                else batch.agent_input
+            )
 
             async def commit(session: AsyncSession, receipt: RunAcceptanceReceipt | SteerReceipt) -> None:
                 current = await self._selection(session, batch, lock=True)
@@ -145,7 +154,7 @@ class IngressInputAcceptor:
                     actor=selection.actor,
                     run_id=selection.run_id,
                     idempotency_key=key,
-                    input=batch.agent_input,
+                    input=agent_input,
                     transaction_hook=commit,
                 )
                 return AcceptedInputOutcome(receipt_kind="steer", receipt_id=receipt.steer_id)
@@ -163,7 +172,7 @@ class IngressInputAcceptor:
                     workspace_id=batch.workspace_id,
                     idempotency_key=key,
                     request=StartRunCommand(
-                        agent_id=selection.agent_id, input=batch.agent_input, config_override=selection.override
+                        agent_id=selection.agent_id, input=agent_input, config_override=selection.override
                     ),
                     origin=origin,
                     transaction_hook=commit,
@@ -173,7 +182,7 @@ class IngressInputAcceptor:
                 request = ContinueRunCommand(
                     expected_thread_version=selection.thread_version,
                     agent_id=selection.agent_id,
-                    input=batch.agent_input,
+                    input=agent_input,
                     config_override=selection.override,
                 )
                 if selection.run_id is None:

@@ -27,6 +27,7 @@ import { showFocusedOutput } from "./stream";
 import { useLiveThread } from "./live-threads";
 import { LiveConnectionNotice } from "./live-connection";
 import { ConversationTranscript, RecoveryNotice } from "./transcript";
+import { PauseConversationFollowing } from "./execution-details";
 import { inputSource } from "./local-input";
 import { InputNavigation } from "./input-navigation";
 import {
@@ -651,17 +652,19 @@ function Conversation({
                   Retry earlier messages
                 </Button>
               )}
-              <ConversationTranscript
-                entries={entries}
-                blocks={showLive ? liveBlocks : []}
-                localInputs={hasLater ? [] : draft.localInputs}
-                turns={turns}
-                loadDetails
-                onSavedEntries={reconcileSavedInputs}
-                continuation={continuation}
-                gap={showLive && display.gap}
-                threadId={threadId}
-              />
+              <PauseConversationFollowing value={interruptScroll}>
+                <ConversationTranscript
+                  entries={entries}
+                  blocks={showLive ? liveBlocks : []}
+                  localInputs={hasLater ? [] : draft.localInputs}
+                  turns={turns}
+                  loadDetails
+                  onSavedEntries={reconcileSavedInputs}
+                  continuation={continuation}
+                  gap={showLive && display.gap}
+                  threadId={threadId}
+                />
+              </PauseConversationFollowing>
               {hasLater && (
                 <div className={styles.historyActions}>
                   <Button

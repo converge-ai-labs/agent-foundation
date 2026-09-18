@@ -1,7 +1,7 @@
 """add planned update handoff.
 
 Revision ID: ba240ec65035
-Revises: e416fbd4674c
+Revises: 63e8be47c2e2
 Create Date: 2026-09-18 12:33:19.328997+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "ba240ec65035"
-down_revision: str | Sequence[str] | None = "e416fbd4674c"
+down_revision: str | Sequence[str] | None = "63e8be47c2e2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

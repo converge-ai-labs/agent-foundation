@@ -420,13 +420,12 @@ class HarnessUiApp:
 
     async def subscribe_push(self, subscription: PushSubscriptionInput) -> PushSubscriptionView:
         async with self._operation():
-            followed = []
-            for thread_id in subscription.thread_ids:
-                thread = await self._store.threads.get(thread_id)
-                if thread is not None and thread.parent_thread_id is None:
-                    followed.append(thread_id)
-            subscription = subscription.model_copy(update={"thread_ids": tuple(followed)})
             return PushSubscriptionView(subscription_id=await self._push().repository.save(subscription))
+
+    async def record_push_activity(self, subscription_id: str) -> None:
+        async with self._operation():
+            if not await self._push().repository.mark_active(subscription_id):
+                raise HarnessUiError("Push subscription not found.", code="not_found")
 
     async def unsubscribe_push(self, subscription_id: str) -> None:
         async with self._operation():

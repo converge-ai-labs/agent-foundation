@@ -68,14 +68,14 @@ def test_planned_handoff_migration_requires_resolution_before_downgrade(tmp_path
             connection.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
         with pytest.raises(RuntimeError, match="resolve maintenance first"):
             migrator._run(  # pyright: ignore[reportPrivateUsage]
-                lambda config: command.downgrade(config, "e416fbd4674c"), write=True
+                lambda config: command.downgrade(config, "63e8be47c2e2"), write=True
             )
         migrator.verify_current()
         with engine.begin() as connection:
             assert connection.execute(text("SELECT payload FROM planned_restart")).scalar_one() == "{}"
             connection.execute(text("DELETE FROM planned_restart"))
         migrator._run(  # pyright: ignore[reportPrivateUsage]
-            lambda config: command.downgrade(config, "e416fbd4674c"), write=True
+            lambda config: command.downgrade(config, "63e8be47c2e2"), write=True
         )
         assert "planned_restart" not in inspect(engine).get_table_names()
         migrator.upgrade()

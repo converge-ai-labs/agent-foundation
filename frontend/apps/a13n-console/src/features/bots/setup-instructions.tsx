@@ -12,6 +12,8 @@ const slackManifest = JSON.stringify(
         bot: [
           "app_mentions:read",
           "chat:write",
+          "files:read",
+          "files:write",
           "users:read",
           "channels:read",
           "channels:history",
@@ -57,6 +59,11 @@ export function BotSetupInstructions({
             : "Connect your Feishu app",
         )}
       </h2>
+      <p>
+        {t(
+          "Attach images, PDFs, or UTF-8 text files to a message that triggers the bot (up to 5 files, 20 MiB each). Image and PDF reading depends on the selected model or environment. To return generated files, the agent needs an environment and the Publish asset tool.",
+        )}
+      </p>
       {platform === "slack" ? (
         <>
           <ol className={styles.instructions}>
@@ -76,6 +83,11 @@ export function BotSetupInstructions({
               )}
             </li>
           </ol>
+          <p>
+            {t(
+              "For image and file input, grant files:read; for generated file replies, grant files:write. Reauthorize existing installations after adding these scopes.",
+            )}
+          </p>
           <p>
             <a
               href="https://api.slack.com/apps"
@@ -126,6 +138,16 @@ export function BotSetupInstructions({
               )}
             </li>
           </ol>
+          <p>
+            {t(
+              "Enable message-resource access to read attachments. To send generated files, grant im:resource (or an existing im:resource:upload permission), then publish the updated Feishu app permissions.",
+            )}
+          </p>
+          <p>
+            {t(
+              "To receive standalone group file messages, Feishu requires im:message.group_msg and a reception mode that accepts messages without a mention. This permission gives the app access to all messages in groups it joins; enable it only when needed.",
+            )}
+          </p>
           <p>
             <a
               href="https://open.feishu.cn/app"

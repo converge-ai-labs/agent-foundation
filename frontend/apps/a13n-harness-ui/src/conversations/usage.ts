@@ -28,37 +28,56 @@ export function useContextUsage(threadId: string) {
       ),
   });
 }
-type ThreadUsage = NonNullable<ReturnType<typeof useThreadUsage>["data"]>;
-export function usageSummary(
-  usage?: ThreadUsage,
-  context?: Schema<"ContextUsageView">,
-) {
-  const tokens = new Map(
-    (usage?.root.tokens ?? []).flatMap(([name, count]) =>
+export type ThreadUsage = NonNullable<
+  ReturnType<typeof useThreadUsage>["data"]
+>;
+export function tokenCounts(totals?: ThreadUsage["root"]) {
+  return new Map(
+    (totals?.tokens ?? []).flatMap(([name, count]) =>
       typeof name === "string" && typeof count === "number"
         ? [[name, count] as const]
         : [],
     ),
   );
+}
+export function modelCost(totals?: ThreadUsage["root"]) {
+  const cost =
+    totals && totals.model_requests > totals.unknown_model_costs
+      ? Number(totals.model_cost_usd)
+      : undefined;
+  return cost !== undefined && Number.isFinite(cost)
+    ? `${cost > 0 && cost < 0.0001 ? "<$0.0001" : `$${cost.toFixed(cost < 1 ? 4 : 2)}`}${totals?.unknown_model_costs ? "+" : ""}`
+    : "—";
+}
+export function usageSummary(
+  usage?: ThreadUsage,
+  context?: Schema<"ContextUsageView">,
+) {
+  const tokens = tokenCounts(usage?.root);
   const total =
     (tokens.get("input_tokens") ?? 0) + (tokens.get("output_tokens") ?? 0);
-  const cache = tokens.get("cache_read_tokens");
-  const cost =
-    usage?.first_observed_at &&
-    usage.root.model_requests > usage.root.unknown_model_costs
-      ? Number(usage.root.model_cost_usd)
+  const totalTokens =
+    usage?.first_observed_at && usage.root.model_requests > 0
+      ? total
       : undefined;
+  const cache = tokens.get("cache_read_tokens");
   const used = context?.latest_request_tokens;
   const window = context?.context_window;
   return {
+    totalTokens,
+    tokens:
+      totalTokens === undefined
+        ? "—"
+        : totalTokens >= 1_000_000
+          ? `${(totalTokens / 1_000_000).toFixed(1)}M`
+          : totalTokens >= 1000
+            ? `${(totalTokens / 1000).toFixed(1)}K`
+            : String(totalTokens),
     context:
       used != null && window != null && window > 0
         ? `${Math.round((100 * used) / window)}%`
         : "—",
-    cost:
-      cost !== undefined && Number.isFinite(cost)
-        ? `${cost > 0 && cost < 0.0001 ? "<$0.0001" : `$${cost.toFixed(cost < 1 ? 4 : 2)}`}${usage?.root.unknown_model_costs ? "+" : ""}`
-        : "—",
+    cost: modelCost(usage?.first_observed_at ? usage.root : undefined),
     cache:
       usage?.first_observed_at && total > 0 && cache != null
         ? `${((100 * cache) / total).toFixed(1)}%`

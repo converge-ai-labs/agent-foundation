@@ -103,7 +103,7 @@ function Diagram({
         </Button>
       </div>
       {!original && current?.src && (
-        <div className={styles.diagramCanvas}>
+        <div className={styles.diagramCanvas} data-diagram-canvas>
           <img src={current.src} alt="Mermaid diagram" />
         </div>
       )}

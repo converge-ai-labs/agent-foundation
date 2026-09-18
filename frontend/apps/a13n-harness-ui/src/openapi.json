@@ -83,6 +83,38 @@
         }
       }
     },
+    "/api/push/subscriptions/{subscription_id}/activity": {
+      "post": {
+        "summary": "Record Push Activity",
+        "operationId": "record_push_activity_api_push_subscriptions__subscription_id__activity_post",
+        "parameters": [
+          {
+            "name": "subscription_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Subscription Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/push/subscriptions/{subscription_id}/test": {
       "post": {
         "summary": "Test Push",
@@ -13872,15 +13904,6 @@
             "type": "string",
             "maxLength": 512,
             "title": "Origin"
-          },
-          "thread_ids": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "maxItems": 256,
-            "title": "Thread Ids",
-            "default": []
           }
         },
         "additionalProperties": false,
