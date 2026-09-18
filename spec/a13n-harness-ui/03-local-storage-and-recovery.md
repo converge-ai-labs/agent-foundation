@@ -177,7 +177,7 @@ An admitted Run records the Thread configuration version and accepted generation
 
 ## Immutable Publication
 
-Immutable values are canonical, bounded, typed, and content-addressed. Publication follows:
+Immutable values are canonical, bounded, typed, and content-addressed. The restart-bound `process.max_object_bytes` setting limits each complete uncompressed object on publication and read. It defaults to 256 MiB and accepts 1 KiB through 1 GiB. This is not a Thread disk quota or a model-context budget; retained display history remains part of the checkpoint after context compaction. An oversized publication reports its actual byte count and configured limit without truncating the payload or advancing the selected reference. Lowering the limit can make previously saved larger objects unreadable until the limit is raised again. Publication follows:
 
 1. serialize and validate the complete payload;
 2. write a uniquely named file under the same storage root;
