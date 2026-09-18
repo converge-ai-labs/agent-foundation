@@ -2,87 +2,71 @@
 
 ## Design Position
 
-`a13n-envd` exposes semantic, mount-scoped filesystem operations and bounded observation of local listening ports. It resolves native paths and races inside the Environment boundary rather than exposing host absolute paths or asking the EIP client to emulate filesystem behavior through low-level syscalls.
-
-Every session observes the daemon's immutable trusted mount configuration. The descriptor exposes those logical mounts and one optional `root_mount_id`; a caller cannot add a native root or select a broader server-filesystem mode. An operator that intentionally needs whole-filesystem breadth configures `/` or explicit platform volume roots as ordinary mounts. Every request still uses platform-neutral `EIPPath` values rather than native host paths.
+Envd exposes Session-owned filesystem operations over the Device filesystem and bounded observation of listening ports. The Session's working directory supplies defaults, not an access boundary. Native account permissions and the Host's outer deployment boundary apply to every path.
 
 ## Boundaries
 
-| Concern                                                                              | Owner                                                    | Relationship                                            |
-| ------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------- |
-| Configured roots, writable ceilings, allowed methods, and port-observation policy    | Operator or provider adapter                             | Trusted immutable daemon configuration                  |
-| Harness virtual `/workspace` and `/environment/{alias}` routing                      | Harness                                                  | Resolves to one Environment adapter before EIP dispatch |
-| Logical mount paths and file, search, and port methods                               | This document                                            | Stable EIP resource contract                            |
-| Native path canonicalization, symlink containment, bounded publication, and receipts | `a13n-envd`                                              | Authoritative provider enforcement                      |
-| Provider ingress, public URL, tunnel, or container port publishing                   | Provider adapter                                         | Outside EIP port observation                            |
-| Raw file-transfer framing, attachment, and backpressure                              | [Transports and Sessions](03-transports-and-sessions.md) | Carries bytes for the transfer lifecycle owned here     |
+| Concern                                                          | Owner                                                    |
+| ---------------------------------------------------------------- | -------------------------------------------------------- |
+| Device authentication, selection and model operation permissions | Host                                                     |
+| Aggregate mount aliases and relative-path routing                | Harness and Environment adapter                          |
+| Device paths, directory discovery and filesystem semantics       | Envd                                                     |
+| Raw transfer framing and backpressure                            | [Transports and Sessions](03-transports-and-sessions.md) |
+| Provider ingress, tunnels and port publication                   | Provider                                                 |
 
-Filesystem selectors and port numbers are not authority. Every method also crosses trusted-session checks, exact method availability, current generation, mount policy, and configured ceilings.
+## Path Model
 
-## Mount Model
-
-Trusted daemon configuration uses this conceptual, non-EIP shape:
-
-```python
-class TrustedMountConfig(BaseModel):
-    mount_id: str
-    native_root: str
-    writable: bool
-    allow_command_execution: bool = True
-    max_file_bytes: int
-    allowed_operations: frozenset[str]
-```
-
-`native_root` is operator-only secret-adjacent configuration: envd canonicalizes it, validates policy against that canonical path, opens the final component without following a link, and retains the opened directory as the mount's capability root. The launching provider must keep the root's containing directory outside payload or other untrusted mutation during that startup sequence; after open, renaming the native path does not retarget the retained capability. This bootstrap authority precondition replaces any portable FileID requirement. Envd never returns the native root in EIP. `allowed_operations` is a subset of exact file, search, command-cwd, and executable-source operations supported by the daemon. `writable=false` is an absolute ceiling for file mutations and required-isolation command grants. A writable mount does not assert exclusive control over contents: commands, provider tooling, and other processes with native access can mutate them concurrently.
-
-The following objects are serialized EIP JSON:
+The EIP JSON path shape is:
 
 ```python
 class EIPPath(BaseModel):
-    mount_id: str
+    path: str
+```
+
+Paths are absolute in the Device namespace and use `/` separators. POSIX paths retain their native spelling. Windows drive paths use `/C:/path`; UNC paths use `/UNC/server/share/path`. On Windows, `/` is a virtual volume-listing root, valid for directory enumeration but not ordinary file mutation or command cwd. Conversion uses the Device's advertised `path_style`, never the requester's operating system. Drive-relative paths, NUL, empty interior segments and `.`/`..` segments are invalid. A trailing separator is allowed only for a filesystem root.
+
+The daemon resolves its native startup cwd and configured default into this format. Discovery and Session descriptors return Device paths. Hosts retain Device identity with every path and translate aggregate aliases before EIP dispatch. A path on a remote Device never implicitly names a Host file. Relative Host tool inputs resolve against the captured Session working directory; EIP file operands are explicit absolute paths.
+
+Every Session may address paths outside its working directory. There is no Session folder allowlist, mount selector or path-based Session sharing. Host action ceilings can disable file mutations or shell execution without changing native filesystem ownership.
+
+`max_file_bytes` bounds complete mutation candidates. It does not reject metadata, bounded range reads or incremental search merely because the source is larger. Those operations have their own transfer, response, work and duration bounds. Atomic publication is supported only where the target filesystem supplies the required native primitive; unsupported requests fail without a copy/delete fallback.
+
+## Directory Discovery
+
+`directory.list` is a Device-level, read-only, ledger-external method available only when `directory_discovery` is enabled. It requires authenticated Device access and no Session or Run. It enumerates one directory, never a recursive scan or persistent index.
+
+```python
+class DirectoryListParams(BaseModel):
+    expected_device_id: str
+    expected_generation: int
+    path: str
+    offset: int = 0
+    limit: int
+
+
+class DirectoryEntry(BaseModel):
+    name: str
     path: str
 
 
-class MountDescriptor(BaseModel):
-    mount_id: str
-    logical_root: str
-    writable: bool
-    case_sensitive: bool | None
-    supports_atomic_replace: bool
-    max_file_bytes: int
+class DirectoryListResult(BaseModel):
+    path: str
+    parent_path: str | None
+    entries: tuple[DirectoryEntry, ...]
+    next_offset: int | None
 ```
 
-`mount_id` is a bounded stable logical ID within one Environment generation. `logical_root` is a display-only EIP path such as `/`; it is not a host path. `path` is absolute within that logical mount, begins with `/`, uses `/` separators on the wire, contains no NUL, and is validated lexically before native resolution. `/` is the mount root; otherwise empty interior segments, a trailing separator, `.`, and `..` are rejected instead of normalized into another request.
+The response returns the resolved current path, its parent, and bounded directory entries in deterministic name order. A filesystem root has no parent on POSIX; Windows volume roots have `/` as parent. Windows `/` enumerates native local volumes without probing network shares. Explicit UNC paths remain usable. Directory symlinks may be selected and resolved under native permissions; the method never traverses them recursively. Each page is a current observation, not a stable snapshot. Concurrent changes may require restarting enumeration.
 
-A mount configuration binds the logical ID to one canonical native directory, read-only or read-write ceiling, protected-path checks, exact allowed operations, mutation-size bounds, and platform semantics. `supports_atomic_replace=true` means envd can build and integrity-check a complete candidate in the destination directory and publish it with one same-filesystem atomic rename. It does not mean envd exclusively owns the destination, serialize external writers, or provide compare-and-swap. The descriptor reports observed behavior but cannot widen configuration or OS authority.
-
-Configured mount roots are non-overlapping after canonicalization unless exact aliases intentionally share identical policy and one logical identity. Ancestor/descendant roots with competing policies are rejected at startup. `max_file_bytes` bounds complete mutation candidates; it does not reject metadata reads, a bounded reader range, or incremental search merely because the source regular file is larger. Those operations use their own transfer, response, work, and duration ceilings.
-
-### Protected runtime subtraction
-
-Generation-private runtime, output spool, connector/bootstrap state, supervisor control, probe sentinels, logs, installed helpers, and credential-bearing roots are protected even when a configured mount is their native ancestor. Envd opens or fixes each protected root during startup and derives a resource-layer deny set from native identities and canonical topology. Choosing a runtime parent outside ordinary narrow mounts is preferred but never substitutes for this enforcement because an intentional `/` or volume-root mount physically contains almost every daemon path.
-
-Every file method applies protected-root subtraction independently of command isolation. A direct selection of a protected root or descendant is denied without disclosure. Component resolution refuses a symlink, junction, mount point, reparse point, or replaced parent that would enter a protected identity. `file.list`, `file.find`, `file.search`, and recursive mutation test an entry before returning protected metadata or descending, so traversal cannot enumerate names below the boundary. Staged candidates remain destination-local but cannot be created inside a protected root through EIP authority.
-
-Startup validates mount/protected-root topology and the exact platform-relative implementation. A broad mount is unavailable when the platform/filesystem cannot provide no-follow protected subtraction for all advertised operations. Required execution isolation performs a separate subtraction for payload commands; passing one layer never substitutes for the other.
+The request has finite entry, response-byte, work and duration bounds. Cancellation or timeout ends enumeration without allocating retained Session resources. Missing/inaccessible paths fail explicitly. Disabled discovery returns `unsupported`; known paths, ordinary Session file operations and explicit cwd selection remain available. There is no configured discovery-entry list.
 
 ## Canonicalization and Symlinks
 
-For every operation, envd:
+For every operation, envd validates its Device paths and operation bounds, resolves native operands, checks native permissions and resource shape, and freezes the resolved operands before mutation dispatch. Multi-path operations validate each operand. Capability-relative and no-follow native operations protect the selected publication/removal entry where supported; they do not enforce confinement to the Session working directory.
 
-1. selects the trusted mount by exact `mount_id`;
-2. validates the lexical wire path and operation-specific size bounds;
-3. resolves components relative to the already opened mount capability root;
-4. checks every followed symlink target remains inside the same authorized root and outside protected paths;
-5. applies read/write and operation policy to the resolved resource;
-6. uses capability-relative and no-follow native operations at mutation boundaries;
-7. revalidates resource shape and publication intent at the latest practical boundary before the native mutation.
+`file.stat` inspects a link itself or its target according to `follow_symlinks`. Reads, copy sources and patches follow explicitly selected symlinks under native permissions, including outside cwd. List, find, search and recursive remove report descendant symlinks/reparse points but do not recursively traverse them. Replacement changes the selected destination entry, not a symlink's target; remove deletes the selected entry itself. Recursive traversal has finite depth and entry bounds.
 
-A symlink can narrow convenience but cannot expand authority. A link inside a writable workspace that targets daemon state, another mount, the host home, or any unexposed path remains inaccessible. The daemon does not return a native canonical path to the client.
-
-`file.stat` can inspect the link itself or a contained target through an explicit `follow_symlinks` flag. Read, copy-source, and patch operations follow contained symlinks by default. List, find, search, and recursive remove report a symlink or reparse-point entry but never descend through it. Write replacement does not replace an out-of-root target, and `file.remove` removes the selected directory entry itself. Recursive traversal has finite depth and entry ceilings and therefore does not require a portable native file identity.
-
-Canonicalization failure is pre-dispatch for the requested filesystem mutation. If resource shape or publication intent no longer holds at a checked boundary, envd returns a conflict or denial; it never silently retargets or retries the request. Envd does not claim compare-and-swap or serialize commands and external native writers, so a concurrent writer can still change a path before or after any observation.
+Resolution failure occurs before the requested mutation. A changed resource shape or publication precondition returns conflict or denial rather than silently retargeting or retrying. Native actors can still change content before or after observation; envd supplies neither filesystem snapshots nor compare-and-swap.
 
 ## Common File Types
 
@@ -117,7 +101,7 @@ class FileStatResult(BaseModel):
     info: FileInfo
 ```
 
-A missing path returns `not_found_or_denied`. Following a symlink that leaves the mount returns `denied` without disclosing the target.
+A missing or inaccessible path returns `not_found_or_denied`.
 
 ### `file.read_text`
 
@@ -292,13 +276,13 @@ class FileSearchResult(BaseModel):
     omitted_unrepresentable_entries: int
 ```
 
-`root` selects a directory or one regular file. Directory searches recursively consider regular files below it, omit hidden path components unless requested, and apply `respect_git_ignore=true` during traversal to prune ignored directories. An explicit file searches only itself regardless of hidden-name or Git-ignore discovery filters. `include_pattern` applies the same path-glob semantics as `file.find`, relative to a directory root or against the requested basename of an explicit file. An explicitly selected contained symlink to a regular file is followed and matches retain the selected logical path; descendant symlinks are not traversed. Missing or denied explicit roots return typed failures rather than empty success. Special-file roots are rejected before reading or opening them as content. All single-file searches retain the same match, context, byte, output, and paging bounds. A file containing invalid UTF-8 or NUL is skipped deterministically. Literal and regex matching are applied independently to each complete logical line and cannot span LF boundaries. `case_sensitive=false` uses explicit Unicode case-insensitive matching.
+`root` selects a directory or one regular file. Directory searches recursively consider regular files below it, omit hidden path components unless requested, and apply `respect_git_ignore=true` during traversal to prune ignored directories. An explicit file searches only itself regardless of hidden-name or Git-ignore discovery filters. `include_pattern` applies the same path-glob semantics as `file.find`, relative to a directory root or against the requested basename of an explicit file. An explicitly selected symlink to a regular file is followed and matches retain the selected logical path; descendant symlinks are not traversed. Missing or denied explicit roots return typed failures rather than empty success. Special-file roots are rejected before reading or opening them as content. All single-file searches retain the same match, context, byte, output, and paging bounds. A file containing invalid UTF-8 or NUL is skipped deterministically. Literal and regex matching are applied independently to each complete logical line and cannot span LF boundaries. `case_sensitive=false` uses explicit Unicode case-insensitive matching.
 
 `line_number` is one-based. `preview` is the containing line with only its LF terminator removed and at most `max_line_length` characters; `preview_truncated` reports an omitted suffix. `context` contains the bounded preview rendering of up to `context_lines` preceding and following lines, preserves available LF terminators, and starts at `context_start_line`. EIP does not expose a raw byte offset or duplicate the same line for several occurrences. Results are ordered by relative path and then line number.
 
 Pattern size, incremental traversal work, bytes scanned per file and operation, result count, per-file match count, eligible files searched, source-file bytes, context width, preview length, response bytes, and duration are finite. `max_files` counts included regular files actually opened for search; traversal stops when the ceiling is reached. Files larger than `max_file_bytes` are skipped before that count. A source file can exceed the mutation candidate limit when the explicit search ceiling permits it; search streams bounded lines and applies its independent per-file and operation scan ceilings. `offset` skips ordered matching lines, `max_results` bounds the page, and `has_more` reports another match in that observation. Implementations page deterministically without retaining a complete traversal/result set merely to return the first page. Unrepresentable path entries are omitted and counted. A response ceiling can narrow result count; if the first selected item cannot fit, the method returns `output_limit_exceeded`. Cancellation and timeout return typed errors rather than partial success.
 
-Neither find nor search follows a symlink outside the selected mount or reads special files. Result text remains untrusted caller-visible content.
+Neither find nor search recursively traverses descendant symlinks or reads special files. Result text remains untrusted caller-visible content.
 
 ## Mutation Operations
 
@@ -340,7 +324,7 @@ class FileWriteTextResult(BaseModel):
     receipt: OperationReceipt
 ```
 
-The exact UTF-8 encoding of `text` is bounded by request, response-independent file, and mount limits before staging. Envd rejects NUL and performs no newline, Unicode-normalization, encoding, or BOM transformation. `create` intends absence, `replace` intends an existing regular file, `upsert` allows either, and `append` produces a replacement containing the bytes envd reads followed by the supplied bytes. Append requires an existing strict UTF-8, NUL-free file. Repeating the same operation ID and semantic digest replays the accepted operation rather than appending twice. The parent directory must already exist; callers use the separately receipted `file.mkdir` operation rather than hiding directory creation inside a write.
+The exact UTF-8 encoding of `text` is bounded by request, response-independent file, and Session limits before staging. Envd rejects NUL and performs no newline, Unicode-normalization, encoding, or BOM transformation. `create` intends absence, `replace` intends an existing regular file, `upsert` allows either, and `append` produces a replacement containing the bytes envd reads followed by the supplied bytes. Append requires an existing strict UTF-8, NUL-free file. Repeating the same operation ID and semantic digest replays the accepted operation rather than appending twice. The parent directory must already exist; callers use the separately receipted `file.mkdir` operation rather than hiding directory creation inside a write.
 
 Every mode stages a complete candidate with a bounded random name in the destination directory. The candidate can be visible to commands or other native actors that can list or mutate that directory; it is neither a confidentiality boundary nor a lock. Envd records the digest of the intended complete bytes while building the candidate, rehashes the held candidate immediately before one same-filesystem directory-entry publication, and treats the native rename result as the publication boundary. It does not require a portable native identity token to bind that open handle to the candidate name: an independently authoritative native writer can replace the named entry or destination before or after publication, just as it can replace the destination directly. The digest proves the bytes envd received and verified, not exclusive control of shared native directory state. Integrity failure or a cancellation proven before publication removes the candidate and leaves the destination unchanged unless another native actor independently mutates those entries. A daemon crash can leave a recognizable candidate as ordinary Environment state; no startup-wide filesystem scan is required. Carrier loss after method acceptance does not cancel this mutation; the client reconciles its operation ID, receipt, or observed resource state before starting another operation.
 
@@ -394,7 +378,7 @@ class FileWriterAbortResult(BaseModel):
     ]
 ```
 
-`file.open_writer` authorizes the destination, reserves finite transfer/staging capacity, and creates one complete-file candidate in the destination directory without changing the target. The parent must already exist. For append, the candidate begins with the currently observed existing bytes. A candidate can be visible to another actor that already controls that directory; it is not a confidentiality boundary or lock. `max_transfer_bytes` bounds newly uploaded bytes, while the final candidate also obeys the mount mutation ceiling.
+`file.open_writer` authorizes the destination, reserves finite transfer/staging capacity, and creates one complete-file candidate in the destination directory without changing the target. The parent must already exist. For append, the candidate begins with the currently observed existing bytes. A candidate can be visible to another actor that already controls that directory; it is not a confidentiality boundary or lock. `max_transfer_bytes` bounds newly uploaded bytes, while the final candidate also obeys the Session mutation ceiling.
 
 The transport attaches one client-to-server stream. Offsets start at zero and cover only uploaded bytes. Envd writes bounded contiguous chunks while counting and hashing them. Client `END` followed by envd `END_ACK` seals the upload but does not publish it.
 
@@ -420,7 +404,7 @@ class FileMkdirResult(BaseModel):
     receipt: OperationReceipt
 ```
 
-Creates one directory or a bounded parent chain under the selected mount. Existing-path behavior is explicit through `exist_ok`. It never treats a symlink as a directory for creation.
+Creates one directory or a bounded parent chain at the selected Device path. Existing-path behavior is explicit through `exist_ok`. It never treats a symlink as a directory for creation.
 
 ### `file.patch_text`
 
@@ -458,7 +442,7 @@ class FileCopyResult(BaseModel):
 
 Copy reads and writes in bounded chunks and separately checks source-read and destination-write authority. It copies the bytes observed through one opened source object but makes no portable source-version or immutable-snapshot claim. Every successful copy publishes one complete destination-local candidate; publication strategy is an envd invariant, not a caller option or result flag. Failure before publication removes the candidate and leaves the destination unchanged. The destination never aliases the source through a symlink escape.
 
-Cross-Environment copy is not an EIP method. A trusted client pumps one provider byte stream into one independently authorized destination stream write under backpressure. Its EIP adapter still verifies transport count and digest internally, while the provider-neutral copy contract treats normal source iterator exhaustion as success and commits only then. Within one envd instance, copying between configured mounts remains one method only when both mounts permit it and no protected boundary is crossed.
+Cross-Environment copy is not an EIP method. A trusted client pumps one provider byte stream into one independently authorized destination stream write under backpressure. Its EIP adapter still verifies transport count and digest internally, while the provider-neutral copy contract treats normal source iterator exhaustion as success and commits only then. Within one Device and Session, copying between accessible paths uses one method.
 
 ### `file.move`
 
@@ -475,7 +459,7 @@ class FileMoveResult(BaseModel):
     receipt: OperationReceipt
 ```
 
-Move is available only when envd can provide one atomic rename within the same effective mount and filesystem. Cross-mount or copy-then-delete move returns `unsupported` rather than presenting two mutations as atomic. Destination replacement intent is explicit, but another native writer can race before or after the rename.
+Move is available only when envd can provide one atomic rename within the same filesystem. Cross-filesystem or copy-then-delete move returns `unsupported` rather than presenting two mutations as atomic. Destination replacement intent is explicit, but another native writer can race before or after the rename.
 
 ### `file.remove`
 
@@ -540,24 +524,24 @@ class PortWaitResult(BaseModel):
 
 `port.inspect` returns one observation. `port.wait` uses the effective relative `EIPCallContext.timeout_ms` as its finite wait boundary and returns when the desired status is observed or that deadline expires. The base contract follows the Linux/POSIX TCP port domain: `port` is an integer in `1..65535`; port `0` is valid for listener allocation but is never an observable listening target. Exact availability of `port.inspect` or `port.wait` and any narrower current policy determine admission; EIP does not define a configurable default port-range grant. Arbitrary remote hosts, UDP scanning, raw sockets, packet capture, and host-network enumeration are not methods.
 
-When the platform can safely attribute a listener to an envd-managed process in the current daemon generation, `managed_process` can be returned. An unmanaged listener is reported only as policy permits and never reveals a PID or identity. `unknown` is used when namespace, platform, or permission prevents trustworthy observation.
+When the platform can attribute a listener to a process owned by the current Session, `managed_process` can be returned. A sibling Session's process handle is never disclosed. An unmanaged listener is reported only as policy permits and never reveals a PID or identity. `unknown` is used when namespace, platform, or permission prevents trustworthy observation.
 
-A command under required `deny` networking has no usable IP path through the platform backend and cannot expose an ordinary listener to envd or the provider. A command using `host` or explicit outer-sandbox networking is observable only from the network boundary where envd runs. The descriptor reports the applicable port methods and isolation posture honestly.
+Port observations occur in the network boundary where envd runs. The Host's outer sandbox determines connectivity; EIP has no per-command network-denial mode. Listening locally does not prove reachability outside that boundary.
 
 Provider adapters own the mapping from a successfully observed local port to a public, tunneled, or container-exposed endpoint. EIP never treats listening status as proof that an external route exists or is authorized.
 
 ## Resource Lifetime
 
-Native files and directories are provider Environment state and can remain after envd exits. EIP does not serialize a filesystem snapshot or daemon registry. Process handles, operation records, receipts, output references, and private spool data exist only in the current daemon generation. Because complete candidates are destination-local, a crash can leave a bounded-name candidate beside its intended destination. It is ordinary visible Environment state after daemon ownership is lost; envd does not scan an arbitrary filesystem tree at startup or claim it can distinguish every old candidate from a user-created file safely. A fresh authenticated protocol session in the current generation can continue using generation-owned records where their owning contract permits it; a daemon restart cannot.
+Native files and directories are provider Environment state and can remain after envd exits. EIP does not serialize a filesystem snapshot or daemon registry. Process handles, operation records, receipts, output references, and private spool data exist only in the current daemon generation. Because complete candidates are destination-local, a crash can leave a bounded-name candidate beside its intended destination. It is ordinary visible Environment state after daemon ownership is lost; envd does not scan an arbitrary filesystem tree at startup or claim it can distinguish every old candidate from a user-created file safely. Only the same retained Session can continue using its records after reattachment. A new Session or daemon generation cannot adopt them.
 
-File reader and writer handles are the deliberate exception to generation-wide reconnectability. They are ephemeral, single-attachment resources bound to the exact initialized session and authenticated data carrier that opened them. Session close, idle expiry, carrier loss, or reconnect closes readers and aborts pre-handoff writers. A handoff-complete writer's operation record and attached receipt evidence remain generation-scoped for reconciliation even though its transfer handle is gone.
+File reader and writer handles are single-attachment Session resources. Session close/expiry or carrier loss closes readers and aborts pre-handoff writers. A handed-off commit retains its frozen destination and native cleanup responsibility until settlement. Its evidence is available only while the owning Session retains it; loss of that evidence never proves non-dispatch.
 
 ## Failure Semantics
 
 | Failure                                        | Outcome                                                   | Side-effect meaning                              |
 | ---------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------ |
-| Invalid logical path, mount, query, or port    | `invalid_params` or `denied`                              | Pre-dispatch                                     |
-| Symlink or canonical target escapes policy     | `denied`                                                  | Pre-dispatch for requested mutation              |
+| Invalid Device path, query, or port            | `invalid_params` or `denied`                              | Pre-dispatch                                     |
+| Native permissions deny the resolved target    | `denied`                                                  | Pre-dispatch for requested mutation              |
 | Publication intent no longer holds             | `conflict`                                                | No requested publication when detected before it |
 | Text-result or structured-result bound reached | `has_more=true` or `output_limit_exceeded`                | No hidden completeness claim                     |
 | Reader interrupted or source read fails        | Reset or carrier/source failure                           | Delivered bytes are not reported as complete     |
@@ -573,19 +557,19 @@ File reader and writer handles are the deliberate exception to generation-wide r
 
 File method availability is reported by exact JSON-RPC method independently for each platform. New metadata fields can be additive, but changing path normalization, symlink behavior, text decoding, range meaning, transfer-handle scope, data offset or integrity rules, write-mode defaults, commit atomicity, metadata meaning, search dialect, or traversal ordering requires an incompatible protocol revision.
 
-Providers can expose narrower limits and omit unsupported methods. A client never infers support from operating system, Docker/E2B labels, or daemon package version. Common conformance tests use configured mounts, symlink/reparse escapes, concurrent replacement, raw transfer backpressure, interruption cleanup, integrity mismatch, output bounds, publication intent, receipt ambiguity, path-find/content-search distinctions, omission counts, and explicit-offset fixtures.
+Providers can expose narrower limits and omit unsupported methods. A client never infers support from operating system, Docker/E2B labels, or daemon package version. Common conformance tests use Device paths, cwd-independent access, symlinks/reparse points, concurrent replacement, raw transfer backpressure, interruption cleanup, integrity mismatch, output bounds, publication intent, receipt ambiguity, path-find/content-search distinctions, omission counts, and explicit-offset fixtures.
 
 ## Invariants
 
-01. Every filesystem operand selects one effective logical mount and never accepts a native root from request data; a multi-path operation authorizes each operand independently.
-02. Lexical validation and native canonicalization both apply; symlinks and reparse points cannot expand authority beyond a configured mount or enter a protected daemon root.
-03. Configured read-only mount policy constrains both file methods and command filesystem grants; whole-filesystem breadth requires an explicit ordinary mount, resource-layer protected-root subtraction, and independent command-layer subtraction, never a session mode.
+01. Every filesystem operand identifies a Device path; a multi-path operation validates each operand independently.
+02. Lexical validation and native canonicalization apply independently of cwd; selected symlinks and reparse points follow native permissions.
+03. Host action ceilings constrain exposed operations; cwd supplies no confinement, and the Host supplies the whole-daemon security boundary.
 04. Every text result, traversal, query, patch, data frame, file, staged candidate, transfer, result, and duration has a finite bound.
 05. Text convenience operations are strict UTF-8 and bounded; arbitrary complete content uses a raw binary reader or writer rather than JSON/base64.
 06. One binary reader carries one opened file interval sequentially; only terminal consumer acceptance reports a complete count and digest, while no file-version or snapshot-isolation claim is fabricated.
 07. One binary writer stages a bounded complete candidate in the destination directory; the candidate is not private or a lock, and publication never exposes envd's partial bytes.
-08. File transfer handles are single-attachment and session-scoped; generation-scoped commit operation records and attached receipt evidence, not transfer resumption, reconcile an ambiguous commit.
-09. Atomic publication is claimed only for one complete-candidate rename or native move primitive; it never implies global ordering or compare-and-swap, and cross-mount move never masquerades as atomic.
+08. File transfer handles are single-attachment and session-scoped; retained same-Session commit evidence, not transfer resumption, can reconcile an ambiguous commit.
+09. Atomic publication is claimed only for one complete-candidate rename or native move primitive; it never implies global ordering or compare-and-swap, and cross-filesystem move never masquerades as atomic.
 10. Every mutating method returns bounded side-effect evidence and preserves unknown outcome after ambiguous commit response loss.
 11. Port methods observe only policy-authorized local TCP targets in `1..65535` and never create external exposure or scan remote hosts.
 12. `file.find` matches relative path names and never reads file content; `file.search` matches UTF-8 regular-file content and uses path globs only for file selection.

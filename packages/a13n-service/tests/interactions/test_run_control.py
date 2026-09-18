@@ -478,7 +478,7 @@ async def test_compaction_precedes_receipt_publication_without_losing_incorporat
         else:
             assert ("new direction" in _business_prompts(tuple(messages))) is compaction_fails
             if scenario == "model_recovery" and ordinary_calls == 2:
-                raise RuntimeError("recover after compaction")
+                raise ConnectionResetError("recover after compaction")
             yield "done"
 
     result, _ = await _consume(
@@ -1161,7 +1161,7 @@ def _recovering_model(
         calls.append(tuple(messages))
         trace.append(f"model:{len(calls)}")
         if len(calls) == 1:
-            raise RuntimeError("provider interrupted")
+            raise ConnectionResetError("provider interrupted")
         yield f"turn-{len(calls)}"
 
     return FunctionModel(stream_function=stream)

@@ -104,20 +104,19 @@ POST to `/api/v1/runs/{run_id}/environment-mounts`, with a fresh `Idempotency-Ke
 ```json
 {
   "name": "computer",
-  "environment_id": "env_0123456789abcdef",
-  "access": "read_only"
+  "environment_id": "env_0123456789abcdef"
 }
 ```
 
-Replace the Environment ID with the registered resource. Access can be `read_only`, `read_write`, or `full`, within that Environment's ceiling. The caller needs Run-control and Environment-use authority; the Run's retained Principal must also be authorized. The target must belong to the same Workspace. Only the Thread's current accepted or running Run accepts additions. `workspace` is reserved for the fixed primary Environment.
+Replace the Environment ID with the registered resource. The caller needs Run-control and Environment-use authority; the Run's retained Principal must also be authorized. The target must belong to the same Workspace. Only the Thread's current accepted or running Run accepts additions. `workspace` is reserved for the fixed primary Environment.
 
 The `201` response confirms a durable association, initially `pending`. Worker installs it between complete root iterations before a later model request. Read `GET /api/v1/runs/{run_id}/environment-mounts` for the current Attempt's `pending`, `preparing`, `ready`, or `failed` observation. Follow `next_cursor` for pagination; the list preserves acceptance order. `ready` reports installation, not a promise that the client will remain online. A Run that finishes before another model request may never apply the mount.
 
 The Agent accesses this example at `/environment/computer`. Without a primary, the first accepted addition becomes the default when installed; a later addition does not take its place if it becomes ready sooner. With a primary, its default remains unchanged. Agent tool restrictions still apply, and acceptance does not enable a disabled file or shell toolset.
 
-Retrying the same request with its original idempotency key returns the original acceptance receipt. Use the list endpoint for fresh loading observations. Mount names, targets, and access are immutable after acceptance; this API does not unmount, replace, or switch defaults. A failed addition leaves other installed mounts usable. Temporary unavailability is retried with bounded backoff at later model boundaries.
+Retrying the same request with its original idempotency key returns the original acceptance receipt. Use the list endpoint for fresh loading observations. Mount names and targets are immutable after acceptance; this API does not unmount, replace, or switch defaults. A failed addition leaves other installed mounts usable. Temporary unavailability is retried with bounded backoff at later model boundaries.
 
-Retrying a failed or cancelled Run, or continuing its sealed waiting state, copies the accepted additional mounts with their original access ceilings and relative order. Each successor acquires fresh use and reports its own loading status. Ordinary new Runs, forks, and independently scheduled children do not inherit these additions; inline children share the parent’s facade.
+Retrying a failed or cancelled Run, or continuing its sealed waiting state, copies the accepted additional mounts with their original targets and relative order. Each successor acquires fresh use and reports its own loading status. Ordinary new Runs, forks, and independently scheduled children do not inherit these additions; inline children share the parent’s facade.
 
 ### Host-local placement
 

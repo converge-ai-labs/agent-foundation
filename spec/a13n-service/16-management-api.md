@@ -164,6 +164,8 @@ Every input-bearing Run command and terminal Retry can select one exact Run-scop
 
 ## Session Reads
 
+Sessions have an immutable `purpose` of `execution` (the default) or `debug` (an explicit interactive trial). Purpose is assigned atomically when the Session is created and is returned by the Session collection. Thread reads and collections project the owning Session's value as `session_purpose`; it is not duplicated in Thread storage. Purpose survives continuation, retries and label changes, grants no permission, and does not restrict Native client execution operations. The [Console](../frontend/console.md#sessions-and-runs) uses it to distinguish interactive trials from application-controlled work. Configuration-assistant ownership remains independently enforced by its owning contract.
+
 `GET /api/v1/workspaces/{workspace}/sessions?limit=...&cursor=...` returns an authorized Session page in `updated_at desc, id desc` order. Every Session includes a nullable `preview` so clients can render a conversation list without fetching each Session's Threads and Run separately. Session visibility and cursor boundaries remain governed by `session.read` and the caller's current Agent scope.
 
 Optional filters are `q` (a trimmed exact Session ID or readable Thread ID, at most 72 characters), `agent_id`, repeated `status` and `trigger_type`, and timezone-aware `updated_after` / `updated_before`. Time bounds are inclusive at the start and exclusive at the end; when both exist the start must precede the end. Values within one repeated filter are ORed, and different filters are ANDed. Agent, status, and trigger filters apply to the exact authorized Run selected by the preview rules below, before pagination; no historical Run or older Thread substitutes for a nonmatching selection. A caller without the required Thread and Run read authority receives no matches for these Run filters. Exact Thread lookup also respects Thread authorization and Workspace scope. Cursor scope includes the normalized filters, so changing filters requires a new first page.
@@ -212,6 +214,7 @@ class Thread:
     head_run_id: str | None
     current_run_id: str | None
     default_environment_id: EnvironmentId | None
+    default_environment_working_directory: str | None
     created_at: datetime
     updated_at: datetime
 ```

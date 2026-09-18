@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ..infrastructure.management_support import has_tool, last_tool_result
+from ..infrastructure.management_support import last_tool_result
 from ..infrastructure.round_two_lab import REPOSITORY, open_lab
 from .environment_backends import EnvironmentBackend
 from .environment_workers import add_second_worker, reset_workers, shell
@@ -159,30 +159,6 @@ async def test_provider_disable_is_rechecked_for_both_accepted_users(local_worke
     for worker in pair.workers:
         _, result = await pair.execute(worker, environment, [shell("printf restored")])
         assert result["ok"] is True
-
-
-async def test_readonly_selection_does_not_gain_other_worker_capabilities(local_workers):
-    backend, target, pair = local_workers
-    async with backend.target() as writable:
-        full = await writable.allocate()
-        for worker in pair.workers:
-            _, result = await pair.execute(worker, full, [shell("printf writable > writable")])
-            assert result["ok"] is True
-    environment = await target.allocate(access="read_only")
-    (target.root / "proof").write_text("READABLE")
-    for worker in pair.workers:
-        _, result = await pair.execute(
-            worker, environment, [{"tool": "view", "arguments": {"file_path": "/workspace/proof"}}]
-        )
-        assert result["ok"] is True
-        step = {**shell("printf forbidden > forbidden"), "force_unadvertised": True}
-        case = await pair.journey.case(steps=[step])
-        receipt = await pair.start(worker, case, environment)
-        await pair.journey.live.finish(receipt["run_id"])
-        observation = pair.journey.observations(case)[-1]
-        assert has_tool(observation, "view") and not has_tool(observation, "shell_exec")
-        assert not has_tool(observation, "write")
-    assert not (target.root / "forbidden").exists() and (target.root / "proof").read_text() == "READABLE"
 
 
 async def test_other_worker_cannot_use_live_process_handle_or_stdin(local_workers):

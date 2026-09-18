@@ -227,7 +227,6 @@ async def test_existing_file_lease_prevents_retention_until_release(due_environm
         actor=hook_actor(),
         environment_id=environment_id,
         backing_identity=f"{environment_id}:{generation}",
-        write=True,
         authorize=authorize,
     ):
         async with short_session(sessions) as session:
@@ -240,7 +239,6 @@ async def test_existing_file_lease_prevents_retention_until_release(due_environm
             actor=hook_actor(),
             environment_id=environment_id,
             backing_identity=f"{environment_id}:{generation + 1}",
-            write=True,
             authorize=authorize,
         ):
             pytest.fail("Recreated targets cannot satisfy a retained memory binding")

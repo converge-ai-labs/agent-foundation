@@ -90,9 +90,9 @@ export function NewConversation() {
       <div className={styles.newConversation}>
         <div className={styles.welcome}>
           <ChatIcon size={32} weight="light" />
-          <h2>{t("What would you like to work on?")}</h2>
+          <h2>{t("Try your agent")}</h2>
           <p>
-            {t("Choose an agent, share an idea, and start making progress.")}
+            {t("Start a debug session to test inputs and inspect execution.")}
           </p>
         </div>
         <ErrorNotice error={agents.error} />
@@ -108,15 +108,13 @@ export function NewConversation() {
         />
         <Composer
           disabled={!can("agent.invoke") || !agentId}
-          label={t("Start session")}
+          label={t("Start debug session")}
           submit={async (input) => {
             const body = {
               ...options.build(),
               agent_id: agentId,
               input,
-              ...(search.get("session")
-                ? { session_id: search.get("session")! }
-                : {}),
+              session_purpose: "debug" as const,
             };
             const receipt = data(
               await client.http.POST("/api/v1/workspaces/{workspace}/runs", {
@@ -239,6 +237,9 @@ export function SessionLayout() {
             </Link>
             <CaretRightIcon size={12} aria-hidden="true" />
             <CopyableId value={sessionId} />
+            {first?.session_purpose === "debug" && (
+              <span className={styles.debugBadge}>{t("Debug session")}</span>
+            )}
           </div>
           <SessionIdentity />
           <div className={styles.sessionControls}>

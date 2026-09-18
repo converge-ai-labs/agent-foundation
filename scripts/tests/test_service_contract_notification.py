@@ -1,4 +1,4 @@
-"""Notifications cover semantic/runtime changes without building downstream SDKs."""
+"""Notify SDKs for consumed contract inputs, not unrelated source revisions."""
 
 import fnmatch
 import json
@@ -27,16 +27,30 @@ def workflow() -> dict:
         "spec/api-conventions.md",
         "spec/a13n-service/21-native-streaming-and-notifications.md",
         "spec/a13n-service/20-agent-control-queued-submissions.md",
+    ],
+)
+def test_consumed_contract_changes_notify(changed: str) -> None:
+    assert any(fnmatch.fnmatchcase(changed, pattern) for pattern in workflow()[True]["push"]["paths"])
+
+
+@pytest.mark.parametrize(
+    "changed",
+    [
         "packages/a13n-service/a13n_service/gateway/native_streaming.py",
         "packages/a13n-service/a13n_service/gateway/notifications.py",
         "packages/a13n-service/a13n_service/run_stream/projector.py",
         "packages/a13n-harness/a13n_harness/stream.py",
         "packages/a13n-stream-protocol/a13n_stream_protocol/events.py",
         "uv.lock",
+        "pyproject.toml",
+        "proto/a13n-service/README.md",
+        "spec/a13n-service/37-service-sdks-and-clients.md",
+        "scripts/export-a13n-service-openapi.py",
+        ".github/workflows/notify-service-contract.yml",
     ],
 )
-def test_client_relevant_changes_notify_even_without_openapi_changes(changed: str) -> None:
-    assert any(fnmatch.fnmatchcase(changed, pattern) for pattern in workflow()[True]["push"]["paths"])
+def test_unconsumed_changes_do_not_notify(changed: str) -> None:
+    assert not any(fnmatch.fnmatchcase(changed, pattern) for pattern in workflow()[True]["push"]["paths"])
 
 
 def test_notification_is_configured_main_only_and_target_scoped() -> None:

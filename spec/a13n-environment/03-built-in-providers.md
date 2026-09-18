@@ -13,7 +13,7 @@
 | Native | `vercel`              | Named Vercel sandbox                        | Native command stream        | Create, stop/resume, renew and destroy              |
 | Native | `sprites`             | Persistent Sprite                           | Native WebSocket exec        | Create, automatic sleep/wake and destroy            |
 | Native | `runloop`             | Runloop Devbox                              | Native commands              | Create, suspend/resume, keepalive and shutdown      |
-| Envd   | `a13n.local-envd`     | Local workspace and private daemon          | EIP over stdio               | Adapter-owned daemon; caller-owned workspace        |
+| Envd   | `a13n.local-envd`     | Local folders and Host-owned daemon         | EIP over shared stdio        | Adapter-owned Session; Host-owned daemon            |
 | Native | `docker`              | Docker container                            | Docker Engine API            | Managed container; close preserves target           |
 | Envd   | `a13n.http-envd`      | External daemon at a configured origin      | EIP over HTTP(S)             | Connect-only                                        |
 | Envd   | `a13n.websocket-envd` | External daemon reverse-connected to a Host | EIP over accepted WebSocket  | Connect-only; Host-integrated SDK                   |
@@ -113,72 +113,25 @@ File writes stage complete candidates before publication. `move(replace=False)` 
 
 ### Configuration and runtime
 
-`a13n.local-envd` is the built-in local isolated execution provider. Configuration schema version `1` is credential-free:
+`a13n.local-envd` provides local EIP operations through a Host-owned daemon runtime. Its credential-free configuration contains a working directory and required methods under the [remote adapter path contract](04-remote-envd.md#configuration-and-state). The working directory is an existing Device path, not a filesystem access boundary.
 
-```python
-class LocalEnvdNetworkMode(StrEnum):
-    HOST = "host"
-    DENY = "deny"
+`LocalEnvdProviderRuntime` supplies a connection source owned by the Host. The Host lazily resolves an exact executable, launches envd under its selected account or outer sandbox and shares the resulting stdio Device connection across compatible adapters. Different security boundaries use separate launches; a Session cannot widen one. A Sandbox product must sandbox the whole daemon, not ask envd to build per-command isolation.
 
-
-class LocalEnvdWorkspaceConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    path: Path
-    read_only: bool = False
-
-
-class LocalEnvdShellProfile(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    profile_id: str
-    executable: Path
-    fixed_arguments: tuple[str, ...] = ()
-    allow_login: bool = False
-    max_script_bytes: int = 1024 * 1024
-
-
-class LocalEnvdProviderConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    workspace: LocalEnvdWorkspaceConfiguration
-    execution_network: LocalEnvdNetworkMode = LocalEnvdNetworkMode.HOST
-    trusted_executable_roots: tuple[Path, ...] = ()
-    shell_profiles: tuple[LocalEnvdShellProfile, ...] = ()
-    max_file_bytes: int = 16 * 1024 * 1024
-    max_output_preview_bytes: int = 64 * 1024
-    max_output_bytes_per_stream: int = 1024 * 1024 * 1024
-    max_spool_bytes: int = 64 * 1024 * 1024 * 1024
-```
-
-Paths are absolute after user expansion. The workspace must already exist. Local Envd always selects required native isolation; configuration cannot disable it. The Provider maps this model to one strict envd configuration and does not expose arbitrary envd JSON, transport selection, native runtime paths, payload identities, or arbitrary environment variables.
-
-A fresh `LocalEnvdProviderRuntime` supplies one exact absolute envd executable and a Host-owned allocator for a protected private runtime parent. Provider construction records these collaborators without inspection or launch.
-
-The package exposes a separate Host convenience `resolve_a13n_envd_executable()` helper. It can resolve an explicit path, `A13N_ENVD_EXECUTABLE`, then `shutil.which`. The helper validates the result and performs no download or installation. Low-level Provider construction never invokes it or loads `.env`.
-
-The package also exposes `local_envd.validate_local_envd_runtime(executable, configuration)` for explicit Host preflight. It uses the same exact-release and production isolation checks as `prepare()`, including denied-network verification when selected, without allocating a private runtime or starting an EIP daemon. It performs no executable discovery, downloads, installation, or system-policy changes. Success is a point-in-time observation; actual preparation retains its normal checks. Cancellation and timeout terminate the validation subprocess.
+The separate `resolve_a13n_envd_executable()` convenience can resolve an explicit path, `A13N_ENVD_EXECUTABLE`, then `shutil.which`, without installation. Low-level client and Provider construction do not discover executables or load ambient credentials. A Host can preflight its launcher, executable version and selected outer boundary; failure never silently selects a weaker launch mode.
 
 ### State and lifecycle
 
-Local Envd owns no durable provider target beyond the Host-selected workspace. Each fresh adapter launches a new process-local daemon generation and closes it with the adapter. `dump_state()` therefore returns `None`.
+Local Envd retains no durable target beyond Host-selected files. `dump_state()` returns `None`. The Host-owned connection runtime, not portable Environment state, preserves a daemon across adapters/Runs. PID, pipes, runtime paths, generation, descriptor and Session remain process-local.
 
-Raw PID, subprocess handle, process tree, pipes, private runtime path, EIP credential, endpoint, daemon generation, descriptor, and Session are process-local runtime data. They never enter `EnvironmentState` or Harness continuation.
+`prepare()` acquires the Host's ready Device connection, opens a fresh Session with the captured working directory, verifies method compatibility/readiness and exposes operation facets. Construction and `enter()` remain inert. Concurrent independent adapters receive independent Sessions on the same compatible daemon.
 
-`prepare()`:
+Preparation cancellation closes only the newly created Session. Failure during a new Host-owned daemon launch cleans that failed launch; failure to open one Session never kills a healthy shared daemon. The runtime serializes its own launch/shutdown without introducing global library state.
 
-1. validates the workspace and exact executable shape/version;
-2. runs the production-equivalent isolation probe;
-3. allocates a protected private runtime;
-4. starts one daemon generation over trusted stdio or another fixed local carrier;
-5. establishes EIP initialization, Environment identity, method compatibility, and readiness;
-6. exposes fresh EIP operation facets.
+`close()` fences adapter operations, stops Session keepalive and closes that Session and its owned commands/output/transfers. It preserves the shared carrier and daemon. Host runtime shutdown closes remaining Sessions and then terminates its owned daemon under bounded cleanup. An explicitly standalone runtime can couple its entire lifetime to one caller, but this is not the default per-adapter ownership model.
 
-A failure after process launch unconditionally terminates the owned process tree, closes carriers, and removes private runtime data. Cancellation does not leave a reusable daemon reference.
+Local Envd has no stop/destroy action for the caller-owned workspace and no infrastructure-renewal requirement. Session keepalive is handled by the client while the adapter exists. Workspace files are never deleted by close or collection.
 
-`close()` fences new operations, closes EIP, terminates the complete owned daemon process tree under bounded grace, closes pipes, and removes its private runtime. It never deletes or mutates the shared workspace merely because the adapter closes. There is no durable daemon target to stop or delete; these target actions are unsupported. Local Envd requires no target keepalive, and template stop/delete policies must be disabled for its caller-owned workspace.
-
-Because every independent Run creates a fresh daemon, Local Envd state does not preserve daemon identity across Runs. Filesystem continuity comes from the configured Host workspace. After preparation, `backing_identity` binds the same Host filesystem evidence described for Direct Local, including the workspace, trusted executable roots, and canonical execution policy. Recreating a private daemon or its runtime directory preserves this evidence; replacing a backing root or changing the policy changes it. Harness does not automatically bind deferred approval to this evidence. The fresh daemon `generation` still fences process, output, and other Session-local handles. Missing filesystem evidence means backing continuity is unknown, not that a new Session must invalidate approval.
+After preparation, `backing_identity` uses the same Host filesystem evidence as Direct Local plus the effective Host launch configuration. A fresh Session does not change backing identity; root replacement or a changed launch boundary does. Generation and Session identity still fence all native operation handles. No process/output recovery is persisted across App restart.
 
 ## Docker
 

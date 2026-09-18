@@ -88,7 +88,7 @@ async def test_recovery_prompt_factory_receives_detached_messages() -> None:
     assert prompt.content == "original"
 
 
-@pytest.mark.parametrize("error_type", [RuntimeError, httpx2.ReadError, UnexpectedModelBehavior])
+@pytest.mark.parametrize("error_type", [httpx2.RemoteProtocolError, httpx2.ReadError, ConnectionResetError])
 async def test_stream_failure_resumes_with_partial_history_and_shared_usage(error_type: type[Exception]) -> None:
     calls: list[list[ModelMessage]] = []
 
@@ -139,7 +139,7 @@ async def test_interrupted_partial_thinking_is_not_replayed() -> None:
         calls.append(deepcopy(messages))
         if len(calls) == 1:
             yield {0: DeltaThinkingPart(content="unfinished private reasoning")}
-            raise RuntimeError("stream disconnected")
+            raise httpx2.ReadError("stream disconnected")
         yield "resumed answer"
 
     executable = HarnessBuilder().build(
@@ -174,7 +174,7 @@ async def test_disabled_recovery_exports_no_unfinished_thinking() -> None:
     ) -> AsyncIterator[dict[int, DeltaThinkingPart]]:
         del messages, info
         yield {0: DeltaThinkingPart(content="unfinished private reasoning")}
-        raise RuntimeError("stream disconnected")
+        raise httpx2.ReadError("stream disconnected")
 
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -208,7 +208,7 @@ async def test_finalized_thinking_and_partial_text_are_replayed_in_order() -> No
             yield {0: DeltaThinkingPart(content="finished reasoning")}
             yield {0: DeltaThinkingPart(signature="signature-1")}
             yield "visible partial answer"
-            raise RuntimeError("stream disconnected")
+            raise httpx2.ReadError("stream disconnected")
         yield "resumed answer"
 
     executable = HarnessBuilder().build(
@@ -262,7 +262,7 @@ async def test_response_tracker_does_not_mix_multiple_model_requests() -> None:
             # first public event for this response is therefore text at index 1.
             yield {0: DeltaToolCall(json_args='{"value":')}
             yield "second response partial text"
-            raise RuntimeError("second response disconnected")
+            raise httpx2.ReadError("second response disconnected")
         yield "recovered answer"
 
     executable = HarnessBuilder().build(
@@ -363,7 +363,7 @@ async def test_complete_native_tool_parts_survive_a_later_text_interruption() ->
             )
         }
         yield "partial answer"
-        raise RuntimeError("stream disconnected")
+        raise httpx2.ReadError("stream disconnected")
 
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -430,7 +430,7 @@ async def test_malformed_native_tool_pairs_preserve_surrounding_text(
         for index, part in enumerate(parts):
             yield {index: part}
         yield "partial answer"
-        raise RuntimeError("stream disconnected")
+        raise httpx2.ReadError("stream disconnected")
 
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -469,7 +469,7 @@ async def test_unmatched_native_tool_call_preserves_surrounding_text() -> None:
             )
         }
         yield "partial answer after native call"
-        raise RuntimeError("stream disconnected")
+        raise httpx2.ReadError("stream disconnected")
 
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -511,7 +511,7 @@ async def test_recovery_does_not_replay_an_unmatched_native_tool_call() -> None:
                     tool_call_id="native-unmatched",
                 )
             }
-            raise RuntimeError("stream disconnected")
+            raise httpx2.ReadError("stream disconnected")
         yield "resumed answer"
 
     executable = HarnessBuilder().build(
@@ -550,7 +550,7 @@ async def test_unfinalized_tool_call_without_text_leaves_no_partial_response() -
                     tool_call_id="tool-1",
                 )
             }
-            raise RuntimeError("stream disconnected")
+            raise httpx2.ReadError("stream disconnected")
         yield "resumed answer"
 
     executable = HarnessBuilder().build(
@@ -576,7 +576,7 @@ async def test_disabled_recovery_exports_interrupted_model_history_as_a_failed_r
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
         del messages, info
         yield "partial"
-        raise RuntimeError("stream disconnected")
+        raise httpx2.ReadError("stream disconnected")
 
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -605,7 +605,7 @@ async def test_stream_establishment_failure_can_resume_before_any_content() -> N
         del messages, info
         calls += 1
         if calls == 1:
-            raise RuntimeError("stream establishment failed")
+            raise httpx2.ConnectError("stream establishment failed")
         yield "recovered"
 
     executable = HarnessBuilder().build(
@@ -639,7 +639,7 @@ async def test_recovery_prompt_factory_receives_the_failure_and_repaired_history
         calls.append(deepcopy(messages))
         if len(calls) == 1:
             yield "partial"
-            raise RuntimeError("disconnected")
+            raise httpx2.ReadError("disconnected")
         yield "done"
 
     executable = HarnessBuilder().build(
@@ -705,7 +705,7 @@ def test_recovery_backoff_can_be_explicitly_disabled(initial: float, maximum: fl
     assert [policy.delay(index) for index in (1, 2, 3, 4)] == [0, 0, 0, 0]
 
 
-async def test_recovery_attempt_budget_is_total_and_monotonic() -> None:
+async def test_consecutive_partial_failures_exhaust_recovery_budget() -> None:
     calls = 0
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
@@ -713,7 +713,7 @@ async def test_recovery_attempt_budget_is_total_and_monotonic() -> None:
         del messages, info
         calls += 1
         yield "partial"
-        raise RuntimeError("still disconnected")
+        raise httpx2.ReadError("still disconnected")
 
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -746,7 +746,7 @@ async def test_recovery_attempt_budget_is_total_and_monotonic() -> None:
     assert result.failure is not None
     assert result.failure.code == "model_recovery_exhausted"
     assert result.failure.retry_hint == "new_run"
-    assert "after 3 attempts" in result.failure.message
+    assert "after 3 consecutive failed attempts" in result.failure.message
     assert result.usage.requests == 3
 
 
@@ -823,7 +823,7 @@ async def test_cancel_interrupts_recovery_backoff_without_starting_another_attem
         del messages, info
         calls += 1
         started.set()
-        raise RuntimeError("connection failed")
+        raise httpx2.ConnectError("connection failed")
         yield "unreachable"
 
     executable = HarnessBuilder().build(
@@ -972,11 +972,12 @@ async def test_provider_suspended_continuation_remains_inside_one_pydantic_attem
     [
         ("Tool 'some_tool' exceeded max retries count of 1.", False),
         ("Exceeded maximum retries (1) for output validation", False),
-        ("Stream ended unexpectedly", True),
+        ("Streamed response ended without content or tool calls", True),
+        ("Stream ended unexpectedly", False),
     ],
 )
 def test_unexpected_model_behavior_retry_classification(message: str, recoverable: bool) -> None:
-    assert is_recoverable_model_failure(UnexpectedModelBehavior(message), ()) is recoverable
+    assert is_recoverable_model_failure(UnexpectedModelBehavior(message)) is recoverable
 
 
 @pytest.mark.parametrize("retries", [0, 1, 2])
@@ -1592,7 +1593,7 @@ async def test_retry_retains_visible_text_beside_an_unfinished_tool(native_tool:
                 }
             else:
                 yield {1: DeltaToolCall(name="inspect", json_args='{"path":', tool_call_id="tool-1")}
-            raise RuntimeError("stream disconnected during tool call")
+            raise httpx2.ReadError("stream disconnected during tool call")
         yield "Continued without repeating the first inspection."
 
     executable = HarnessBuilder().build(
@@ -1640,7 +1641,7 @@ async def test_stopped_mixed_stream_exports_partial_text(native_tool: bool, stop
         started.set()
         if stop == "cancel":
             await asyncio.Event().wait()
-        raise RuntimeError("stream disconnected")
+        raise httpx2.ReadError("stream disconnected")
 
     executable = HarnessBuilder().build(
         AgentSpec(),

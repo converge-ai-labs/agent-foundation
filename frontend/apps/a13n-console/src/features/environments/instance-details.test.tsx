@@ -32,7 +32,7 @@ const environment: Schema["Environment"] = {
   provider_id: "envp_test",
   template_revision_id: "envrev_test",
   ownership: "managed",
-  access: "full",
+
   generation: 1,
   status: "running",
   retention_condition: "idle",

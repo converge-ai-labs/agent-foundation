@@ -37,8 +37,8 @@ async def assert_native_journey(live, case, run, events, scenario, outcome):
         assert len(calls) == 2 and all(tool["result"] for tool in calls)
         assert (await live.evidence(case))["effects"] == 2
     if outcome == "failed":
-        assert (await live.evidence(case))["injected_errors"] == 5, (
-            "Model recovery skipped or exceeded its five-attempt budget"
+        assert (await live.evidence(case))["injected_errors"] == 1, (
+            "Permanent model authentication failures must not consume recovery retries"
         )
     assert await live.events(run["id"]) == events
     assert await live.events(run["id"], after=events[-1].cursor) == []

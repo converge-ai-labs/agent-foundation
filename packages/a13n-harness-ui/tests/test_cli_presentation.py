@@ -265,7 +265,7 @@ async def test_model_stream_retry_renders_only_a_system_notice_until_exhaustion(
     assert "answer-1" in text and "answer-2" in text
     if exhausted:
         assert len(errors) == 1
-        assert "after 2 attempts" in text
+        assert "after 2 consecutive failed attempts" in text
     else:
         assert not errors
         assert not [record for record in caplog.records if record.levelname in {"WARNING", "ERROR"}]

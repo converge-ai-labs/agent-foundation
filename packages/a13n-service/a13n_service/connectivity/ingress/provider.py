@@ -93,7 +93,21 @@ class ProviderCompleteDecision(_StrictModel):
     response: ProviderHttpResponse
 
 
-type ProviderRequestDecision = ProviderEventDecision | ProviderCompleteDecision
+class ProviderActionDecision(_StrictModel):
+    """Authenticated interaction, never model input or an execution principal."""
+
+    kind: Literal["action"] = "action"
+    action: Literal["stop"] = "stop"
+    reference: Annotated[str, StringConstraints(min_length=1, max_length=72)]
+    token: Annotated[str, StringConstraints(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")] = Field(
+        repr=False
+    )
+    actor_id: BoundedProviderId = Field(repr=False)
+    conversation_id: BoundedProviderId = Field(repr=False)
+    message_id: BoundedProviderId = Field(repr=False)
+
+
+type ProviderRequestDecision = ProviderEventDecision | ProviderCompleteDecision | ProviderActionDecision
 
 
 class DurableAdmissionReceipt(_StrictModel):

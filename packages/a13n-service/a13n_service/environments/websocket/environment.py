@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from a13n_environment import (
     Environment,
+    EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
@@ -41,7 +42,6 @@ class ClientRunEnvironment(Environment):
         attempt: AttemptContext,
         environment_id: str,
         descriptor: EnvironmentDescriptor,
-        access: str,
         *,
         mount_name: str = "workspace",
     ) -> None:
@@ -54,7 +54,6 @@ class ClientRunEnvironment(Environment):
         self._operations = EnvironmentOperations()
         self._client: RelayUseClient | None = None
         self._generation = 0
-        self.access = access
 
     @property
     def provider_key(self) -> str:
@@ -88,10 +87,8 @@ class ClientRunEnvironment(Environment):
         with observe_phase("a13n.service.environment.prepare"):
             await self._close()
             target = await self._resources.admit(self._attempt, self.environment_id, mount_name=self._mount_name)
-            if target.access != self.access:
-                raise ValueError("Accepted Environment access changed")
             client = await self._connections.acquire(
-                self._attempt, self.environment_id, target.permissions, mount_name=self._mount_name
+                self._attempt, self.environment_id, frozenset(EnvironmentAction), mount_name=self._mount_name
             )
             self._client = client
             if self.is_entered:

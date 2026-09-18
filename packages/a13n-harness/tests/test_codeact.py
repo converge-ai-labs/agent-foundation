@@ -127,7 +127,7 @@ async def test_codeact_preserves_run_state_across_native_model_recovery() -> Non
             code = "saved = await double(value=21)\nsaved"
         elif requests == 2:
             yield "partial answer"
-            raise RuntimeError("stream disconnected")
+            raise ConnectionResetError("stream disconnected")
         elif requests == 3:
             code = "saved + 1"
         else:

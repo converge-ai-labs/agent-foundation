@@ -34,6 +34,12 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
 | Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                         |
 
+## Device and Environment Selection Storage
+
+Device definitions remain desired files in the accepted generation. Thread configuration stores binding selections and the normalized default; immutable Run compositions retain the exact captured Devices and working directories used for that admission. [Devices and Environment Bindings](04a-devices-and-environment-bindings.md) owns their semantics and binding-state identity.
+
+Online Device connections, EIP Sessions/generations, keepalive tasks and native process/output references remain process-local. Local-only selections have an empty added-binding collection and their local default. Storage upgrades preserve captured history and existing user data.
+
 ## Child Inspection Results
 
 The existing immutable child checkpoint retains bounded activity snapshots and the latest complete final answer. Activity budgets do not truncate that final answer; bounded HTTP windows paginate it for human inspection. A later failed or interrupted segment does not replace the previous complete result with an activity preview. This remains inspection state, not a separate event store or continuation authority. Older checkpoints whose answers were already truncated remain readable but cannot recover bytes that were never saved.
@@ -171,7 +177,7 @@ An admitted Run records the Thread configuration version and accepted generation
 
 ## Immutable Publication
 
-Immutable values are canonical, bounded, typed, and content-addressed. Publication follows:
+Immutable values are canonical, bounded, typed, and content-addressed. The restart-bound `process.max_object_bytes` setting limits each complete uncompressed object on publication and read. It defaults to 256 MiB and accepts 1 KiB through 1 GiB. This is not a Thread disk quota or a model-context budget; retained display history remains part of the checkpoint after context compaction. An oversized publication reports its actual byte count and configured limit without truncating the payload or advancing the selected reference. Lowering the limit can make previously saved larger objects unreadable until the limit is raised again. Publication follows:
 
 1. serialize and validate the complete payload;
 2. write a uniquely named file under the same storage root;

@@ -32,7 +32,6 @@ class ExistingEnvironmentFiles:
         actor: AuthenticatedActor,
         environment_id: str,
         backing_identity: str,
-        write: bool,
         authorize: Callable[[], Awaitable[None]],
     ) -> AsyncIterator[FileOperator]:
         lease_id = new_object_id("envuse")
@@ -55,7 +54,6 @@ class ExistingEnvironmentFiles:
                 or row.state is None
                 or row.operation_id is not None
                 or f"{row.id}:{row.generation}" != backing_identity
-                or (write and row.access == "read_only")
                 or provider is None
                 or not provider.enabled
             ):

@@ -60,7 +60,7 @@ async def test_manage_retained_scope_and_reject_another_user(memory_sessions, tm
 
     class ExistingFiles:
         @asynccontextmanager
-        async def open(self, *, actor, environment_id, backing_identity, write, authorize):
+        async def open(self, *, actor, environment_id, backing_identity, authorize):
             assert environment_id == "env_1234567890abcdef" and backing_identity == "env_1234567890abcdef:1"
             await authorize()
             yield files

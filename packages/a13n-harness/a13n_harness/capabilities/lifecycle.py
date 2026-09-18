@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import RunContext
-from pydantic_ai.agent import ModelRequestNode
+from pydantic_ai.agent import CallToolsNode, ModelRequestNode
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 
 from a13n_harness.context import AgentContext
@@ -89,9 +89,15 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
                 message_count=len(ctx.messages) + 1,
             ),
         )
+        recovery = ctx.deps._model_recovery
+        primary_request = recovery.attempt_id is not None and ctx.run_id == recovery.attempt_id
+        if primary_request:
+            recovery.request_error = None
         try:
             result = await handler(node)
         except BaseException as exc:
+            if primary_request:
+                recovery.request_error = exc
             try:
                 await emit_harness_event(
                     ctx.deps.events,
@@ -106,6 +112,10 @@ class _LifecycleEventActiveCapability(LifecycleEventCapability):
                 pass
             raise
         else:
+            # A retry node, partial stream, or auxiliary Agent response is not
+            # accepted progress in the primary execution being recovered.
+            if primary_request and isinstance(result, CallToolsNode) and result.model_response.state == "complete":
+                recovery.consecutive_failures = 0
             await emit_harness_event(
                 ctx.deps.events,
                 kind="lifecycle",

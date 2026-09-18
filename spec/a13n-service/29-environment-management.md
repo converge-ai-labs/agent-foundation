@@ -4,7 +4,7 @@
 
 Service manages Organization- or Workspace-owned Environment Providers and versioned Environment Templates, plus Workspace-owned actual Environments. A template describes how to obtain an environment; an Environment records the logical working environment and its current backing target. Users normally start a Thread with a template selection rather than creating an Environment separately.
 
-A Thread remembers a mutable default Environment. Each accepted Run fixes its own optional primary Environment reference independently of Agent configuration. Normal Runs can switch environments; recovery of an accepted Run cannot change its logical Environment selection. A stopped target resumes; a confirmed-deleted managed target is rebuilt from its frozen template revision. Rebuilding changes the backing generation, not the Service Environment ID, and does not restore lost files or unknown command outcomes.
+A Thread stores a mutable default Environment binding. Each accepted Run freezes its optional primary target and working directory independently of Agent configuration. Normal Runs can switch environments; recovery of an accepted Run cannot change its logical Environment selection. A stopped target resumes; a confirmed-deleted managed target is rebuilt from its frozen template revision. Rebuilding changes the backing generation, not the Service Environment ID, and does not restore lost files or unknown command outcomes.
 
 The shared [Environment Provider contract](../a13n-environment/README.md) owns implementation selection, preparation, connections, operations, state codecs, stop, keepalive, and destruction. Service owns durable records, authorization, preparation timing, and retention. Harness consumes ready or transparently lazy operation objects and owns no target preparation policy.
 
@@ -17,7 +17,7 @@ The shared [Environment Provider contract](../a13n-environment/README.md) owns i
 | Reusable creation configuration and immutable versions                    | EnvironmentTemplate and EnvironmentTemplateRevision |
 | Current target, generation, preparation and retention coordination        | Environment                                         |
 | Default selection for later Runs                                          | Thread                                              |
-| Accepted Environment and access ceiling                                   | Run                                                 |
+| Accepted Environment binding                                              | Run                                                 |
 | When to prepare, preserve, stop or delete                                 | Service                                             |
 | How to create, resume, connect, retain, stop or delete                    | Provider implementation                             |
 | File, shell and other Agent operation routing                             | Harness through the supplied Environment object     |
@@ -54,6 +54,8 @@ Only the protected configuration purpose can request this mount. Service resolve
 
 The mount's adapter identity is not a Service Environment ID and must not be written to `Run.environment_id`. It grants no access to managed Environments; ordinary `environment.use` and resource lifecycle checks remain unchanged. Configuration entry explicitly selects no managed Environment and does not inherit the business Agent's or Thread's default. Replacement Attempts construct a fresh adapter for the current deployment's fixed Skill directory. Its file contents are not part of the accepted Run snapshot and may change across deployments; no per-Run bundle reference or old-file retention is required. This exception does not change managed Skill Revision locks or artifact retention. There is no remote provisioning, user-writable materialization, or managed stop/delete lifecycle for this static content.
 
+Service does not define an Environment access level. Templates, instances, primary Run selections and additional mounts carry no `read_only`/`read_write`/`full` preset. Provider capabilities and native restrictions remain authoritative. Agent toolsets select exposed tools; tool policy controls allow, deny and approval. Trusted Skill materialization and Memory file operations retain Provider checks and resource-use authorization independently of model tool policy. Enabling Shell permits command effects beyond individual file-tool policies; actual read-only storage requires a Provider or backing-target restriction.
+
 ## Templates and Revisions
 
 An `EnvironmentTemplate` is an Organization- or Workspace-owned resource with stable `id`, `name`, description, `version`, `current_revision_id`, timestamps and archive state. Creation publishes revision 1. Behavior changes publish a higher immutable revision; metadata-only changes do not. Selecting current resolves to an exact revision when an Environment record is allocated. A referenced revision remains retained.
@@ -61,9 +63,6 @@ An `EnvironmentTemplate` is an Organization- or Workspace-owned resource with st
 The conceptual revision is:
 
 ```python
-type EnvironmentAccess = Literal["read_only", "read_write", "full"]
-
-
 class EnvironmentTemplateRevision:
     id: EnvironmentTemplateRevisionId
     template_id: EnvironmentTemplateId
@@ -72,7 +71,6 @@ class EnvironmentTemplateRevision:
     provider_id: EnvironmentProviderId
     configuration_schema_version: str
     configuration: JsonObject
-    access: EnvironmentAccess
     preparation: Literal["on_run", "on_use"] = "on_run"
     retention: EnvironmentRetentionPolicy
 ```
@@ -81,7 +79,7 @@ A revision retains its Template's ownership. Organization Templates reference on
 
 `configuration` is the implementation's desired environment template configuration: image or provider template, resource limits, initialization and supported workspace settings. It contains no current sandbox/container ID, credentials, live client or process handle. Required Provider runtime collaborators come from the selected Provider configuration and deployment. Initialization is provider-validated and runs for a new backing target, not on every reconnect. Restoring an earlier template configuration creates a new revision.
 
-The revision stores its frozen template configuration as `template_config`, including preparation timing, retention and the access ceiling. New revisions affect newly allocated Environments only. Existing Environments, including later automatic rebuilds, use their original revision. Credential rotation does not publish a template revision. Archiving a template prevents new allocation but does not revoke existing Environments.
+The revision stores its frozen template configuration as `template_config`, including preparation timing and retention. New revisions affect newly allocated Environments only. Existing Environments, including later automatic rebuilds, use their original revision. Credential rotation does not publish a template revision. Archiving a template prevents new allocation but does not revoke existing Environments.
 
 ## Live Additional Mounts
 
@@ -112,11 +110,23 @@ The Provider ID must equal the referenced template revision's Provider ID. State
 
 Only managed Environments carry a creation template configuration, preparation policy and retention policy; a missing managed revision fails explicitly. External configuration is a connection configuration and carries no synthetic template or disabled retention policy.
 
-An externally managed registration supplies a validated existing-target reference and access ceiling for the selected Provider, without a template. The Environment stores that ceiling; a managed Environment derives its ceiling from its frozen template revision. Service connects to it but does not create, rebuild, stop or delete it automatically. It cannot claim managed retention guarantees. Same-Workspace registration of an already registered target must reuse its Environment or fail conflict, using the canonical backend-scoped target identity. The uniqueness check spans Provider resource IDs: configuring the same backend twice does not create two lifecycle owners for one target. Target metadata is validated through the same Provider implementation; this is not another target resource or registry. Managed targets carry sufficient ownership evidence to reject adoption under an unrelated Environment. Explicit cross-Workspace registration of the same target is outside this contract and never grants shared lifecycle ownership.
+An externally managed registration supplies a validated existing-target reference for the selected Provider, without a template. Service connects to it but does not create, rebuild, stop or delete it automatically. It cannot claim managed retention guarantees. Same-Workspace registration of an already registered target must reuse its Environment or fail conflict, using the canonical backend-scoped target identity. The uniqueness check spans Provider resource IDs: configuring the same backend twice does not create two lifecycle owners for one target. Target metadata is validated through the same Provider implementation; this is not another target resource or registry. Managed targets carry sufficient ownership evidence to reject adoption under an unrelated Environment. Explicit cross-Workspace registration of the same target is outside this contract and never grants shared lifecycle ownership.
+
+### Envd Device Registration
+
+An envd Environment registers one Device under the existing Workspace Environment resource. Registration accepts typed Device identity and connection configuration; Provider state is constructed and validated by Service. Its ownership is `external`, without a TemplateRevision or managed target retention. Registration, connection status, selection and Session cleanup are first-party Service operations. Infrastructure lifecycle actions require the Provider's declared capabilities.
+
+The Environment record owns Device identity and connection configuration. Thread defaults and accepted Run/mount bindings own working-directory selections. Concurrent bindings may select different folders on the same Device. Preparing a binding never rewrites shared Environment configuration.
+
+### Device Info and Directory Discovery
+
+`GET /environments/{environment_id}/device` returns authenticated Device info, including the default working directory and discovery capability. `GET /environments/{environment_id}/directories` accepts a Device `path` and bounded `offset`/`limit`, and returns one directory page. Both require same-Workspace `environment.use`, an enabled envd Provider and current connection authority. They create no Run, Session or Environment-use slot. Unsupported discovery reports `unsupported`; unavailable targets return an availability error without fallback.
+
+Control calls HTTP EIP directly or routes reverse-WebSocket requests to the current socket owner under the [Device relay contract](29a-websocket-environments-and-live-mounts.md#device-discovery-relay). Provider I/O occurs outside SQL. Directory results are current observations; selecting a path does not reserve it. Registration/ticket issuance needs Device identity, not a Session or selected working directory.
 
 ## Thread Defaults and Run Selection
 
-Interactions owns input validation, source-Run inheritance, Run creation and Thread defaults. Environment selection applies one rule for current or explicit template revisions, archive state, existing references, Provider availability and access ceilings. Management, Thread/Run acceptance and read-only Gateway preflight share that rule. Acceptance reloads and authorizes the selection in the same short transaction as allocation and Run creation; preflight does not grant execution authority.
+Interactions owns input validation, source-Run inheritance, Run creation and Thread defaults. Environment selection applies one rule for current or explicit template revisions, archive state, existing references, Provider availability. Management, Thread/Run acceptance and read-only Gateway preflight share that rule. Acceptance reloads and authorizes the selection in the same short transaction as allocation and Run creation; preflight does not grant execution authority.
 
 A root Thread can be created without accepting a Run. Ordinary creation requires the Workspace runner authority also used for root Run start, current access to the selected Session and Agent when supplied, and the Environment/template use permission for its selected choice. Creation selects an explicit environment choice or, when absent, the selected Agent default Revision's `AgentConfig.default_environment_template_id`. It resolves that template's current revision at allocation, creates a managed Environment record and records `Thread.default_environment_id`, but performs no external provisioning. An explicit no-environment choice is preserved. If no explicit choice or Revision default exists, the Thread has no Environment. Thread creation and Environment allocation are idempotent and atomic. A combined root Run using an exact historical AgentRevision takes its omitted choice from that selected Revision, not the Agent's live default. Accepted Run and existing Thread choices retain their own semantics.
 
@@ -127,6 +137,7 @@ Environment choices are independent invocation fields, not `AgentConfig`, `Agent
 ```python
 class ExistingEnvironmentSelection:
     environment_id: EnvironmentId
+    working_directory: str | None = None
 
 
 class NewEnvironmentSelection:
@@ -137,6 +148,8 @@ class NewEnvironmentSelection:
 type EnvironmentSelection = ExistingEnvironmentSelection | NewEnvironmentSelection
 ```
 
+`working_directory` is an absolute [Device path](../a13n-envd/04-resource-operations.md#path-model). For an explicit envd target, omission/null resolves its advertised default before the acceptance transaction; the accepted binding always stores an explicit path. Inherited bindings retain their stored path. Native selections reject this override and retain Provider-defined configuration. Native Docker, E2B and Direct Local retain their own target preparation, state and lifecycle contracts.
+
 Exactly one variant is accepted. A new-environment choice always allocates a new record; matching the same template never implies reuse. `version=None` selects current at allocation. The public `environment` field distinguishes omission from null:
 
 | Entry path                                      | Omitted                           | Explicit Environment or template choice | Explicit null  |
@@ -145,7 +158,7 @@ Exactly one variant is accepted. A new-environment choice always allocates a new
 | Ordinary new Run in a Thread                    | Copy Thread default               | Select existing or allocate new         | No environment |
 | Fork / Continue From a historical completed Run | Copy source Run selection         | Select existing or allocate new         | No environment |
 
-At Run acceptance, one short transaction authorizes the final choice, fixes `Run.environment_id` and its access ceiling, and sets the Thread default to that choice. No Provider I/O occurs in this transaction. Acceptance failure changes neither; later execution failure does not roll back the selected default. The explicit request or resolved selection participates in the operation's idempotency evidence. Retrying the same acceptance cannot allocate a second Environment.
+At Run acceptance, one short transaction authorizes the final choice, fixes `Run.environment_id`, `Run.environment_working_directory`, and sets the complete Thread default binding to that choice. No Provider I/O occurs in this transaction. Acceptance failure changes neither; later execution failure does not roll back the selected default. The complete explicit request or resolved binding participates in idempotency evidence and authorized preview/read projections. Retrying the same acceptance cannot allocate a second Environment.
 
 Queued input stores the explicit choice or its absence. Queueing alone allocates no Environment and changes no Thread default. Omitted selection and unpinned template versions resolve only when the queued intent is consumed into an accepted Run. Agent switching does not itself change the Thread default. Existing Thread configuration, including an explicit null, never falls back to a different Agent's default template.
 
@@ -153,28 +166,28 @@ Queued input stores the explicit choice or its absence. Queueing alone allocates
 
 Service supplies at most one primary Environment as the Harness `workspace` mount. The shared Harness multi-mount API remains available to other Hosts; it does not create another Service selection surface. Trusted local mount changes cannot substitute another logical Environment for the accepted Run; backing rebuilds follow generation reconciliation.
 
-`Run.environment_id` and `Run.environment_access` are the canonical immutable binding. They are both absent for a Run without an Environment. The access ceiling is intersected with the template/registered environment ceiling and the [Attempt IAM snapshot](33-identity-and-access-management.md#attempt-iam-snapshot). Later operation checks, periodic IAM refresh, or a fresh Attempt's authorization can deny use but cannot silently broaden the accepted ceiling. No parallel Run-to-Environment binding resource or table duplicates these fields.
+`Run.environment_id` and `Run.environment_working_directory` form the canonical immutable primary binding. All are absent without an Environment; `environment_working_directory` is present only for envd. Thread default fields retain the same complete value. Additional mounts store their binding on the existing association row and freeze it at mount acceptance. The [Attempt IAM snapshot](33-identity-and-access-management.md#attempt-iam-snapshot) authorizes resource use. Provider descriptors define supported operations; Agent toolsets and tool policy govern model-visible tools and invocation approval. Later operation checks and IAM refresh may deny use. No parallel Run-to-Environment binding resource or table duplicates these fields.
 
 A Run also records whether environment use has begun. This is an execution fact, not part of Agent configuration. `on_use` Runs can finish without setting it. Once acquired, use remains active through model work, retry backoff and Attempt replacement until the Run leaves `running`; a between-tool pause is not environment idleness. Environment state and target generations belong to the Environment record, while existing lifecycle/audit evidence records which generation each Attempt used and when a rebuild occurred. Historical Runs must not be displayed as having executed on a newly rebuilt target.
 
-| Operation                                | Selection                                                   |
-| ---------------------------------------- | ----------------------------------------------------------- |
-| Normal new input / continuation          | Explicit choice or Thread default                           |
-| Same-Run Worker replacement              | Same accepted Environment ID and access                     |
-| Retry of failed/cancelled intent         | Copy source Run's Environment and access                    |
-| Feedback / waiting continuation          | Copy the waiting Run's Environment and access               |
-| Automatic async-result continuation      | Copy the selected continuation Run's Environment and access |
-| Fork or explicit historical continuation | Source selection unless explicitly overridden               |
+| Operation                                | Selection                                             |
+| ---------------------------------------- | ----------------------------------------------------- |
+| Normal new input / continuation          | Explicit choice or Thread default                     |
+| Same-Run Worker replacement              | Same accepted target and working directory            |
+| Retry of failed/cancelled intent         | Copy source Run's complete binding                    |
+| Feedback / waiting continuation          | Copy the waiting Run's complete binding               |
+| Automatic async-result continuation      | Copy the selected continuation Run's complete binding |
+| Fork or explicit historical continuation | Source selection unless explicitly overridden         |
 
-Retry and feedback cannot use a later Thread default to redirect old work. Their acceptance updates the Thread default to the preserved choice. A caller wanting different execution inputs or environment submits an ordinary new operation under its eligibility rules.
+Recovery and inherited selections load the complete retained binding, never a working directory from mutable Thread or Device defaults. Retry and feedback cannot use a later Thread default to redirect old work. Their acceptance updates the Thread default to the preserved choice. A caller wanting different execution inputs or environment submits an ordinary new operation under its eligibility rules.
 
 Portable Harness environment state never overrides Service's current Environment state. Switching environments preserves compatible conversation history but does not copy files, processes or dependencies. Backing-generation changes invalidate old native handles, process references, readiness evidence and environment-dependent caches. The operation object refreshes safe Environment context before later Agent work. Pending approvals tied to files or other mutable target facts require revalidation after recovery/rebuild; mismatched conditions must fail or request fresh approval rather than treating the old decision as proof of unchanged state.
 
 ### Memory Storage Access
 
-[Service Memory](42-memory.md#filesystem-configuration-and-storage-binding) defaults to the accepted Run's Environment and borrows only its file access. It creates no second execution Environment or shell route. A memory-specific root is provider-local and remains subject to current action/path ceilings. Explicit persistent roots and explicit existing Environment references use the same preparation, credential, use-authority, routing, and generation checks; they do not replace `Run.environment_id` or enable general tools on the additional target.
+[Service Memory](42-memory.md#filesystem-configuration-and-storage-binding) defaults to the accepted Run's Environment and borrows only its file access. It creates no second execution Environment or shell route. A memory-specific root is provider-local within the captured file binding and remains subject to its action ceiling and native permissions. Explicit persistent roots and explicit existing Environment references use the same preparation, credential, use-authority, routing, and generation checks; they do not replace `Run.environment_id` or enable general tools on the additional target.
 
-Memory acquires/reuses an Environment operation scope outside SQL and releases only what it owns. Another Worker reconnects through the existing target/state routing, never a local mirror. A configuration's file capability does not prove conditional commit, crash durability, or shared-filesystem coordination; the memory backend validates those guarantees before enabling writes.
+Memory captures the exact file binding with its corpus binding, including the working directory for an explicit envd target. It acquires/reuses an Environment operation scope outside SQL and releases only what it owns. Another Worker reconnects through the existing target/state routing, never a local mirror. A configuration's file capability does not prove conditional commit, crash durability, or shared-filesystem coordination; the memory backend validates those guarantees before enabling writes.
 
 Memory references do not automatically extend sandbox retention. Stop/destroy and target reconstruction retain their existing semantics. Interfaces exposing destructive lifecycle operations identify affected memory bindings; scheduled retention follows its configured policy and does not promise memory preservation. A confirmed rebuilt target advances generation, while memory separately verifies corpus identity. The same logical Environment ID is insufficient to restore lost files. Stale memory operations are fenced, and pending organization must not recreate an old corpus silently.
 
@@ -219,6 +232,12 @@ The preparation path inspects current target evidence:
 | Timeout, denial, unreachable backend or uncertain outcome | Report/reconcile; never infer absence                                                      |
 | Incompatible ownership or target metadata                 | Fail conflict without adoption or mutation                                                 |
 | Missing externally managed target                         | Report unavailable; no implicit creation                                                   |
+
+### Envd Session Lifetime
+
+HTTP and reverse WebSocket envd prepare a fresh Session from each current Attempt's captured binding. Control owns shared reverse WebSocket connections; HTTP uses the remote Provider directly without the Redis relay. Device initialization and online status require no Session. Folder or Session readiness failure affects only that binding.
+
+Session keepalive is bounded by confirmed live Attempt authority. Run usage for target retention, another active Session and a healthy Control connection cannot renew an abandoned Session. Close, waiting, cancellation or authority loss stops renewal and closes only owned Session resources; connection loss follows the bounded EIP disconnect grace. Same-runtime reattachment preserves only the same Session and generation. Attempt replacement opens fresh Sessions without importing handles, replaying uncertain effects or resuming transfers.
 
 ## Workspace Capacity
 
@@ -278,9 +297,9 @@ Keepalive maintains a running target while active use or the current pre-stop/pr
 
 ## Children and Forks
 
-Every Run acceptance selects an explicit Environment source: the supplied selection (including explicit no Environment), the Agent default, the current Thread default, or an exact retained Run. Retry and state-preserving continuations name their retained source Run and preserve its access ceiling; they do not infer that source from mutable Thread pointers or Run kind. Authorization and allocation happen in the acceptance transaction. Managed Skills in any inline descendant require the owning Run to have a writable Environment, just as root Skills do.
+Every Run acceptance selects an explicit Environment source: the supplied selection (including explicit no Environment), the Agent default, the current Thread default, or an exact retained Run. Retry and state-preserving continuations name their retained source Run and preserve its Environment binding; they do not infer that source from mutable Thread pointers or Run kind. Authorization and allocation happen in the acceptance transaction. Managed Skills in any inline descendant require the owning Run to have a writable Environment, just as root Skills do.
 
-Child policy is `none`, `shared` or `dedicated`, defaulting to `shared`. Direct Local rejects dedicated child selection. Shared children copy the spawning Run's Environment and narrow its access ceiling; they never consult a later root Thread default. Dedicated children allocate their own Environment from the exact template revision selected by the frozen child policy. Both use fresh process-local objects and the Environment's preparation/retention contract. Inline children borrow the parent Harness facade and do not acquire an independent durable use.
+Child policy is `none`, `shared` or `dedicated`, defaulting to `shared`. Direct Local rejects dedicated child selection. Shared children copy the spawning Run's complete Environment binding; they never consult a later root Thread default. Dedicated children allocate their own Environment from the exact template revision selected by the frozen child policy. Both use fresh process-local objects and the Environment's preparation/retention contract. Each independently scheduled envd Attempt/binding opens a fresh Session; inline children borrow their parent's Session. Inline children borrow the parent Harness facade and do not acquire an independent durable use.
 
 A Fork normally shares its source Run's Environment, but an explicit selection may choose another or allocate from a template. Neither Fork nor dedicated creation copies the parent's changed files. File transfer or snapshot cloning is not implicit. Parent switching, completion or cancellation cannot stop/delete an Environment still used by another Run or protected by its aggregate retention condition.
 
@@ -306,9 +325,11 @@ Provider and Template collections also expose `POST/GET /organizations/{organiza
 
 Provider reads require `environment_provider.read`; configuration, credentials and enabled-state mutations require `environment_provider.manage`. Template reads, authoring and selection require `environment_template.read`, `environment_template.manage` and `environment_template.use`. Actual Environment reads, external registration/manual lifecycle and selection require `environment.read`, `environment.manage` and `environment.use`. An authorized template use can automatically allocate its Environment during Thread/Run creation without granting arbitrary Provider administration or external-target registration. Attempt preparation validates the accepted primary Environment selection and its Organization, Workspace, and Provider ownership once and retains that fixed binding in memory. Additional mounts repeat authorization at their model-boundary admission under the live-mount contract and publish fresh operation proxies. Ordinary runtime operations do not reload the Run or Environment binding.
 
+For envd, `environment.use` delegates selection of any folder accessible to the daemon account. Folder selection comes from authorized product input, not Agent tool administration. Tool policy governs Agent tool calls; cwd is neither a file-access boundary nor a shell sandbox. The daemon's launch account and outer container/VM supply the filesystem security boundary.
+
 Attempt preparation captures `environment.use`, the required Agent invocation authority, Workspace existence, and selected Environment Provider enablement in process-local authorization state, including for `preparation=on_use`. Provider enablement and Workspace existence refresh together with the [Attempt IAM snapshot](33-identity-and-access-management.md#attempt-iam-snapshot), after every ten Agent loops and before the next loop. A disabled or missing Provider denies subsequent Environment operations after refresh; a deleted Workspace or failed refresh invalidates Attempt authorization. A replacement Attempt reads fresh state. This cadence does not guarantee wall-clock propagation during a long model request or tool operation.
 
-Each runtime operation checks its requested action, path and mount against the latest published authorization state, the accepted access ceiling, and the current adapter permissions and generation. It also checks the Attempt's locally confirmed lease deadline and invalidation state immediately before dispatch, including after readiness waits. These checks perform no PostgreSQL reads: this applies to shell execution, process polling, file operations, readiness prechecks, and managed Skill materialization. An earlier allow for one command or path does not authorize another. Background lease renewal and control reconciliation retain their independent PostgreSQL checks and invalidate local authority when it is lost. First preparation, target recovery, lifecycle coordination, and durable state mutations retain their owning database checks and fences.
+Each runtime operation checks its requested action, path and mount against the latest published authorization state, the current adapter permissions and generation. It also checks the Attempt's locally confirmed lease deadline and invalidation state immediately before dispatch, including after readiness waits. These checks perform no PostgreSQL reads: this applies to shell execution, process polling, file operations, readiness prechecks, and managed Skill materialization. An earlier allow for one command or path does not authorize another. Background lease renewal and control reconciliation retain their independent PostgreSQL checks and invalidate local authority when it is lost. First preparation, target recovery, lifecycle coordination, and durable state mutations retain their owning database checks and fences.
 
 Disabling a Provider denies new Attempt preparation and is observed by active Attempts at their next authorization refresh, without deleting records. Already selected retention cleanup remains separately authorized system maintenance and uses protected current credentials; it cannot execute Agent operations or bypass explicit credential revocation. Missing credentials or ownership evidence reports a lifecycle failure. Private authorized management reads may expose protected target references; safe lists, Agent context, events and traces omit them. Lifecycle evidence records Environment ID, generation, operation identity and safe outcome, never credentials or raw native errors.
 
@@ -331,7 +352,7 @@ The domain owns `environment_providers`, `environment_templates`, `environment_t
 
 ## Lifecycle Publication and Recovery
 
-`on_run`, first `on_use`, and in-Run connection recovery acquire the same fenced preparation operation. A ready connection serves normal readiness checks; target discovery and bootstrap run only when preparation or recovery is necessary. An accepted Run keeps its logical Environment and access selection across Attempt replacement, waiting resumption and retries.
+Target preparation and recovery acquire the same fenced Environment operation. Envd Session opening is per Attempt/binding and does not exclusively reserve the Device. A ready connection serves normal readiness checks; target discovery and bootstrap run only when preparation or recovery is necessary. An accepted Run keeps its logical Environment selection across Attempt replacement, waiting resumption and retries.
 
 Publication commits known state, canonical target identity, backing generation, bounded status, command outcome and lease release in one short transaction. Retrying a failed publication preserves completed reconciliation observations, including authoritative absence. The Run adapter exposes operations only after that commit. Only a different canonical backing target increments `generation`; refreshed credentials, connections and daemon sessions do not. Harness receives a stable backing identity derived from logical Environment ID and backing generation for recovery observation and Host policy. Standard Harness deferred approval does not automatically bind to it.
 
@@ -349,4 +370,4 @@ Managed Direct Local templates specify a base in `root.path`. Service derives `<
 
 EnvironmentTemplate and Environment labels are mutable head metadata outside TemplateRevision and Environment generation. New managed Environments copy the Template's current head labels inside allocation even when selection names a historical TemplateRevision, then apply explicit overrides. The new-Environment selection accepts `labels` overrides in explicit creation and Thread/Run allocation alike; selecting an existing Environment accepts no labels mutation. External Environment registration without a Template uses only explicit labels. Backing replacement and existing-Environment selection retain labels.
 
-Service input files and managed Skills are materialized beneath the Environment descriptor’s default working directory. For native Docker this is `/workspace` inside the container; explicit external mount targets remain independently accessible. Harness aggregate paths still include the selected mount prefix; relative file and shell paths use the declared working directory.
+Service input files and managed Skills use the accepted primary binding and are materialized beneath its descriptor's default working directory. For native Docker this is `/workspace` inside the container; explicit external mount targets remain independently accessible. Harness aggregate paths still include the selected mount prefix; relative file and shell paths use the declared working directory.

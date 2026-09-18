@@ -92,10 +92,10 @@ An Environment profile selects one installed Provider and one approved Host adap
 
 Harness UI owns two fixed profiles that require no YAML resource:
 
-| Stable profile ID     | Surface mode     | Provider          | Host adapter                   | Command authority                                                                                               |
-| --------------------- | ---------------- | ----------------- | ------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `environment-native`  | **Full Control** | `direct-local`    | `a13n.native-project-root`     | Direct Host-user execution with ambient Host filesystem and network access                                      |
-| `environment-sandbox` | **Sandbox**      | `a13n.local-envd` | `a13n.local-envd-project-root` | EIP execution with required native filesystem/process isolation and denied networking; no Full Control fallback |
+| Stable profile ID     | Surface mode     | Provider          | Host adapter                   | Command authority                                                                               |
+| --------------------- | ---------------- | ----------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `environment-native`  | **Full Control** | `direct-local`    | `a13n.native-project-root`     | Direct Host-user execution with ambient Host filesystem and network access                      |
+| `environment-sandbox` | **Sandbox**      | `a13n.local-envd` | `a13n.local-envd-project-root` | EIP execution in a Host-launched outer sandbox with denied networking; no Full Control fallback |
 
 These IDs are release-owned and a configured resource cannot redefine them. `environment-native` remains the omission fallback for compatible existing configuration, while surfaces present it as **Full Control** rather than exposing “Native” as the user-facing safety label.
 
@@ -117,7 +117,7 @@ adapter_configuration: {}
 
 Provider discovery alone can prove installation but cannot prove that Harness UI knows how to map local Project roots or construct Docker, E2B, credential, transport, or bootstrap collaborators. A discovered Provider without an approved Host adapter is reported as installed but not configurable. Full Control, Sandbox, and other Harness UI-supported Providers use release-owned adapters. Explicit embedding integrations can add exact approved adapters without placing Python import targets in YAML.
 
-A Thread selects exactly one Environment profile. Omission during new root Thread creation resolves through defaults and finally to the release-owned Full Control profile. A Run never silently falls back to Full Control after Sandbox, a custom profile, its Provider, or required isolation fails.
+A Thread selects one profile for local roots and may also select [Device Environment bindings](04a-devices-and-environment-bindings.md). Omission of the local profile during creation resolves through defaults and then Full Control. A Run never silently falls back after a selected Device, profile, Provider or Host sandbox fails.
 
 ## Environment Run Extension Resources
 

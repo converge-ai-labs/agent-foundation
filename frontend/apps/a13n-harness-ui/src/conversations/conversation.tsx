@@ -233,7 +233,10 @@ function Conversation({
       (a, b) => a.input_position - b.input_position,
     );
   }, [history.data]);
-  const hasLater = !!history.data?.pages[0]?.newer_cursor;
+  const latestPage = history.data?.pages[0];
+  const hasLater = !!(latestPage?.later_turns_cursor === undefined
+    ? latestPage?.newer_cursor
+    : latestPage.later_turns_cursor);
   const findTurn = useCallback(
     (id: string) =>
       [
@@ -271,16 +274,25 @@ function Conversation({
     readingAnchor.current = captureReadingAnchor(element);
     pendingJump.current = undefined;
   }, [entries, history.isPreviousHistory, findTurn]);
-  useEffect(() => {
-    const saved = new Set(
-      entries.flatMap((entry) => entry.parts.map(inputSource)),
-    );
-    const retained = draft.localInputs.filter((input) => !saved.has(input.id));
-    if (retained.length !== draft.localInputs.length) {
-      draft.localInputs = retained;
-      draft.notify();
-    }
-  }, [entries, draft]);
+  const reconcileSavedInputs = useCallback(
+    (savedEntries: Schema<"TranscriptEntry">[]) => {
+      const saved = new Set(
+        savedEntries.flatMap((entry) => entry.parts.map(inputSource)),
+      );
+      const retained = draft.localInputs.filter(
+        (input) => !saved.has(input.id),
+      );
+      if (retained.length !== draft.localInputs.length) {
+        draft.localInputs = retained;
+        draft.notify();
+      }
+    },
+    [draft],
+  );
+  useEffect(
+    () => reconcileSavedInputs(entries),
+    [entries, reconcileSavedInputs],
+  );
   const latestLocalInput = draft.localInputs.at(-1)?.id;
   const previousLocalInput = useRef(latestLocalInput);
   useLayoutEffect(() => {
@@ -465,8 +477,7 @@ function Conversation({
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
     // Short/context-only pages need no scroll gesture to fill the viewport.
-    // Folded execution details do not block reaching an earlier turn. A page
-    // can add only hidden steps, so keep paging while the reader stays at the top.
+    // Turn-boundary cursors skip execution pages owned by the inner readers.
     if (
       pageReady &&
       element &&
@@ -581,7 +592,7 @@ function Conversation({
           />
           <div
             ref={reader}
-            className={styles.reading}
+            className={`${styles.reading} a13n-scrollbar`}
             onWheel={(event) => {
               if (event.deltaY < 0) interruptScroll();
             }}
@@ -645,15 +656,8 @@ function Conversation({
                 blocks={showLive ? liveBlocks : []}
                 localInputs={hasLater ? [] : draft.localInputs}
                 turns={turns}
-                loadEarlier={
-                  history.hasNextPage
-                    ? () => {
-                        interruptScroll();
-                        void history.fetchNextPage();
-                      }
-                    : undefined
-                }
-                loadingEarlier={history.isFetchingNextPage}
+                loadDetails
+                onSavedEntries={reconcileSavedInputs}
                 continuation={continuation}
                 gap={showLive && display.gap}
                 threadId={threadId}

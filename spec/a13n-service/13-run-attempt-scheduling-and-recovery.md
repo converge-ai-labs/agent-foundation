@@ -427,7 +427,7 @@ Environment host/daemon affinity is part of Worker eligibility. A Worker that ca
 
 Recovery admission performs no model or Environment Provider I/O. Target preparation is execution work under [Environment Management](29-environment-management.md#preparation-timing), not a recovery-admission probe.
 
-A later Attempt receives a new ID, fence, lease, fresh `RunBindings`, a fresh Environment operation object for the same immutable Run binding, and a Harness Run, then follows the [Run resume contract](12-run-persistence.md#resume-semantics) against the same Run state key. Service imports only the selected complete state and does not add synthetic results or generic recovery context for tool work absent from that state.
+A later Attempt receives a new ID, fence, lease, fresh `RunBindings`, a fresh Environment operation object for the same immutable target/working-directory/access binding, a fresh EIP Session per envd binding, and a Harness Run, then follows the [Run resume contract](12-run-persistence.md#resume-semantics) against the same Run state key. Service imports only the selected complete state and does not add synthetic results or generic recovery context for tool work absent from that state.
 
 The Agent decides its next action through ordinary model output. A re-driven or later tool call receives its ordinary tool-call and invocation identity. Service does not guarantee cross-Attempt idempotency-key reuse; a tool that requires it must define and persist that key through its own contract.
 

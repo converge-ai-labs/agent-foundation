@@ -821,7 +821,7 @@ async def test_unapplied_steering_is_redelivered_across_model_recovery() -> None
         if len(calls) == 1:
             started.set()
             await release.wait()
-            raise RuntimeError("stream disconnected before steering delivery")
+            raise ConnectionResetError("stream disconnected before steering delivery")
         yield "done"
 
     executable = HarnessBuilder().build(

@@ -207,7 +207,6 @@ class FileDocuments:
                 actor=actor,
                 environment_id=environment_id,
                 backing_identity=backing,
-                write=write,
                 authorize=lambda: authorize(write),
             ) as native:
 

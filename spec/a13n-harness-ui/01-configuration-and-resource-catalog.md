@@ -2,9 +2,11 @@
 
 ## Design Position
 
-Harness UI uses a small multi-file configuration tree so people can configure and inspect the CLI with an ordinary editor or another agent. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes editable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
+Harness UI uses a small multi-file configuration tree so people can configure and inspect the CLI with an ordinary editor or another agent. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, Devices and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes editable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
 
 A stable valid read of the configuration tree plus usable optional Content Plugin sources produces one accepted configuration generation. A malformed, incomplete, or changing primary configuration tree leaves the previous accepted generation active during live reload. At startup, a nonexistent Agent Model or effective reviewer Model reference is fatal even if a previous accepted generation exists. The application logs the source file, field, and missing Model ID and does not substitute a Model or skip permission policy. Other invalid startup candidates retain the diagnostic/repair flow. Invalid optional plugin content is skipped with diagnostics under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration). Unusable Agent Capability selections are skipped with warnings under the [Capability catalog contract](01a-extension-discovery-and-management.md#capability-catalog), without rejecting the generation or rewriting source files. Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
+
+[Devices and Environment Bindings](04a-devices-and-environment-bindings.md) owns Device definitions and Project/Thread directory bindings. They use the same accepted-generation rules; connection status stays process-local and credentials use references rather than literal values.
 
 ## Configuration Tree
 
@@ -27,6 +29,8 @@ An explicit `--config <path>` selects the root YAML. Otherwise Harness UI select
     <resource>.md
   projects/
     <resource>.yaml
+  devices/
+    <resource>.yaml
 ```
 
 Each resource file defines one resource except MCP files, which also accept a multi-server `mcpServers` object under [MCP Servers](02-agent-composition-and-snapshots.md#mcp-servers). Harness UI scans immediate lower-case `.yaml` files in the YAML directories, additionally `.json` files in `mcp/`, and immediate non-README `.md` files in `subagents/`. A physical MCP file has one source digest and zero or more indexed resource IDs; each server has its own resource index entry pointing to that file. JSON rejects duplicate keys, non-finite numbers, comments, trailing commas, and non-object documents; source size, nesting, and node limits are bounded as for YAML. Local Markdown subagents override an installed Content Plugin contribution with the same ID; plugin-to-plugin duplicates use deterministic precedence with diagnostics. It does not recurse, follow a symlinked directory, follow file symlinks, walk parent directories, process YAML includes, or discover ambient product configuration as a live layer.
@@ -43,6 +47,7 @@ process:
   terminal_update_check: true
   log_level: INFO
   log_format: pretty
+  max_object_bytes: 268435456  # Restart-bound; see Local Storage and Recovery.
 
 input:
   long_text_threshold_chars: 8000

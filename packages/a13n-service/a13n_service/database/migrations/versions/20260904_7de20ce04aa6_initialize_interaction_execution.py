@@ -167,7 +167,6 @@ def upgrade() -> None:
     op.create_table(
         "runs",
         sa.Column("environment_id", sa.String(length=72), nullable=True),
-        sa.Column("environment_access", sa.String(length=16), nullable=True),
         sa.Column("environment_use_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
@@ -363,7 +362,7 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["environment_id"], ["environments.id"], name="fk_runs_environment_id_environments"),
         sa.CheckConstraint(
-            "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
+            "environment_id IS NOT NULL OR environment_use_started_at IS NULL",
             name=op.f("ck_runs_environment_selection_valid"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_runs")),

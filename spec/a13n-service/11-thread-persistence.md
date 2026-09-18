@@ -60,6 +60,7 @@ class Thread:
     head_run_id: str | None
     current_run_id: str | None
     default_environment_id: EnvironmentId | None
+    default_environment_working_directory: str | None
 
     created_at: datetime
     updated_at: datetime
@@ -120,7 +121,7 @@ The conceptual model materializes as one row in `threads`. Supported relational 
 | Identity and scope | `id`, `version`, `queue_version`, `organization_id`, `session_id` | `id` is the primary key; advancement version is positive; queue version is non-negative; Session membership is immutable |
 | Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_run_id`        | Immutable validated provenance; origin references can cross Session only for an authorized Session fork                  |
 | Advancement        | `head_run_id`, `current_run_id`                                   | Same-Thread Run references updated only by accepted advancement or outcome commit                                        |
-| Environment        | `default_environment_id`                                          | Mutable same-Workspace default; Run acceptance freezes its own selection and updates this field atomically               |
+| Environment        | `default_environment_id`, `default_environment_working_directory` | Mutable complete binding; Run acceptance freezes its own selection and updates these fields atomically                   |
 | Inbox accounting   | `next_delivery_sequence`, `pending_count`, `pending_bytes`        | Internal FIFO allocation and pending-capacity state, serialized by the owning Thread row lock                            |
 | Time               | `created_at`, `updated_at`                                        | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                                    |
 
@@ -163,7 +164,7 @@ The combined root Run command uses the same allocation rules and commits the new
 
 ## Reads and History Selection
 
-An exact Thread read comes from `threads` under current authorization. It returns safe identity, advancement and queue versions, Session, role, currently authorized origin references, the optional head/current Run references, safe default Environment identity, and timestamps. A concealed origin reference is omitted rather than exposing another Session or Run by possession. A Session Thread listing pages authorized Thread rows directly and can join the exact current Run for bounded current-status and latest-outcome summaries. It never groups Run rows to invent a Thread resource. Continuation eligibility comes from the selected head, its status, and the owning operation contract; it is not inferred from the current Run summary alone.
+An exact Thread read comes from `threads` under current authorization. It returns safe identity, advancement and queue versions, Session, role, currently authorized origin references, the optional head/current Run references, authorized default Environment binding, including working directory and access, and timestamps. A concealed origin reference is omitted rather than exposing another Session or Run by possession. A Session Thread listing pages authorized Thread rows directly and can join the exact current Run for bounded current-status and latest-outcome summaries. It never groups Run rows to invent a Thread resource. Continuation eligibility comes from the selected head, its status, and the owning operation contract; it is not inferred from the current Run summary alone.
 
 Thread Run listing filters authorized Run rows by the selected durable Thread identity. Exact lineage still starts from an explicitly selected Run and follows `parent_run_id`; `head_run_id` is a continuation selector, not a replacement for an explicit lineage head. Item and event replay remain separate projections and cannot repair or advance Thread state.
 

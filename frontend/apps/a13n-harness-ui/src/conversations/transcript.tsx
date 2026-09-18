@@ -1,4 +1,18 @@
-import { memo, useMemo, useState } from "react";
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { useExecutionHistory } from "./queries";
+import {
+  captureReadingAnchor,
+  restoreReadingAnchor,
+  type ReadingAnchor,
+} from "./reading-anchor";
 import { ArrowClockwise, CaretDown, CaretRight } from "@phosphor-icons/react";
 import { ToolActivity } from "./tool-call";
 import {
@@ -393,12 +407,12 @@ export function ConversationTranscript({
   threadId,
   gap = false,
   turns = [],
-  loadEarlier,
-  loadingEarlier = false,
+  loadDetails = false,
+  onSavedEntries,
 }: {
   turns?: Schema<"TranscriptTurn">[];
-  loadEarlier?: () => void;
-  loadingEarlier?: boolean;
+  loadDetails?: boolean;
+  onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
   entries: Schema<"TranscriptEntry">[];
   blocks: DisplayBlock[];
   localInputs: LocalInput[];
@@ -450,8 +464,9 @@ export function ConversationTranscript({
         turns={turns}
         localInputs={localInputs}
         threadId={threadId}
-        loadEarlier={loadEarlier}
-        loadingEarlier={loadingEarlier}
+        loadDetails={loadDetails}
+        onSavedEntries={onSavedEntries}
+        continuation={continuation}
       />
       {gap && <GapNotice />}
     </>
@@ -464,16 +479,18 @@ function TurnRows({
   turns,
   localInputs,
   threadId,
-  loadEarlier,
-  loadingEarlier,
+  loadDetails,
+  onSavedEntries,
+  continuation,
 }: {
   rows: Row[];
   entries: Schema<"TranscriptEntry">[];
   turns: Schema<"TranscriptTurn">[];
   localInputs: LocalInput[];
   threadId: string;
-  loadEarlier?: () => void;
-  loadingEarlier: boolean;
+  loadDetails: boolean;
+  onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
+  continuation?: string | null;
 }) {
   const groups: { id: string; turn?: Schema<"TranscriptTurn">; rows: Row[] }[] =
     [];
@@ -504,6 +521,7 @@ function TurnRows({
       <Turn
         key={group.id}
         {...group}
+        entries={entries}
         threadId={threadId}
         missing={
           !!group.turn &&
@@ -514,8 +532,9 @@ function TurnRows({
           ).length <
             group.turn.end_position - group.turn.input_position
         }
-        loadEarlier={loadEarlier}
-        loadingEarlier={loadingEarlier}
+        loadDetails={loadDetails}
+        onSavedEntries={onSavedEntries}
+        continuation={continuation}
       />
     ),
   );
@@ -527,16 +546,20 @@ function Turn({
   rows,
   threadId,
   missing,
-  loadEarlier,
-  loadingEarlier,
+  entries,
+  loadDetails,
+  onSavedEntries,
+  continuation,
 }: {
   id: string;
   turn?: Schema<"TranscriptTurn">;
   rows: Row[];
   threadId: string;
   missing: boolean;
-  loadEarlier?: () => void;
-  loadingEarlier: boolean;
+  entries: Schema<"TranscriptEntry">[];
+  loadDetails: boolean;
+  onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
+  continuation?: string | null;
 }) {
   const [expanded, setExpanded] = useState<boolean>();
   const complete =
@@ -605,26 +628,195 @@ function Turn({
               </span>
             )}
           </button>
-          <div hidden={!open} className={styles.executionContent}>
-            {missing && (
-              <button
-                type="button"
-                className={styles.executionToggle}
-                onClick={loadEarlier}
-                disabled={!loadEarlier || loadingEarlier}
-              >
-                {loadingEarlier
-                  ? "Loading earlier steps…"
-                  : "Load earlier steps"}
-              </button>
-            )}
-            <Rows rows={process} threadId={threadId} continuation />
-          </div>
+          {loadDetails && turn ? (
+            <ExecutionHistory
+              threadId={threadId}
+              continuation={continuation}
+              turn={turn}
+              entries={entries}
+              process={process}
+              open={open}
+              missing={missing}
+              onSavedEntries={onSavedEntries}
+            />
+          ) : (
+            <ExecutionReader open={open}>
+              <Rows rows={process} threadId={threadId} continuation />
+            </ExecutionReader>
+          )}
         </div>
       )}
       <Rows rows={final} threadId={threadId} continuation copyOutput />
       <Rows rows={following} threadId={threadId} continuation />
     </section>
+  );
+}
+
+function ExecutionHistory({
+  threadId,
+  continuation,
+  turn,
+  entries,
+  process,
+  open,
+  missing,
+  onSavedEntries,
+}: {
+  threadId: string;
+  continuation?: string | null;
+  turn: Schema<"TranscriptTurn">;
+  entries: Schema<"TranscriptEntry">[];
+  process: Row[];
+  open: boolean;
+  missing: boolean;
+  onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
+}) {
+  const history = useExecutionHistory(
+    threadId,
+    continuation,
+    turn,
+    open && missing,
+  );
+  useEffect(() => {
+    // Saved steering can be outside the outer conversation window. Reconcile
+    // its local echo without merging execution pages into that window.
+    if (history.data)
+      onSavedEntries?.(history.data.pages.flatMap((page) => page.entries));
+  }, [history.data, onSavedEntries]);
+  const byPosition = new Map<number, Schema<"TranscriptEntry">>();
+  for (const entry of [
+    ...entries,
+    ...(history.data?.pages.flatMap((page) => page.entries) ?? []),
+  ]) {
+    if (
+      entry.position >= turn.input_position &&
+      entry.position < turn.end_position
+    )
+      byPosition.set(entry.position, entry);
+  }
+  const loaded = [...byPosition.values()].sort(
+    (a, b) => a.position - b.position,
+  );
+  const output = turn.output_position ?? turn.final_position;
+  const rows = [
+    ...savedRows(loaded, savedToolGroups(loaded), continuation).filter(
+      (row) =>
+        !(row.kind === "input" && row.position === turn.input_position) &&
+        !(row.kind === "assistant" && row.position === output) &&
+        (output == null || row.position! <= output),
+    ),
+    ...process.filter((row) => row.position === undefined),
+  ];
+  const load = () => {
+    if (history.isFetching) return;
+    if (history.isFetchNextPageError || history.hasNextPage)
+      void history.fetchNextPage();
+    else if (history.isError) void history.refetch();
+  };
+  return (
+    <ExecutionReader
+      open={open}
+      loadEarlier={history.hasNextPage || history.isError ? load : undefined}
+      loading={history.isFetching}
+      failed={history.isError}
+    >
+      <Rows rows={rows} threadId={threadId} continuation />
+    </ExecutionReader>
+  );
+}
+
+function ExecutionReader({
+  open,
+  children,
+  loadEarlier,
+  loading = false,
+  failed = false,
+}: {
+  open: boolean;
+  children: ReactNode;
+  loadEarlier?: () => void;
+  loading?: boolean;
+  failed?: boolean;
+}) {
+  const reader = useRef<HTMLDivElement>(null);
+  const follow = useRef(true);
+  const previousTop = useRef(0);
+  const anchor = useRef<ReadingAnchor | undefined>(undefined);
+  const prepend = useRef<{ top: number; height: number } | undefined>(
+    undefined,
+  );
+  const requestEarlier = () => {
+    const element = reader.current;
+    if (!element || !loadEarlier || loading || prepend.current) return;
+    follow.current = false;
+    prepend.current = { top: element.scrollTop, height: element.scrollHeight };
+    loadEarlier();
+  };
+  useLayoutEffect(() => {
+    const element = reader.current;
+    if (!open || !element) return;
+    if (prepend.current) {
+      if (loading) return;
+      // A tool result at a page edge can merge into an earlier call row.
+      // Preserve geometry even when that first semantic anchor disappears.
+      element.scrollTop =
+        prepend.current.top + element.scrollHeight - prepend.current.height;
+      prepend.current = undefined;
+    } else if (follow.current) element.scrollTop = element.scrollHeight;
+    else restoreReadingAnchor(element, anchor.current);
+    previousTop.current = element.scrollTop;
+    anchor.current = captureReadingAnchor(element);
+  }, [children, open, loading]);
+  return (
+    <div
+      ref={reader}
+      hidden={!open}
+      role="region"
+      aria-label="Execution details"
+      tabIndex={0}
+      data-execution-reader
+      className={`${styles.executionContent} a13n-scrollbar`}
+      onWheel={(event) => {
+        event.stopPropagation();
+        if (event.deltaY < 0) follow.current = false;
+      }}
+      onTouchStart={(event) => {
+        event.stopPropagation();
+        follow.current = false;
+      }}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        follow.current = false;
+      }}
+      onKeyDown={(event) => {
+        event.stopPropagation();
+        if (["ArrowUp", "PageUp", "Home"].includes(event.key))
+          follow.current = false;
+      }}
+      onScroll={(event) => {
+        if (event.target !== event.currentTarget) return;
+        const element = event.currentTarget;
+        const upward = element.scrollTop < previousTop.current;
+        follow.current =
+          element.scrollHeight - element.scrollTop - element.clientHeight <= 1;
+        previousTop.current = element.scrollTop;
+        anchor.current = captureReadingAnchor(element);
+        if (upward && element.scrollTop < 80 && !failed) requestEarlier();
+      }}
+    >
+      {loading ? (
+        <small role="status">Loading earlier steps…</small>
+      ) : loadEarlier ? (
+        <button
+          type="button"
+          className={styles.executionToggle}
+          onClick={requestEarlier}
+        >
+          {failed ? "Retry earlier steps" : "Load earlier steps"}
+        </button>
+      ) : null}
+      {children}
+    </div>
   );
 }
 

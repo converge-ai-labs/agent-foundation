@@ -16,6 +16,7 @@ import { TransportContext } from "../transport/context";
 import { createTransport } from "../transport/client";
 import { Realtime } from "../transport/realtime";
 import { ComposerDrafts } from "./composer";
+import { previewInput } from "./local-input";
 import { ThreadDraft, encode, values } from "./draft";
 import {
   NewConversationDrafts,
@@ -1269,7 +1270,7 @@ it.each([
   [true, false],
   [false, true],
 ])(
-  "loads previous turns through folded pages (short viewport: %s, retry: %s)",
+  "loads previous turns without filling execution pages (short viewport: %s, retry: %s)",
   async (short, retry) => {
     const requests: string[] = [];
     const original = vi.mocked(fetch).getMockImplementation()!;
@@ -1325,11 +1326,9 @@ it.each([
             steering_count: 0,
           },
         ],
-        next_cursor: earlier
-          ? "oldest"
-          : cursor === "steps"
-            ? "previous-turn"
-            : "steps",
+        next_cursor: earlier ? "oldest" : "steps",
+        earlier_turns_cursor: earlier ? "oldest" : "previous-turn",
+        later_turns_cursor: null,
       });
     });
     const view = mount(`/threads/${id}`);
@@ -1363,20 +1362,18 @@ it.each([
       });
       fireEvent.scroll(reader);
       await act(async () => {});
-      expect(requests).toEqual(["latest", "steps"]);
+      expect(requests).toEqual(["latest", "previous-turn"]);
       fireEvent.click(retryButton);
     }
     await screen.findByText("Previous answer");
     const expectedRequests = retry
-      ? ["latest", "steps", "steps", "previous-turn"]
-      : ["latest", "steps", "previous-turn"];
+      ? ["latest", "previous-turn", "previous-turn"]
+      : ["latest", "previous-turn"];
     expect(requests).toEqual(expectedRequests);
     expect(top).toBe(short ? 600 : 940);
     const toggle = screen.getByRole("button", { name: /Execution details/ });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(
-      screen.getByText("Folded intermediate work").closest("[hidden]"),
-    ).not.toBeNull();
+    expect(screen.queryByText("Folded intermediate work")).toBeNull();
     fireEvent.scroll(reader);
     await act(async () => {});
     expect(requests).toEqual(expectedRequests);
@@ -1437,9 +1434,16 @@ it("loads missing turn details on request when away from the top", async () => {
   await act(async () => {});
   expect(requests).toHaveLength(1);
   fireEvent.click(toggle);
-  fireEvent.click(screen.getByRole("button", { name: "Load earlier steps" }));
-  await waitFor(() => expect(requests).toHaveLength(2));
-  expect(requests[1]).toContain("cursor=older");
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Load earlier steps" }),
+  );
+  await waitFor(() => expect(requests).toHaveLength(3));
+  expect(requests[1]).toContain("turn_id=long");
+  expect(requests[2]).toContain("turn_id=long");
+  expect(requests[2]).toContain("cursor=older");
+  expect(
+    screen.queryByRole("button", { name: "Load earlier steps" }),
+  ).toBeNull();
 });
 
 it("returns to the latest window when New output is clicked from a historical input", async () => {
@@ -1559,3 +1563,195 @@ it.each(["new", "existing"])(
     }
   },
 );
+
+it("keeps expanded execution pagination, local echoes and retries independent of earlier prompts", async () => {
+  const requests: string[] = [];
+  const steeringParts = previewInput("steer-one", ["Please use plan B"]);
+  let failSteps = true;
+  const original = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    const url = new URL((request as Request).url);
+    if (!url.pathname.endsWith("/transcript")) return original(request);
+    const cursor = url.searchParams.get("cursor");
+    const execution = url.searchParams.get("turn_id") === "current";
+    requests.push(
+      execution
+        ? `execution:${cursor ?? "latest"}`
+        : `conversation:${cursor ?? "latest"}`,
+    );
+    if (execution && cursor === "steps" && failSteps) {
+      failSteps = false;
+      return json(
+        { error: { message: "Execution temporarily unavailable" } },
+        503,
+      );
+    }
+    const earlier = cursor === "previous-turn";
+    return json({
+      continuation_id: "initial:one",
+      entries: earlier
+        ? [
+            {
+              position: 0,
+              message_kind: "request",
+              parts: [{ kind: "user", text: "Previous prompt" }],
+            },
+            {
+              position: 1,
+              message_kind: "response",
+              parts: [{ kind: "assistant", text: "Previous answer" }],
+            },
+          ]
+        : execution && cursor === "steps"
+          ? [
+              {
+                position: 2,
+                message_kind: "request",
+                parts: [{ kind: "user", text: "Current prompt" }],
+              },
+              {
+                position: 3,
+                message_kind: "response",
+                parts: [{ kind: "thinking", text: "Earlier execution work" }],
+              },
+              { position: 4, message_kind: "request", parts: steeringParts },
+            ]
+          : [
+              {
+                position: 80,
+                message_kind: "response",
+                parts: [{ kind: "thinking", text: "Recent execution work" }],
+              },
+              {
+                position: 102,
+                message_kind: "response",
+                parts: [{ kind: "assistant", text: "Current answer" }],
+              },
+            ],
+      boundary_entries: earlier
+        ? []
+        : [
+            {
+              position: 2,
+              message_kind: "request",
+              parts: [{ kind: "user", text: "Current prompt" }],
+            },
+          ],
+      turns: [
+        {
+          turn_id: earlier ? "previous" : "current",
+          input_position: earlier ? 0 : 2,
+          end_position: earlier ? 2 : 103,
+          final_position: earlier ? 1 : 102,
+          preview: earlier ? "Previous prompt" : "Current prompt",
+        },
+      ],
+      next_cursor: earlier || cursor === "steps" ? null : "steps",
+      earlier_turns_cursor: earlier ? null : "previous-turn",
+      later_turns_cursor: null,
+    });
+  });
+  const view = mount(`/threads/${id}`);
+  const reader = view.container.querySelector(
+    '[class*="reading"]',
+  )! as HTMLElement;
+  let top = 800;
+  Object.defineProperties(reader, {
+    clientHeight: { get: () => 600 },
+    scrollHeight: {
+      get: () =>
+        1400 + (reader.textContent?.includes("Previous answer") ? 900 : 0),
+    },
+    scrollTop: {
+      get: () => top,
+      set: (value: number) => {
+        top = value;
+      },
+    },
+  });
+  const toggle = await screen.findByRole("button", {
+    name: "Execution details",
+  });
+  expect(requests).toEqual(["conversation:latest"]);
+  fireEvent.click(toggle);
+  await screen.findByRole("button", { name: "Load earlier steps" });
+  expect(requests).toEqual(["conversation:latest", "execution:latest"]);
+  await act(async () => {
+    const draft = drafts.get(id)!;
+    draft.localInputs = [
+      {
+        id: "steer-one",
+        action: "steer",
+        state: "accepted",
+        parts: steeringParts,
+      },
+    ];
+    draft.notify();
+  });
+  expect(screen.getAllByText("Please use plan B")).toHaveLength(1);
+  // The outer gesture loads the previous prompt, not the expanded execution's cursor.
+  fireEvent.wheel(reader, { deltaY: -100 });
+  reader.scrollTop = 40;
+  fireEvent.scroll(reader);
+  await screen.findByText("Previous answer");
+  expect(requests.at(-1)).toBe("conversation:previous-turn");
+  expect(screen.queryByText("Earlier execution work")).toBeNull();
+  const execution = screen.getByRole("region", { name: "Execution details" });
+  let innerTop = 800;
+  Object.defineProperties(execution, {
+    clientHeight: { get: () => 200 },
+    scrollHeight: {
+      get: () =>
+        execution.textContent?.includes("Earlier execution work") ? 1500 : 1000,
+    },
+    scrollTop: {
+      get: () => innerTop,
+      set: (value: number) => {
+        innerTop = value;
+      },
+    },
+  });
+  fireEvent.scroll(execution);
+  const outerTop = reader.scrollTop;
+  fireEvent.wheel(execution, { deltaY: -100 });
+  execution.scrollTop = 20;
+  fireEvent.scroll(execution);
+  const retry = await screen.findByRole("button", {
+    name: "Retry earlier steps",
+  });
+  expect(requests.at(-1)).toBe("execution:steps");
+  expect(reader.scrollTop).toBe(outerTop);
+  fireEvent.scroll(execution);
+  expect(requests.filter((value) => value === "execution:steps")).toHaveLength(
+    1,
+  );
+  fireEvent.click(retry);
+  await screen.findByText("Earlier execution work");
+  expect(execution.scrollTop).toBe(520);
+  expect(drafts.get(id)!.localInputs).toHaveLength(0);
+  expect(screen.getAllByText("Please use plan B")).toHaveLength(1);
+  expect(
+    screen.getByText("Please use plan B").closest("[data-execution-reader]"),
+  ).toBe(execution);
+  expect(screen.getAllByText("Current prompt")).toHaveLength(1);
+  expect(screen.getAllByText("Current answer")).toHaveLength(1);
+  expect(
+    screen.getByText("Current answer").closest("[data-execution-reader]"),
+  ).toBeNull();
+  expect(
+    screen
+      .getByText("Earlier execution work")
+      .closest("[data-execution-reader]"),
+  ).toBe(execution);
+  expect(requests).toEqual([
+    "conversation:latest",
+    "execution:latest",
+    "conversation:previous-turn",
+    "execution:steps",
+    "execution:steps",
+  ]);
+  fireEvent.click(toggle);
+  fireEvent.click(toggle);
+  await act(async () => {});
+  expect(requests).toHaveLength(5);
+});

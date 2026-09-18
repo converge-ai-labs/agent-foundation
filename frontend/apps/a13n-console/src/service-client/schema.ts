@@ -4514,7 +4514,6 @@ export interface components {
       | components["schemas"]["SystemActorRef"];
     /** AddEnvironmentMountRequest */
     AddEnvironmentMountRequest: {
-      access: components["schemas"]["EnvironmentAccess"];
       /** Environment Id */
       environment_id: string;
       /** Name */
@@ -6674,8 +6673,6 @@ export interface components {
     };
     /** CreateTemplateRequest */
     CreateTemplateRequest: {
-      /** @default full */
-      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -6705,8 +6702,6 @@ export interface components {
     };
     /** CreateTemplateRevisionRequest */
     CreateTemplateRevisionRequest: {
-      /** @default full */
-      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -7088,7 +7083,6 @@ export interface components {
     };
     /** Environment */
     Environment: {
-      access: components["schemas"]["EnvironmentAccess"];
       /**
        * Condition Since
        * Format: date-time
@@ -7134,11 +7128,6 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
-    /**
-     * EnvironmentAccess
-     * @enum {string}
-     */
-    EnvironmentAccess: "read_only" | "read_write" | "full";
     /** EnvironmentCommand */
     EnvironmentCommand: {
       /**
@@ -7165,7 +7154,6 @@ export interface components {
     };
     /** EnvironmentDetail */
     EnvironmentDetail: {
-      access: components["schemas"]["EnvironmentAccess"];
       /**
        * Condition Since
        * Format: date-time
@@ -7345,8 +7333,6 @@ export interface components {
     };
     /** EnvironmentTemplateRevision */
     EnvironmentTemplateRevision: {
-      /** @default full */
-      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -9355,8 +9341,6 @@ export interface components {
     ReceptionScope: "all_accessible" | "configured_targets";
     /** RegisterEnvironmentRequest */
     RegisterEnvironmentRequest: {
-      /** @default full */
-      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -9776,7 +9760,6 @@ export interface components {
     /** RunEnvironmentMount */
     RunEnvironmentMount: {
       accepting_principal: components["schemas"]["PrincipalRef"];
-      access: components["schemas"]["EnvironmentAccess"];
       /** @default pending */
       application_status?: components["schemas"]["MountApplicationStatus"];
       /** Applied Attempt Fence */
@@ -9859,8 +9842,6 @@ export interface components {
       created_at: string;
       /** Effective Agent Config Digest */
       effective_agent_config_digest: string;
-      /** Environment Access */
-      environment_access: string | null;
       /** Environment Id */
       environment_id: string | null;
       failure: components["schemas"]["JsonValue"] | null;
@@ -10171,6 +10152,11 @@ export interface components {
       /** Trigger Type */
       trigger_type: string;
     };
+    /**
+     * SessionPurpose
+     * @enum {string}
+     */
+    SessionPurpose: "execution" | "debug";
     /** SessionResource */
     SessionResource: {
       /**
@@ -10185,6 +10171,7 @@ export interface components {
         [key: string]: string;
       };
       preview: components["schemas"]["SessionPreview"] | null;
+      purpose: components["schemas"]["SessionPurpose"];
       /** Run Count */
       run_count: number | null;
       /**
@@ -10462,6 +10449,8 @@ export interface components {
       session_labels?: {
         [key: string]: string;
       };
+      /** @default execution */
+      session_purpose?: components["schemas"]["SessionPurpose"];
       /** Thread Labels */
       thread_labels?: {
         [key: string]: string;
@@ -10808,6 +10797,7 @@ export interface components {
       role: string;
       /** Session Id */
       session_id: string;
+      session_purpose: components["schemas"]["SessionPurpose"];
       /**
        * Updated At
        * Format: date-time

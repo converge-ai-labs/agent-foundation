@@ -79,7 +79,7 @@ async def test_contextual_mcp_proxy_real_http_isolates_concurrent_runs_and_reuse
         attempts[tenant] = attempt + 1
         if attempt == 0:
             yield "partial"
-            raise RuntimeError("recoverable model disconnect")
+            raise ConnectionResetError("recoverable model disconnect")
         if attempt == 1:
             yield {
                 0: DeltaToolCall(

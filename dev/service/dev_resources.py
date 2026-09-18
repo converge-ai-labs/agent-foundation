@@ -65,7 +65,6 @@ class DevelopmentEnvironmentTemplate(BaseModel):
     name: str
     provider: str
     configuration: dict[str, object]
-    access: str = "full"
     preparation: str = "on_run"
     stop_after: int | None = None
     delete_after: int | None = None
@@ -241,7 +240,6 @@ def load_resources(path: Path = DEFAULT_PATH) -> DevelopmentResources | None:
                     "name": template.name,
                     "provider_id": "eprov_00000000000000000000",
                     "configuration": template.configuration,
-                    "access": template.access,
                     "preparation": template.preparation,
                     "retention": {"idle": {"stop_after": template.stop_after, "delete_after": template.delete_after}},
                 }

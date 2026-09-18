@@ -72,6 +72,8 @@ it("deletes with a query precondition and refreshes after an empty 204 response"
           thread={
             {
               id: "thread",
+              role: "root",
+              session_purpose: "debug",
               session_id: "session",
               version: 1,
               queue_version: 1,

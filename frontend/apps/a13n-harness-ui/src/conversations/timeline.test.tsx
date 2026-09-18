@@ -493,8 +493,7 @@ it("keeps unfinished work open and only auto-collapses after a saved final bound
   expect(screen.getByText("Done").closest("[hidden]")).toBeNull();
 });
 
-it("keeps boundary input and final visible while earlier process pages load", () => {
-  const load = vi.fn();
+it("keeps boundary input and final outside the execution reader", () => {
   render(
     <ConversationTranscript
       entries={[
@@ -516,12 +515,18 @@ it("keeps boundary input and final visible while earlier process pages load", ()
       blocks={[]}
       localInputs={[]}
       threadId="one"
-      loadEarlier={load}
     />,
   );
   fireEvent.click(screen.getByRole("button", { name: "Execution details" }));
-  fireEvent.click(screen.getByRole("button", { name: "Load earlier steps" }));
-  expect(load).toHaveBeenCalledOnce();
+  expect(
+    screen.getByRole("region", { name: "Execution details" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("Original").closest("[data-execution-reader]"),
+  ).toBeNull();
+  expect(
+    screen.getByText("Final").closest("[data-execution-reader]"),
+  ).toBeNull();
   expect(screen.getAllByText("Original")).toHaveLength(1);
   expect(screen.getAllByText("Final")).toHaveLength(1);
 });

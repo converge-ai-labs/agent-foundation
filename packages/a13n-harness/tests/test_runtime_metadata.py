@@ -134,7 +134,7 @@ async def test_tool_runtime_metadata_is_reused_across_inner_recovery_attempts() 
         calls += 1
         if calls == 1:
             yield "partial"
-            raise RuntimeError("stream interrupted")
+            raise ConnectionResetError("stream interrupted")
         yield "done"
 
     executable = HarnessBuilder().build(

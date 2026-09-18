@@ -19,7 +19,7 @@ from a13n_service.connectivity.ingress.provider import ProviderRequestDecision
 from a13n_service.connectivity.providers.lark.adapter import LarkAccountConfig
 from a13n_service.connectivity.providers.lark.wire import LarkIdentity
 from a13n_service.connectivity.providers.lark.wire import normalize_payload as normalize_lark
-from a13n_service.connectivity.providers.slack.adapter import SlackAccountConfig
+from a13n_service.connectivity.providers.slack.adapter import SlackAccountConfig, interaction_installation
 from a13n_service.connectivity.providers.slack.adapter import normalize_payload as normalize_slack
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
@@ -167,15 +167,19 @@ class EventConnectionSupervisor:
                     failures = 0
                     await self.leases.update(claim, state="connected")
 
-                async def admit(payload: JsonObject, accounts: list[AccountSnapshot] = accounts) -> None:
+                async def admit(payload: JsonObject, accounts: list[AccountSnapshot] = accounts) -> JsonObject | None:
                     if self.is_draining():
                         raise TransportError("service_draining")
+                    result = None
                     for snapshot in accounts:
                         if _matches(snapshot, payload):
-                            await self.ingress.receive_socket(
+                            response = await self.ingress.receive_socket(
                                 snapshot=snapshot, decision=_normalize(snapshot, payload), claim=claim
                             )
+                            if response:
+                                result = response
                     await self.leases.update(claim, event_at=utc_now())
+                    return result
 
                 await self.leases.update(claim, state="connecting")
                 if first.provider_key == "slack":
@@ -207,7 +211,16 @@ class EventConnectionSupervisor:
 def _matches(snapshot: AccountSnapshot, payload: JsonObject) -> bool:
     config = snapshot.provider_config
     if snapshot.provider_key == "slack":
-        return payload.get("api_app_id") == config.get("api_app_id") and payload.get("team_id") == config.get("team_id")
+        team, enterprise = (
+            interaction_installation(payload)
+            if payload.get("type") == "block_actions"
+            else (payload.get("team_id"), payload.get("enterprise_id"))
+        )
+        return (
+            payload.get("api_app_id") == config.get("api_app_id")
+            and team == config.get("team_id")
+            and enterprise == config.get("enterprise_id")
+        )
     header = payload.get("header")
     return (
         isinstance(header, dict)

@@ -14,6 +14,7 @@ from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from anyio import create_task_group, to_thread
 from pydantic_ai import prices
 
+from a13n_service.background import PeriodicTask
 from a13n_service.bots.connectivity.ingress import BotIngress
 from a13n_service.bots.connectivity.replies import ReplyObservations
 from a13n_service.bots.connectivity.service import BotService
@@ -21,6 +22,9 @@ from a13n_service.bots.memory.behavior import ConversationMemory
 from a13n_service.bots.memory.files import authorize_management
 from a13n_service.bots.memory.organization import authorize_organization
 from a13n_service.bots.memory.verification import BotMemoryVerifier
+from a13n_service.bots.progress.delivery import CardDelivery
+from a13n_service.bots.progress.replies import CardReplies
+from a13n_service.bots.progress.service import ProgressService
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -190,6 +194,7 @@ async def open_process_runtime(
                     )
                 if execution is None or environment_catalog is None:
                     raise RuntimeError("Worker execution resources were not constructed")
+                assert memory_http is not None
                 worker, worker_background = await build_worker_runtime(
                     settings,
                     shared,
@@ -202,7 +207,18 @@ async def open_process_runtime(
                     invocations=agent_resources.invocations,
                     configuration_resolver=build_agent_resolver(components, shared, agent_resources),
                     observability=observability,
-                    observations=ReplyObservations(storage.sessions),
+                    observations=ReplyObservations(
+                        storage.sessions,
+                        cards=CardReplies(
+                            CardDelivery(
+                                storage.sessions,
+                                memory_http,
+                                settings.connectivity_endpoint_policy(),
+                                protector,
+                                public_origin=settings.iam.public_origin,
+                            )
+                        ),
+                    ),
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()
@@ -263,6 +279,35 @@ async def open_process_runtime(
                     accounts=connectivity.control.accounts,
                     timeout_seconds=settings.connectivity.total_timeout_seconds,
                 )
+            progress_background: tuple[BackgroundTask, ...] = ()
+            if control is not None:
+                assert memory_http is not None
+                progress = ProgressService(
+                    storage.sessions,
+                    control.gateway.commands,
+                    memory_http,
+                    settings.connectivity_endpoint_policy(),
+                    protector,
+                    public_origin=settings.iam.public_origin,
+                )
+                progress_loop = PeriodicTask(
+                    "bot_task_progress",
+                    progress.scan,
+                    interval_seconds=2,
+                    timeout_seconds=240,
+                )
+
+                async def shutdown_progress() -> None:
+                    await progress_loop.shutdown(timeout_seconds=5)
+
+                progress_background = (
+                    BackgroundTask(
+                        "bot task progress",
+                        progress_loop.run,
+                        return_is_expected=progress_loop.is_draining,
+                        shutdown=shutdown_progress,
+                    ),
+                )
             runtime = ProcessRuntime(
                 settings=settings,
                 status=status,
@@ -275,7 +320,12 @@ async def open_process_runtime(
                 connectivity=connectivity,
                 bots=bot_service,
             )
-            background_components = (*worker_background, *control_background, *connectivity_background)
+            background_components = (
+                *worker_background,
+                *control_background,
+                *connectivity_background,
+                *progress_background,
+            )
             async with create_task_group() as background_tasks:
                 for component in background_components:
                     background_tasks.start_soon(

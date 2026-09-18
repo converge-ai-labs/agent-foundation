@@ -24,7 +24,7 @@ See [Tracing Harness UI](observation.md) for automatic OTLP export, Langfuse and
 
 ## Model connection interruptions
 
-Harness UI automatically continues eligible interrupted model requests from the available history, for up to five total attempts including the first. This applies to root Agents and subagents. The terminal shows a short `[System] Retrying model request…` notice rather than an error for each retry. If recovery succeeds, the same Run continues normally. If the budget is exhausted, a terminal error reports the attempt count and suggests continuing the conversation again.
+Harness UI automatically continues eligible interrupted model requests from the available history, for up to five consecutive failed attempts including the first. A complete successful primary model response resets this budget and the retry delay; partial output and successful auxiliary requests do not. Intermittent failures therefore do not exhaust a lifetime Run budget, while continuous failures still stop. Permanent or unrecognized failures are not automatically retried. This applies to root Agents and subagents. The terminal shows a short `[System] Retrying model request…` notice rather than an error for each retry. If recovery succeeds, the same Run continues normally. If the budget is exhausted, a terminal error reports the attempt count and suggests continuing the conversation again.
 
 Recovery does not restart completed work or directly replay tool calls. Cancellation, usage limits, tool failures, and pending approvals do not trigger this mechanism. Before manually repeating a side-effecting action after an interruption, check whether it already completed. These in-process retries do not recover a crashed process.
 

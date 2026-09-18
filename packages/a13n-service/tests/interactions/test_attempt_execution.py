@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
-from typing import Literal
 
 import pytest
 from a13n_harness import SafeFailure
@@ -712,7 +711,6 @@ async def _accept_root(
     execution_policy_version: str = "1",
     execution_deadline_at: datetime | None = None,
     environment_id: str | None = None,
-    environment_access: Literal["read_only", "read_write", "full"] = "full",
     coordination: ConnectionCoordination | None = None,
     idempotency_key: str | None = None,
 ) -> tuple[RunStateStore, Run, RunCheckpoint]:
@@ -738,7 +736,6 @@ async def _accept_root(
         effective_agent_config_digest=config.content_digest,
         model_execution_observation=config.resolved_model.execution.observation(),
         environment_id=environment_id,
-        environment_access=environment_access if environment_id is not None else None,
         priority=0,
         queue_name="default",
         available_at=NOW,

@@ -25,7 +25,6 @@ def upgrade() -> None:
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("environment_id", sa.String(length=72), nullable=False),
-        sa.Column("access", sa.String(length=16), nullable=False),
         sa.Column("use_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("principal_type", sa.String(length=32), nullable=False),
@@ -38,9 +37,6 @@ def upgrade() -> None:
         sa.CheckConstraint(
             "(applied_attempt_id IS NULL AND applied_attempt_fence IS NULL AND observed_at IS NULL AND application_status = 'pending' AND error IS NULL) OR (applied_attempt_id IS NOT NULL AND applied_attempt_fence IS NOT NULL AND applied_attempt_fence > 0 AND observed_at IS NOT NULL)",
             name=op.f("ck_run_environment_mounts_observation_authority_valid"),
-        ),
-        sa.CheckConstraint(
-            "access IN ('read_only', 'read_write', 'full')", name=op.f("ck_run_environment_mounts_access_valid")
         ),
         sa.CheckConstraint(
             "application_status IN ('pending', 'preparing', 'ready', 'failed')",

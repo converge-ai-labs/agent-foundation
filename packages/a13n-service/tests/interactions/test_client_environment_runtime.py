@@ -105,7 +105,7 @@ async def client_runtime(admitted_use, native_client, interaction_sessions, rela
             await receiving
 
 
-@pytest.mark.parametrize("admitted_use", ["full"], indirect=True)
+@pytest.mark.parametrize("admitted_use", [True], indirect=True)
 async def test_worker_facets_renew_without_database_io_and_fence_lost_attempt(client_runtime, interaction_sessions):
     lifecycle, connections, attempt, workspace, service, target = client_runtime
     environment = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
@@ -163,35 +163,8 @@ async def test_worker_facets_renew_without_database_io_and_fence_lost_attempt(cl
             await asyncio.sleep(0.01)
 
 
-async def test_read_only_use_rejects_write_before_redis_publication(client_runtime, monkeypatch):
-    lifecycle, connections, attempt, workspace, _, _ = client_runtime
-    (workspace / "existing.txt").write_text("readable")
-    environment = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
-    assert environment is not None
-    await environment.enter(
-        thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="mount-readonly"
-    )
-    await environment.ensure_ready(frozenset({"files"}))
-    files = environment.operations.files
-    assert files is not None
-    assert EnvironmentAction.FILE_WRITE_TEXT not in environment.descriptor.permissions.operations
-    assert environment.operations.shell is None
-    assert (await files.read_text("/existing.txt")).text == "readable"
-
-    async def unexpected(*args, **kwargs):
-        pytest.fail("forbidden request reached Redis")
-
-    monkeypatch.setattr(environment._client._scope.store, "append", unexpected)
-    with pytest.raises(EnvironmentError) as denied:
-        await files.write_text("/forbidden.txt", "no", mode="create")
-    assert denied.value.code == "environment_forbidden"
-    assert not (workspace / "forbidden.txt").exists()
-    monkeypatch.undo()
-    await environment.close()
-
-
-@pytest.mark.parametrize("admitted_use", [None, "read_only"], indirect=True)
-async def test_accepted_addition_prepares_with_its_own_access_and_retained_use(client_runtime, interaction_sessions):
+@pytest.mark.parametrize("admitted_use", [False, True], indirect=True)
+async def test_accepted_addition_prepares_with_its_own_retained_use(client_runtime, interaction_sessions):
     lifecycle, connections, attempt, workspace, service, target = client_runtime
     primary = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
     if primary is not None:
@@ -205,11 +178,11 @@ async def test_accepted_addition_prepares_with_its_own_access_and_retained_use(c
         actor=hook_actor(),
         run_id=attempt.run_id,
         idempotency_key="live-writer",
-        request=AddEnvironmentMountRequest(name="writer", environment_id=target.environment_id, access="full"),
+        request=AddEnvironmentMountRequest(name="writer", environment_id=target.environment_id),
     )
     mount = (await RunMountObservations(interaction_sessions).snapshot(attempt))[0]
     addition = await prepare_run_environment(lifecycle, attempt, mount=mount, client_connections=connections)
-    assert addition is not None and addition.access == "full"
+    assert addition is not None
     await addition.enter(
         thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="writer-harness"
     )
@@ -220,10 +193,8 @@ async def test_accepted_addition_prepares_with_its_own_access_and_retained_use(c
     assert (workspace / "from-addition.txt").read_text() == "shared target"
     if primary is not None:
         assert primary._client.identity == addition._client.identity
-        assert EnvironmentAction.FILE_WRITE_TEXT not in primary.descriptor.permissions.operations
-        with pytest.raises(EnvironmentError) as denied:
-            await primary.operations.files.write_text("/from-addition.txt", "forbidden", mode="replace")
-        assert denied.value.code == "environment_forbidden"
+        assert EnvironmentAction.FILE_WRITE_TEXT in primary.descriptor.permissions.operations
+        await primary.operations.files.write_text("/from-addition.txt", "shared target", mode="replace")
         assert (workspace / "from-addition.txt").read_text() == "shared target"
     await addition.close()
     if primary is not None:
@@ -238,7 +209,7 @@ async def test_accepted_addition_prepares_with_its_own_access_and_retained_use(c
         assert (run.environment_id is not None) == (primary is not None)
 
 
-@pytest.mark.parametrize("admitted_use", ["full"], indirect=True)
+@pytest.mark.parametrize("admitted_use", [True], indirect=True)
 async def test_client_takeover_recovers_fresh_use_without_reviving_old_operations(
     client_runtime,
     native_client,

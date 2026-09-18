@@ -1,7 +1,7 @@
 """retain filesystem memory storage bindings.
 
 Revision ID: f38b358b08bd
-Revises: e0bca206450c
+Revises: f2abf114c374
 Create Date: 2026-09-18 08:30:15.514158+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "f38b358b08bd"
-down_revision: str | Sequence[str] | None = "e0bca206450c"
+down_revision: str | Sequence[str] | None = "f2abf114c374"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

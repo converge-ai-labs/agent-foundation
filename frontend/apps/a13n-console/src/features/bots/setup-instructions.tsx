@@ -12,6 +12,7 @@ const slackManifest = JSON.stringify(
         bot: [
           "app_mentions:read",
           "chat:write",
+          "users:read",
           "channels:read",
           "channels:history",
           "groups:read",
@@ -33,6 +34,7 @@ const slackManifest = JSON.stringify(
           "message.mpim",
         ],
       },
+      interactivity: { is_enabled: true },
       socket_mode_enabled: false,
     },
   },
@@ -65,7 +67,7 @@ export function BotSetupInstructions({
             </li>
             <li>
               {t(
-                "Choose HTTP callbacks or Socket Mode below. HTTP uses a signing secret; Socket Mode uses an app-level token with connections:write. Both use the bot token.",
+                "Choose HTTP callbacks or Socket Mode below. HTTP uses a signing secret; Socket Mode uses an app-level token with connections:write. Both use the bot token. Enable Interactivity so requesters can stop tasks. For HTTP, set its Request URL to the same URL as Event Subscriptions; Socket Mode receives interactions over the connection.",
               )}
             </li>
             <li>
@@ -86,7 +88,7 @@ export function BotSetupInstructions({
           <DisclosureSection title={t("Slack manifest template")}>
             <p>
               {t(
-                "This template includes public and private channel history, direct messages, and group direct messages for discussion and chat modes. Remove unused event subscriptions and their scopes for a mention-only pilot. For HTTP add the request URL after saving; for Socket Mode enable socket_mode_enabled and create an app-level token.",
+                "This template includes public and private channel history, direct messages, and group direct messages for discussion and chat modes. Remove unused event subscriptions and their scopes for a mention-only pilot. Keep users:read for bot identity verification. For HTTP add the request URL after saving; for Socket Mode enable socket_mode_enabled and create an app-level token.",
               )}
             </p>
             <CopyButton value={slackManifest} copyLabel={t("Copy manifest")} />
@@ -110,7 +112,7 @@ export function BotSetupInstructions({
             </li>
             <li>
               {t(
-                "Grant the message permissions for your selected interaction mode and subscribe to im.message.receive_v1 using your chosen connection method.",
+                "Grant the message permissions for your selected interaction mode. In Events and Callbacks, subscribe to im.message.receive_v1 under Event configuration, then add card.action.trigger under Callback configuration using the same connection method. Publish these changes so requesters can stop tasks from progress cards.",
               )}
             </li>
             <li>

@@ -173,7 +173,7 @@ async def test_recovery_reports_interrupted_and_completed_model_requests() -> No
         calls += 1
         if calls == 1:
             yield "partial"
-            raise RuntimeError("disconnected")
+            raise ConnectionResetError("disconnected")
         yield "done"
 
     executable = HarnessBuilder().build(

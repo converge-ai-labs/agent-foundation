@@ -4192,6 +4192,10 @@ export interface components {
             next_cursor?: string | null;
             /** Newer Cursor */
             newer_cursor?: string | null;
+            /** Earlier Turns Cursor */
+            earlier_turns_cursor?: string | null;
+            /** Later Turns Cursor */
+            later_turns_cursor?: string | null;
             /**
              * Turns
              * @default []

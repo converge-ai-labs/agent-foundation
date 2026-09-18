@@ -7,6 +7,7 @@ Platform envelope acknowledgements happen only after the admission callback retu
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
@@ -21,7 +22,7 @@ from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.providers.lark.frame_pb2 import Frame, Header
 from a13n_service.endpoint_policy import EndpointPolicy
 
-EventHandler = Callable[[JsonObject], Awaitable[None]]
+EventHandler = Callable[[JsonObject], Awaitable[JsonObject | None]]
 ConnectedHandler = Callable[[], Awaitable[None]]
 _OBJECT = TypeAdapter(JsonObject)
 MAX_BYTES = 1024 * 1024
@@ -88,7 +89,7 @@ async def slack_connection(
     url = socket_url(result.get("url"), "slack")
     await _validate_endpoint(url)
     async with FixedEndpointConnect(
-        url, max_size=MAX_BYTES, max_queue=16, open_timeout=15, close_timeout=3, proxy=None, logger=_SOCKET_LOGGER
+        url, max_size=MAX_BYTES, max_queue=16, open_timeout=15, close_timeout=3, proxy=True, logger=_SOCKET_LOGGER
     ) as socket:
         hello = _OBJECT.validate_json(await asyncio.wait_for(socket.recv(), timeout=15))
         info = hello.get("connection_info")
@@ -103,7 +104,7 @@ async def slack_connection(
             identifier = envelope.get("envelope_id")
             if not isinstance(identifier, str) or not identifier:
                 continue
-            if kind == "events_api":
+            if kind in {"events_api", "interactive"}:
                 payload = _OBJECT.validate_python(envelope.get("payload"))
                 async with asyncio.timeout(2.5):
                     await admit(payload)
@@ -164,7 +165,7 @@ async def lark_connection(
     fragments = Fragments()
     await _validate_endpoint(url)
     async with FixedEndpointConnect(
-        url, max_size=MAX_BYTES, max_queue=16, open_timeout=15, close_timeout=3, proxy=None, logger=_SOCKET_LOGGER
+        url, max_size=MAX_BYTES, max_queue=16, open_timeout=15, close_timeout=3, proxy=True, logger=_SOCKET_LOGGER
     ) as socket:
         await connected()
         deadline = time.monotonic()
@@ -193,8 +194,11 @@ async def lark_connection(
             if payload is None:
                 continue
             async with asyncio.timeout(2.5):
-                await admit(_OBJECT.validate_json(payload))
-            frame.payload = b'{"code":200}'
+                result = await admit(_OBJECT.validate_json(payload))
+            response: JsonObject = {"code": 200}
+            if result is not None:
+                response["data"] = base64.b64encode(json.dumps(result).encode()).decode()
+            frame.payload = json.dumps(response).encode()
             await socket.send(frame.SerializeToString())
 
 
