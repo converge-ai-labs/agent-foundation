@@ -2,7 +2,7 @@ import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router";
-import { PageActionsTarget } from "./page-actions";
+import { PageActionsTarget, PageEmptyAction } from "./page-actions";
 import styles from "./page.module.css";
 
 /**
@@ -36,33 +36,44 @@ export function Page({
   const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(
     null,
   );
+  // One offer of the primary action per screen: when the collection is empty
+  // and its empty state offers it, the header stays quiet.
+  const [offeredBelow, setOfferedBelow] = useState(false);
   return (
-    <PageActionsTarget value={actionsTarget}>
-      <div className={`${styles.page} ${className ?? ""}`}>
-        {back && (
-          <Link className={styles.back} to={back}>
-            <ArrowLeftIcon size={13} />
-            {backLabel ?? t("Back")}
-          </Link>
-        )}
-        <header className={styles.header}>
-          <div className="min-w-0">
-            <div className={styles.titleRow}>
-              <h1>{title}</h1>
-              {count !== undefined && (
-                <span className={styles.count}>{count}</span>
+    <PageEmptyAction value={setOfferedBelow}>
+      <PageActionsTarget value={actionsTarget}>
+        <div className={`${styles.page} ${className ?? ""}`}>
+          {back && (
+            <Link className={styles.back} to={back}>
+              <ArrowLeftIcon size={13} />
+              {backLabel ?? t("Back")}
+            </Link>
+          )}
+          <header className={styles.header}>
+            <div className="min-w-0">
+              <div className={styles.titleRow}>
+                <h1>{title}</h1>
+                {count !== undefined && (
+                  <span className={styles.count}>{count}</span>
+                )}
+                {titleAction}
+              </div>
+              {description && (
+                <p className={styles.description}>{description}</p>
               )}
-              {titleAction}
             </div>
-            {description && <p className={styles.description}>{description}</p>}
-          </div>
-          <div className={styles.actions} ref={setActionsTarget}>
-            {actions}
-          </div>
-        </header>
-        {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
-        <div className={styles.body}>{children}</div>
-      </div>
-    </PageActionsTarget>
+            <div
+              className={styles.actions}
+              ref={setActionsTarget}
+              data-quiet={offeredBelow || undefined}
+            >
+              {actions}
+            </div>
+          </header>
+          {toolbar && <div className={styles.toolbar}>{toolbar}</div>}
+          <div className={styles.body}>{children}</div>
+        </div>
+      </PageActionsTarget>
+    </PageEmptyAction>
   );
 }

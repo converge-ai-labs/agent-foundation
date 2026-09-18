@@ -10,7 +10,11 @@ export {
   type DetailTab,
 } from "./detail";
 export { Page } from "./page";
-export { PageActions, PageActionsTarget } from "./page-actions";
+export {
+  PageActions,
+  PageActionsTarget,
+  PageEmptyAction,
+} from "./page-actions";
 export { SaveBar } from "./save-bar";
 export { Panel } from "./panel";
 export { Section } from "./section";

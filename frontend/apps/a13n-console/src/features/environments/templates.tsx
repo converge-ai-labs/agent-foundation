@@ -160,8 +160,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
               },
               {
                 label: t("Version"),
-                render: (item) =>
-                  t("Version {{version}}", { version: item.version }),
+                render: (item) => `v${item.version}`,
               },
               {
                 label: t("Status"),
@@ -172,7 +171,9 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
               {
                 label: t("Updated"),
                 tone: "muted",
-                render: (item) => <Timestamp value={item.updated_at} />,
+                render: (item) => (
+                  <Timestamp value={item.updated_at} relative />
+                ),
               },
             ]}
           />

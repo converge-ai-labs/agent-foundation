@@ -3,7 +3,6 @@ import { DotsThreeIcon } from "@phosphor-icons/react";
 import {
   BrandIcon,
   Button,
-  FormField,
   Input,
   Menu,
   MenuItem,
@@ -17,7 +16,7 @@ import {
   TabsTab,
 } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -328,6 +327,7 @@ function ConnectionSettings({
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation(),
+    nameId = useId(),
     [name, setName] = useState(connection.name);
   const save = useMutation({
     mutationFn: () =>
@@ -357,29 +357,30 @@ function ConnectionSettings({
   const changed = name !== connection.name;
   return (
     <>
-      <form
-        className={styles.inlineEdit}
-        onSubmit={(event) => {
-          event.preventDefault();
-          save.mutate();
-        }}
-      >
-        <FormField label={t("Name")}>
-          <Input
-            size="sm"
-            required
-            value={name}
-            maxLength={128}
-            onChange={(event) => setName(event.target.value)}
-          />
-        </FormField>
-        {changed && (
-          <Button type="submit" size="sm" loading={save.isPending}>
-            {t("Save")}
-          </Button>
-        )}
-      </form>
       <SettingsSection>
+        <SettingsRow label={t("Name")} controlId={nameId}>
+          <form
+            className={styles.inlineEdit}
+            onSubmit={(event) => {
+              event.preventDefault();
+              save.mutate();
+            }}
+          >
+            <Input
+              id={nameId}
+              size="sm"
+              required
+              value={name}
+              maxLength={128}
+              onChange={(event) => setName(event.target.value)}
+            />
+            {changed && (
+              <Button type="submit" size="sm" loading={save.isPending}>
+                {t("Save")}
+              </Button>
+            )}
+          </form>
+        </SettingsRow>
         <SettingsRow label={t("Source")}>
           {connection.source.kind === "mcp"
             ? t("Remote MCP")
@@ -440,7 +441,7 @@ function ConnectionSettings({
       {connection.status === "disabled" && (
         <p className={styles.reason}>
           {t(
-            "After enabling, verify the connection. Open the Authorization tab if new credentials are needed.",
+            "After enabling, check the connection. Open the Authorization tab if new credentials are needed.",
           )}
         </p>
       )}

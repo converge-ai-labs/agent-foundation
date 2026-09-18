@@ -3076,5 +3076,12 @@
   "{{count}} bots on this page": "{{count}} bots on this page",
   "{{count}} conversations on this page": "{{count}} conversations on this page",
   "{{count}} targets on this page": "{{count}} targets on this page",
-  "Last check": "Last check"
+  "Last check": "Last check",
+  "Add {{model}}": "Add {{model}}",
+  "No {{state}} messages": "No {{state}} messages",
+  "Session, thread, or run ID": "Session, thread, or run ID",
+  "{{count}} {{state}}": "{{count}} {{state}}",
+  "Retry check": "Retry check",
+  "state.open": "Open",
+  "After enabling, check the connection. Open the Authorization tab if new credentials are needed.": "After enabling, check the connection. Open the Authorization tab if new credentials are needed."
 }

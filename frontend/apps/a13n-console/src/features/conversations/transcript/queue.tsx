@@ -125,11 +125,18 @@ export function ThreadQueue({
     [ids[index], ids[index + offset]] = [ids[index + offset]!, ids[index]!];
     reorder.mutate(ids);
   }
+  // The closed state says what is there, not a bare count beside a filter.
+  const queueSummary = (count: number, filter: string) => {
+    const name = t(`state.${filter}`, { defaultValue: filter }).toLowerCase();
+    return count
+      ? t("{{count}} {{state}}", { count, state: name })
+      : t("No {{state}} messages", { state: name });
+  };
   return (
     <DisclosureSection
       className={styles.queue}
       title={t("Queued messages")}
-      summary={`${items.length} · ${t(`state.${state}`, { defaultValue: state })}`}
+      summary={queueSummary(items.length, state)}
     >
       <div className={styles.queueBody}>
         <div className={styles.queueToolbar}>

@@ -194,6 +194,8 @@ function stepHeading(
       ),
       description: t("Pick one from the catalog, or add a model by its ID."),
     };
+  const chosen =
+    model.selectedEntry?.name || model.draft.name || model.draft.upstream_model;
   return {
     title: (
       <BrandTitle
@@ -206,7 +208,7 @@ function stepHeading(
           />
         }
       >
-        {t("Details")}
+        {chosen ? t("Add {{model}}", { model: chosen }) : t("Add model")}
       </BrandTitle>
     ),
     description: t("Name this model and set the defaults agents will use."),

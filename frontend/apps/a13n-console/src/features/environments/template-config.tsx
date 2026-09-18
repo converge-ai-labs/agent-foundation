@@ -285,44 +285,44 @@ export function TemplateConfig({
             </FormField>
           </FormSection>
         )}
-        <FormSection>
-          {/* Creation carries the brand in the dialog title instead. */}
-          {basis && (
+        {/* Creation carries the brand in the dialog title instead. */}
+        {basis && (
+          <div className={editorStyles.chosenProviderBlock}>
             <ChosenProviderRow
               provider={provider}
               definition={definition}
               pending={providers.isPending}
               onChange={readOnly ? undefined : () => setChoosing(true)}
             />
-          )}
-          {definition?.type === "direct-local" && (
-            <p className={editorStyles.revisionNote}>
-              {t(
-                "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.",
-              )}
-            </p>
-          )}
-          <ProviderConfiguration
-            key={configurationKey}
-            readOnly={readOnly}
-            schema={configurationSchema}
-            text={configuration}
-            onChange={setConfiguration}
-            error={configurationError}
-            variant={definition?.type === "docker" ? "docker" : "default"}
-            imageTest={
-              definition?.type === "docker" && !readOnly
-                ? {
-                    run: () => imageTest.mutate(),
-                    pending: imageTest.isPending,
-                    result: imageTest.data,
-                    error: imageTest.error,
-                  }
-                : undefined
-            }
-          />
-        </FormSection>
-        <FormSection>
+          </div>
+        )}
+        <ProviderConfiguration
+          key={configurationKey}
+          readOnly={readOnly}
+          schema={configurationSchema}
+          text={configuration}
+          onChange={setConfiguration}
+          error={configurationError}
+          note={
+            definition?.type === "direct-local"
+              ? t(
+                  "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.",
+                )
+              : undefined
+          }
+          variant={definition?.type === "docker" ? "docker" : "default"}
+          imageTest={
+            definition?.type === "docker" && !readOnly
+              ? {
+                  run: () => imageTest.mutate(),
+                  pending: imageTest.isPending,
+                  result: imageTest.data,
+                  error: imageTest.error,
+                }
+              : undefined
+          }
+        />
+        <FormSection divider={false}>
           <DisclosureSection
             className={editorStyles.advanced}
             title={t("Lifecycle")}

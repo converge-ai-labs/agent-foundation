@@ -184,6 +184,25 @@ const sections: Record<SettingsScope, SettingsSectionDefinition[]> = {
   ],
 };
 
+/**
+ * Section labels by scope and URL segment, so the document title can name the
+ * settings section a reader is on.
+ */
+export const settingsSectionLabels: Record<
+  SettingsScope,
+  Record<string, string>
+> = {
+  personal: Object.fromEntries(
+    sections.personal.map((item) => [item.value, item.label]),
+  ),
+  workspace: Object.fromEntries(
+    sections.workspace.map((item) => [item.value, item.label]),
+  ),
+  organization: Object.fromEntries(
+    sections.organization.map((item) => [item.value, item.label]),
+  ),
+};
+
 /** `?section=` values that shipped before sections became addressable pages. */
 const legacy: Record<string, string> = {
   profile: "general",

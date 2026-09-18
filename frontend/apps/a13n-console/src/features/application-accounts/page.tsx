@@ -37,6 +37,7 @@ import {
   usePlatformName,
 } from "../integrations/platform";
 import { AccountActions } from "./actions";
+import { accountProviderKey, accountProviderLabel } from "./data";
 import { AddApplicationAccount } from "./add-account";
 import { AccountCredentials } from "./credentials";
 import { AccountTargets } from "./targets";
@@ -239,7 +240,17 @@ export function ApplicationAccountDetail() {
               <ReceptionPill enabled={!!account.receive_enabled} />
             </RailRow>
             <RailRow label={t("Provider")}>
-              <span>{account.provider_config_version}</span>
+              <span
+                title={accountProviderKey(
+                  account.provider_key,
+                  account.provider_config_version,
+                )}
+              >
+                {accountProviderLabel(
+                  account.provider_key,
+                  account.provider_config_version,
+                )}
+              </span>
             </RailRow>
             <RailRow label={t("Credentials")}>
               <span>

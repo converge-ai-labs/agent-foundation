@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { pageName } from "./page-title";
+import { pageName, sectionName } from "./page-title";
 
 it("names the destination behind a workspace path", () => {
   expect(pageName("/workspace/design/agents")).toBe("Agents");
@@ -13,4 +13,12 @@ it("names the settings scopes and leaves unknown paths unnamed", () => {
   expect(pageName("/organization/settings")).toBe("Organization settings");
   expect(pageName("/")).toBeUndefined();
   expect(pageName("/workspace/design/nowhere")).toBeUndefined();
+});
+
+it("names the settings section a reader is on", () => {
+  expect(sectionName("/workspace/design/settings/members")).toBe("Members");
+  expect(sectionName("/settings/profile")).toBe("Profile");
+  expect(sectionName("/organization/settings/workspaces")).toBe("Workspaces");
+  expect(sectionName("/workspace/design/agents")).toBeUndefined();
+  expect(sectionName("/workspace/design/settings/nowhere")).toBeUndefined();
 });

@@ -136,11 +136,7 @@ export function MCPAuthorization({
           onClick={() => reconnect.mutate()}
           type="button"
         >
-          {t(
-            basis.status === "pending"
-              ? "Retry verification"
-              : "Verify connection",
-          )}
+          {t(basis.status === "pending" ? "Retry check" : "Check connection")}
         </Button>
       )}
       <ErrorNotice

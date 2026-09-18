@@ -3,8 +3,7 @@ import {
   FormField,
   Input,
   ModalFrame,
-  ToggleGroup,
-  ToggleGroupItem,
+  SegmentedControl,
 } from "a13n-ui";
 import { PaperclipIcon } from "@phosphor-icons/react";
 import { useState } from "react";
@@ -69,23 +68,17 @@ export function AttachDialog({
         disabled={disabled}
         className={`${styles.attach} fieldset-reset`}
       >
-        <ToggleGroup
-          value={[mode]}
-          onValueChange={(value) => {
-            const next = value[0];
-            if (next) setMode(next as Mode);
-          }}
-          aria-label={t("Attachment type")}
+        <SegmentedControl
+          label={t("Attachment type")}
           className={styles.segments}
-        >
-          {canUpload && (
-            <ToggleGroupItem value="file">{t("File")}</ToggleGroupItem>
-          )}
-          <ToggleGroupItem value="url">{t("URL")}</ToggleGroupItem>
-          <ToggleGroupItem value="structured">
-            {t("Structured JSON")}
-          </ToggleGroupItem>
-        </ToggleGroup>
+          value={mode}
+          onValueChange={(value) => setMode(value as Mode)}
+          options={[
+            ...(canUpload ? [{ value: "file", label: t("File") }] : []),
+            { value: "url", label: t("URL") },
+            { value: "structured", label: t("Structured JSON") },
+          ]}
+        />
         {mode === "file" && canUpload && (
           <FileUpload
             label={t("Upload a file")}

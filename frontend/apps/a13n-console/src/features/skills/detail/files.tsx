@@ -3,6 +3,7 @@ import {
   FileTextIcon,
   FolderIcon,
 } from "@phosphor-icons/react";
+import { SegmentedControl } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -18,7 +19,6 @@ import {
   readTextFile,
   type FileNode,
 } from "../package-files";
-import { SegmentedControl } from "../segmented";
 import styles from "../skills.module.css";
 
 /** The published package: its tree at the left, the chosen file at the right. */
@@ -141,7 +141,7 @@ function FileContent({
             label={t("File view")}
             value={view}
             onValueChange={setView}
-            segments={[
+            options={[
               { value: "preview", label: t("Preview") },
               { value: "source", label: t("Source") },
             ]}

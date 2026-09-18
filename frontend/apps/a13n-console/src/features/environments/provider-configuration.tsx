@@ -1,14 +1,14 @@
-import {
-  Button,
-  DisclosureSection,
-  ToggleGroup,
-  ToggleGroupItem,
-} from "a13n-ui";
+import { Button, DisclosureSection, SegmentedControl } from "a13n-ui";
 import { Fragment, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { StatePill } from "../../shared/feedback";
-import { jsonObject, SchemaFields, TextAreaField } from "../../shared/forms";
+import {
+  FormSection,
+  jsonObject,
+  SchemaFields,
+  TextAreaField,
+} from "../../shared/forms";
 import styles from "./environments.module.css";
 
 /**
@@ -23,6 +23,7 @@ export function ProviderConfiguration({
   readOnly = false,
   error,
   imageTest,
+  note,
   variant = "default",
 }: {
   schema?: Record<string, unknown>;
@@ -30,6 +31,8 @@ export function ProviderConfiguration({
   onChange: (value: string) => void;
   readOnly?: boolean;
   error?: string;
+  /** Provider-specific guidance, read as the group's description. */
+  note?: string;
   variant?: "default" | "docker";
   imageTest?: {
     run: () => void;
@@ -70,27 +73,40 @@ export function ProviderConfiguration({
   const fieldsAvailable = !!schema && !!value;
   const jsonMode = mode === "json" || !fieldsAvailable;
   return (
-    <div className="grid min-w-0 gap-4">
-      <div className={styles.groupHeader}>
-        <div className="min-w-0">
-          <h4>{t("Configuration")}</h4>
-        </div>
-        <ToggleGroup
-          className={styles.segmented}
-          variant="outline"
-          size="sm"
-          value={[jsonMode ? "json" : "fields"]}
-          onValueChange={(next) => {
-            if (next[0]) setMode(next[0]);
-          }}
-          aria-label={t("Configuration editor")}
-        >
-          <ToggleGroupItem value="fields" disabled={!fieldsAvailable}>
-            {t("Fields")}
-          </ToggleGroupItem>
-          <ToggleGroupItem value="json">JSON</ToggleGroupItem>
-        </ToggleGroup>
-      </div>
+    <FormSection
+      title={t("Configuration")}
+      description={note}
+      actions={
+        <>
+          <SegmentedControl
+            label={t("Configuration editor")}
+            value={jsonMode ? "json" : "fields"}
+            onValueChange={setMode}
+            options={[
+              {
+                value: "fields",
+                label: t("Fields"),
+                disabled: !fieldsAvailable,
+              },
+              { value: "json", label: "JSON" },
+            ]}
+          />
+          {!readOnly && (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={() => {
+                onChange("{}");
+                setReset((value) => value + 1);
+              }}
+            >
+              {t("Reset to defaults")}
+            </Button>
+          )}
+        </>
+      }
+    >
       {jsonMode || !value ? (
         <TextAreaField
           readOnly={readOnly}
@@ -172,22 +188,7 @@ export function ProviderConfiguration({
           )}
         </Fragment>
       )}
-      {!readOnly && (
-        <div>
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              onChange("{}");
-              setReset((value) => value + 1);
-            }}
-          >
-            {t("Reset to defaults")}
-          </Button>
-        </div>
-      )}
-    </div>
+    </FormSection>
   );
 }
 

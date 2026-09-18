@@ -75,6 +75,7 @@ function EditModel({
           <ResourceModalTitle
             name={model.data.value.name}
             id={model.data.value.id}
+            resourceKey={model.data.value.key}
           />
         ) : (
           t("Edit model")

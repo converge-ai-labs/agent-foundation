@@ -69,7 +69,7 @@ it("renders raw instruction lines, folds unchanged context, and can expand it an
     screen.getByRole("button", { name: "Show unchanged lines" }),
   );
   expect(screen.getByText("Context 7")).toBeTruthy();
-  await user.click(screen.getByRole("tab", { name: "Side-by-side diff" }));
+  await user.click(screen.getByRole("button", { name: "Side-by-side diff" }));
   expect(screen.getByText("Before")).toBeTruthy();
   expect(screen.getByText("After")).toBeTruthy();
   expect(screen.getByText("Old policy")).toBeTruthy();

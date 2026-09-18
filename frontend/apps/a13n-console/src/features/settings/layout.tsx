@@ -4,7 +4,7 @@ import { ArrowLeftIcon, CaretDownIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 import { Link, Navigate, useLocation, useParams } from "react-router";
-import { PageActionsTarget } from "../../shared/page";
+import { PageActionsTarget, PageEmptyAction } from "../../shared/page";
 
 import { useTranslation } from "react-i18next";
 import {
@@ -40,6 +40,9 @@ export function SettingsLayout({
     null,
   );
   const [navigationOpen, setNavigationOpen] = useState(false);
+  // One offer of the primary action: an empty state that carries it quiets
+  // the heading, the same way a list page does.
+  const [offeredBelow, setOfferedBelow] = useState(false);
   const [filter, setFilter] = useState("");
   const groups = useSettingsNavigation();
   const current = groups.find((group) => group.scope === scope)!;
@@ -83,107 +86,115 @@ export function SettingsLayout({
     ...visible.filter((group) => group.scope !== scope),
   ];
   return (
-    <PageActionsTarget value={actionsTarget}>
-      <div className={styles.layout}>
-        <div className={styles.mobileNavigation}>
-          <Button
-            variant="ghost"
-            aria-expanded={navigationOpen}
-            aria-controls="settings-outline"
-            onClick={() => setNavigationOpen(!navigationOpen)}
-            type="button"
+    <PageEmptyAction value={setOfferedBelow}>
+      <PageActionsTarget value={actionsTarget}>
+        <div className={styles.layout}>
+          <div className={styles.mobileNavigation}>
+            <Button
+              variant="ghost"
+              aria-expanded={navigationOpen}
+              aria-controls="settings-outline"
+              onClick={() => setNavigationOpen(!navigationOpen)}
+              type="button"
+            >
+              {t("Settings")}
+              <CaretDownIcon size={14} />
+            </Button>
+            <span>{t(selected.label)}</span>
+          </div>
+          <aside
+            id="settings-outline"
+            className={`${styles.outline} a13n-scrollbar`}
+            data-open={navigationOpen}
           >
-            {t("Settings")}
-            <CaretDownIcon size={14} />
-          </Button>
-          <span>{t(selected.label)}</span>
-        </div>
-        <aside
-          id="settings-outline"
-          className={`${styles.outline} a13n-scrollbar`}
-          data-open={navigationOpen}
-        >
-          <Link className={styles.back} to="/">
-            <ArrowLeftIcon size={14} />
-            {t("Back to workspace")}
-          </Link>
-          <FormField
-            className={`min-w-0 w-full ${styles.search}`}
-            label={t("Search settings")}
-            hideLabel={true}
-          >
-            <Input
-              placeholder={t("Search settings…")}
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              type="search"
-            />
-          </FormField>
-          <nav aria-label={t("Settings navigation")}>
-            {ordered.map((group) => (
-              <section
-                className={styles.scope}
-                key={group.scope}
-                data-scope={group.scope}
-              >
-                <h2 className={styles.scopeLabel}>
-                  {t(group.label)}
-                  {group.name && (
-                    <span className={styles.scopeName} title={group.name}>
-                      {group.name}
-                    </span>
-                  )}
-                </h2>
-                {group.sections.map((item) => (
-                  <Link
-                    key={item.value}
-                    onClick={() => setNavigationOpen(false)}
-                    to={`${group.path}/${item.value}`}
-                    aria-current={
-                      group.scope === scope && item.value === selected.value
-                        ? "page"
-                        : undefined
-                    }
-                  >
-                    <item.icon size={14} />
-                    {t(item.label)}
-                  </Link>
-                ))}
-              </section>
-            ))}
-            {!ordered.length && (
-              <p className={styles.noResults}>{t("No matching settings")}</p>
-            )}
-          </nav>
-        </aside>
-        <div className={styles.surface} data-settings-part="surface">
-          <div
-            className={styles.content}
-            data-settings-part="content"
-            data-content={selected.layout ?? "collection"}
-            key={`${scope}:${selected.value}`}
-          >
-            {heading && (
-              <header className={styles.heading} data-settings-part="heading">
-                <div className="min-w-0">
-                  <h1>{t(selected.title ?? selected.label)}</h1>
-                  {(selected.value === "providers" || selected.description) && (
-                    <p>
-                      {t(
-                        selected.value === "providers"
-                          ? providerCategory(search.get("category")).description
-                          : selected.description!,
-                      )}
-                    </p>
-                  )}
-                </div>
-                <div className={styles.headingActions} ref={setActionsTarget} />
-              </header>
-            )}
-            {content[selected.value] ?? null}
+            <Link className={styles.back} to="/">
+              <ArrowLeftIcon size={14} />
+              {t("Back to workspace")}
+            </Link>
+            <FormField
+              className={`min-w-0 w-full ${styles.search}`}
+              label={t("Search settings")}
+              hideLabel={true}
+            >
+              <Input
+                placeholder={t("Search settings…")}
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+                type="search"
+              />
+            </FormField>
+            <nav aria-label={t("Settings navigation")}>
+              {ordered.map((group) => (
+                <section
+                  className={styles.scope}
+                  key={group.scope}
+                  data-scope={group.scope}
+                >
+                  <h2 className={styles.scopeLabel}>
+                    {t(group.label)}
+                    {group.name && (
+                      <span className={styles.scopeName} title={group.name}>
+                        {group.name}
+                      </span>
+                    )}
+                  </h2>
+                  {group.sections.map((item) => (
+                    <Link
+                      key={item.value}
+                      onClick={() => setNavigationOpen(false)}
+                      to={`${group.path}/${item.value}`}
+                      aria-current={
+                        group.scope === scope && item.value === selected.value
+                          ? "page"
+                          : undefined
+                      }
+                    >
+                      <item.icon size={14} />
+                      {t(item.label)}
+                    </Link>
+                  ))}
+                </section>
+              ))}
+              {!ordered.length && (
+                <p className={styles.noResults}>{t("No matching settings")}</p>
+              )}
+            </nav>
+          </aside>
+          <div className={styles.surface} data-settings-part="surface">
+            <div
+              className={styles.content}
+              data-settings-part="content"
+              data-content={selected.layout ?? "collection"}
+              key={`${scope}:${selected.value}`}
+            >
+              {heading && (
+                <header className={styles.heading} data-settings-part="heading">
+                  <div className="min-w-0">
+                    <h1>{t(selected.title ?? selected.label)}</h1>
+                    {(selected.value === "providers" ||
+                      selected.description) && (
+                      <p>
+                        {t(
+                          selected.value === "providers"
+                            ? providerCategory(search.get("category"))
+                                .description
+                            : selected.description!,
+                        )}
+                      </p>
+                    )}
+                  </div>
+                  <div
+                    className={styles.headingActions}
+                    ref={setActionsTarget}
+                    data-quiet={offeredBelow || undefined}
+                  />
+                </header>
+              )}
+              {content[selected.value] ?? null}
+            </div>
           </div>
         </div>
-      </div>
-    </PageActionsTarget>
+      </PageActionsTarget>
+    </PageEmptyAction>
   );
 }

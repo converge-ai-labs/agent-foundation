@@ -1,0 +1,19 @@
+/*
+ * Layout for the application account form. A saved bot reads as settings:
+ * groups on a surface, separated by whitespace rather than by hairlines.
+ */
+.settingsForm {
+  display: grid;
+  gap: 32px;
+  min-width: 0;
+}
+.settingsForm > [data-a13n-form-actions] {
+  margin-top: -12px;
+}
+/* Content that is not a label-and-control row still needs the row's air. */
+.settingsBlock {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding-block: 14px;
+}

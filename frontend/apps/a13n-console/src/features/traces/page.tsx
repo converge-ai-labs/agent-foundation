@@ -190,6 +190,7 @@ function TraceBrowser({
           search={idQuery}
           onSearchChange={setIdQuery}
           searchLabel={t("Search by ID")}
+          searchPlaceholder={t("Session, thread, or run ID")}
           filters={
             <>
               <TimeRangeFilter

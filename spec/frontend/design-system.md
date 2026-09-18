@@ -85,13 +85,13 @@ Status is a pill: a 6px dot, 12px medium text, and a 10% tinted background of th
 
 **Dialog.** 520px for standard forms and 640px for complex ones, vertically stable across steps. Header: 18px title, 13px description. Creation flows start with a catalog (tiles or a searchable list) and continue with a step whose title carries the chosen brand. Fields use 16px gaps; advanced groups use a disclosure; the footer is sticky with Cancel and the primary action. Destructive confirmations name the resource and label the action with its verb.
 
-**Empty state.** Centered on a surface: a 40px icon tile, 15px title, 13px explanation, and the primary action. Search results with no matches use a shorter inline message and keep the toolbar.
+**Empty state.** Centered on a surface: a 40px icon tile, 15px title, 13px explanation, and the primary action. When the empty state offers that action, the page header does not repeat it; the screen still offers it exactly once. Search results with no matches use a shorter inline message and keep the toolbar.
 
 **Loading.** Skeletons preserve the destination's layout and density; spinners are reserved for gates and explicit actions. Existing content stays visible during background refreshes.
 
 ## Collections
 
-One `ResourceTable` serves every resource list. Header cells are 11px medium uppercase secondary text without a fill. Rows are 52–60px with a hairline divider, a 3–4% hover fill, and a pointer cursor when the row opens something. The first column is the identity: a 32px icon tile or avatar, the name at 13.5px medium, and one line of secondary text (key, source, or summary). Supporting columns use 13px text; timestamps and identifiers use 12px secondary text; status uses a pill. Row actions live in an overflow menu at the right that stays visible on touch devices. Long lists load in pages with a footer count and Previous/Next; search and filters query the server, never only the current page.
+One `ResourceTable` serves every resource list. The list is part of the page: the page scrolls, the table never scrolls inside a fixed-height box. Header cells are 11px medium uppercase secondary text without a fill. Rows are 52–60px with a hairline divider, a 3–4% hover fill, and a pointer cursor when the row opens something. The first column is the identity: a 32px icon tile or avatar, the name at 13.5px medium, and one line of secondary text (key, source, or summary). Supporting columns use 13px text; timestamps and identifiers use 12px secondary text; status uses a pill. Columns that are compared as numbers align right with tabular figures; timestamps stay left with their own inset. A search field carries its accessible name, and a placeholder when the field accepts something more specific than the name says. Row actions live in an overflow menu at the right that stays visible on touch devices. Long lists load in pages with a footer count and Previous/Next; search and filters query the server, never only the current page.
 
 Selection lists inside pickers use the same row anatomy with a checkbox in place of the tile, sorted with selected items first.
 
@@ -99,7 +99,9 @@ Selection lists inside pickers use the same row anatomy with a checkbox in place
 
 Labels sit above controls at 13.5px medium; descriptions sit below the control at 12.5px secondary; validation replaces the description in the danger color and names the fix. Optional fields say "(optional)" in the label; required fields carry no asterisk. Inputs are 36px tall with a 10px radius and a hairline border; compact inputs in toolbars are 32px. Textareas for long content (instructions, prompts, JSON) use a soft surface with no border, grow to a bounded height, and scroll internally. Selects and pickers show the current value with one trailing chevron. Read-only values use `ReadOnlyField` with no box.
 
-Buttons: primary (filled), outline (secondary), ghost (tertiary and inline), and destructive (only inside confirmations and menus). Icon-only buttons always have a tooltip and an accessible name. Loading preserves size and disables activation. Menu items pair an icon with a label; destructive items sit last after a separator.
+Buttons: primary (filled), outline (secondary), ghost (tertiary and inline), and destructive (only inside confirmations and menus). Icon-only buttons always have a tooltip and an accessible name. Loading preserves size and disables activation. Menu items pair an icon with a label; destructive items sit last after a separator. A form whose submit is not the screen's primary action uses the outline button for it, so the one filled primary per screen still holds.
+
+A segmented control switches an in-place view or mode: a track on the soft surface, the active segment lifted onto the elevated surface, 12px medium labels, and no outline. It never navigates and never replaces tabs; an unavailable segment is disabled rather than hidden. Fields generated from a schema are named by the property that holds them; a schema's own type name is never a field label.
 
 ## Conversation Rendering
 
@@ -107,7 +109,7 @@ The session view keeps a compact header (title, agent chip, status pill, actions
 
 ## Navigation
 
-The sidebar is a tinted column without a border: workspace switcher at the top, navigation rows at 32px with an 8px radius, active rows on the selected fill with a duotone icon, 11px uppercase group labels, and the account menu at the bottom. It collapses to an icon rail with tooltips. Settings open in the contextual layout with a clear way back. Internal links never open new tabs.
+The sidebar is a tinted column without a border: workspace switcher at the top, navigation rows at 32px with an 8px radius, active rows on the selected fill with a duotone icon, 11px uppercase group labels, and the account menu at the bottom. Hover is lighter than the active fill, so pointing at a row never reads as being on it. It collapses to an icon rail with tooltips. Settings open in the contextual layout with a clear way back. Internal links never open new tabs. Every route names itself in the document title, settings sections included.
 
 ## Overlays and Feedback
 
@@ -119,7 +121,7 @@ Popovers and menus use the elevated surface, an 10px radius, and the shared shad
 
 ## Accessibility and Motion
 
-Every interactive element keeps a visible focus ring at both densities. Fields and icon-only actions have accessible names; tooltips complement, never replace, them. Base UI controls keep keyboard interaction and disabled semantics. Motion is short (100–200ms), used for hover fills, disclosures, and overlays, and respects reduced-motion preferences.
+Every interactive element keeps a visible focus ring at both densities. Titled regions name themselves through their heading, so assistive technology can address them. Fields and icon-only actions have accessible names; tooltips complement, never replace, them. A resource without an image presents initials from the first and last word of its name on a hue derived from its identifier, so similar names stay distinguishable. Base UI controls keep keyboard interaction and disabled semantics. Motion is short (100–200ms), used for hover fills, disclosures, and overlays, and respects reduced-motion preferences.
 
 ## Themes and Language
 

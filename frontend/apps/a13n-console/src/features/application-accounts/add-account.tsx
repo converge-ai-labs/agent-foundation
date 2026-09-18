@@ -12,7 +12,8 @@ import {
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { PlatformIcon, usePlatformName } from "../integrations/platform";
 import { useAccountProviders } from "./data";
-import { AccountForm, accountProviderLabels } from "./form";
+import { accountProviderLabels } from "./data";
+import { AccountForm } from "./form";
 
 type Definition = Schema["AccountProviderDefinition"];
 

@@ -13,30 +13,6 @@
   padding-top: 20px;
 }
 
-/* A group heading with a control at its right (Fields / JSON, for example). */
-.groupHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  min-width: 0;
-}
-.groupHeader h4 {
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 500;
-}
-.groupHeader p {
-  margin: 4px 0 0;
-  color: var(--a13n-secondary);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-
-.segmented {
-  flex: none;
-}
-
 .advanced {
   font-size: 13px;
 }
@@ -61,6 +37,11 @@
   font-size: 12px;
   line-height: 1.5;
   overflow-wrap: anywhere;
+}
+
+/* The chosen provider sits above the configuration group, on its own. */
+.chosenProviderBlock {
+  padding-bottom: 4px;
 }
 
 /* The chosen provider, shown above the configuration with a way to change it. */
@@ -226,10 +207,4 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-@media (max-width: 600px) {
-  .groupHeader {
-    flex-wrap: wrap;
-  }
 }

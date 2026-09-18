@@ -1,5 +1,4 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import {} from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -77,7 +76,11 @@ export function AccountCredentials({
         />
       )}
       <ErrorNotice error={save.error} retry={() => void reload()} />
-      <FormActions pending={save.isPending} label={t("Replace credentials")} />
+      <FormActions
+        pending={save.isPending}
+        label={t("Replace credentials")}
+        variant="outline"
+      />
     </form>
   );
 }

@@ -124,7 +124,8 @@ export function TraceTable({
       const translated = t(label);
       return {
         label: translated,
-        align: "right",
+        // Numbers line up at the right; a timestamp reads from the left.
+        align: field === "started" ? "left" : "right",
         dataColumn: field,
         ariaSort:
           sort.field === field

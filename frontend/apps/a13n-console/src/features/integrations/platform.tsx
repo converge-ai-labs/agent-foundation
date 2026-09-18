@@ -1,4 +1,4 @@
-import { BrandIcon, StatusPill } from "a13n-ui";
+import { BrandIcon } from "a13n-ui";
 import { useTranslation } from "react-i18next";
 import { StatePill } from "../../shared/feedback";
 
@@ -53,22 +53,10 @@ export const setupConditions = {
 
 export type SetupCondition = keyof typeof setupConditions;
 
-const setupVariants = {
-  disabled: "neutral",
-  needs_verification: "warning",
-  check_failed: "danger",
-  reception_off: "neutral",
-  receiving: "success",
-} as const;
-
-/** The bot's own progress through setup, quieter than a failure. */
+/** The bot's own progress through setup, read through the shared state map. */
 export function SetupPill({ condition }: { condition: SetupCondition }) {
   const { t } = useTranslation();
-  return (
-    <StatusPill variant={setupVariants[condition]} data-state={condition}>
-      {t(setupConditions[condition])}
-    </StatusPill>
-  );
+  return <StatePill state={condition} label={t(setupConditions[condition])} />;
 }
 
 /** Stages of the guided setup test. */

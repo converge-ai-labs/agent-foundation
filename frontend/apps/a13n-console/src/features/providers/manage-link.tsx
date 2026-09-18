@@ -8,15 +8,18 @@ import { providersPath } from "./navigation";
 export function ManageProvidersLink({
   category,
   scope,
+  variant = "outline",
 }: {
   category: string;
   scope: "workspace" | "organization";
+  variant?: "outline" | "ghost";
 }) {
   const { t } = useTranslation();
   const { workspace } = useAccess();
   return (
     <Button
-      variant="outline"
+      variant={variant}
+      size={variant === "ghost" ? "sm" : undefined}
       render={<Link to={providersPath(category, scope, workspace?.key)} />}
     >
       {t("Manage providers")}

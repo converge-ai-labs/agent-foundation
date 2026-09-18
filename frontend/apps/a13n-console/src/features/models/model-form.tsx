@@ -9,7 +9,7 @@ import {
   SettingsSection,
   Switch,
 } from "a13n-ui";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, type Schema } from "../../shared/api";
@@ -268,9 +268,12 @@ export function CatalogNotice({ model }: { model: ModelDraft }) {
 export function ModelSelection({
   model,
   onChange,
+  actions,
 }: {
   model: ModelDraft;
   onChange?: () => void;
+  /** Quiet links that belong with the connection, not under the fields. */
+  actions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { draft, selectedEntry, definition, channels } = model;
@@ -302,6 +305,7 @@ export function ModelSelection({
             {t("Change")}
           </Button>
         )}
+        {actions}
       </div>
       <div className={sharedStyles.twoColumns}>
         <FormField
@@ -493,17 +497,23 @@ export function EditModelForm({
         model.save.mutate();
       }}
     >
-      <ModelSelection model={model} onChange={() => setChanging(true)} />
-      {model.selectedProvider && (
-        <div className={sharedStyles.actions}>
-          <ManageProvidersLink
-            category="models"
-            scope={
-              model.selectedProvider.workspace_id ? "workspace" : "organization"
-            }
-          />
-        </div>
-      )}
+      <ModelSelection
+        model={model}
+        onChange={() => setChanging(true)}
+        actions={
+          model.selectedProvider && (
+            <ManageProvidersLink
+              variant="ghost"
+              category="models"
+              scope={
+                model.selectedProvider.workspace_id
+                  ? "workspace"
+                  : "organization"
+              }
+            />
+          )
+        }
+      />
       <ModelStatus model={model} />
       <ModelFields model={model} />
       <ErrorNotice

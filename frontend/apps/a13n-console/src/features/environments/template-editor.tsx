@@ -261,6 +261,7 @@ export function TemplateSettings({
         label={t("Description")}
         value={description}
         onChange={setDescription}
+        maxLength={4096}
         readOnly={!editable}
       />
       <Label className="flex items-center gap-2">

@@ -18,8 +18,13 @@
 }
 .inlineEdit {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.inlineEdit input {
+  flex: 1 1 auto;
   min-width: 0;
 }
 .checkRow {

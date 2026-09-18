@@ -4,6 +4,7 @@ import {
   FormField,
   Input,
   ModalFrame,
+  SegmentedControl,
 } from "a13n-ui";
 import {
   CheckCircleIcon,
@@ -22,7 +23,6 @@ import { FormActions, JsonView } from "../../shared/forms";
 import { IconTile } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
 import shared from "../../shared/shared.module.css";
-import { SegmentedControl } from "./segmented";
 import { SourceIcon } from "./source";
 import styles from "./skills.module.css";
 
@@ -183,7 +183,7 @@ function ImportForm({
             setKind(value);
             publish.reset();
           }}
-          segments={[
+          options={[
             {
               value: "zip_upload",
               label: (

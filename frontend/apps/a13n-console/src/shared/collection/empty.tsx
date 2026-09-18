@@ -8,6 +8,7 @@ import {
 } from "a13n-ui";
 import { TrayIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
+import { useOffersPageAction } from "../page/page-actions";
 
 /** Centred on a surface: icon tile, title, one line, and the primary action. */
 export function Empty({
@@ -21,6 +22,7 @@ export function Empty({
   description: string;
   action?: ReactNode;
 }) {
+  useOffersPageAction(!!action);
   return (
     <EmptyRoot>
       <EmptyHeader>

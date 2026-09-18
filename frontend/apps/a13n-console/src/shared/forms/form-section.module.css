@@ -18,6 +18,24 @@
 .section + .section {
   border-top: 1px solid var(--a13n-border-soft);
 }
+.section[data-divider="none"] {
+  border-top: 0;
+}
+.heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+.headingActions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
 .heading h3 {
   margin: 0;
   font-size: 14px;

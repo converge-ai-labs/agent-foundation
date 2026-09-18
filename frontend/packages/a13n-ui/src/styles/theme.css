@@ -40,8 +40,9 @@
   --code-highlight: --alpha(var(--color-black) / 4%);
   --radius: 0.625rem;
   --sidebar: var(--color-neutral-50);
-  --sidebar-accent: --alpha(var(--color-black) / 4%);
+  --sidebar-accent: --alpha(var(--color-black) / 7%);
   --sidebar-accent-foreground: var(--color-neutral-800);
+  --sidebar-hover: --alpha(var(--color-black) / 3%);
   --sidebar-border: --alpha(var(--color-black) / 6%);
   --sidebar-foreground: color-mix(
     in srgb,
@@ -103,8 +104,9 @@
     var(--color-neutral-950) 97%,
     var(--color-white)
   );
-  --sidebar-accent: --alpha(var(--color-white) / 4%);
+  --sidebar-accent: --alpha(var(--color-white) / 8%);
   --sidebar-accent-foreground: var(--color-neutral-100);
+  --sidebar-hover: --alpha(var(--color-white) / 3%);
   --sidebar-border: --alpha(var(--color-white) / 5%);
   --sidebar-foreground: color-mix(
     in srgb,
@@ -160,6 +162,7 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-hover: var(--sidebar-hover);
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-ring: var(--sidebar-ring);

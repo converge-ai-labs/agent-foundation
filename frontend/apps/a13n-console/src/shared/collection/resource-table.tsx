@@ -112,6 +112,7 @@ export function ResourceTable<T extends { id: string }>({
                 className={styles.cell}
                 data-tone={column.tone ?? "secondary"}
                 data-align={column.align}
+                data-column={column.dataColumn}
               >
                 <div
                   className={

@@ -95,6 +95,7 @@ export function DirectoryRow({
   detail,
   meta,
   tone = "surface",
+  disabled = false,
   onClick,
 }: {
   icon: ReactNode;
@@ -102,10 +103,17 @@ export function DirectoryRow({
   detail?: string | null;
   meta?: ReactNode;
   tone?: "surface" | "elevated";
+  /** An entry that cannot be chosen yet: quieter, and it never activates. */
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
-    <button type="button" className={styles.directoryRow} onClick={onClick}>
+    <button
+      type="button"
+      className={styles.directoryRow}
+      disabled={disabled}
+      onClick={onClick}
+    >
       <IconTile size={36} tone={tone}>
         {icon}
       </IconTile>
@@ -116,11 +124,13 @@ export function DirectoryRow({
       {meta ? (
         <span className={styles.directoryMeta}>{meta}</span>
       ) : (
-        <CaretRightIcon
-          aria-hidden="true"
-          size={14}
-          className="text-muted-foreground"
-        />
+        !disabled && (
+          <CaretRightIcon
+            aria-hidden="true"
+            size={14}
+            className="text-muted-foreground"
+          />
+        )
       )}
     </button>
   );

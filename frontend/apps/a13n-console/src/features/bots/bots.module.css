@@ -317,3 +317,10 @@
     max-height: 320px;
   }
 }
+
+/* Settings tab: groups on a surface, separated by whitespace. */
+.settings {
+  display: grid;
+  gap: 32px;
+  min-width: 0;
+}

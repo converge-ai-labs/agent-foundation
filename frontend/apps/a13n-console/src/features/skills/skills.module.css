@@ -41,51 +41,6 @@
   background: var(--a13n-hover);
 }
 
-/* Segmented control ------------------------------------------------------ */
-/* Doubled selectors so the module wins over the primitive's own utilities. */
-.segmented.segmented {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex: none;
-  width: fit-content;
-  padding: 2px;
-  border-radius: var(--a13n-radius-tile);
-  background: var(--a13n-surface);
-}
-.segment.segment {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 26px;
-  min-width: 0;
-  padding: 0 10px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--a13n-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
-  box-shadow: none;
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
-}
-.segment.segment:hover {
-  background: transparent;
-  color: var(--a13n-text);
-}
-.segment.segment[data-pressed] {
-  background: var(--a13n-elevated);
-  color: var(--a13n-text);
-  box-shadow: var(--a13n-shadow-subtle);
-}
-.segment.segment:focus-visible {
-  outline: 2px solid var(--a13n-focus);
-  outline-offset: 1px;
-}
-
 /* Detail: retained version notice --------------------------------------- */
 .retained {
   display: flex;

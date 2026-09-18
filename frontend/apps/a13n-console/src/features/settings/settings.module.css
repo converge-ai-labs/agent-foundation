@@ -147,7 +147,8 @@
   gap: 8px;
   flex-shrink: 0;
 }
-.headingActions:empty {
+.headingActions:empty,
+.headingActions[data-quiet] {
   display: none;
 }
 

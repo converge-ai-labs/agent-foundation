@@ -12,6 +12,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import {
+  allPages,
   commandHeaders,
   data,
   representation,
@@ -37,6 +38,7 @@ import {
 } from "../../shared/feedback";
 import { useIdempotency } from "../../shared/idempotency";
 import { Page } from "../../shared/page";
+import { modelApi } from "../models/api";
 import { ModelIcon } from "../models/model-icon";
 import { AgentAvatar } from "./avatar";
 import { ExportAgent } from "./export";
@@ -225,15 +227,34 @@ function useRevisions(items: readonly Agent[]) {
   });
 }
 
+/** Agent rows name their model, so the table never leads with a raw key. */
+function useModelsByKey() {
+  const client = useClient(),
+    { workspace } = useWorkspace();
+  const query = useQuery({
+    queryKey: ["agent-list-models", workspace.id],
+    staleTime: 60_000,
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        modelApi(client, { kind: "workspace", id: workspace.id }).models(
+          signal,
+          cursor,
+        ),
+      ),
+  });
+  return new Map((query.data ?? []).map((model) => [model.key, model]));
+}
+
 function AgentRows({ items }: { items: readonly Agent[] }) {
   const { t } = useTranslation(),
     { can, basePath } = useWorkspace(),
     navigate = useNavigate();
   const revisions = useRevisions(items);
+  const modelsByKey = useModelsByKey();
   const state = (agent: Agent) =>
     agent.archived_at ? "archived" : agent.enabled ? "enabled" : "disabled";
   return (
-    <div className={`${styles.listTable} a13n-scrollbar`}>
+    <div className={styles.listTable}>
       <ResourceTable
         items={items}
         caption={t("Agents")}
@@ -306,16 +327,19 @@ function AgentRows({ items }: { items: readonly Agent[] }) {
                 return <span className={styles.modelName}>—</span>;
               if (revision?.isPending) return <InlineLoading width="6rem" />;
               const key = revision?.data?.config.model.model_key;
+              const model = key ? modelsByKey.get(key) : undefined;
               return (
-                <span className={styles.modelName}>
+                <span className={styles.modelName} title={key ?? undefined}>
                   {key ? (
-                    <ModelIcon upstream={key} size={16} />
+                    <ModelIcon
+                      upstream={model?.upstream_model ?? key}
+                      catalogRef={model?.catalog_ref}
+                      size={16}
+                    />
                   ) : (
                     <span aria-hidden="true" />
                   )}
-                  <span title={key ?? undefined}>
-                    {key ?? t("Unavailable")}
-                  </span>
+                  <span>{model?.name ?? key ?? t("Unavailable")}</span>
                 </span>
               );
             },

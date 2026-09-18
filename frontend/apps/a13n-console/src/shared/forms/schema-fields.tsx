@@ -13,6 +13,11 @@ import { useTranslation } from "react-i18next";
 import styles from "./forms.module.css";
 import { jsonValue } from "./validation";
 
+/** A nested group reads as "Shell profiles" when the schema names nothing. */
+function humanize(key: string) {
+  const words = key.replaceAll(/[_-]+/g, " ").trim();
+  return words ? words[0].toLocaleUpperCase() + words.slice(1) : key;
+}
 function object(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
@@ -25,8 +30,15 @@ function fieldSchema(
     typeof value.$ref === "string" &&
     value.$ref.startsWith("#/$defs/") &&
     object(root.$defs)
-  )
-    return { ...fieldSchema(root.$defs[value.$ref.slice(8)], root), ...value };
+  ) {
+    // A referenced schema carries its own type name as `title`. A field is
+    // named by the property that holds it, never by the type behind it.
+    const { title: _typeName, ...referenced } = fieldSchema(
+      root.$defs[value.$ref.slice(8)],
+      root,
+    );
+    return { ...referenced, ...value };
+  }
   if (Array.isArray(value.anyOf))
     return {
       ...value,
@@ -137,8 +149,13 @@ export function SchemaFields({
         if (field.type === "object" && object(field.properties)) {
           if (!Object.keys(field.properties).length) return null;
           return (
-            <fieldset key={key} className={styles.stack}>
-              <legend>{label}</legend>
+            <fieldset key={key} className={styles.schemaGroup}>
+              {/* A nested object is a group; it is named by its property. */}
+              <legend>
+                {typeof field.title === "string" && field.title
+                  ? label
+                  : t(humanize(key))}
+              </legend>
               <SchemaFields
                 schema={{ ...field, $defs: schema.$defs }}
                 value={object(current) ? current : {}}

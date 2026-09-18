@@ -195,6 +195,7 @@ export function ApiKeys({
                           <span className={settings.inlineIdentity}>
                             <UserAvatar
                               name={owner.name}
+                              id={owner.id}
                               url={owner.image_url}
                               className="size-5 rounded-full"
                             />

@@ -218,6 +218,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
                       icon={
                         <UserAvatar
                           name={identity.name}
+                          id={item.principal_id}
                           url={identity.image}
                           className="size-8 rounded-[8px]"
                         />

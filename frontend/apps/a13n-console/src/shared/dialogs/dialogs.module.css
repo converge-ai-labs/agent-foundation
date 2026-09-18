@@ -121,6 +121,16 @@
   background: var(--a13n-hover);
   outline: none;
 }
+.directoryRow:disabled {
+  background: transparent;
+  cursor: default;
+}
+.directoryRow:disabled .directoryCopy strong {
+  color: var(--a13n-secondary);
+}
+.directoryRow:disabled > span:first-child {
+  opacity: 0.55;
+}
 .directoryCopy {
   display: grid;
   gap: 1px;

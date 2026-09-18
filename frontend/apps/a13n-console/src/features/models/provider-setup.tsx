@@ -49,9 +49,10 @@ export function ProviderChoice({
               definitions.find((item) => item.type === provider.type)
                 ?.display_name ?? provider.type
             }
+            disabled={!provider.enabled}
             meta={
               provider.enabled ? undefined : (
-                <StatusPill variant="warning">{t("Disabled")}</StatusPill>
+                <StatusPill variant="neutral">{t("Disabled")}</StatusPill>
               )
             }
             onClick={() => onSelect(provider.id)}

@@ -32,7 +32,12 @@
   width: 92px;
 }
 .traceTable th[data-column="started"] {
-  width: 152px;
+  width: 164px;
+}
+/* The timestamp keeps its own inset so it never touches the cost column. */
+.traceTable th[data-column="started"],
+.traceTable td[data-column="started"] {
+  padding-inline-start: 16px;
 }
 @media (max-width: 1160px) {
   .traceTable {
@@ -563,12 +568,6 @@
   padding: 12px 14px;
   border-radius: var(--a13n-radius-row);
   background: var(--a13n-surface);
-}
-.panelTabs [data-slot="tabs-list"] {
-  width: 100%;
-}
-.panelTabs [data-slot="tabs-tab"] {
-  flex: 1;
 }
 
 /* Retained content rendering ---------------------------------------------- */

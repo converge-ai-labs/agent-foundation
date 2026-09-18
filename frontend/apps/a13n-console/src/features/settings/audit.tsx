@@ -107,6 +107,7 @@ export function Audit({ scope }: { scope: ProfileTarget }) {
                     icon={
                       <UserAvatar
                         name={user.name}
+                        id={user.id}
                         url={user.image_url}
                         className="size-8 rounded-[8px]"
                       />

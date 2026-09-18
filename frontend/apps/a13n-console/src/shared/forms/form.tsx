@@ -16,6 +16,8 @@ export function TextAreaField({
   code = false,
   hideLabel = false,
   readOnly = false,
+  disabled = false,
+  maxLength,
   error,
 }: {
   label: string;
@@ -27,6 +29,8 @@ export function TextAreaField({
   code?: boolean;
   hideLabel?: boolean;
   readOnly?: boolean;
+  disabled?: boolean;
+  maxLength?: number;
   error?: string;
 }) {
   if (readOnly)
@@ -45,6 +49,7 @@ export function TextAreaField({
       description={hint}
       hideLabel={hideLabel}
       error={error}
+      disabled={disabled}
     >
       <Textarea
         variant="soft"
@@ -53,6 +58,7 @@ export function TextAreaField({
         onChange={(event) => onChange(event.target.value)}
         rows={rows}
         required={required}
+        maxLength={maxLength}
       />
     </FormField>
   );
@@ -71,11 +77,15 @@ export function FormActions({
   label,
   onCancel,
   disabled = false,
+  variant = "default",
 }: {
   pending: boolean;
   disabled?: boolean;
   label?: string;
   onCancel?: () => void;
+  /** Outline keeps a secondary submit row from competing with the page's
+   *  one filled primary action. */
+  variant?: "default" | "outline";
 }) {
   const { t } = useTranslation();
   return (
@@ -92,7 +102,7 @@ export function FormActions({
       )}
       <Button
         type="submit"
-        variant="default"
+        variant={variant}
         loading={pending}
         disabled={disabled}
       >

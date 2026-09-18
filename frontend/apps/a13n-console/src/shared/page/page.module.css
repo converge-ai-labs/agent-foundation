@@ -62,6 +62,9 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+.actions[data-quiet] {
+  display: none;
+}
 .toolbar {
   margin-top: 20px;
 }

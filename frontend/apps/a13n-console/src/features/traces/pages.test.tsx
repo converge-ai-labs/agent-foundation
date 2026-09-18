@@ -309,7 +309,7 @@ it("loads separate observation pages, deduplicates the root, and retains paginat
   );
   await user.click(screen.getByRole("button", { name: /^child/ }));
   const panel = within(await screen.findByRole("complementary"));
-  await user.click(panel.getByRole("tab", { name: "Metadata" }));
+  await user.click(panel.getByRole("button", { name: "Metadata" }));
   expect(panel.getByText("Diagnostic reason")).toBeTruthy();
   expect(panel.getByText("Requested model")).toBeTruthy();
   expect(panel.getByText("model-alias")).toBeTruthy();
@@ -718,6 +718,6 @@ it("opens the root content tab without substituting child output", async () => {
   await user.click(screen.getByRole("tab", { name: "Observations" }));
   await user.click(await screen.findByRole("button", { name: /^child/ }));
   const childPanel = within(await screen.findByRole("complementary"));
-  await user.click(childPanel.getByRole("tab", { name: "Output" }));
+  await user.click(childPanel.getByRole("button", { name: "Output" }));
   expect(childPanel.getByText("Child only output")).toBeTruthy();
 });

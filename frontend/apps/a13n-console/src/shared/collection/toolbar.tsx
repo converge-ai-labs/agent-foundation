@@ -7,6 +7,7 @@ export function Toolbar({
   search,
   onSearchChange,
   searchLabel,
+  searchPlaceholder,
   filters,
   trailing,
   children,
@@ -14,6 +15,8 @@ export function Toolbar({
   search?: string;
   onSearchChange?: (value: string) => void;
   searchLabel?: string;
+  /** Hint inside the field when it says more than the accessible name. */
+  searchPlaceholder?: string;
   filters?: ReactNode;
   trailing?: ReactNode;
   children?: ReactNode;
@@ -26,7 +29,7 @@ export function Toolbar({
           size="sm"
           className={styles.toolbarSearch}
           aria-label={searchLabel}
-          placeholder={searchLabel}
+          placeholder={searchPlaceholder ?? searchLabel}
           value={search ?? ""}
           onChange={(event) => onSearchChange(event.target.value)}
         />

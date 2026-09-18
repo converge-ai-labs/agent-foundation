@@ -3076,5 +3076,12 @@
   "{{count}} bots on this page": "本页 {{count}} 个机器人",
   "{{count}} conversations on this page": "本页 {{count}} 个会话",
   "{{count}} targets on this page": "本页 {{count}} 个目标",
-  "Last check": "最近一次检查"
+  "Last check": "最近一次检查",
+  "Add {{model}}": "添加 {{model}}",
+  "No {{state}} messages": "没有{{state}}的消息",
+  "Session, thread, or run ID": "会话、对话或运行 ID",
+  "{{count}} {{state}}": "{{count}} 条{{state}}",
+  "Retry check": "重试检查",
+  "state.open": "进行中",
+  "After enabling, check the connection. Open the Authorization tab if new credentials are needed.": "启用后请检查连接。如需新凭据，请打开“授权”标签页。"
 }
