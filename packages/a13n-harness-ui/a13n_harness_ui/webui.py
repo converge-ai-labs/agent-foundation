@@ -218,6 +218,7 @@ class SteerRequest(SurfaceModel):
 
 
 class SubmitRequest(PromptRequest):
+    environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     thinking: ThinkingSelection | None = None
     fast: bool | None = None
@@ -1389,6 +1390,7 @@ def create_webui(
                 thread_id=thread_id,
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
+                environment_profile_id=document.environment_profile_id,
                 model_overrides=RunModelOverrides(
                     model_id=document.model_id, thinking=document.thinking, fast=document.fast
                 ),

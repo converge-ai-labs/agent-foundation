@@ -14561,6 +14561,19 @@
             ],
             "title": "Source Id"
           },
+          "environment_profile_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Profile Id"
+          },
           "model_id": {
             "anyOf": [
               {

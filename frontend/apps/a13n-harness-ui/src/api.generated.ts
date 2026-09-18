@@ -5072,6 +5072,8 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            /** Environment Profile Id */
+            environment_profile_id?: string | null;
             /** Model Id */
             model_id?: string | null;
             thinking?: components["schemas"]["ThinkingSelection"] | null;

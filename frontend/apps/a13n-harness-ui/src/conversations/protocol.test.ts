@@ -778,3 +778,82 @@ it("rejects realtime access before exposing even heartbeat or application frames
   expect(await closed).toBe(4401);
   expect(messages).toEqual([]);
 });
+
+it("captures an HTTP environment override without changing defaults and never falls back from an invalid profile", async () => {
+  const created = await result(
+    transport.client.POST("/api/threads", {
+      body: { defaults: { environment_profile_id: "environment-sandbox" } },
+    }),
+  );
+  const thread = created.thread_id;
+  const before = await result(
+    transport.client.GET("/api/threads/{thread_id}", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  const receipt = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path: { thread_id: thread } },
+      body: {
+        prompt: "Use Full Control for this Run",
+        environment_profile_id: "environment-native",
+      },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("completed");
+    },
+    { timeout: 10000 },
+  );
+  const inspection = await result(
+    transport.client.GET("/api/threads/{thread_id}/configuration", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  expect(inspection.captured?.environment_profile_id).toBe(
+    "environment-native",
+  );
+  const after = await result(
+    transport.client.GET("/api/threads/{thread_id}", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  expect(after.thread.configuration).toEqual(before.thread.configuration);
+  await expect(
+    transport.fetch(`/api/operations/${receipt.receipt_id}/steer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: "Continue",
+        environment_profile_id: "environment-native",
+      }),
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  const invalid = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path: { thread_id: thread } },
+      body: {
+        prompt: "Do not fall back",
+        environment_profile_id: "missing-environment",
+      },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: invalid.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("failed");
+      expect(operation.failure?.code).toBe("environment_profile_missing");
+    },
+    { timeout: 10000 },
+  );
+});

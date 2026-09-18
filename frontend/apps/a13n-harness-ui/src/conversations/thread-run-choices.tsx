@@ -6,29 +6,88 @@ import { ModelPicker } from "./model-picker";
 import { FastToggle } from "./fast-toggle";
 import styles from "./new-conversation.module.css";
 
-export function EnvironmentMode({
-  environment,
+export function EnvironmentPicker({
+  catalog,
+  defaultProfileId,
+  value,
+  onChange,
+  disabled,
 }: {
-  environment?: Schema<"ThreadSelectorCatalog">["environments"][number];
+  catalog?: Schema<"ThreadSelectorCatalog">;
+  defaultProfileId?: string;
+  value?: string;
+  onChange: (value: string | undefined) => void;
+  disabled: boolean;
 }) {
-  if (!environment) return null;
+  const environments = catalog?.environments ?? [];
+  const inherited = environments.find(
+    (item) => item.profile_id === defaultProfileId,
+  );
+  const selected = environments.find(
+    (item) => item.profile_id === (value ?? defaultProfileId),
+  );
+  const description = (item: (typeof environments)[number]) =>
+    item.mode === "full-control"
+      ? "Runs as your host account. Not a sandbox."
+      : item.description;
   return (
-    <span
+    <div
       className={styles.mode}
-      data-full-control={environment.mode === "full-control"}
-      title={
-        environment.mode === "full-control"
-          ? "Runs on the host with your account permissions."
-          : environment.description
-      }
+      data-full-control={selected?.mode === "full-control"}
+      title="Applies to your next Run, not the active Run or conversation defaults."
     >
-      <ShieldWarning aria-hidden="true" />
-      {environment.mode === "full-control"
-        ? "Full Control"
-        : environment.mode === "sandbox"
-          ? "Sandbox"
-          : "Custom environment"}
-    </span>
+      <SearchPicker
+        label="Execution mode"
+        popupClassName={styles.choicePopup}
+        placeholder={
+          selected?.name ??
+          (value
+            ? `${value} (unavailable)`
+            : (inherited?.name ?? defaultProfileId ?? "Loading environment…"))
+        }
+        emptyMessage="No environments found."
+        value={value ?? ""}
+        disabled={disabled || !catalog || !defaultProfileId}
+        onValueChange={(next) => onChange(next || undefined)}
+        groups={[
+          {
+            label: "Execution environments",
+            options: [
+              {
+                value: "",
+                label:
+                  inherited?.name ?? defaultProfileId ?? "Default environment",
+                badge: "Default",
+                icon: <ShieldWarning aria-hidden="true" />,
+                description: inherited
+                  ? `Follow the conversation default. ${description(inherited)}`
+                  : "The conversation's selected environment is unavailable.",
+              },
+              ...environments.map((item) => ({
+                value: item.profile_id,
+                label: item.name,
+                description: description(item),
+                icon: <ShieldWarning aria-hidden="true" />,
+              })),
+              ...(value && !selected
+                ? [
+                    {
+                      value,
+                      label: `${value} (unavailable)`,
+                      disabled: true,
+                    },
+                  ]
+                : []),
+            ],
+          },
+        ]}
+        footer={
+          <small>
+            For your next Run only. Steering keeps the active environment.
+          </small>
+        }
+      />
+    </div>
   );
 }
 

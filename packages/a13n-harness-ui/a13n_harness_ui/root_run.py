@@ -219,6 +219,7 @@ class RootRunCoordinator:
         *,
         thread_id: str,
         prompt: RunInputValue,
+        environment_profile_id: str | None = None,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         touch: bool = False,
@@ -228,6 +229,7 @@ class RootRunCoordinator:
             thread_id=thread_id,
             prompt=prompt,
             response=None,
+            environment_profile_id=environment_profile_id,
             mutation=mutation,
             model_overrides=model_overrides,
             touch=touch,
@@ -261,6 +263,7 @@ class RootRunCoordinator:
         model_overrides: RunModelOverrides | None,
         touch: bool,
         timeout: _InteractionWait | None = None,
+        environment_profile_id: str | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -316,6 +319,7 @@ class RootRunCoordinator:
                     response,
                     mutation,
                     None if model_overrides is None else model_overrides.model_copy(deep=True),
+                    environment_profile_id,
                 )
         await self._publish_change(operation)
         return receipt.model_copy(deep=True)
@@ -452,6 +456,7 @@ class RootRunCoordinator:
         response: ThreadDeferredResponse | None,
         mutation: ThreadConfigurationMutation | None,
         model_overrides: RunModelOverrides | None,
+        environment_profile_id: str | None,
     ) -> None:
         with self._observation.operation(
             "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
@@ -459,7 +464,9 @@ class RootRunCoordinator:
             record_input(
                 prompt if response is None else response, kind="prompt" if response is None else "deferred_response"
             )
-            await self._execute_operation(operation, prompt, response, mutation, model_overrides)
+            await self._execute_operation(
+                operation, prompt, response, mutation, model_overrides, environment_profile_id
+            )
             record_output(
                 operation.outcome.execution.output if operation.outcome is not None else None,
                 status=operation.status.value,
@@ -478,6 +485,7 @@ class RootRunCoordinator:
         response: ThreadDeferredResponse | None,
         mutation: ThreadConfigurationMutation | None,
         model_overrides: RunModelOverrides | None,
+        environment_profile_id: str | None,
     ) -> None:
         scope = CancelScope()
         async with self._lock:
@@ -498,6 +506,7 @@ class RootRunCoordinator:
                         response=response,
                         mutation=mutation,
                         model_overrides=model_overrides,
+                        environment_profile_id=environment_profile_id,
                         on_composition=lambda reference: self._captured(operation.receipt.receipt_id, reference),
                         on_stream=lambda stream, input_files=None: self._running(
                             operation.receipt.receipt_id, stream, input_files

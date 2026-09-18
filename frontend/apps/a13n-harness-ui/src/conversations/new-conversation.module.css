@@ -79,19 +79,23 @@
 }
 .mode {
   display: inline-flex;
-  align-items: center;
-  gap: 5px;
   min-width: 0;
+  max-width: min(220px, 100%);
+}
+.mode > button {
+  min-width: 0;
+  height: 32px;
+  padding-inline: 8px;
   color: var(--a13n-secondary);
   font-size: 12px;
-  white-space: nowrap;
+  font-weight: 400;
+  box-shadow: none;
 }
-.mode[data-full-control="true"] {
+.mode[data-full-control="true"] > button {
   color: var(--warning-foreground);
 }
-.mode > svg {
-  width: 16px;
-  height: 16px;
+.mode > button:hover {
+  background: var(--a13n-hover);
 }
 .setup {
   display: inline-block;

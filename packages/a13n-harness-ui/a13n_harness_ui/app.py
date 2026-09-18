@@ -1670,6 +1670,7 @@ class HarnessUiApp:
         model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
         input_surface: Literal["tui", "webui"] | None = None,
+        environment_profile_id: str | None = None,
     ) -> RootRunReceipt:
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
@@ -1688,6 +1689,7 @@ class HarnessUiApp:
                 prompt=prompt,
                 mutation=mutation,
                 model_overrides=model_overrides,
+                environment_profile_id=environment_profile_id,
                 touch=True,
             )
             self._terminal_projections.pin_active_skill_catalog(

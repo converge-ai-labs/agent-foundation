@@ -82,6 +82,14 @@ Existing installations keep their conversations and configuration. **General →
 
 **Projects** edits server directories and defaults directly, with a separate saved-default preview and per-axis provenance. Each folder has its own row with add/remove controls. **Browse** lets you navigate server directories one level at a time, go to a parent or entered path, and choose **Use this directory**; selection stays in the draft until you save. With `--no-share-computer`, enter paths manually instead. Saved defaults initialize new conversations; changes to project folders also affect future Runs in existing conversations. Default, None and Custom list selections remain distinct. Preview does not include unsaved source changes or execute a model. The top-right header automatically shows a generated collaboration name on first entry. Click it to change the name; **Save name** remembers it in this browser and updates live presence and composer labels. The online indicator opens the per-tab participant directory. This profile is not provider login or an authenticated identity.
 
+### Execution mode for the next Run
+
+Click **Sandbox**, **Full Control**, or the environment name in the composer to choose the execution environment, including in an existing conversation. **Default** follows that conversation's saved environment. Full Control runs as the server's Host account; it is not a sandbox. Sandbox still requires its native runtime and fails explicitly if unavailable, without switching to Full Control.
+
+An explicit choice is sent with each Run you start from that tab until you change it or choose Default. It does not rewrite the conversation's defaults, affect another participant's selection, or change an active Run. While work is running, the picker prepares the next Send; **Steer** only adds instructions. Answering a deferred question or its automatic timeout retains the suspended Run's selected environment. New subagents inherit the captured environment; resumed subagents keep their own conversation configuration. Switching modes does not copy or isolate your project files or conversation history.
+
+Open **Configuration** to distinguish saved conversation defaults from the environment captured by a Run. An unavailable custom profile remains visible and must be explicitly replaced. An unsent new-conversation draft retains its choice across reloads; an existing conversation's override is private to the current tab.
+
 ### Thinking for the next Run
 
 The composer places **Thinking** beside Agent and Model. **Default** shows the selected Model's configured thinking and inherits its settings unchanged. The menu comes from the server's model-aware controls: effort levels and token-budget presets depend on the model and installed adapter. Off appears only where supported; minimal effort does not necessarily mean Off. Unknown models keep Default and explain why overrides are unavailable.

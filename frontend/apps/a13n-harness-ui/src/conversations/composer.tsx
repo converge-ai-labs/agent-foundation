@@ -154,6 +154,7 @@ export async function submitDraft(
     return;
   const thinking = draft.thinking;
   const fast = draft.fast;
+  const environmentProfileId = draft.environmentProfileId;
   // Own the shared submission state before any asynchronous preparation so
   // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
   draft.submission = { kind: "pending", action };
@@ -197,6 +198,9 @@ export async function submitDraft(
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
+            ...(environmentProfileId
+              ? { environment_profile_id: environmentProfileId }
+              : {}),
             ...(thinking != null ? { thinking } : {}),
             ...(fast != null ? { fast } : {}),
           },
