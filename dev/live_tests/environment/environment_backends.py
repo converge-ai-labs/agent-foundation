@@ -60,12 +60,12 @@ class BackendTarget:
             {"name": "Backend matrix " + uuid4().hex, **self.template_config, **overrides},
         )
 
-    async def allocate(self, *, access="full", preparation="on_run"):
+    async def allocate(self, *, preparation="on_run"):
         journey = self.backend.journey
         if self.backend.kind in REMOTE:
-            body = {"provider_id": self.provider["id"], "configuration": {}, "state": self.state, "access": access}
+            body = {"provider_id": self.provider["id"], "configuration": {}, "state": self.state}
         else:
-            template = await self.template(access=access, preparation=preparation)
+            template = await self.template(preparation=preparation)
             body = {"template_id": template["id"]}
         resource = await journey.post(journey.base + "/environments", body)
         if self.backend.kind == "direct-local":
@@ -127,7 +127,6 @@ class EnvironmentBackend:
             template_config = {
                 "provider_id": provider["id"],
                 "configuration": configuration,
-                "access": "full",
                 "preparation": "on_run",
                 "retention": RETENTION,
             }

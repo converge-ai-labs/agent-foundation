@@ -56,7 +56,7 @@ async def test_live_client_mount_is_usable_by_the_next_model_request(
             actor=hook_actor(),
             run_id=run.id,
             idempotency_key="client-during-tool",
-            request=AddEnvironmentMountRequest(name="computer", environment_id=target.environment_id, access="full"),
+            request=AddEnvironmentMountRequest(name="computer", environment_id=target.environment_id),
         )
         # Acceptance cannot change the Environment in the middle of this tool iteration.
         assert not ctx.deps.environment.snapshot.mounts

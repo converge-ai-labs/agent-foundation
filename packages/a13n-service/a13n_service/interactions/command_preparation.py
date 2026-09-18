@@ -32,7 +32,7 @@ from a13n_service.secrets.agent_inputs import graph_secret_requirements, require
 from a13n_service.secrets.domain import AgentSecretBinding
 from a13n_service.storage import short_session, transaction
 
-from .environment_preview import input_environment_access
+from .environment_preview import has_input_environment
 from .errors import InteractionCommandError
 from .input import AcceptedAgentInput
 
@@ -64,7 +64,6 @@ class CommandInput:
         submitted: AgentInput,
         environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
         inherited_environment_id: str | Omitted | None = Omitted.UNSET,
-        environment_access_ceiling: str | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> PreparedCommandInput:
         """Freeze a selected invocation, then accept its input outside the transaction.
@@ -88,7 +87,6 @@ class CommandInput:
             frozen=frozen,
             environment=environment,
             inherited_environment_id=inherited_environment_id,
-            environment_access_ceiling=environment_access_ceiling,
             prepared_assets=prepared_assets,
         )
         return PreparedCommandInput(prepared, frozen, accepted)
@@ -129,25 +127,23 @@ class CommandInput:
         frozen: FrozenAgentInvocation,
         environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
         inherited_environment_id: str | Omitted | None = Omitted.UNSET,
-        environment_access_ceiling: str | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> AcceptedAgentInput:
         async with short_session(self._sessions) as database:
-            access = await input_environment_access(
+            available = await has_input_environment(
                 database,
                 actor=actor,
                 agent_id=frozen.agent_id,
                 agent_revision_id=frozen.agent_revision_id,
                 choice=environment,
                 inherited_id=inherited_environment_id,
-                access_ceiling=environment_access_ceiling,
             )
         return await self.accept_effective(
             actor=actor,
             workspace_id=workspace_id,
             submitted=submitted,
             effective=frozen.effective_config,
-            environment_access=access,
+            environment_available=available,
             prepared_assets=prepared_assets,
         )
 
@@ -158,7 +154,7 @@ class CommandInput:
         workspace_id: str,
         submitted: AgentInput,
         effective: EffectiveAgentConfig,
-        environment_access: str | None = None,
+        environment_available: bool = False,
         prepared_assets: Mapping[str, Asset] | None = None,
         retained_secret_bindings: tuple[AgentSecretBinding, ...] | None = None,
     ) -> AcceptedAgentInput:
@@ -197,8 +193,8 @@ class CommandInput:
                     model_characteristics=effective.resolved_model.characteristics,
                     max_input_bytes=effective.protocol.limits.max_input_bytes,
                     structured_content_schema=effective.protocol.input_data_schema,
-                    environment_writable=environment_access is not None and environment_access != "read_only",
-                    environment_bindings=(frozenset({"workspace"}) if environment_access is not None else frozenset()),
+                    environment_writable=environment_available,
+                    environment_bindings=(frozenset({"workspace"}) if environment_available else frozenset()),
                 ),
             )
         except AgentInputError as error:

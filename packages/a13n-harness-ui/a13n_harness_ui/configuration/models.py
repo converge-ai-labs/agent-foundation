@@ -26,6 +26,7 @@ from pydantic import (
 
 from a13n_harness_ui.content_plugins import InstalledContentPlugin
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
+from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit
 from a13n_harness_ui.subagents import BuiltinSubagentName
 
 _RESOURCE_ID = r"^[a-z][a-z0-9]*(?:-[a-z0-9]+)+$"
@@ -81,6 +82,7 @@ class ConfigurationModel(StrictModel):
 
 
 class ProcessConfiguration(ConfigurationModel):
+    max_object_bytes: ObjectSizeLimit = DEFAULT_MAX_OBJECT_BYTES
     pricing_auto_update: bool = True
     terminal_update_check: bool = True
     log_level: str = Field(default="INFO", min_length=1, max_length=32)

@@ -10,7 +10,7 @@ import pytest
 from ..infrastructure.round_two_lab import REPOSITORY, open_lab
 from .environment_backends import BACKENDS, REMOTE, EnvironmentBackend, provider_configuration
 from .service_cases import (
-    assert_access_policy,
+    assert_environment_tools,
     assert_managed_continuity,
     assert_template_preparation,
     execute,
@@ -47,21 +47,17 @@ async def environment_backend(request):
         yield backend
 
 
-async def test_environment_backend_tools_and_access(environment_backend):
+async def test_environment_backend_tools(environment_backend):
     backend, journey = environment_backend, environment_backend.journey
-    for access in ("read_only", "read_write", "full"):
-        async with backend.target() as target:
-            environment = await target.allocate(access=access)
-            await assert_access_policy(
-                journey,
-                environment,
-                access,
-                root=None if backend.kind in {"e2b", "docker"} else target.root,
-                read_text=target.read_text,
-            )
-            logger.info(
-                "Environment backend=%s access=%s passed real operation/effect assertions", backend.kind, access
-            )
+    async with backend.target() as target:
+        environment = await target.allocate()
+        await assert_environment_tools(
+            journey,
+            environment,
+            root=None if backend.kind in {"e2b", "docker"} else target.root,
+            read_text=target.read_text,
+        )
+        logger.info("Environment backend=%s passed real operation/effect assertions", backend.kind)
 
 
 async def test_environment_backend_templates_and_preparation(environment_backend):
@@ -80,19 +76,16 @@ async def test_environment_backend_templates_and_preparation(environment_backend
         return
     for preparation in ("on_run", "on_use"):
         async with backend.target() as target:
-            template = await target.template(access="read_write", preparation=preparation)
+            template = await target.template(preparation=preparation)
             revised = {
                 **target.template_config,
-                "access": "full",
                 "preparation": preparation,
                 "configuration": provider_configuration(
                     backend.kind, target.root.parent / "version-two", backend.settings
                 ),
             }
             roots = None if backend.kind in {"e2b", "docker"} else (target.root, target.root.parent / "version-two")
-            await assert_template_preparation(
-                journey, template, revised, preparation=preparation, initial_access="read_write", roots=roots
-            )
+            await assert_template_preparation(journey, template, revised, preparation=preparation, roots=roots)
             logger.info(
                 "Environment backend=%s preparation=%s retained exact revisions and prepared once",
                 backend.kind,

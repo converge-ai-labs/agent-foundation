@@ -150,11 +150,7 @@ class ChildRunAcceptanceService:
             )
             choice = await child_environment_choice(database, parent=parent_resource, policy=edge.environment)
             inherited_labels = merge_labels(session.labels)
-            child_run = (
-                prepared.run.model_copy(update={"environment_access": parent.environment_access})
-                if edge.environment.mode == "shared"
-                else prepared.run
-            ).model_copy(update={"labels": inherited_labels})
+            child_run = prepared.run.model_copy(update={"labels": inherited_labels})
             database.add(thread_record(prepared.thread.model_copy(update={"labels": inherited_labels})))
             child_record = await add_run_with_environment(
                 database,

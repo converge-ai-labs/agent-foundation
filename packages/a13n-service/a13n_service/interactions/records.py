@@ -13,6 +13,7 @@ from .models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 
 def session_record(value: Session) -> SessionRecord:
     return SessionRecord(
+        purpose=value.purpose.value,
         id=value.id,
         organization_id=value.organization_id,
         workspace_id=value.workspace_id,
@@ -75,7 +76,6 @@ def run_record(value: Run) -> RunRecord:
         agent_revision_id=value.agent_revision_id,
         effective_agent_config_digest=value.effective_agent_config_digest,
         environment_id=value.environment_id,
-        environment_access=value.environment_access,
         environment_use_started_at=value.environment_use_started_at,
         model_execution_observation_json=_json(value.model_execution_observation),
         connection_selections_json=list(value.connection_selections),

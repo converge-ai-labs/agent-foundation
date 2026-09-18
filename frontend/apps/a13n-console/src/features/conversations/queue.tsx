@@ -103,6 +103,7 @@ export function ThreadQueue({
   });
   if (!can("queued_submission.read")) return null;
   const items = query.data?.items ?? [];
+  const editable = thread.session_purpose === "debug" && thread.role === "root";
   function move(index: number, offset: number) {
     const ids = items.map((item) => item.queued_submission_id);
     [ids[index], ids[index + offset]] = [ids[index + offset]!, ids[index]!];
@@ -135,20 +136,22 @@ export function ThreadQueue({
               { value: "failed", label: t("Failed") },
             ]}
           />
-          {state === "queued" && can("queued_submission.consume") && (
-            <Button
-              variant="outline"
-              disabled={!canConsume || !items.length}
-              loading={consume.isPending}
-              onClick={() => consume.mutate()}
-              type="button"
-            >
-              <PlayIcon size={13} />
-              {t("Run next message")}
-            </Button>
-          )}
+          {editable &&
+            state === "queued" &&
+            can("queued_submission.consume") && (
+              <Button
+                variant="outline"
+                disabled={!canConsume || !items.length}
+                loading={consume.isPending}
+                onClick={() => consume.mutate()}
+                type="button"
+              >
+                <PlayIcon size={13} />
+                {t("Run next message")}
+              </Button>
+            )}
         </div>
-        {!canConsume && state === "queued" && (
+        {editable && !canConsume && state === "queued" && (
           <p>
             {t(
               "Queued messages can run after the current run finishes and pending feedback is resolved.",
@@ -198,59 +201,65 @@ export function ThreadQueue({
                 </Link>
               )}
               <div className={styles.inline}>
-                {state === "queued" && can("queued_submission.reorder") && (
-                  <>
-                    <Button
-                      aria-label={t("Move message up")}
-                      variant="outline"
-                      disabled={index === 0 || reorder.isPending}
-                      onClick={() => move(index, -1)}
-                      size="icon-sm"
-                      type="button"
-                    >
-                      {<ArrowUpIcon size={13} />}
-                    </Button>
-                    <Button
-                      aria-label={t("Move message down")}
-                      variant="outline"
-                      disabled={index === items.length - 1 || reorder.isPending}
-                      onClick={() => move(index, 1)}
-                      size="icon-sm"
-                      type="button"
-                    >
-                      {<ArrowDownIcon size={13} />}
-                    </Button>
-                  </>
-                )}
-                {state === "queued" && can("queued_submission.delete") && (
-                  <Confirm
-                    subject={item.queued_submission_id}
-                    onSuccess={refresh}
-                    title={t("Delete queued message")}
-                    description={t(
-                      "Remove this message from the queue permanently.",
-                    )}
-                    trigger={t("Delete")}
-                    danger
-                    action={() =>
-                      client.http.DELETE(
-                        "/api/v1/queued-submissions/{queued_submission_id}",
-                        {
-                          params: {
-                            path: {
-                              queued_submission_id: item.queued_submission_id,
+                {editable &&
+                  state === "queued" &&
+                  can("queued_submission.reorder") && (
+                    <>
+                      <Button
+                        aria-label={t("Move message up")}
+                        variant="outline"
+                        disabled={index === 0 || reorder.isPending}
+                        onClick={() => move(index, -1)}
+                        size="icon-sm"
+                        type="button"
+                      >
+                        {<ArrowUpIcon size={13} />}
+                      </Button>
+                      <Button
+                        aria-label={t("Move message down")}
+                        variant="outline"
+                        disabled={
+                          index === items.length - 1 || reorder.isPending
+                        }
+                        onClick={() => move(index, 1)}
+                        size="icon-sm"
+                        type="button"
+                      >
+                        {<ArrowDownIcon size={13} />}
+                      </Button>
+                    </>
+                  )}
+                {editable &&
+                  state === "queued" &&
+                  can("queued_submission.delete") && (
+                    <Confirm
+                      subject={item.queued_submission_id}
+                      onSuccess={refresh}
+                      title={t("Delete queued message")}
+                      description={t(
+                        "Remove this message from the queue permanently.",
+                      )}
+                      trigger={t("Delete")}
+                      danger
+                      action={() =>
+                        client.http.DELETE(
+                          "/api/v1/queued-submissions/{queued_submission_id}",
+                          {
+                            params: {
+                              path: {
+                                queued_submission_id: item.queued_submission_id,
+                              },
+                              query: { expected_version: item.version },
+                              header: commandHeaders(
+                                workspace.id,
+                                crypto.randomUUID(),
+                              ),
                             },
-                            query: { expected_version: item.version },
-                            header: commandHeaders(
-                              workspace.id,
-                              crypto.randomUUID(),
-                            ),
                           },
-                        },
-                      )
-                    }
-                  />
-                )}
+                        )
+                      }
+                    />
+                  )}
               </div>
             </article>
           ))

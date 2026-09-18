@@ -13,7 +13,7 @@ from a13n_service.agents.models import AgentRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent_scoped_collection
 from a13n_service.iam.authorization import AuthorizedAgentCollection
 from a13n_service.interactions.access import authorize_interaction, configuration_visibility
-from a13n_service.interactions.domain import RunStatus
+from a13n_service.interactions.domain import RunStatus, SessionPurpose
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.labels import LabelFilterValues, Labels, label_predicates, parse_label_filters
 from a13n_service.temporal import assume_utc
@@ -70,6 +70,7 @@ class SessionPreview(_Resource):
 
 
 class SessionResource(_Resource):
+    purpose: SessionPurpose
     id: str
     workspace_id: str
     created_at: datetime
@@ -380,6 +381,7 @@ async def _session_run_counts(
 
 def _session(record: SessionRecord, preview: SessionPreview | None, run_count: int | None) -> SessionResource:
     return SessionResource(
+        purpose=SessionPurpose(record.purpose),
         id=record.id,
         workspace_id=record.workspace_id,
         created_at=assume_utc(record.created_at),

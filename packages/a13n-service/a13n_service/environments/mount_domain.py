@@ -13,7 +13,7 @@ from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId
 from a13n_service.temporal import assume_utc
 
-from .domain import DomainModel, EnvironmentAccess
+from .domain import DomainModel
 
 if TYPE_CHECKING:
     from .mount_models import RunEnvironmentMountRecord
@@ -26,7 +26,6 @@ type MountApplicationStatus = Literal["pending", "preparing", "ready", "failed"]
 class AddEnvironmentMountRequest(DomainModel):
     name: MountName
     environment_id: ObjectId
-    access: EnvironmentAccess
 
     @field_validator("name")
     @classmethod
@@ -40,7 +39,6 @@ class RunEnvironmentMount(DomainModel):
     run_id: ObjectId
     name: MountName
     environment_id: ObjectId
-    access: EnvironmentAccess
     created_at: datetime
     accepting_principal: PrincipalRef
     use_started_at: datetime | None = None
@@ -58,9 +56,8 @@ class AcceptedRunMount:
     run_id: str
     name: str
     environment_id: str
-    access: str
     created_at: datetime
 
     @classmethod
     def from_record(cls, row: RunEnvironmentMountRecord) -> AcceptedRunMount:
-        return cls(row.run_id, row.name, row.environment_id, row.access, assume_utc(row.created_at))
+        return cls(row.run_id, row.name, row.environment_id, assume_utc(row.created_at))

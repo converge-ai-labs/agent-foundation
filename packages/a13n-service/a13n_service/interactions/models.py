@@ -45,6 +45,7 @@ from .domain import (
     RunWaitReason,
     SealedRunState,
     Session,
+    SessionPurpose,
     Thread,
     ThreadOriginKind,
     ThreadRole,
@@ -70,6 +71,7 @@ class SessionRecord(Base):
             ondelete="CASCADE",
         ),
         UniqueConstraint("organization_id", "id", name="uq_sessions_organization_id"),
+        CheckConstraint("purpose IN ('execution', 'debug')", name="session_purpose_valid"),
         ForeignKeyConstraint(
             ("configuration_draft_id", "organization_id", "id"),
             ("configuration_drafts.id", "configuration_drafts.organization_id", "configuration_drafts.session_id"),
@@ -93,6 +95,7 @@ class SessionRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(16), nullable=False, default="execution", server_default="execution")
     configuration_owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
     configuration_draft_id: Mapped[str | None] = mapped_column(String(72))
     labels: Mapped[dict[str, str]] = mapped_column(
@@ -103,6 +106,7 @@ class SessionRecord(Base):
 
     def to_resource(self) -> Session:
         return Session(
+            purpose=SessionPurpose(self.purpose),
             id=self.id,
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
@@ -246,7 +250,7 @@ class RunRecord(Base):
             name="configuration_binding_consistent",
         ),
         CheckConstraint(
-            "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
+            "environment_id IS NOT NULL OR environment_use_started_at IS NULL",
             name="environment_selection_valid",
         ),
         Index("ix_runs_labels", "labels", postgresql_using="gin", postgresql_ops={"labels": "jsonb_path_ops"}),
@@ -451,7 +455,6 @@ class RunRecord(Base):
     )
 
     environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"), index=True)
-    environment_access: Mapped[str | None] = mapped_column(String(16))
     environment_use_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
@@ -545,7 +548,6 @@ class RunRecord(Base):
             "parent_run_id": self.parent_run_id,
             "retry_of_run_id": self.retry_of_run_id,
             "environment_id": self.environment_id,
-            "environment_access": self.environment_access,
             "environment_use_started_at": optional_assume_utc(self.environment_use_started_at),
             "lineage_kind": RunLineageKind(self.lineage_kind),
             "trigger_type": self.trigger_type,

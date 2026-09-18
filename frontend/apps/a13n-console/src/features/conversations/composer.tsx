@@ -17,12 +17,14 @@ export function Composer({
   initial,
   submit,
   label,
+  placeholder,
   disabled = false,
   children,
 }: {
   initial?: Schema["AgentInput"];
   submit: (input: Schema["AgentInput"], key: string) => Promise<unknown>;
   label?: string;
+  placeholder?: string;
   disabled?: boolean;
   children?: React.ReactNode;
 }) {
@@ -137,7 +139,7 @@ export function Composer({
           unstyled
           className={styles.messageInput}
           aria-label={t("Message")}
-          placeholder={t("Message your agent…")}
+          placeholder={placeholder ?? t("Message your agent…")}
           value={text}
           onChange={(event) => {
             setText(event.target.value);

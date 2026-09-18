@@ -1,30 +1,23 @@
 import { EarlierMessages } from "./earlier-messages";
 import { Button, DisclosureSection } from "a13n-ui";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Link, useParams } from "react-router";
+import { useParams } from "react-router";
 
-import { ArrowDownIcon, SquareIcon } from "@phosphor-icons/react";
+import { ArrowDownIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { commandHeaders, data, type Schema } from "../../shared/api";
+import { type Schema } from "../../shared/api";
 import {
   ErrorNotice,
-  ErrorToast,
   Loading,
   StateBadge,
   Timestamp,
 } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
-import { useIdempotency } from "../../shared/idempotency";
-import {
-  conversationQueries,
-  invalidateConversation,
-  isActiveRun,
-  runPath,
-} from "./api";
+import { conversationQueries, isActiveRun } from "./api";
 import styles from "./conversations.module.css";
 import { HistoryTranscript } from "./history";
 import { InputContent, PresentedItems } from "./items";
@@ -32,9 +25,7 @@ import { useLiveRun } from "./live";
 import { MarkdownContent } from "../../shared/markdown";
 import { useAgent } from "../agents/queries";
 import { useRun } from "./queries";
-import { ThreadQueue } from "./queue";
-import { ConfigurationFeedback } from "../configuration-assistant/feedback";
-import { ContinueWithoutFeedback } from "../configuration-assistant/continuation";
+import { RunControls } from "./run-controls";
 
 export function RunPage() {
   const { runId = "", threadId = "", sessionId = "" } = useParams();
@@ -63,8 +54,7 @@ export function RunContent({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    { workspace, can, basePath } = useWorkspace(),
-    cache = useQueryClient(),
+    { workspace } = useWorkspace(),
     queries = conversationQueries(client, workspace.id);
   const live = useLiveRun(runId);
   const runQuery = useRun(runId);
@@ -76,7 +66,6 @@ export function RunContent({
     ...queries.thread(run?.thread_id ?? ""),
     enabled: !!run,
   });
-  const pending = useQuery(queries.pending(runId));
   const thread = threadQuery.data;
   useEffect(() => {
     const content = transcript.current;
@@ -101,55 +90,6 @@ export function RunContent({
     };
   }, [!!run, !!thread, threadId]);
 
-  const currentRun = useRun(thread?.current_run_id);
-  const headRun = useRun(thread?.head_run_id);
-  const interruptKey = useIdempotency();
-  const interrupt = useMutation({
-    mutationFn: () => {
-      const body = {
-        expected_thread_version: thread!.version,
-        expected_run_version: run!.version,
-      };
-      return client.http
-        .POST("/api/v1/runs/{run_id}/interrupt", {
-          params: {
-            path: { run_id: runId },
-            header: commandHeaders(workspace.id, interruptKey.forBody(body)),
-          },
-          body,
-        })
-        .then(data);
-    },
-    onSuccess: () => {
-      interruptKey.reset();
-      void invalidateConversation(cache, workspace.id, {
-        sessionId,
-        threadId,
-        runId,
-      });
-    },
-  });
-  const retryKey = useIdempotency();
-  const retry = useMutation({
-    mutationFn: () => {
-      const body = {
-        expected_thread_version: thread!.version,
-      };
-      return client.http
-        .POST("/api/v1/runs/{run_id}/retry", {
-          params: {
-            path: { run_id: runId },
-            header: commandHeaders(workspace.id, retryKey.forBody(body)),
-          },
-          body,
-        })
-        .then(data);
-    },
-    onSuccess: (receipt) => {
-      retryKey.reset();
-      configuration?.accepted(receipt);
-    },
-  });
   if (runQuery.isPending || threadQuery.isPending)
     return <Loading variant="detail" />;
   if (!run || !thread)
@@ -168,10 +108,7 @@ export function RunContent({
         error={new Error(t("This run does not belong to this thread."))}
       />
     );
-  const current = thread.current_run_id === runId,
-    active = isActiveRun(run.status),
-    waiting =
-      current && thread.head_run_id === runId && run.status === "waiting";
+  const active = isActiveRun(run.status);
   return (
     <div className={styles.run}>
       <header className={styles.runHeader}>
@@ -183,7 +120,6 @@ export function RunContent({
         </div>
       </header>
       <ErrorNotice error={runQuery.error ?? threadQuery.error} />
-      <ErrorToast error={interrupt.error ?? retry.error} />
       {live.gap && (
         <p role="status" className={styles.notice}>
           {live.incomplete
@@ -238,11 +174,7 @@ export function RunContent({
           {run.failure != null && (
             <section className={styles.failure}>
               <h3>{t("The agent could not finish this run")}</h3>
-              <p>
-                {t(
-                  "Your messages are saved. Review the details or retry this run.",
-                )}
-              </p>
+              <p>{t("Your messages are saved. Review the error details.")}</p>
               <DisclosureSection title={<>{t("Error details")}</>}>
                 <JsonView value={run.failure} />
               </DisclosureSection>
@@ -259,34 +191,6 @@ export function RunContent({
           )}
         </PresentedItems>
       </div>
-      {waiting && run.sealed_state_digest_sha256 && (
-        <>
-          <ErrorNotice error={pending.error} />
-          {pending.data && (
-            <ConfigurationFeedback
-              key={run.sealed_state_digest_sha256}
-              run={run}
-              thread={thread}
-              actions={pending.data.items}
-              accepted={(receipt) => {
-                configuration?.accepted(receipt);
-                void invalidateConversation(cache, workspace.id, {
-                  sessionId,
-                  threadId,
-                  runId,
-                });
-              }}
-            />
-          )}
-          {configuration && can("run.continue") && can("run.feedback") && (
-            <ContinueWithoutFeedback
-              run={run}
-              thread={thread}
-              accepted={configuration.accepted}
-            />
-          )}
-        </>
-      )}
       {!following && (
         <Button
           className={styles.jumpToLatest}
@@ -308,71 +212,7 @@ export function RunContent({
           {t("Jump to latest")}
         </Button>
       )}
-      {configuration &&
-        current &&
-        ["failed", "cancelled"].includes(run.status) &&
-        can("run.retry") && (
-          <Button
-            size="sm"
-            variant="outline"
-            loading={retry.isPending}
-            onClick={() => retry.mutate()}
-            type="button"
-          >
-            {t("Retry run")}
-          </Button>
-        )}
-      {((current && active && can("run.interrupt")) || !current) && (
-        <div
-          className={styles.composerDock}
-          data-floating-controls={(current && active) || undefined}
-        >
-          {current && active && can("run.interrupt") && (
-            <div className={styles.dockControls}>
-              <Button
-                size="sm"
-                variant="ghost"
-                loading={interrupt.isPending}
-                onClick={() => interrupt.mutate()}
-                type="button"
-              >
-                <SquareIcon size={13} />
-                {t("Stop")}
-              </Button>
-            </div>
-          )}
-          {!current && (
-            <p className={styles.notice}>
-              {t("You are viewing a historical run.")}{" "}
-              {thread.current_run_id && (
-                <Link
-                  to={runPath(basePath, {
-                    session_id: thread.session_id,
-                    thread_id: thread.id,
-                    run_id: thread.current_run_id,
-                  })}
-                >
-                  {t("Open current run")}
-                </Link>
-              )}
-            </p>
-          )}
-        </div>
-      )}
-      {configuration?.composer}
-      {!configuration && (
-        <ThreadQueue
-          thread={thread}
-          canConsume={
-            (!thread.current_run_id ||
-              (!!currentRun.data &&
-                !isActiveRun(currentRun.data.status) &&
-                currentRun.data.status !== "waiting")) &&
-            (!thread.head_run_id ||
-              (!!headRun.data && headRun.data.status !== "waiting"))
-          }
-        />
-      )}
+      <RunControls run={run} thread={thread} configuration={configuration} />
     </div>
   );
 }

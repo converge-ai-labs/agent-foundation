@@ -10,7 +10,7 @@ Connection, durable Run/mount acceptance, and Worker application are separate co
 
 | Concern                                                                                                  | Owner                                                                                                                |
 | -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| External identity, Provider, lifecycle, access and retention                                             | [Environment Management](29-environment-management.md)                                                               |
+| External identity, Provider, lifecycle and retention                                                     | [Environment Management](29-environment-management.md)                                                               |
 | Registration, tickets, WebSocket/EIP Session, connection observations, Run/mount APIs and relay dispatch | Control, under this contract                                                                                         |
 | Accepted associations and application observations                                                       | PostgreSQL, under this contract                                                                                      |
 | Connection placement, use leases and operation transport                                                 | Redis, under this contract                                                                                           |
@@ -71,7 +71,7 @@ flowchart TB
 
 ### Environment and connection
 
-Registration uses the existing external `environments` resource: Workspace, Provider, access ceiling, typed connection configuration and validated Provider state containing `device_id`, with no TemplateRevision. Existing canonical-target reuse rules apply; EIP input cannot retarget a registered identity.
+Registration uses the existing external `environments` resource: Workspace, Provider, typed connection configuration and validated Provider state containing `device_id`, with no TemplateRevision. Existing canonical-target reuse rules apply; EIP input cannot retarget a registered identity.
 
 The client retains the Service origin, `environment_id` and native identity across reconnects, Runs and Sessions. Disconnect, ticket expiry and idleness do not delete this record; explicit removal retains normal reference checks. Reconnect does not advance backing `generation`. Lifecycle operation fields remain lifecycle coordination, while credentials and connection placement stay outside portable Provider state.
 
@@ -81,18 +81,18 @@ A fresh authenticated connection actively replaces the existing owner through [a
 
 ### Live Run mounts
 
-`Run.environment_id`, `environment_working_directory` and `environment_access` form the fixed primary binding. Additional mounts are separately authorized rows in `run_environment_mounts`:
+`Run.environment_id`, `environment_working_directory` form the fixed primary binding. Additional mounts are separately authorized rows in `run_environment_mounts`:
 
-| Conceptual field                                | Meaning                                                                            |
-| ----------------------------------------------- | ---------------------------------------------------------------------------------- |
-| `run_id`, `name`                                | Unique mount identity within a Run                                                 |
-| `environment_id`, `working_directory`, `access` | Same-Workspace target, fixed Session working directory and accepted access ceiling |
-| `use_started_at`                                | Retained first-use evidence, not a live lease                                      |
-| `created_at`, accepting Principal               | Acceptance order and audit provenance                                              |
-| `applied_attempt_id`, `applied_attempt_fence`   | Authority of the application observation                                           |
-| `application_status`, `observed_at`, safe error | Bounded loading observation                                                        |
+| Conceptual field                                | Meaning                                                |
+| ----------------------------------------------- | ------------------------------------------------------ |
+| `run_id`, `name`                                | Unique mount identity within a Run                     |
+| `environment_id`, `working_directory`           | Same-Workspace target, fixed Session working directory |
+| `use_started_at`                                | Retained first-use evidence, not a live lease          |
+| `created_at`, accepting Principal               | Acceptance order and audit provenance                  |
+| `applied_attempt_id`, `applied_attempt_fence`   | Authority of the application observation               |
+| `application_status`, `observed_at`, safe error | Bounded loading observation                            |
 
-Mount associations are append-only; their identity, target, working directory and access are immutable after acceptance. The primary is not duplicated in this table. It occupies `workspace`; additions use `/environment/{name}` and cannot shadow another mount. Mount inputs include an authorized Device working directory under [Environment selection](29-environment-management.md#thread-defaults-and-run-selection), but no credentials or socket destinations. Additions neither broaden existing access nor change `EffectiveAgentConfig`; unmount, replacement and default switching are outside this API.
+Mount associations are append-only; their identity, target, working directory are immutable after acceptance. The primary is not duplicated in this table. It occupies `workspace`; additions use `/environment/{name}` and cannot shadow another mount. Mount inputs include an authorized Device working directory under [Environment selection](29-environment-management.md#thread-defaults-and-run-selection), but no credentials or socket destinations. Additions neither broaden existing access nor change `EffectiveAgentConfig`; unmount, replacement and default switching are outside this API.
 
 Without a primary, the first accepted addition becomes the local default when applied; later additions remain named-only even if ready earlier. Primary fields stay null. `created_at` is assigned under the Run acceptance lock and strictly increases for successive additions, including timestamp ties or clock rollback. It preserves acceptance order for default selection and reads, not a client concurrency precondition. Recovery and successor copies preserve the relative order.
 
@@ -210,7 +210,7 @@ The subsequent short PG transaction revalidates durable authority, target, appli
 
 The existing [Start and Continue interfaces](18-agent-control-input-and-continuation.md#start-and-continue) accept an existing-Environment selection containing `environment_id` and optional `working_directory` and retain their normal Agent input, authorization, idempotency, Thread-version and queue rules. Queued submissions repeat the online check when actually accepted; waiting continuations and retries retain their selection restrictions.
 
-Before the acceptance transaction, Control resolves an omitted working directory from Device info under [Environment selection](29-environment-management.md#thread-defaults-and-run-selection). Acceptance fixes the complete primary target/working-directory/access binding without Provider I/O inside the transaction or an additional-mount row. Worker reconstructs its proxy through ordinary primary preparation. Later disconnection follows bounded preparation/recovery rules and cannot silently remove the requested primary.
+Before the acceptance transaction, Control resolves an omitted working directory from Device info under [Environment selection](29-environment-management.md#thread-defaults-and-run-selection). Acceptance fixes the complete primary target/working-directory binding without Provider I/O inside the transaction or an additional-mount row. Worker reconstructs its proxy through ordinary primary preparation. Later disconnection follows bounded preparation/recovery rules and cannot silently remove the requested primary.
 
 ```mermaid
 sequenceDiagram
@@ -244,7 +244,7 @@ sequenceDiagram
 
 ### Addition to an accepted or executing Run
 
-The mount API accepts `name`, `environment_id`, optional `working_directory` and `access`, with `Idempotency-Key` for retries. It requires no mount-set expected version or ETag. It requires Run-control authority, `environment.use` for both caller and persisted Run Principal, same-Workspace ownership, an enabled Provider and a permitted access ceiling. Only the Thread's current accepted/running Run allows additions.
+The mount API accepts `name`, `environment_id`, optional `working_directory`, with `Idempotency-Key` for retries. It requires no mount-set expected version or ETag. It requires Run-control authority, `environment.use` for both caller and persisted Run Principal, same-Workspace ownership, an enabled Provider. Only the Thread's current accepted/running Run allows additions.
 
 Before the acceptance transaction, Control resolves an omitted working directory from Device info. Acceptance locks/revalidates Thread and Run, checks the unique `(run_id, name)`, and commits the explicit working directory, pending association and idempotency evidence before sending a best-effort reconcile wake-up. Different names can be accepted concurrently through this serialized transaction without a collection-version conflict. An existing name returns a conflict unless this is the original idempotent replay. A concurrent waiting/terminal transition either rejects acceptance or follows a committed association retained as history.
 
@@ -269,7 +269,7 @@ Registration, Run and mount mutations follow their separate [idempotency contrac
 
 Control sends bounded, payload-free Thread wake-ups after mount commits and online publication to Runs already associated through primary or additional mounts. The watcher rereads accepted associations from PG but never mutates Harness. At each model boundary, Worker captures the accepted rows and compares their `(run_id, name)` identities with its locally installed mounts, preparing missing associations or retrying unavailable ones under the existing policy. Ready observations in PG do not substitute for local installation. Mandatory reconciliation at startup, takeover, tool-batch, checkpoint, outcome and each root model-request boundary makes lost/duplicate wake-ups harmless to accepted facts.
 
-At the model boundary, Worker marks an addition preparing, rechecks presence, acquires Attempt/binding use and validates capabilities/access outside PG transactions. Immediately before local publication it revalidates the Attempt fence and accepted association. Routes, effective tools/schema and trusted Environment context advance together before request assembly. An initially empty Run has the stable facade and dynamic capability from startup but exposes no premature tools; existing capability restrictions still apply.
+At the model boundary, Worker marks an addition preparing, rechecks presence, acquires Attempt/binding use and validates Provider capabilities outside PG transactions. Immediately before local publication it revalidates the Attempt fence and accepted association. Routes, effective tools/schema and trusted Environment context advance together before request assembly. An initially empty Run has the stable facade and dynamic capability from startup but exposes no premature tools; existing capability restrictions still apply.
 
 Publication occurs between complete root iterations, after the selected tool batch. It cannot alter an in-flight model request or run inside compaction, nested calls or concurrent inline execution. A mount accepted after the boundary snapshot waits for the next boundary; a finishing Run may never apply it.
 
@@ -294,7 +294,7 @@ sequenceDiagram
     participant Redis
     participant Worker as Current Worker
 
-    Caller->>Control: POST /runs/{id}/environment-mounts<br/>name, environment_id, working_directory, access and Idempotency-Key
+    Caller->>Control: POST /runs/{id}/environment-mounts<br/>name, environment_id, working_directory and Idempotency-Key
     Control->>DB: Check Run control and Environment use authority
     Control->>Redis: Observe current initialized online lease
     alt Offline or connecting
@@ -312,7 +312,7 @@ sequenceDiagram
         Worker->>DB: Publish preparing under current Attempt fence
         Worker->>Redis: Recheck online presence and acquire Attempt/binding use
         alt Online and preparation succeeds
-            Worker->>Worker: Prepare proxy and validate capabilities/access
+            Worker->>Worker: Prepare proxy and validate Provider capabilities
             Worker->>DB: Revalidate current Attempt and accepted association
             Worker->>Worker: Publish routes, tools and Environment context together
             Worker->>DB: Publish this mount's ready observation
@@ -333,7 +333,7 @@ Acceptance alone acquires no environment-use slot. Each active Attempt/binding u
 
 Recovery reloads complete accepted PG bindings, reauthorizes them and opens fresh Sessions/proxies. Checkpoint state cannot invent mounts; reconstruction uses the retained association's working directory and current validated target state, never mutable Thread or Device defaults. Old handles and readiness do not transfer to another Attempt. Same-runtime short reattachment is limited to the same Session and generation under still-valid use authority; it neither imports resources nor replays requests.
 
-Waiting seals the association set. Retry and state-preserving waiting successors copy it with its exact working directories and ceilings and acquire fresh use. Unrelated ordinary Runs, forks and independently scheduled children do not inherit additions; inline children borrow the parent facade. Additions cannot retroactively satisfy acceptance-time primary requirements for inputs or managed Skills. Usage, retention and cleanup account for every acquired primary/additional mount.
+Waiting seals the association set. Retry and state-preserving waiting successors copy it with its exact working directories and acquire fresh use. Unrelated ordinary Runs, forks and independently scheduled children do not inherit additions; inline children borrow the parent facade. Additions cannot retroactively satisfy acceptance-time primary requirements for inputs or managed Skills. Usage, retention and cleanup account for every acquired primary/additional mount.
 
 ## Redis Stream Operation Relay
 

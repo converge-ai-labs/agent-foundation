@@ -129,7 +129,6 @@ def upgrade() -> None:
         sa.Column("provider_id", sa.String(length=72), nullable=False),
         sa.Column("template_revision_id", sa.String(length=72), nullable=True),
         sa.Column("ownership", sa.String(length=16), nullable=False),
-        sa.Column("access", sa.String(length=16), nullable=False),
         sa.Column("external_configuration", sa.JSON(), nullable=True),
         sa.Column("state", sa.JSON(), nullable=True),
         sa.Column("target_identity", sa.String(length=256), nullable=True),

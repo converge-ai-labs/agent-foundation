@@ -24,7 +24,6 @@ credential = { api_key = "" }
 [[environment_templates]]
 name = "E2B base"
 provider = "E2B (local)"
-access = "full"
 preparation = "on_run"
 stop_after = 3600
 delete_after = 86400

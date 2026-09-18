@@ -205,7 +205,13 @@ class SealedRunState(StrictModel):
     committed_by_run_attempt_id: ObjectId | None = None
 
 
+class SessionPurpose(StrEnum):
+    execution = "execution"
+    debug = "debug"
+
+
 class Session(StrictModel):
+    purpose: SessionPurpose = SessionPurpose.execution
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
@@ -264,7 +270,6 @@ class Run(StrictModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId | None
     environment_id: ObjectId | None = None
-    environment_access: Literal["read_only", "read_write", "full"] | None = None
     environment_use_started_at: UtcDateTime | None = None
     effective_agent_config_digest: Sha256Digest
     model_execution_observation: ModelExecutionObservation
@@ -496,7 +501,6 @@ def accepted_run(
     agent_id: ObjectId,
     agent_revision_id: ObjectId | None,
     environment_id: ObjectId | None = None,
-    environment_access: Literal["read_only", "read_write", "full"] | None = None,
     effective_agent_config_digest: Sha256Digest,
     model_execution_observation: ModelExecutionObservation,
     connection_selections: tuple[JsonObject, ...] = (),
@@ -532,7 +536,6 @@ def accepted_run(
         agent_id=agent_id,
         agent_revision_id=agent_revision_id,
         environment_id=environment_id,
-        environment_access=environment_access,
         effective_agent_config_digest=effective_agent_config_digest,
         model_execution_observation=model_execution_observation,
         connection_selections=connection_selections,

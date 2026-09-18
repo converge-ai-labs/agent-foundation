@@ -19,9 +19,11 @@ pytestmark = pytest.mark.anyio
 def _object_store(
     root: Path,
     *,
-    max_object_bytes: int = 64 * 1024 * 1024,
+    max_object_bytes: int | None = None,
 ) -> tuple[ImmutableObjectStore, StorageLayout]:
-    settings = StorageSettings(data_root=root, max_object_bytes=max_object_bytes)
+    settings = StorageSettings(data_root=root)
+    if max_object_bytes is not None:
+        settings = StorageSettings(data_root=root, max_object_bytes=max_object_bytes)
     layout = StorageLayout.from_root(settings.data_root)
     layout.prepare()
     return ImmutableObjectStore(layout, settings, producer_release="test-release"), layout
@@ -113,6 +115,11 @@ async def test_object_publish_rejects_invalid_or_excessive_payloads(tmp_path: Pa
             payload={"value": "x" * 2048},
         )
     assert excessive.value.code == "object_too_large"
+    assert excessive.value.details["actual_bytes"] > 2048
+    assert excessive.value.details["max_object_bytes"] == 1024
+    assert "process.max_object_bytes" in str(excessive.value)
+    assert not list(tmp_path.rglob("*.json.zst"))
+    assert not list((tmp_path / "staging").iterdir())
 
     with pytest.raises(StoreIntegrityError) as unknown_codec:
         await store.publish(
@@ -219,3 +226,19 @@ async def test_object_read_checks_declared_size_before_decompression(tmp_path: P
     with pytest.raises(ObjectIntegrityError) as excessive:
         await reader.read(envelope.ref)
     assert excessive.value.code == "object_too_large"
+    assert excessive.value.details["actual_bytes"] > 2048
+    assert excessive.value.details["max_object_bytes"] == 1024
+    assert "process.max_object_bytes" in str(excessive.value)
+    assert await writer.read(envelope.ref) == envelope
+
+
+async def test_default_store_round_trips_continuation_above_previous_limit(tmp_path: Path) -> None:
+    store, _ = _object_store(tmp_path)
+    payload = {"display_history": "x" * (64 * 1024 * 1024)}
+    envelope = await store.publish(
+        object_kind=ObjectKind.continuation,
+        object_schema_version="1",
+        payload=payload,
+    )
+    reopened, _ = _object_store(tmp_path)
+    assert (await reopened.read(envelope.ref)).payload == payload
