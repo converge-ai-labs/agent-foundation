@@ -79,7 +79,7 @@ async def main() -> None:
         configuration.parent.mkdir(exist_ok=True)
         setup = "--setup" in sys.argv
         if not setup:
-            timeout = 30 if "--slow" in sys.argv else 2
+            timeout = 120 if "--hitl" in sys.argv else 30 if "--slow" in sys.argv else 2
             configuration.write_text(
                 'schema_version: "1"\ndefaults:\n  agent: agent-fixture\n'
                 f"tools:\n  interaction_timeout_seconds: {timeout}\n",
@@ -99,11 +99,117 @@ async def main() -> None:
             path.parent.mkdir(exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
+        if "--hitl" in sys.argv:
+            from a13n_harness_ui.composition.reconstruction import AgentReconstructor
+            from pydantic_ai.capabilities import Capability
+            from pydantic_ai.tools import ToolDefinition
+            from pydantic_ai.toolsets import ExternalToolset, FunctionToolset
+
+            configuration.write_text(
+                configuration.read_text()
+                + "security:\n  shell_review:\n    enable: true\n    model: model-fixture\n    risk_threshold: high\n",
+                encoding="utf-8",
+            )
+            agent_path = configuration.parent / "agents/fixture.yaml"
+            agent_path.write_text(
+                agent_path.read_text()
+                + "  - capability: dynamic_environment\n"
+                + "    configuration: {files_enabled: true, shell_enabled: true}\n",
+                encoding="utf-8",
+            )
+            reconstruct = AgentReconstructor.reconstruct
+
+            def with_hitl_tools(self, composition, *, root_capabilities=(), **kwargs):
+                tools = FunctionToolset(id="hitl-fixture")
+
+                @tools.tool_plain(requires_approval=True)
+                def publish_fixture(value: str) -> str:
+                    return f"Published: {value}"
+
+                external = ExternalToolset(
+                    [
+                        ToolDefinition(
+                            name="lookup_fixture", parameters_json_schema={"type": "object", "properties": {}}
+                        )
+                    ],
+                    id="hitl-external",
+                )
+                return reconstruct(
+                    self,
+                    composition,
+                    root_capabilities=(*root_capabilities, Capability(id="hitl-fixture", toolsets=(tools, external))),
+                    **kwargs,
+                )
+
+            AgentReconstructor.reconstruct = with_hitl_tools
+
         attempts = 0
 
         async def model(messages, info):
             nonlocal attempts
             attempts += 1
+            if "--hitl" in sys.argv:
+                if not info.function_tools:
+                    yield {
+                        0: DeltaToolCall(
+                            name=info.output_tools[0].name,
+                            json_args='{"risk":"high","reason":"Writes a fixture marker"}',
+                        )
+                    }
+                    return
+                prompts = [
+                    part.content
+                    for message in messages
+                    if isinstance(message, ModelRequest)
+                    for part in message.parts
+                    if isinstance(part, UserPromptPart)
+                ]
+                returns = [
+                    part
+                    for message in messages
+                    if isinstance(message, ModelRequest)
+                    for part in message.parts
+                    if isinstance(part, ToolReturnPart)
+                ]
+                if returns:
+                    yield "Handled: " + " | ".join(str(part.content) for part in returns)
+                elif any("shell review" in str(prompt) for prompt in prompts):
+                    marker = root / "approved-marker.txt"
+                    yield {
+                        0: DeltaToolCall(
+                            name="shell_exec",
+                            tool_call_id="shell-review",
+                            json_args=json.dumps({"command": f'echo reviewed > "{marker}"'}),
+                        )
+                    }
+                else:
+                    yield {
+                        0: DeltaToolCall(
+                            name="publish_fixture",
+                            tool_call_id="generic-approval",
+                            json_args=json.dumps({"value": "draft"}),
+                        ),
+                        1: DeltaToolCall(name="lookup_fixture", tool_call_id="external-result", json_args="{}"),
+                        2: DeltaToolCall(
+                            name="ask_user_question",
+                            tool_call_id="mixed-question",
+                            json_args=json.dumps(
+                                {
+                                    "questions": [
+                                        {
+                                            "header": "Direction",
+                                            "question": "Where?",
+                                            "options": [
+                                                {"label": "Left", "description": "Go left"},
+                                                {"label": "Right", "description": "Go right"},
+                                            ],
+                                        }
+                                    ]
+                                }
+                            ),
+                        ),
+                    }
+                return
             if "--fail" in sys.argv and not any(
                 "Continue completing the previous task." in str(part.content)
                 for message in messages
@@ -233,7 +339,11 @@ async def main() -> None:
                     await asyncio.sleep(0.01)
             print(
                 json.dumps(
-                    {"origin": f"http://127.0.0.1:{sock.getsockname()[1]}", "native_root": str(native_root.resolve())}
+                    {
+                        "origin": f"http://127.0.0.1:{sock.getsockname()[1]}",
+                        "native_root": str(native_root.resolve()),
+                        "fixture_root": str(root.resolve()),
+                    }
                 ),
                 flush=True,
             )

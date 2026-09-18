@@ -28,7 +28,15 @@ The slim rail at the left of Chat has one mark per ordinary input. Hover or focu
 
 After a turn completes and its result is saved, **Execution details** collapses the intermediate output, including reasoning, tools, progress messages, and steering. The original input and final answer stay visible. A saved closing answer also stays visible when you manually collapse an older turn without a completion marker; displaying that answer does not classify the turn as successful. Expand the disclosure to inspect the process; **Load earlier steps** fetches any process history not yet loaded. Running, failed, cancelled, and older turns without a recorded final boundary remain expanded by default. Pending questions and approvals remain actionable outside the disclosure. Navigation and expansion are personal display choices, not changes to the Agent's context or another participant's view.
 
-## Questions and approval timeouts
+## Pending questions, approvals, and external results
+
+The pending-decision form handles structured questions, generic tool approvals, and externally supplied tool results. Shell approvals show the risk assessment and reason before the command, working directory, and selected mount. Environment variable values are hidden in argument previews. Other approvals show the tool, arguments, and available review context without requiring a tool-specific form.
+
+For a single approval, choose **Approve once** or **Deny**, optionally entering a denial reason first. **Edit arguments** appears only when the request permits replacements; bound shell approvals must keep their original arguments. To change such a command, deny it with an explanation and let the Agent propose another. Arguments omitted by the server cannot be approved from the form; missing risk assessments alone do not prevent a decision. Approval is not confirmation that execution succeeded.
+
+Multiple or mixed requests must be answered together using **Submit responses**. **Provide a result** accepts the actual external tool result as JSON; it does not execute that tool in your browser. Enter `null` explicitly if that is the intended result—an empty editor is not a result. No approval is selected automatically. If submission acknowledgement is lost, inspect the current request instead of assuming failure; the browser never resends the decision automatically.
+
+### Questions and approval timeouts
 
 New pending root questions, approvals, and external-result requests share one server-owned response window per batch, controlled by `tools.interaction_timeout_seconds` (default **120 seconds**). The workbench displays the remaining time. Submit the complete form before it expires; partial selections and typed but unsubmitted answers are not sent to the Agent.
 

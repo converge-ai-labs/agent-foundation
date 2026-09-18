@@ -99,6 +99,14 @@ All participants observe the same root operation, child activity, pending reques
 
 Approval or question responses target the exact pending request/continuation. Competing responses cannot both resolve that same request; a stale response receives a conflict or already-resolved result and refreshes current state. Cancel and steer target the exact current receipt and cannot accidentally affect a later Run.
 
+### Decision Forms
+
+The browser renders all three App decision kinds: structured questions, tool approvals, and external results. Approvals show available target, reason, risk, and arguments, with generic presentation for tools without a dedicated view. Shell approvals use the stable tool identity in captured approval metadata to show the command, working directory, selected mount, and review assessment. Environment argument previews show variable names rather than values. Review text is inert text, not executable markup; internal approval bindings are not user-facing evidence.
+
+A single approval exposes direct **Approve once** and **Deny** actions with an optional denial reason. Replacement arguments require the explicit App capability and a complete JSON object. Mixed or multiple requests retain local selections until the entire batch is answered and explicitly submitted together. No action is preselected. External results require explicit valid JSON, including explicit `null` when intended; an empty editor is not a result and does not execute an external tool. Existing omission and override restrictions follow the [App decision projection](../05-runtime-subagents-and-surfaces.md#root-deferred-response).
+
+Submitted decisions are disabled while pending or accepted. Unknown acknowledgements are disclosed without replay; conflicts refetch the authoritative request. An accepted response receipt is not evidence that the tool executed or its result was saved. Browser deadlines remain advisory under the App-owned timeout contract.
+
 Execution continues independently of browser presence. A browser may close its subscription without cancelling the Run. Reopening the Thread obtains current App state and resumes supported live delivery; retained checkpoints, not browser transcripts, authorize continuation.
 
 ## Failure and Reconnect Behavior

@@ -36,7 +36,7 @@ def approval_panel(source: str, theme: ResolvedTheme) -> Panel:
     tool.append("  ·  " + value("position"), style=f"not bold {muted}")
     content.append(tool)
     if value("risk") or value("reason") or value("error"):
-        title = "Shell review" if value("risk") or value("error") else "Approval reason"
+        title = "Shell review" if value("review_kind") == "shell" else "Approval reason"
         content.extend((Text(""), Text(title, style=f"bold {heading}")))
         if value("error"):
             content.append(Text(value("error"), style=accent))
@@ -49,6 +49,8 @@ def approval_panel(source: str, theme: ResolvedTheme) -> Panel:
             reason = Text("Reason  ", style=muted)
             reason.append(value("reason"))
             content.append(reason)
+    if value("target"):
+        content.append(Text("Target  " + value("target"), style=muted))
     for key, label, lexer in (("command", "Command", "bash"), ("arguments", "Arguments", "json")):
         if value(key):
             content.extend((Text(""), Text(label, style=f"bold {heading}")))

@@ -206,7 +206,7 @@ def test_question_and_approval_batch_is_typed_and_complete() -> None:
     assert interaction.accept("2") is None
     assert interaction.accept("1,2") is None
     assert interaction.accept("review") == "review"
-    for invalid in ("", "please do it", "0", "4"):
+    for invalid in ("", "please do it", "0", "5"):
         with pytest.raises(ValueError):
             interaction.accept(invalid)
     result = interaction.accept("no Not this command")
@@ -656,7 +656,8 @@ def test_generic_approval_panel_preserves_non_object_arguments(arguments) -> Non
 def test_approval_panel_handles_omitted_arguments_without_losing_reason_or_choices() -> None:
     text = _shell_approval(arguments=None, arguments_omitted=True).prompt()
     assert "Reason: Deletes a report" in text
-    assert "/review shell-call" in text and "Approve once" in text
+    assert "/review shell-call" in text and "Approve once" not in text
+    assert "1. Deny" in text and "Approval is unavailable" in text
 
 
 @pytest.mark.parametrize("theme_name", ["dark", "light"])
@@ -871,3 +872,88 @@ async def test_terminal_decision_editor_keyboard_back_validation_and_submit(tmp_
                 shell.app.exit()
             await task
             shell.renderer.transcript.close()
+
+
+@pytest.mark.parametrize("answer", ["approve", "yes", "y", "edit arguments"])
+def test_omitted_approval_cannot_be_authorized_by_text_alias(answer) -> None:
+    interaction = _shell_approval(arguments=None, arguments_omitted=True)
+    with pytest.raises(ValueError):
+        interaction.accept(answer)
+    assert interaction.responses == []
+    selection = interaction.selection()
+    assert selection is not None
+    assert [choice.value for choice in selection.choices] == ["deny", "deny with reason"]
+    response = interaction.accept("1")
+    assert isinstance(response, ThreadDeferredResponse)
+    assert isinstance(response.responses[0], ApprovalDecision)
+    assert response.responses[0].approved is False
+
+
+def test_terminal_generic_approval_reads_presentation_without_shell_label() -> None:
+    from a13n_harness_ui.interactive.approvals import approval_panel
+    from a13n_harness_ui.interactive.theme import resolve_theme
+    from rich.console import Console
+
+    interaction = _shell_approval(
+        tool_name="publish",
+        arguments={"environment": {"TOKEN": "not-for-display"}},
+        metadata={
+            "a13n.harness.tool-approval": {"tool_id": "custom.publish", "binding": "private-binding"},
+            "a13n.harness.approval-presentation": {
+                "target": "staging",
+                "risk": "medium",
+                "reason": "[red]Needs confirmation[/red]",
+            },
+        },
+    )
+    source = interaction.display_prompt()
+    assert "private-binding" not in source and "not-for-display" not in source
+    console = Console(width=100, record=True)
+    with console.capture() as captured:
+        console.print(approval_panel(source, resolve_theme("dark")))
+    rendered = captured.get()
+    assert "Shell review" not in rendered
+    assert "staging" in rendered and "MEDIUM" in rendered
+    assert "[red]Needs confirmation[/red]" in rendered
+
+
+def test_terminal_argument_override_validates_json_and_keeps_timeout() -> None:
+    interaction = _shell_approval(metadata=None, override_allowed=True)
+    started = interaction.request_started
+    assert interaction.accept("4") is None
+    assert interaction.editor == "arguments"
+    for value in ("", "[]", "null", "broken"):
+        with pytest.raises(ValueError):
+            interaction.accept(value)
+    assert interaction.responses == []
+    assert interaction.back()
+    assert interaction.request_started == started
+    interaction.accept("edit arguments")
+    response = interaction.accept('{"command":"echo reviewed"}')
+    assert isinstance(response, ThreadDeferredResponse)
+    assert isinstance(response.responses[0], ApprovalDecision)
+    assert response.responses[0].approved
+    assert response.responses[0].override_arguments == {"command": "echo reviewed"}
+
+
+def test_terminal_bound_approval_cannot_enter_override_editor() -> None:
+    interaction = _shell_approval(override_allowed=False)
+    assert "Approve with edited arguments" not in interaction.prompt()
+    with pytest.raises(ValueError, match="does not allow"):
+        interaction.accept("edit arguments")
+    assert interaction.editor is None and not interaction.responses
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_external_preview_hides_environment_values_without_mutating_request(as_json) -> None:
+    import json
+
+    from a13n_harness_ui.surfaces import ExternalRequestView
+
+    arguments = {"environment": {"TOKEN": "hidden-external-value"}}
+    original = json.dumps(arguments) if as_json else arguments
+    request = ExternalRequestView(request_id="external", tool_name="lookup", arguments=original)
+    interaction = DecisionInteraction(DecisionBatchView(continuation_id="b" * 64, requests=(request,)))
+    assert "hidden-external-value" not in interaction.prompt()
+    assert "TOKEN" in interaction.prompt()
+    assert request.arguments == original

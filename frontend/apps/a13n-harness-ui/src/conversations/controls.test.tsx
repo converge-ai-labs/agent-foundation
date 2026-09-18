@@ -322,13 +322,7 @@ it("validates an approval override as a JSON object before allowing the complete
     />,
     { wrapper: harness({ POST }) },
   );
-  const user = userEvent.setup();
-  await user.click(screen.getByRole("combobox", { name: "Approval" }));
-  await user.click(
-    await screen.findByRole("option", {
-      name: "Approve with edited arguments",
-    }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Edit arguments" }));
   const input = screen.getByRole("textbox", {
     name: "Replacement arguments (JSON object)",
   });
@@ -336,12 +330,14 @@ it("validates an approval override as a JSON object before allowing the complete
   expect(
     (
       screen.getByRole("button", {
-        name: "Submit responses",
+        name: "Approve with edited arguments",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
   fireEvent.change(input, { target: { value: '{"command":"review"}' } });
-  fireEvent.click(screen.getByRole("button", { name: "Submit responses" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Approve with edited arguments" }),
+  );
   await waitFor(() => expect(POST).toHaveBeenCalledOnce());
   expect(POST.mock.calls[0][1].body.responses).toEqual([
     {

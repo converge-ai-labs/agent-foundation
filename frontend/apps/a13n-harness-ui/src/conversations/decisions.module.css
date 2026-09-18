@@ -1,0 +1,75 @@
+.request,
+.evidence {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.request + .request {
+  border-top: 1px solid var(--a13n-border);
+  padding-top: 20px;
+}
+.heading,
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.heading {
+  justify-content: space-between;
+  font-size: 13px;
+}
+.heading h3 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.tool,
+.hint {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+.reason {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.code,
+.editor {
+  font-family: var(--a13n-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.code {
+  margin: 0;
+  max-height: 320px;
+  overflow: auto;
+  background: var(--a13n-surface);
+  padding: 12px;
+  border-radius: 6px;
+}
+.context {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  font-size: 13px;
+}
+.context dt {
+  color: var(--a13n-secondary);
+}
+.context dd {
+  overflow-wrap: anywhere;
+}
+.evidence summary {
+  font-size: 12px;
+  cursor: pointer;
+  padding-block: 4px;
+}
+@media (max-width: 480px) {
+  .context {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .context dd + dt {
+    margin-top: 6px;
+  }
+}

@@ -363,7 +363,9 @@ class TerminalProjectionService:
             return None
         projected = []
         for request in requests.calls:
-            metadata = _json_mapping(requests.metadata.get(request.tool_call_id))
+            raw_metadata = requests.metadata.get(request.tool_call_id)
+            metadata = _json_mapping(raw_metadata)
+            metadata_omitted = raw_metadata is not None and metadata is None
             if request.tool_name == "ask_user_question":
                 try:
                     questions = AskUserQuestionRequest.model_validate(request.args_as_dict())
@@ -389,6 +391,7 @@ class TerminalProjectionService:
                             for item in questions.questions
                         ),
                         metadata=metadata,
+                        metadata_omitted=metadata_omitted,
                     )
                 )
             else:
@@ -400,17 +403,25 @@ class TerminalProjectionService:
                         arguments=value,
                         arguments_omitted=omitted,
                         metadata=metadata,
+                        metadata_omitted=metadata_omitted,
                     )
                 )
         for request in requests.approvals:
             value, omitted = _bounded_json(request.args)
+            raw_metadata = requests.metadata.get(request.tool_call_id)
+            metadata = _json_mapping(raw_metadata)
+            # Bound Harness approvals authorize the captured arguments, not edits.
+            # Read the original evidence even when its display projection is omitted.
+            bound = isinstance(raw_metadata, dict) and "a13n.harness.tool-approval" in raw_metadata
             projected.append(
                 ApprovalRequestView(
                     request_id=request.tool_call_id,
                     tool_name=request.tool_name,
                     arguments=value,
                     arguments_omitted=omitted,
-                    metadata=_json_mapping(requests.metadata.get(request.tool_call_id)),
+                    metadata=metadata,
+                    metadata_omitted=raw_metadata is not None and metadata is None,
+                    override_allowed=not bound and not omitted,
                 )
             )
         expires_at = await self._root_runs.interaction_expiry(thread_id, continuation_id)
