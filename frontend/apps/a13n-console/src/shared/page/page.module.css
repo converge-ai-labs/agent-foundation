@@ -203,10 +203,7 @@
 /* Section --------------------------------------------------------------- */
 .section {
   display: grid;
-  gap: 16px;
-  padding: 20px;
-  border-radius: var(--a13n-radius-group);
-  background: var(--a13n-surface);
+  gap: 14px;
   min-width: 0;
 }
 .sectionHeader {

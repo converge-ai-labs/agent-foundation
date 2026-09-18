@@ -14,10 +14,10 @@ export function ProviderKeyLink({
       href={href}
       target="_blank"
       rel="noreferrer"
-      className="inline-flex shrink-0 items-center gap-1 rounded-sm text-sm font-medium text-blue-600 transition-colors hover:text-blue-700 hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
+      className="inline-flex shrink-0 items-center gap-1 rounded-sm text-[12.5px] font-medium text-muted-foreground transition-colors hover:text-foreground hover:underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
     >
       {t(label)}
-      <ArrowUpRightIcon aria-hidden className="size-3.5" />
+      <ArrowUpRightIcon aria-hidden className="size-3" />
     </a>
   );
 }

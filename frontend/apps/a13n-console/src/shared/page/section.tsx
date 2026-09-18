@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import styles from "./page.module.css";
 
-/** Titled group on a surface. Sections never draw an outline. */
+/** Titled group separated by whitespace; only its contents carry surfaces. */
 export function Section({
   title,
   description,

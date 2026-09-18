@@ -213,6 +213,7 @@ export function AgentEditor({
           noteLabel={t("Version note")}
           notePlaceholder={t("Version note (optional)")}
           onDiscard={discard}
+          discardLabel={creating ? t("Cancel") : undefined}
           saveLabel={
             saveLabel ?? t("Save as v{{version}}", { version: nextVersion })
           }

@@ -160,6 +160,7 @@ export function CreateAgent() {
         error={create.error ?? fileError}
         saveLabel={t("Create agent")}
         saveDisabled={!name.trim()}
+        discard={() => navigate(`${basePath}/agents`)}
         identity={
           <Section
             title={t("Identity")}
