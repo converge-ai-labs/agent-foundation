@@ -2,7 +2,7 @@
 
 from datetime import timedelta
 
-from a13n_harness.memory import MemoryDocumentBackend, require_memory_subject
+from a13n_harness.providers.memory.contracts import MemoryDocumentBackend, require_memory_subject
 from sqlalchemy import select
 
 from a13n_service.application_errors import ErrorCategory

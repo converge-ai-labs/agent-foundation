@@ -8,7 +8,7 @@ The external integration service owns third-party account authorization, OAuth c
 
 ## Connector Provider definitions
 
-The distribution registers trusted Connector Provider implementations explicitly. Built-ins and Connector registrations from deployment-selected `a13n.providers` entry points form one immutable definition catalog at startup. Installation alone grants no trust, and package loading creates no network client: each owning process later binds the selected implementation factory to its bounded Connector transport. Each implementation supplies one safe definition:
+The distribution registers trusted Connector Provider implementations explicitly. Built-ins and Connector registrations from deployment-selected `a13n_harness.providers.plugins` entry points form one immutable definition catalog at startup. Installation alone grants no trust, and package loading creates no network client: each owning process later binds the selected implementation factory to its bounded Connector transport. Each implementation supplies one safe definition:
 
 ```python
 class ConnectorProviderDefinition:

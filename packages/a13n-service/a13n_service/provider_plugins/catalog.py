@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import importlib.metadata
-import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
 
 from a13n_environment import EnvironmentProvider
-from a13n_harness.memory_plugins import MemoryBackendCatalog, MemoryBackendPlugin
+from a13n_harness.providers.memory import MemoryProviderDefinition
+from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.plugins import ProviderManifest, selected_entry_points
@@ -24,7 +23,6 @@ from .api import (
     _DomainRegistry,
 )
 
-_PROVIDER_TYPE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _ENVIRONMENT_BUILTINS = frozenset(
     {
         "direct-local",
@@ -60,7 +58,7 @@ class ProviderCatalogs:
     connector: tuple[ConnectorProviderRegistration, ...]
     web: tuple[WebProviderDefinition, ...]
     plugins: tuple[LoadedProviderPlugin, ...]
-    memory: tuple[MemoryBackendPlugin[Any, Any], ...] = ()
+    memory: tuple[MemoryProviderDefinition, ...] = ()
 
 
 def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
@@ -81,6 +79,9 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
     web = _DomainRegistry("Web", WebProviderDefinition, lambda definition: definition.type)
     for definition in built_in_web_providers():
         web.register(definition)
+    memory = _DomainRegistry("Memory", MemoryProviderDefinition, lambda definition: definition.type)
+    for definition in BUILT_IN_MEMORY_PROVIDERS:
+        memory.register(definition)
     loaded: list[LoadedProviderPlugin] = []
     for entry_point in selected:
         name = entry_point.name
@@ -90,6 +91,8 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
         try:
             register = entry_point.load()
             if isinstance(register, ProviderManifest):
+                for definition in register.memory:
+                    memory.register(definition)
                 for definition in register.model:
                     model.register(definition)
                 for definition in register.web:
@@ -130,7 +133,7 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
         connector=registry.connector.values(),
         web=web.values(),
         plugins=tuple(loaded),
-        memory=registry.memory.values(),
+        memory=memory.values(),
     )
 
 
@@ -142,11 +145,6 @@ def _metadata_text(distribution: importlib.metadata.Distribution | None, key: st
 
 
 def _validate(registry: ProviderPluginRegistry) -> None:
-    MemoryBackendCatalog(registry.memory.values())
-    for plugin in registry.memory.values():
-        validate_display_name("Memory", plugin.key, plugin.display_name)
-        validate_schema("Memory", plugin.key, plugin.configuration_model)
-        validate_schema("Memory credential", plugin.key, plugin.credential_model)
     for provider in registry.environment.values():
         if provider.key in _ENVIRONMENT_BUILTINS:
             raise ProviderPluginError(f"Environment Provider {provider.key!r} uses a reserved built-in key")

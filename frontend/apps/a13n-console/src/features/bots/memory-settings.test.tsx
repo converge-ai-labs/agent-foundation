@@ -53,11 +53,16 @@ beforeEach(() => {
       if (state.typesFailed) throw new Error("Catalog unavailable");
       return response({
         items: [
-          { type: "legacy", supports_documents: false },
+          {
+            type: "legacy",
+            supports_documents: false,
+            authentication: { mode: "required" },
+          },
           {
             type: "documents",
             display_name: "Documents",
             supports_documents: true,
+            authentication: { mode: "required" },
             configuration_schema: { type: "object" },
             credential_schema: { type: "object" },
           },
@@ -74,12 +79,16 @@ beforeEach(() => {
                 name: "Legacy",
                 type: "legacy",
                 enabled: true,
+                configuration: {},
+                credential_configured: true,
               },
               {
                 id: "mp_documents",
                 name: "Documents",
                 type: "documents",
                 enabled: true,
+                configuration: {},
+                credential_configured: true,
               },
             ],
       next_cursor: null,
@@ -93,6 +102,8 @@ beforeEach(() => {
       name: "Documents",
       type: "documents",
       enabled: true,
+      configuration: {},
+      credential_configured: true,
     });
   });
 });

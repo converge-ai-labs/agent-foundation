@@ -1,6 +1,6 @@
-# Installed Model and Web Provider example
+# Installed Model, Web and Memory Provider example
 
-This independent package depends on Harness, Pydantic, and the native SDK used by its Model implementation. It exports an immutable `ProviderManifest` through the `a13n.providers` entry-point group. Installation makes it discoverable; a host must explicitly select `acme` to load it. Importing its definition does not import Service, Agent orchestration, or vendor SDKs.
+This independent package depends on Harness, Pydantic, and the native SDK used by its Model implementation. It exports an immutable `ProviderManifest` through the `a13n_harness.providers.plugins` entry-point group. Installation makes it discoverable; a host must explicitly select `acme` to load it. Importing its definition does not import Service, Agent orchestration, or vendor SDKs.
 
 A Web author supplies two input models, an async operation, and a `WebProviderDefinition`. There is no forwarding backend, factory, or empty cleanup method. The same definition works directly with a transport for the vendor:
 
@@ -42,7 +42,8 @@ from acme_provider.plugin import acme_model
 
 async with httpx2.AsyncClient() as client:
     model = await acme_model.build(
-        "acme-small", configuration={"index": "guides"},
+        "acme-small",
+        configuration={"index": "guides"},
         credential={"authorization": {"token": "example-token"}, "revision": 1},
         http_client=client,
     )
@@ -52,3 +53,20 @@ async with httpx2.AsyncClient() as client:
 ```
 
 Create a Service Model Provider with type `acme_model` and the same objects, then a Model referencing that account. No Service subclass, IDs in provider inputs, or duplicate metadata are needed. Service HTTP tests install this package, encrypt the nested credential, call the native Model against fixture HTTP, rotate the saved values, and verify that disabling the account prevents further calls.
+
+## Memory
+
+The same manifest contributes `acme_memory`, with nested secret and integer inputs, configuration-dependent Authentication, setup help and document support. Direct use needs no Service identity or Agent:
+
+```python
+from acme_provider.plugin import acme_memory
+from a13n_harness.providers.memory.contracts import MemoryScope, MemorySubject
+
+async with acme_memory.open(
+    {"collection": "facts"},
+    {"authorization": {"token": "example-token"}, "revision": 1},
+) as backend:
+    result = await backend.search("preferences", subjects=(MemorySubject(MemoryScope.USER, "trusted-user"),), limit=5)
+```
+
+The fictional endpoint speaks the Mem0 OSS protocol, so this implementation reuses the OSS adapter without importing the Platform SDK. Tests replace only HTTP and retain native subject/result validation. `access: "public"` forbids credentials; `"optional"` accepts their absence. Hosted credential removal is separate from runtime eligibility: removing a required credential succeeds but later content calls fail until it is restored.

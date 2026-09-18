@@ -6,9 +6,10 @@ from uuid import uuid4
 import httpx
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend, open_mem0_platform
-from a13n_harness.memory import MemoryScope as ScopeKind
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
+from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
+from a13n_harness.providers.memory.mem0_platform import open_mem0_platform
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthorizationError, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord
@@ -18,7 +19,7 @@ from a13n_service.storage import transaction
 
 from ..models.conftest import ORG_ID, USER_ID, WORKSPACE_ID, actor
 from ..models.test_router import settings
-from .support import BorrowedMemoryPlugin
+from .support import BorrowedMemory
 
 pytestmark = pytest.mark.anyio
 
@@ -79,7 +80,7 @@ def native_transport(records, calls, response_type):
 async def provider_path(client, *, name="Memory"):
     response = await client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/memory-providers",
-        json={"type": "test.memory", "name": name, "credential": {"api_key": "test-key"}},
+        json={"type": "test_memory", "name": name, "credential": {"api_key": "test-key"}},
     )
     assert response.status_code == 201, response.text
     return f"/api/v1/workspaces/{WORKSPACE_ID}/memory-providers/{response.json()['id']}/memories"
@@ -115,7 +116,7 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
         settings(tmp_path, service_database),
         components=Components(
             request_authenticator=authenticate,
-            memory_backend_catalog=MemoryBackendCatalog((BorrowedMemoryPlugin(backend),)),
+            memory_provider_catalog=MemoryProviderCatalog((BorrowedMemory(backend).definition,)),
         ),
     )
     async with stack, remote, app.router.lifespan_context(app):
@@ -195,7 +196,7 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
 async def test_service_account_never_becomes_user(memory_sessions):
     principal = PrincipalRef(principal_type="service_account", principal_id="sa_1234567890abcdef")
     with pytest.raises(AuthorizationError):
-        await MemoryAuthorizer(memory_sessions, MemoryBackendCatalog()).authorize(
+        await MemoryAuthorizer(memory_sessions, MemoryProviderCatalog()).authorize(
             actor=replace(actor(), principal=principal),
             workspace_id=WORKSPACE_ID,
             provider_id="memprov_1234567890abcdef",
@@ -235,7 +236,7 @@ async def test_oss_default_loads_1000_for_client_paging_without_completeness_cla
             settings(tmp_path, service_database),
             components=Components(
                 request_authenticator=authenticate,
-                memory_backend_catalog=MemoryBackendCatalog((BorrowedMemoryPlugin(Mem0OSSBackend(remote)),)),
+                memory_provider_catalog=MemoryProviderCatalog((BorrowedMemory(Mem0OSSBackend(remote)).definition,)),
             ),
         )
         async with app.router.lifespan_context(app):

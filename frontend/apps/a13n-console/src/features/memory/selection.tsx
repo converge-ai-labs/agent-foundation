@@ -14,7 +14,11 @@ import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { providersPath } from "../providers/navigation";
-import { useMemoryProviders } from "./availability";
+import {
+  useMemoryProviders,
+  useMemoryProviderDefinitions,
+  eligibleMemoryProvider,
+} from "./availability";
 import { memoriesPath } from "./api";
 
 export function AgentMemorySelection({
@@ -35,13 +39,14 @@ export function AgentMemorySelection({
   const id = useId();
   const [advanced, setAdvanced] = useState(false);
   const { providers } = useMemoryProviders();
+  const definitions = useMemoryProviderDefinitions();
+  const eligible = (provider: Schema["MemoryProvider"]) =>
+    eligibleMemoryProvider(provider, definitions.data?.items ?? []);
   const selected = providers.data?.find(
     (item) => item.id === value?.provider_id,
   );
   const options = (providers.data ?? []).filter(
-    (item) =>
-      item.id === value?.provider_id ||
-      (item.enabled && item.credential_configured),
+    (item) => item.id === value?.provider_id || eligible(item),
   );
   function toggle(
     key: "auto_recall" | "toolset" | "recall_required",
@@ -85,7 +90,7 @@ export function AgentMemorySelection({
           { value: "off", label: t("Off") },
           ...options.map((item) => ({
             value: item.id,
-            label: `${item.name} · ${t(item.workspace_id ? "Workspace" : "Organization")}${!item.enabled || !item.credential_configured ? ` · ${t("Unavailable")}` : ""}`,
+            label: `${item.name} · ${t(item.workspace_id ? "Workspace" : "Organization")}${!eligible(item) ? ` · ${t("Unavailable")}` : ""}`,
           })),
           ...(value && !selected
             ? [
@@ -101,15 +106,13 @@ export function AgentMemorySelection({
         )}
       />
       <ErrorNotice error={providers.error} />
-      {value &&
-        providers.isSuccess &&
-        (!selected?.enabled || !selected.credential_configured) && (
-          <p role="alert" className="text-sm text-destructive-foreground">
-            {t(
-              "The selected provider is unavailable or disabled. Choose another provider before saving.",
-            )}
-          </p>
-        )}
+      {value && providers.isSuccess && (!selected || !eligible(selected)) && (
+        <p role="alert" className="text-sm text-destructive-foreground">
+          {t(
+            "The selected provider is unavailable or disabled. Choose another provider before saving.",
+          )}
+        </p>
+      )}
       {!can("memory_provider.read") && (
         <p className="text-sm text-muted-foreground">
           {t(

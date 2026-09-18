@@ -73,13 +73,18 @@ import importlib.abc
 import sys
 class Block(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.startswith(("a13n_service", "pydantic_ai", "mem0", "a13n_harness.execution", "a13n_environment")):
+        if fullname.startswith(("a13n_service", "pydantic_ai", "mem0", "a13n_harness.execution", "a13n_harness.agent", "a13n_environment")):
             raise AssertionError(fullname)
 sys.meta_path.insert(0, Block())
 from a13n_harness.providers.plugins import load_provider_plugins
 from a13n_harness.providers.web.builtins import built_in_web_providers
 assert len(built_in_web_providers()) == 9
-assert load_provider_plugins(("acme",))[0].manifest.web[0].type == "acme_web"
+manifest = load_provider_plugins(("acme",))[0].manifest
+assert manifest.web[0].type == "acme_web"
+assert manifest.model[0].type == "acme_model"
+assert manifest.memory[0].type == "acme_memory"
+from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS
+assert len(BUILT_IN_MEMORY_PROVIDERS) == 2
 """,
         ],
         capture_output=True,
@@ -145,3 +150,55 @@ async def test_installed_model_definition_calls_native_api():
     assert len(calls) == 1
     assert calls[0][:4] == ("https://models.acme.example/v1/chat/completions", "Bearer native-secret", "guides", "2")
     assert calls[0][4]["messages"] == [{"role": "user", "content": "hello"}]
+
+
+@pytest.mark.anyio
+async def test_installed_memory_definition_direct_native_operation(monkeypatch):
+    from a13n_harness.providers.memory.contracts import MemoryScope, MemorySubject
+
+    observed = []
+
+    async def remote(self, request):
+        import json
+
+        body = json.loads(request.content)
+        observed.append((str(request.url), request.headers["x-api-key"], request.headers["x-acme-revision"], body))
+        return httpx2.Response(200, json={"results": [{"id": "fact", "memory": "Direct fact", **body["filters"]}]})
+
+    monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", remote)
+    definition = load_provider_plugins(("acme",))[0].manifest.memory[0]
+    subject = MemorySubject(MemoryScope.USER, "embedding-user")
+    async with definition.open(
+        {"collection": "notes"}, {"authorization": {"token": "direct-secret"}, "revision": 4}
+    ) as backend:
+        result = await backend.search("fact", subjects=(subject,), limit=3)
+    assert result[0].text == "Direct fact" and result[0].subjects == (subject,)
+    assert observed[0][:3] == ("https://memory.acme.example/notes/search", "direct-secret", "4")
+
+
+@pytest.mark.anyio
+async def test_installed_memory_cleanup_completes_under_cancellation(monkeypatch):
+    import anyio
+
+    completed = anyio.Event()
+    calls = 0
+
+    class Transport(httpx2.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            pytest.fail("No vendor I/O expected")
+
+        async def aclose(self):
+            nonlocal calls
+            calls += 1
+            await anyio.sleep(0)
+            completed.set()
+
+    client = httpx2.AsyncClient(transport=Transport())
+    monkeypatch.setattr(httpx2, "AsyncClient", lambda **kwargs: client)
+    definition = load_provider_plugins(("acme",))[0].manifest.memory[0]
+    with anyio.CancelScope() as scope:
+        async with definition.open({"collection": "notes", "access": "public"}):
+            scope.cancel()
+            await anyio.sleep_forever()
+    assert scope.cancelled_caught
+    assert completed.is_set() and calls == 1

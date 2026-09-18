@@ -7043,11 +7043,18 @@
             "type": "object"
           },
           "credential": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credential",
-            "type": "object",
             "writeOnly": true
           },
           "enabled": {
@@ -7070,8 +7077,7 @@
         },
         "required": [
           "type",
-          "name",
-          "credential"
+          "name"
         ],
         "title": "CreateMemoryProviderRequest",
         "type": "object"
@@ -11828,6 +11834,9 @@
       "MemoryProviderDefinition": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "configuration_schema": {
             "additionalProperties": true,
             "title": "Configuration Schema",
@@ -11841,6 +11850,28 @@
           "display_name": {
             "title": "Display Name",
             "type": "string"
+          },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
           },
           "supports_documents": {
             "default": false,
@@ -11856,7 +11887,8 @@
           "type",
           "display_name",
           "configuration_schema",
-          "credential_schema"
+          "credential_schema",
+          "authentication"
         ],
         "title": "MemoryProviderDefinition",
         "type": "object"

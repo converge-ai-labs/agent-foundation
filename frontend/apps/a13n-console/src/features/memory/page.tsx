@@ -1,3 +1,4 @@
+import type { Schema } from "../../shared/api";
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ChoiceField, FormField, Input, SearchPicker } from "a13n-ui";
@@ -11,7 +12,11 @@ import { Empty, ErrorNotice, Page } from "../../shared/feedback";
 import { providersPath } from "../providers/navigation";
 import { memoryKey, type MemoryTarget } from "./api";
 import { MemoryContents } from "./contents";
-import { useMemoryProviders } from "./availability";
+import {
+  useMemoryProviders,
+  useMemoryProviderDefinitions,
+  eligibleMemoryProvider,
+} from "./availability";
 
 export function MemoriesPage() {
   const [params, setParams] = useSearchParams();
@@ -42,6 +47,9 @@ function MemoryPageSelection({
   const [subject, setSubject] = useState(params.get("subject") ?? "");
   const [editing, setEditing] = useState(false);
   const { providers } = useMemoryProviders();
+  const definitions = useMemoryProviderDefinitions();
+  const eligible = (provider: Schema["MemoryProvider"]) =>
+    eligibleMemoryProvider(provider, definitions.data?.items ?? []);
   const agents = useQuery({
     queryKey: ["agents", workspace.id, "memory-subjects"],
     enabled: scope === "agent",
@@ -126,7 +134,7 @@ function MemoryPageSelection({
                       ...(providers.data ?? []).map((item) => ({
                         value: item.id,
                         label: item.name,
-                        description: `${t(item.workspace_id ? "Workspace" : "Organization")} · ${item.id}${!item.enabled || !item.credential_configured ? ` · ${t("Unavailable")}` : ""}`,
+                        description: `${t(item.workspace_id ? "Workspace" : "Organization")} · ${item.id}${!eligible(item) ? ` · ${t("Unavailable")}` : ""}`,
                       })),
                       ...(provider && !selected
                         ? [

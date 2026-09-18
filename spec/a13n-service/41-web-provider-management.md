@@ -21,7 +21,7 @@ Connectors and remote MCP connections retain their own schemas, credentials, and
 
 ## Trusted Provider Types
 
-The Service process owns one finite code-reviewed catalog assembled before readiness from built-ins and Harness Web definitions in deployment-selected `a13n.providers` manifests. Selection names installed metadata rather than an import target; package installation alone grants no trust. Manifests expose inert definitions and typed operation callbacks, not live clients. Service projects their metadata into the management API; embedded Harness and Service use the same vendor operation. Every implementation still enters this Web-specific management and operation path:
+The Service process owns one finite code-reviewed catalog assembled before readiness from built-ins and Harness Web definitions in deployment-selected `a13n_harness.providers.plugins` manifests. Selection names installed metadata rather than an import target; package installation alone grants no trust. Manifests expose inert definitions and typed operation callbacks, not live clients. Service projects their metadata into the management API; embedded Harness and Service use the same vendor operation. Every implementation still enters this Web-specific management and operation path:
 
 ```python
 class WebProviderDefinition:

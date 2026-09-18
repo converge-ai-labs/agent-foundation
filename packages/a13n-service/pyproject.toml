@@ -16,7 +16,7 @@ dependencies = [
     "botocore>=1.43.3,<1.43.57",
     "click>=8.2,<9",
     "cryptography>=50,<51",
-    "a13n-harness",
+    "a13n-harness[mem0]",
     "a13n-logging",
     "a13n-stream-protocol",
     "ag-ui-protocol>=0.1.18,<0.2",

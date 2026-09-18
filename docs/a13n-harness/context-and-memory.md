@@ -49,7 +49,7 @@ Memory is opt-in. `MemoryCapability` works with any implementation of the typed 
 
 ```python
 from a13n_harness.capabilities import MemoryCapability, MemoryScope
-from a13n_harness.capabilities.mem0_backends import open_mem0_oss
+from a13n_harness.providers.memory.mem0_oss import open_mem0_oss
 
 async with open_mem0_oss(base_url=mem0_url, api_key=mem0_api_key) as backend:
     capabilities = (
@@ -67,7 +67,7 @@ There is no implicit environment configuration or Run-owned client. Hosts can pa
 Platform is an independent adapter, not an OSS compatibility mode:
 
 ```python
-from a13n_harness.capabilities.mem0_backends import open_mem0_platform
+from a13n_harness.providers.memory.mem0_platform import open_mem0_platform
 
 async with open_mem0_platform(api_key=platform_api_key) as backend:
     capabilities = (MemoryCapability(backend=backend, scope=MemoryScope.USER),)
@@ -85,7 +85,7 @@ Use the finalized Capability in the current native `RunContext`, not an original
 ```python
 from a13n_harness import AgentContext
 from a13n_harness.capabilities import MemoryCapability, MemoryScope
-from a13n_harness.memory import MemoryRecord
+from a13n_harness.providers.memory.contracts import MemoryRecord
 from pydantic_ai import RunContext
 
 
@@ -102,24 +102,24 @@ The same API exposes typed `search`, `list`, `get`, `update`, and `delete` opera
 
 Custom post-commit jobs and management services can call an authorized `MemoryBackend` directly; they do not need to create a Capability or run an Agent. Text is nonblank, at most 8000 characters, and preserved verbatim. Writes verify readback, and `MemoryWriteUnconfirmed` requires inspection before repetition. A delete does not remove already observed text from context or traces.
 
-### Backend factories
+### Provider definitions
 
-Hosts that need configurable backend selection use `MemoryBackendPlugin` and `build_memory_backend_catalog` from `a13n_harness.memory_plugins`. The plugin itself is the factory. Its stable key and display name describe an implementation, its independent Pydantic models validate nonsecret configuration and credentials without I/O, and `open(configuration, credential)` returns a Host-owned asynchronous context manager.
+Reusable storage definitions live under `a13n_harness.providers.memory`. Each `MemoryProviderDefinition` supplies typed configuration and credential models, the shared declarative authentication and help metadata, and an asynchronous `open_backend` callback. The callback owns its backend lifetime. Metadata loading opens no backend and performs no vendor I/O.
 
 ```python
-from a13n_harness.memory_plugins import build_memory_backend_catalog
+from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.memory.builtins import MEM0_OSS
 
-catalog = build_memory_backend_catalog(builtin_keys=("a13n.mem0-oss",))
-plugin = catalog["a13n.mem0-oss"]
-configuration = plugin.configuration_model.model_validate({"base_url": mem0_url})
-credential = plugin.credential_model.model_validate({"api_key": mem0_api_key})
-
-async with plugin.open(configuration, credential) as backend:
+catalog = MemoryProviderCatalog((MEM0_OSS,))
+definition = catalog["mem0_oss"]
+async with definition.open({"base_url": mem0_url}, {"api_key": mem0_api_key}) as backend:
     capability = MemoryCapability(backend=backend, auto_recall=False, toolset=False)
-    # Build Agents with this capability and your custom behavior plugin here.
+    # Or call backend operations directly with trusted MemorySubject values.
 ```
 
-Catalogs also accept explicit plugin objects or selected installed entry-point keys from `a13n_harness.memory_backends`. Installing a distribution does not enable it. Duplicate keys fail rather than shadowing, and unselected entry points are not imported. Embedded applications can continue injecting a backend directly. Hosted applications instead select an authorized [Memory Provider resource](../a13n-service/memory.md); provider selection and Agent behavior are separate settings.
+Installed extensions contribute `ProviderManifest.memory` alongside Model and Web through the same `a13n_harness.providers.plugins` entry point. A host calls `load_provider_plugins(("acme",))` and explicitly builds a catalog from the selected definitions. Installation does not enable a package. Duplicate types fail; unselected entry points remain unloaded. Hosted applications select an authorized [Memory Provider resource](../a13n-service/memory.md) instead of embedding credentials in an Agent.
+
+The implemented built-ins are `mem0_oss` and `mem0_platform`. OSS uses HTTP directly and needs no Platform SDK. Install `a13n-harness[mem0]` for Platform. Its native SDK loads only when used; local construction defers the SDK's synchronous validation ping. Neither backend automatically retries uncertain writes. The document-store abstraction and document behavior remain separate from Provider construction; no filesystem Provider is currently registered.
 
 The public names are `MemoryCapability` and `MemoryScope`, with Capability ID `a13n.memory`. There are no compatibility aliases for the earlier Mem0-only Capability. Backend objects, credentials, and transports are not serialized in `AgentSpec` or `HarnessState`.
 
@@ -178,3 +178,5 @@ Use content filtering only for provider/model multimodal compatibility. Cold-sta
 `HandoffCapability` exposes an explicit `summarize` tool; `CompactionCapability` reacts to request context usage. Both are optional. Configure their usual thresholds through [model characteristics](models.md#model-characteristics), or supply explicit token thresholds when the Agent needs a fixed policy.
 
 A summary is narrative continuation, not a substitute for task/note state. Neither summarization nor compaction commits application storage. Persist the resulting safe `HarnessState` only under your Host's acceptance policy.
+
+Provider context managers own cleanup for the resources they acquire. Protect asynchronous client teardown with a bounded cancellation shield inside the provider, as shown in the installed Acme example. The definition and Service compose provider contexts normally so TaskGroups retain their scope nesting; they do not impose a universal exit timeout. Borrowed clients remain owned by their caller.

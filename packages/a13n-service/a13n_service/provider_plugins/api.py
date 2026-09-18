@@ -4,10 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol, cast
+from typing import Protocol, cast
 
 from a13n_environment import EnvironmentProvider
-from a13n_harness.memory_plugins import MemoryBackendPlugin
 from pydantic import BaseModel
 
 from a13n_service.connectivity.connectors.contracts import ConnectorProviderRuntime
@@ -63,9 +62,6 @@ class ProviderPluginRegistry:
         )
         self.connector = _DomainRegistry[ConnectorProviderRegistration](
             "Connector", ConnectorProviderRegistration, lambda item: item.type
-        )
-        self.memory = _DomainRegistry[MemoryBackendPlugin[Any, Any]](
-            "Memory", MemoryBackendPlugin, lambda item: item.key
         )
 
 

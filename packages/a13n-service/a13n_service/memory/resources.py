@@ -1,6 +1,6 @@
 """Short-session Memory Provider eligibility and representation checks."""
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.memory import MemoryProviderCatalog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -21,7 +21,7 @@ async def require_provider(
     organization_id: str,
     workspace_id: str | None,
     provider_id: str,
-    catalog: MemoryBackendCatalog | None = None,
+    catalog: MemoryProviderCatalog | None = None,
     eligible: bool = False,
     owning_scope: bool = False,
     lock: bool = False,
@@ -45,34 +45,40 @@ async def require_provider(
     return record
 
 
-def require_eligible(record: MemoryProviderRecord, catalog: MemoryBackendCatalog) -> None:
+def require_eligible(record: MemoryProviderRecord, catalog: MemoryProviderCatalog) -> None:
     if not record.enabled:
         raise MemoryProviderError(
             "memory_provider_disabled", "Memory Provider is disabled.", category=ErrorCategory.conflict
         )
-    if record.ciphertext is None:
+    definition = catalog.get(record.type)
+    if definition is None:
         raise MemoryProviderError(
-            "memory_provider_credential_missing",
-            "Memory Provider requires a credential.",
+            "memory_provider_unavailable",
+            "Memory Provider implementation is unavailable.",
+            category=ErrorCategory.unavailable,
+        )
+    try:
+        configuration = definition.configuration_model.model_validate(record.configuration)
+        definition.authentication.validate_presence(configuration, record.ciphertext is not None)
+    except ValueError as error:
+        raise MemoryProviderError(
+            "memory_provider_credential_missing"
+            if record.ciphertext is None
+            else "memory_provider_configuration_invalid",
+            "Memory Provider authentication or configuration is unavailable.",
             category=ErrorCategory.conflict,
-        )
-    if record.type not in catalog:
+        ) from error
+
+
+def require_document_support(provider_type: str, catalog: MemoryProviderCatalog | None) -> None:
+    definition = catalog.get(provider_type) if catalog is not None else None
+    if definition is None:
         raise MemoryProviderError(
             "memory_provider_unavailable",
             "Memory Provider implementation is unavailable.",
             category=ErrorCategory.unavailable,
         )
-
-
-def require_document_support(provider_type: str, catalog: MemoryBackendCatalog | None) -> None:
-    plugin = catalog.get(provider_type) if catalog is not None else None
-    if plugin is None:
-        raise MemoryProviderError(
-            "memory_provider_unavailable",
-            "Memory Provider implementation is unavailable.",
-            category=ErrorCategory.unavailable,
-        )
-    if not plugin.supports_documents:
+    if not definition.supports_documents:
         raise MemoryProviderError(
             "memory_documents_unsupported",
             "This Memory Provider does not support Bot documents.",

@@ -3,9 +3,9 @@
 import hashlib
 import json
 
-from a13n_harness.memory import MemoryScope as ScopeKind
-from a13n_harness.memory import MemorySubject
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
+from a13n_harness.providers.memory.contracts import MemorySubject
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord
@@ -36,7 +36,7 @@ def memory_subject(
 
 
 class MemoryAuthorizer:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], catalog: MemoryBackendCatalog) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], catalog: MemoryProviderCatalog) -> None:
         self.sessions = sessions
         self.catalog = catalog
 

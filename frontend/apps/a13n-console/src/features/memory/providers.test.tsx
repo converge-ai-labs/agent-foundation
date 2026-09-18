@@ -38,7 +38,7 @@ const scope = { kind: "workspace", id: "ws_test" } as const;
 const provider = {
   id: "memprov_test",
   name: "Team memory",
-  type: "custom.memory",
+  type: "custom_memory",
   configuration: { base_url: "https://memory.example" },
   enabled: true,
   credential_configured: true,
@@ -46,7 +46,8 @@ const provider = {
   organization_id: "org_test",
 };
 const definition = {
-  type: "custom.memory",
+  authentication: { mode: "required" as const },
+  type: "custom_memory",
   display_name: "Custom memory",
   configuration_schema: {
     type: "object",
@@ -108,7 +109,7 @@ it("creates an installed custom backend from its schemas and clears credentials 
     )?.[1].headers,
   ).toEqual({ "X-A13N-Workspace-ID": scope.id });
   expect(http.POST.mock.calls[0][1].body).toMatchObject({
-    type: "custom.memory",
+    type: "custom_memory",
     configuration: { base_url: "https://memory.example" },
     credential: { token: "private-token" },
   });
@@ -228,7 +229,13 @@ it("preserves all memory options when switching providers and refreshes choices 
     );
   }
   setup(<Draft />);
-  await waitFor(() => expect(http.GET).toHaveBeenCalledOnce());
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(
+        ([path]) => !path.endsWith("memory-provider-types"),
+      ),
+    ).toHaveLength(1),
+  );
   const link = screen.getByRole("link", { name: "Manage memory providers" });
   expect(link.getAttribute("target")).toBe("_blank");
   expect(link.getAttribute("href")).toBe(
@@ -236,7 +243,13 @@ it("preserves all memory options when switching providers and refreshes choices 
   );
   focusManager.setFocused(false);
   focusManager.setFocused(true);
-  await waitFor(() => expect(http.GET).toHaveBeenCalledTimes(2));
+  await waitFor(() =>
+    expect(
+      http.GET.mock.calls.filter(
+        ([path]) => !path.endsWith("memory-provider-types"),
+      ),
+    ).toHaveLength(2),
+  );
   expect(change).not.toHaveBeenCalled();
   focusManager.setFocused(undefined);
   await user.click(screen.getByRole("button", { name: "Recall settings" }));
@@ -284,4 +297,116 @@ it("links to the saved Agent provider even when the selection draft changes", as
     "/workspace/research/memories?scope=agent&provider=memprov_old&subject=agt_stable",
   );
   expect(link.getAttribute("target")).toBe("_blank");
+});
+
+const structuredDefinition = {
+  ...definition,
+  setup_url: "https://docs.example.com/memory-setup",
+  setup_label: "Configure custom memory",
+  authentication: {
+    mode: "required",
+    cases: [{ field: "access", equals: "public", mode: "forbidden" }],
+  },
+  configuration_schema: {
+    type: "object",
+    properties: {
+      access: {
+        type: "string",
+        title: "Access",
+        enum: ["public", "private"],
+        default: "public",
+      },
+    },
+  },
+  credential_schema: {
+    type: "object",
+    required: ["authorization", "revision"],
+    properties: {
+      authorization: {
+        type: "object",
+        required: ["token"],
+        properties: { token: { type: "string", title: "Token", minLength: 1 } },
+      },
+      revision: { type: "integer", title: "Revision", minimum: 1, default: 1 },
+    },
+  },
+};
+it("renders custom help, choice defaults, nested secrets and numeric credentials", async () => {
+  const user = userEvent.setup();
+  http.GET.mockResolvedValue(response({ items: [structuredDefinition] }));
+  setup(<MemoryProviderEditor scope={scope} />);
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  expect(
+    (
+      await screen.findByRole("link", { name: "Configure custom memory" })
+    ).getAttribute("href"),
+  ).toBe(structuredDefinition.setup_url);
+  expect(screen.queryByLabelText("Token")).toBeNull();
+  await user.click(screen.getByRole("combobox", { name: "Access" }));
+  await user.click(await screen.findByRole("option", { name: "private" }));
+  expect(screen.getByLabelText("Token").getAttribute("type")).toBe("password");
+  await user.type(screen.getByLabelText("Token"), "nested-secret");
+  await user.clear(screen.getByLabelText("Revision"));
+  await user.type(screen.getByLabelText("Revision"), "7");
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await waitFor(() => expect(http.POST).toHaveBeenCalledOnce());
+  expect(http.POST.mock.calls[0][1].body).toMatchObject({
+    configuration: { access: "private" },
+    credential: { authorization: { token: "nested-secret" }, revision: 7 },
+  });
+});
+it("allows explicit removal even when the definition requires credentials", async () => {
+  const user = userEvent.setup();
+  setup(<MemoryProviderEditor scope={scope} providerId={provider.id} />);
+  await user.click(screen.getByRole("button", { name: "Edit" }));
+  await user.click(await screen.findByRole("button", { name: "Remove" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
+  expect(http.PATCH.mock.calls[0][1].body.credential).toBeNull();
+});
+
+it("keeps a forbidden-credential custom provider selectable without a credential", async () => {
+  http.GET.mockImplementation(async (path: string) =>
+    response(
+      path.endsWith("memory-provider-types")
+        ? { items: [structuredDefinition] }
+        : {
+            items: [
+              {
+                ...provider,
+                configuration: { access: "public" },
+                credential_configured: false,
+              },
+            ],
+            next_cursor: null,
+          },
+    ),
+  );
+  setup(
+    <AgentMemorySelection
+      value={{ provider_id: provider.id }}
+      onChange={vi.fn()}
+    />,
+  );
+  await waitFor(() => expect(http.GET).toHaveBeenCalledTimes(2));
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(
+    screen.getByRole("combobox", { name: "Memory provider" }).textContent,
+  ).not.toContain("Unavailable");
+});
+
+it("retains saved credentials when renaming an account whose definition is unavailable", async () => {
+  const user = userEvent.setup();
+  http.GET.mockImplementation(async (path: string) =>
+    response(path.endsWith("memory-provider-types") ? { items: [] } : provider),
+  );
+  setup(<MemoryProviderEditor scope={scope} providerId={provider.id} />);
+  await user.click(screen.getByRole("button", { name: "Edit" }));
+  await user.type(
+    await screen.findByRole("textbox", { name: "Name" }),
+    " renamed",
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
+  expect(http.PATCH.mock.calls[0][1].body).not.toHaveProperty("credential");
 });

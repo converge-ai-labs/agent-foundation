@@ -4,6 +4,7 @@ import type { MemoryDialogControl } from "./memory-actions";
 import { Button, ChoiceField, Label, ModalFrame, Switch } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+import { eligibleMemoryProvider } from "../memory/availability";
 import { MemoryProviderEditor } from "../memory/editor";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -112,13 +113,13 @@ function SettingsForm({
       item.supports_documents,
     ]),
   );
+  const eligible = (item: Schema["MemoryProvider"]) =>
+    support.get(item.type) === true &&
+    eligibleMemoryProvider(item, types.data?.items ?? []);
   const unavailable =
     enabled &&
     !(providers.data ?? []).some(
-      (item) =>
-        item.id === providerId &&
-        item.enabled &&
-        support.get(item.type) === true,
+      (item) => item.id === providerId && eligible(item),
     );
   const save = useMutation({
     mutationFn: async () => {
@@ -218,16 +219,14 @@ function SettingsForm({
                   },
                   ...(providers.data ?? []).map((item) => ({
                     value: item.id,
-                    label: `${item.name}${!item.enabled ? ` · ${t("Disabled")}` : support.get(item.type) === false ? ` · ${t("Document memory unsupported")}` : support.get(item.type) !== true ? ` · ${t("Unavailable")}` : ""}`,
-                    disabled: !item.enabled || support.get(item.type) !== true,
+                    label: `${item.name}${!item.enabled ? ` · ${t("Disabled")}` : support.get(item.type) === false ? ` · ${t("Document memory unsupported")}` : !eligible(item) ? ` · ${t("Unavailable")}` : ""}`,
+                    disabled: !eligible(item),
                   })),
                 ]}
               />
               {!providers.error &&
                 !types.error &&
-                !(providers.data ?? []).some(
-                  (item) => item.enabled && support.get(item.type) === true,
-                ) && (
+                !(providers.data ?? []).some((item) => eligible(item)) && (
                   <p role="note">
                     {t(
                       "No compatible memory storage is available. Add storage to continue.",

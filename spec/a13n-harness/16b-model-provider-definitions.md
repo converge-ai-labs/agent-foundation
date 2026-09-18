@@ -10,7 +10,7 @@ A `ModelProviderDefinition` declares a stable type, display name, optional HTTPS
 
 `ProviderConfiguration` supplies optional base URL and host-bound session-affinity header configuration. Vendor subclasses add only their actual connection fields. Secret values use secret types, remain absent from representations, and are revealed only at the native SDK or wire boundary. Credentials may contain nested objects and non-string values. They are not serialized JSON hidden in string fields.
 
-`ProviderManifest.model` and `.web` contain immutable definition tuples. The common installed loader selects explicit `a13n.providers` entry-point names, rejects conflicting contributions within each domain, and imports no Service implementation. Installation alone does not activate code. Definition/schema loading is inert; vendor SDKs load when their operation needs them. Memory, Connector, and Environment retain their existing registration contracts until their owning transitions are implemented.
+`ProviderManifest.model`, `.web`, and `.memory` contain immutable definition tuples. The common installed loader selects explicit `a13n_harness.providers.plugins` entry-point names, rejects conflicting contributions within each domain, and imports no Service implementation. Installation alone does not activate code. Definition/schema loading is inert; vendor SDKs load when their operation needs them. Connector and Environment retain their existing registration contracts until their owning transitions are implemented.
 
 ## Authentication
 

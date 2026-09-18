@@ -18,7 +18,6 @@ dependencies = [
     "genai-prices>=0.1.6,<1",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
-    "mem0ai>=2.0.19,<3",
     "opentelemetry-api>=1.39,<2",
     "pydantic>=2.12,<3",
     "pydantic-ai[bedrock,bedrock-mantle,cohere,google-realtime,groq,huggingface,mistral,openai-realtime,openrouter,retries,xai,xai-realtime]>=2.41.0,<3",
@@ -30,6 +29,9 @@ dependencies = [
     "tenacity>=9,<10",
     "typing-extensions>=4.15,<5",
 ]
+
+[project.optional-dependencies]
+mem0 = ["mem0ai>=2.0.19,<3"]
 
 [dependency-groups]
 test = [

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, Mem0PlatformBackendPlugin
-
 from a13n_service.connectivity.connectors.providers.composio.configuration import (
     ComposioConfiguration,
     validate_setup,
@@ -15,8 +13,6 @@ from .api import ConnectorProviderRegistration, ProviderPluginRegistry
 
 
 def register(registry: ProviderPluginRegistry) -> None:
-    registry.memory.register(Mem0OSSBackendPlugin())
-    registry.memory.register(Mem0PlatformBackendPlugin())
     registry.connector.register(
         ConnectorProviderRegistration(
             type="composio",

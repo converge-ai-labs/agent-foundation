@@ -103,7 +103,6 @@ dependencies = [
     { name = "google-genai" },
     { name = "httpx2" },
     { name = "jsonschema" },
-    { name = "mem0ai" },
     { name = "openai" },
     { name = "opentelemetry-api" },
     { name = "pydantic" },
@@ -115,6 +114,11 @@ dependencies = [
     { name = "referencing" },
     { name = "tenacity" },
     { name = "typing-extensions" },
+]
+
+[package.optional-dependencies]
+mem0 = [
+    { name = "mem0ai" },
 ]
 
 [package.dev-dependencies]
@@ -135,7 +139,7 @@ requires-dist = [
     { name = "google-genai", specifier = ">=1.0,<3" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
-    { name = "mem0ai", specifier = ">=2.0.19,<3" },
+    { name = "mem0ai", marker = "extra == 'mem0'", specifier = ">=2.0.19,<3" },
     { name = "openai", specifier = ">=3.5,<4" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
@@ -148,6 +152,7 @@ requires-dist = [
     { name = "tenacity", specifier = ">=9,<10" },
     { name = "typing-extensions", specifier = ">=4.15,<5" },
 ]
+provides-extras = ["mem0"]
 
 [package.metadata.requires-dev]
 test = [
@@ -280,7 +285,7 @@ source = { editable = "packages/a13n-service" }
 dependencies = [
     { name = "a13n-envd-client" },
     { name = "a13n-environment" },
-    { name = "a13n-harness" },
+    { name = "a13n-harness", extra = ["mem0"] },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
     { name = "a2a-sdk", extra = ["fastapi"] },
@@ -327,7 +332,7 @@ dependencies = [
 requires-dist = [
     { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
     { name = "a13n-environment", editable = "packages/a13n-environment" },
-    { name = "a13n-harness", editable = "packages/a13n-harness" },
+    { name = "a13n-harness", extras = ["mem0"], editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
     { name = "a2a-sdk", extras = ["fastapi"], specifier = ">=1.1.2,<1.2" },

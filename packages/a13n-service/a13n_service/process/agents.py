@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.memory import MemoryProviderCatalog
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
@@ -20,7 +20,7 @@ class AgentResources:
     connectivity: ConnectivitySelectionResolver
     invocations: AgentInvocationResolver
     web_providers: WebProviderRegistry
-    memory_backends: MemoryBackendCatalog
+    memory_providers: MemoryProviderCatalog
 
 
 def build_agent_resources(
@@ -28,19 +28,19 @@ def build_agent_resources(
     shared: SharedRuntime,
     providers: ProviderRegistry,
     web_providers: WebProviderRegistry | None = None,
-    memory_backends: MemoryBackendCatalog | None = None,
+    memory_providers: MemoryProviderCatalog | None = None,
 ) -> AgentResources:
     sessions = shared.storage.sessions
     models = AcceptedModelSelector(sessions, providers)
     connectivity = ConnectivitySelectionResolver(sessions)
     selected_web_providers = web_providers or built_in_web_provider_registry()
-    selected_memory = memory_backends if memory_backends is not None else MemoryBackendCatalog()
+    selected_memory = memory_providers if memory_providers is not None else MemoryProviderCatalog()
     invocations = components.agent_invocation_resolver or AgentInvocationResolver(
         sessions,
         models,
         connectivity_resolver=connectivity,
         web_provider_registry=selected_web_providers,
-        memory_backend_catalog=selected_memory,
+        memory_provider_catalog=selected_memory,
     )
     return AgentResources(models, connectivity, invocations, selected_web_providers, selected_memory)
 
@@ -51,5 +51,5 @@ def build_agent_resolver(components: Components, shared: SharedRuntime, resource
         resources.models,
         connectivity_resolver=resources.connectivity,
         web_provider_registry=resources.web_providers,
-        memory_backend_catalog=resources.memory_backends,
+        memory_provider_catalog=resources.memory_providers,
     )

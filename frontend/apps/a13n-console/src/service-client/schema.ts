@@ -6457,9 +6457,9 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       /** Credential */
-      credential: {
+      credential?: {
         [key: string]: components["schemas"]["JsonValue"];
-      };
+      } | null;
       /**
        * Enabled
        * @default true
@@ -8157,6 +8157,7 @@ export interface components {
     };
     /** MemoryProviderDefinition */
     MemoryProviderDefinition: {
+      authentication: components["schemas"]["Authentication"];
       /** Configuration Schema */
       configuration_schema: {
         [key: string]: unknown;
@@ -8167,6 +8168,10 @@ export interface components {
       };
       /** Display Name */
       display_name: string;
+      /** Setup Label */
+      setup_label?: string | null;
+      /** Setup Url */
+      setup_url?: string | null;
       /**
        * Supports Documents
        * @default false

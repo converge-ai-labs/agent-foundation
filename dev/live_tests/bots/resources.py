@@ -11,7 +11,7 @@ async def setup(journey, platform, *, agent=None):
     provider = await journey.post(
         journey.base + "/memory-providers",
         {
-            "type": "a13n.mem0-oss",
+            "type": "mem0_oss",
             "name": "Live Bot memory",
             "configuration": {"base_url": os.environ["TEST_MEM0_OSS_URL"]},
             "credential": {"api_key": os.environ["TEST_MEM0_OSS_API_KEY"]},

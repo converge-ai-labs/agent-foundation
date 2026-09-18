@@ -9,9 +9,9 @@ from dataclasses import replace
 from functools import partial
 
 import httpx2
-from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.memory import MemoryProviderCatalog
 from anyio import create_task_group, to_thread
 from pydantic_ai import prices
 
@@ -90,9 +90,9 @@ async def open_process_runtime(
                 stack.enter_context(prices.update_in_background())
             protector = settings.secret_protector()
             memory_catalog = (
-                components.memory_backend_catalog
-                if components.memory_backend_catalog is not None
-                else MemoryBackendCatalog(provider_catalogs.memory)
+                components.memory_provider_catalog
+                if components.memory_provider_catalog is not None
+                else MemoryProviderCatalog(provider_catalogs.memory)
             )
             bot_verifier = None
             memory_http = None

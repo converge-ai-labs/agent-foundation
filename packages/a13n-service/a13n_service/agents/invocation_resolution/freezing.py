@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.memory import MemoryProviderCatalog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.selection_resolution import (
@@ -57,12 +57,12 @@ class AgentInvocationFreezer:
         *,
         connectivity_resolver: ConnectivitySelectionResolver,
         web_provider_registry: WebProviderRegistry,
-        memory_backend_catalog: MemoryBackendCatalog,
+        memory_provider_catalog: MemoryProviderCatalog,
     ) -> None:
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver
         self._web_provider_registry = web_provider_registry
-        self._memory_backend_catalog = memory_backend_catalog
+        self._memory_provider_catalog = memory_provider_catalog
 
     async def freeze_in_transaction(
         self,
@@ -151,7 +151,7 @@ class AgentInvocationFreezer:
                     workspace_id=prepared.workspace_id,
                     provider_id=memory.provider_id,
                     eligible=True,
-                    catalog=self._memory_backend_catalog,
+                    catalog=self._memory_provider_catalog,
                 )
             original_web = web_selection(authored.toolsets)
             original_by_operation = dict(provider_selections(original_web))

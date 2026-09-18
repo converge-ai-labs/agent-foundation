@@ -15,6 +15,8 @@ import { CredentialEditor } from "../../shared/credential-editor";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { FormSection, formSectionStyles } from "../../shared/form-section";
+import { credentialMode } from "../../shared/provider-authentication";
+import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
@@ -162,14 +164,17 @@ export function MemoryProviderForm({
   const definition = definitions.find((item) => item.type === type);
   const configSchema = definition?.configuration_schema ?? {};
   const credentialSchema = definition?.credential_schema ?? {};
-  const replacingCredential = Object.keys(credential).length > 0;
+  const mode = credentialMode(definition, configuration);
+  const replacingCredential =
+    mode !== "forbidden" &&
+    (Object.keys(credential).length > 0 || (!original && mode === "required"));
   const save = useMutation({
     gcTime: 0,
     retry: false,
     mutationFn: async () => {
       if (!name.trim()) throw new Error(t("Enter a provider name."));
       const credentials = withSchemaValues(credentialSchema, credential);
-      if (!original || replacingCredential)
+      if (replacingCredential && !removeCredential)
         validateSettings(credentialSchema, credentials);
       if (!original) {
         if (!definition) throw new Error(t("Choose a provider type."));
@@ -181,7 +186,9 @@ export function MemoryProviderForm({
             name,
             enabled,
             configuration: jsonObject(JSON.stringify(config)),
-            credential: jsonObject(JSON.stringify(credentials)),
+            credential: replacingCredential
+              ? jsonObject(JSON.stringify(credentials))
+              : null,
           });
         } catch (error) {
           if (
@@ -200,7 +207,7 @@ export function MemoryProviderForm({
       return api.updateProvider(original.value.id, original.etag, {
         name,
         enabled,
-        ...(removeCredential
+        ...(removeCredential || (definition && mode === "forbidden")
           ? { credential: null }
           : replacingCredential
             ? { credential: jsonObject(JSON.stringify(credentials)) }
@@ -263,6 +270,14 @@ export function MemoryProviderForm({
             definitions={definitions}
             value={type}
             readOnly={!!original || readOnly}
+            labelAction={
+              definition?.setup_url && (
+                <ProviderKeyLink
+                  href={definition.setup_url}
+                  label={definition.setup_label ?? undefined}
+                />
+              )
+            }
             onValueChange={(value) => {
               setType(value);
               setConfiguration({});
@@ -294,49 +309,53 @@ export function MemoryProviderForm({
             />
           )}
         </FormSection>
-        <FormSection title={t("Credentials")}>
-          {readOnly ? (
-            <ReadOnlyField label={t("Credentials")}>
-              {t(
-                original?.value.credential_configured
-                  ? "Configured"
-                  : "Not configured",
-              )}
-            </ReadOnlyField>
-          ) : original ? (
-            <CredentialEditor
-              configured={original.value.credential_configured}
-              removing={removeCredential}
-              onRemovingChange={(value) => {
-                setRemoveCredential(value);
-                setCredential({});
-              }}
-            >
-              {definition ? (
-                <SchemaFields
-                  secret
-                  schema={{ ...credentialSchema, required: [] }}
-                  value={credential}
-                  onChange={setCredential}
-                />
-              ) : (
-                <p className="text-sm text-muted-foreground">
-                  {t(
-                    "The backend definition is unavailable. Credential replacement requires its installed schema.",
-                  )}
-                </p>
-              )}
-            </CredentialEditor>
-          ) : (
-            <SchemaFields
-              secret
-              key={`${type}-credentials`}
-              schema={credentialSchema}
-              value={credential}
-              onChange={setCredential}
-            />
-          )}
-        </FormSection>
+        {(mode !== "forbidden" || original?.value.credential_configured) && (
+          <FormSection title={t("Credentials")}>
+            {readOnly ? (
+              <ReadOnlyField label={t("Credentials")}>
+                {t(
+                  original?.value.credential_configured
+                    ? "Configured"
+                    : "Not configured",
+                )}
+              </ReadOnlyField>
+            ) : original ? (
+              <CredentialEditor
+                configured={original.value.credential_configured}
+                removing={removeCredential}
+                onRemovingChange={(value) => {
+                  setRemoveCredential(value);
+                  setCredential({});
+                }}
+              >
+                {definition && mode !== "forbidden" ? (
+                  <SchemaFields
+                    secret
+                    schema={credentialSchema}
+                    requireFields={replacingCredential && !removeCredential}
+                    value={credential}
+                    onChange={setCredential}
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {t(
+                      "The backend definition is unavailable. Credential replacement requires its installed schema.",
+                    )}
+                  </p>
+                )}
+              </CredentialEditor>
+            ) : (
+              <SchemaFields
+                secret
+                key={`${type}-credentials`}
+                requireFields={mode === "required"}
+                schema={credentialSchema}
+                value={credential}
+                onChange={setCredential}
+              />
+            )}
+          </FormSection>
+        )}
         {original && (
           <FormSection>
             {readOnly ? (

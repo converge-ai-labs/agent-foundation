@@ -5,6 +5,9 @@ description = "Installed deployment Provider plugin example for Agent Foundation
 requires-python = ">=3.13"
 dependencies = [
     "a13n-harness>=0,<1",
+    "a13n-logging>=0,<1",
+    "anyio>=4,<5",
+    "httpx2>=2,<3",
     "pydantic>=2.12,<3",
     "openai>=3.8,<4",
     "pydantic-ai>=2.41,<3",
@@ -12,13 +15,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "httpx2>=2,<3",
     "pytest>=9,<10",
     "pyright>=1.1,<2",
     "ruff>=0.16,<0.17",
 ]
 
-[project.entry-points."a13n.providers"]
+[project.entry-points."a13n_harness.providers.plugins"]
 acme = "acme_provider.plugin:manifest"
 
 [build-system]

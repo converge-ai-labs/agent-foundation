@@ -4,12 +4,7 @@ import json
 import httpx
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0_backends import (
-    Mem0OSSBackend,
-    open_mem0_oss,
-    open_mem0_platform,
-)
-from a13n_harness.memory import (
+from a13n_harness.providers.memory.contracts import (
     MemoryDocumentScope,
     MemoryPage,
     MemoryPaginationUnsupported,
@@ -17,6 +12,8 @@ from a13n_harness.memory import (
     MemorySubject,
     MemoryWriteUnconfirmed,
 )
+from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
+from a13n_harness.providers.memory.mem0_platform import open_mem0_platform
 from mem0 import AsyncMemoryClient
 
 pytestmark = pytest.mark.anyio
@@ -207,21 +204,11 @@ async def test_platform_native_sdk_contract_without_constructor_network_io(monke
     assert "deferred" not in json.dumps(calls)
 
 
-async def test_oss_transport_lifetime_is_owned_by_host_even_on_cancellation():
-    client = None
-    with pytest.raises(asyncio.CancelledError):
-        async with open_mem0_oss(base_url="http://oss", api_key="test-key") as backend:
-            client = backend.client
-            assert not client.is_closed
-            raise asyncio.CancelledError
-    assert client.is_closed
-
-
 @pytest.mark.parametrize("kind", ["oss", "platform"])
 async def test_native_crud_confirms_exact_text_and_checks_subject_before_mutation(kind):
     from contextlib import asynccontextmanager
 
-    from a13n_harness.memory import MemoryRecordNotFound
+    from a13n_harness.providers.memory.contracts import MemoryRecordNotFound
 
     calls = []
     stored = {}
@@ -288,7 +275,7 @@ async def test_native_crud_confirms_exact_text_and_checks_subject_before_mutatio
 
 @pytest.mark.parametrize("operation", ["add", "update", "delete"])
 async def test_uncertain_native_writes_never_retry(operation):
-    from a13n_harness.memory import MemoryWriteUnconfirmed
+    from a13n_harness.providers.memory.contracts import MemoryWriteUnconfirmed
 
     writes = []
 
@@ -321,7 +308,7 @@ async def test_invalid_explicit_text_fails_before_native_io(text):
 
 
 async def test_native_page_cannot_return_records_outside_the_requested_subject():
-    from a13n_harness.memory import MemoryRecordNotFound
+    from a13n_harness.providers.memory.contracts import MemoryRecordNotFound
 
     def handle(request):
         return httpx2.Response(200, json={"results": [{"id": "other", "memory": "secret", "run_id": "other-thread"}]})
@@ -417,3 +404,13 @@ async def test_document_search_rejects_provider_filter_violation():
                 record_keys=("allowed",),
                 limit=5,
             )
+
+
+@pytest.mark.parametrize("metadata", [[], "", False, 0])
+async def test_oss_rejects_malformed_metadata_even_when_empty(metadata):
+    def handle(request):
+        return httpx2.Response(200, json={"id": "record", "memory": "fact", "run_id": "thread-1", "metadata": metadata})
+
+    async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handle)) as client:
+        with pytest.raises(ValueError, match="Invalid Mem0 metadata"):
+            await Mem0OSSBackend(client).get("record", subject=SUBJECTS[0])

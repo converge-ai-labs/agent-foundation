@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from a13n_harness.memory import MemoryScope as ScopeKind
+from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory

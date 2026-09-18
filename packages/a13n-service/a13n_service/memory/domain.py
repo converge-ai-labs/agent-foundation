@@ -3,7 +3,8 @@
 from datetime import datetime
 from typing import Annotated
 
-from a13n_harness.memory import MemoryScope as ScopeKind
+from a13n_harness.providers.authentication import Authentication
+from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
 from a13n_service.iam.domain import PrincipalRef
@@ -88,7 +89,7 @@ class CreateMemoryProviderRequest(BaseModel):
     type: str = Field(min_length=1, max_length=128)
     name: DisplayName
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
-    credential: dict[str, JsonValue] = Field(repr=False, json_schema_extra={"writeOnly": True})
+    credential: dict[str, JsonValue] | None = Field(default=None, repr=False, json_schema_extra={"writeOnly": True})
     enabled: bool = True
 
 
@@ -104,7 +105,7 @@ class UpdateMemoryProviderRequest(BaseModel):
         if not self.model_fields_set:
             raise ValueError("at least one field must be supplied")
         values = {"name": self.name, "credential": self.credential, "enabled": self.enabled}
-        if any(values[key] is None for key in self.model_fields_set):
+        if any(values[key] is None for key in self.model_fields_set - {"credential"}):
             raise ValueError("supplied fields cannot be null")
         return self
 
@@ -138,6 +139,9 @@ class MemoryProviderDefinition(BaseModel):
     display_name: str
     configuration_schema: dict[str, object]
     credential_schema: dict[str, object]
+    authentication: Authentication
+    setup_url: str | None = None
+    setup_label: str | None = None
     supports_documents: bool = False
 
 

@@ -5,8 +5,8 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_service.application_errors import ApplicationError
 from a13n_service.bots.memory.binding import BotMemoryBinding
 from a13n_service.bots.memory.bindings import bind, require_binding

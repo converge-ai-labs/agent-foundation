@@ -35,7 +35,7 @@ Long-term memory uses the opt-in `MemoryCapability` with a required Host-owned b
 
 ```python
 from a13n_harness.capabilities import MemoryCapability, MemoryScope
-from a13n_harness.capabilities.mem0_backends import open_mem0_oss
+from a13n_harness.providers.memory.mem0_oss import open_mem0_oss
 
 async with open_mem0_oss(base_url=mem0_url, api_key=mem0_api_key) as backend:
     capabilities = (MemoryCapability(backend=backend, scope=MemoryScope.USER),)

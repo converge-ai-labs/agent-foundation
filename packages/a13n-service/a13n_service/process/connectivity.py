@@ -7,8 +7,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
 import httpx2
-from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.memory import MemoryProviderCatalog
 
 from a13n_service.bots.connectivity.setup_tests import SetupObservations
 from a13n_service.bots.memory.lifecycle import invalidate_conversation
@@ -83,7 +83,7 @@ async def build_connectivity_runtime(
     input_acceptor: InputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
-    memory_catalog: MemoryBackendCatalog | None = None,
+    memory_catalog: MemoryProviderCatalog | None = None,
 ) -> tuple[ConnectivityRuntime | None, tuple[BackgroundTask, ...]]:
     """Construct only the Connectivity capabilities owned by this role."""
 
@@ -127,7 +127,7 @@ async def _build_control_runtime(
     provider_catalogs: ProviderCatalogs,
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
-    memory_catalog: MemoryBackendCatalog | None,
+    memory_catalog: MemoryProviderCatalog | None,
 ) -> tuple[ConnectivityControlRuntime, tuple[BackgroundTask, ...]]:
     public_origin = settings.validated_connectivity_public_origin() if settings.connectivity.public_origin else None
     endpoint_policy = settings.connectivity_endpoint_policy()

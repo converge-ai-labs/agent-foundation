@@ -4,8 +4,8 @@ import hashlib
 import json
 from datetime import date
 
-from a13n_harness.memory import MemoryDocumentBackend
 from a13n_harness.memory_documents import MemoryDocumentIndex
+from a13n_harness.providers.memory.contracts import MemoryDocumentBackend
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement

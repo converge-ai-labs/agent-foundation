@@ -3,7 +3,7 @@
 import json
 from datetime import timedelta
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.memory import MemoryProviderCatalog
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -45,7 +45,7 @@ class MemoryProviderService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         protector: SecretProtector,
-        catalog: MemoryBackendCatalog,
+        catalog: MemoryProviderCatalog,
         *,
         clock: Clock = utc_now,
     ) -> None:
@@ -66,12 +66,15 @@ class MemoryProviderService:
             items=tuple(
                 MemoryProviderDefinition(
                     type=key,
-                    display_name=plugin.display_name,
-                    supports_documents=plugin.supports_documents,
-                    configuration_schema=plugin.configuration_model.model_json_schema(),
-                    credential_schema={**plugin.credential_model.model_json_schema(), "writeOnly": True},
+                    display_name=definition.display_name,
+                    supports_documents=definition.supports_documents,
+                    authentication=definition.authentication,
+                    setup_url=definition.setup_url,
+                    setup_label=definition.setup_label,
+                    configuration_schema=definition.configuration_model.model_json_schema(),
+                    credential_schema={**definition.credential_model.model_json_schema(), "writeOnly": True},
                 )
-                for key, plugin in sorted(self.catalog.items())
+                for key, definition in sorted(self.catalog.items())
             )
         )
 
@@ -85,7 +88,7 @@ class MemoryProviderService:
                 )
                 now = self.clock()
                 configuration = self._validate_configuration(request.type, request.configuration)
-                credentials = self._validate_credentials(request.type, request.credential)
+                credentials = self._validate_credentials(request.type, configuration, request.credential)
                 record = MemoryProviderRecord(
                     id=new_object_id("memprov"),
                     organization_id=scope.organization_id,
@@ -106,7 +109,8 @@ class MemoryProviderService:
                     created_at=now,
                     updated_at=now,
                 )
-                record.replace_credential(json.dumps(credentials), self.protector)
+                if credentials is not None:
+                    record.replace_credential(json.dumps(credentials), self.protector)
                 session.add(record)
                 self.audit(session, actor, record, "create", tuple(request.model_fields_set))
                 await session.flush()
@@ -156,10 +160,15 @@ class MemoryProviderService:
                 if request.enabled is not None and record.enabled != request.enabled:
                     record.enabled = request.enabled
                     changes.append("enabled")
-                if request.credential is not None:
-                    credentials = self._validate_credentials(record.type, request.credential)
-                    record.replace_credential(json.dumps(credentials), self.protector)
-                    changes.append("credential")
+                if "credential" in request.model_fields_set:
+                    if request.credential is None:
+                        if record.ciphertext is not None:
+                            record.replace_credential(None, self.protector)
+                            changes.append("credential")
+                    else:
+                        credentials = self._validate_credentials(record.type, record.configuration, request.credential)
+                        record.replace_credential(json.dumps(credentials), self.protector)
+                        changes.append("credential")
                 if changes:
                     record.normalized_name = record.name.casefold()
                     record.updated_at = max(self.clock(), assume_utc(record.updated_at) + timedelta(microseconds=1))
@@ -186,9 +195,14 @@ class MemoryProviderService:
                 category=ErrorCategory.invalid_request,
             ) from error
 
-    def _validate_credentials(self, provider_type: str, value: object) -> dict[str, object]:
+    def _validate_credentials(
+        self, provider_type: str, configuration: object, value: object
+    ) -> dict[str, object] | None:
         try:
-            return credential_payload(self.catalog[provider_type].credential_model.model_validate(value))
+            definition = self.catalog[provider_type]
+            parsed = definition.configuration_model.model_validate(configuration)
+            definition.authentication.validate_presence(parsed, value is not None)
+            return credential_payload(definition.credential_model.model_validate(value)) if value is not None else None
         except (KeyError, ValueError) as error:
             raise MemoryProviderError(
                 "memory_provider_credential_invalid",

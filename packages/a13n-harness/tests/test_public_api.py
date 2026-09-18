@@ -344,8 +344,8 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
 
 def test_memory_has_one_public_capability_and_independent_backend_contract():
     from a13n_harness.capabilities.memory import MemoryCapability
-    from a13n_harness.memory import MemoryBackend, MemoryScope
-    from a13n_harness.memory_plugins import MemoryBackendCatalog, MemoryBackendPlugin
+    from a13n_harness.providers.memory import MemoryProviderCatalog, MemoryProviderDefinition
+    from a13n_harness.providers.memory.contracts import MemoryBackend, MemoryScope
 
     assert capabilities.MemoryCapability is MemoryCapability
     assert capabilities.MemoryScope is MemoryScope
@@ -353,5 +353,5 @@ def test_memory_has_one_public_capability_and_independent_backend_contract():
     assert not hasattr(capabilities, "Mem0Capability")
     assert not hasattr(capabilities, "MemoryRunCapability")
     assert MemoryBackend.__abstractmethods__ == {"search", "list", "add", "get", "update", "delete"}
-    assert MemoryBackendPlugin is not harness.AbstractHarnessPlugin
-    assert MemoryBackendCatalog() == {}
+    assert MemoryProviderDefinition is not harness.AbstractHarnessPlugin
+    assert MemoryProviderCatalog() == {}

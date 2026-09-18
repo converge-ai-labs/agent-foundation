@@ -24,14 +24,6 @@ from a13n_harness.events import (
     MemoryRecallStartedPayload,
     emit_harness_event,
 )
-from a13n_harness.memory import (
-    MemoryBackend,
-    MemoryPage,
-    MemoryRecord,
-    MemoryScope,
-    MemorySubject,
-    MemoryWriteUnconfirmed,
-)
 from a13n_harness.memory_documents import MemoryDocumentStore
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
@@ -43,6 +35,14 @@ from a13n_harness.model_context import (
     ModelContextRequestKind,
 )
 from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
+from a13n_harness.providers.memory.contracts import (
+    MemoryBackend,
+    MemoryPage,
+    MemoryRecord,
+    MemoryScope,
+    MemorySubject,
+    MemoryWriteUnconfirmed,
+)
 
 MEMORY_CAPABILITY_ID = "a13n.memory"
 

@@ -202,29 +202,18 @@ def test_manifest_rejects_version_and_duplicate_definitions():
         ProviderManifest(api_version=1, web=(registration(), registration()))
 
 
-def test_memory_registration_reuses_shared_plugin_and_rejects_builtin_collision(monkeypatch):
-    from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, MemoryBackendCatalog
+def test_memory_manifest_reuses_shared_definition_and_rejects_builtin_collision(monkeypatch):
+    from dataclasses import replace
 
-    class CustomMemoryPlugin(Mem0OSSBackendPlugin):
-        key = "custom.memory"
-        display_name = "Custom Memory"
+    from a13n_harness.providers.memory import MemoryProviderCatalog
+    from a13n_harness.providers.memory.builtins import MEM0_OSS
 
-    plugin = CustomMemoryPlugin()
-
-    @compatible
-    def selected(registry):
-        registry.memory.register(plugin)
-
-    chosen = EntryPoint("memory", selected)
+    definition = replace(MEM0_OSS, type="custom_memory", display_name="Custom Memory")
+    chosen = EntryPoint("memory", ProviderManifest(api_version=1, memory=(definition,)))
     install(monkeypatch, chosen)
-    catalog = MemoryBackendCatalog(load_provider_catalogs(("memory",)).memory)
-    assert catalog[plugin.key] is plugin
+    catalog = MemoryProviderCatalog(load_provider_catalogs(("memory",)).memory)
+    assert catalog[definition.type] is definition
     assert chosen.loads == 1
-
-    @compatible
-    def collision(registry):
-        registry.memory.register(Mem0OSSBackendPlugin())
-
-    install(monkeypatch, EntryPoint("collision", collision))
+    install(monkeypatch, EntryPoint("collision", ProviderManifest(api_version=1, memory=(MEM0_OSS,))))
     with pytest.raises(ProviderPluginError, match="ValueError"):
         load_provider_catalogs(("collision",))

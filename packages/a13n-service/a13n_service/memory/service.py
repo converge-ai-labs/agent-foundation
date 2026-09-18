@@ -4,7 +4,8 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
-from a13n_harness.memory import (
+from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.memory.contracts import (
     MemoryPaginationUnsupported,
     MemoryRecord,
     MemoryRecordNotFound,
@@ -12,7 +13,6 @@ from a13n_harness.memory import (
     require_memory_subject,
     validate_memory_text,
 )
-from a13n_harness.memory_plugins import MemoryBackendCatalog
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.collection_cursors import decode_collection_cursor, encode_collection_cursor
@@ -62,7 +62,7 @@ def project_memory(record: MemoryRecord) -> Memory:
 class MemoryService:
     def __init__(
         self,
-        catalog: MemoryBackendCatalog,
+        catalog: MemoryProviderCatalog,
         protector: SecretProtector,
         authorizer: MemoryAuthorizer,
         *,
