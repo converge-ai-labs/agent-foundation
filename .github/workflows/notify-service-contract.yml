@@ -4,16 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - 'proto/a13n-service/**'
+      - 'proto/a13n-service/openapi.json'
+      - 'proto/a13n-service/notification-client.schema.json'
+      - 'proto/a13n-service/run-stream-event.schema.json'
+      - 'proto/a13n-service/fixtures/wire.json'
       - 'spec/api-conventions.md'
-      - 'spec/a13n-service/**'
-      - 'packages/a13n-service/**'
-      - 'packages/a13n-stream-protocol/**'
-      - 'packages/a13n-harness/**'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - 'scripts/export-a13n-service-openapi.py'
-      - '.github/workflows/notify-service-contract.yml'
+      - 'spec/a13n-service/21-native-streaming-and-notifications.md'
+      - 'spec/a13n-service/20-agent-control-queued-submissions.md'
   workflow_dispatch:
     inputs:
       source_sha:
