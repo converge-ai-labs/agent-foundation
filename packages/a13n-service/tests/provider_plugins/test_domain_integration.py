@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from a13n_environment import EnvironmentProvider
+from a13n_harness.providers.model import ModelProviderDefinition, ProviderConfiguration
 from a13n_service.connectivity.connectors.contracts import ConnectorProviderRuntime
 from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.process.components import Components
@@ -11,8 +12,6 @@ from a13n_service.provider_plugins import (
     PROVIDER_EXTENSION_API_VERSION,
     ConnectorProviderRegistration,
     ProviderCatalogs,
-    ProviderConfiguration,
-    ProviderIntegration,
     ProviderPluginRegistry,
 )
 from a13n_service.provider_plugins.connectors import build_connector_provider_registry
@@ -153,10 +152,11 @@ def test_external_model_configuration_preserves_aliases_and_explicit_nulls() -> 
     def unused_builder(_provider, _http, _model_api):
         raise AssertionError("configuration validation must not construct a Provider")
 
-    integration = ProviderIntegration(
+    integration = ModelProviderDefinition(
         type="aliased_model",
         display_name="Aliased Model",
         configuration_model=AliasedModelConfiguration,
+        credential_model=Credential,
         supported_model_apis=("openai.responses",),
         build_provider=unused_builder,
         endpoint="https://models.example.com/v1",

@@ -10,7 +10,6 @@ from a13n_service.connectivity.connectors.providers.composio.configuration impor
 )
 from a13n_service.connectivity.connectors.providers.composio.runtime import ComposioProvider
 from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
-from a13n_service.models.provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
 
 from .api import ConnectorProviderRegistration, ProviderPluginRegistry
 
@@ -18,8 +17,6 @@ from .api import ConnectorProviderRegistration, ProviderPluginRegistry
 def register(registry: ProviderPluginRegistry) -> None:
     registry.memory.register(Mem0OSSBackendPlugin())
     registry.memory.register(Mem0PlatformBackendPlugin())
-    for integration in BUILT_IN_PROVIDER_INTEGRATIONS:
-        registry.model.register(integration)
     registry.connector.register(
         ConnectorProviderRegistration(
             type="composio",

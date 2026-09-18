@@ -37,6 +37,19 @@ function fieldSchema(
     };
   return value;
 }
+function visible(
+  field: Record<string, unknown>,
+  values: Record<string, unknown>,
+) {
+  const condition = field["x-visible-when"];
+  return (
+    !object(condition) ||
+    Object.entries(condition).every(
+      ([name, expected]) => values[name] === expected,
+    )
+  );
+}
+
 /** Apply schema defaults and fixed values to the submitted object as well as the form. */
 export function withSchemaValues(
   schema: Record<string, unknown>,
@@ -63,6 +76,10 @@ export function withSchemaValues(
       }
     }
   }
+  if (object(schema.properties))
+    for (const [key, definition] of Object.entries(schema.properties)) {
+      if (!visible(fieldSchema(definition, schema), result)) delete result[key];
+    }
   return result;
 }
 
@@ -103,7 +120,11 @@ export function SchemaFields({
           descriptions && typeof field.description === "string"
             ? t(field.description)
             : undefined;
-        if (Object.hasOwn(field, "const")) return null;
+        if (
+          Object.hasOwn(field, "const") ||
+          !visible(field, withSchemaValues(schema, value))
+        )
+          return null;
         const current = Object.hasOwn(value, key) ? value[key] : field.default;
         const options = Array.isArray(field.oneOf)
           ? field.oneOf.flatMap((choice) =>
@@ -200,7 +221,8 @@ export function SchemaFields({
                     : undefined
                 }
                 type={
-                  secret || field.format === "password"
+                  field.type === "string" &&
+                  (secret || field.format === "password")
                     ? "password"
                     : field.type === "string"
                       ? "text"
@@ -219,7 +241,7 @@ export function SchemaFields({
                   change(
                     key,
                     event.target.value === ""
-                      ? secret || field.default == null
+                      ? field.default == null
                         ? undefined
                         : ""
                       : field.type === "string"

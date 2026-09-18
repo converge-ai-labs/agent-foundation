@@ -37,7 +37,7 @@ async def shared_model(journey, organization):
         json={
             "name": "Shared " + uuid4().hex,
             "type": "openai",
-            "credential": "fixture-primary",
+            "credential": {"api_key": "fixture-primary"},
             "configuration": case["provider"]["configuration"],
         },
     )

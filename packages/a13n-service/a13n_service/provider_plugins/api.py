@@ -13,7 +13,6 @@ from pydantic import BaseModel
 from a13n_service.connectivity.connectors.contracts import ConnectorProviderRuntime
 from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.models.provider_adapters.base import ProviderIntegration
 
 PROVIDER_EXTENSION_API_VERSION = 1
 
@@ -62,7 +61,6 @@ class ProviderPluginRegistry:
         self.environment = _DomainRegistry[EnvironmentProvider](
             "Environment", EnvironmentProvider, lambda item: item.key
         )
-        self.model = _DomainRegistry[ProviderIntegration]("Model", ProviderIntegration, lambda item: item.type)
         self.connector = _DomainRegistry[ConnectorProviderRegistration](
             "Connector", ConnectorProviderRegistration, lambda item: item.type
         )

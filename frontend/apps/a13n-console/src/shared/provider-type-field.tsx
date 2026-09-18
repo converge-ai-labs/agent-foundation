@@ -27,7 +27,7 @@ export function ProviderTypeField({
   const { t } = useTranslation();
   if (readOnly)
     return (
-      <ReadOnlyField label={t("Provider type")}>
+      <ReadOnlyField label={t("Provider type")} description={labelAction}>
         <span className="flex items-center gap-2">
           <ProviderIcon type={value} />
           {definitions.find((item) => item.type === value)?.display_name ??

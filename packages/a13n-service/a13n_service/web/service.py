@@ -72,15 +72,7 @@ class WebProviderService:
                 )
                 now = self.clock()
                 configuration = self._validate_configuration(request.type, request.configuration)
-                definition = self.registry.require(request.type)
-                if definition.credential_required != (request.credential is not None) or (
-                    not definition.credential_required and "credential" in request.model_fields_set
-                ):
-                    raise WebProviderError(
-                        "web_provider_credential_invalid",
-                        "Web Provider credential does not match its type.",
-                        category=ErrorCategory.invalid_request,
-                    )
+                self._validate_authentication(request.type, configuration, request.credential is not None)
                 credentials = (
                     self._validate_credentials(request.type, request.credential)
                     if request.credential is not None
@@ -158,15 +150,22 @@ class WebProviderService:
                     if getattr(record, key) != value:
                         setattr(record, key, value)
                         changes.append(key)
-                if request.credential is not None:
-                    if not self.registry.require(record.type).credential_required:
-                        raise WebProviderError(
-                            "web_provider_credential_invalid",
-                            "Web Provider does not accept a credential.",
-                            category=ErrorCategory.invalid_request,
-                        )
-                    credentials = self._validate_credentials(record.type, request.credential)
-                    record.replace_credential(json.dumps(credentials), self.protector)
+                self._validate_authentication(
+                    record.type,
+                    record.configuration,
+                    request.credential is not None
+                    if "credential" in request.model_fields_set
+                    else record.ciphertext is not None,
+                )
+                if "credential" in request.model_fields_set:
+                    credentials = (
+                        self._validate_credentials(record.type, request.credential)
+                        if request.credential is not None
+                        else None
+                    )
+                    record.replace_credential(
+                        json.dumps(credentials) if credentials is not None else None, self.protector
+                    )
                     changes.append("credential")
                 if changes:
                     record.normalized_name = record.name.casefold()
@@ -179,6 +178,19 @@ class WebProviderService:
         except IntegrityError as error:
             _name_conflict(error)
             raise
+
+    def _validate_authentication(self, provider_type: str, configuration: dict[str, object], configured: bool) -> None:
+        definition = self.registry.require(provider_type)
+        try:
+            definition.authentication.validate_presence(
+                definition.configuration_model.model_validate(configuration), configured
+            )
+        except ValueError as error:
+            raise WebProviderError(
+                "web_provider_credential_invalid",
+                "Web Provider credential does not match its configuration.",
+                category=ErrorCategory.invalid_request,
+            ) from error
 
     def _validate_configuration(self, provider_type: str, value: object) -> dict[str, object]:
         try:

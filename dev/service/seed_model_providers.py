@@ -1,7 +1,5 @@
 """Fictional connections for exercising every supported Provider editor."""
 
-import json
-
 from a13n_service.models.providers import built_in_provider_registry
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
@@ -40,27 +38,23 @@ async def seed_model_providers(client: Client, base: str) -> dict[str, str]:
             "ollama": {"base_url": "http://127.0.0.1:11434"},
             "alibaba_model_studio": {"region": "cn-beijing", "domain_type": "mainland_china"},
         }.get(definition.type, {})
-        credential = "fictional-local-demo-not-a-real-api-key"
+        credential = {"api_key": "fictional-local-demo-not-a-real-api-key"}
         if definition.type == "ollama":
             credential = None
         elif definition.type == "aws_bedrock":
-            credential = json.dumps(
-                {"aws_access_key_id": "FICTIONALLOCALDEMO", "aws_secret_access_key": "not-a-real-aws-secret"}
-            )
+            credential = {"aws_access_key_id": "FICTIONALLOCALDEMO", "aws_secret_access_key": "not-a-real-aws-secret"}
         elif definition.type == "google_vertex":
             # A syntactically valid, unregistered key; never a real cloud account.
             key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-            credential = json.dumps(
-                {
-                    "type": "service_account",
-                    "project_id": "fictional-local-demo",
-                    "client_email": "demo@fictional-local-demo.iam.gserviceaccount.com",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                    "private_key": key.private_bytes(
-                        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
-                    ).decode(),
-                }
-            )
+            credential = {
+                "type": "service_account",
+                "project_id": "fictional-local-demo",
+                "client_email": "demo@fictional-local-demo.iam.gserviceaccount.com",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "private_key": key.private_bytes(
+                    serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+                ).decode(),
+            }
         item = await client.request(
             "POST",
             base + "/model-providers",

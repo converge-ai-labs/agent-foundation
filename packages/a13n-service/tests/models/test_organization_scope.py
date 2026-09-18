@@ -33,7 +33,7 @@ async def org_provider(provider_service, org_admin):
     return await provider_service.create(
         actor=org_admin,
         workspace_id=None,
-        request=CreateModelProviderRequest(type="openai", name="Shared", credential="sk-shared"),
+        request=CreateModelProviderRequest(type="openai", name="Shared", credential={"api_key": "sk-shared"}),
     )
 
 
@@ -59,7 +59,7 @@ async def test_shared_models_resolve_by_bare_key_and_use_owned_credentials(
         record = await session.get(ModelProviderRecord, org_provider.id)
         assert record is not None
         snapshot = record.credential_snapshot()
-        assert ProviderSecrets.model_validate_json(snapshot.decrypt(protector())).credential == "sk-shared"
+        assert ProviderSecrets.model_validate_json(snapshot.decrypt(protector())).credential["api_key"] == "sk-shared"
         with pytest.raises(SecretProtectionError):
             replace(snapshot, workspace_id=WORKSPACE_ID).decrypt(protector())
         with pytest.raises(SecretProtectionError):
@@ -84,7 +84,7 @@ async def test_shared_models_resolve_by_bare_key_and_use_owned_credentials(
             workspace_id=WORKSPACE_ID,
             provider_id=org_provider.id,
             if_match=resource_etag(org_provider.id, org_provider.updated_at),
-            request=UpdateModelProviderRequest(credential="replacement"),
+            request=UpdateModelProviderRequest(credential={"api_key": "replacement"}),
         )
 
 
@@ -146,7 +146,7 @@ async def test_org_cannot_reference_workspace_provider(model_service, provider_s
     local = await provider_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openai", name="Local", credential="sk-local"),
+        request=CreateModelProviderRequest(type="openai", name="Local", credential={"api_key": "sk-local"}),
     )
     with pytest.raises(ModelError):
         await model_service.create(actor=org_admin, workspace_id=None, request=model_request(local.id))
@@ -157,13 +157,13 @@ async def test_scope_creation_requires_organization_admin(model_service, provide
         await provider_service.create(
             actor=actor(),
             workspace_id=None,
-            request=CreateModelProviderRequest(type="openai", name="Denied", credential="sk-denied"),
+            request=CreateModelProviderRequest(type="openai", name="Denied", credential={"api_key": "sk-denied"}),
         )
     with pytest.raises(ModelError):
         await provider_service.create(
             actor=replace(actor(), boundary_workspace_id=None, boundary_organization_id=ORG_ID),
             workspace_id=None,
-            request=CreateModelProviderRequest(type="openai", name="Denied", credential="sk-denied"),
+            request=CreateModelProviderRequest(type="openai", name="Denied", credential={"api_key": "sk-denied"}),
         )
 
 
@@ -199,7 +199,7 @@ async def test_cross_organization_resources_remain_invisible(
     other_provider = await provider_service.create(
         actor=other_admin,
         workspace_id=None,
-        request=CreateModelProviderRequest(type="openai", name="Shared", credential="sk-other"),
+        request=CreateModelProviderRequest(type="openai", name="Shared", credential={"api_key": "sk-other"}),
     )
     other_model = await model_service.create(
         actor=other_admin, workspace_id=None, request=model_request(other_provider.id)

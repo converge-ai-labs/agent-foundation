@@ -10,6 +10,7 @@ from a13n_harness.capabilities.web import (
     WebSearchRequest,
     WebSearchResponse,
 )
+from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.web import WebProviderDefinition, WebProviderResponseError
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.secrets.crypto import SecretProtector
@@ -174,7 +175,7 @@ async def test_credential_free_provider_dispatches_without_ciphertext() -> None:
                 display_name="Keyless Web",
                 configuration_model=_Configuration,
                 credential_model=_Configuration,
-                credential_required=False,
+                authentication=Authentication(mode=CredentialMode.forbidden),
                 setup_url="https://example.com/setup",
                 search=runtime.search,
             ),

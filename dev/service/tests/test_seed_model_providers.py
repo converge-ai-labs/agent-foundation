@@ -2,7 +2,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_service.ids import new_object_id
-from a13n_service.models.credentials import validate_provider_credential
 from a13n_service.models.domain import CreateModelRequest
 from a13n_service.models.providers import built_in_provider_registry
 
@@ -23,7 +22,7 @@ async def test_every_builtin_provider_has_a_valid_fictional_seed_connection():
         assert method == "POST" and expected == 201
         integration = registry.integration(json["type"])
         integration.validate_configuration(json["configuration"], credential_configured=json["credential"] is not None)
-        validate_provider_credential(integration.credential_format, json["credential"])
+        integration.bind(json["configuration"], json["credential"])
         item = {**json, "id": f"mp_{json['type']}"}
         created.append(item)
         return item

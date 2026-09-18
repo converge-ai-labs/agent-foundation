@@ -33,7 +33,7 @@ async def provision(client: LiveClient, *, on_created: Callable[[dict], None] | 
         {
             "type": "openai",
             "name": "Local live-test model",
-            "credential": config["token"],
+            "credential": {"api_key": config["token"]},
             "configuration": {"base_url": config["control_url"] + "/__live__/model/v1", "auth_mode": "bearer"},
         },
     )

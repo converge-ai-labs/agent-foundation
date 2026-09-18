@@ -42,6 +42,7 @@ async def build_model_bundle(
         provider_resolver=live_provider_resolver,
         registry=execution.model_provider_registry,
         http_client=execution.model_http_client,
+        endpoint_policy=execution.model_endpoint_policy,
     )
     catalog = components.model_catalog
     if catalog is None:

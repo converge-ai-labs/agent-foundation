@@ -60,6 +60,7 @@ const definition = {
     "openai.chat_completions": settingsSchema,
     "openai.responses": settingsSchema,
   },
+  authentication: { mode: "required" },
   credential_schema: {
     type: "string",
     "x-a13n-credential-format": "api_key",

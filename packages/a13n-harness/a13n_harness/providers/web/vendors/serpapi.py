@@ -18,11 +18,12 @@ SEARCH_URL = "https://serpapi.com/search"
 
 async def search(
     configuration: EmptyConfiguration,
-    credential: ApiKeyCredential,
+    credential: ApiKeyCredential | None,
     request: WebSearchRequest,
     options: SearchOptions,
     transport: WebProviderTransport,
 ) -> WebSearchResponse:
+    assert credential is not None
     key = credential.api_key.get_secret_value()
     limit = min(request.limit, options.max_results)
     payload = await transport.exchange_json(

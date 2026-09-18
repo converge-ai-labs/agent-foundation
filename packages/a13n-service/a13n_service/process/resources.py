@@ -7,9 +7,9 @@ from dataclasses import dataclass
 
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.model.apis import MODEL_APIS
 from anyio import to_thread
 
-from a13n_service.models.model_apis import BUILT_IN_MODEL_APIS
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.providers import ProviderRegistry
@@ -38,7 +38,7 @@ async def build_execution_resources(
 ) -> ExecutionResources:
     """Open the resources used by Control and Worker capabilities."""
     # Native schema generation reads installed source docs; warm its cache off the event loop.
-    for model_api in BUILT_IN_MODEL_APIS:
+    for model_api in MODEL_APIS:
         await to_thread.run_sync(settings_schema, model_api)
 
     async def validate_model_request(request: httpx2.Request) -> None:

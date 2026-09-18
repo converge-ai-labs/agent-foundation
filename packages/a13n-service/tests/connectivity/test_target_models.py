@@ -62,7 +62,7 @@ async def selected_model(request, connectivity_sessions, credential_protector):
     provider = await providers.create(
         actor=admin,
         workspace_id=None,
-        request=CreateModelProviderRequest(type="openai", name="Shared", credential="sk-test"),
+        request=CreateModelProviderRequest(type="openai", name="Shared", credential={"api_key": "sk-test"}),
     )
     models = ModelService(connectivity_sessions, registry)
     model = await models.create(

@@ -14,7 +14,6 @@ from pydantic import (
     ConfigDict,
     Field,
     JsonValue,
-    SecretStr,
     StringConstraints,
     model_validator,
 )
@@ -80,7 +79,7 @@ class CreateModelProviderRequest(BaseModel):
     type: ProviderType
     name: DisplayName
     configuration: dict[str, object] = Field(default_factory=dict)
-    credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
+    credential: dict[str, object] | None = Field(default=None, repr=False, json_schema_extra={"writeOnly": True})
     extra_headers: HeaderUpdates = Field(default_factory=dict)
     enabled: bool = True
 
@@ -90,7 +89,7 @@ class UpdateModelProviderRequest(BaseModel):
 
     name: DisplayName | None = None
     configuration: dict[str, object] | None = None
-    credential: SecretStr | None = Field(default=None, json_schema_extra={"writeOnly": True})
+    credential: dict[str, object] | None = Field(default=None, repr=False, json_schema_extra={"writeOnly": True})
     extra_headers: HeaderUpdates = Field(default_factory=dict)
     enabled: bool | None = None
 

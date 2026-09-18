@@ -50,7 +50,7 @@ async def test_provider_change_applies_to_next_request_in_same_run(management, c
         updated = await journey.patch(
             provider_path,
             {
-                "credential": rotated,
+                "credential": {"api_key": rotated},
                 "configuration": {
                     "base_url": live.config["control_url"] + "/__live__/model-alternate/v1",
                     "auth_mode": "bearer",

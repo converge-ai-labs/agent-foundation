@@ -21,7 +21,7 @@ async def _create_provider(service: ModelProviderService, name: str = "OpenAI Pr
     return await service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openai", name=name, credential="sk-secret"),
+        request=CreateModelProviderRequest(type="openai", name=name, credential={"api_key": "sk-secret"}),
     )
 
 
@@ -54,7 +54,7 @@ async def test_provider_credential_is_encrypted_write_only_and_rotatable(
         workspace_id=WORKSPACE_ID,
         provider_id=provider.id,
         if_match=resource_etag(provider.id, provider.updated_at),
-        request=UpdateModelProviderRequest(credential="sk-rotated"),
+        request=UpdateModelProviderRequest(credential={"api_key": "sk-rotated"}),
     )
     assert updated.credential_configured is True
     async with transaction(model_sessions) as session:
@@ -68,9 +68,9 @@ async def test_provider_credential_is_encrypted_write_only_and_rotatable(
 @pytest.mark.parametrize(
     ("provider_type", "configuration", "credential"),
     [
-        ("openai", {}, ""),
-        ("aws_bedrock", {"region": "us-east-1"}, "{}"),
-        ("google_vertex", {"project_id": "project", "location": "us-central1"}, "{}"),
+        ("openai", {}, {"api_key": ""}),
+        ("aws_bedrock", {"region": "us-east-1"}, {}),
+        ("google_vertex", {"project_id": "project", "location": "us-central1"}, {}),
     ],
 )
 async def test_provider_rejects_invalid_credential_before_storage(
@@ -168,7 +168,7 @@ async def test_model_patch_revalidates_all_settings_and_can_clear_defaults(provi
     provider = await provider_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openai", name="Settings", credential="secret"),
+        request=CreateModelProviderRequest(type="openai", name="Settings", credential={"api_key": "secret"}),
     )
     model = await model_service.create(
         actor=actor(),
@@ -213,7 +213,7 @@ async def test_model_identity_conflict_is_not_misreported_as_duplicate_key(
     provider = await provider_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openai", name="OpenAI", credential="secret"),
+        request=CreateModelProviderRequest(type="openai", name="OpenAI", credential={"api_key": "secret"}),
     )
     request = CreateModelRequest(
         key="first", provider_id=provider.id, name="First", upstream_model="gpt-next", model_api="openai.responses"
@@ -235,7 +235,7 @@ async def test_provider_collection_cursor_roundtrips_across_pages(provider_servi
         await provider_service.create(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
-            request=CreateModelProviderRequest(type="openai", name=f"Account {i}", credential="secret"),
+            request=CreateModelProviderRequest(type="openai", name=f"Account {i}", credential={"api_key": "secret"}),
         )
     first = await provider_service.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=2)
     assert first.next_cursor is not None

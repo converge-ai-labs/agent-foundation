@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import httpx2
 import pytest
-from a13n_service.models.provider_adapters.types import RuntimeProvider
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service_common import ModelError
 
@@ -45,7 +44,7 @@ def test_openai_auth_mode_controls_credential_requirement() -> None:
     )
     assert validated.configuration["auth_mode"] == "none"
 
-    with pytest.raises(ValueError, match="requires a credential"):
+    with pytest.raises(ValueError, match="credential is required"):
         registry.validate_provider(
             "openai",
             {"base_url": "https://models.example/v1", "auth_mode": "bearer"},
@@ -58,13 +57,13 @@ def test_openai_auth_mode_controls_credential_requirement() -> None:
     ("mode", "credential", "expected_headers"),
     [
         ("none", None, {}),
-        ("bearer", "secret", {"authorization": "Bearer secret"}),
-        ("api_key_header", "secret", {"x-api-key": "secret"}),
+        ("bearer", {"api_key": "secret"}, {"authorization": "Bearer secret"}),
+        ("api_key_header", {"api_key": "secret"}, {"x-api-key": "secret"}),
     ],
 )
 async def test_openai_runtime_sends_only_selected_auth(
     mode: str,
-    credential: str | None,
+    credential: dict[str, str] | None,
     expected_headers: dict[str, str],
 ) -> None:
     requests: list[httpx2.Request] = []
@@ -79,7 +78,7 @@ async def test_openai_runtime_sends_only_selected_auth(
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         integration = built_in_provider_registry().integration("openai")
         provider = integration.build_provider(
-            RuntimeProvider("openai", configuration, "https://models.example/v1", credential),
+            built_in_provider_registry().integration("openai").bind(configuration, credential),
             http,
             integration.supported_model_apis[0],
         )
@@ -95,3 +94,15 @@ def test_registry_has_one_openai_provider_for_both_apis() -> None:
     assert [item.type for item in registry.definitions()].count("openai") == 1
     assert registry.definition("openai").default_model_api == "openai.responses"
     assert registry.definition("openai").supported_model_apis == ("openai.responses", "openai.chat_completions")
+
+
+def test_help_and_probe_metadata_come_from_definitions():
+    registry = built_in_provider_registry()
+    assert registry.definition("anthropic").supports_connection_probe
+    assert registry.definition("anthropic").setup_url == "https://platform.claude.com/settings/keys"
+    for name in ("google_vertex", "aws_bedrock"):
+        assert not registry.definition(name).supports_connection_probe
+        assert registry.definition(name).setup_url is not None
+        assert registry.definition(name).setup_label is not None
+    assert registry.definition("ollama").setup_url is None
+    assert registry.definition("ollama").setup_label is None

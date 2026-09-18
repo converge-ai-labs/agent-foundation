@@ -63,7 +63,7 @@ async def resources(client: Client, base: str, model_url: str, settings: Setting
         json={
             "type": "openai",
             "name": "Local scripted model (fictional)",
-            "credential": "public-local-model-token",
+            "credential": {"api_key": "public-local-model-token"},
             "configuration": {"base_url": model_url, "auth_mode": "bearer"},
         },
     )
@@ -89,7 +89,7 @@ async def resources(client: Client, base: str, model_url: str, settings: Setting
             json={
                 "type": "openai",
                 "name": f"Local model provider · {state}",
-                "credential": "public-local-model-token" if state == "disabled" else None,
+                "credential": {"api_key": "public-local-model-token"} if state == "disabled" else None,
                 "configuration": {"base_url": model_url, "auth_mode": "bearer" if state == "disabled" else "none"},
                 "enabled": state != "disabled",
             },

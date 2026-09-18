@@ -5,15 +5,16 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping, Sequence
 from types import MappingProxyType
 
+from a13n_harness.providers.authentication import Authentication
+from a13n_harness.providers.model.apis import MODEL_APIS
+from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
+from a13n_harness.providers.model.definition import ModelProviderDefinition as Definition
+from a13n_harness.providers.model.types import ValidatedProviderConfiguration
 from pydantic import BaseModel, ConfigDict
 
 from a13n_service.application_errors import ErrorCategory
 
-from .model_apis import BUILT_IN_MODEL_APIS
 from .profiles import PROVIDER_CATALOGS
-from .provider_adapters.base import ProviderIntegration
-from .provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
-from .provider_adapters.types import CredentialFormat, ValidatedProviderConfiguration
 from .service_common import ModelError
 from .settings import settings_schema
 
@@ -25,6 +26,10 @@ class ModelProviderDefinition(BaseModel):
     display_name: str
     configuration_schema: dict[str, object]
     credential_schema: dict[str, object]
+    authentication: Authentication
+    setup_url: str | None = None
+    setup_label: str | None = None
+    supports_connection_probe: bool
     supported_model_apis: tuple[str, ...]
     catalog_providers: tuple[str, ...] = ()
     default_model_api: str
@@ -42,12 +47,12 @@ class ModelProviderDefinitionCollection(BaseModel):
 class ProviderRegistry:
     """Immutable allowlist of trusted Provider integrations."""
 
-    def __init__(self, integrations: Iterable[ProviderIntegration]) -> None:
-        indexed: dict[str, ProviderIntegration] = {}
+    def __init__(self, integrations: Iterable[Definition]) -> None:
+        indexed: dict[str, Definition] = {}
         for integration in integrations:
             if integration.type in indexed:
                 raise ValueError(f"duplicate provider type {integration.type!r}")
-            unknown_apis = sorted(set(integration.supported_model_apis) - BUILT_IN_MODEL_APIS.keys())
+            unknown_apis = sorted(set(integration.supported_model_apis) - MODEL_APIS.keys())
             if unknown_apis:
                 raise ValueError(f"unknown model APIs for {integration.type!r}: {', '.join(unknown_apis)}")
             if not integration.supported_model_apis:
@@ -61,7 +66,7 @@ class ProviderRegistry:
     def definition(self, provider_type: str) -> ModelProviderDefinition:
         return _definition(self._require(provider_type))
 
-    def integration(self, provider_type: str) -> ProviderIntegration:
+    def integration(self, provider_type: str) -> Definition:
         return self._require(provider_type)
 
     def validate_provider(
@@ -85,9 +90,6 @@ class ProviderRegistry:
                 category=ErrorCategory.invalid_request,
             )
 
-    def credential_format(self, provider_type: str) -> CredentialFormat | None:
-        return self._require(provider_type).credential_format
-
     def with_validated_endpoint(
         self,
         provider_type: str,
@@ -96,7 +98,7 @@ class ProviderRegistry:
     ) -> ValidatedProviderConfiguration:
         return self._require(provider_type).with_validated_endpoint(validated, endpoint)
 
-    def _require(self, provider_type: str) -> ProviderIntegration:
+    def _require(self, provider_type: str) -> Definition:
         try:
             return self._integrations[provider_type]
         except KeyError as error:
@@ -104,30 +106,28 @@ class ProviderRegistry:
 
 
 def built_in_provider_registry() -> ProviderRegistry:
-    return ProviderRegistry(BUILT_IN_PROVIDER_INTEGRATIONS)
+    return ProviderRegistry(BUILT_IN_MODEL_PROVIDERS)
 
 
-def _definition(integration: ProviderIntegration) -> ModelProviderDefinition:
-    credential_schema: dict[str, object] = {"type": "null"}
-    if integration.credential_format is not None:
-        credential_schema = {
-            "type": "string",
-            "format": "password",
-            "writeOnly": True,
-            "x-a13n-credential-format": integration.credential_format.value,
-        }
+def _definition(integration: Definition) -> ModelProviderDefinition:
+    credential_schema = integration.credential_model.model_json_schema()
+    credential_schema["writeOnly"] = True
     return ModelProviderDefinition(
         type=integration.type,
         catalog_providers={"google_vertex": ("google-vertex",), "azure_openai": ("azure",)}.get(
             integration.type, PROVIDER_CATALOGS.get(integration.type, ())
         ),
         display_name=integration.display_name,
+        setup_url=integration.setup_url,
+        setup_label=integration.setup_label,
+        supports_connection_probe=integration.supports_connection_probe,
         configuration_schema=integration.configuration_model.model_json_schema(),
         credential_schema=credential_schema,
+        authentication=integration.authentication,
         supported_model_apis=integration.supported_model_apis,
         default_model_api=integration.supported_model_apis[0],
         model_api_labels={
-            model_api: BUILT_IN_MODEL_APIS[model_api].display_name for model_api in integration.supported_model_apis
+            model_api: MODEL_APIS[model_api].display_name for model_api in integration.supported_model_apis
         },
         settings_schemas={model_api: settings_schema(model_api) for model_api in integration.supported_model_apis},
     )

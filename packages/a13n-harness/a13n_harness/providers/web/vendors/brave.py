@@ -18,11 +18,12 @@ SEARCH_URL = "https://api.search.brave.com/res/v1/web/search"
 
 async def search(
     configuration: EmptyConfiguration,
-    credential: ApiKeyCredential,
+    credential: ApiKeyCredential | None,
     request: WebSearchRequest,
     options: SearchOptions,
     transport: WebProviderTransport,
 ) -> WebSearchResponse:
+    assert credential is not None
     key = credential.api_key.get_secret_value()
     if len(request.query) > 600 or len(request.query.split()) > 75:
         raise WebProviderError("web_search_request_invalid")

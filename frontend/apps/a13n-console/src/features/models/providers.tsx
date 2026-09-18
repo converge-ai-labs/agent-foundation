@@ -17,7 +17,7 @@ import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { PageActions } from "../../shared/page-actions";
 import styles from "../../shared/shared.module.css";
 import { modelApi, type ModelScope } from "./api";
-import { requiresProviderCredential } from "./provider-credentials";
+import { credentialMode } from "../../shared/provider-authentication";
 import { ProviderForm } from "./provider-form";
 import { ProviderIcon } from "../../shared/provider-icon";
 import { useModelProviderDefinitions } from "./provider-definitions";
@@ -90,13 +90,12 @@ export function Providers({ scope }: { scope: ModelScope }) {
                 label: t("Credentials"),
                 render: (item) =>
                   t(
-                    !requiresProviderCredential(
-                      item.type,
-                      item.configuration,
+                    credentialMode(
                       definitions.data?.items.find(
                         (definition) => definition.type === item.type,
                       ),
-                    )
+                      item.configuration,
+                    ) !== "required"
                       ? "No credentials required"
                       : item.credential_configured
                         ? "Configured"

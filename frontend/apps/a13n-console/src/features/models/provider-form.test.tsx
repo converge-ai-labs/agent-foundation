@@ -44,6 +44,7 @@ function mount() {
           {
             type: "deepseek",
             display_name: "DeepSeek",
+            supports_connection_probe: true,
             supported_model_apis: ["openai.chat_completions"],
             default_model_api: "openai.chat_completions",
             model_api_labels: {
@@ -53,6 +54,7 @@ function mount() {
               "openai.chat_completions": { type: "object" },
             },
             catalog_providers: ["openai"],
+            authentication: { mode: "required" },
             credential_schema: { type: "string" },
             configuration_schema: {
               type: "object",
@@ -189,4 +191,154 @@ it("clears a preset without changing the endpoint or static headers", async () =
   expect(state.PATCH.mock.calls[0][1].body.configuration).toEqual(
     provider.configuration,
   );
+});
+
+const customDefinition: Schema["ModelProviderDefinition"] = {
+  type: "acme",
+  display_name: "Acme",
+  supports_connection_probe: false,
+  setup_url: "https://docs.example.com/model-setup",
+  setup_label: "Configure Acme access",
+  supported_model_apis: ["openai.chat_completions"],
+  default_model_api: "openai.chat_completions",
+  model_api_labels: {},
+  settings_schemas: {},
+  catalog_providers: [],
+  authentication: {
+    mode: "required",
+    cases: [
+      { field: "access", equals: "public", mode: "forbidden" },
+      { field: "access", equals: "optional", mode: "optional" },
+    ],
+  },
+  configuration_schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      access: {
+        title: "Access",
+        type: "string",
+        enum: ["public", "optional", "private"],
+        default: "public",
+      },
+    },
+  },
+  credential_schema: {
+    type: "object",
+    required: ["authorization", "revision"],
+    additionalProperties: false,
+    properties: {
+      authorization: {
+        title: "Authorization",
+        type: "object",
+        required: ["token"],
+        properties: {
+          token: {
+            title: "Token",
+            type: "string",
+            minLength: 1,
+            writeOnly: true,
+          },
+        },
+      },
+      revision: { title: "Revision", type: "integer", minimum: 1, default: 1 },
+    },
+  },
+};
+function mountCustom(configuration = {}, definition = customDefinition) {
+  state.PATCH.mockResolvedValue({ data: provider });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { mutations: { retry: false } } })
+      }
+    >
+      <ProviderForm
+        scope={{ kind: "workspace", id: "ws_test" }}
+        resource={{
+          value: {
+            ...provider,
+            type: definition.type,
+            configuration,
+            header_names: [],
+          },
+          etag: '"test"',
+        }}
+        definitions={[definition]}
+        close={state.close}
+        reload={async () => {}}
+      />
+    </QueryClientProvider>,
+  );
+}
+it("uses custom auth defaults to hide credentials and removes saved material", async () => {
+  mountCustom();
+  const user = userEvent.setup();
+  expect(screen.queryByLabelText("Token")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.close).toHaveBeenCalled());
+  expect(state.PATCH.mock.calls[0][1].body).toMatchObject({
+    configuration: { access: "public" },
+    credential: null,
+  });
+});
+it("renders a custom conditional credential with nested secrets and a numeric value", async () => {
+  mountCustom();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("combobox", { name: "Access" }));
+  await user.click(await screen.findByRole("option", { name: "private" }));
+  expect(screen.getByLabelText("Token").getAttribute("type")).toBe("password");
+  expect(screen.getByLabelText("Revision").getAttribute("type")).toBe("number");
+  await user.type(screen.getByLabelText("Token"), "nested-secret");
+  await user.clear(screen.getByLabelText("Revision"));
+  await user.type(screen.getByLabelText("Revision"), "7");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.close).toHaveBeenCalled());
+  expect(state.PATCH.mock.calls[0][1].body).toMatchObject({
+    configuration: { access: "private" },
+    credential: { authorization: { token: "nested-secret" }, revision: 7 },
+  });
+});
+
+it("renders definition-owned custom help and hides unsupported connection probes", () => {
+  mountCustom();
+  expect(
+    screen
+      .getByRole("link", { name: "Configure Acme access" })
+      .getAttribute("href"),
+  ).toBe("https://docs.example.com/model-setup");
+  expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
+});
+it("offers a probe only for a definition with the operation and permits absent help", () => {
+  mountCustom(
+    {},
+    {
+      ...customDefinition,
+      supports_connection_probe: true,
+      setup_url: null,
+      setup_label: null,
+    },
+  );
+  expect(
+    screen.queryByRole("link", { name: "Configure Acme access" }),
+  ).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "Check connection" }),
+  ).toBeDefined();
+});
+
+it.each(["google_vertex", "aws_bedrock"])(
+  "does not offer an unsupported %s account probe",
+  (type) => {
+    mountCustom({}, { ...customDefinition, type });
+    expect(
+      screen.queryByRole("button", { name: "Check connection" }),
+    ).toBeNull();
+  },
+);
+it("offers the supported built-in provider probe", () => {
+  mount();
+  expect(
+    screen.getByRole("button", { name: "Check connection" }),
+  ).toBeDefined();
 });

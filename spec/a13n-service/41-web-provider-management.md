@@ -29,11 +29,14 @@ class WebProviderDefinition:
     display_name: str
     configuration_schema: JsonObject
     credential_schema: JsonObject
-    credential_required: bool
-    setup_url: str
+    authentication: Authentication
+    setup_url: str | None
+    setup_label: str | None
     operations: tuple[Literal["search", "scrape"], ...]
     supports_restricted_scrape: bool
 ```
+
+The shared [authentication declaration](../a13n-harness/16b-model-provider-definitions.md#authentication) determines required, optional, or forbidden credentials from validated configuration, including defaults. PATCH validation applies to the resulting configuration and credential presence.
 
 The operation list describes only capabilities implemented by this integration. `supports_restricted_scrape` is true only when an adapter can enforce requested-content restrictions throughout a remote scrape. It is not inferred from an input or returned URL check.
 

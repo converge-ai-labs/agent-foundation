@@ -1,3 +1,4 @@
+import { credentialMode } from "../../shared/provider-authentication";
 import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
 import { CredentialEditor } from "../../shared/credential-editor";
 import { useSuggestedName } from "../../shared/suggested-name";
@@ -113,9 +114,12 @@ export function WebProviderEditor({
                   </ReadOnlyField>
                   <ReadOnlyField label={t("Credentials")}>
                     {t(
-                      definitions.data.items.find(
-                        (item) => item.type === resource.data?.value.type,
-                      )?.credential_required === false
+                      credentialMode(
+                        definitions.data.items.find(
+                          (item) => item.type === resource.data?.value.type,
+                        ),
+                        resource.data.value.configuration,
+                      ) !== "required"
                         ? "Not required"
                         : resource.data.value.credential_configured
                           ? "Configured"
@@ -174,6 +178,8 @@ export function WebProviderForm({
   const [reloadError, setReloadError] = useState<unknown>();
   const api = webProviderApi(client, scope),
     definition = definitions.find((item) => item.type === type);
+  const mode = credentialMode(definition, configuration);
+  const [removeCredential, setRemoveCredential] = useState(false);
   async function reconcile() {
     setReconciling(true);
     try {
@@ -213,7 +219,8 @@ export function WebProviderForm({
         return api.createProvider({
           type,
           name,
-          ...(definition.credential_required
+          ...(mode !== "forbidden" &&
+          (mode === "required" || replacingCredential)
             ? { credential: credentialValue }
             : {}),
           configuration: config,
@@ -228,7 +235,12 @@ export function WebProviderForm({
         name,
         enabled,
         configuration: config,
-        ...(replacingCredential ? { credential: credentialValue } : {}),
+        ...(removeCredential ||
+        (mode === "forbidden" && original.value.credential_configured)
+          ? { credential: null }
+          : mode !== "forbidden" && replacingCredential
+            ? { credential: credentialValue }
+            : {}),
       });
     },
     onSuccess: (provider) => {
@@ -298,8 +310,12 @@ export function WebProviderForm({
             setCredential({});
           }}
           labelAction={
-            definition?.credential_required && (
-              <ProviderKeyLink href={definition.setup_url} />
+            definition?.setup_url &&
+            mode !== "forbidden" && (
+              <ProviderKeyLink
+                href={definition.setup_url}
+                label={definition.setup_label ?? undefined}
+              />
             )
           }
         />
@@ -311,13 +327,21 @@ export function WebProviderForm({
             onChange={setConfiguration}
           />
         )}
-        {definition?.credential_required && (
-          <CredentialEditor configured={original?.value.credential_configured}>
+        {definition && mode !== "forbidden" && (
+          <CredentialEditor
+            configured={original?.value.credential_configured}
+            removing={removeCredential}
+            onRemovingChange={(value) => {
+              setRemoveCredential(value);
+              setCredential({});
+            }}
+          >
             <SchemaFields
               key={`${type}-credential`}
               schema={definition.credential_schema}
               requireFields={
-                !original?.value.credential_configured ||
+                (mode === "required" &&
+                  !original?.value.credential_configured) ||
                 Object.keys(credential).length > 0
               }
               value={credential}

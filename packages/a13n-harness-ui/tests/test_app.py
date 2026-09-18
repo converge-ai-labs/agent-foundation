@@ -26,7 +26,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import SkillsCapability, SubagentCancelResult, SubagentSteerResult, WebCapability
 from a13n_harness.environment import EnvironmentAction, EnvironmentError
-from a13n_harness.model_auth import GrokCredentials
+from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_harness_ui.app import AppState, HarnessUiIntegrations, open_harness_ui_app
 from a13n_harness_ui.composition import (
     AgentReconstructor,

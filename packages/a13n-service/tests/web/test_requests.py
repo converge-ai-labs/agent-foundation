@@ -8,7 +8,6 @@ def test_account_request_and_configuration_validation():
     request = CreateWebProviderRequest(type="brave", name="  Work  ", credential={"api_key": " key "})
     assert request.name == "Work"
     assert request.credential == {"api_key": " key "}
-    with pytest.raises(ValidationError):
-        UpdateWebProviderRequest(credential=None)
+    assert UpdateWebProviderRequest(credential=None).model_fields_set == {"credential"}
     with pytest.raises(ValidationError):
         built_in_web_provider_registry().validate_configuration("exa", {"endpoint": "https://example.com"})

@@ -26,11 +26,12 @@ SCRAPE_URL = "https://r.jina.ai/"
 
 async def search(
     configuration: EmptyConfiguration,
-    credential: ApiKeyCredential,
+    credential: ApiKeyCredential | None,
     request: WebSearchRequest,
     options: SearchOptions,
     transport: WebProviderTransport,
 ) -> WebSearchResponse:
+    assert credential is not None
     key = credential.api_key.get_secret_value()
     payload = await transport.exchange_json(
         lambda client: client.build_request(
@@ -52,12 +53,13 @@ async def search(
 
 async def scrape(
     configuration: EmptyConfiguration,
-    credential: ApiKeyCredential,
+    credential: ApiKeyCredential | None,
     request: WebScrapeRequest,
     options: ScrapeOptions,
     transport: WebProviderTransport,
     policy: WebPolicy,
 ) -> WebScrapeResult:
+    assert credential is not None
     key = credential.api_key.get_secret_value()
     limit = min(request.max_content_bytes, options.max_content_bytes)
     payload = await transport.exchange_json(

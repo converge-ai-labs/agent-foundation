@@ -70,11 +70,16 @@ source = { editable = "../../packages/a13n-harness" }
 dependencies = [
     { name = "a13n-environment" },
     { name = "a13n-logging" },
+    { name = "anthropic" },
     { name = "anyio" },
+    { name = "botocore" },
     { name = "genai-prices" },
+    { name = "google-auth" },
+    { name = "google-genai" },
     { name = "httpx2" },
     { name = "jsonschema" },
     { name = "mem0ai" },
+    { name = "openai" },
     { name = "opentelemetry-api" },
     { name = "pydantic" },
     { name = "pydantic-ai", extra = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"] },
@@ -91,11 +96,16 @@ dependencies = [
 requires-dist = [
     { name = "a13n-environment", editable = "../../packages/a13n-environment" },
     { name = "a13n-logging", editable = "../../packages/a13n-logging" },
+    { name = "anthropic", specifier = ">=1.3,<2" },
     { name = "anyio", specifier = ">=4,<5" },
+    { name = "botocore", specifier = ">=1.43.3,<1.43.57" },
     { name = "genai-prices", specifier = ">=0.1.6,<1" },
+    { name = "google-auth", specifier = ">=2.40,<3" },
+    { name = "google-genai", specifier = ">=1.0,<3" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
     { name = "mem0ai", specifier = ">=2.0.19,<3" },
+    { name = "openai", specifier = ">=3.5,<4" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"], specifier = ">=2.41.0,<3" },
@@ -131,7 +141,9 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "a13n-harness" },
+    { name = "openai" },
     { name = "pydantic" },
+    { name = "pydantic-ai" },
 ]
 
 [package.dev-dependencies]
@@ -145,7 +157,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-harness", editable = "../../packages/a13n-harness" },
+    { name = "openai", specifier = ">=3.8,<4" },
     { name = "pydantic", specifier = ">=2.12,<3" },
+    { name = "pydantic-ai", specifier = ">=2.41,<3" },
 ]
 
 [package.metadata.requires-dev]

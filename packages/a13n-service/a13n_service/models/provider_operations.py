@@ -5,22 +5,28 @@ from __future__ import annotations
 from typing import Protocol
 
 import httpx2
+from a13n_harness.providers.model.definition import EndpointValidator
+from a13n_harness.providers.model.types import ModelConnection
 
-from .provider_adapters.base import ProviderOperationError, ProviderOperationUnsupported
-from .provider_adapters.types import RuntimeProvider
 from .providers import ProviderRegistry
 
 
 class ProviderStateResolver(Protocol):
     async def resolve_provider(
         self, *, provider_id: str, organization_id: str, workspace_id: str | None
-    ) -> RuntimeProvider: ...
+    ) -> ModelConnection: ...
 
 
 class NativeProviderOperations:
     def __init__(
-        self, *, provider_resolver: ProviderStateResolver, registry: ProviderRegistry, http_client: httpx2.AsyncClient
+        self,
+        *,
+        provider_resolver: ProviderStateResolver,
+        registry: ProviderRegistry,
+        http_client: httpx2.AsyncClient,
+        endpoint_policy: EndpointValidator,
     ) -> None:
+        self._endpoint_policy = endpoint_policy
         self._provider_resolver = provider_resolver
         self._registry = registry
         self._http_client = http_client
@@ -29,19 +35,6 @@ class NativeProviderOperations:
         provider = await self._provider_resolver.resolve_provider(
             provider_id=provider_id, organization_id=organization_id, workspace_id=workspace_id
         )
-        probe = self._registry.integration(provider.type).connection_probe
-        if probe is None:
-            raise ProviderOperationUnsupported("Test a saved Model to verify this connection")
-        request = probe(provider)
-        try:
-            async with self._http_client.stream(
-                "GET", request.url, headers={**provider.extra_headers, **request.headers}, timeout=10
-            ) as response:
-                response.raise_for_status()
-                size = 0
-                async for chunk in response.aiter_bytes():
-                    size += len(chunk)
-                    if size > 4 * 1024 * 1024:
-                        raise ProviderOperationError("Provider probe response exceeds its size limit")
-        except httpx2.HTTPError as error:
-            raise ProviderOperationError("Provider connection probe failed") from error
+        await self._registry.integration(provider.type).probe(
+            provider, http_client=self._http_client, endpoint_policy=self._endpoint_policy
+        )

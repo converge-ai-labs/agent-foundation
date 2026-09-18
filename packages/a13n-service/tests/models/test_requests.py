@@ -20,7 +20,6 @@ from a13n_service.models.domain import (
     UpdateModelRequest,
 )
 from a13n_service.models.model_factory import NativeModelFactory
-from a13n_service.models.provider_adapters.types import RuntimeProvider
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.requests import LiveProviderModel
@@ -102,7 +101,9 @@ async def _live_model(
 ):
     resolver = Mock(spec=LiveProviderResolver)
     resolver.resolve = AsyncMock(
-        return_value=RuntimeProvider(provider_type, configuration or {}, "https://api.openai.com/v1", "test-key")
+        return_value=built_in_provider_registry()
+        .integration(provider_type)
+        .bind({**(configuration or {}), "base_url": "https://api.openai.com/v1"}, {"api_key": "test-key"})
     )
     factory = NativeModelFactory(client, built_in_provider_registry(), _AllowEndpoints())
     return await LiveProviderModel.create(
@@ -130,7 +131,7 @@ async def test_each_retry_observes_current_database_state(
     provider = await provider_service.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openai", name="Account", credential="first"),
+        request=CreateModelProviderRequest(type="openai", name="Account", credential={"api_key": "first"}),
     )
     saved = await model_service.create(
         actor=actor(),
@@ -158,7 +159,7 @@ async def test_each_retry_observes_current_database_state(
                 )
             else:
                 update = (
-                    UpdateModelProviderRequest(credential="second")
+                    UpdateModelProviderRequest(credential={"api_key": "second"})
                     if change == "rotate"
                     else UpdateModelProviderRequest(enabled=False)
                 )
@@ -348,7 +349,6 @@ async def test_native_endpoint_validation_closes_bedrock_client_on_rejection():
     from unittest.mock import patch
 
     from a13n_harness.providers.endpoint_policy import EndpointPolicyError
-    from a13n_service.models.provider_adapters import aws_bedrock
 
     main_thread = threading.get_ident()
     client = Mock()
@@ -362,15 +362,14 @@ async def test_native_endpoint_validation_closes_bedrock_client_on_rejection():
     policy = Mock()
     policy.validate = AsyncMock(side_effect=EndpointPolicyError("blocked"))
     snapshot = _snapshot().model_copy(update={"model_api": "bedrock.converse"})
-    provider = RuntimeProvider(
-        "aws_bedrock",
-        {"region": "us-east-1"},
-        None,
-        json.dumps({"aws_access_key_id": "test", "aws_secret_access_key": "test"}),
+    provider = (
+        built_in_provider_registry()
+        .integration("aws_bedrock")
+        .bind({"region": "us-east-1"}, {"aws_access_key_id": "test", "aws_secret_access_key": "test"})
     )
     session = Mock()
     session.create_client.side_effect = build
-    with patch.object(aws_bedrock, "get_session", return_value=session):
+    with patch("botocore.session.get_session", return_value=session):
         async with httpx2.AsyncClient() as http_client:
             factory = NativeModelFactory(http_client, built_in_provider_registry(), policy)
             with pytest.raises(ModelResolutionError):
@@ -647,7 +646,7 @@ async def test_retry_refreshes_affinity_header_with_endpoint(
         request=CreateModelProviderRequest(
             type="openai",
             name="Gateway",
-            credential="test-key",
+            credential={"api_key": "test-key"},
             configuration={"base_url": "https://first.example/v1", "session_affinity_header": "x-session-id"},
         ),
     )

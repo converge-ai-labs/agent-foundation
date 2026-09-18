@@ -466,7 +466,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
 ) -> None:
     import json
 
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -683,7 +683,7 @@ async def test_api_key_setup_publishes_only_reference_and_additional_instruction
 async def test_setup_run_delivers_base_and_additions_through_distinct_native_channels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
@@ -758,12 +758,11 @@ async def test_saved_key_connects_deferred_default_agent_and_first_native_conver
         assert "Keep my instructions." in info.instructions
         yield "Connected."
 
-    def infer(route, *, provider_factory):
-        provider = provider_factory("openai-responses")
-        seen.append(provider.client.api_key)
+    async def infer(route, credential, *, base_url=None):
+        seen.append(credential.api_key.get_secret_value())
         return FunctionModel(stream_function=stream)
 
-    monkeypatch.setattr("a13n_harness_ui.model_runtime.infer_model", infer)
+    monkeypatch.setattr("a13n_harness_ui.model_runtime.build_api_key_model", infer)
     path = tmp_path / "config" / "config.yaml"
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path

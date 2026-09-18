@@ -40,7 +40,7 @@ async def test_five_configuration_resources_support_org_collections(
             provider = await client.post(
                 f"{org_path}/model-providers",
                 headers=headers,
-                json={"type": "openai", "name": "Organization OpenAI", "credential": "sk-test"},
+                json={"type": "openai", "name": "Organization OpenAI", "credential": {"api_key": "sk-test"}},
             )
             assert provider.status_code == 201, provider.text
             for path, request_headers in ((org_path, headers), (workspace_path, {})):

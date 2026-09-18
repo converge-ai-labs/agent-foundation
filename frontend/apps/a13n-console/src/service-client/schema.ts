@@ -4993,6 +4993,27 @@ export interface components {
       /** User Id */
       user_id: string;
     };
+    /** Authentication */
+    Authentication: {
+      /**
+       * Cases
+       * @default []
+       */
+      cases?: components["schemas"]["AuthenticationCase"][];
+      /** @default required */
+      mode?: components["schemas"]["CredentialMode"];
+    };
+    /**
+     * AuthenticationCase
+     * @description Override credential presence for one declared configuration field value.
+     */
+    AuthenticationCase: {
+      /** Equals */
+      equals: string | number | boolean | null;
+      /** Field */
+      field: string;
+      mode: components["schemas"]["CredentialMode"];
+    };
     /** Authorization */
     Authorization: {
       /** Connection Id */
@@ -6456,7 +6477,9 @@ export interface components {
         [key: string]: unknown;
       };
       /** Credential */
-      credential?: string | null;
+      credential?: {
+        [key: string]: unknown;
+      } | null;
       /**
        * Enabled
        * @default true
@@ -6674,6 +6697,11 @@ export interface components {
       /** Workspace Id */
       workspace_id: string | null;
     };
+    /**
+     * CredentialMode
+     * @enum {string}
+     */
+    CredentialMode: "required" | "optional" | "forbidden";
     /** DelegationContextPolicy */
     DelegationContextPolicy: {
       /**
@@ -8446,6 +8474,7 @@ export interface components {
     };
     /** ModelProviderDefinition */
     ModelProviderDefinition: {
+      authentication: components["schemas"]["Authentication"];
       /**
        * Catalog Providers
        * @default []
@@ -8473,8 +8502,14 @@ export interface components {
           [key: string]: unknown;
         };
       };
+      /** Setup Label */
+      setup_label?: string | null;
+      /** Setup Url */
+      setup_url?: string | null;
       /** Supported Model Apis */
       supported_model_apis: string[];
+      /** Supports Connection Probe */
+      supports_connection_probe: boolean;
       /** Type */
       type: string;
     };
@@ -10909,7 +10944,9 @@ export interface components {
         [key: string]: unknown;
       } | null;
       /** Credential */
-      credential?: string | null;
+      credential?: {
+        [key: string]: unknown;
+      } | null;
       /** Enabled */
       enabled?: boolean | null;
       /** Extra Headers */
@@ -11273,15 +11310,11 @@ export interface components {
     };
     /** WebProviderDefinition */
     WebProviderDefinition: {
+      authentication: components["schemas"]["Authentication"];
       /** Configuration Schema */
       configuration_schema: {
         [key: string]: unknown;
       };
-      /**
-       * Credential Required
-       * @default true
-       */
-      credential_required?: boolean;
       /** Credential Schema */
       credential_schema: {
         [key: string]: unknown;
@@ -11290,8 +11323,10 @@ export interface components {
       display_name: string;
       /** Operations */
       operations: ("search" | "scrape")[];
+      /** Setup Label */
+      setup_label?: string | null;
       /** Setup Url */
-      setup_url: string;
+      setup_url?: string | null;
       /**
        * Supports Restricted Scrape
        * @default false

@@ -18,8 +18,8 @@ from a13n_environment import EnvironmentProvider
 from a13n_harness import HarnessInstrumentation
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
-from a13n_harness.model_auth import GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
+from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field

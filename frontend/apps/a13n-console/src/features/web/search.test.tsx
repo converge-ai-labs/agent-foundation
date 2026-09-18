@@ -49,7 +49,7 @@ const definition = {
     },
     writeOnly: true,
   },
-  credential_required: true,
+  authentication: { mode: "required" },
 };
 const response = (data: unknown, status = 200, etag = '"v1"') => ({
   data,
@@ -128,7 +128,7 @@ it("creates a credential-free DuckDuckGo provider without an API key", async () 
     ...definition,
     type: "duckduckgo",
     display_name: "DuckDuckGo",
-    credential_required: false,
+    authentication: { mode: "forbidden" },
     credential_schema: { type: "object", properties: {} },
   };
   http.GET.mockImplementation(async (path: string) =>

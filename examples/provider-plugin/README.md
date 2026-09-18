@@ -1,6 +1,6 @@
-# Installed Web Provider example
+# Installed Model and Web Provider example
 
-This independent package depends on Harness and Pydantic. It exports an immutable `ProviderManifest` through the `a13n.providers` entry-point group. Installation makes it discoverable; a host must explicitly select `acme` to load it. Importing its definition does not import Service, Agent orchestration, or vendor SDKs.
+This independent package depends on Harness, Pydantic, and the native SDK used by its Model implementation. It exports an immutable `ProviderManifest` through the `a13n.providers` entry-point group. Installation makes it discoverable; a host must explicitly select `acme` to load it. Importing its definition does not import Service, Agent orchestration, or vendor SDKs.
 
 A Web author supplies two input models, an async operation, and a `WebProviderDefinition`. There is no forwarding backend, factory, or empty cleanup method. The same definition works directly with a transport for the vendor:
 
@@ -31,3 +31,24 @@ Run the installed entry-point tests:
 uv sync --project examples/provider-plugin --locked
 uv run --project examples/provider-plugin --locked pytest examples/provider-plugin/tests
 ```
+
+## Model contribution
+
+The same manifest exports `acme_model`. Its configuration contains `index`; credentials contain a nested `authorization.token` secret and integer `revision`. Its callback constructs a native OpenAI Provider. The definition validates inputs, chooses the declared native Chat Completions API, and returns a native Pydantic AI Model:
+
+```python
+import httpx2
+from acme_provider.plugin import acme_model
+
+async with httpx2.AsyncClient() as client:
+    model = await acme_model.build(
+        "acme-small", configuration={"index": "guides"},
+        credential={"authorization": {"token": "example-token"}, "revision": 1},
+        http_client=client,
+    )
+    async with model:
+        # Pass model directly to an Agent or HarnessBuilder.
+        ...
+```
+
+Create a Service Model Provider with type `acme_model` and the same objects, then a Model referencing that account. No Service subclass, IDs in provider inputs, or duplicate metadata are needed. Service HTTP tests install this package, encrypt the nested credential, call the native Model against fixture HTTP, rotate the saved values, and verify that disabling the account prevents further calls.

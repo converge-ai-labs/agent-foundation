@@ -265,7 +265,7 @@ async def test_cross_directory_resume_reassigns_thread_without_retargeting_proje
 async def test_resume_creates_cwd_project_and_preserves_history_across_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, historical_project: str
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import yaml
     from a13n_harness_ui.storage import ThreadConfigurationMutation, ThreadConfigurationPatch
     from pydantic_ai.models.function import DeltaToolCall
@@ -587,7 +587,7 @@ async def test_cross_directory_resume_failure_preserves_saved_and_local_selectio
 async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     cwd = tmp_path / "workspace"
@@ -662,7 +662,7 @@ async def test_global_and_exact_cwd_guidance_reach_the_first_model_request(
 async def test_session_overrides_capture_native_context_and_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     before = (path.parent / "models/codex.yaml").read_bytes()
@@ -751,7 +751,7 @@ async def test_session_overrides_capture_native_context_and_resume(
 async def test_model_selection_is_remembered_for_project_and_preserves_agent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import yaml
 
     path = await _seed(tmp_path, monkeypatch)
@@ -815,7 +815,7 @@ async def test_model_selection_is_remembered_for_project_and_preserves_agent(
 
 @pytest.mark.anyio
 async def test_cancel_is_receipt_owned_and_session_is_reusable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     entered = asyncio.Event()
@@ -860,7 +860,7 @@ async def test_terminal_flush_retains_semantic_output_independently_of_draw() ->
 async def test_native_compaction_is_active_not_only_written_to_config(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import yaml
     from pydantic_ai.messages import ModelResponse, TextPart
 
@@ -969,7 +969,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 ) -> None:
     if mode == "sandbox" and os.environ.get("A13N_HARNESS_UI_TEST_SANDBOX") != "1":
         pytest.skip("Set A13N_HARNESS_UI_TEST_SANDBOX=1 with a compatible envd binary and native isolation support")
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
@@ -1060,7 +1060,7 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
 async def test_setup_model_view_uses_declared_media_without_an_external_provider(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disable_media: bool
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import yaml
     from pydantic_ai import BinaryContent
     from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
@@ -1123,7 +1123,7 @@ async def test_native_image_input_reaches_model_and_survives_continuation(
 ) -> None:
     from io import BytesIO
 
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from PIL import Image
     from pydantic_ai import BinaryContent
     from pydantic_ai.messages import ModelRequest, UserPromptPart
@@ -1202,7 +1202,7 @@ async def test_active_guidance_reaches_native_model_in_order_without_another_roo
 ) -> None:
     import asyncio
 
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from pydantic_ai.messages import ModelRequest, UserPromptPart
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1320,7 +1320,7 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
 async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     tmp_path: Path, monkeypatch, timeout: bool
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
@@ -1403,7 +1403,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
 
 @pytest.mark.anyio
 async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
@@ -1457,7 +1457,7 @@ async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatc
 async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resume(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from a13n_harness_ui.interactive.commands import CommandRegistry
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1521,7 +1521,7 @@ async def test_agent_switch_changes_full_recipe_keeps_history_and_survives_resum
 async def test_usage_updates_before_root_operation_completes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import asyncio
 
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1624,7 +1624,7 @@ def test_add_agent_cli_routes_to_terminal_with_explicit_advanced_flag(monkeypatc
 
 @pytest.mark.anyio
 async def test_default_notes_are_injected_and_survive_resume_with_full_projection(tmp_path: Path, monkeypatch) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
     from pydantic_ai.models.function import DeltaToolCall
 
@@ -1686,7 +1686,7 @@ async def test_default_notes_are_injected_and_survive_resume_with_full_projectio
 async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
     tmp_path: Path, monkeypatch, tier_key: str
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import yaml
 
     path = await _seed(tmp_path, monkeypatch)
@@ -1752,7 +1752,7 @@ async def test_fast_override_reaches_model_without_mutating_config_or_reasoning(
 
 @pytest.mark.anyio
 async def test_resume_browser_end_to_end_with_saved_execution(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from a13n_harness_ui.interactive.shell import CliShell
     from prompt_toolkit.application import create_app_session
     from prompt_toolkit.input import create_pipe_input

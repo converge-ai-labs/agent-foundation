@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from .model.definition import ModelProviderDefinition
 from .web.definition import WebProviderDefinition
 
 PROVIDER_API_VERSION = 1
@@ -17,15 +18,20 @@ ENTRY_POINT_GROUP = "a13n.providers"
 @dataclass(frozen=True, slots=True)
 class ProviderManifest:
     api_version: int
+    model: tuple[ModelProviderDefinition[Any, Any], ...] = ()
     web: tuple[WebProviderDefinition[Any, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if self.api_version != PROVIDER_API_VERSION:
             raise ValueError(f"unsupported Provider API version {self.api_version!r}")
-        if not isinstance(self.web, tuple) or not all(isinstance(item, WebProviderDefinition) for item in self.web):
-            raise TypeError("Web definitions must be an immutable tuple")
-        if len({item.type for item in self.web}) != len(self.web):
-            raise ValueError("duplicate Web Provider type")
+        for label, definitions, kind in (
+            ("Web", self.web, WebProviderDefinition),
+            ("Model", self.model, ModelProviderDefinition),
+        ):
+            if not isinstance(definitions, tuple) or not all(isinstance(item, kind) for item in definitions):
+                raise TypeError(f"{label} definitions must be an immutable tuple")
+            if len({item.type for item in definitions}) != len(definitions):
+                raise ValueError(f"duplicate {label} Provider type")
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,15 +67,17 @@ def selected_entry_points(enabled: Iterable[str]) -> tuple[importlib.metadata.En
 
 def load_provider_plugins(enabled: Iterable[str]) -> tuple[LoadedProviderPlugin, ...]:
     plugins = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for entry in selected_entry_points(enabled):
         manifest = entry.load()
         if not isinstance(manifest, ProviderManifest):
             raise TypeError(f"Provider plugin {entry.name!r} must export a ProviderManifest")
-        for definition in manifest.web:
-            if definition.type in seen:
-                raise ValueError(f"duplicate Web Provider type {definition.type!r}")
-            seen.add(definition.type)
+        for label, definitions in (("Web", manifest.web), ("Model", manifest.model)):
+            for definition in definitions:
+                key = (label, definition.type)
+                if key in seen:
+                    raise ValueError(f"duplicate {label} Provider type {definition.type!r}")
+                seen.add(key)
         plugins.append(
             LoadedProviderPlugin(
                 entry.name,

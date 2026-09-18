@@ -20,7 +20,7 @@ SEARCH_URL = "https://html.duckduckgo.com/html/"
 
 async def search(
     configuration: EmptyConfiguration,
-    credential: EmptyConfiguration,
+    credential: EmptyConfiguration | None,
     request: WebSearchRequest,
     options: SearchOptions,
     transport: WebProviderTransport,

@@ -2463,6 +2463,63 @@
         "title": "AuthSession",
         "type": "object"
       },
+      "Authentication": {
+        "additionalProperties": false,
+        "properties": {
+          "cases": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/AuthenticationCase"
+            },
+            "title": "Cases",
+            "type": "array"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CredentialMode",
+            "default": "required"
+          }
+        },
+        "title": "Authentication",
+        "type": "object"
+      },
+      "AuthenticationCase": {
+        "additionalProperties": false,
+        "description": "Override credential presence for one declared configuration field value.",
+        "properties": {
+          "equals": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equals"
+          },
+          "field": {
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+            "title": "Field",
+            "type": "string"
+          },
+          "mode": {
+            "$ref": "#/components/schemas/CredentialMode"
+          }
+        },
+        "required": [
+          "field",
+          "equals",
+          "mode"
+        ],
+        "title": "AuthenticationCase",
+        "type": "object"
+      },
       "Authorization": {
         "additionalProperties": false,
         "properties": {
@@ -7030,9 +7087,8 @@
           "credential": {
             "anyOf": [
               {
-                "format": "password",
-                "type": "string",
-                "writeOnly": true
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
@@ -7718,6 +7774,15 @@
         ],
         "title": "CredentialContext",
         "type": "object"
+      },
+      "CredentialMode": {
+        "enum": [
+          "required",
+          "optional",
+          "forbidden"
+        ],
+        "title": "CredentialMode",
+        "type": "string"
       },
       "DelegationContextPolicy": {
         "additionalProperties": false,
@@ -12612,6 +12677,9 @@
       "ModelProviderDefinition": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "catalog_providers": {
             "default": [],
             "items": {
@@ -12653,12 +12721,38 @@
             "title": "Settings Schemas",
             "type": "object"
           },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
+          },
           "supported_model_apis": {
             "items": {
               "type": "string"
             },
             "title": "Supported Model Apis",
             "type": "array"
+          },
+          "supports_connection_probe": {
+            "title": "Supports Connection Probe",
+            "type": "boolean"
           },
           "type": {
             "title": "Type",
@@ -12670,6 +12764,8 @@
           "display_name",
           "configuration_schema",
           "credential_schema",
+          "authentication",
+          "supports_connection_probe",
           "supported_model_apis",
           "default_model_api",
           "model_api_labels",
@@ -20419,9 +20515,8 @@
           "credential": {
             "anyOf": [
               {
-                "format": "password",
-                "type": "string",
-                "writeOnly": true
+                "additionalProperties": true,
+                "type": "object"
               },
               {
                 "type": "null"
@@ -21562,15 +21657,13 @@
       "WebProviderDefinition": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "configuration_schema": {
             "additionalProperties": true,
             "title": "Configuration Schema",
             "type": "object"
-          },
-          "credential_required": {
-            "default": true,
-            "title": "Credential Required",
-            "type": "boolean"
           },
           "credential_schema": {
             "additionalProperties": true,
@@ -21592,9 +21685,27 @@
             "title": "Operations",
             "type": "array"
           },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
           "setup_url": {
-            "title": "Setup Url",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
           },
           "supports_restricted_scrape": {
             "default": false,
@@ -21611,7 +21722,7 @@
           "display_name",
           "configuration_schema",
           "credential_schema",
-          "setup_url",
+          "authentication",
           "operations"
         ],
         "title": "WebProviderDefinition",

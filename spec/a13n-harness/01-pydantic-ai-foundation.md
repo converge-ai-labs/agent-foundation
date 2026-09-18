@@ -34,7 +34,7 @@ The Harness adds:
 
 - process-local `AgentDefinition` containing native objects;
 - one synchronous `HarnessBuilder` that calls `Agent.from_spec()` and captures optional gateway Provider construction;
-- SDK-first provider-compatible Model OAuth values, Host credential sources, refresh lifecycle, and native Model constructors through [`a13n_harness.model_auth`](16a-model-authentication.md);
+- SDK-first provider-compatible Model OAuth values, Host credential sources, refresh lifecycle, and native Model constructors through [`a13n_harness.providers.model.oauth`](16a-model-authentication.md);
 - trusted code-first plugins around the outer semantic-input-to-result boundary;
 - fresh `RunBindings` and one `AgentContext` per logical run;
 - fresh Environment adapters entered before input and Pydantic work, exposed through one stable Run-local bound facade;

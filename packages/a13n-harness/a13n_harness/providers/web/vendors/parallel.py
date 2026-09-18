@@ -26,11 +26,12 @@ SCRAPE_URL = "https://api.parallel.ai/v1/extract"
 
 async def search(
     configuration: EmptyConfiguration,
-    credential: ApiKeyCredential,
+    credential: ApiKeyCredential | None,
     request: WebSearchRequest,
     options: SearchOptions,
     transport: WebProviderTransport,
 ) -> WebSearchResponse:
+    assert credential is not None
     key = credential.api_key.get_secret_value()
     limit = min(request.limit, options.max_results)
     payload = await transport.exchange_json(
@@ -57,12 +58,13 @@ def _search_item(item: dict[str, object]) -> tuple[object, object, object]:
 
 async def scrape(
     configuration: EmptyConfiguration,
-    credential: ApiKeyCredential,
+    credential: ApiKeyCredential | None,
     request: WebScrapeRequest,
     options: ScrapeOptions,
     transport: WebProviderTransport,
     policy: WebPolicy,
 ) -> WebScrapeResult:
+    assert credential is not None
     key = credential.api_key.get_secret_value()
     limit = min(request.max_content_bytes, options.max_content_bytes)
     payload = await transport.exchange_json(

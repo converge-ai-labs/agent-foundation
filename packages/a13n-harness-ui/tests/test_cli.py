@@ -8,7 +8,7 @@ import a13n_harness_ui.cli as cli_module
 import a13n_harness_ui.cli_runtime as runtime_module
 import a13n_harness_ui.terminal as terminal_module
 import pytest
-from a13n_harness.model_auth import CodexLoginResult, GrokCredentials
+from a13n_harness.providers.model.oauth import CodexLoginResult, GrokCredentials
 from a13n_harness_ui.cli import CliRequest, OutputFormat, cli, main
 from a13n_harness_ui.errors import ConfigurationError
 from a13n_harness_ui.model_accounts import DEFAULT_GROK_OAUTH_SCOPE, GrokLoginRequest
@@ -239,7 +239,7 @@ async def test_codex_cli_login_uses_harness_oauth_flow(
         async def exchange_login_from_callback(self) -> CodexLoginResult:
             return credentials
 
-    monkeypatch.setattr("a13n_harness.model_auth.CodexLoginFlow", Flow)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.CodexLoginFlow", Flow)
 
     from a13n_harness_ui.model_accounts.codex import CodexLoginRequest
 

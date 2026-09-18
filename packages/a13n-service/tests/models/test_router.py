@@ -139,7 +139,7 @@ async def api_client(
 async def create_provider(api_client: httpx2.AsyncClient, name: str = "OpenAI Primary") -> dict[str, object]:
     response = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
-        json={"type": "openai", "name": name, "credential": "sk-secret"},
+        json={"type": "openai", "name": name, "credential": {"api_key": "sk-secret"}},
     )
     assert response.status_code == 201
     assert "sk-secret" not in response.text
@@ -213,7 +213,12 @@ async def test_model_http_lifecycle_has_no_revision_or_default_api(api_client: h
 async def test_unknown_fields_use_shared_safe_error(api_client: httpx2.AsyncClient) -> None:
     response = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
-        json={"type": "openai", "name": "OpenAI", "credential": "must-not-leak", "api_key": "must-not-leak"},
+        json={
+            "type": "openai",
+            "name": "OpenAI",
+            "credential": {"api_key": "must-not-leak"},
+            "api_key": "must-not-leak",
+        },
     )
 
     assert response.status_code == 400
@@ -244,7 +249,7 @@ async def test_manual_model_ids_do_not_require_discovery(api_client):
             "type": "aws_bedrock",
             "name": "Bedrock",
             "configuration": {"region": "us-east-1"},
-            "credential": '{"aws_access_key_id":"test","aws_secret_access_key":"test"}',
+            "credential": {"aws_access_key_id": "test", "aws_secret_access_key": "test"},
         },
     )
     assert created.status_code == 201

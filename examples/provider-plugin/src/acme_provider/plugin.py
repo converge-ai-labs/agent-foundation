@@ -1,5 +1,6 @@
 """A Web provider needs typed inputs, an operation, and an inert definition."""
 
+from a13n_harness.providers.model import ModelConnection, ModelProviderDefinition, ProviderConfiguration
 from a13n_harness.providers.plugins import ProviderManifest
 from a13n_harness.providers.web import (
     SearchOptions,
@@ -23,12 +24,13 @@ class AcmeCredential(BaseModel):
 
 async def search(
     configuration: AcmeWebConfiguration,
-    credential: AcmeCredential,
+    credential: AcmeCredential | None,
     request: WebSearchRequest,
     options: SearchOptions,
     transport: WebProviderTransport,
 ) -> WebSearchResponse:
     """Call the fictional Acme vendor; tests supply a mocked HTTP transport."""
+    assert credential is not None
     payload = await transport.exchange_json(
         lambda client: client.build_request(
             "POST",
@@ -55,4 +57,49 @@ acme_web = WebProviderDefinition(
     search=search,
 )
 
-manifest = ProviderManifest(api_version=1, web=(acme_web,))
+
+class AcmeModelConfiguration(ProviderConfiguration):
+    index: str = Field(default="docs", min_length=1, max_length=64)
+
+
+class AcmeModelCredential(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    authorization: AcmeCredential
+    revision: int = Field(ge=1)
+
+
+def build_model_provider(
+    connection: ModelConnection[AcmeModelConfiguration, AcmeModelCredential], http_client, model_api
+):
+    from openai import AsyncOpenAI
+    from pydantic_ai.providers.openai import OpenAIProvider
+
+    assert connection.credential is not None
+    return OpenAIProvider(
+        openai_client=AsyncOpenAI(
+            api_key=connection.credential.authorization.token.get_secret_value(),
+            base_url=connection.endpoint,
+            http_client=http_client,
+            max_retries=0,
+            default_headers={
+                **connection.extra_headers,
+                "x-acme-index": connection.configuration.index,
+                "x-acme-revision": str(connection.credential.revision),
+            },
+        )
+    )
+
+
+acme_model = ModelProviderDefinition(
+    type="acme_model",
+    setup_url="https://docs.example.com/model-setup",
+    setup_label="Configure Acme access",
+    display_name="Acme Model",
+    configuration_model=AcmeModelConfiguration,
+    credential_model=AcmeModelCredential,
+    supported_model_apis=("openai.chat_completions",),
+    build_provider=build_model_provider,
+    endpoint="https://models.acme.example/v1",
+)
+
+manifest = ProviderManifest(api_version=1, web=(acme_web,), model=(acme_model,))

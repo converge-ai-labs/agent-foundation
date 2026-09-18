@@ -50,7 +50,7 @@ async def test_concurrent_org_and_workspace_model_creates_have_one_winner(postgr
     provider = await providers.create(
         actor=admin,
         workspace_id=None,
-        request=CreateModelProviderRequest(type="openai", name="Shared", credential="sk-test"),
+        request=CreateModelProviderRequest(type="openai", name="Shared", credential={"api_key": "sk-test"}),
     )
     models = ModelService(postgres_models, registry)
     request = CreateModelRequest(

@@ -32,7 +32,7 @@ async def provision(client):
         json={
             "type": "openai",
             "name": "Round-two HTTP fixture",
-            "credential": config["token"],
+            "credential": {"api_key": config["token"]},
             "configuration": {"base_url": config["control_url"] + "/__live__/model/v1", "auth_mode": "bearer"},
         },
     )

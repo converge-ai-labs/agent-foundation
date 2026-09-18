@@ -55,9 +55,15 @@ async def _dispatch[ResultT](
             try:
                 definition = registry.require(snapshot.provider_type)
                 credential_value = (
-                    json.loads(snapshot.credential.decrypt(protector)) if definition.credential_required else {}
+                    json.loads(snapshot.credential.decrypt(protector))
+                    if snapshot.credential.ciphertext is not None
+                    else None
                 )
-                credentials = registry.validate_credentials(snapshot.provider_type, credential_value)
+                credentials = (
+                    registry.validate_credentials(snapshot.provider_type, credential_value)
+                    if credential_value is not None
+                    else None
+                )
                 configuration = definition.configuration_model.model_validate(snapshot.configuration)
             except (SecretProtectionError, ValueError, TypeError, json.JSONDecodeError) as error:
                 raise WebProviderError("web_provider_unavailable") from error

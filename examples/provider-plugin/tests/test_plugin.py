@@ -15,9 +15,9 @@ from pydantic import ValidationError
 @pytest.fixture
 async def transport():
     class Policy(EndpointPolicy):
-        async def validate(self, endpoint):
+        async def validate(self, endpoint, *, resolve_dns=True):
             assert endpoint == "https://search.acme.example/v1/search"
-            self.validate_syntax(endpoint)
+            return self.validate_syntax(endpoint)[0]
 
     def handle(request):
         assert request.headers["Authorization"] == "Bearer test-token"
@@ -86,3 +86,62 @@ assert load_provider_plugins(("acme",))[0].manifest.web[0].type == "acme_web"
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.anyio
+async def test_installed_model_definition_calls_native_api():
+    from pydantic_ai.messages import ModelRequest, UserPromptPart
+    from pydantic_ai.models import ModelRequestParameters
+
+    class Policy(EndpointPolicy):
+        async def validate(self, endpoint, *, resolve_dns=True):
+            assert endpoint.rstrip("/") == "https://models.acme.example/v1"
+            return self.validate_syntax(endpoint)[0]
+
+    calls = []
+
+    def vendor(request):
+        calls.append(
+            (
+                str(request.url),
+                request.headers["authorization"],
+                request.headers["x-acme-index"],
+                request.headers["x-acme-revision"],
+                json.loads(request.content),
+            )
+        )
+        return httpx2.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "fixture-model",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": "Native fixture result"},
+                        "finish_reason": "stop",
+                    }
+                ],
+            },
+        )
+
+    definition = load_provider_plugins(("acme",))[0].manifest.model[0]
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(vendor)) as client:
+        model = await definition.build(
+            "fixture-model",
+            configuration={"index": "guides"},
+            credential={"authorization": {"token": "native-secret"}, "revision": 2},
+            http_client=client,
+            endpoint_policy=Policy(),
+        )
+        async with model:
+            response = await model.request(
+                [ModelRequest(parts=[UserPromptPart("hello")])], None, ModelRequestParameters()
+            )
+        assert response.text == "Native fixture result"
+        assert not client.is_closed
+    assert len(calls) == 1
+    assert calls[0][:4] == ("https://models.acme.example/v1/chat/completions", "Bearer native-secret", "guides", "2")
+    assert calls[0][4]["messages"] == [{"role": "user", "content": "hello"}]

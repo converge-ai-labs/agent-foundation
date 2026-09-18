@@ -17,29 +17,20 @@ from a13n_harness_ui.model_presets import API_PROVIDERS, settings_presets
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from pydantic_ai.models import ModelResolutionContext
-from pydantic_ai.providers import infer_provider_class
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("provider", API_PROVIDERS, ids=lambda provider: provider.route)
 async def test_every_offered_provider_constructs_native_model_with_selected_endpoint(provider, monkeypatch) -> None:
-    from a13n_harness_ui import model_runtime
 
     monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
     endpoint = "https://example.invalid/custom/v1"
     model_cfg = {} if provider.transport == "xai" else {"base_url": endpoint}
-    captured = []
+    import ipaddress
 
-    def infer(name):
-        native = infer_provider_class(name)
-
-        def build(**kwargs):
-            captured.append(kwargs)
-            return native(**kwargs)
-
-        return build
-
-    monkeypatch.setattr(model_runtime, "infer_provider_class", infer)
+    monkeypatch.setattr(
+        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: (ipaddress.ip_address("93.184.216.34"),)
+    )
     model_name = "openai/test-model" if provider.route == "openrouter" else "test-model"
     recipe = ResolvedModelRecipe(
         model_id="model-test",
@@ -53,20 +44,16 @@ async def test_every_offered_provider_constructs_native_model_with_selected_endp
         cast(ModelResolutionContext[AgentContext], None), recipe.model_id
     )
     assert model.model_name == model_name
-    if provider.route == "grok":
-        from pydantic_ai.models.openai import OpenAIChatModel
-
-        assert isinstance(model, OpenAIChatModel)
-        assert str(model.client.base_url).rstrip("/") == endpoint
-    elif provider.transport == "xai":
+    if provider.transport == "xai":
         from pydantic_ai.models.xai import XaiModel
 
         assert isinstance(model, XaiModel)
-        assert captured == [{"api_key": "fixture-key"}]
     elif provider.transport == "openai-client":
-        assert str(captured[0]["openai_client"].base_url).rstrip("/") == endpoint
+        assert str(model.client.base_url).rstrip("/") == endpoint
     else:
-        assert captured == [{"api_key": "fixture-key", "base_url": endpoint}]
+        assert str(model.provider.base_url).rstrip("/") == endpoint
+    async with model:
+        assert model.model_name == model_name
 
 
 @pytest.mark.parametrize("provider", API_PROVIDERS, ids=lambda provider: provider.route)
@@ -255,7 +242,6 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
     import json
 
     import httpx2 as httpx
-    from a13n_harness_ui import model_runtime
     from pydantic_ai import Agent
     from pydantic_ai.messages import ThinkingPart
     from pydantic_ai.settings import ModelSettings
@@ -319,13 +305,18 @@ async def test_presets_reach_native_http_and_preserve_returned_thinking(provider
             return httpx.Response(200, text=content, headers={"content-type": "text/event-stream"})
         return httpx.Response(200, json=body)
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)):
+        import ipaddress
 
-        def infer(name):
-            native = infer_provider_class(name)
-            return lambda **kwargs: native(**kwargs, http_client=client)
+        monkeypatch.setattr(
+            "a13n_harness.providers.endpoint_policy._resolve_addresses",
+            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
+        )
 
-        monkeypatch.setattr(model_runtime, "infer_provider_class", infer)
+        async def native_request(_transport, request):
+            return respond(request)
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", native_request)
         monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
         preset = settings_presets(provider, model_id)[0]
         settings = {
@@ -399,8 +390,6 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
     import json
 
     import httpx2 as httpx
-    from a13n_harness_ui import model_runtime
-    from openai import AsyncOpenAI
     from pydantic_ai import Agent
     from pydantic_ai.messages import ModelMessagesTypeAdapter, PartDeltaEvent, ThinkingPart, ThinkingPartDelta
     from pydantic_ai.models.zai import ZaiModel
@@ -451,21 +440,22 @@ async def test_native_thinking_stream_tool_continuation_and_checkpoint_replay(pr
         content = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in chunks) + "data: [DONE]\n\n"
         return httpx.Response(200, text=content, headers={"content-type": "text/event-stream"})
 
-    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as client:
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)):
+        import ipaddress
 
-        def infer(name):
-            native = infer_provider_class(name)
+        monkeypatch.setattr(
+            "a13n_harness.providers.endpoint_policy._resolve_addresses",
+            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
+        )
+        monkeypatch.setattr(
+            "a13n_harness.providers.endpoint_policy._resolve_addresses",
+            lambda *_: (ipaddress.ip_address("93.184.216.34"),),
+        )
 
-            def build(**kwargs):
-                original = kwargs.pop("openai_client")
-                return native(
-                    openai_client=AsyncOpenAI(api_key="fixture-key", base_url=original.base_url, http_client=client),
-                    **kwargs,
-                )
+        async def native_request(_transport, request):
+            return respond(request)
 
-            return build
-
-        monkeypatch.setattr(model_runtime, "infer_provider_class", infer)
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", native_request)
         monkeypatch.setenv("TEST_PROVIDER_KEY", "fixture-key")
         preset = settings_presets(provider, model_id)[0]
         assert preset.key == "thinking"

@@ -7,9 +7,9 @@ import a13n_harness.capability_types as capability_types
 import a13n_harness.environment as environment
 import a13n_harness.environment.advanced as advanced_environment
 import a13n_harness.filters as filters
-import a13n_harness.model_auth as model_auth
 import a13n_harness.models as models
 import a13n_harness.pricing as pricing
+import a13n_harness.providers.model.oauth as model_auth
 import a13n_harness.tools as tools
 import a13n_harness.toolsets as toolsets
 
@@ -235,13 +235,15 @@ def test_model_auth_feature_facade_is_public_without_root_reexports() -> None:
         "CodexDeviceAuthorization",
         "CodexDeviceAuthorizationFlow",
         "DeviceAuthorizationError",
-        "CodexRequestModel",
         "CodexLoginFlow",
         "CodexLoginResult",
         "CredentialPersistenceError",
         "CredentialRefreshError",
+        "RefreshNotDispatched",
+        "ProcessGrokCredentialSource",
         "GrokCredentialSource",
         "GrokCredentials",
+        "GrokRefresh",
         "GrokDeviceAuthorization",
         "GrokDeviceAuthorizationFlow",
         "GrokOAuthFlow",

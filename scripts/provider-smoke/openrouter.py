@@ -7,34 +7,18 @@ import asyncio
 import json
 import os
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict
 from getpass import getpass
 from time import monotonic
 from typing import cast
 
 import httpx2
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_service.models.domain import ModelExecutionSnapshot
-from a13n_service.models.model_factory import NativeModelFactory
-from a13n_service.models.provider_operations import NativeProviderOperations
-from a13n_service.models.provider_runtime import RuntimeProvider
-from a13n_service.models.providers import built_in_provider_registry
-from a13n_service.models.settings import validate_settings
+from a13n_harness.providers.model.apis import MODEL_APIS
+from a13n_harness.providers.model.openrouter import DEFINITION
+from pydantic import TypeAdapter
 from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models import ModelRequestParameters
 from pydantic_ai.settings import ModelSettings
-
-
-@dataclass
-class LocalProviderResolver:
-    """Supply only this process's explicit credential to the connection probe."""
-
-    provider: RuntimeProvider
-
-    async def resolve_provider(
-        self, *, provider_id: str, organization_id: str, workspace_id: str | None
-    ) -> RuntimeProvider:
-        return self.provider
 
 
 def show(value: object) -> None:
@@ -46,44 +30,38 @@ def pause(message: str) -> None:
 
 
 async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) -> None:
-    registry = built_in_provider_registry()
-    definition = registry.definition("openrouter")
-    configuration = registry.validate_provider("openrouter", {}, credential_configured=bool(key))
-    provider = RuntimeProvider("openrouter", configuration.configuration, configuration.endpoint, key)
-    model_api = definition.default_model_api
+    definition = DEFINITION
+    provider = definition.bind({}, {"api_key": key})
+    model_api = definition.supported_model_apis[0]
     print("\n[1] Local Provider configuration validated (credential hidden)", flush=True)
     show({"type": provider.type, "endpoint": provider.endpoint, "model_api": model_api})
 
-    operations = NativeProviderOperations(
-        provider_resolver=LocalProviderResolver(provider), registry=registry, http_client=client
-    )
     walkthrough = args.command == "walkthrough"
     if walkthrough:
         pause("Next: probe the OpenRouter connection through the Model module.")
     if args.command in {"walkthrough", "test"}:
         print("\n[2] Test Provider connection", flush=True)
         async with asyncio.timeout(60):
-            await operations.test(provider_id="local", organization_id="local", workspace_id="local")
+            await definition.probe(provider, http_client=client)
         print("Connection probe succeeded; this does not prove inference authorization.", flush=True)
         if args.command == "test":
             return
 
     model_id = args.model or input("\nEnter the full OpenRouter model ID to test (vendor/model): ").strip()
-    snapshot = ModelExecutionSnapshot(
-        model_id="mdl_1234567890abcdef", model_key="local-smoke", upstream_model=model_id, model_api=model_api
-    )
     if not model_id.strip():
         raise ValueError("Model ID must not be empty")
     if args.command != "call":
         print("\n[3] Local Model API settings (not upstream capability discovery)", flush=True)
         show({"upstream_model": model_id, "model_api": model_api})
-        properties = cast(dict[str, object], definition.settings_schemas[model_api].get("properties", {}))
+        properties = cast(
+            dict[str, object], TypeAdapter(MODEL_APIS[model_api].settings_type).json_schema().get("properties", {})
+        )
         print("Available settings:", ", ".join(sorted(properties)))
         if args.command == "describe":
             return
 
-    settings = validate_settings(model_api, json.loads(args.settings))
-    model = await NativeModelFactory(client, registry, EndpointPolicy()).build(snapshot, provider)
+    settings = TypeAdapter(MODEL_APIS[model_api].settings_type).validate_python(json.loads(args.settings))
+    model = await definition.build(model_id, configuration={}, credential=provider.credential, http_client=client)
     print("\n[4] Settings validated and native Model constructed", flush=True)
     show({"upstream_model": model_id, "model_api": model_api, "settings": settings, "prompt": args.prompt})
     print(f"Native Model type: {type(model).__name__}", flush=True)

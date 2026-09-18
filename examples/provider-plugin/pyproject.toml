@@ -6,6 +6,8 @@ requires-python = ">=3.13"
 dependencies = [
     "a13n-harness>=0,<1",
     "pydantic>=2.12,<3",
+    "openai>=3.8,<4",
+    "pydantic-ai>=2.41,<3",
 ]
 
 [dependency-groups]

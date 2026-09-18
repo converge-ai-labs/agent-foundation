@@ -8,6 +8,7 @@ from typing import cast
 
 import httpx2
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.model.definition import ProviderOperationError, ProviderOperationUnsupported
 from anyio import fail_after
 from pydantic_ai.exceptions import ModelAPIError, UnexpectedModelBehavior
 from pydantic_ai.messages import ModelRequest, UserPromptPart
@@ -16,7 +17,6 @@ from pydantic_ai.settings import ModelSettings
 
 from .domain import ModelConnectionTestResult, ModelExecutionSnapshot
 from .model_factory import NativeModelFactory
-from .provider_adapters.base import ProviderOperationError, ProviderOperationUnsupported
 from .provider_runtime import LiveProviderResolver
 from .requests import LiveProviderModel
 from .settings import JsonObject, validate_settings

@@ -3,6 +3,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.usage import ProviderUsage
 from a13n_harness.providers.web import ScrapeOptions, WebProviderDefinition, WebScrapeRequest, WebScrapeResult
 from anyio import CancelScope, current_time, fail_after, move_on_after, sleep, sleep_forever
@@ -20,7 +21,7 @@ def definition(scrape):
         configuration_model=Empty,
         credential_model=Empty,
         setup_url="https://example.com/setup",
-        credential_required=False,
+        authentication=Authentication(mode=CredentialMode.forbidden),
         scrape=scrape,
     )
 
@@ -70,7 +71,9 @@ async def test_custom_scrape_enforces_utf8_limits_without_losing_metadata(
     async def scrape(configuration, credential, requested, options, transport, callback_policy):
         return original
 
-    async with definition(scrape).open({}, {}, scrape_options=ScrapeOptions(max_content_bytes=provider_budget)) as web:
+    async with definition(scrape).open(
+        {}, None, scrape_options=ScrapeOptions(max_content_bytes=provider_budget)
+    ) as web:
         result = await web.scrape(request(budget=request_budget), policy=policy)
     assert result.content == expected
     assert len(result.content.encode("utf-8")) <= min(request_budget, provider_budget)
@@ -104,7 +107,7 @@ async def test_deadline_includes_policy_and_callback_and_allows_cleanup(boundary
 
     started = current_time()
     with pytest.raises(TimeoutError), fail_after(2):
-        async with definition(scrape).open({}, {}) as web:
+        async with definition(scrape).open({}, None) as web:
             await web.scrape(request(deadline=0.01), policy=Policy())
     assert current_time() - started < 1
     assert steps == (
@@ -124,7 +127,7 @@ async def test_outer_cancellation_is_not_converted_to_timeout_or_provider_failur
             cleaned = True
 
     with move_on_after(0.01) as scope:
-        async with definition(scrape).open({}, {}) as web:
+        async with definition(scrape).open({}, None) as web:
             await web.scrape(request(deadline=1), policy=policy)
         pytest.fail("cancellation was swallowed")
     assert scope.cancelled_caught and cleaned

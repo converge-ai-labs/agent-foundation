@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Awaitable
 from typing import Protocol
 
@@ -11,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.credentials import CredentialSnapshot
+from a13n_service.credentials import CredentialSnapshot, credential_payload
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
@@ -19,7 +20,7 @@ from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, utc_now
 
 from .connection_test import test_connection
-from .credentials import ProviderCredentialError, ProviderSecrets, validate_provider_credential
+from .credentials import ProviderSecrets
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .domain import (
     CreateModelProviderRequest,
@@ -78,7 +79,7 @@ class ModelProviderService:
         workspace_id: str | None,
         request: CreateModelProviderRequest,
     ) -> ModelProvider:
-        credential = request.credential.get_secret_value() if request.credential is not None else None
+        credential = self._credential(request.type, request.credential)
         secrets = ProviderSecrets(
             credential=credential,
             extra_headers={
@@ -91,7 +92,6 @@ class ModelProviderService:
             credential_configured=credential is not None,
             header_names=tuple(secrets.extra_headers),
         )
-        self._validate_credential(request.type, credential)
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -263,9 +263,7 @@ class ModelProviderService:
             actor=actor, workspace_id=workspace_id, provider_id=provider_id, action=WorkspaceAction.models_manage
         )
         require_etag(current.id, current.updated_at, if_match)
-        credential = request.credential.get_secret_value() if request.credential is not None else None
-        if "credential" in request.model_fields_set:
-            self._validate_credential(current.type, credential)
+        credential = self._credential(current.type, request.credential)
         credential_configured = (
             credential is not None if "credential" in request.model_fields_set else current.credential_configured
         )
@@ -283,11 +281,11 @@ class ModelProviderService:
         secrets: ProviderSecrets | None = None
         if "credential" in request.model_fields_set or request.extra_headers:
             try:
-                previous = (
-                    ProviderSecrets.model_validate_json(encrypted.decrypt(self._protector))
-                    if encrypted
-                    else ProviderSecrets()
-                )
+                stored = json.loads(encrypted.decrypt(self._protector)) if encrypted else {}
+                if isinstance(stored, dict) and "credential" in request.model_fields_set:
+                    # Replacing the primary material does not need to interpret its discarded value.
+                    stored.pop("credential", None)
+                previous = ProviderSecrets.model_validate(stored)
                 secrets = ProviderSecrets(
                     credential=(credential if "credential" in request.model_fields_set else previous.credential),
                     extra_headers=apply_header_updates(
@@ -441,12 +439,17 @@ class ModelProviderService:
             ) from error
         return self._registry.with_validated_endpoint(provider_type, validated, endpoint)
 
-    def _validate_credential(self, provider_type: str, credential: str | None) -> None:
+    def _credential(self, provider_type: str, credential: dict[str, object] | None) -> dict[str, object] | None:
+        if credential is None:
+            return None
         try:
-            validate_provider_credential(self._registry.credential_format(provider_type), credential)
-        except (ValueError, ProviderCredentialError) as error:
+            parsed = self._registry.integration(provider_type).credential_model.model_validate(credential)
+            return credential_payload(parsed)
+        except ValueError as error:
             raise ModelError(
-                "invalid_provider_credential", str(error), category=ErrorCategory.invalid_request
+                "invalid_provider_credential",
+                "The Provider credential is invalid.",
+                category=ErrorCategory.invalid_request,
             ) from error
 
 

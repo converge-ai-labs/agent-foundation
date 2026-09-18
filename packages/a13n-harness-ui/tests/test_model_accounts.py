@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_harness.model_auth import CodexLoginResult, GrokCredentials
+from a13n_harness.providers.model.oauth import CodexLoginResult, GrokCredentials
 from a13n_harness_ui.model_accounts import (
     AccountProjection,
     AccountStoreConflictError,
@@ -334,7 +334,7 @@ async def test_grok_policy_honors_path_precedence_and_rejects_process_store(tmp_
     assert malformed_inline.value.code == "account_policy_invalid"
 
 
-async def test_grok_save_preserves_other_scopes_and_entry_fields(tmp_path: Path) -> None:
+async def test_grok_rotation_preserves_other_scopes_and_entry_fields(tmp_path: Path) -> None:
     auth_path = tmp_path / "auth.json"
     initial = _grok_entry(
         account_id="grok-user-1",
@@ -357,7 +357,11 @@ async def test_grok_save_preserves_other_scopes_and_entry_fields(tmp_path: Path)
 
     loaded = await store.load()
     assert "grok-refresh-old" not in repr(loaded)
-    await store.save(refreshed)
+
+    async def exchange(_):
+        return refreshed
+
+    await store.rotate(loaded, exchange)
     persisted = json.loads(auth_path.read_text())
 
     assert persisted[other_scope] == other_entry

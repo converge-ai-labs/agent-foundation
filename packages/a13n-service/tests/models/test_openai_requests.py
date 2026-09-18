@@ -7,7 +7,6 @@ import httpx2
 import pytest
 from a13n_service.models.domain import ModelExecutionSnapshot
 from a13n_service.models.model_factory import NativeModelFactory
-from a13n_service.models.provider_adapters.types import RuntimeProvider
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.requests import LiveProviderModel
@@ -131,12 +130,14 @@ async def test_custom_responses_endpoint_inference(mode: str, stream: bool) -> N
     if mode == "api_key_header":
         configuration["api_key_header_name"] = "x-model-key"
     validated = registry.validate_provider("openai", configuration, credential_configured=mode != "none")
-    provider = RuntimeProvider(
-        "openai",
-        validated.configuration,
-        validated.endpoint,
-        None if mode == "none" else "test-secret",
-        extra_headers={"x-gateway-key": "private-routing-value"},
+    provider = (
+        built_in_provider_registry()
+        .integration("openai")
+        .bind(
+            {**validated.configuration, "base_url": validated.endpoint},
+            None if mode == "none" else {"api_key": "test-secret"},
+            extra_headers={"x-gateway-key": "private-routing-value"},
+        )
     )
     snapshot = ModelExecutionSnapshot(
         model_id="mdl_1234567890abcdef", model_key="custom", upstream_model="custom-model", model_api="openai.responses"
@@ -194,7 +195,11 @@ async def test_base_model_profile_preserves_relay_identity_endpoint_and_thinking
         {"base_url": "https://relay.example/v1"},
         credential_configured=True,
     )
-    provider = RuntimeProvider("openai", validated.configuration, validated.endpoint, "relay-secret")
+    provider = (
+        built_in_provider_registry()
+        .integration("openai")
+        .bind({**validated.configuration, "base_url": validated.endpoint}, {"api_key": "relay-secret"})
+    )
     resolver = Mock(spec=LiveProviderResolver)
     resolver.resolve = AsyncMock(return_value=provider)
     snapshot = ModelExecutionSnapshot(
@@ -255,7 +260,11 @@ async def test_openai_base_profile_routes_thinking_through_explicit_chat_overrid
         {"base_url": "https://relay.example/v1"},
         credential_configured=True,
     )
-    provider = RuntimeProvider("openai", validated.configuration, validated.endpoint, "relay-secret")
+    provider = (
+        built_in_provider_registry()
+        .integration("openai")
+        .bind({**validated.configuration, "base_url": validated.endpoint}, {"api_key": "relay-secret"})
+    )
     snapshot = ModelExecutionSnapshot(
         model_id="mdl_1234567890abcdef",
         model_key="relay-chat",
@@ -293,7 +302,11 @@ async def test_deepseek_base_profile_survives_openai_relay_agent_lifecycle(strea
         {"base_url": "https://relay.example/v1"},
         credential_configured=True,
     )
-    provider = RuntimeProvider("openai", validated.configuration, validated.endpoint, "relay-secret")
+    provider = (
+        built_in_provider_registry()
+        .integration("openai")
+        .bind({**validated.configuration, "base_url": validated.endpoint}, {"api_key": "relay-secret"})
+    )
     snapshot = ModelExecutionSnapshot(
         model_id="mdl_1234567890abcdef",
         model_key="relay-deepseek",

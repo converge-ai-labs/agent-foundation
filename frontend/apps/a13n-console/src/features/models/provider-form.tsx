@@ -5,8 +5,7 @@ import { ResourceReference } from "../../shared/resource-reference";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
-import { providerKeyUrls } from "./provider-key-urls";
-import { requiresProviderCredential } from "./provider-credentials";
+import { credentialMode } from "../../shared/provider-authentication";
 import {
   ProviderConnection,
   ordinaryConfigurationSchema,
@@ -21,27 +20,9 @@ import { useClient } from "../../auth/context";
 import { type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
-import { SchemaFields } from "../../shared/schema-fields";
+import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
 import { validateSettings } from "../../shared/validation";
 import { modelApi, type ModelScope } from "./api";
-
-const credentialFields: Record<string, { label: string; description: string }> =
-  {
-    api_key: {
-      label: "API key",
-      description: "Paste the API key from your provider account.",
-    },
-    google_service_account_json: {
-      label: "Service account JSON",
-      description:
-        "Paste the complete JSON key file for your Google Cloud service account.",
-    },
-    aws_credentials_json: {
-      label: "AWS access keys (JSON)",
-      description:
-        "Paste a JSON object with aws_access_key_id and aws_secret_access_key. Include aws_session_token for temporary credentials.",
-    },
-  };
 
 export function ProviderForm({
   scope,
@@ -77,16 +58,11 @@ export function ProviderForm({
     ),
     [headers, setHeaders] = useState(() => initialHeaders(original?.value)),
     [advancedOpen, setAdvancedOpen] = useState(false),
-    [credential, setCredential] = useState(""),
+    [credential, setCredential] = useState<Record<string, unknown>>({}),
     [removeCredential, setRemoveCredential] = useState(false),
     [enabled, setEnabled] = useState(original?.value.enabled ?? true);
   const definition = definitions.find((item) => item.type === type);
-  const credentialField = credentialFields[
-    String(
-      definition?.credential_schema["x-a13n-credential-format"] ?? "api_key",
-    )
-  ] ?? { label: "Authentication secret", description: "" };
-  const credentialLabel = t(credentialField.label);
+  const mode = credentialMode(definition, configuration);
   const save = useMutation({
     gcTime: 0,
     mutationFn: async () => {
@@ -95,16 +71,34 @@ export function ProviderForm({
         headers,
         original?.value.header_names ?? [],
       );
-      validateSettings(definition.configuration_schema, configuration);
+      const config = withSchemaValues(
+        definition.configuration_schema,
+        configuration,
+      );
+      validateSettings(definition.configuration_schema, config);
+      const replacement = withSchemaValues(
+        definition.credential_schema,
+        credential,
+      );
+      const replacing =
+        Object.keys(credential).length > 0 ||
+        (mode === "required" && !original?.value.credential_configured);
+      if (
+        mode !== "forbidden" &&
+        (replacing ||
+          (mode === "required" && !original?.value.credential_configured))
+      )
+        validateSettings(definition.credential_schema, replacement);
       const body = {
         name,
-        configuration,
+        configuration: config,
         extra_headers: extraHeaders,
         enabled,
-        ...(removeCredential
+        ...(removeCredential ||
+        (mode === "forbidden" && original?.value.credential_configured)
           ? { credential: null }
-          : credential
-            ? { credential }
+          : mode !== "forbidden" && replacing
+            ? { credential: replacement }
             : {}),
       };
       if (!original) return api.createProvider({ ...body, type });
@@ -117,7 +111,7 @@ export function ProviderForm({
     onError: () => setAdvancedOpen(true),
     onSuccess: (provider) => {
       setHeaders([]);
-      setCredential("");
+      setCredential({});
       void cache.invalidateQueries();
       if (onCreated) onCreated(provider, suggestedApi);
       else close();
@@ -161,13 +155,16 @@ export function ProviderForm({
             setConfiguration({});
             setHeaders([]);
             setAdvancedOpen(false);
-            setCredential("");
+            setCredential({});
             setRemoveCredential(false);
             setSuggestedApi(undefined);
           }}
           labelAction={
-            providerKeyUrls[type] && (
-              <ProviderKeyLink {...providerKeyUrls[type]} />
+            definition?.setup_url && (
+              <ProviderKeyLink
+                href={definition.setup_url}
+                label={definition.setup_label ?? undefined}
+              />
             )
           }
         />
@@ -181,38 +178,29 @@ export function ProviderForm({
             onChange={setConfiguration}
           />
         )}
-        {requiresProviderCredential(type, configuration, definition) && (
+        {definition && mode !== "forbidden" && (
           <CredentialEditor
             configured={original?.value.credential_configured}
             removing={removeCredential}
             onRemovingChange={(value) => {
               setRemoveCredential(value);
-              setCredential("");
+              setCredential({});
             }}
           >
-            <FormField
-              className="min-w-0 w-full"
-              label={credentialLabel}
-              description={
-                original ? undefined : t(credentialField.description)
+            <SchemaFields
+              schema={definition.credential_schema}
+              value={credential}
+              onChange={(value) => {
+                setCredential(value);
+                setRemoveCredential(false);
+              }}
+              secret
+              requireFields={
+                mode === "required" &&
+                (!original?.value.credential_configured ||
+                  Object.keys(credential).length > 0)
               }
-            >
-              <Input
-                type="password"
-                placeholder={
-                  original?.value.credential_configured
-                    ? t("Saved credential · enter to replace")
-                    : undefined
-                }
-                autoComplete="new-password"
-                name="provider-api-key"
-                value={credential}
-                onChange={(event) => {
-                  setCredential(event.target.value);
-                  setRemoveCredential(false);
-                }}
-              />
-            </FormField>
+            />
           </CredentialEditor>
         )}
         {definition && (
@@ -234,13 +222,9 @@ export function ProviderForm({
               }
             }}
             onSuggestedApi={setSuggestedApi}
-            onAuthChange={(mode) => {
-              if (mode === "none") setCredential("");
-              setRemoveCredential(mode === "none");
-            }}
           />
         )}
-        {original && (
+        {original && definition?.supports_connection_probe && (
           <ConnectionTest
             compact
             action={() => api.testProvider(original.value.id)}
@@ -249,7 +233,7 @@ export function ProviderForm({
               save.isPending ||
               name !== original.value.name ||
               enabled !== original.value.enabled ||
-              !!credential ||
+              Object.keys(credential).length > 0 ||
               JSON.stringify(headers) !==
                 JSON.stringify(initialHeaders(original.value)) ||
               removeCredential ||

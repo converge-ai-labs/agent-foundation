@@ -55,7 +55,11 @@ def require_eligible(record: WebProviderRecord, registry: WebProviderRegistry) -
             "Web Provider implementation is unavailable.",
             category=ErrorCategory.unavailable,
         ) from None
-    if definition.credential_required and record.ciphertext is None:
+    if (
+        definition.authentication.resolve(definition.configuration_model.model_validate(record.configuration))
+        == "required"
+        and record.ciphertext is None
+    ):
         raise WebProviderError(
             "web_provider_credential_missing",
             "Web Provider requires a credential.",

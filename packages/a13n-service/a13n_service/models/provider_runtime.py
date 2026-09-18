@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable
 from dataclasses import dataclass
-from typing import Protocol
 
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
+from a13n_harness.providers.model.definition import EndpointValidator
+from a13n_harness.providers.model.types import ModelConnection
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -19,7 +19,6 @@ from a13n_service.storage import short_session
 from .credentials import ProviderSecrets
 from .domain import ModelExecutionSnapshot
 from .models import ModelProviderRecord, ModelRecord
-from .provider_adapters.types import RuntimeProvider
 from .providers import ProviderRegistry
 
 
@@ -32,10 +31,6 @@ class _StoredProvider:
     credential: CredentialSnapshot | None
     credential_configured: bool
     header_names: tuple[str, ...]
-
-
-class EndpointValidator(Protocol):
-    def validate(self, endpoint: str, *, resolve_dns: bool) -> Awaitable[str]: ...
 
 
 class LiveProviderResolver:
@@ -59,7 +54,7 @@ class LiveProviderResolver:
         organization_id: str,
         workspace_id: str | None,
         snapshot: ModelExecutionSnapshot,
-    ) -> RuntimeProvider:
+    ) -> ModelConnection:
         async with short_session(self._sessions) as session:
             row = (
                 await session.execute(
@@ -86,7 +81,7 @@ class LiveProviderResolver:
         organization_id: str,
         workspace_id: str | None,
         provider_id: str,
-    ) -> RuntimeProvider:
+    ) -> ModelConnection:
         async with short_session(self._sessions) as session:
             provider = await session.scalar(
                 select(ModelProviderRecord).where(
@@ -100,7 +95,7 @@ class LiveProviderResolver:
             stored = _stored_provider(provider)
         return await self._materialize(stored)
 
-    async def _materialize(self, provider: _StoredProvider, *, model_api: str | None = None) -> RuntimeProvider:
+    async def _materialize(self, provider: _StoredProvider, *, model_api: str | None = None) -> ModelConnection:
         try:
             if not provider.enabled:
                 raise ValueError("the Model Provider is disabled")
@@ -129,13 +124,14 @@ class LiveProviderResolver:
                 code="model_provider_unavailable",
                 details={"provider_id": provider.id},
             ) from error
-        return RuntimeProvider(
-            type=provider.type,
-            configuration=validated.configuration,
-            endpoint=validated.endpoint,
-            credential=secrets.credential,
-            extra_headers=secrets.extra_headers,
-        )
+        try:
+            return self._registry.integration(provider.type).bind(
+                validated.configuration, secrets.credential, extra_headers=secrets.extra_headers
+            )
+        except ValueError as error:
+            raise ModelResolutionError(
+                "The current Model Provider credential is unavailable.", code="model_provider_unavailable"
+            ) from error
 
 
 def _stored_provider(provider: ModelProviderRecord) -> _StoredProvider:

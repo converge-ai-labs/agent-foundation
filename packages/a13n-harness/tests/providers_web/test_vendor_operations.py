@@ -5,7 +5,7 @@ import json
 import httpx2
 import pytest
 from a13n_harness.providers.web import ScrapeOptions, SearchOptions, WebScrapeRequest, WebSearchRequest
-from a13n_harness.providers.web.configuration import ApiKeyCredential, EmptyConfiguration
+from a13n_harness.providers.web.configuration import ApiKeyCredential
 from a13n_harness.providers.web.transport import WebProviderTransport
 from a13n_harness.providers.web.vendors import duckduckgo, firecrawl, jina, parallel, perplexity, serpapi, tavily
 
@@ -97,7 +97,7 @@ async def test_duckduckgo_uses_html_search_without_credential(providers) -> None
 
     async with providers["duckduckgo"].open(
         {},
-        EmptyConfiguration(),
+        None,
         transport=transport(handle),
         search_options=SearchOptions(max_results=2, allow_domains=("example.com",), deny_domains=()),
     ) as web:

@@ -13,18 +13,19 @@ import httpx2
 import jwt
 import pytest
 from a13n_harness.model_affinity import derive_model_affinity_id
-from a13n_harness.model_auth import (
-    CodexRequestModel,
+from a13n_harness.models import codex as model_auth_runtime
+from a13n_harness.models.codex import CodexRequestModel
+from a13n_harness.providers.model.oauth import (
     CredentialPersistenceError,
     CredentialRefreshError,
     GrokCredentials,
     GrokDeviceAuthorizationFlow,
     GrokOAuthFlow,
     ModelAuthenticationError,
+    ProcessGrokCredentialSource,
     build_grok_model,
     refresh_grok_credentials,
 )
-from a13n_harness.model_auth import codex as model_auth_runtime
 from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic_ai import RunContext
 from pydantic_ai.exceptions import UserError
@@ -126,6 +127,7 @@ class _GrokSource:
     def __init__(self, current: GrokCredentials, *, fail_save: bool = False) -> None:
         self.current = current
         self.fail_save = fail_save
+        self.coordinator = ProcessGrokCredentialSource(self)
         self.loads = 0
         self.saved: list[GrokCredentials] = []
         self.events: list[str] = []
@@ -216,7 +218,7 @@ async def test_stale_credentials_are_saved_before_the_rotated_token_is_sent() ->
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source.coordinator, refresh=refresh, http_client=client)
         response = await client.post(f"{_GROK_BASE_URL}/responses", content=b"request-body")
 
     assert response.status_code == 200
@@ -250,7 +252,7 @@ async def test_refresh_adopts_a_newer_same_account_source_value() -> None:
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
         build_grok_model(
             "gpt-5",
-            credential_source=source,
+            credential_source=source.coordinator,
             refresh=refresh,
             refresh_window=timedelta(hours=2),
             http_client=client,
@@ -274,7 +276,7 @@ async def test_live_model_rejects_a_source_account_switch() -> None:
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("gpt-5", credential_source=source, http_client=client)
+        build_grok_model("gpt-5", credential_source=source.coordinator, http_client=client)
         await client.get(f"{_GROK_BASE_URL}/responses")
         source.current = replace(
             source.current,
@@ -306,7 +308,7 @@ async def test_persistence_failure_prevents_the_rotated_token_from_being_sent() 
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source.coordinator, refresh=refresh, http_client=client)
         with pytest.raises(CredentialPersistenceError) as failed:
             await client.get(f"{_GROK_BASE_URL}/responses")
 
@@ -316,7 +318,7 @@ async def test_persistence_failure_prevents_the_rotated_token_from_being_sent() 
     assert source.current.access_token == "grok-access-old"
 
 
-async def test_later_request_retries_a_transient_proactive_refresh_failure() -> None:
+async def test_later_request_requires_a_new_grant_after_uncertain_refresh() -> None:
     source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
     refreshes = 0
     sends = 0
@@ -326,7 +328,7 @@ async def test_later_request_retries_a_transient_proactive_refresh_failure() -> 
         del credentials
         refreshes += 1
         if refreshes == 1:
-            raise OSError("temporary refresh failure")
+            raise CredentialRefreshError("grok", "Refresh response was lost.")
         return _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
@@ -336,9 +338,12 @@ async def test_later_request_retries_a_transient_proactive_refresh_failure() -> 
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source.coordinator, refresh=refresh, http_client=client)
         with pytest.raises(CredentialRefreshError):
             await client.get(f"{_GROK_BASE_URL}/responses")
+        with pytest.raises(ModelAuthenticationError, match="unknown"):
+            await client.get(f"{_GROK_BASE_URL}/responses")
+        source.current = _grok_credentials(marker="new-grant", expires_at=datetime.now(UTC) - timedelta(minutes=1))
         response = await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert response.status_code == 200
@@ -346,10 +351,10 @@ async def test_later_request_retries_a_transient_proactive_refresh_failure() -> 
     assert sends == 1
 
 
-async def test_concurrent_stale_requests_share_failure_and_a_later_request_retries() -> None:
+async def test_concurrent_stale_requests_block_old_grant_until_reauthentication() -> None:
     source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) - timedelta(minutes=1)))
     refreshes = 0
-    failures: list[CredentialRefreshError] = []
+    failures: list[ModelAuthenticationError] = []
 
     async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         nonlocal refreshes
@@ -357,7 +362,7 @@ async def test_concurrent_stale_requests_share_failure_and_a_later_request_retri
         refreshes += 1
         await anyio.sleep(0.02)
         if refreshes == 1:
-            raise OSError("temporary refresh failure")
+            raise CredentialRefreshError("grok", "Refresh response was lost.")
         return _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
@@ -365,12 +370,12 @@ async def test_concurrent_stale_requests_share_failure_and_a_later_request_retri
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source.coordinator, refresh=refresh, http_client=client)
 
         async def send() -> None:
             try:
                 await client.get(f"{_GROK_BASE_URL}/responses")
-            except CredentialRefreshError as exc:
+            except ModelAuthenticationError as exc:
                 failures.append(exc)
 
         async with anyio.create_task_group() as tasks:
@@ -378,6 +383,9 @@ async def test_concurrent_stale_requests_share_failure_and_a_later_request_retri
                 tasks.start_soon(send)
 
         assert refreshes == 1
+        with pytest.raises(ModelAuthenticationError, match="unknown"):
+            await client.get(f"{_GROK_BASE_URL}/responses")
+        source.current = _grok_credentials(marker="new-grant", expires_at=datetime.now(UTC) - timedelta(minutes=1))
         recovered = await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert recovered.status_code == 200
@@ -403,7 +411,7 @@ async def test_invalid_refreshed_credentials_are_not_saved_or_sent() -> None:
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source.coordinator, refresh=refresh, http_client=client)
         with pytest.raises(CredentialRefreshError):
             await client.get(f"{_GROK_BASE_URL}/responses")
 
@@ -428,7 +436,7 @@ async def test_one_401_refreshes_and_replays_the_same_request_body_once() -> Non
         return httpx2.Response(401)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source.coordinator, refresh=refresh, http_client=client)
         response = await client.post(f"{_GROK_BASE_URL}/responses", content=b"request-body")
 
     assert response.status_code == 401
@@ -481,7 +489,7 @@ async def test_grok_refresh_bypasses_model_auth_when_oidc_uses_model_origin() ->
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("grok-code", credential_source=source, http_client=client)
+        build_grok_model("grok-code", credential_source=source.coordinator, http_client=client)
         with anyio.fail_after(1):
             response = await client.get(f"{_GROK_BASE_URL}/models")
 
@@ -512,20 +520,20 @@ async def test_grok_refresh_rejects_mismatched_discovery_issuer_before_token_exc
     assert [request.method for request in requests] == ["GET"]
 
 
-async def test_concurrent_401s_share_failure_and_a_later_request_retries() -> None:
+async def test_concurrent_401s_block_old_grant_until_reauthentication() -> None:
     source = _GrokSource(_grok_credentials(marker="old", expires_at=datetime.now(UTC) + timedelta(hours=1)))
     refreshes = 0
     initial_requests = 0
     all_started = anyio.Event()
     request_lock = anyio.Lock()
-    failures: list[CredentialRefreshError] = []
+    failures: list[ModelAuthenticationError] = []
 
     async def refresh(credentials: GrokCredentials) -> GrokCredentials:
         nonlocal refreshes
         del credentials
         refreshes += 1
         if refreshes == 1:
-            raise OSError("temporary refresh failure")
+            raise CredentialRefreshError("grok", "Refresh response was lost.")
         return _grok_credentials(marker="new", expires_at=datetime.now(UTC) + timedelta(hours=1))
 
     async def handle(request: httpx2.Request) -> httpx2.Response:
@@ -540,12 +548,12 @@ async def test_concurrent_401s_share_failure_and_a_later_request_retries() -> No
         return httpx2.Response(401)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("gpt-5", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("gpt-5", credential_source=source.coordinator, refresh=refresh, http_client=client)
 
         async def send() -> None:
             try:
                 await client.get(f"{_GROK_BASE_URL}/responses")
-            except CredentialRefreshError as exc:
+            except ModelAuthenticationError as exc:
                 failures.append(exc)
 
         async with anyio.create_task_group() as tasks:
@@ -553,13 +561,16 @@ async def test_concurrent_401s_share_failure_and_a_later_request_retries() -> No
                 tasks.start_soon(send)
 
         assert refreshes == 1
+        with pytest.raises(ModelAuthenticationError, match="unknown"):
+            await client.get(f"{_GROK_BASE_URL}/responses")
+        source.current = _grok_credentials(marker="new-grant", expires_at=datetime.now(UTC) - timedelta(minutes=1))
         recovered = await client.get(f"{_GROK_BASE_URL}/responses")
 
     assert recovered.status_code == 200
     assert refreshes == 2
-    assert initial_requests == 6
+    assert initial_requests == 5
     assert len(failures) == 5
-    assert all(isinstance(error, CredentialRefreshError) for error in failures)
+    assert all(isinstance(error, ModelAuthenticationError) for error in failures)
 
 
 async def test_concurrent_stale_requests_share_one_process_local_refresh() -> None:
@@ -580,7 +591,7 @@ async def test_concurrent_stale_requests_share_one_process_local_refresh() -> No
         return httpx2.Response(200)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        build_grok_model("grok-code", credential_source=source, refresh=refresh, http_client=client)
+        build_grok_model("grok-code", credential_source=source.coordinator, refresh=refresh, http_client=client)
 
         async def send() -> None:
             response = await client.get(f"{_GROK_BASE_URL}/models")
@@ -599,7 +610,7 @@ async def test_caller_owned_client_stays_open_after_model_lifecycle() -> None:
     source = _GrokSource(_grok_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
     client = httpx2.AsyncClient()
     try:
-        model = build_grok_model("grok-code", credential_source=source, http_client=client)
+        model = build_grok_model("grok-code", credential_source=source.coordinator, http_client=client)
         assert model.provider is not None
         assert model.provider.name == "grok"
         async with model:
@@ -952,7 +963,7 @@ async def test_grok_device_oauth_polls_pending_and_slow_down_without_exposing_de
             },
         )
 
-    monkeypatch.setattr("a13n_harness.model_auth.oauth.anyio.sleep", fake_sleep)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.oauth.anyio.sleep", fake_sleep)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
         authorization = await GrokDeviceAuthorizationFlow.start(
             issuer=issuer,
@@ -988,7 +999,7 @@ async def test_grok_device_oauth_lifetime_starts_with_authorization_response(
             },
         )
 
-    monkeypatch.setattr("a13n_harness.model_auth.oauth.time.monotonic", lambda: now)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.oauth.time.monotonic", lambda: now)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
         authorization = await GrokDeviceAuthorizationFlow.start(
             issuer="https://issuer.example",
@@ -1021,7 +1032,7 @@ async def test_grok_device_oauth_bounds_each_token_request(
         await anyio.Event().wait()
         raise AssertionError("unreachable")
 
-    monkeypatch.setattr("a13n_harness.model_auth.oauth.anyio.sleep", fake_sleep)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.oauth.anyio.sleep", fake_sleep)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
         authorization = await GrokDeviceAuthorizationFlow.start(
             issuer="https://issuer.example",
@@ -1104,7 +1115,7 @@ async def test_codex_subscription_settings_use_bound_thread_not_gateway_header()
 async def test_codex_device_authorization_uses_vendor_protocol_and_device_redirect(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from a13n_harness.model_auth import CodexDeviceAuthorizationFlow
+    from a13n_harness.providers.model.oauth import CodexDeviceAuthorizationFlow
 
     attempts = 0
 
@@ -1140,7 +1151,7 @@ async def test_codex_device_authorization_uses_vendor_protocol_and_device_redire
             },
         )
 
-    monkeypatch.setattr("a13n_harness.model_auth.oauth.anyio.sleep", fake_sleep)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.oauth.anyio.sleep", fake_sleep)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle), auth=("ambient", "secret")) as client:
         grant = await CodexDeviceAuthorizationFlow.start(http_client=client)
         assert "device-secret" not in repr(grant)
@@ -1152,7 +1163,7 @@ async def test_codex_device_authorization_uses_vendor_protocol_and_device_redire
 
 
 async def test_codex_device_unsupported_expiry_and_cancellation(monkeypatch: pytest.MonkeyPatch) -> None:
-    from a13n_harness.model_auth import CodexDeviceAuthorizationFlow, DeviceAuthorizationError
+    from a13n_harness.providers.model.oauth import CodexDeviceAuthorizationFlow, DeviceAuthorizationError
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _: httpx2.Response(404))) as client:
         with pytest.raises(DeviceAuthorizationError) as caught:
@@ -1274,7 +1285,7 @@ async def test_codex_owned_client_supports_nested_entry_and_reopening() -> None:
 
 
 async def test_codex_login_retains_id_token_using_upstream_pkce(monkeypatch: pytest.MonkeyPatch) -> None:
-    from a13n_harness.model_auth import CodexLoginFlow, codex_login
+    from a13n_harness.providers.model.oauth import CodexLoginFlow, codex_login
     from pydantic_ai.providers.openai_codex import OpenAICodexOAuthFlow
 
     flow = CodexLoginFlow()

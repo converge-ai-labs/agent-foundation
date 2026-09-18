@@ -64,8 +64,9 @@ class WebProviderRegistry:
             display_name=definition.display_name,
             configuration_schema=definition.configuration_model.model_json_schema(),
             credential_schema=credential_schema,
-            credential_required=definition.credential_required,
+            authentication=definition.authentication,
             setup_url=definition.setup_url,
+            setup_label=definition.setup_label,
             operations=tuple(operations),
             supports_restricted_scrape=definition.supports_restricted_scrape,
         )

@@ -1,3 +1,4 @@
+import { credentialMode } from "../../shared/provider-authentication";
 import { useResourceRows } from "../../shared/resource-modal";
 import { data, type Schema } from "../../shared/api";
 import { ProviderIcon } from "../../shared/provider-icon";
@@ -87,9 +88,12 @@ export function WebProviders({ scope }: { scope: WebProviderScope }) {
                 label: t("Credentials"),
                 render: (item) =>
                   t(
-                    definitions.data?.items.find(
-                      (definition) => definition.type === item.type,
-                    )?.credential_required === false
+                    credentialMode(
+                      definitions.data?.items.find(
+                        (definition) => definition.type === item.type,
+                      ),
+                      item.configuration,
+                    ) !== "required"
                       ? "Not required"
                       : item.credential_configured
                         ? "Configured"

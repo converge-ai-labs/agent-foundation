@@ -1,6 +1,6 @@
 # Model authentication and HTTP clients
 
-Use native Provider credentials for API-key Models. Use `a13n_harness.model_auth` when your application needs the implemented subscription login and credential-source integration. Harness supplies protocol/model building blocks, not an account database, browser UI, or permission to replace a user's account.
+Use native Provider credentials for API-key Models. Use `a13n_harness.providers.model.oauth` when your application needs the implemented subscription login and credential-source integration. Harness supplies protocol/model building blocks, not an account database, browser UI, or permission to replace a user's account.
 
 For a ready-to-use local login experience, follow [Harness UI Models and authentication](../a13n-harness-ui/models-and-authentication.md). The examples below describe source APIs; login functions contact external services when called and must be initiated by the user. They are not offline tests or a guarantee of provider account eligibility.
 
@@ -18,7 +18,7 @@ Never store access/refresh/ID tokens in `AgentSpec`, `HarnessState`, tool metada
 `CodexLoginFlow` specializes the upstream browser flow only where native-store publication needs the real ID token. It inherits PKCE/callback handling and exposes `authorization_url()` and `exchange_login_from_callback()`:
 
 ```python
-from a13n_harness.model_auth import CodexLoginFlow
+from a13n_harness.providers.model.oauth import CodexLoginFlow
 
 
 async def browser_login(show_authorization_url, publish_login):
@@ -33,7 +33,7 @@ Both callbacks are application-owned async functions. Present the URL to the use
 For a headless environment, `CodexDeviceAuthorizationFlow.start()` returns a `CodexDeviceAuthorization`:
 
 ```python
-from a13n_harness.model_auth import CodexDeviceAuthorizationFlow
+from a13n_harness.providers.model.oauth import CodexDeviceAuthorizationFlow
 
 
 async def device_login(show_device_code, publish_login):
@@ -49,7 +49,7 @@ The authorization exposes verification URI, user code, expiry, and polling inter
 
 ### Build the Model
 
-`CodexRequestModel(model_name, *, credential_source, http_client=None, thread_id=None)` accepts the upstream `OpenAICodexCredentialSource` protocol (`async load()` / `async save(credentials)`). In your Model resolver, pass `thread_id=context.deps.thread_id` to bind native Codex session headers for both streaming and non-streaming requests. The adapter applies the shared [UUID v5 affinity derivation](models.md#automatic-model-request-affinity) to that raw Thread ID; do not pre-derive it. Explicit native headers remain unchanged. These no longer derive from `x-session-id` or any other gateway header. Rebind from the current context for child Threads and forks; do not capture a parent's ID. Upstream Pydantic AI owns authentication, refresh, retries, and Responses rendering.
+`a13n_harness.models.codex.CodexRequestModel(model_name, *, credential_source, http_client=None, thread_id=None)` accepts the upstream `OpenAICodexCredentialSource` protocol (`async load()` / `async save(credentials)`). In your Model resolver, pass `thread_id=context.deps.thread_id` to bind native Codex session headers for both streaming and non-streaming requests. The adapter applies the shared [UUID v5 affinity derivation](models.md#automatic-model-request-affinity) to that raw Thread ID; do not pre-derive it. Explicit native headers remain unchanged. These no longer derive from `x-session-id` or any other gateway header. Rebind from the current context for child Threads and forks; do not capture a parent's ID. Upstream Pydantic AI owns authentication, refresh, retries, and Responses rendering.
 
 The wrapper owns its HTTP client only when it creates one. An injected client stays caller-owned. Harness scopes the Model for a Run; the wrapper's request/response hooks must not outlive their owning model use. Reconstruct account selection for a new Run instead of swapping accounts behind an active request.
 
@@ -64,7 +64,7 @@ Supply the issuer, client ID, and scopes required by the application's configure
 The device alternative is:
 
 ```python
-from a13n_harness.model_auth import GrokDeviceAuthorizationFlow
+from a13n_harness.providers.model.oauth import GrokDeviceAuthorizationFlow
 
 
 async def grok_device_login(issuer, client_id, scopes, show_device_code, source):
@@ -80,7 +80,7 @@ async def grok_device_login(issuer, client_id, scopes, show_device_code, source)
 
 ### Credential sources and refresh
 
-`GrokCredentials` holds account identity, auth mode, creation/expiry times, issuer/client ID, access token, and optional refresh token. `GrokCredentialSource` requires `async load()` and `async save(credentials)`.
+`GrokCredentials` holds account identity, auth mode, creation/expiry times, issuer/client ID, access token, and optional refresh token. `GrokCredentialSource` requires `async load()` and `async rotate(expected, exchange)`. The host coordinates the complete read, grant spend, and durable publication interval.
 
 `build_grok_model(model_name, *, credential_source, refresh=None, refresh_window=timedelta(minutes=5), http_client=None)` constructs a native Responses Model backed by that source. `refresh_grok_credentials(credentials, *, http_client=None)` is the standalone refresh operation; it returns credentials and does not publish them to a Host store for you.
 
@@ -136,3 +136,7 @@ The helper also retries supported timeout/connect/read errors. Attempt count mus
 | Host worker replacement / user retry  | A new execution selected and owned by the Host                                                      |
 
 `ModelRecoveryPolicy` is disabled by default, with `max_attempts=5` consecutive failed attempts when enabled, initial backoff 1 second, and maximum 30 seconds. An accepted primary model response resets the count and backoff. Only recognized transient failures are eligible; permanent or unknown provider errors are not retried. It accepts a continuation prompt or a prompt factory. Internal model attempts share Run context and usage; they are not new durable worker attempts. [Agents and Runs](agents-and-runs.md) owns the build/run API and recovery behavior.
+
+For a simple embedding store exposing `load()` and `save()`, wrap it once in `ProcessGrokCredentialSource` and share the wrapper across Models. Its lock and uncertain-grant evidence last only for that process. A possibly consumed grant is blocked after response loss, cancellation, or save failure; changing its metadata does not make it safe to retry. Reauthenticate with a new grant. `RefreshNotDispatched` distinguishes a proven failure before token dispatch.
+
+Harness UI supplies stronger file-store coordination: cooperating processes share one lock and a durable non-secret grant-fingerprint sidecar. This protects fresh Runs and restarts without storing a second token copy. Product CLI writers do not participate in that lock; their detected edits cause a conflict rather than an overwrite.

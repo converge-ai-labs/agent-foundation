@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
+from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES as MAX_SCRAPE_CONTENT_BYTES
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -77,7 +78,7 @@ class UpdateWebProviderRequest(BaseModel):
     def validate_changes(self) -> UpdateWebProviderRequest:
         if not self.model_fields_set:
             raise ValueError("at least one field must be supplied")
-        if any(getattr(self, name) is None for name in self.model_fields_set):
+        if any(getattr(self, name) is None for name in self.model_fields_set - {"credential"}):
             raise ValueError("supplied fields cannot be null")
         return self
 
@@ -111,8 +112,9 @@ class WebProviderDefinition(BaseModel):
     display_name: str
     configuration_schema: dict[str, object]
     credential_schema: dict[str, object]
-    credential_required: bool = True
-    setup_url: str
+    authentication: Authentication
+    setup_url: str | None = None
+    setup_label: str | None = None
     operations: tuple[Literal["search", "scrape"], ...]
     supports_restricted_scrape: bool = False
 

@@ -2,9 +2,9 @@
 
 ## Design Position
 
-The Harness provides SDK-first process-local authentication for native Models whose providers use user OAuth credentials rather than API keys. Pydantic AI owns the official Codex credential values, source protocol, browser PKCE/callback handling, authentication, refresh, and Responses dialect. The public `a13n_harness.model_auth` feature module supplies Codex request-affinity and shared-store login adapters plus the Grok credential, OAuth, and Model integration.
+The Harness provides SDK-first process-local authentication for native Models whose providers use user OAuth credentials rather than API keys. Pydantic AI owns the official Codex credential values, source protocol, browser PKCE/callback handling, authentication, refresh, and Responses dialect. The public `a13n_harness.providers.model.oauth` module supplies supplemental login flows and the Grok credential, OAuth, and Model integration. `a13n_harness.models.codex.CodexRequestModel` owns Harness Thread affinity and Run turn state above the reusable provider foundation.
 
-This boundary is designed for embedded applications and hosted workers alike. It does not treat an installed CLI or a local credential file as the primary API. A Host can connect a local product-compatible file, an encrypted service store, or another authorized durable source by implementing the same asynchronous `load()` and `save()` protocol.
+This boundary is designed for embedded applications and hosted workers alike. It does not treat an installed CLI or a local credential file as the primary API. A Host can connect a local product-compatible file, an encrypted service store, or another authorized durable source by implementing the provider-specific credential-source contract. Codex retains the official SDK source; Grok requires an atomic host rotation boundary.
 
 ## Boundaries
 
@@ -48,12 +48,12 @@ class GrokCredentials:
 
 class GrokCredentialSource(Protocol):
     async def load(self) -> GrokCredentials: ...
-    async def save(self, credentials: GrokCredentials) -> None: ...
+    async def rotate(self, expected: GrokCredentials, exchange: GrokRefresh) -> GrokCredentials: ...
 ```
 
-The native `OpenAICodexCredentials` contains `access_token`, `refresh_token`, and `account_id`; it does not contain an expiry field or ID token. Hosts derive expiry projections from the token when needed. Credential representations exclude secret fields from `repr`. A source returns one complete current provider credential set. `save()` durably replaces that set or raises; it never reports success before the replacement meets the Host's durability policy.
+The native `OpenAICodexCredentials` contains `access_token`, `refresh_token`, and `account_id`; it does not contain an expiry field or ID token. Hosts derive expiry projections from the token when needed. Credential representations exclude secret fields from `repr`. A source returns one complete current provider credential set. Codex `save()` durably replaces that set or raises; it never reports success before the replacement meets the Host's durability policy.
 
-The small protocol is intentionally structural. Provider lifecycle code needs no revision token or storage-specific snapshot. A Host that requires compare-and-swap, row locking, leases, or cross-replica exclusion implements that behavior behind `load()` and `save()`.
+Grok's structural `rotate(expected, exchange)` operation owns the entire current-read, same-account check, grant authorization, provider exchange, and durable publication interval. It adopts a changed same-account value before dispatch. Storage-specific revisions and locking remain behind this boundary. `ProcessGrokCredentialSource(store)` provides explicit process-lifetime exclusion and uncertain-grant rejection for simple embeddings with `load()`/`save()` storage; all Models must share that instance. It provides no restart or cross-process guarantee. Hosts requiring those guarantees implement durable coordination themselves.
 
 ## Codex Device Authorization
 
@@ -71,42 +71,11 @@ A successful refresh installs the complete credential set in provider memory bef
 
 ## Grok Request Lifecycle
 
-```mermaid
-sequenceDiagram
-    participant Model
-    participant Auth as Harness model authentication
-    participant Source as Host credential source
-    participant OAuth as Provider OAuth endpoint
-    participant API as Model endpoint
+Every outbound Grok request loads current credentials and retains its account binding. Expiry triggers `source.rotate(expected, exchange)`; an HTTP 401 triggers at most one such rotation or adoption and one replay. The second response is returned without further authentication retry. Interactive login never starts from a Model request.
 
-    Model->>Auth: outbound provider request
-    Auth->>Source: load()
-    alt credential is usable
-        Source-->>Auth: current credentials
-    else refresh is required
-        Source-->>Auth: expiring credentials
-        Auth->>Source: load() immediately before refresh
-        alt source contains a newer same-account set
-            Source-->>Auth: newer credentials
-        else source remains unchanged
-            Auth->>OAuth: refresh current grant
-            OAuth-->>Auth: rotated credentials
-            Auth->>Source: save(rotated credentials)
-            Source-->>Auth: durable success
-        end
-    end
-    Auth->>API: authenticated request
-    alt API returns 401
-        Auth->>Source: reload and adopt or refresh
-        Auth->>API: replay once
-    end
-```
+A coordinating source reloads under its exclusion boundary, rejects account changes and uncertain grants, and adopts a newer same-account value when available. Before invoking the exchange callback it records that the current grant may be consumed. A valid replacement becomes usable only after successful publication. Lost responses, cancellation, invalid replacements, or publication failure leave the old grant ineligible for another spend. Changed access-token or expiry metadata with that same grant is not recovery. A newly authorized grant can restore same-account use.
 
-For Grok, the source is consulted for every outbound provider request. This is a freshness check, not an unconditional refresh. One provider instance serializes its own refresh operation and lets concurrent requests adopt the completed result. Before spending a refresh token, it reloads the source and adopts a changed same-account credential set instead.
-
-A refreshed credential is not installed for outbound use until `save()` succeeds. A failed save therefore fails the pending request and leaves the previously accepted in-memory set unchanged. This stricter ordering prevents an application from treating an unpersisted rotation as usable when refresh tokens can be single-use.
-
-An HTTP 401 triggers at most one reload-or-refresh and one replay. The second response is returned without another authentication retry. Interactive authorization never starts from a Model request.
+`RefreshNotDispatched` is the narrowly defined proof that no token request was sent; only that outcome permits clearing the uncertain marker without a replacement. Discovery failures can produce this proof. Failure after possible token dispatch cannot. A process-local source retains uncertainty for its lifetime; [Harness UI's file source](../a13n-harness-ui/02a-model-authentication-and-account-stores.md#credential-source-behavior) persists it across fresh Models, Runs, cooperating processes, and restarts.
 
 ## Request Isolation and Affinity
 
@@ -171,7 +140,7 @@ Grok refresh follows the issuer and client identity in `GrokCredentials`, requir
 
 ## Compatibility
 
-`pydantic_ai.providers.openai_codex` is the canonical import route for native Codex credentials, sources, provider, browser flow, and refresh/persistence errors. `a13n_harness.model_auth` exports only its supplemental Codex request/login adapters and its Grok integration, without package-root reexports. It does not retain aliases for the former Codex credential types, OAuth flow, Model builder, account-auth builder, or refresh function. Provider-specific credential fields, OAuth wire behavior, request headers, and Model dialects are release-owned compatibility surfaces and are tested against the supported upstream products.
+`pydantic_ai.providers.openai_codex` is the canonical import route for native Codex credentials, sources, provider, browser flow, and refresh/persistence errors. `a13n_harness.providers.model.oauth` exports its supplemental Codex login adapters and Grok integration; `a13n_harness.models.codex` exports the Harness-specific request adapter, without package-root reexports. It does not retain aliases for the former Codex credential types, OAuth flow, Model builder, account-auth builder, or refresh function. Provider-specific credential fields, OAuth wire behavior, request headers, and Model dialects are release-owned compatibility surfaces and are tested against the supported upstream products.
 
 Adding another provider is additive only when it has an explicit credential type, source protocol, OAuth behavior, and Model transport contract. A generic OAuth document that erases provider differences is not a compatible extension.
 

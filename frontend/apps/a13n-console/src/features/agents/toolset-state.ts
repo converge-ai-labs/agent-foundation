@@ -1,3 +1,4 @@
+import { credentialMode } from "../../shared/provider-authentication";
 import type { Schema } from "../../shared/api";
 
 type Definition = Schema["ToolsetDefinition"];
@@ -17,7 +18,8 @@ export function eligibleWebProvider(
     definitions.some(
       (definition) =>
         definition.type === provider.type &&
-        (!definition.credential_required || provider.credential_configured) &&
+        (credentialMode(definition, provider.configuration) !== "required" ||
+          provider.credential_configured) &&
         definition.operations.includes(operation),
     )
   );

@@ -47,7 +47,7 @@ async def test_shared_snapshot_readers_block_edits_and_revalidate_after_commit(p
     provider = await providers.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateModelProviderRequest(type="openrouter", name="Router", credential="test"),
+        request=CreateModelProviderRequest(type="openrouter", name="Router", credential={"api_key": "test"}),
     )
     model = await ModelService(postgres_models, registry, clock=lambda: NOW).create(
         actor=actor(),

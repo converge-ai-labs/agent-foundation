@@ -10,12 +10,12 @@ from typing import Any
 
 from a13n_environment import EnvironmentProvider
 from a13n_harness.memory_plugins import MemoryBackendCatalog, MemoryBackendPlugin
+from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.plugins import ProviderManifest, selected_entry_points
-from a13n_harness.providers.validation import _validate_display_name, _validate_schema, _validate_type
+from a13n_harness.providers.validation import validate_display_name, validate_schema, validate_type
 from a13n_harness.providers.web.builtins import built_in_web_providers
 from a13n_harness.providers.web.definition import WebProviderDefinition
-
-from a13n_service.models.provider_adapters.base import ProviderIntegration
 
 from .api import (
     PROVIDER_EXTENSION_API_VERSION,
@@ -56,7 +56,7 @@ class LoadedProviderPlugin:
 @dataclass(frozen=True, slots=True)
 class ProviderCatalogs:
     environment: tuple[EnvironmentProvider, ...]
-    model: tuple[ProviderIntegration, ...]
+    model: tuple[ModelProviderDefinition, ...]
     connector: tuple[ConnectorProviderRegistration, ...]
     web: tuple[WebProviderDefinition, ...]
     plugins: tuple[LoadedProviderPlugin, ...]
@@ -75,6 +75,9 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
     from .builtins import register as register_builtins
 
     register_builtins(registry)
+    model = _DomainRegistry("Model", ModelProviderDefinition, lambda definition: definition.type)
+    for definition in BUILT_IN_MODEL_PROVIDERS:
+        model.register(definition)
     web = _DomainRegistry("Web", WebProviderDefinition, lambda definition: definition.type)
     for definition in built_in_web_providers():
         web.register(definition)
@@ -87,6 +90,8 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
         try:
             register = entry_point.load()
             if isinstance(register, ProviderManifest):
+                for definition in register.model:
+                    model.register(definition)
                 for definition in register.web:
                     web.register(definition)
             elif not isinstance(register, Callable):
@@ -121,7 +126,7 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
         raise ProviderPluginError(str(error)) from error
     return ProviderCatalogs(
         environment=registry.environment.values(),
-        model=registry.model.values(),
+        model=model.values(),
         connector=registry.connector.values(),
         web=web.values(),
         plugins=tuple(loaded),
@@ -139,23 +144,16 @@ def _metadata_text(distribution: importlib.metadata.Distribution | None, key: st
 def _validate(registry: ProviderPluginRegistry) -> None:
     MemoryBackendCatalog(registry.memory.values())
     for plugin in registry.memory.values():
-        _validate_display_name("Memory", plugin.key, plugin.display_name)
-        _validate_schema("Memory", plugin.key, plugin.configuration_model)
-        _validate_schema("Memory credential", plugin.key, plugin.credential_model)
+        validate_display_name("Memory", plugin.key, plugin.display_name)
+        validate_schema("Memory", plugin.key, plugin.configuration_model)
+        validate_schema("Memory credential", plugin.key, plugin.credential_model)
     for provider in registry.environment.values():
         if provider.key in _ENVIRONMENT_BUILTINS:
             raise ProviderPluginError(f"Environment Provider {provider.key!r} uses a reserved built-in key")
     for registration in registry.connector.values():
-        _validate_type("Connector", registration.type)
-        _validate_display_name("Connector", registration.type, registration.display_name)
+        validate_type("Connector", registration.type)
+        validate_display_name("Connector", registration.type, registration.display_name)
         if not callable(registration.setup_validator) or not callable(registration.factory):
             raise ProviderPluginError(f"Connector Provider {registration.type!r} has an invalid runtime hook")
-        _validate_schema("Connector", registration.type, registration.configuration_model)
-        _validate_schema("Connector credential", registration.type, registration.credential_model)
-    # The existing constructors own deeper domain validation and produce clearer errors.
-    from a13n_service.models.providers import ProviderRegistry
-
-    for integration in registry.model.values():
-        _validate_type("Model", integration.type)
-        _validate_schema("Model", integration.type, integration.configuration_model)
-    ProviderRegistry(registry.model.values())
+        validate_schema("Connector", registration.type, registration.configuration_model)
+        validate_schema("Connector credential", registration.type, registration.credential_model)

@@ -13,7 +13,15 @@ from a13n_service.app import create_app
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.settings import Settings
 
-from .dev_resources import DevelopmentResources, _active, _filled, _model_credential, _revealed, load_resources
+from .dev_resources import (
+    DevelopmentResources,
+    _active,
+    _filled,
+    _model_credential,
+    _model_requires_credential,
+    _revealed,
+    load_resources,
+)
 from .seed_client import Client
 from .seed_identity import PASSWORD
 
@@ -66,7 +74,7 @@ async def _sync_models(
     registry = built_in_provider_registry()
     for configured in resources.model_providers:
         credential = _model_credential(configured)
-        if credential is None and registry.credential_format(configured.type) is not None:
+        if credential is None and _model_requires_credential(configured):
             continue
         desired_provider = {
             "type": configured.type,

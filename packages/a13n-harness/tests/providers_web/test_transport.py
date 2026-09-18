@@ -2,6 +2,7 @@
 
 import httpx2
 import pytest
+from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.web import WebProviderError, WebProviderTransport, WebSearchRequest
 from a13n_harness.providers.web.builtins import built_in_web_providers
 from anyio import fail_after, sleep_forever
@@ -172,13 +173,14 @@ async def test_scrape_deadline_cleans_up_its_owned_http_client(policy, borrowed)
     provider = WebProviderDefinition(
         type="custom",
         display_name="Custom",
+        authentication=Authentication(mode=CredentialMode.forbidden),
         configuration_model=EmptyConfiguration,
         credential_model=EmptyConfiguration,
         setup_url="https://example.com/setup",
         scrape=scrape,
     )
     with pytest.raises(TimeoutError):
-        async with provider.open({}, {}, transport=transport) as web:
+        async with provider.open({}, None, transport=transport) as web:
             await web.scrape(
                 WebScrapeRequest(
                     url="https://example.com/article",

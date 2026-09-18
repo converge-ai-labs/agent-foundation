@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from anyio import current_time, fail_after
 from pydantic import BaseModel
 
+from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 from .contracts import (
@@ -25,10 +26,10 @@ from .options import ScrapeOptions, SearchOptions
 from .transport import WebProviderTransport
 
 type SearchOperation[C: BaseModel, K: BaseModel] = Callable[
-    [C, K, WebSearchRequest, SearchOptions, WebProviderTransport], Awaitable[WebSearchResponse]
+    [C, K | None, WebSearchRequest, SearchOptions, WebProviderTransport], Awaitable[WebSearchResponse]
 ]
 type ScrapeOperation[C: BaseModel, K: BaseModel] = Callable[
-    [C, K, WebScrapeRequest, ScrapeOptions, WebProviderTransport, WebPolicy], Awaitable[WebScrapeResult]
+    [C, K | None, WebScrapeRequest, ScrapeOptions, WebProviderTransport, WebPolicy], Awaitable[WebScrapeResult]
 ]
 
 
@@ -38,18 +39,25 @@ class WebProviderDefinition[C: BaseModel, K: BaseModel]:
     display_name: str
     configuration_model: type[C]
     credential_model: type[K]
-    setup_url: str
+    setup_url: str | None = None
+    setup_label: str | None = None
     search: SearchOperation[C, K] | None = None
     scrape: ScrapeOperation[C, K] | None = None
     supports_restricted_scrape: bool = False
-    credential_required: bool = True
+    authentication: Authentication = field(default_factory=Authentication)
 
     def __post_init__(self) -> None:
         from a13n_harness.providers.validation import validate_definition
 
         validate_definition(
-            self.type, self.display_name, self.setup_url, self.configuration_model, self.credential_model
+            self.type,
+            self.display_name,
+            self.setup_url,
+            self.configuration_model,
+            self.credential_model,
+            setup_label=self.setup_label,
         )
+        self.authentication.validate_configuration_model(self.configuration_model)
         if self.search is None and self.scrape is None:
             raise ValueError("Web Provider must implement search or scrape")
         if self.supports_restricted_scrape and self.scrape is None:
@@ -69,17 +77,19 @@ class WebProviderDefinition[C: BaseModel, K: BaseModel]:
     async def open(
         self,
         configuration: object,
-        credential: object,
+        credential: object = None,
         *,
         search_options: SearchOptions | None = None,
         scrape_options: ScrapeOptions | None = None,
         transport: WebProviderTransport | None = None,
     ) -> AsyncIterator[WebProvider[C, K]]:
         """Validate host inputs before constructing an operation handle; no I/O at open."""
+        parsed = self.configuration_model.model_validate(configuration)
+        self.authentication.validate_presence(parsed, credential is not None)
         yield WebProvider(
             self,
-            self.configuration_model.model_validate(configuration),
-            self.credential_model.model_validate(credential),
+            parsed,
+            self.credential_model.model_validate(credential) if credential is not None else None,
             search_options or SearchOptions(),
             scrape_options or ScrapeOptions(),
             transport or WebProviderTransport(),
@@ -95,7 +105,7 @@ class _PublicWebPolicy:
 class WebProvider[C: BaseModel, K: BaseModel]:
     definition: WebProviderDefinition[C, K]
     configuration: C
-    credential: K = field(repr=False)
+    credential: K | None = field(repr=False)
     search_options: SearchOptions
     scrape_options: ScrapeOptions
     transport: WebProviderTransport
