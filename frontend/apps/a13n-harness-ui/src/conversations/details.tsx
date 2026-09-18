@@ -1,3 +1,4 @@
+import { useThreadWork, workCaption } from "./work";
 import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
@@ -18,7 +19,6 @@ import { useThreadUsage, useContextUsage } from "./usage";
 export function ConversationDetails({
   threadId,
   receipt,
-  continuation,
   reconcile,
 }: {
   threadId: string;
@@ -72,9 +72,7 @@ export function ConversationDetails({
       {tab === "configuration" && (
         <ConversationConfiguration threadId={threadId} reconcile={reconcile} />
       )}
-      {tab === "context" && (
-        <ContextDetails threadId={threadId} continuation={continuation} />
-      )}
+      {tab === "context" && <ContextDetails threadId={threadId} />}
     </div>
   );
 }
@@ -488,38 +486,33 @@ function ChildPresentation({
     </div>
   );
 }
-function ContextDetails({
-  threadId,
-  continuation,
-}: {
-  threadId: string;
-  continuation?: string | null;
-}) {
-  const { client } = useTransport();
-  const params = {
-    path: { thread_id: threadId },
-    query: { expected_continuation_id: continuation ?? undefined },
-  };
-  const tasks = useQuery({
-    queryKey: ["thread", threadId, "tasks", continuation],
-    queryFn: ({ signal }) =>
-      result(client.GET("/api/threads/{thread_id}/tasks", { params, signal })),
-  });
-  const notes = useQuery({
-    queryKey: ["thread", threadId, "notes", continuation],
-    queryFn: ({ signal }) =>
-      result(client.GET("/api/threads/{thread_id}/notes", { params, signal })),
-  });
+function ContextDetails({ threadId }: { threadId: string }) {
+  const work = useThreadWork(threadId, { tasks: true, notes: true });
+  const tasks = { ...work.tasks, data: work.tasks.data?.tasks.page };
+  const notes = { ...work.notes, data: work.notes.data?.notes.page };
   const usage = useThreadUsage(threadId);
   const context = useContextUsage(threadId);
   return (
     <div className={styles.form}>
       <ErrorNotice
-        error={tasks.error || notes.error || usage.error || context.error}
+        error={
+          work.summary.error ||
+          tasks.error ||
+          notes.error ||
+          usage.error ||
+          context.error
+        }
       />
       <section>
         <h3>Tasks</h3>
-        {tasks.data?.available === false ? (
+        <p>{workCaption(work.tasks.data, work.stale, tasks.isFetching)}</p>
+        {!tasks.data ? (
+          <p>
+            {tasks.isPending
+              ? "Loading tasks…"
+              : "Task observation unavailable."}
+          </p>
+        ) : tasks.data.available === false ? (
           <p>Task projection is unavailable.</p>
         ) : tasks.data?.tasks?.length ? (
           tasks.data.tasks.map((task) => (
@@ -538,13 +531,20 @@ function ContextDetails({
             </div>
           ))
         ) : (
-          <p>No saved tasks.</p>
+          <p>No tasks yet.</p>
         )}
         {!!tasks.data?.omitted && <p>{tasks.data.omitted} tasks omitted.</p>}
       </section>
       <section>
         <h3>Notes</h3>
-        {notes.data?.notes?.length ? (
+        <p>{workCaption(work.notes.data, work.stale, notes.isFetching)}</p>
+        {!notes.data ? (
+          <p>
+            {notes.isPending
+              ? "Loading notes…"
+              : "Note observation unavailable."}
+          </p>
+        ) : notes.data.notes?.length ? (
           notes.data.notes.map((note) => (
             <details key={note.key} className={styles.activity}>
               <summary>{note.key}</summary>
@@ -552,7 +552,7 @@ function ContextDetails({
             </details>
           ))
         ) : (
-          <p>No saved notes.</p>
+          <p>No notes yet.</p>
         )}
         {!!notes.data?.omitted && <p>{notes.data.omitted} notes omitted.</p>}
       </section>

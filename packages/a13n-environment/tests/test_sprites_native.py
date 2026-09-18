@@ -7,6 +7,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx2
+import pytest
 from a13n_environment import build_environment_provider_catalog
 from a13n_environment.commands import CommandRequest, ShellCommand
 from a13n_environment.management import ProviderRuntimeContext
@@ -16,6 +17,8 @@ from a13n_environment.retention import EnvironmentOutputPolicy
 from a13n_environment.sprites import provider as sprites
 from websockets.asyncio.client import connect
 from websockets.asyncio.server import serve
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Fixture executes POSIX guest helpers on the Host")
 
 
 def test_sprites_native_roundtrip_and_reconstruction(tmp_path, monkeypatch):

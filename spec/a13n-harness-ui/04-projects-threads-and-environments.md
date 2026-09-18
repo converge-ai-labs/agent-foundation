@@ -4,7 +4,7 @@
 
 A Project is the optional Harness UI concept for grouping local roots and organizing project-bound root Threads. It owns a mutable named ordered root list and Project-scoped creation configuration for project-bound conversations. Threads can run without selecting a Project. Harness UI defines no separate Workspace resource, Workspace root collection, or `WorkspaceBinding` input.
 
-A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent Project or Thread changes do not affect the admitted Run.
+A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, optional default Model, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent Project or Thread changes do not affect the admitted Run.
 
 ## Projects
 
@@ -109,17 +109,18 @@ class ThreadConfiguration(BaseModel):
     version: int
     project_id: ProjectId | None
     agent_source: AgentSource
+    default_model_id: ModelId | None
     environment_profile_id: EnvironmentProfileId
     harness_plugin_ids: tuple[PluginId, ...]
     environment_run_extension_ids: tuple[RunExtensionId, ...]
     mcp_server_ids: tuple[McpServerId, ...]
 ```
 
-The stored value is exact. It contains no `inherit`, omitted, or globally enabled state. A null `project_id` means no Project, not an unresolved reference or a request to inherit a global default. A configuration patch can explicitly clear the Project with null; omission retains the current selection.
+The stored value is exact. It contains no omitted or globally enabled state. `default_model_id` is an optional Model resource ID: null follows the selected Agent's current Model, while a non-null ID persists independently of Agent edits. Effective root Model precedence is explicit per-Run override, then Thread default, then Agent Model. An override containing only thinking, fast, or service-tier settings retains that precedence. Missing selected Models fail admission without silently falling back. Explicit Run overrides never change the stored default or historical captures. A configuration patch can set the default, explicitly clear it with null, or omit it to retain the current value. A null `project_id` means no Project, not an unresolved reference or a request to inherit a global default. A configuration patch can explicitly clear the Project with null; omission retains the current selection.
 
 A new root Thread resolves its Agent resource from explicit creation input, the selected Project's Agent default, or the root YAML Agent default into `AgentResourceSource`, then resolves other axes under the shared creation precedence and stores the exact result. Root Threads cannot select a Markdown subagent as their source; that concise format depends on a parent Agent capture.
 
-A child Thread stores the selected roster entry as either an Agent resource or Markdown subagent source. Project, Environment profile, and Run Extensions default from the admitting parent capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the admitting parent capture's exact Plugin and MCP lists. After creation the child owns these stored selections independently.
+A child Thread stores the selected roster entry as either an Agent resource or Markdown subagent source. Project, Environment profile, and Run Extensions default from the admitting parent capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the admitting parent capture's exact Plugin and MCP lists. After creation the child owns these stored selections independently. Agent-resource children start with a null default Model and retain their independent Model selection. Markdown children inherit the admitting parent Model and reject a non-null `default_model_id` rather than silently ignoring it.
 
 ## Configuration Patch and Run Admission
 
@@ -127,8 +128,9 @@ A Thread can change configuration before or after any Run:
 
 ```python
 class ThreadConfigurationPatch(BaseModel):
-    project_id: ProjectId | Unset
+    project_id: ProjectId | None | Unset
     agent_source: AgentSource | Unset
+    default_model_id: ModelId | None | Unset
     environment_profile_id: EnvironmentProfileId | Unset
     harness_plugin_ids: tuple[PluginId, ...] | Unset
     environment_run_extension_ids: tuple[RunExtensionId, ...] | Unset
@@ -157,6 +159,10 @@ Every non-empty patch, including one admitted with Run input, requires `expected
 8. starts the Harness Run with the selected continuation's `HarnessState`, or the Thread's immutable `initial_state` when no continuation is selected.
 
 The accepted patch applies to this Run and subsequent Runs. A separate update during an active Run is allowed but affects only the next admission. Steering never changes captured configuration.
+
+Root prompt admission also accepts an optional Run-only `environment_profile_id`. An omitted or null value follows the Thread's current selection; an explicit ID takes precedence over that selection for this Run without changing the configuration head or its version. The resolver validates and captures the effective profile before runtime entry. Unknown profiles and failed preparation never fall back to another mode. Environment state continues to use the captured profile's existing binding key. Project files and conversation history remain shared across mode changes.
+
+Deferred responses, including automatic interaction timeout responses, retain the Environment profile ID from the selected continuation's captured composition unless the response admission explicitly mutates that configuration axis. Unrelated configuration mutations do not drop the captured profile. The retained ID is resolved against the accepted generation; this does not freeze a custom profile's old recipe. A later ordinary prompt without an override again follows the Thread selection. New child Threads inherit the admitting parent's captured profile; existing child Threads retain their independent configuration when resumed.
 
 ## Thread Queries
 

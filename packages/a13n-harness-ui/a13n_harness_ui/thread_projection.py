@@ -9,7 +9,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Literal
 
-from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, WorkingState
+from a13n_harness.capabilities.working_state import WORKING_STATE_CAPABILITY_ID, Task, TaskState, WorkingState
 from a13n_harness.model_context import user_prompt_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from anyio import Lock, to_thread
@@ -532,6 +532,57 @@ class ThreadProjectionService:
                 self._inspection_loads[thread.thread_id] = (lock, users - 1)
 
 
+def project_task(task: Task) -> TaskView:
+    return TaskView(
+        task_id=task.id,
+        version=task.version,
+        subject=task.subject,
+        active_form=task.active_form,
+        status=task.status,
+        owner=task.owner,
+        blocks=task.blocks,
+        blocked_by=task.blocked_by,
+    )
+
+
+def project_task_page(state: TaskState | None, continuation_id: str | None = None) -> TaskPage:
+    if state is None:
+        return TaskPage(continuation_id=continuation_id, available=False)
+    ordered = sorted(state.tasks.values(), key=lambda item: int(item.id.removeprefix("task-")))
+    return TaskPage(
+        continuation_id=continuation_id,
+        version=state.version,
+        tasks=tuple(project_task(task) for task in ordered[:256]),
+        total=len(ordered),
+        omitted=max(0, len(ordered) - 256),
+    )
+
+
+def project_note_page(values: Mapping[str, str], continuation_id: str | None = None) -> NotePage:
+    visible: list[NoteView] = []
+    size = 0
+    for key, value in sorted(values.items()):
+        cost = len(key.encode()) + len(value.encode())
+        if len(visible) >= 256 or size + cost > 256 * 1024:
+            break
+        visible.append(NoteView(key=key, value=value))
+        size += cost
+    return NotePage(
+        continuation_id=continuation_id,
+        notes=tuple(visible),
+        total=len(values),
+        omitted=len(values) - len(visible),
+    )
+
+
+def project_working_state(working: WorkingState, continuation_id: str | None = None) -> tuple[TaskPage, NotePage]:
+    """Bound the same work details for saved inspection and current observation."""
+    return (
+        project_task_page(working.tasks if working.task_mode == "embedded" else None, continuation_id),
+        project_note_page(working.notes, continuation_id),
+    )
+
+
 def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredThreadInitialState) -> InspectionData:
     """Project once off-loop, then read bounded indexed rows across process restarts."""
     state = stored.harness_state
@@ -546,43 +597,7 @@ def build_thread_inspection(thread: Thread, stored: StoredContinuation | StoredT
     entry = state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
     if entry is not None and continuation_id is not None:
         working = WorkingState.model_validate(entry.data)
-        visible_notes: list[NoteView] = []
-        size = 0
-        for key, value in sorted(working.notes.items()):
-            cost = len(key.encode()) + len(value.encode())
-            if len(visible_notes) >= 256 or size + cost > 256 * 1024:
-                break
-            visible_notes.append(NoteView(key=key, value=value))
-            size += cost
-        notes = NotePage(
-            continuation_id=continuation_id,
-            notes=tuple(visible_notes),
-            total=len(working.notes),
-            omitted=len(working.notes) - len(visible_notes),
-        )
-        if working.task_mode != "embedded" or working.tasks is None:
-            tasks = TaskPage(continuation_id=continuation_id, available=False)
-        else:
-            ordered = sorted(working.tasks.tasks.values(), key=lambda item: int(item.id.removeprefix("task-")))
-            tasks = TaskPage(
-                continuation_id=continuation_id,
-                version=working.tasks.version,
-                tasks=tuple(
-                    TaskView(
-                        task_id=item.id,
-                        version=item.version,
-                        subject=item.subject,
-                        active_form=item.active_form,
-                        status=item.status,
-                        owner=item.owner,
-                        blocks=item.blocks,
-                        blocked_by=item.blocked_by,
-                    )
-                    for item in ordered[:256]
-                ),
-                total=len(ordered),
-                omitted=max(0, len(ordered) - 256),
-            )
+        tasks, notes = project_working_state(working, continuation_id)
     metadata = ThreadInspection(
         run_composition=stored.run_composition if isinstance(stored, StoredContinuation) else None,
         latest_request_tokens=next(
@@ -727,6 +742,7 @@ def _configuration(value: ThreadConfiguration) -> ThreadConfigurationView:
         version=value.version,
         project_id=value.project_id,
         agent_source=AgentSourceView.from_stored(value.agent_source),
+        default_model_id=value.default_model_id,
         environment_profile_id=value.environment_profile_id,
         harness_plugin_ids=value.harness_plugin_ids,
         environment_run_extension_ids=value.environment_run_extension_ids,

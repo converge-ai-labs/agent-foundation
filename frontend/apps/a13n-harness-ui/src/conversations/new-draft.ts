@@ -49,6 +49,8 @@ function restore(): Omit<NewDraft, "save"> | undefined {
     throw error;
   }
   if (typeof saved.modelId === "string") composer.modelId = saved.modelId;
+  if (typeof saved.environmentProfileId === "string")
+    composer.environmentProfileId = saved.environmentProfileId;
   if (typeof saved.draftId === "string") composer.draftId = saved.draftId;
   // A reload is not an acknowledgement. Never turn an interrupted Send into
   // an idle composer that can silently replay the same input.
@@ -119,6 +121,7 @@ export class NewDraftStore {
     const composer = new ThreadDraft();
     Y.applyUpdate(composer.doc, Y.encodeStateAsUpdate(old.composer.doc));
     composer.modelId = old.composer.modelId;
+    composer.environmentProfileId = old.composer.environmentProfileId;
     // A new Thread cannot use the archived Thread's uploaded handles. Keep
     // visible markers for reattachment, and stage any still-local file bytes.
     for (const key of composer.doc.getMap<string>("attachments").keys()) {
@@ -170,6 +173,7 @@ export class NewDraftStore {
             update: encode(Y.encodeStateAsUpdate(draft.composer.doc)),
             draftId: draft.composer.draftId,
             modelId: draft.composer.modelId,
+            environmentProfileId: draft.composer.environmentProfileId,
             submission: draft.composer.submission.kind,
           }),
         );

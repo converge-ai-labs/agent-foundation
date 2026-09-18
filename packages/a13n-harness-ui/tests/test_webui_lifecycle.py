@@ -112,16 +112,30 @@ async def test_slow_cleanup_remains_observable_without_abandoning_it(
 ) -> None:
     stopping = Event()
     cleaned = False
+    reported = Event()
+    ticks = 0
+
+    async def report_tick(seconds):
+        nonlocal ticks
+        assert seconds == 2
+        ticks += 1
+        if ticks > 1:
+            # Entering the next tick proves the preceding log was emitted.
+            reported.set()
+            await sleep_forever()
 
     async def cleanup(self, sockets=None):
         nonlocal cleaned
         assert stopping.is_set()
-        await sleep(2.1)
+        await reported.wait()
+        assert "Still stopping WebUI" in caplog.text
+        assert "WebUI stopped." not in caplog.text
         cleaned = True
 
+    monkeypatch.setattr("a13n_harness_ui.webui_lifecycle.sleep", report_tick)
     monkeypatch.setattr(uvicorn.Server, "shutdown", cleanup)
     server = WebUIServer(uvicorn.Config("unused:app", log_config=None), stopping=stopping)
-    with caplog.at_level(logging.INFO, logger="a13n_harness_ui.webui"):
+    with caplog.at_level(logging.INFO, logger="a13n_harness_ui.webui"), fail_after(5):
         await server.shutdown()
     assert cleaned
     assert "Still stopping WebUI" in caplog.text
@@ -171,6 +185,10 @@ async def stream(messages, info):
         (root / 'run-stopped').touch()
 async def resolve(self, context, model_id):
     return FunctionModel(stream_function=stream)
+from a13n_harness_ui import model_catalog
+async def bundled():
+    return model_catalog.bundled_models()
+model_catalog.fetch_directory = bundled
 HarnessUiModelResolver.__call__ = resolve
 configure_logging(logger_names=('a13n_harness_ui', 'uvicorn'), log_format=LogFormat.json)
 settings = HarnessUiSettings(storage=StorageSettings(data_root=root / 'data'), pricing_auto_update=False, shutdown_timeout_seconds=1)
@@ -249,7 +267,7 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
                 connect(f"ws://127.0.0.1:{port}/api/host/terminals/{terminal['terminal_id']}/connect", proxy=None)
             )
             ws.send(json.dumps({"api_key": "lifecycle-test-key"}))
-            initial = json.loads(ws.recv())
+            initial = json.loads(ws.recv(timeout=5))
             assert initial["kind"] == "terminal"
             ws.send(json.dumps({"kind": "control", "control_epoch": 0}))
             while True:

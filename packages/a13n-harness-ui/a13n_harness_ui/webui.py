@@ -133,6 +133,7 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSelectorCatalog,
     ThreadSummary,
+    ThreadWork,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -218,6 +219,7 @@ class SteerRequest(SurfaceModel):
 
 
 class SubmitRequest(PromptRequest):
+    environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     thinking: ThinkingSelection | None = None
     fast: bool | None = None
@@ -1208,6 +1210,13 @@ def create_webui(
             limit=limit,
         )
 
+    @server.get("/api/threads/{thread_id}/work", response_model=ThreadWork)
+    async def work(
+        thread_id: str,
+        include: Annotated[tuple[Literal["tasks", "notes"], ...], Query(max_length=2)] = (),
+    ) -> ThreadWork:
+        return await app().thread_work(thread_id=thread_id, include=tuple(include))
+
     @server.get("/api/threads/{thread_id}/tasks", response_model=TaskPage)
     async def tasks(
         thread_id: str,
@@ -1389,6 +1398,7 @@ def create_webui(
                 thread_id=thread_id,
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
+                environment_profile_id=document.environment_profile_id,
                 model_overrides=RunModelOverrides(
                     model_id=document.model_id, thinking=document.thinking, fast=document.fast
                 ),

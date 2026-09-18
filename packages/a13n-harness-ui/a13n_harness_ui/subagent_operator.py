@@ -1081,6 +1081,9 @@ class HarnessUiSubagentOperator(SubagentOperator):
                     self._active.pop(current.head.execution_id, None)
                     active.done.set()
                     self._signal_change_locked()
+                # Persisted terminal status precedes cleanup; publish again only
+                # after process-local activity is no longer observable as active.
+                await self._publish_summary_by_execution(current.head.execution_id)
 
     async def _consume_run(
         self,
@@ -1774,6 +1777,7 @@ def _selection(thread_id: str, configuration: ThreadConfiguration) -> ThreadComp
         project_id=configuration.project_id,
         agent_source_kind=source.kind,
         agent_source_id=source.id,
+        default_model_id=configuration.default_model_id,
         environment_profile_id=configuration.environment_profile_id,
         harness_plugin_ids=configuration.harness_plugin_ids,
         environment_run_extension_ids=configuration.environment_run_extension_ids,

@@ -15,6 +15,7 @@ import type { Schema, Transport } from "../transport/client";
 import { FocusDisplay } from "./stream";
 import { WorkInspector, TaskList } from "./work-inspector";
 import { Child } from "./details";
+import { refreshThread } from "./refresh";
 import { ChildControlsProvider } from "./child-controls";
 
 afterEach(cleanup);
@@ -39,68 +40,105 @@ function harness(GET: ReturnType<typeof vi.fn>, POST = vi.fn()) {
   );
   return { wrapper, queries };
 }
-it("opens bounded task and saved-note inspection without editing the prompt", async () => {
-  const GET = vi.fn(async (path: string) => ({
-    data: path.endsWith("/children")
-      ? { executions: [], total: 0 }
-      : path.endsWith("/tasks")
-        ? { tasks: [task], version: 1 }
-        : {
-            notes: [{ key: "Decision", value: "Keep the user's draft" }],
-            omitted: 2,
-          },
-  }));
-  const display = new FocusDisplay();
-  display.baseContinuation = "C1";
-  display.tasks = {
-    version: 2,
-    tasks: [
-      {
-        ...task,
-        version: 2,
-        status: "in_progress",
-        active_form: "Checking output",
-        blocked_by: ["task-before"],
-        blocks: ["task-after"],
-      },
-    ],
+it("observes closed badges and lazily reads current tasks and notes across Runs", async () => {
+  let run = "run-one";
+  const active = {
+    ...task,
+    status: "in_progress",
+    active_form: "Checking output",
+    blocked_by: ["task-before"],
+    blocks: ["task-after"],
   };
+  const GET = vi.fn(
+    async (
+      _path: string,
+      options: { params: { query: { include: string[] } } },
+    ) => ({
+      data: {
+        thread_id: "root",
+        epoch: "epoch",
+        sequence: 1,
+        run_id: run,
+        revision: 1,
+        source: "live",
+        tasks: {
+          total: 2,
+          completed: 1,
+          active,
+          page: options.params.query.include.includes("tasks")
+            ? {
+                tasks: [
+                  active,
+                  { ...task, task_id: "done", status: "completed" },
+                ],
+              }
+            : null,
+        },
+        notes: {
+          total: 3,
+          page: options.params.query.include.includes("notes")
+            ? {
+                notes: [{ key: "Decision", value: "Keep the user's draft" }],
+                omitted: 2,
+              }
+            : null,
+        },
+        children: { running: 1, active: 1 },
+      },
+    }),
+  );
+  const setup = harness(GET);
+  const display = new FocusDisplay();
   const view = render(
-    <WorkInspector
-      threadId="root"
-      continuation="C1"
-      display={display}
-      live
-      reconcile={vi.fn()}
-    />,
-    harness(GET),
+    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
+    setup,
   );
   await screen.findByText("Checking output");
-  expect(GET).not.toHaveBeenCalled();
+  expect(
+    screen.getByRole("button", { name: "Inspect tasks" }).textContent,
+  ).toContain("1/2");
+  expect(
+    screen.getByRole("button", { name: "Inspect notes" }).textContent,
+  ).toContain("3");
+  expect(
+    screen.getByRole("button", { name: "Inspect subagents" }).textContent,
+  ).toContain("1");
+  expect(
+    GET.mock.calls.every(
+      ([, options]) => options.params.query.include.length === 0,
+    ),
+  ).toBe(true);
   const user = userEvent.setup();
   await user.click(screen.getByRole("button", { name: "Inspect tasks" }));
+  await screen.findByText("task-before");
   const summary = screen
     .getAllByText("Checking output")
     .find((element) => element.tagName === "SUMMARY")!;
   fireEvent.click(summary);
-  expect(screen.getByText("task-before")).toBeTruthy();
   expect(screen.getByText("task-after")).toBeTruthy();
   await user.keyboard("{Escape}");
   await user.click(screen.getByRole("button", { name: "Inspect notes" }));
   await screen.findByText("Decision");
-  expect(screen.getByText(/Unsaved changes may not appear/)).toBeTruthy();
+  expect(screen.getByText(/not a saved checkpoint/)).toBeTruthy();
   expect(screen.getByText("2 notes omitted by the server.")).toBeTruthy();
   await user.keyboard("{Escape}");
+  run = "run-two";
+  display.reset();
+  refreshThread(setup.queries, "root", "lifecycle");
   view.rerender(
-    <WorkInspector
-      threadId="root"
-      continuation="C2"
-      display={display}
-      live={false}
-      reconcile={vi.fn()}
-    />,
+    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
   );
-  await waitFor(() => expect(screen.queryByText("Checking output")).toBeNull());
+  await waitFor(() =>
+    expect(
+      setup.queries.getQueryData<Schema<"ThreadWork">>([
+        "thread",
+        "root",
+        "work",
+        "summary",
+      ])?.run_id,
+    ).toBe("run-two"),
+  );
+  expect(screen.getByText("Checking output")).toBeTruthy();
 });
 it("orders active tasks first and distinguishes unavailable from empty", () => {
   const view = render(
@@ -322,16 +360,17 @@ it("inspects observed processes in place, updates status and discloses missing o
   const GET = vi.fn(async (path: string) => ({
     data: path.endsWith("/children")
       ? { executions: [], total: 0 }
-      : { tasks: [] },
+      : {
+          thread_id: "root",
+          source: "saved",
+          tasks: { total: 0 },
+          notes: { total: 0 },
+          children: {},
+        },
   }));
   const display = new FocusDisplay();
   const view = render(
-    <WorkInspector
-      threadId="root"
-      display={display}
-      live
-      reconcile={vi.fn()}
-    />,
+    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
     harness(GET),
   );
   const user = userEvent.setup();
@@ -344,12 +383,7 @@ it("inspects observed processes in place, updates status and discloses missing o
     { process_id: "process-one", status: { phase: "running" } },
   );
   view.rerender(
-    <WorkInspector
-      threadId="root"
-      display={display}
-      live
-      reconcile={vi.fn()}
-    />,
+    <WorkInspector threadId="root" display={display} reconcile={vi.fn()} />,
   );
   expect(screen.getByText("pnpm dev")).toBeTruthy();
   expect(
@@ -363,7 +397,6 @@ it("inspects observed processes in place, updates status and discloses missing o
     <WorkInspector
       threadId="root"
       display={display}
-      live
       connected={false}
       reconcile={vi.fn()}
     />,

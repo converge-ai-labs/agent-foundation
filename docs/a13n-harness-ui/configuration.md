@@ -99,7 +99,7 @@ webui:
 
 ### WebUI Sidekick
 
-In **Settings → General → Sidekick**, select **Enabled**, optionally choose an Agent and a Model override, then **Save changes**. This sets preferences for independent work without changing your default conversation Agent:
+In **Settings → General → Sidekick**, select **Enabled**, optionally choose an Agent and a default Model, then **Save changes**. This sets preferences for independent work without changing your default conversation Agent:
 
 ```yaml
 webui:
@@ -108,7 +108,7 @@ webui:
     model: model-worker      # Override its Model for the requested Run
 ```
 
-Use existing resource IDs. Set `agent: agent-worker` to select a different Agent; either choice can use a Model override. Omit/null `model` to use the selected Agent's Model. An empty `sidekick: {}` enables instructions with inherited selections. Overrides use the normal per-Run mechanism, not an Agent resource edit or a sticky Model change to later turns. Choose **Disabled** or set `sidekick: null` to turn off the extra instructions. Saving does not start any work. New WebUI Runs receive the preference; active Runs keep their captured instructions. Terminal Runs and delegated children are unaffected. Generic Thread, Project, Agent and Model discovery tools remain available in WebUI whether Sidekick is enabled or not. See [Thread collaboration](webui.md#agent-collaboration-and-sidekick) for behavior and delivery limits.
+Use existing resource IDs. Set `agent: agent-worker` to select a different Agent; either choice can use a default Model. Omit/null `model` to follow the selected Agent's current Model. An empty `sidekick: {}` enables inherited Agent selection. The Host saves the configured Model as `default_model_id` when the Agent creates a Sidekick Thread, so follow-up messages and resumed turns keep using it. An explicit `create_thread(model_id=...)` or Run picker selection overrides only that Run; it does not change the saved default. Existing Threads are not rewritten when Sidekick settings change or are disabled. Choose **Disabled** or set `sidekick: null` to turn off the extra instructions. Saving does not start any work. New WebUI Runs receive the preference; active Runs keep their captured instructions. Terminal Runs and delegated children are unaffected. Generic Thread, Project, Agent and Model discovery tools remain available in WebUI whether Sidekick is enabled or not. See [Thread collaboration](webui.md#agent-collaboration-and-sidekick) for behavior and delivery limits.
 
 ### Shell review shortcut
 
@@ -216,7 +216,7 @@ For a new Thread, selection precedence is explicit creation/launch choices, sele
 | MCP literal-bearing source files                                              | New captures use new sources; an older capture verifies its source before client construction    | Already constructed clients retain their Run-local values; changed old sources can fail validation |
 | Skill content                                                                 | Catalog preparation uses the Run's current source set; files are read through Environment access | Catalog membership is Run-frozen, but file bytes are not copied into immutable composition         |
 
-Resume restores the Thread's selected Agent against current resources and preserves an explicit Model override in the current TUI. A later terminal invocation loads the launch Project's last manually selected Model, including when resuming an old Thread; it does not infer a model from Thread history. Without a Model override, saved reasoning is restored only when the continuation used that Agent's configured Model. `--resume` cannot be combined with Agent, Environment, or title launch overrides; resume first, then change a selection explicitly.
+Resume restores the Thread's selected Agent against current resources and preserves an explicit Model override in the current TUI. A later terminal invocation uses a resumed Thread's saved default Model when present; otherwise it loads the launch Project's last manually selected Model. It does not infer a Model from Thread history. Without a Model override, saved reasoning is restored only when the continuation used the effective Thread-default or Agent Model. `--resume` cannot be combined with Agent, Environment, or title launch overrides; resume first, then change a selection explicitly.
 
 For multi-file edits, save the whole tree, validate it, and start the next Run after acceptance. Do not delete local state to force reload. [MCP capture](mcp.md#literal-values-and-environment-references) and [Skill source lifetime](skills-and-content-plugins.md#automatic-sources-and-precedence) explain the file-content boundaries.
 

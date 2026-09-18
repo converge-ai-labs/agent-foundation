@@ -85,6 +85,32 @@ class WorkingStateToolset:
         self._task_binding_resolved = False
         self._state_lock = asyncio.Lock()
         self._last_task_observation = None
+        self._observed_provider_tasks = None
+        self._observation_revision = 0
+        self._notes_version = 1
+
+    def publish_observation(self) -> None:
+        from a13n_harness.capabilities.working_state import WorkingStateObservation
+
+        observer = self._context.working_state_observer
+        if observer is None:
+            return
+        self._observation_revision += 1
+        try:
+            observer(
+                WorkingStateObservation(
+                    run_id=self._context.run_id,
+                    revision=self._observation_revision,
+                    notes_version=self._notes_version,
+                    state=self._state.model_copy(deep=True),
+                    tasks=self._state.tasks if self._state.task_mode == "embedded" else self._observed_provider_tasks,
+                )
+            )
+        except Exception:
+            # Observation cannot split a committed state replacement from its cell.
+            from a13n_logging import get_logger
+
+            get_logger(__name__).exception("Working State observer failed")
 
     def get_toolset(self, *, tasks: bool, notes: bool) -> FunctionToolset[AgentContext] | None:
         tools = []
@@ -296,6 +322,8 @@ class WorkingStateToolset:
         state = _working_state_with(self._state, notes=notes)
         await ctx.deps.state.write(WORKING_STATE_CAPABILITY_ID, state, version=_WORKING_STATE_VERSION)
         self._state = state
+        self._notes_version += 1
+        self.publish_observation()
 
     async def _task_result(self, operation: str, *args) -> TaskToolResult:
         from a13n_harness.capabilities.working_state import TaskStateError
@@ -432,6 +460,7 @@ class WorkingStateToolset:
                 version=_WORKING_STATE_VERSION,
             )
             self._state = state
+            self.publish_observation()
 
     async def _emit_task_changes(self, before, after, *, reason, primary_task_id=None) -> None:
         changed = [task_id for task_id in sorted(after.tasks) if before.tasks.get(task_id) != after.tasks[task_id]]
@@ -498,6 +527,7 @@ class WorkingStateToolset:
                 and current_cursor.state_version == cursor.state_version
                 and current_cursor.observed_version is not None
                 and current_cursor.observed_version >= observed.version
+                and self._observed_provider_tasks is not None
             ):
                 return
             state = _working_state_with(self._state, tasks=None, provider_cursor=cursor)
@@ -507,6 +537,8 @@ class WorkingStateToolset:
                 version=_WORKING_STATE_VERSION,
             )
             self._state = state
+            self._observed_provider_tasks = observed
+            self.publish_observation()
 
 
 def _project_task(task) -> TaskProjection:

@@ -6,6 +6,7 @@ import shutil
 import sys
 from pathlib import Path
 
+import pytest
 from a13n_environment import build_environment_provider_catalog
 from a13n_environment.management import ProviderRuntimeContext
 from a13n_environment.models import EnvironmentState
@@ -16,6 +17,8 @@ from grpclib.const import Cardinality, Handler
 from grpclib.server import Server
 from modal_proto import api_pb2 as api
 from modal_proto import task_command_router_pb2 as router
+
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Fixture executes POSIX guest helpers on the Host")
 
 
 class ModalCloud:

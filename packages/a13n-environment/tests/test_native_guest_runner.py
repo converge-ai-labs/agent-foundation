@@ -9,6 +9,8 @@ from importlib.resources import files
 
 import pytest
 
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Fixture executes POSIX guest helpers on the Host")
+
 
 @pytest.mark.parametrize("case", ["bounded-output", "timeout", "descendant"])
 def test_guest_runner_foreground_bounds(case, tmp_path):

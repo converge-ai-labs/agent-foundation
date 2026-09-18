@@ -1316,46 +1316,6 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
 
 
 @pytest.mark.anyio
-async def test_default_codeact_executes_and_disabled_questions_are_not_exposed(tmp_path: Path, monkeypatch) -> None:
-    import a13n_harness.model_auth as runtime
-    import yaml
-    from pydantic_ai.messages import ModelRequest, ToolReturnPart
-    from pydantic_ai.models.function import DeltaToolCall
-
-    path = await _seed(tmp_path, monkeypatch)
-    root = yaml.safe_load(path.read_text())
-    root["tools"]["enable_ask_user_question"] = False
-    path.write_text(yaml.safe_dump(root))
-
-    async def stream(messages, info):
-        names = {tool.name for tool in info.function_tools}
-        assert {"run_code", "run_program", "store", "load", "forget"} <= names
-        assert "ask_user_question" not in names
-        results = [
-            part
-            for message in messages
-            if isinstance(message, ModelRequest)
-            for part in message.parts
-            if isinstance(part, ToolReturnPart) and part.tool_name == "run_code"
-        ]
-        if not results:
-            yield {0: DeltaToolCall(name="run_code", tool_call_id="code-one", json_args='{"code":"1 + 1"}')}
-        else:
-            assert "2" in str(results[0].content)
-            yield "CodeAct completed."
-
-    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
-    async with open_harness_ui_app(
-        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
-    ) as app:
-        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
-        renderer = StreamRenderer(backend.status)
-        assert await backend.execute(renderer, prompt="Calculate with CodeAct") == ""
-        assert "CodeAct completed" in "".join(block.source for block in renderer.transcript.blocks.values())
-        renderer.transcript.close()
-
-
-@pytest.mark.anyio
 @pytest.mark.parametrize("timeout", [False, True])
 async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     tmp_path: Path, monkeypatch, timeout: bool
@@ -1444,14 +1404,21 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
 @pytest.mark.anyio
 async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     import a13n_harness.model_auth as runtime
+    import yaml
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall
 
     path = await _seed(tmp_path, monkeypatch)
+    root = yaml.safe_load(path.read_text())
+    root["tools"]["enable_ask_user_question"] = False
+    path.write_text(yaml.safe_dump(root))
     requests = 0
 
     async def stream(messages, info):
         nonlocal requests
+        names = {tool.name for tool in info.function_tools}
+        assert {"run_code", "run_program", "store", "load", "forget"} <= names
+        assert "ask_user_question" not in names
         step = requests
         requests += 1
         if step in (0, 2):
@@ -1474,10 +1441,15 @@ async def test_codeact_values_survive_ui_continuation(tmp_path: Path, monkeypatc
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
     ) as app:
         first = SessionBackend(app, CliRequest(), tmp_path, Status())
-        assert await first.execute(StreamRenderer(first.status), prompt="Store the value") == ""
-        resumed = SessionBackend(app, CliRequest(thread_id=first.thread_id), tmp_path, Status())
-        await resumed.initialize()
-        assert await resumed.execute(StreamRenderer(resumed.status), prompt="Load the saved value") == ""
+        renderer = StreamRenderer(first.status)
+        try:
+            assert await first.execute(renderer, prompt="Store the value") == ""
+            assert "Stored value is available" in "".join(block.source for block in renderer.transcript.blocks.values())
+            resumed = SessionBackend(app, CliRequest(thread_id=first.thread_id), tmp_path, Status())
+            await resumed.initialize()
+            assert await resumed.execute(renderer, prompt="Load the saved value") == ""
+        finally:
+            renderer.transcript.close()
     assert requests == 4
 
 
@@ -2055,3 +2027,35 @@ async def test_model_memory_disambiguates_projects_on_resume(tmp_path: Path, mon
         await backend.models("default")
         assert await app.cwd_model_preference(tmp_path, project_id="project-a") == ("project-a", "model-codex")
         assert await app.cwd_model_preference(tmp_path, project_id="project-b") == ("project-b", None)
+
+
+@pytest.mark.anyio
+async def test_resume_thread_default_outranks_restored_memory_but_not_explicit_choice(tmp_path, monkeypatch):
+    import yaml
+    from a13n_harness_ui.surfaces import NewThreadDefaults
+
+    path = await _seed(tmp_path, monkeypatch)
+    model = yaml.safe_load((path.parent / "models/codex.yaml").read_text())
+    model.update(id="model-alternate", name="Alternate")
+    (path.parent / "models/alternate.yaml").write_text(yaml.safe_dump(model))
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        creator = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await creator.initialize()
+        await creator.models("model-alternate")
+        project = await app.ensure_cwd_project(tmp_path)
+        target = await app.create_thread(defaults=NewThreadDefaults(project_id=project, default_model_id="model-codex"))
+        backend = SessionBackend(app, CliRequest(), tmp_path, Status())
+        await backend.initialize()
+        assert backend.overrides.model_id == "model-alternate"
+        await backend.resume(target.thread_id)
+        assert backend.overrides.model_id is None
+        assert backend.status.model == model["route"]
+        # Explicit in-session choice remains an override when switching Threads.
+        await backend.models("model-alternate")
+        await backend.resume(target.thread_id)
+        assert backend.overrides.model_id == "model-alternate"
+        fresh = SessionBackend(app, CliRequest(thread_id=target.thread_id), tmp_path, Status())
+        await fresh.initialize()
+        assert fresh.overrides.model_id is None
+        assert fresh.status.model == model["route"]

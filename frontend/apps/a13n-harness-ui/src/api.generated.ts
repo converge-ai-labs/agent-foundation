@@ -1018,6 +1018,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/{thread_id}/work": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Work */
+        get: operations["work_api_threads__thread_id__work_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/tasks": {
         parameters: {
             query?: never;
@@ -1950,6 +1967,12 @@ export interface components {
              */
             agent_source: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
             /**
+             * Default Model Id
+             * @default agent
+             * @enum {string}
+             */
+            default_model_id?: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
+            /**
              * Environment Profile Id
              * @enum {string}
              */
@@ -2834,6 +2857,22 @@ export interface components {
             /** Value */
             value: string;
         };
+        /** NoteWorkSummary */
+        NoteWorkSummary: {
+            /**
+             * Available
+             * @default true
+             */
+            available?: boolean;
+            /** Version */
+            version?: number | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total?: number;
+            page?: components["schemas"]["NotePage"] | null;
+        };
         /** OutputComment */
         OutputComment: {
             /** Body */
@@ -2972,6 +3011,8 @@ export interface components {
             /** Project Id */
             project_id?: string | null;
             agent_source?: components["schemas"]["AgentSource"] | null;
+            /** Default Model Id */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Harness Plugin Ids */
@@ -3648,6 +3689,44 @@ export interface components {
              */
             blocked_by?: string[];
         };
+        /** TaskWorkSummary */
+        TaskWorkSummary: {
+            /**
+             * Available
+             * @default true
+             */
+            available?: boolean;
+            /**
+             * Source
+             * @default embedded
+             * @enum {string}
+             */
+            source?: "embedded" | "provider_observed" | "unavailable";
+            /** Version */
+            version?: number | null;
+            /**
+             * Total
+             * @default 0
+             */
+            total?: number;
+            /**
+             * Pending
+             * @default 0
+             */
+            pending?: number;
+            /**
+             * In Progress
+             * @default 0
+             */
+            in_progress?: number;
+            /**
+             * Completed
+             * @default 0
+             */
+            completed?: number;
+            active?: components["schemas"]["TaskView"] | null;
+            page?: components["schemas"]["TaskPage"] | null;
+        };
         /** TerminalPage */
         TerminalPage: {
             /**
@@ -3799,6 +3878,8 @@ export interface components {
             /** Project Id */
             project_id?: string | null;
             agent_source: components["schemas"]["AgentSource"];
+            /** Default Model Id */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id: string;
             /**
@@ -3857,6 +3938,11 @@ export interface components {
              */
             project_id?: string | null;
             agent_source: components["schemas"]["AgentSourceView"];
+            /**
+             * Default Model Id
+             * @default null
+             */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id: string;
             /**
@@ -3990,6 +4076,34 @@ export interface components {
             /** Recent Runs */
             recent_runs: components["schemas"]["RunUsageView"][];
             other_runs: components["schemas"]["UsageTotals"];
+        };
+        /**
+         * ThreadWork
+         * @description Current work observations; sections are independently owned, not atomic.
+         */
+        ThreadWork: {
+            /** Thread Id */
+            thread_id: string;
+            /** Epoch */
+            epoch: string;
+            /** Sequence */
+            sequence: number;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "live" | "saved" | "unavailable";
+            /** Run Id */
+            run_id?: string | null;
+            /** Revision */
+            revision?: number | null;
+            /** Continuation Id */
+            continuation_id?: string | null;
+            /** Base Continuation Id */
+            base_continuation_id?: string | null;
+            tasks: components["schemas"]["TaskWorkSummary"];
+            notes: components["schemas"]["NoteWorkSummary"];
+            children: components["schemas"]["ChildStatusCounts"];
         };
         /**
          * ToolProxyConfig
@@ -4408,7 +4522,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "comment";
+            kind: "configuration" | "catalog" | "project" | "thread" | "root_operation" | "child_execution" | "comment" | "thread_work";
             /**
              * Root Thread Id
              * @default null
@@ -4426,6 +4540,21 @@ export interface components {
             execution_id?: string | null;
             /** @default null */
             notice?: components["schemas"]["RootOperationNotice"] | null;
+            /**
+             * Work Sections
+             * @default []
+             */
+            work_sections?: ("tasks" | "notes" | "children")[];
+            /**
+             * Work Revision
+             * @default null
+             */
+            work_revision?: number | null;
+            /**
+             * Run Id
+             * @default null
+             */
+            run_id?: string | null;
         };
         /** SummaryOpenFrame */
         SummaryOpenFrame: {
@@ -4868,6 +4997,8 @@ export interface components {
             project_id?: string | null;
             /** Agent Id */
             agent_id?: string | null;
+            /** Default Model Id */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Harness Plugin Ids */
@@ -4883,6 +5014,8 @@ export interface components {
             project_id?: string | null;
             /** Agent Id */
             agent_id?: string | null;
+            /** Default Model Id */
+            default_model_id?: string | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Harness Plugin Ids */
@@ -5053,6 +5186,8 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            /** Environment Profile Id */
+            environment_profile_id?: string | null;
             /** Model Id */
             model_id?: string | null;
             thinking?: components["schemas"]["ThinkingSelection"] | null;
@@ -7239,6 +7374,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadActivityPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    work_api_threads__thread_id__work_get: {
+        parameters: {
+            query?: {
+                include?: ("tasks" | "notes")[];
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadWork"];
                 };
             };
             /** @description Validation Error */

@@ -20,6 +20,19 @@ The status contract has `api_version: "1"`, package/build information, App statu
 
 Authentication and Host/Origin validation apply at the listener boundary. Use a header-capable HTTP/fetch client. Do not put access keys in API query strings or logs, or confuse model-provider credentials managed under `/api/auth/*` with the listener key. The deliberate dangerous-bypass mode is not a production authentication mechanism.
 
+## Run-only execution environment
+
+`POST /api/threads/{thread_id}/submit` accepts an optional `environment_profile_id` alongside the prompt or ordered input parts:
+
+```json
+{
+  "prompt": "Review this project",
+  "environment_profile_id": "environment-sandbox"
+}
+```
+
+Use `environment-native` for Full Control, `environment-sandbox` for Sandbox, or a profile ID from `GET /api/selectors`. Omission or null uses the Thread's saved default. An explicit choice affects this Run without updating the Thread configuration or version. A returned receipt acknowledges admission, not successful environment preparation: inspect the operation for unavailable profiles or runtime failures. Neither case silently falls back to Full Control. Steering rejects this field. Deferred responses retain the suspended continuation's captured Environment profile; a later ordinary submit without an override uses the saved default again.
+
 ## Conversation input navigation
 
 `GET /api/threads/{thread_id}/inputs` returns a continuation-bound, paginated directory of ordinary input turns, excluding steering and hidden system input. Each turn carries its stable input identity, bounded preview, input position, exclusive end position, and an optional recorded final-response position. `limit` is 1–100; follow `next_cursor` to read the directory without transferring tool output.

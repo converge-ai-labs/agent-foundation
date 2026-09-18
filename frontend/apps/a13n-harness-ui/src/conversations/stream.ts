@@ -125,7 +125,6 @@ export class FocusDisplay {
         (this.savedBlocks.get(block.id) ?? Infinity) > checkpoint,
     );
   }
-  tasks?: Schema<"TaskPage">;
   readonly children = new Map<
     string,
     {
@@ -155,7 +154,6 @@ export class FocusDisplay {
     this.blocks.clear();
     this.children.clear();
     this.processes.clear();
-    this.tasks = undefined;
     this.fragments.clear();
     this.fragmentBytes = 0;
     this.ready = false;
@@ -689,49 +687,6 @@ export class FocusDisplay {
       object(payload.task)
     ) {
       const task = payload.task;
-      const status = task.status;
-      const version = payload.task_state_version;
-      if (
-        this.tasks?.available !== false &&
-        typeof version === "number" &&
-        version >= (this.tasks?.version ?? -1) &&
-        typeof task.id === "string" &&
-        typeof task.version === "number" &&
-        typeof task.subject === "string" &&
-        (status === "pending" ||
-          status === "in_progress" ||
-          status === "completed")
-      ) {
-        const tasks = new Map(
-          (this.tasks?.tasks ?? []).map((item) => [item.task_id, item]),
-        );
-        const previous = tasks.get(task.id);
-        if (!previous || task.version > previous.version) {
-          tasks.set(task.id, {
-            task_id: task.id,
-            version: task.version,
-            subject: task.subject,
-            status,
-            active_form: string(task.active_form) || null,
-            owner: string(task.owner) || null,
-            blocks: Array.isArray(task.blocks)
-              ? task.blocks.filter((id): id is string => typeof id === "string")
-              : [],
-            blocked_by: Array.isArray(task.blocked_by)
-              ? task.blocked_by.filter(
-                  (id): id is string => typeof id === "string",
-                )
-              : [],
-          });
-        }
-        this.tasks = {
-          ...this.tasks,
-          version,
-          available: true,
-          tasks: [...tasks.values()].slice(-100),
-          omitted: (this.tasks?.omitted ?? 0) + Math.max(0, tasks.size - 100),
-        };
-      }
       const key = `${this.runId}:task:${string(task.id)}`;
       this.blocks.set(key, {
         id: key,

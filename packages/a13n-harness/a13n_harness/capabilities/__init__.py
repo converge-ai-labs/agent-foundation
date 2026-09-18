@@ -136,6 +136,8 @@ from .working_state import (
     WorkingState,
     WorkingStateCapability,
     WorkingStateConfiguration,
+    WorkingStateObservation,
+    WorkingStateObserver,
 )
 
 __all__ = [
@@ -263,6 +265,8 @@ __all__ = [
     "WorkingState",
     "WorkingStateCapability",
     "WorkingStateConfiguration",
+    "WorkingStateObservation",
+    "WorkingStateObserver",
     "WorkspaceOutlineCapability",
     "WorkspaceOutlineConfiguration",
 ]

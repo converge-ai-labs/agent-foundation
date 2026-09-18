@@ -34,28 +34,30 @@ export async function startApp(...args: string[]) {
     }
   };
   try {
-    const address = await new Promise<{ origin: string; native_root: string }>(
-      (resolve, reject) => {
-        const timer = setTimeout(
-          () => reject(new Error(`Test App startup timed out: ${stderr}`)),
-          30000,
-        );
-        server.once("error", (error) => {
+    const address = await new Promise<{
+      origin: string;
+      native_root: string;
+      fixture_root: string;
+    }>((resolve, reject) => {
+      const timer = setTimeout(
+        () => reject(new Error(`Test App startup timed out: ${stderr}`)),
+        30000,
+      );
+      server.once("error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+      server.once("exit", (code) => {
+        clearTimeout(timer);
+        reject(new Error(`Test App exited (${code}): ${stderr}`));
+      });
+      lines.on("line", (line) => {
+        if (line.startsWith("{")) {
           clearTimeout(timer);
-          reject(error);
-        });
-        server.once("exit", (code) => {
-          clearTimeout(timer);
-          reject(new Error(`Test App exited (${code}): ${stderr}`));
-        });
-        lines.on("line", (line) => {
-          if (line.startsWith("{")) {
-            clearTimeout(timer);
-            resolve(JSON.parse(line));
-          }
-        });
-      },
-    );
+          resolve(JSON.parse(line));
+        }
+      });
+    });
     return { ...address, close };
   } catch (error) {
     await close();

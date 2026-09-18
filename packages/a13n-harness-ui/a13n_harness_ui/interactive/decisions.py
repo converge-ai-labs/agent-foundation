@@ -30,7 +30,7 @@ class DecisionInteraction:
     answers: dict[str, str | tuple[str, ...]] = field(default_factory=dict)
     timeout_seconds: float = 120.0
     request_started: float = field(default_factory=time.monotonic)
-    editor: Literal["reason", "result"] | None = None
+    editor: Literal["reason", "result", "arguments"] | None = None
 
     def back(self) -> bool:
         """Leave an editor without resolving the request or restarting its timeout."""
@@ -72,20 +72,15 @@ class DecisionInteraction:
                 tuple(Choice(option.label, option.label, option.description) for option in question.options),
                 multiple=question.multi_select,
             )
-        approval = isinstance(request, ApprovalRequestView)
-        return Selection(
-            (
-                Choice("approve", "Approve once", "Execute only this pending request")
-                if approval
-                else Choice("provide", "Provide result", "Open the JSON result editor"),
-                Choice("deny", "Deny", "Do not execute this request" if approval else "Decline to provide a result"),
-                Choice("deny with reason", "Deny with reason", "Open the reason editor"),
-            )
-        )
+        return Selection(_decision_choices(request))
 
     def title(self) -> str:
         if self.editor is not None:
-            return "Denial reason" if self.editor == "reason" else "Provide JSON result"
+            return {
+                "reason": "Denial reason",
+                "result": "Provide JSON result",
+                "arguments": "Replacement arguments (JSON object)",
+            }[self.editor]
         request = self.request
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
@@ -111,11 +106,11 @@ class DecisionInteraction:
         request = self.request
         heading = f"Decision {self.index + 1}/{len(self.batch.requests)} · {request.tool_name} · {request.request_id}"
         if self.editor is not None:
-            instruction = (
-                "Enter a reason to deny this request."
-                if self.editor == "reason"
-                else "Enter the actual tool result as JSON. Providing a result does not execute the tool."
-            )
+            instruction = {
+                "reason": "Enter a reason to deny this request.",
+                "result": "Enter the actual tool result as JSON. Providing a result does not execute the tool.",
+                "arguments": "Enter the complete replacement arguments as a JSON object. Submitting approves this request with those arguments.",
+            }[self.editor]
             return f"{heading}\n{instruction}\nEnter submits · Alt+Enter adds a line · Esc or /cancel returns to choices. The original {self.timeout_seconds:g}s timeout continues."
         if isinstance(request, StructuredQuestionRequestView):
             question = request.questions[self.question_index]
@@ -133,7 +128,7 @@ class DecisionInteraction:
                 _approval_prompt(request, self.index + 1, len(self.batch.requests))
                 + f"\n{self.timeout_seconds:g}s timeout without approval."
             )
-        arguments = json.dumps(request.arguments, ensure_ascii=False, indent=2)
+        arguments = json.dumps(_display_arguments(request.arguments), ensure_ascii=False, indent=2)
         metadata = json.dumps(request.metadata, ensure_ascii=False, indent=2) if request.metadata else ""
         content = f"{arguments}\n{metadata}".strip()
         if len(content) > 8192 or request.arguments_omitted or request.metadata_omitted:
@@ -170,14 +165,35 @@ class DecisionInteraction:
             approval = isinstance(request, ApprovalRequestView)
             reason = None
             result = None
+            override_arguments = None
             if self.editor == "reason":
                 if not value:
                     raise ValueError("Enter a denial reason, or press Esc to return to choices.")
                 denied, reason = True, value
             elif self.editor == "result":
                 denied, result = False, json.loads(value)
+            elif self.editor == "arguments":
+                if (
+                    not isinstance(request, ApprovalRequestView)
+                    or not request.override_allowed
+                    or request.arguments_omitted
+                ):
+                    raise ValueError("This request does not allow replacement arguments.")
+                override_arguments = json.loads(value)
+                if not isinstance(override_arguments, dict):
+                    raise ValueError("Replacement arguments must be a JSON object.")
+                denied = False
             else:
-                value = str(resolve_choice(value, ("approve" if approval else "provide", "deny", "deny with reason")))
+                value = str(resolve_choice(value, tuple(choice.value for choice in _decision_choices(request))))
+                if value == "edit arguments":
+                    if (
+                        not isinstance(request, ApprovalRequestView)
+                        or not request.override_allowed
+                        or request.arguments_omitted
+                    ):
+                        raise ValueError("This request does not allow replacement arguments.")
+                    self.editor = "arguments"
+                    return None
                 if value == "review":
                     return "review"
                 if value == "deny with reason" or (not approval and value in {"provide", "provide result"}):
@@ -188,10 +204,15 @@ class DecisionInteraction:
                 if verb not in allowed:
                     raise ValueError("Choose an action by number or name. Use review to inspect details.")
                 denied = verb in {"deny", "no", "n"}
+            if approval and request.arguments_omitted and not denied:
+                raise ValueError(
+                    "Arguments were omitted. Approval is unavailable; deny or inspect the retained request."
+                )
             self.responses.append(
                 ApprovalDecision(
                     request_id=request.request_id,
                     approved=not denied,
+                    override_arguments=override_arguments,
                     denial_message=reason if denied and reason else None,
                 )
                 if approval
@@ -217,6 +238,41 @@ class DecisionInteraction:
         return None
 
 
+def _decision_choices(request: DecisionRequestView) -> tuple[Choice, ...]:
+    approval = isinstance(request, ApprovalRequestView)
+    actions = []
+    if not approval:
+        actions.append(Choice("provide", "Provide result", "Open the JSON result editor"))
+    elif not request.arguments_omitted:
+        actions.append(Choice("approve", "Approve once", "Approve only this pending request"))
+    actions.extend(
+        (
+            Choice("deny", "Deny", "Do not execute this request" if approval else "Decline to provide a result"),
+            Choice("deny with reason", "Deny with reason", "Open the reason editor"),
+        )
+    )
+    if approval and request.override_allowed and not request.arguments_omitted:
+        actions.append(Choice("edit arguments", "Approve with edited arguments", "Open the JSON object editor"))
+    return tuple(actions)
+
+
+def _display_arguments(value: object) -> object:
+    """Hide known Environment values without modifying the retained request."""
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+        except ValueError:
+            return value
+        if isinstance(decoded, dict):
+            value = decoded
+    if isinstance(value, dict):
+        value = dict(value)
+        environment = value.get("environment")
+        if isinstance(environment, dict):
+            value["environment"] = dict.fromkeys(environment, "[hidden]")
+    return value
+
+
 def _approval_content(request: ApprovalRequestView, index: int, total: int) -> dict[str, str]:
     """Expose review evidence before arguments without interpreting it as markup."""
     incomplete = request.arguments_omitted or request.metadata_omitted
@@ -231,32 +287,28 @@ def _approval_content(request: ApprovalRequestView, index: int, total: int) -> d
     content = {"tool": request.tool_name, "position": f"{index}/{total}", "details": f"/review {request.request_id}"}
     metadata = dict(request.metadata or {})
     approval = metadata.pop("a13n.harness.tool-approval", None)
-    reason = metadata.pop("reason", None) if isinstance(approval, dict) else None
+    presentation = metadata.pop("a13n.harness.approval-presentation", None)
+    if isinstance(presentation, dict):
+        for key in ("target", "reason", "risk"):
+            value = presentation.get(key)
+            if isinstance(value, str) and value:
+                content[key] = preview(value, 2000)
+    reason = metadata.pop("reason", None)
     if isinstance(reason, str) and reason:
         content["reason"] = preview(reason, 2000)
     shared_review = metadata.pop("a13n.harness.tool-review", None)
     review = (
         shared_review if isinstance(approval, dict) and approval.get("tool_id") == "environment.shell_exec" else None
     )
+    if isinstance(approval, dict) and approval.get("tool_id") == "environment.shell_exec":
+        content["review_kind"] = "shell"
     if isinstance(review, dict):
         risk, reason = review.get("risk"), review.get("reason")
         content["risk"] = preview(risk, 80) if isinstance(risk, str) and risk else "unavailable"
         content["reason"] = preview(reason, 2000) if isinstance(reason, str) and reason else "unavailable"
     elif review is not None:
         content["error"] = "Shell review unavailable (invalid review metadata)"
-    arguments = request.arguments
-    if isinstance(arguments, str):
-        # Native ToolCallPart arguments can be a JSON string or an object.
-        # Only expand complete objects; retain malformed/truncated text verbatim.
-        try:
-            decoded = json.loads(arguments)
-        except ValueError:
-            pass
-        else:
-            if isinstance(decoded, dict):
-                arguments = decoded
-    if isinstance(arguments, dict):
-        arguments = dict(arguments)
+    arguments = _display_arguments(request.arguments)
     command = arguments.get("command") if isinstance(arguments, dict) else None
     if isinstance(arguments, dict) and isinstance(command, str):
         arguments.pop("command")
@@ -272,6 +324,8 @@ def _approval_content(request: ApprovalRequestView, index: int, total: int) -> d
         content["context"] = preview(json.dumps(metadata, ensure_ascii=False, indent=2))
     if incomplete:
         content["notice"] = "Preview incomplete; inspect retained request details before deciding."
+    if request.arguments_omitted:
+        content["notice"] = "Arguments were omitted. Approval is unavailable; deny or inspect the retained request."
     return content
 
 
@@ -282,6 +336,7 @@ def _approval_prompt(request: ApprovalRequestView, index: int, total: int) -> st
     for key, label in (
         ("risk", "Risk"),
         ("reason", "Reason"),
+        ("target", "Target"),
         ("error", "Shell review unavailable"),
         ("command", "Command"),
         ("cwd", "Working directory"),
@@ -292,7 +347,6 @@ def _approval_prompt(request: ApprovalRequestView, index: int, total: int) -> st
     ):
         if key in content:
             parts.append(f"{label}:" + ("\n" if key in {"command", "arguments"} else " ") + content[key])
-    parts.append(
-        "1. Approve once   2. Deny   3. Deny with reason\nNo automatic approval · Details: " + content["details"]
-    )
+    actions = "   ".join(f"{index}. {choice.label}" for index, choice in enumerate(_decision_choices(request), 1))
+    parts.append(actions + "\nNo automatic approval · Details: " + content["details"])
     return "\n".join(parts)

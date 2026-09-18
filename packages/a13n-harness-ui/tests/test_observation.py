@@ -252,10 +252,16 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
     async def publish(*args):
         pass
 
+    async def publish_cleanup(execution_id):
+        assert execution_id == head.execution_id
+        assert execution_id not in operator._active
+        assert active.done.is_set()
+
     operator = SimpleNamespace(
         _consume_run=consume,
         _finish_result=finish,
         _publish_summary=publish,
+        _publish_summary_by_execution=publish_cleanup,
         _publish_live=publish,
         _lock=Lock(),
         _active={head.execution_id: active},

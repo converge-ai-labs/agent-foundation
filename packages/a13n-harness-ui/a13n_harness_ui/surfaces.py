@@ -65,6 +65,7 @@ class AgentSourceView(SurfaceModel):
 class NewThreadDefaults(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
@@ -75,6 +76,7 @@ class ThreadConfigurationView(SurfaceModel):
     version: int = Field(ge=1)
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_source: AgentSourceView
+    default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str = Field(min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] = ()
     environment_run_extension_ids: tuple[str, ...] = ()
@@ -87,6 +89,7 @@ ConfigurationOrigin = Literal["explicit", "project", "agent", "global", "builtin
 class ConfigurationProvenance(SurfaceModel):
     project_id: ConfigurationOrigin
     agent_source: ConfigurationOrigin
+    default_model_id: ConfigurationOrigin = "agent"
     environment_profile_id: ConfigurationOrigin
     harness_plugin_ids: ConfigurationOrigin
     environment_run_extension_ids: ConfigurationOrigin
@@ -539,6 +542,41 @@ class TaskPage(SurfaceModel):
     available: bool = True
 
 
+class TaskWorkSummary(SurfaceModel):
+    available: bool = True
+    source: Literal["embedded", "provider_observed", "unavailable"] = "embedded"
+    version: int | None = None
+    total: int = Field(default=0, ge=0)
+    pending: int = Field(default=0, ge=0)
+    in_progress: int = Field(default=0, ge=0)
+    completed: int = Field(default=0, ge=0)
+    active: TaskView | None = None
+    page: TaskPage | None = None
+
+
+class NoteWorkSummary(SurfaceModel):
+    available: bool = True
+    version: int | None = None
+    total: int = Field(default=0, ge=0)
+    page: NotePage | None = None
+
+
+class ThreadWork(SurfaceModel):
+    """Current work observations; sections are independently owned, not atomic."""
+
+    thread_id: str
+    epoch: str
+    sequence: int = Field(ge=0)
+    source: Literal["live", "saved", "unavailable"]
+    run_id: str | None = None
+    revision: int | None = None
+    continuation_id: str | None = None
+    base_continuation_id: str | None = None
+    tasks: TaskWorkSummary
+    notes: NoteWorkSummary
+    children: ChildStatusCounts
+
+
 class ThreadFocusSnapshot(SurfaceModel):
     epoch: str = Field(min_length=1, max_length=80)
     cutover_sequence: int = Field(ge=0)
@@ -670,6 +708,7 @@ class ThreadSelectorCatalog(SurfaceModel):
 class ThreadConfigurationPatch(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
+    default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
@@ -681,7 +720,7 @@ class ThreadConfigurationPatch(SurfaceModel):
             raise ValueError("Thread configuration patch must not be empty")
         values = self.model_dump(exclude_unset=True)
         for name, value in values.items():
-            if name != "project_id" and value is None:
+            if name not in {"project_id", "default_model_id"} and value is None:
                 raise ValueError(f"{name} cannot be null when supplied")
             if isinstance(value, tuple) and len(value) != len(set(value)):
                 raise ValueError(f"{name} must be unique and ordered")

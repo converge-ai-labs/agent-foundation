@@ -1,6 +1,6 @@
 """Real PTY input/output tests with no account or provider access.
 
-Each scenario family owns its process and temporary home, so families can run concurrently.
+Keep the few terminal-boundary scenarios together; domain behavior is tested in-process.
 """
 
 from __future__ import annotations
@@ -52,9 +52,24 @@ def _spawn(script: str, tmp_path: Path) -> tuple[subprocess.Popen[bytes], int]:
         "CODEX_HOME": str(tmp_path / "codex"),
         "XDG_CONFIG_HOME": str(tmp_path / "xdg"),
     }
+    # Autouse fixtures do not cross the subprocess boundary. Neither catalog
+    # refresh, pricing nor release checks are part of terminal rendering tests.
+    offline = """
+from contextlib import nullcontext
+from pydantic_ai import prices
+from a13n_harness_ui import model_catalog
+from a13n_harness_ui.interactive import updates
+prices.update_in_background = nullcontext
+async def bundled():
+    return model_catalog.bundled_models()
+async def no_update(root):
+    return None
+model_catalog.fetch_directory = bundled
+updates.check_update = no_update
+"""
     try:
         process = subprocess.Popen(
-            [sys.executable, "-c", script], stdin=slave, stdout=slave, stderr=slave, cwd=tmp_path, env=env
+            [sys.executable, "-c", offline + script], stdin=slave, stdout=slave, stderr=slave, cwd=tmp_path, env=env
         )
     finally:
         os.close(slave)
@@ -73,21 +88,17 @@ def _stop(process: subprocess.Popen[bytes], master: int) -> None:
         os.close(master)
 
 
-@pytest.mark.xdist_group("pty-setup")
 @pytest.mark.parametrize("command", [[], ["setup"]])
 def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path: Path, command: list[str]) -> None:
     configuration = tmp_path / ".a13n-harness-ui"
     configuration.mkdir()
     (configuration / "a13n-harness-ui.yaml").write_text('schema_version: "1"\nprocess:\n  pricing_auto_update: false\n')
-    script = (
-        "from a13n_harness_ui import model_catalog\n"
-        "async def bundled():\n    return model_catalog.bundled_models()\n"
-        "model_catalog.fetch_directory = bundled\n"
-        f"from a13n_harness_ui.cli import main; main({command!r})"
-    )
+    script = f"from a13n_harness_ui.cli import main; main({command!r})"
     process, master = _spawn(script, tmp_path)
     try:
-        output = _read_until(master, b"Connect a model")
+        # A cold subprocess imports the complete runtime before the first screen;
+        # this is a readiness guard, not an eight-second startup benchmark.
+        output = _read_until(master, b"Connect a model", timeout=30)
         assert output.count(b"\x1b[?1049h") == 1
         os.write(master, b"\x1b[B\x1b[B\r")
         output += _read_until(master, b"API provider")
@@ -126,11 +137,12 @@ def test_setup_redraws_one_alternate_screen_and_only_launch_enters_chat(tmp_path
         _stop(process, master)
 
 
-@pytest.mark.xdist_group("pty-cancel")
 def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
     process, master = _spawn("from a13n_harness_ui.cli import main; main([])", tmp_path)
     try:
-        output = _read_until(master, b"Connect a model")
+        # A cold subprocess imports the complete runtime before the first screen;
+        # this is a readiness guard, not an eight-second startup benchmark.
+        output = _read_until(master, b"Connect a model", timeout=30)
         os.write(master, b"\x03")
         output += _read_until(master, b"Setup cancelled")
         process.wait(timeout=5)
@@ -141,7 +153,6 @@ def test_cancel_initial_setup_never_opens_chat(tmp_path: Path) -> None:
         _stop(process, master)
 
 
-@pytest.mark.xdist_group("pty-update")
 @pytest.mark.parametrize("install", [False, True])
 def test_update_screen_precedes_setup_and_releases_terminal_for_installer(tmp_path: Path, install: bool) -> None:
     script = r"""
@@ -162,7 +173,7 @@ main(["setup"])
 """
     process, master = _spawn(script, tmp_path)
     try:
-        output = _read_until(master, b"Install this update?")
+        output = _read_until(master, b"Install this update?", timeout=30)
         assert b"Connect a model" not in output
         assert output.count(b"\x1b[?1049h") == 1
         if install:
@@ -184,9 +195,8 @@ main(["setup"])
         _stop(process, master)
 
 
-@pytest.mark.xdist_group("pty-chat")
-@pytest.mark.parametrize("pasted", ["line1\nline2", "long pasted text\n" * 100])
-def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path, pasted: str) -> None:
+def test_chat_paste_enter_steering_mode_switch_and_cancel_use_one_terminal(tmp_path: Path) -> None:
+    pasted = "long pasted text\n" * 100
     script = r"""
 import asyncio, json
 from contextlib import asynccontextmanager
@@ -207,6 +217,7 @@ class Backend:
     def __init__(self, status):
         self.status = status
         self.stop = asyncio.Event()
+        self.steered = asyncio.Event()
         self.receipt_id = None
     async def initialize(self):
         self.status.model = "fixture-model"
@@ -217,7 +228,7 @@ class Backend:
             admitted()
         self.receipt_id = "receipt-fixture"
         renderer.ingest("TEXT_MESSAGE_CONTENT", {"delta": "fixture-stream\n"})
-        await asyncio.sleep(.7)
+        await self.steered.wait()
         renderer.ingest("TOOL_CALL_START", {"tool_call_id": "edit", "tool_call_name": "view"})
         renderer.ingest("TOOL_CALL_ARGS", {"tool_call_id": "edit", "delta": '{"file_path":"fixture.py"}'})
         renderer.ingest("TOOL_CALL_END", {"tool_call_id": "edit"})
@@ -226,6 +237,7 @@ class Backend:
         return "fixture-cancelled"
     async def steer(self, text, *, receipt_id, skill_references=()):
         Path("steering.json").write_text(json.dumps([text.text, receipt_id]))
+        self.steered.set()
         return "Guidance sent"
     async def interaction(self):
         return None
@@ -240,22 +252,24 @@ asyncio.run(run_terminal(CliRequest(no_update_check=True), runtime_loader=lambda
 """
     process, master = _spawn(script, tmp_path)
     try:
-        output = _read_until(master, b"Enter sends a message")
+        output = _read_until(master, b"Enter sends a message", timeout=30)
         assert output.count(b"\x1b[?1049h") == 1
         assert b"\x1b[?1049l" not in output
         os.write(master, b"draft")
         assert not (tmp_path / "submitted.json").exists()
         os.write(master, b"\x1b[200~" + pasted.encode() + b"\x1b[201~")
-        time.sleep(0.1)
+        # Wait for the bracketed paste to render, not a guessed input delay.
+        output += _read_until(master, b"[Pasted text #1: 1700 chars]")
         assert not (tmp_path / "submitted.json").exists()
         os.write(master, b"\r")
         output += _read_until(master, b"fixture-stream")
         assert json.loads((tmp_path / "submitted.json").read_text()) == "draft" + pasted
         os.write(master, b"/mode detailed\r")
+        output += _read_until(master, b"Display \xc2\xb7 detailed")
+        os.write(master, b"change direction\r")
+        # The backend emits the tool only after steering has been handled.
         output += _read_until(master, b"fixture.py")
         # Detailed mode retains formatted arguments; terminal diffing may split headings.
-        os.write(master, b"change direction\r")
-        output += _read_until(master, b"Guidance sent")
         assert json.loads((tmp_path / "steering.json").read_text()) == ["change direction", "receipt-fixture"]
         os.write(master, b"\x03")
         output += _read_until(master, b"Enter to send")

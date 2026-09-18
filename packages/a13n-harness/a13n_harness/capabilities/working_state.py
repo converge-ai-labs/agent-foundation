@@ -229,6 +229,24 @@ class WorkingState(BaseModel):
         return TypeAdapter(dict[str, str]).validate_json(self.notes_json)
 
 
+@dataclass(frozen=True, slots=True)
+class WorkingStateObservation:
+    """Detached, run-local observation, not a durable checkpoint.
+
+    Embedded tasks are complete. Provider tasks are only the last successfully
+    observed snapshot (or None), never a promise of provider freshness.
+    """
+
+    run_id: str
+    revision: int
+    notes_version: int
+    state: WorkingState
+    tasks: TaskState | None
+
+
+type WorkingStateObserver = Callable[[WorkingStateObservation], None]
+
+
 class CreateTask(BaseModel):
     """Validated request for atomic task allocation and dependency insertion."""
 
@@ -581,6 +599,7 @@ class WorkingStateCapability(AbstractModelContextCapability):
             state=state,
         )
         ctx.deps._record_run_capability(WORKING_STATE_CAPABILITY_ID, replacement)
+        replacement._toolset.publish_observation()
         return replacement
 
 

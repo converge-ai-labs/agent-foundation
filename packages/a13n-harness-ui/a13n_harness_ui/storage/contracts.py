@@ -40,6 +40,7 @@ class ThreadConfiguration(StoredContract):
     version: int = Field(ge=1)
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_source: AgentSource
+    default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str = Field(min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] = ()
     environment_run_extension_ids: tuple[str, ...] = ()
@@ -62,6 +63,7 @@ class ThreadConfigurationPatch(StoredContract):
 
     project_id: str | None = None
     agent_source: AgentSource | None = None
+    default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = None
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
@@ -70,7 +72,7 @@ class ThreadConfigurationPatch(StoredContract):
     @model_validator(mode="after")
     def _set_fields_are_not_null(self) -> Self:
         for name in self.model_fields_set:
-            if name != "project_id" and getattr(self, name) is None:
+            if name not in {"project_id", "default_model_id"} and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null when supplied")
         return self
 

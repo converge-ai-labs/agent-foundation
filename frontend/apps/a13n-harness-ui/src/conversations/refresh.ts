@@ -1,4 +1,5 @@
 import type { Query, QueryClient } from "@tanstack/react-query";
+import { invalidateWorkRead } from "./work";
 
 const scheduled = new WeakMap<Query, ReturnType<typeof setTimeout>>();
 
@@ -20,6 +21,7 @@ export function scheduleRefresh(
       (query.state.data !== undefined || query.state.fetchStatus === "fetching")
     )
       continue;
+    invalidateWorkRead(query);
     if (scheduled.has(query)) continue;
     scheduled.set(
       query,
@@ -44,7 +46,7 @@ export function scheduleRefresh(
 }
 
 export type ThreadRefresh =
-  "reconcile" | "lifecycle" | "checkpoint" | "usage" | "children";
+  "reconcile" | "lifecycle" | "checkpoint" | "usage" | "children" | "work";
 export function refreshThread(
   client: QueryClient,
   threadId: string,
@@ -53,6 +55,7 @@ export function refreshThread(
   const sections: Record<ThreadRefresh, readonly string[]> = {
     reconcile: [],
     lifecycle: [
+      "work",
       "detail",
       "configuration",
       "skills",
@@ -60,9 +63,10 @@ export function refreshThread(
       "usage",
       "context-usage",
     ],
-    checkpoint: ["detail", "configuration", "usage", "context-usage"],
+    checkpoint: ["work", "detail", "configuration", "usage", "context-usage"],
     usage: ["usage", "context-usage"],
-    children: ["children", "child-review"],
+    children: ["work", "children", "child-review"],
+    work: ["work"],
   };
   scheduleRefresh(client, (query) => {
     const [kind, id, section] = query.queryKey;

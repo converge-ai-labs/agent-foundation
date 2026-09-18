@@ -865,6 +865,7 @@ def _configuration_record(thread_id: str, value: ThreadConfiguration) -> ThreadC
         project_id=value.project_id,
         agent_source_kind=value.agent_source.kind,
         agent_source_id=value.agent_source.id,
+        default_model_id=value.default_model_id,
         environment_profile_id=value.environment_profile_id,
         harness_plugin_ids_json=_json_list(value.harness_plugin_ids),
         environment_run_extension_ids_json=_json_list(value.environment_run_extension_ids),
@@ -877,6 +878,7 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
     record.project_id = value.project_id
     record.agent_source_kind = value.agent_source.kind
     record.agent_source_id = value.agent_source.id
+    record.default_model_id = value.default_model_id
     record.environment_profile_id = value.environment_profile_id
     record.harness_plugin_ids_json = _json_list(value.harness_plugin_ids)
     record.environment_run_extension_ids_json = _json_list(value.environment_run_extension_ids)
@@ -893,6 +895,7 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
         version=record.version,
         project_id=record.project_id,
         agent_source=source,
+        default_model_id=record.default_model_id,
         environment_profile_id=record.environment_profile_id,
         harness_plugin_ids=_parse_list(record.harness_plugin_ids_json),
         environment_run_extension_ids=_parse_list(record.environment_run_extension_ids_json),

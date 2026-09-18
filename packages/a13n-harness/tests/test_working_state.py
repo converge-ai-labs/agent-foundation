@@ -722,3 +722,67 @@ async def test_working_state_exact_continuation_detection_matches_provider_bound
 
 async def _text(value: str) -> AsyncIterator[str]:
     yield value
+
+
+@pytest.mark.parametrize("observer_fails", [False, True])
+async def test_work_observations_publish_restored_baseline_and_committed_mutations(observer_fails: bool) -> None:
+    observations = []
+    calls = 0
+
+    def observe(value) -> None:
+        observations.append(value)
+        if observer_fails:
+            raise RuntimeError("Observer failure must not break state commits")
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            assert len(observations) == 1
+            assert observations[0].tasks is not None and not observations[0].tasks.tasks
+            yield {
+                0: DeltaToolCall(
+                    name="task_create",
+                    json_args=json.dumps({"subject": "Keep", "description": "Restored task"}),
+                    tool_call_id="create-task",
+                ),
+                1: DeltaToolCall(
+                    name="note_write",
+                    json_args=json.dumps({"key": "note", "value": "private"}),
+                    tool_call_id="write-note",
+                ),
+            }
+        elif calls == 2:
+            assert observations[-1].state.notes == {"note": "private"}
+            assert observations[-1].tasks is not None and len(observations[-1].tasks.tasks) == 1
+            yield {0: DeltaToolCall(name="note_delete", json_args='{"key":"note"}', tool_call_id="delete-note")}
+        else:
+            assert observations[-1].state.notes == {}
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(WorkingStateCapability(),),
+    )
+    first = await executable.run("Work", bindings=RunBindings.embedded(working_state_observer=observe))
+    assert first.output_or_raise() == "done"
+    assert first.state is not None
+    assert [item.revision for item in observations] == [1, 2, 3, 4]
+    assert observations[-1].notes_version == 3
+    # Earlier snapshots cannot be changed by later notes/tasks mutations.
+    assert observations[0].state.notes == {}
+    count = len(observations)
+    second = await executable.run(
+        "Continue without changing the task",
+        previous_state=first.state,
+        bindings=RunBindings.embedded(working_state_observer=observe),
+    )
+    assert second.output_or_raise() == "done"
+    assert len(observations) == count + 1
+    baseline = observations[-1]
+    assert baseline.run_id != observations[0].run_id
+    assert baseline.revision == 1
+    assert baseline.tasks is not None and len(baseline.tasks.tasks) == 1
+    assert baseline.tasks == observations[count - 1].tasks

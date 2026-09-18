@@ -237,6 +237,7 @@ from a13n_harness_ui.surfaces import (
     ThreadPage,
     ThreadSelectorCatalog,
     ThreadSummary,
+    ThreadWork,
     TranscriptInputPage,
     TranscriptPage,
 )
@@ -253,6 +254,7 @@ from a13n_harness_ui.thread_files import (
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
 from a13n_harness_ui.thread_service import RootThreadDefaults, ThreadService
+from a13n_harness_ui.thread_work import ThreadWorkService
 from a13n_harness_ui.web_push import WebPush
 
 
@@ -320,6 +322,7 @@ class HarnessUiApp:
         threads: ThreadService,
         projections: ThreadProjectionService,
         terminal_projections: TerminalProjectionService,
+        work: ThreadWorkService,
         root_runs: RootRunCoordinator,
         thread_files: ThreadFiles,
         subagent_operator: HarnessUiSubagentOperator,
@@ -352,6 +355,7 @@ class HarnessUiApp:
         self._threads = threads
         self._projections = projections
         self._terminal_projections = terminal_projections
+        self._work = work
         self._thread_files = thread_files
         self._host_files = HostFiles(enabled=share_computer)
         self._host_git = HostGit(enabled=share_computer)
@@ -819,6 +823,15 @@ class HarnessUiApp:
         async with self._operation():
             return await self._store.usage.snapshot(thread_id=thread_id)
 
+    async def thread_work(
+        self,
+        *,
+        thread_id: str,
+        include: tuple[Literal["tasks", "notes"], ...] = (),
+    ) -> ThreadWork:
+        async with self._operation():
+            return await self._work.snapshot(thread_id, include)
+
     async def thread_notes(
         self,
         *,
@@ -1048,6 +1061,7 @@ class HarnessUiApp:
                     provenance=ConfigurationProvenance(
                         project_id="thread",
                         agent_source="thread",
+                        default_model_id="thread" if selected.default_model_id is not None else "agent",
                         environment_profile_id="thread",
                         harness_plugin_ids="thread",
                         environment_run_extension_ids="thread",
@@ -1055,7 +1069,7 @@ class HarnessUiApp:
                     ),
                 ),
                 next_generation_digest=None if source is None else source.source_digest,
-                next_model_id=None if agent is None else agent.model,
+                next_model_id=selected.default_model_id or (None if agent is None else agent.model),
                 next_capability_ids=() if agent is None else tuple(item.capability for item in agent.capabilities),
                 next_tool_proxy=(
                     None
@@ -1669,6 +1683,7 @@ class HarnessUiApp:
         model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
         input_surface: Literal["tui", "webui"] | None = None,
+        environment_profile_id: str | None = None,
     ) -> RootRunReceipt:
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
@@ -1687,6 +1702,7 @@ class HarnessUiApp:
                 prompt=prompt,
                 mutation=mutation,
                 model_overrides=model_overrides,
+                environment_profile_id=environment_profile_id,
                 touch=True,
             )
             self._terminal_projections.pin_active_skill_catalog(
@@ -2436,7 +2452,9 @@ async def open_harness_ui_app(
                 store=store,
                 configurations=configurations,
             )
+            work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
+                work=work,
                 store=store,
                 threads=threads,
                 configurations=configurations,
@@ -2511,6 +2529,7 @@ async def open_harness_ui_app(
                 threads=threads,
                 projections=projections,
                 terminal_projections=terminal_projections,
+                work=work,
                 root_runs=root_runs,
                 thread_files=thread_files,
                 subagent_operator=operator,
@@ -2534,6 +2553,7 @@ async def open_harness_ui_app(
                     root_runs=root_runs,
                     create_thread=app.create_thread,
                     configurations=configurations,
+                    inspect_configuration=app.inspect_thread_configuration,
                 )
                 root_executor.set_root_capability_factory(
                     lambda composition: ThreadCollaborationCapability(

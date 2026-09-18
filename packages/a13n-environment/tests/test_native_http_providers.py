@@ -17,6 +17,8 @@ from a13n_environment.models import EnvironmentState
 from a13n_environment.native.http import NativeHTTP
 from a13n_environment.retention import EnvironmentOutputPolicy
 
+pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="Fixture executes POSIX guest helpers on the Host")
+
 BACKENDS = {
     "daytona": {"organization_id": "org-fixture"},
     "vercel": {"team_id": "team-fixture", "project_id": "project-fixture"},

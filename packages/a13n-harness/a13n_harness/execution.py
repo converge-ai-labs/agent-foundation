@@ -1484,6 +1484,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     file_media_understanding=self._bindings.file_media_understanding,
                     skill_selection=self._bindings.skill_selection,
                     task_state=self._bindings.task_state,
+                    working_state_observer=self._bindings.working_state_observer,
                     client_toolsets=self._bindings.client_toolsets,
                     tool_result_directory=self._bindings.tool_result_directory,
                     _capability_provenance=_CapabilityProvenance(
