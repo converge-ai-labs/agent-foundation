@@ -66,6 +66,8 @@ async def test_concurrent_provisioning_and_apply_have_one_committed_result(postg
     migrator = DatabaseMigrator(service_database)
     with pytest.raises(RuntimeError, match="protected configuration assistant data"):
         await anyio.to_thread.run_sync(lambda: migrator.downgrade("042c77935852"))
+    # Later revisions can commit their downgrades before the protected revision refuses.
+    await anyio.to_thread.run_sync(migrator.upgrade)
     retained = await drafts.get(actor=actor(), draft_id=saved.id)
     assert retained.status == "open" and retained.version == saved.version + 1
     assert (await applications.list_applications(actor=actor(), draft_id=draft.id, limit=10, cursor=None)).items == (
