@@ -73,9 +73,13 @@ import importlib.abc
 import sys
 class Block(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.startswith(("a13n_service", "pydantic_ai", "mem0", "a13n_harness.execution", "a13n_harness.agent", "a13n_environment")):
+        if fullname.startswith(("a13n_harness.providers.connector.composio.runtime", "a13n_service", "pydantic_ai", "mem0", "a13n_harness.execution", "a13n_harness.agent", "a13n_environment")):
             raise AssertionError(fullname)
 sys.meta_path.insert(0, Block())
+import httpx2
+def no_client(*args, **kwargs):
+    raise AssertionError("Metadata opened a client")
+httpx2.AsyncClient = no_client
 from a13n_harness.providers.plugins import load_provider_plugins
 from a13n_harness.providers.web.builtins import built_in_web_providers
 assert len(built_in_web_providers()) == 9
@@ -83,6 +87,9 @@ manifest = load_provider_plugins(("acme",))[0].manifest
 assert manifest.web[0].type == "acme_web"
 assert manifest.model[0].type == "acme_model"
 assert manifest.memory[0].type == "acme_memory"
+assert manifest.connector[0].type == "acme_connector"
+from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
+assert len(BUILT_IN_CONNECTOR_PROVIDERS) == 1
 from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS
 assert len(BUILT_IN_MEMORY_PROVIDERS) == 2
 """,

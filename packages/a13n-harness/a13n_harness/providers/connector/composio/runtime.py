@@ -6,10 +6,10 @@ from datetime import datetime
 
 from anyio import Semaphore, create_task_group
 
-from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
-from a13n_service.connectivity.domain import JsonObject
+from a13n_harness.providers.connector.configuration import ApiKeyCredentials
+from a13n_harness.providers.connector.contracts import JsonObject
 
-from ...contracts import (
+from ..contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
     BeforeDispatch,
@@ -26,8 +26,8 @@ from ...contracts import (
     SetupContext,
     SetupStarted,
 )
-from ...http import ConnectorHttpClient
-from ...validation import (
+from ..http import ConnectorHttpClient
+from ..validation import (
     optional_string,
     path_segment,
     provider_response_errors,
@@ -48,10 +48,6 @@ class ComposioProvider:
         self._http = http
         self._credentials = credentials
         self._catalog = ComposioCatalog(http, credentials.api_key)
-
-    async def aclose(self) -> None:
-        # The process owns the shared HTTP client.
-        pass
 
     def connect(self, binding: ConnectionBinding) -> ComposioConnection:
         return ComposioConnection(self._http, self._credentials, binding)
@@ -321,10 +317,6 @@ class ComposioConnection:
         self._binding = binding
         self._catalog = ComposioToolCatalog(http, credentials, binding.connector_key)
 
-    async def aclose(self) -> None:
-        # Closing a local binding neither closes a borrowed client nor revokes the account.
-        pass
-
     async def inspect(self) -> ConnectionInspection:
         with provider_response_errors():
             value = required_object(
@@ -367,11 +359,12 @@ class ComposioConnection:
         provider_version: str,
         arguments: JsonObject,
         request_id: str,
-        before_dispatch: BeforeDispatch,
+        before_dispatch: BeforeDispatch | None = None,
     ) -> ConnectorToolOutcome:
         if TOOLKIT_VERSION.fullmatch(provider_version) is None:
             raise ConnectorProviderError("incompatible_toolkit_version")
-        await before_dispatch()
+        if before_dispatch is not None:
+            await before_dispatch()
         try:
             value = await self._http.request(
                 "POST",

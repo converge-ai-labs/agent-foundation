@@ -8,10 +8,10 @@ from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid5
 
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.connectivity.inspection import ConversationInfo, ConversationPage, InstallationInfo
 
 from . import inspection
@@ -33,7 +33,7 @@ from .actions import (
     LarkReplySucceeded,
     LarkTextContent,
 )
-from .api import LarkApiError, read_lark_response
+from .api import read_lark_response
 from .token import LarkTenantTokenProvider
 
 _RESPONSE_MAX_BYTES = 1024 * 1024
@@ -99,7 +99,7 @@ class LarkNativeClient:
                 json_body=body,
                 params=params,
             )
-        except LarkApiError as error:
+        except ProviderHttpError as error:
             if error.code not in {
                 "invalid_provider_response",
                 "provider_unavailable",
@@ -141,11 +141,11 @@ class LarkNativeClient:
         data = _required_data(response)
         raw_items = data.get("items")
         if not isinstance(raw_items, list) or len(raw_items) > arguments.limit:
-            raise LarkApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         try:
             items = tuple(_member(item) for item in raw_items)
         except (ValueError, ValidationError) as error:
-            raise LarkApiError("invalid_provider_response") from error
+            raise ProviderHttpError("invalid_provider_response") from error
         page_token, has_more = _pagination(data)
         return LarkMemberPage(items=items, page_token=page_token, has_more=has_more)
 
@@ -171,11 +171,11 @@ class LarkNativeClient:
         data = _required_data(response)
         raw_items = data.get("items")
         if not isinstance(raw_items, list) or len(raw_items) > arguments.limit:
-            raise LarkApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         try:
             items = tuple(_message(item) for item in raw_items)
         except (ValueError, ValidationError) as error:
-            raise LarkApiError("invalid_provider_response") from error
+            raise ProviderHttpError("invalid_provider_response") from error
         page_token, has_more = _pagination(data)
         return LarkMessagePage(items=items, page_token=page_token, has_more=has_more)
 
@@ -186,7 +186,7 @@ class LarkNativeClient:
 
     async def inspect_conversation(self, chat_id: str) -> ConversationInfo:
         if not 1 <= len(chat_id) <= 512:
-            raise LarkApiError("invalid_arguments")
+            raise ProviderHttpError("invalid_arguments")
         path = f"/open-apis/im/v1/chats/{quote(chat_id, safe='')}"
         detail = await self._request("GET", path)
         membership = await self._request("GET", f"{path}/members/is_in_chat")
@@ -194,7 +194,7 @@ class LarkNativeClient:
 
     async def list_conversations(self, *, limit: int = 100, cursor: str | None = None) -> ConversationPage:
         if not 1 <= limit <= 100 or (cursor is not None and not 1 <= len(cursor) <= 2048):
-            raise LarkApiError("invalid_arguments")
+            raise ProviderHttpError("invalid_arguments")
         params = {"page_size": str(limit)}
         if cursor is not None:
             params["page_token"] = cursor
@@ -222,7 +222,7 @@ class LarkNativeClient:
         try:
             origin = await self._endpoint_validator.validate(self._open_api_origin, resolve_dns=True)
         except ValueError as error:
-            raise LarkApiError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         return origin, await self._token_provider.token()
 
     async def _send(
@@ -244,10 +244,10 @@ class LarkNativeClient:
                 follow_redirects=False,
             ) as response:
                 return await read_lark_response(response, max_bytes=self._response_max_bytes)
-        except LarkApiError:
+        except ProviderHttpError:
             raise
         except httpx2.HTTPError as error:
-            raise LarkApiError("provider_unavailable") from error
+            raise ProviderHttpError("provider_unavailable") from error
 
 
 def _reply_placement(
@@ -256,18 +256,18 @@ def _reply_placement(
 ) -> Literal["thread", "main"]:
     if binding.reply_mode == "auto":
         if not isinstance(arguments, LarkAutoReplyArguments):
-            raise LarkApiError("invalid_arguments")
+            raise ProviderHttpError("invalid_arguments")
         if arguments.placement is not None:
             return arguments.placement
         return "main" if binding.chat_type == "p2p" else "thread"
     if not isinstance(arguments, LarkForcedReplyArguments):
-        raise LarkApiError("invalid_arguments")
+        raise ProviderHttpError("invalid_arguments")
     return binding.reply_mode
 
 
 def _reply_body(content: LarkReplyContent, *, effect_id: str) -> JsonObject:
     if not effect_id or len(effect_id) > 2048:
-        raise LarkApiError("invalid_effect_id")
+        raise ProviderHttpError("invalid_effect_id")
     provider_uuid = str(uuid5(NAMESPACE_URL, f"a13n:lark:{effect_id}"))
     if isinstance(content, LarkTextContent):
         payload: JsonObject = {"text": content.text}
@@ -290,7 +290,7 @@ def _reply_body(content: LarkReplyContent, *, effect_id: str) -> JsonObject:
 def _required_data(response: JsonObject) -> JsonObject:
     data = _object(response.get("data"))
     if data is None:
-        raise LarkApiError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     return data
 
 
@@ -342,9 +342,9 @@ def _pagination(data: JsonObject) -> tuple[str | None, bool]:
     page_token = _optional_string(data.get("page_token"))
     has_more = data.get("has_more")
     if not isinstance(has_more, bool):
-        raise LarkApiError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     if has_more and page_token is None:
-        raise LarkApiError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     return page_token, has_more
 
 

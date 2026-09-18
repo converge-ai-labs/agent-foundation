@@ -6,8 +6,9 @@ import json
 
 import httpx2
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.http import ProviderHttpError
 
-from a13n_service.connectivity.http import ConnectivityHttpError, cookie_free_bounded_request
+from a13n_service.connectivity.http import cookie_free_bounded_request
 
 
 class OAuthTransport(httpx2.AsyncBaseTransport):
@@ -31,23 +32,23 @@ class OAuthTransport(httpx2.AsyncBaseTransport):
             content=await request.aread(),
         )
         if 300 <= response.status_code < 400:
-            raise ConnectivityHttpError("oauth_redirect_forbidden")
+            raise ProviderHttpError("oauth_redirect_forbidden")
         if response.status_code in {401, 403}:
-            raise ConnectivityHttpError("token_authorization_rejected")
+            raise ProviderHttpError("token_authorization_rejected")
         if response.status_code >= 500:
-            raise ConnectivityHttpError("token_exchange_unavailable")
+            raise ProviderHttpError("token_exchange_unavailable")
         if response.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":
-            raise ConnectivityHttpError("invalid_oauth_response")
+            raise ProviderHttpError("invalid_oauth_response")
         try:
             value = json.loads(response.body)
         except (ValueError, RecursionError) as error:
-            raise ConnectivityHttpError("invalid_oauth_response") from error
+            raise ProviderHttpError("invalid_oauth_response") from error
         if not isinstance(value, dict) or ("error" in value and not isinstance(value["error"], str)):
-            raise ConnectivityHttpError("invalid_oauth_response")
+            raise ProviderHttpError("invalid_oauth_response")
         # Authlib parses standard OAuth errors but does not reject every non-200
         # response itself. A provider error cannot be accepted as a token bundle.
         if response.status_code != 200 and not isinstance(value.get("error"), str):
-            raise ConnectivityHttpError("token_exchange_failed")
+            raise ProviderHttpError("token_exchange_failed")
         # The bounded reader already decoded content encoding. Do not decode it
         # again or retain response cookies in Authlib's per-operation client.
         return httpx2.Response(

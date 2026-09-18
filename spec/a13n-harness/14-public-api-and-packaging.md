@@ -422,3 +422,5 @@ The facade preserves native Python composition and type fidelity. Hosted product
 ### Async Execution vs. Sync Construction
 
 Execution and cleanup are async because providers perform I/O. Construction remains synchronous; an explicitly enabled plugin context may perform bounded local file and package-metadata I/O before Agent composition.
+
+Connector integrations use `a13n_harness.providers.connector` for immutable `ConnectorProviderDefinition` and `ConnectorProviderCatalog`, `.contracts` for protocol values and `.builtins.COMPOSIO` for the native definition. `a13n_harness.providers.plugins.ProviderManifest.connector` uses the same installed entry-point group as Model, Web and Memory. These modules import no Service storage or orchestration. Direct hosts supply vendor configuration/credentials and external account correlation; Service layers current authority and durable setup coordination around the same native operations. See [Connector Providers](../a13n-service/40-connectivity/03-connectors-and-connections.md) for the shared protocol versus managed authority boundary.

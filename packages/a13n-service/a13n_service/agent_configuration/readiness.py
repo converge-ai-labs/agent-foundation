@@ -37,7 +37,7 @@ class AssistantReadiness(StrictModel):
     reason_code: Literal[
         "ready", "provider_setup_required", "model_setup_required", "model_access_denied", "compatible_model_required"
     ]
-    setup_actions: tuple[Literal["configure_provider", "configure_model", "contact_administrator"], ...]
+    setup_actions: tuple[Literal["open_provider", "configure_model", "contact_administrator"], ...]
     setup_url: str
     selected_model: SelectedAssistantModel | None = None
 
@@ -66,7 +66,7 @@ class ConfigurationReadiness:
                 )
             except AuthorizationError:
                 can_manage = False
-            actions = ("configure_provider", "configure_model") if can_manage else ("contact_administrator",)
+            actions = ("open_provider", "configure_model") if can_manage else ("contact_administrator",)
             try:
                 await authorize_workspace(
                     session, actor=actor, workspace_id=workspace.id, action=WorkspaceAction.models_read

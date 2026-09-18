@@ -6,13 +6,13 @@ from dataclasses import dataclass, replace
 
 import anyio
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.bots.connectivity.probe import InstallationProbe
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.iam import WorkspaceAction
 from a13n_service.memory.service import failure
 from a13n_service.secrets import SecretProtector
@@ -103,8 +103,8 @@ class BotMemoryVerifier:
                 )
                 identity = await probe.installation()
                 if not identity.enabled:
-                    raise ConnectivityHttpError("bot_inactive")
-                errors: list[ConnectivityHttpError] = []
+                    raise ProviderHttpError("bot_inactive")
+                errors: list[ProviderHttpError] = []
                 semaphore = anyio.Semaphore(4)
 
                 async def check(item: _Conversation) -> None:
@@ -117,8 +117,8 @@ class BotMemoryVerifier:
                             or observed.audience == "unknown"
                             or observed.audience != item.audience
                         ):
-                            raise ConnectivityHttpError("conversation_access_unverified")
-                    except ConnectivityHttpError as error:
+                            raise ProviderHttpError("conversation_access_unverified")
+                    except ProviderHttpError as error:
                         errors.append(error)
 
                 async with anyio.create_task_group() as group:
@@ -126,7 +126,7 @@ class BotMemoryVerifier:
                         group.start_soon(check, item)
                 if errors:
                     raise errors[0]
-        except (ConnectivityHttpError, TimeoutError) as error:
+        except (ProviderHttpError, TimeoutError) as error:
             raise failure(
                 "memory_scope_unverified",
                 "The platform could not confirm current conversation access.",

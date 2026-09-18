@@ -78,7 +78,7 @@ class EndpointPolicy:
             self.validate_address(hostname, literal_address)
             return normalized
         if resolve_dns:
-            addresses = await to_thread.run_sync(_resolve_addresses, hostname, port)
+            addresses = await to_thread.run_sync(_resolve_addresses, hostname, port, abandon_on_cancel=True)
             if not addresses:
                 raise EndpointPolicyError("endpoint hostname has no address")
             for address in addresses:

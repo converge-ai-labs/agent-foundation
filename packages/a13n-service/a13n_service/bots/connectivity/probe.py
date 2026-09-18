@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from pydantic import ValidationError
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.connectivity.inspection import ConversationInfo, ConversationPage, InstallationInfo
 from a13n_service.connectivity.providers.github.inspection import GitHubInspection
 from a13n_service.connectivity.providers.lark.adapter import LarkAccountConfig, LarkAccountCredentials
@@ -61,9 +61,9 @@ class InstallationProbe:
                     http_client, endpoint_validator, config, json.loads(credentials.decrypt(protector))
                 )
             else:
-                raise ConnectivityHttpError("bot_provider_unsupported")
+                raise ProviderHttpError("bot_provider_unsupported")
         except (ValidationError, SecretProtectionError) as error:
-            raise ConnectivityHttpError("credential_unavailable") from error
+            raise ProviderHttpError("credential_unavailable") from error
 
     async def installation(self) -> InstallationInfo:
         if self._github is not None:
@@ -87,7 +87,7 @@ class InstallationProbe:
                 and result.bot_id == config.bot_open_id
             )
         if not matches:
-            raise ConnectivityHttpError("bot_identity_mismatch")
+            raise ProviderHttpError("bot_identity_mismatch")
         return result
 
     async def conversation(self, conversation_id: str) -> ConversationInfo:

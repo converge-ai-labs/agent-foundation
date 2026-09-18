@@ -6,10 +6,10 @@ from typing import Literal
 from urllib.parse import quote, urlsplit
 
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue, ValidationError
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import EndpointValidator
 
 from ..common.origins import provider_url_origin
 from .actions import (
@@ -28,7 +28,7 @@ from .actions import (
     GitHubReadTargetArguments,
     GitHubTarget,
 )
-from .api import GitHubApiError, read_github_response
+from .api import read_github_response
 from .rest import GitHubPersonalTokenProvider
 from .token import GITHUB_API_VERSION, GitHubInstallationTokenProvider
 
@@ -68,7 +68,7 @@ class GitHubNativeClient:
         url = f"{origin}{_issue_comments_path(binding)}"
         try:
             value = await self._send("POST", url, token=token, json_body={"body": arguments.body})
-        except GitHubApiError as error:
+        except ProviderHttpError as error:
             if error.code not in {
                 "invalid_provider_response",
                 "provider_unavailable",
@@ -101,11 +101,11 @@ class GitHubNativeClient:
             params={"page": str(arguments.page), "per_page": str(arguments.per_page)},
         )
         if not isinstance(value, list) or len(value) > arguments.per_page:
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         try:
             items = tuple(self._comment(item) for item in value)
         except (ValueError, ValidationError) as error:
-            raise GitHubApiError("invalid_provider_response") from error
+            raise ProviderHttpError("invalid_provider_response") from error
         return GitHubCommentPage(
             items=items,
             page=arguments.page,
@@ -119,7 +119,7 @@ class GitHubNativeClient:
     ) -> GitHubTarget:
         value = await self._request("GET", _target_path(binding), binding=binding)
         if not isinstance(value, dict):
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         try:
             title = _required_string(value, "title", max_length=40_000)
             state = _required_string(value, "state", max_length=128)
@@ -137,7 +137,7 @@ class GitHubNativeClient:
                 merged=_optional_bool(value.get("merged")),
             )
         except (ValueError, ValidationError) as error:
-            raise GitHubApiError("invalid_provider_response") from error
+            raise ProviderHttpError("invalid_provider_response") from error
 
     async def list_pr_files(
         self,
@@ -145,7 +145,7 @@ class GitHubNativeClient:
         arguments: GitHubListPrFilesArguments,
     ) -> GitHubPrFilePage:
         if binding.target_kind != "pull_request":
-            raise GitHubApiError("action_not_available")
+            raise ProviderHttpError("action_not_available")
         value = await self._request(
             "GET",
             f"{_repository_path(binding)}/pulls/{binding.number}/files",
@@ -153,7 +153,7 @@ class GitHubNativeClient:
             params={"page": str(arguments.page), "per_page": str(arguments.per_page)},
         )
         if not isinstance(value, list) or len(value) > arguments.per_page:
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         remaining = _PATCH_TOTAL_MAX_BYTES
         truncated_any = False
         items: list[GitHubPrFile] = []
@@ -177,7 +177,7 @@ class GitHubNativeClient:
                     )
                 )
         except (ValueError, ValidationError) as error:
-            raise GitHubApiError("invalid_provider_response") from error
+            raise ProviderHttpError("invalid_provider_response") from error
         return GitHubPrFilePage(
             items=tuple(items),
             page=arguments.page,
@@ -200,12 +200,12 @@ class GitHubNativeClient:
         try:
             origin = await self._endpoint_validator.validate(self._api_origin, resolve_dns=True)
         except ValueError as error:
-            raise GitHubApiError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         token = await self._token_provider.token(repository_id=binding.repository_id)
         if isinstance(self._token_provider, GitHubPersonalTokenProvider):
             repository = await self._token_provider.rest.object(_repository_path(binding), token=token)
             if repository.get("id") != binding.repository_id:
-                raise GitHubApiError("invalid_binding")
+                raise ProviderHttpError("invalid_binding")
         return origin, token
 
     async def _send(
@@ -232,10 +232,10 @@ class GitHubNativeClient:
                 follow_redirects=False,
             ) as response:
                 return await read_github_response(response, max_bytes=self._response_max_bytes)
-        except GitHubApiError:
+        except ProviderHttpError:
             raise
         except httpx2.HTTPError as error:
-            raise GitHubApiError("provider_unavailable") from error
+            raise ProviderHttpError("provider_unavailable") from error
 
     def _comment(self, value: JsonValue) -> GitHubComment:
         if not isinstance(value, dict):

@@ -4,14 +4,18 @@ import json
 
 import httpx2
 import pytest
-from a13n_service.connectivity.connectors.contracts import ConnectionBinding, ConnectorProviderError, SetupContext
-from a13n_service.connectivity.connectors.http import ConnectorHttpClient
-from a13n_service.connectivity.connectors.providers.composio import ComposioProvider
-from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
+from a13n_harness.providers.connector.composio.runtime import ComposioProvider
+from a13n_harness.providers.connector.configuration import ApiKeyCredentials
+from a13n_harness.providers.connector.contracts import ConnectionBinding, ConnectorProviderError, SetupContext
+from a13n_harness.providers.connector.http import ConnectorHttpClient
 from jsonschema import Draft202012Validator
 from pydantic import ValidationError
 
-from .connector_helpers import allow_dispatch
+pytestmark = pytest.mark.anyio
+
+
+async def allow_dispatch():
+    return None
 
 
 class _AllowEndpoint:
@@ -22,8 +26,6 @@ class _AllowEndpoint:
 
 def _context(*, callback: bool = False) -> SetupContext:
     return SetupContext(
-        attempt_id="csa_abcdef1234567890",
-        generation=1,
         connector_key="github",
         external_user_correlation="usrh_opaque",
         callback_url=("https://foundation.example/connector-setup/callback" if callback else None),
@@ -185,7 +187,7 @@ async def test_composio_verified_callback_safe_projection_and_pinned_tool_versio
 
 def test_connector_setup_contracts_reject_provider_credentials_and_unpinned_versions() -> None:
     with pytest.raises(ValidationError):
-        from a13n_service.connectivity.connectors.providers.composio.configuration import ComposioSetup
+        from a13n_harness.providers.connector.composio.configuration import ComposioSetup
 
         ComposioSetup.model_validate({"auth_config_id": "ac", "toolkit_version": "latest"})
 
@@ -235,7 +237,7 @@ async def test_composio_account_disabled_flag_overrides_active_status():
     ],
 )
 def test_composio_authorization_origin_is_exact(url):
-    from a13n_service.connectivity.connectors.providers.composio.runtime import _authorization_url
+    from a13n_harness.providers.connector.composio.runtime import _authorization_url
 
     with pytest.raises(ValueError):
         _authorization_url(url)
@@ -243,8 +245,9 @@ def test_composio_authorization_origin_is_exact(url):
 
 @pytest.mark.anyio
 async def test_same_type_accounts_have_independent_directories_and_bindings() -> None:
-    from a13n_service.connectivity.connectors.discovery import validate_connectors
-    from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
+    from contextlib import AsyncExitStack
+
+    from a13n_harness.providers.connector.builtins import COMPOSIO
 
     requests: list[httpx2.Request] = []
 
@@ -299,38 +302,37 @@ async def test_same_type_accounts_have_independent_directories_and_bindings() ->
         raise AssertionError("construction, closing, and rejected setup must perform no remote mutation")
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        registry = built_in_connector_provider_registry(http, _AllowEndpoint(), response_max_bytes=65536)
-        definition = registry.require("composio")
+        transport = ConnectorHttpClient(http, _AllowEndpoint(), response_max_bytes=65536)
+        definition = COMPOSIO
         assert requests == []
-        assert definition.definition().credential_schema["properties"]["api_key"]["writeOnly"] is True
-        first = definition.configure({}, {"api_key": "first"})
-        second = definition.configure({}, {"api_key": "second"})
-        first_items = await first.discover_connectors()
-        second_items = await second.discover_connectors()
-        validate_connectors(first_items)
-        assert first_items[0].setup_schema != second_items[0].setup_schema
-        assert first_items[1].authentication_methods == ()
-        assert len(second_items) == 2
-        assert "must not leak" not in repr(first_items)
-        with pytest.raises(ConnectorProviderError, match="invalid_setup_options"):
-            await second.start_setup(
-                setup={"auth_config_id": "first-config", "toolkit_version": "20260903_01"},
-                context=_context(callback=True),
+        assert definition.credential_model.model_json_schema()["properties"]["api_key"]["writeOnly"] is True
+        async with AsyncExitStack() as stack:
+            first = await stack.enter_async_context(definition.open({}, {"api_key": "first"}, http=transport))
+            second = await stack.enter_async_context(definition.open({}, {"api_key": "second"}, http=transport))
+            first_items = await first.discover_connectors()
+            second_items = await second.discover_connectors()
+            assert first_items[0].setup_schema != second_items[0].setup_schema
+            assert first_items[1].authentication_methods == ()
+            assert len(second_items) == 2
+            assert "must not leak" not in repr(first_items)
+            with pytest.raises(ConnectorProviderError, match="invalid_setup_options"):
+                await second.start_setup(
+                    setup={"auth_config_id": "first-config", "toolkit_version": "20260903_01"},
+                    context=_context(callback=True),
+                )
+            count = len(requests)
+            second.connect(
+                ConnectionBinding(
+                    external_user_correlation="usrh_opaque", external_ref="verified", connector_key="github"
+                )
             )
-        count = len(requests)
-        connection = second.connect(
-            ConnectionBinding(external_user_correlation="usrh_opaque", external_ref="verified", connector_key="github")
-        )
-        await connection.aclose()
-        await second.aclose()
-        await first.aclose()
-        assert len(requests) == count
-        assert not http.is_closed
+            assert len(requests) == count
+            assert not http.is_closed
 
 
 @pytest.mark.anyio
 async def test_discovery_rejects_repeated_pages_and_partial_failures() -> None:
-    from a13n_service.connectivity.connectors.providers.discovery import DirectoryBudget, directory_items
+    from a13n_harness.providers.connector.directory import DirectoryBudget, directory_items
 
     for responses in [
         [
@@ -351,28 +353,10 @@ async def test_discovery_rejects_repeated_pages_and_partial_failures() -> None:
                 )
 
 
-@pytest.mark.parametrize(
-    "schema",
-    [
-        {"$ref": "https://malicious.example/schema"},
-        {"type": "object", "properties": {"access_token": {"type": "string"}}},
-        {"type": "object", "properties": {"option": {"type": "string", "writeOnly": True}}},
-    ],
-)
-def test_discovery_rejects_unsafe_setup_schemas(schema) -> None:
-    from a13n_service.connectivity.connectors.contracts import DiscoveredConnector
-    from a13n_service.connectivity.connectors.discovery import validate_connectors
-
-    with pytest.raises(ConnectorProviderError, match="unsafe_setup_schema"):
-        validate_connectors(
-            (DiscoveredConnector(key="github", name="GitHub", setup_schema=schema, authentication_methods=("oauth2",)),)
-        )
-
-
 @pytest.mark.anyio
 async def test_malformed_setup_response_retains_unknown_outcome(monkeypatch) -> None:
-    from a13n_service.connectivity.connectors.contracts import DiscoveredConnector
-    from a13n_service.connectivity.connectors.providers.composio.catalog import AuthConfiguration, ComposioCatalog
+    from a13n_harness.providers.connector.composio.catalog import AuthConfiguration, ComposioCatalog
+    from a13n_harness.providers.connector.contracts import DiscoveredConnector
 
     async def connector(self, key):
         return DiscoveredConnector(
@@ -394,7 +378,7 @@ async def test_malformed_setup_response_retains_unknown_outcome(monkeypatch) -> 
 
 @pytest.mark.anyio
 async def test_directory_budget_covers_catalog_and_auth_config_reads(monkeypatch) -> None:
-    from a13n_service.connectivity.connectors.providers import discovery
+    from a13n_harness.providers.connector import directory as discovery
 
     monkeypatch.setattr(discovery, "DISCOVERY_MAX_TOOLS", 2)
     responses = iter(
@@ -528,10 +512,13 @@ async def test_composio_directory_definitions_avoid_redundant_detail_requests():
         detail_requests.append(path)
         return httpx2.Response(200, json=definition("GITHUB_SECOND"))
 
-    from a13n_service.connectivity.connectors.tool_discovery import discover_tools
-
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        tools, version = await discover_tools(_composio(http).tool_catalog("github"))
+        catalog = _composio(http).tool_catalog("github")
+        first = await catalog.discover_tools(cursor=None)
+        second = await catalog.discover_tools(cursor=first.next_cursor)
+        tools = first.items + second.items
+        version = first.provider_version
+        assert second.provider_version == version and second.next_cursor is None
     assert [tool.key for tool in tools] == ["GITHUB_FIRST", "GITHUB_SECOND", "GITHUB_THIRD"]
     assert version == "20260903_01"
     assert all(tool.output_schema == schema for tool in tools)

@@ -60,6 +60,7 @@ function setup(
   kind: "workspace" | "organization",
   surface: string,
   deployment = false,
+  overrides: Record<string, unknown> = {},
 ) {
   const connector = surface === "connector";
   const scope = { kind, id: kind === "workspace" ? "ws_test" : "org_test" };
@@ -78,6 +79,7 @@ function setup(
     configuration_source: deployment ? "deployment" : "user",
   };
   const definition = {
+    authentication: { mode: "required", cases: [] },
     deployment_managed: deployment,
     type,
     display_name: connector ? "Composio" : "e2b",
@@ -91,6 +93,7 @@ function setup(
       properties: { api_key: { type: "string" } },
       required: ["api_key"],
     },
+    ...overrides,
   };
   const listPath = `/api/v1/${kind === "workspace" ? "workspaces/{workspace}" : "organizations/{organization}"}/${surface}-providers`;
   const detailPath = `/api/v1/${surface}-providers/{${connector ? "connector_provider_id" : "resource_id"}}`;
@@ -278,4 +281,69 @@ it("shows deployment providers read-only without a manual creation action", asyn
   expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
   expect(http.PATCH).not.toHaveBeenCalled();
+});
+
+it("preserves structured Connector credentials and setup help", async () => {
+  const user = userEvent.setup();
+  const { listPath } = setup("workspace", "connector", false, {
+    setup_url: "https://example.com/keys",
+    setup_label: "Create Connector credentials",
+    credential_schema: {
+      type: "object",
+      properties: {
+        authorization: {
+          type: "object",
+          properties: { token: { type: "string", title: "Token" } },
+          required: ["token"],
+        },
+        revision: { type: "integer", title: "Revision" },
+        tier: { type: "string", title: "Tier", enum: ["sandbox", "live"] },
+      },
+      required: ["authorization", "revision", "tier"],
+    },
+  });
+  await screen.findByText("Existing provider");
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(screen.getByRole("combobox", { name: "Provider type" }));
+  await user.click(await screen.findByRole("option", { name: "Composio" }));
+  expect(
+    screen
+      .getByRole("link", { name: "Create Connector credentials" })
+      .getAttribute("href"),
+  ).toBe("https://example.com/keys");
+  await user.type(screen.getByLabelText("Token"), "nested-secret");
+  await user.type(screen.getByLabelText("Revision"), "7");
+  await user.click(screen.getByRole("combobox", { name: "Tier" }));
+  await user.click(await screen.findByRole("option", { name: "sandbox" }));
+  await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await waitFor(() =>
+    expect(http.POST).toHaveBeenCalledWith(
+      listPath,
+      expect.objectContaining({
+        body: expect.objectContaining({
+          credentials: {
+            authorization: { token: "nested-secret" },
+            revision: 7,
+            tier: "sandbox",
+          },
+        }),
+      }),
+    ),
+  );
+});
+
+it("allows explicit removal of required Connector credentials", async () => {
+  const user = userEvent.setup();
+  const { detailPath } = setup("workspace", "connector");
+  await user.click(await screen.findByText("Existing provider"));
+  await user.click(await screen.findByRole("button", { name: "Remove" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() =>
+    expect(http.PATCH).toHaveBeenCalledWith(
+      detailPath,
+      expect.objectContaining({
+        body: expect.objectContaining({ credentials: null }),
+      }),
+    ),
+  );
 });

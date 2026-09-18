@@ -4,15 +4,15 @@ import json
 
 import httpx2
 import pytest
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
-from a13n_service.connectivity.connectors.http import ConnectorHttpClient
-from a13n_service.connectivity.connectors.providers.composio.catalog import (
+from a13n_harness.providers.connector.composio.catalog import (
     AuthConfiguration,
     ComposioCatalog,
     connector_metadata,
 )
+from a13n_harness.providers.connector.contracts import ConnectorProviderError
+from a13n_harness.providers.connector.http import ConnectorHttpClient
 
-from .connector_helpers import AllowEndpoint
+from .test_connector_adapters import _AllowEndpoint as AllowEndpoint
 
 
 def toolkit(**overrides):
@@ -131,7 +131,7 @@ async def test_managed_configuration_creation_reconciles_before_single_use_gate(
 
 
 def test_hosted_composio_rejects_user_configuration():
-    from a13n_service.connectivity.connectors.providers.composio.configuration import ComposioConfiguration
+    from a13n_harness.providers.connector.composio.configuration import ComposioConfiguration
     from pydantic import ValidationError
 
     assert ComposioConfiguration.model_json_schema()["properties"] == {}

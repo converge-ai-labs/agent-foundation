@@ -1,4 +1,4 @@
-"""One inert manifest contributes independently usable Model, Web and Memory definitions."""
+"""One inert manifest contributes Model, Web, Memory and Connector definitions."""
 
 from contextlib import asynccontextmanager
 from typing import Literal
@@ -19,6 +19,8 @@ from a13n_harness.providers.web import (
 from a13n_logging import get_logger
 from anyio import move_on_after
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
+
+from .connector import acme_connector
 
 
 class AcmeWebConfiguration(BaseModel):
@@ -161,4 +163,6 @@ acme_memory = MemoryProviderDefinition(
     ),
 )
 
-manifest = ProviderManifest(api_version=1, web=(acme_web,), model=(acme_model,), memory=(acme_memory,))
+manifest = ProviderManifest(
+    api_version=1, web=(acme_web,), model=(acme_model,), memory=(acme_memory,), connector=(acme_connector,)
+)

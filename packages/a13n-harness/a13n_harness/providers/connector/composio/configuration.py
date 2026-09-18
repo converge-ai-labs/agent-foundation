@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pydantic import Field
 
-from ...domain import JsonObject, StrictModel
-from ...validation import model_json
+from ..contracts import JsonObject, StrictModel
+from ..validation import model_json
 
 COMPOSIO_ENDPOINT = "https://backend.composio.dev"
 
@@ -20,5 +20,5 @@ class ComposioSetup(StrictModel):
     connection_data: JsonObject = Field(default_factory=dict)
 
 
-def validate_setup(configuration: JsonObject, connector_key: str, value: object) -> JsonObject:
+def validate_setup(configuration: ComposioConfiguration, connector_key: str, value: object) -> JsonObject:
     return model_json(ComposioSetup.model_validate(value))

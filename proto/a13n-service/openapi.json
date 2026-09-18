@@ -2339,7 +2339,7 @@
           "setup_actions": {
             "items": {
               "enum": [
-                "configure_provider",
+                "open_provider",
                 "configure_model",
                 "contact_administrator"
               ],
@@ -5851,9 +5851,12 @@
         "title": "ConnectorProviderCommandRequest",
         "type": "object"
       },
-      "ConnectorProviderDefinition": {
+      "ConnectorProviderMetadata": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "configuration_schema": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -5872,6 +5875,28 @@
             "title": "Display Name",
             "type": "string"
           },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -5881,17 +5906,18 @@
           "type",
           "display_name",
           "configuration_schema",
-          "credential_schema"
+          "credential_schema",
+          "authentication"
         ],
-        "title": "ConnectorProviderDefinition",
+        "title": "ConnectorProviderMetadata",
         "type": "object"
       },
-      "ConnectorProviderDefinitionCollection": {
+      "ConnectorProviderMetadataCollection": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/ConnectorProviderDefinition"
+              "$ref": "#/components/schemas/ConnectorProviderMetadata"
             },
             "title": "Items",
             "type": "array"
@@ -5904,7 +5930,7 @@
         "required": [
           "items"
         ],
-        "title": "ConnectorProviderDefinitionCollection",
+        "title": "ConnectorProviderMetadataCollection",
         "type": "object"
       },
       "ConnectorProviderStatus": {
@@ -5992,11 +6018,7 @@
         "additionalProperties": false,
         "properties": {
           "annotations": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Annotations",
-            "type": "object"
+            "$ref": "#/components/schemas/JsonObject"
           },
           "description": {
             "maxLength": 16384,
@@ -6004,11 +6026,7 @@
             "type": "string"
           },
           "input_schema": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Input Schema",
-            "type": "object"
+            "$ref": "#/components/schemas/JsonObject"
           },
           "key": {
             "maxLength": 128,
@@ -6019,16 +6037,12 @@
           "output_schema": {
             "anyOf": [
               {
-                "additionalProperties": {
-                  "$ref": "#/components/schemas/JsonValue"
-                },
-                "type": "object"
+                "$ref": "#/components/schemas/JsonObject"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Output Schema"
+            ]
           },
           "provider_version": {
             "maxLength": 128,
@@ -6762,15 +6776,18 @@
             "type": "object"
           },
           "credentials": {
-            "additionalProperties": {
-              "format": "password",
-              "type": "string",
-              "writeOnly": true
-            },
-            "maxProperties": 8,
-            "minProperties": 1,
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credentials",
-            "type": "object",
             "writeOnly": true
           },
           "name": {
@@ -6788,8 +6805,7 @@
         "required": [
           "name",
           "type",
-          "configuration",
-          "credentials"
+          "configuration"
         ],
         "title": "CreateConnectorProviderRequest",
         "type": "object"
@@ -10631,6 +10647,13 @@
           "content"
         ],
         "title": "ItemResource",
+        "type": "object"
+      },
+      "JsonObject": {
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "title": "JsonObject",
         "type": "object"
       },
       "JsonValue": {
@@ -14580,15 +14603,18 @@
         "additionalProperties": false,
         "properties": {
           "credentials": {
-            "additionalProperties": {
-              "format": "password",
-              "type": "string",
-              "writeOnly": true
-            },
-            "maxProperties": 8,
-            "minProperties": 1,
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Credentials",
-            "type": "object",
             "writeOnly": true
           },
           "expected_version": {
@@ -20339,12 +20365,8 @@
             "anyOf": [
               {
                 "additionalProperties": {
-                  "format": "password",
-                  "type": "string",
-                  "writeOnly": true
+                  "$ref": "#/components/schemas/JsonValue"
                 },
-                "maxProperties": 8,
-                "minProperties": 1,
                 "type": "object"
               },
               {
@@ -29607,7 +29629,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ConnectorProviderDefinitionCollection"
+                  "$ref": "#/components/schemas/ConnectorProviderMetadataCollection"
                 }
               }
             },

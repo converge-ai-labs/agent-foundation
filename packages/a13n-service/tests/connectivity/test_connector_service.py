@@ -7,6 +7,7 @@ from datetime import timedelta
 import pytest
 from a13n_service.connectivity.connections.access import ConnectionError
 from a13n_service.connectivity.connections.domain import ConnectorSource, CreateConnectionRequest
+from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.domain import (
     CreateConnectorProviderRequest,
@@ -19,7 +20,6 @@ from a13n_service.connectivity.connectors.models import (
     ConnectorConnectionRecord,
 )
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.storage import transaction
 from sqlalchemy import select
@@ -36,7 +36,7 @@ def connector_backend() -> FakeConnectorBackend:
 
 
 @pytest.fixture
-def connector_registry(connector_backend: FakeConnectorBackend) -> ConnectorProviderRegistry:
+def connector_registry(connector_backend: FakeConnectorBackend) -> ConnectorProviders:
     return fake_registry(connector_backend)
 
 
@@ -580,8 +580,8 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     rejection,
 ):
     from a13n_harness import AgentSpec, HarnessBuilder, HarnessInstrumentation, HarnessTraceContent
+    from a13n_harness.providers.connector.contracts import ConnectorProviderError, ConnectorToolOutcome
     from a13n_harness.providers.endpoint_policy import EndpointPolicy
-    from a13n_service.connectivity.connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
     from a13n_service.connectivity.execution import AttemptToolScope
     from a13n_service.connectivity.mcp.transport import RemoteTransport
     from a13n_service.connectivity.selection_domain import ConnectionRunSelection
@@ -977,7 +977,7 @@ async def test_provider_tool_preview_needs_no_connection(connector_services, con
 async def test_expired_unattached_setup_requires_action_without_a_binding(
     connector_services, connector_registry, connectivity_sessions, monkeypatch
 ):
-    from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
+    from a13n_harness.providers.connector.contracts import ConnectorProviderError
 
     from .connector_helpers import FakeConnectorProvider
 

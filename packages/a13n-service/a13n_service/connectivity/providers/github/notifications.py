@@ -4,13 +4,13 @@ from datetime import datetime, timedelta
 from email.utils import format_datetime, parsedate_to_datetime
 from urllib.parse import urlsplit
 
+from a13n_harness.providers.http import ProviderHttpError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import ExternalRef, InboundEvent
 from a13n_service.temporal import assume_utc
 
-from .api import GitHubApiError
 from .rest import GitHubREST
 from .wire import CONTEXT_VERSION
 
@@ -73,15 +73,15 @@ async def scan_notifications(
             if page == 1 and response.headers.get("date"):
                 cursor = min(before, assume_utc(parsedate_to_datetime(response.headers["date"])))
         except (ValueError, TypeError, OverflowError):
-            raise GitHubApiError("invalid_provider_response") from None
+            raise ProviderHttpError("invalid_provider_response") from None
         if response.status == 304:
             return values, cursor, interval
         if not isinstance(response.data, list):
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         values.extend(Notification.model_validate(item) for item in response.data)
         if len(response.data) < 50 or 'rel="next"' not in response.headers.get("link", ""):
             return sorted(values, key=lambda item: (item.updated_at, item.id)), cursor, interval
-    raise GitHubApiError("notification_scan_too_large")
+    raise ProviderHttpError("notification_scan_too_large")
 
 
 async def notification_event(
@@ -99,14 +99,14 @@ async def notification_event(
     # The subject path is validated against the repository supplied by GitHub.
     owner = notification.repository.owner.get("login")
     if not isinstance(owner, str) or not owner:
-        raise GitHubApiError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     try:
         number = int(urlsplit(subject.url).path.rstrip("/").rsplit("/", 1)[-1])
     except ValueError:
-        raise GitHubApiError("invalid_provider_response") from None
+        raise ProviderHttpError("invalid_provider_response") from None
     expected = f"{rest.origin}/repos/{owner}/{notification.repository.name}/{'pulls' if kind == 'pull_request' else 'issues'}/{number}"
     if subject.url.rstrip("/") != expected or number <= 0:
-        raise GitHubApiError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     source_url = subject.latest_comment_url or subject.url
     response = await rest.request(source_url, token=token)
     if response.status in {404, 410} and source_url != subject.url:
@@ -115,7 +115,7 @@ async def notification_event(
     if response.status in {404, 410}:
         return None
     if not isinstance(response.data, dict):
-        raise GitHubApiError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     source = response.data
     actor: JsonObject = {}
     # Only original content can identify its author. Edits may be made by someone else.

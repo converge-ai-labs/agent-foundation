@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
-from contextlib import AsyncExitStack, aclosing, asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from typing import Protocol
@@ -11,6 +11,8 @@ from typing import Protocol
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.observation import record_tool_outcome_unknown
+from a13n_harness.providers.connector.contracts import ConnectorProviderError, ConnectorToolOutcome
+from a13n_harness.providers.connector.tool_errors import rejected_tool_outcome
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from anyio import to_thread
 from jsonschema import Draft202012Validator, ValidationError
@@ -32,18 +34,16 @@ from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
+from .connectors.composition import ConnectorProviders
 from .connectors.connection_access import connection_binding
-from .connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
 from .connectors.management import (
     ProviderSnapshot,
-    configure_provider,
     decode_credentials,
+    open_provider,
     require_connection,
     require_connector_provider,
 )
-from .connectors.registry import ConnectorProviderRegistry
 from .connectors.tool_discovery import discover_tools, mcp_tool
-from .connectors.tool_errors import rejected_tool_outcome
 from .domain import JsonObject
 from .mcp.management import require_connection as require_mcp_connection
 from .mcp.refresh import OAuthCredentialRefresh
@@ -79,7 +79,7 @@ class ExternalToolRuntime:
         self,
         sessions: async_sessionmaker[AsyncSession],
         protector: SecretProtector,
-        providers: ConnectorProviderRegistry,
+        providers: ConnectorProviders,
         remote: RemoteTransport,
         endpoints: EndpointPolicy,
         http_client: httpx2.AsyncClient,
@@ -297,14 +297,15 @@ class ExternalToolRuntime:
         async def connection():
             accepted = await current_binding()
             _, binding, provider, credential = accepted
-            raw = credential.decrypt(self._protector)
-            runtime = configure_provider(self._providers, provider, decode_credentials(raw))
+            raw = credential.decrypt(self._protector) if credential.ciphertext is not None else None
+            runtime = open_provider(self._providers, provider, decode_credentials(raw))
 
             async def before_dispatch() -> None:
                 if await current_binding() != accepted:
                     raise ValueError("connector_connection_changed")
 
-            async with aclosing(runtime), aclosing(runtime.connect(binding)) as connected:
+            async with runtime as provider_runtime:
+                connected = provider_runtime.connect(binding)
                 yield connected, before_dispatch
 
         async with connection() as (connected, _):

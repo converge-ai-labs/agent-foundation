@@ -10,14 +10,14 @@ from datetime import datetime, timedelta
 
 import anyio
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.temporal import Clock, utc_now
 
-from .api import GitHubApiError, read_github_response
+from .api import read_github_response
 
 GITHUB_API_VERSION = "2026-03-10"
 _TOKEN_RESPONSE_MAX_BYTES = 256 * 1024
@@ -68,7 +68,7 @@ class GitHubInstallationTokenProvider:
 
     async def token(self, *, repository_id: int | None = None) -> str:
         if repository_id is not None and repository_id <= 0:
-            raise GitHubApiError("invalid_binding")
+            raise ProviderHttpError("invalid_binding")
         now = self._clock()
         cached = self._tokens.get(repository_id)
         if cached is not None and now < cached.refresh_at:
@@ -82,7 +82,7 @@ class GitHubInstallationTokenProvider:
                 return cached.value
             try:
                 refreshed = await self._refresh(repository_id=repository_id, now=now)
-            except GitHubApiError:
+            except ProviderHttpError:
                 if cached is not None and now < cached.expires_at:
                     return cached.value
                 raise
@@ -96,7 +96,7 @@ class GitHubInstallationTokenProvider:
         try:
             origin = await self._endpoint_validator.validate(self._api_origin, resolve_dns=True)
         except ValueError as error:
-            raise GitHubApiError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         jwt = self.app_token(now)
         try:
             async with self._http_client.stream(
@@ -114,22 +114,22 @@ class GitHubInstallationTokenProvider:
                 follow_redirects=False,
             ) as response:
                 value = await read_github_response(response, max_bytes=_TOKEN_RESPONSE_MAX_BYTES)
-        except GitHubApiError:
+        except ProviderHttpError:
             raise
         except httpx2.HTTPError as error:
-            raise GitHubApiError("provider_unavailable") from error
+            raise ProviderHttpError("provider_unavailable") from error
         if not isinstance(value, dict):
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         token = value.get("token")
         expires_at_value = value.get("expires_at")
         if not isinstance(token, str) or not 1 <= len(token) <= 4096 or not isinstance(expires_at_value, str):
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         try:
             expires_at = datetime.fromisoformat(expires_at_value.replace("Z", "+00:00"))
         except ValueError as error:
-            raise GitHubApiError("invalid_provider_response") from error
+            raise ProviderHttpError("invalid_provider_response") from error
         if expires_at.tzinfo is None or expires_at <= now + timedelta(minutes=2):
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         return _CachedToken(
             value=token,
             refresh_at=expires_at - timedelta(seconds=60),
@@ -138,7 +138,7 @@ class GitHubInstallationTokenProvider:
 
     def app_token(self, now: datetime) -> str:
         if now.tzinfo is None:
-            raise GitHubApiError("invalid_clock")
+            raise ProviderHttpError("invalid_clock")
         header = _base64url_json({"alg": "RS256", "typ": "JWT"})
         payload = _base64url_json(
             {

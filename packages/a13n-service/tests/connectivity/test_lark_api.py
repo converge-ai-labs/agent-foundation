@@ -2,7 +2,8 @@
 
 import httpx2
 import pytest
-from a13n_service.connectivity.providers.lark.api import LarkApiError, read_lark_response
+from a13n_harness.providers.http import ProviderHttpError
+from a13n_service.connectivity.providers.lark.api import read_lark_response
 
 pytestmark = pytest.mark.anyio
 
@@ -11,7 +12,7 @@ pytestmark = pytest.mark.anyio
     "payload", [{}, {"code": None}, {"code": []}, {"code": {}}, {"code": False}, {"code": "0"}, {"code": 0.0}]
 )
 async def test_lark_response_requires_an_integer_status(payload):
-    with pytest.raises(LarkApiError) as caught:
+    with pytest.raises(ProviderHttpError) as caught:
         await read_lark_response(httpx2.Response(200, json=payload), max_bytes=1024)
     assert caught.value.code == "invalid_provider_response"
 
@@ -20,7 +21,7 @@ async def test_lark_response_requires_an_integer_status(payload):
     "code, expected", [(99991400, "rate_limited"), (99991401, "rate_limited"), (99991663, "provider_rejected")]
 )
 async def test_lark_provider_failures_keep_their_classification(code, expected):
-    with pytest.raises(LarkApiError) as caught:
+    with pytest.raises(ProviderHttpError) as caught:
         await read_lark_response(
             httpx2.Response(200, headers={"retry-after": "20"}, json={"code": code}), max_bytes=1024
         )

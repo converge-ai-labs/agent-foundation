@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, Mock
 
 import httpx2
 import pytest
+from a13n_harness.providers.connector.contracts import ConnectorToolOutcome
 from a13n_service.agents.domain import ChildAgentExecution, EffectiveAgentConfig, ResolvedSubagentEdge
 from a13n_service.connectivity import execution as tool_execution
-from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport

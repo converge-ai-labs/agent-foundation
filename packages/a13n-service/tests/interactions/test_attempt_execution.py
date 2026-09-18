@@ -907,7 +907,7 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
 
     import httpx2
     from a13n_service.connectivity import execution
-    from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+    from a13n_service.connectivity.connectors.composition import ConnectorProviders
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
     from a13n_service.connectivity.mcp.transport import RemoteTransport
@@ -964,7 +964,7 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     runtime = ExternalToolRuntime(
         interaction_sessions,
         SecretProtector(key=b"k" * 32, encryption_key_id="test"),
-        ConnectorProviderRegistry(()),
+        ConnectorProviders(),
         RemoteTransport(policy),
         policy,
         Mock(spec=httpx2.AsyncClient),

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
+from a13n_harness.providers.connector.contracts import ConnectorToolPage
 from fastapi import APIRouter, Depends, Query, Request, Response, status
 
 from a13n_service.application_errors import ErrorCategory
@@ -14,13 +15,13 @@ from a13n_service.iam.http.resource_dependencies import OrganizationId, Workspac
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
-from .contracts import ConnectorToolPage
 from .domain import (
     Connector,
     ConnectorCollection,
     ConnectorProvider,
     ConnectorProviderCollection,
     ConnectorProviderCommandRequest,
+    ConnectorProviderMetadataCollection,
     ConnectorProviderStatus,
     ConnectorProviderTestResult,
     CreateConnectorProviderRequest,
@@ -28,7 +29,6 @@ from .domain import (
     UpdateConnectorProviderRequest,
 )
 from .errors import ConnectorError
-from .registry import ConnectorProviderDefinitionCollection
 from .service import ConnectorProviderService
 
 router = APIRouter(tags=["connectivity-management"])
@@ -50,8 +50,8 @@ def _etag(response: Response, resource: ConnectorProvider) -> None:
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
 
 
-@router.get("/api/v1/connector-provider-types", response_model=ConnectorProviderDefinitionCollection)
-async def list_connector_provider_types(request: Request, actor: Actor) -> ConnectorProviderDefinitionCollection:
+@router.get("/api/v1/connector-provider-types", response_model=ConnectorProviderMetadataCollection)
+async def list_connector_provider_types(request: Request, actor: Actor) -> ConnectorProviderMetadataCollection:
     return await _connector_providers(request).type_definitions(actor=actor)
 
 

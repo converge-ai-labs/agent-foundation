@@ -6,11 +6,14 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from a13n_harness.providers.connector import ConnectorProviderCatalog
+from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
+from a13n_harness.providers.connector.http import ConnectorHttpClient
+from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.domain import CreateConnectorProviderRequest
 from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.connectors.models import ConnectorAuthorizationRecord, ConnectorConnectionRecord
-from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.storage import short_session
@@ -136,7 +139,10 @@ async def composio_setup(composio_sessions, credential_protector):
         return await hook(request, result) if hook is not None else result
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(response)) as http:
-        registry = built_in_connector_provider_registry(http, AllowEndpoint(), response_max_bytes=1024 * 1024)
+        registry = ConnectorProviders(
+            ConnectorProviderCatalog(BUILT_IN_CONNECTOR_PROVIDERS),
+            ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=1024 * 1024),
+        )
         state["registry"] = registry
         providers = ConnectorProviderService(sessions, registry, credential_protector, clock=lambda: now[0])
         service = ConnectorConnectionService(

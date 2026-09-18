@@ -27,7 +27,7 @@ async def test_five_configuration_resources_support_org_collections(
         settings(tmp_path, service_database),
         components=Components(
             request_authenticator=authenticate,
-            connector_provider_registry=fake_registry(FakeConnectorBackend()),
+            connector_providers=fake_registry(FakeConnectorBackend()),
             environment_provider_catalog=build_environment_provider_catalog(builtin_keys=("direct-local",)),
             model_catalog=model_catalog,
         ),

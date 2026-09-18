@@ -70,3 +70,41 @@ async with acme_memory.open(
 ```
 
 The fictional endpoint speaks the Mem0 OSS protocol, so this implementation reuses the OSS adapter without importing the Platform SDK. Tests replace only HTTP and retain native subject/result validation. `access: "public"` forbids credentials; `"optional"` accepts their absence. Hosted credential removal is separate from runtime eligibility: removing a required credential succeeds but later content calls fail until it is restored.
+
+## Connector use without Service
+
+The same manifest includes `acme_connector`, a fictional CRM adapter. Its credential schema has a nested secret token, numeric revision and a sandbox/live choice; configuration selects a region and required/optional/forbidden authentication. Service persists these typed values as an encrypted bundle and supplies current-account guards at dispatch.
+
+```python
+from a13n_harness.providers.plugins import load_provider_plugins
+from a13n_harness.providers.connector.contracts import ConnectionBinding, SetupContext
+
+connector = load_provider_plugins(("acme",))[0].manifest.connector[0]
+async with connector.open(
+    {"region": "eu"},
+    {"authorization": {"token": "your-key"}, "revision": 1, "tier": "sandbox"},
+) as provider:
+    await provider.test()
+    apps = await provider.discover_connectors()
+    context = SetupContext(connector_key="crm", external_user_correlation="your-user")
+    started = await provider.start_setup(setup={}, context=context)
+    account = await provider.inspect_setup(setup_ref=started.setup_ref, context=context)
+    connection = provider.connect(
+        ConnectionBinding(
+            connector_key="crm",
+            external_ref=account.external_ref,
+            external_user_correlation=context.external_user_correlation,
+        )
+    )
+    tools = await connection.discover_tools(cursor=None)
+    result = await connection.execute_tool(
+        tool_key="lookup",
+        provider_version=tools.provider_version,
+        arguments={},
+        request_id="your-operation-id",
+    )
+    # Remote revoke is explicit, never a side effect of leaving the context.
+    await connection.revoke(operation_id="your-revoke-id")
+```
+
+The URLs are illustrative; tests supply a bounded fixture transport. `open` owns its client unless the host supplies `http`. A borrowed client remains open. Custom provider contexts own any additional resources and must implement bounded cancellation-safe teardown within their own structured scopes.

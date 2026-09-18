@@ -2,16 +2,16 @@
 
 from __future__ import annotations
 
+import json
 from asyncio import get_running_loop, timeout_at
 from dataclasses import dataclass, field
 
-from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
-from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.management import canonical_json
+from a13n_harness.providers.connector.contracts import JsonObject
 
-from ..contracts import ConnectorProviderError
-from ..http import ConnectorHttpClient
-from ..validation import optional_string, required_object
+from .bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
+from .contracts import ConnectorProviderError
+from .http import ConnectorHttpClient
+from .validation import optional_string, required_object
 
 
 @dataclass(slots=True)
@@ -24,7 +24,7 @@ class DirectoryBudget:
     def record(self, value: JsonObject, item_count: int) -> None:
         self.pages += 1
         self.items += item_count
-        self.bytes += len(canonical_json(value).encode())
+        self.bytes += len(json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode())
         if self.pages > DISCOVERY_MAX_PAGES or self.items > DISCOVERY_MAX_TOOLS or self.bytes > DISCOVERY_MAX_BYTES:
             raise ConnectorProviderError("directory_too_large")
 
@@ -67,3 +67,23 @@ async def directory_items(
             raise ConnectorProviderError("invalid_provider_response")
         seen_cursors.add(cursor)
     raise ConnectorProviderError("directory_too_large")
+
+
+_CREDENTIAL_FIELDS = frozenset(
+    {
+        "credential",
+        "credentials",
+        "password",
+        "api_key",
+        "apikey",
+        "token",
+        "access_token",
+        "refresh_token",
+        "cookie",
+        "client_secret",
+    }
+)
+
+
+def is_credential_field(name: str) -> bool:
+    return name.casefold() in _CREDENTIAL_FIELDS

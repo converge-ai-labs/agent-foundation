@@ -2,22 +2,20 @@
 
 import httpx2
 import pytest
-from a13n_service.connectivity.connectors.contracts import ConnectionBinding, ConnectorProviderError
-from a13n_service.connectivity.connectors.http import ConnectorHttpClient
-from a13n_service.connectivity.connectors.tool_errors import rejected_tool_outcome
+from a13n_harness.providers.connector.contracts import ConnectionBinding, ConnectorProviderError
+from a13n_harness.providers.connector.http import ConnectorHttpClient
+from a13n_harness.providers.connector.tool_errors import rejected_tool_outcome
 
-from .connector_helpers import allow_dispatch
 from .test_connector_adapters import _AllowEndpoint, _composio
+
+
+async def allow_dispatch():
+    return None
 
 
 @pytest.mark.parametrize(
     ("status", "body", "code"),
     [
-        (
-            403,
-            {"errorCode": "scope_missing", "errorMessage": "secret", "data": {"missingScopes": ["secret"]}},
-            "scope_missing",
-        ),
         (403, {"errorCode": "secret", "errorMessage": "secret"}, "permission_denied"),
         (404, {"message": "secret"}, "not_found"),
         (401, {"message": "secret"}, "authentication_required"),
@@ -38,7 +36,7 @@ async def test_http_refusals_become_safe_tool_results(status, body, code):
         with pytest.raises(ConnectorProviderError) as raised:
             await transport.request(
                 "POST",
-                endpoint="https://connector.oomol.com",
+                endpoint="https://connector.example",
                 path="/v1/saas/actions/test",
                 api_key="private",
                 write=True,
@@ -148,45 +146,7 @@ async def test_composio_invalid_execution_evidence_remains_unknown_without_retry
     assert outcome.result is None and len(calls) == 1
 
 
-@pytest.mark.parametrize(
-    "target",
-    [
-        "/",
-        "//outside.invalid/",
-        "http://outside.invalid",
-        "http://localhost.example",
-        "http://localhost:not-a-port/callback",
-        "http://127.0.0.2",
-        "http://[::2]",
-        "https://user:password@outside.invalid",
-        "https://outside.invalid/#fragment",
-    ],
-)
-def test_authorization_requires_a_safe_browser_return_url(target):
-    from a13n_service.connectivity.connections.domain import CreateAuthorizationRequest
-    from pydantic import ValidationError
-
-    with pytest.raises(ValidationError):
-        CreateAuthorizationRequest(
-            expected_version=1, method="browser", return_url=target, state="s" * 32, completion_challenge="a" * 64
-        )
-
-
-@pytest.mark.parametrize(
-    "target",
-    [
-        "https://customer.example/oauth/complete",
-        "http://localhost:5173/connections/callback",
-        "http://127.0.0.1:5173/connections/callback",
-        "http://[::1]:5173/connections/callback",
-    ],
-)
-def test_authorization_accepts_https_or_exact_loopback_http_return_url(target):
-    from a13n_service.connectivity.connections.domain import CreateAuthorizationRequest
-
-    assert (
-        CreateAuthorizationRequest(
-            expected_version=1, method="browser", return_url=target, state="s" * 32, completion_challenge="a" * 64
-        ).return_url
-        == target
-    )
+def test_generic_scope_missing_remains_a_safe_known_refusal():
+    outcome = rejected_tool_outcome(ConnectorProviderError("scope_missing", http_status=403), request_id="tool_test")
+    assert outcome.kind == "failed" and outcome.error.code == "scope_missing"
+    assert outcome.request_id == "tool_test"

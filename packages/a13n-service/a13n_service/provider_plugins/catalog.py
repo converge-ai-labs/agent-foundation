@@ -7,18 +7,18 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from a13n_environment import EnvironmentProvider
+from a13n_harness.providers.connector import ConnectorProviderDefinition
+from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
 from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.plugins import ProviderManifest, selected_entry_points
-from a13n_harness.providers.validation import validate_display_name, validate_schema, validate_type
 from a13n_harness.providers.web.builtins import built_in_web_providers
 from a13n_harness.providers.web.definition import WebProviderDefinition
 
 from .api import (
     PROVIDER_EXTENSION_API_VERSION,
-    ConnectorProviderRegistration,
     ProviderPluginRegistry,
     _DomainRegistry,
 )
@@ -55,7 +55,7 @@ class LoadedProviderPlugin:
 class ProviderCatalogs:
     environment: tuple[EnvironmentProvider, ...]
     model: tuple[ModelProviderDefinition, ...]
-    connector: tuple[ConnectorProviderRegistration, ...]
+    connector: tuple[ConnectorProviderDefinition, ...]
     web: tuple[WebProviderDefinition, ...]
     plugins: tuple[LoadedProviderPlugin, ...]
     memory: tuple[MemoryProviderDefinition, ...] = ()
@@ -70,9 +70,9 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
         raise ProviderPluginError(str(error)) from error
 
     registry = ProviderPluginRegistry(api_version=PROVIDER_EXTENSION_API_VERSION)
-    from .builtins import register as register_builtins
-
-    register_builtins(registry)
+    connector = _DomainRegistry("Connector", ConnectorProviderDefinition, lambda definition: definition.type)
+    for definition in BUILT_IN_CONNECTOR_PROVIDERS:
+        connector.register(definition)
     model = _DomainRegistry("Model", ModelProviderDefinition, lambda definition: definition.type)
     for definition in BUILT_IN_MODEL_PROVIDERS:
         model.register(definition)
@@ -91,6 +91,8 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
         try:
             register = entry_point.load()
             if isinstance(register, ProviderManifest):
+                for definition in register.connector:
+                    connector.register(definition)
                 for definition in register.memory:
                     memory.register(definition)
                 for definition in register.model:
@@ -130,7 +132,7 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
     return ProviderCatalogs(
         environment=registry.environment.values(),
         model=model.values(),
-        connector=registry.connector.values(),
+        connector=connector.values(),
         web=web.values(),
         plugins=tuple(loaded),
         memory=memory.values(),
@@ -148,10 +150,3 @@ def _validate(registry: ProviderPluginRegistry) -> None:
     for provider in registry.environment.values():
         if provider.key in _ENVIRONMENT_BUILTINS:
             raise ProviderPluginError(f"Environment Provider {provider.key!r} uses a reserved built-in key")
-    for registration in registry.connector.values():
-        validate_type("Connector", registration.type)
-        validate_display_name("Connector", registration.type, registration.display_name)
-        if not callable(registration.setup_validator) or not callable(registration.factory):
-            raise ProviderPluginError(f"Connector Provider {registration.type!r} has an invalid runtime hook")
-        validate_schema("Connector", registration.type, registration.configuration_model)
-        validate_schema("Connector credential", registration.type, registration.credential_model)

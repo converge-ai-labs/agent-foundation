@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from ..domain import StrictModel
+from .contracts import StrictModel
 
 
 class ApiKeyCredentials(StrictModel):

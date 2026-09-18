@@ -3,31 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
 from typing import Protocol, cast
 
 from a13n_environment import EnvironmentProvider
-from pydantic import BaseModel
-
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderRuntime
-from a13n_service.connectivity.connectors.http import ConnectorHttpClient
-from a13n_service.connectivity.domain import JsonObject
 
 PROVIDER_EXTENSION_API_VERSION = 1
-
-
-ConnectorSetupValidator = Callable[[JsonObject, str, object], JsonObject]
-ConnectorRuntimeFactory = Callable[[ConnectorHttpClient, JsonObject, JsonObject], ConnectorProviderRuntime]
-
-
-@dataclass(frozen=True, slots=True)
-class ConnectorProviderRegistration:
-    type: str
-    display_name: str
-    configuration_model: type[BaseModel]
-    credential_model: type[BaseModel]
-    setup_validator: ConnectorSetupValidator
-    factory: ConnectorRuntimeFactory
 
 
 class _DomainRegistry[T]:
@@ -59,9 +39,6 @@ class ProviderPluginRegistry:
             )
         self.environment = _DomainRegistry[EnvironmentProvider](
             "Environment", EnvironmentProvider, lambda item: item.key
-        )
-        self.connector = _DomainRegistry[ConnectorProviderRegistration](
-            "Connector", ConnectorProviderRegistration, lambda item: item.type
         )
 
 

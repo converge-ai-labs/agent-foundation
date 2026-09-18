@@ -8,7 +8,7 @@ import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.execution import AttemptToolScope
 from a13n_service.connectivity.mcp.transport import RemoteTransport
 from a13n_service.connectivity.native_context import AccountRunContext, bind_account_tools, parse_native_contexts
@@ -61,7 +61,7 @@ async def native_runtime(
         return httpx2.Response(200, json={"ok": True, "channel": "C1", "ts": "1.0"})
 
     runtime = external_runtime_factory(
-        ConnectorProviderRegistry(()), RemoteTransport(policy), policy, transport=httpx2.MockTransport(send)
+        ConnectorProviders(), RemoteTransport(policy), policy, transport=httpx2.MockTransport(send)
     )
     monkeypatch.setattr(runtime, "_scope", read_scope)
     return runtime, current, requests
@@ -233,7 +233,7 @@ async def test_lark_attempt_reuses_token_and_rotation_replaces_scope(
 
     policy = EndpointPolicy()
     runtime = external_runtime_factory(
-        ConnectorProviderRegistry(()), RemoteTransport(policy), policy, transport=httpx2.MockTransport(send)
+        ConnectorProviders(), RemoteTransport(policy), policy, transport=httpx2.MockTransport(send)
     )
 
     async def read_scope(_attempt, *, accepted=None):

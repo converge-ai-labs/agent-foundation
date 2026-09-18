@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import anyio
 import httpx2
 import pytest
+from a13n_harness.providers.http import ProviderHttpError
 from a13n_service.connectivity.providers.github.actions import (
     GitHubActionBinding,
     GitHubAddCommentArguments,
@@ -17,7 +18,6 @@ from a13n_service.connectivity.providers.github.actions import (
     GitHubReadCommentsArguments,
     GitHubReadTargetArguments,
 )
-from a13n_service.connectivity.providers.github.api import GitHubApiError
 from a13n_service.connectivity.providers.github.client import GitHubNativeClient
 from a13n_service.connectivity.providers.github.token import (
     GITHUB_API_VERSION,
@@ -165,7 +165,7 @@ async def test_github_token_refresh_failure_keeps_still_valid_token(
         now[0] = NOW + timedelta(minutes=59, seconds=30)
         assert await provider.token(repository_id=42) == "ghs_1234567890_new_format"
         now[0] = NOW + timedelta(hours=1, seconds=1)
-        with pytest.raises(GitHubApiError, match="provider_unavailable"):
+        with pytest.raises(ProviderHttpError, match="provider_unavailable"):
             await provider.token(repository_id=42)
 
 
@@ -289,7 +289,7 @@ async def test_github_token_failure_before_dispatch_is_not_unknown(
         transport=httpx2.MockTransport(lambda _request: httpx2.Response(503, json={"message": "no"}))
     ) as http_client:
         client, _tokens = _clients(http_client, endpoint, github_private_key_pem)
-        with pytest.raises(GitHubApiError, match="provider_unavailable"):
+        with pytest.raises(ProviderHttpError, match="provider_unavailable"):
             await client.add_comment(
                 _binding(),
                 GitHubAddCommentArguments(body="hello"),
@@ -310,7 +310,7 @@ async def test_github_reads_surface_rate_limits_and_response_bounds(
     endpoint = _AllowEndpoint()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _request: next(responses))) as http_client:
         client, _tokens = _clients(http_client, endpoint, github_private_key_pem)
-        with pytest.raises(GitHubApiError) as raised:
+        with pytest.raises(ProviderHttpError) as raised:
             await client.read_comments(_binding(), GitHubReadCommentsArguments())
     assert raised.value.code == "rate_limited"
     assert raised.value.retry_after_seconds == 15
@@ -323,7 +323,7 @@ async def test_github_reads_surface_rate_limits_and_response_bounds(
             github_private_key_pem,
             response_max_bytes=64,
         )
-        with pytest.raises(GitHubApiError, match="response_too_large"):
+        with pytest.raises(ProviderHttpError, match="response_too_large"):
             await client.read_comments(_binding(), GitHubReadCommentsArguments())
 
 
@@ -426,7 +426,7 @@ async def test_github_rejects_wrong_receipt_origin_and_issue_file_action(
             GitHubAddCommentArguments(body="hello"),
             request_id="req-origin",
         )
-        with pytest.raises(GitHubApiError, match="action_not_available"):
+        with pytest.raises(ProviderHttpError, match="action_not_available"):
             await client.list_pr_files(
                 _binding(target_kind="issue"),
                 GitHubListPrFilesArguments(),

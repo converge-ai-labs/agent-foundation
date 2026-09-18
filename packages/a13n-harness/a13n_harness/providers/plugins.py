@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from .connector.definition import ConnectorProviderDefinition
 from .memory.definition import MemoryProviderDefinition
 from .model.definition import ModelProviderDefinition
 from .web.definition import WebProviderDefinition
@@ -22,6 +23,7 @@ class ProviderManifest:
     model: tuple[ModelProviderDefinition[Any, Any], ...] = ()
     web: tuple[WebProviderDefinition[Any, Any], ...] = ()
     memory: tuple[MemoryProviderDefinition[Any, Any], ...] = ()
+    connector: tuple[ConnectorProviderDefinition[Any, Any], ...] = ()
 
     def __post_init__(self) -> None:
         if self.api_version != PROVIDER_API_VERSION:
@@ -30,6 +32,7 @@ class ProviderManifest:
             ("Web", self.web, WebProviderDefinition),
             ("Model", self.model, ModelProviderDefinition),
             ("Memory", self.memory, MemoryProviderDefinition),
+            ("Connector", self.connector, ConnectorProviderDefinition),
         ):
             if not isinstance(definitions, tuple) or not all(isinstance(item, kind) for item in definitions):
                 raise TypeError(f"{label} definitions must be an immutable tuple")
@@ -75,7 +78,12 @@ def load_provider_plugins(enabled: Iterable[str]) -> tuple[LoadedProviderPlugin,
         manifest = entry.load()
         if not isinstance(manifest, ProviderManifest):
             raise TypeError(f"Provider plugin {entry.name!r} must export a ProviderManifest")
-        for label, definitions in (("Web", manifest.web), ("Model", manifest.model), ("Memory", manifest.memory)):
+        for label, definitions in (
+            ("Web", manifest.web),
+            ("Model", manifest.model),
+            ("Memory", manifest.memory),
+            ("Connector", manifest.connector),
+        ):
             for definition in definitions:
                 key = (label, definition.type)
                 if key in seen:

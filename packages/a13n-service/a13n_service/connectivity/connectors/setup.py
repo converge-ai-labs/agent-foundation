@@ -7,18 +7,11 @@ import hashlib
 import hmac
 import logging
 import re
-from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
 
-from anyio import fail_after, move_on_after
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.browser_urls import is_secure_or_loopback_url
-from a13n_service.connectivity.connectors.contracts import (
+from a13n_harness.providers.connector.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
     ConnectionInspection,
@@ -27,7 +20,13 @@ from a13n_service.connectivity.connectors.contracts import (
     SetupContext,
     SetupStarted,
 )
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from anyio import fail_after, move_on_after
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.browser_urls import is_secure_or_loopback_url
+from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.domain import PrincipalRef
@@ -51,8 +50,8 @@ from .errors import ConnectorError
 from .management import (
     ProviderSnapshot,
     audit,
-    configure_provider,
     decode_credentials,
+    open_provider,
     require_active_provider,
     require_connection,
     require_connector_provider,
@@ -91,14 +90,14 @@ class AttemptSnapshot:
     credential_generation: int
     attempt: SetupSnapshot
     connector: ProviderSnapshot
-    credentials: JsonObject
+    credentials: JsonObject | None
 
 
 class ConnectorSetupCoordinator:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviderRegistry,
+        adapters: ConnectorProviders,
         protector: SecretProtector,
         *,
         correlation_secret: bytes | None,
@@ -363,8 +362,7 @@ class ConnectorSetupCoordinator:
             interrupted = False
         try:
             snapshot = await self.attempt_snapshot(attempt_id, claim_owner=owner, claim_generation=generation)
-            runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
-            async with aclosing(runtime):
+            async with open_provider(self._adapters, snapshot.connector, snapshot.credentials) as runtime:
                 if interrupted and not runtime.setup_replay_safe:
                     await self.fail_attempt(
                         attempt_id, code="setup_outcome_unknown", claim_owner=owner, claim_generation=generation
@@ -578,7 +576,7 @@ class ConnectorSetupCoordinator:
                 dict(attempt.setup_json),
             )
         try:
-            raw = credential.decrypt(self._protector)
+            raw = credential.decrypt(self._protector) if credential.ciphertext is not None else None
         except SecretProtectionError as error:
             raise ConnectorError(
                 "credential_unavailable",
@@ -690,8 +688,7 @@ class ConnectorSetupCoordinator:
         if snapshot.attempt.external_ref is None:
             raise ConnectorProviderError("setup_incomplete")
         require_active_provider(snapshot.connector)
-        runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
-        async with aclosing(runtime):
+        async with open_provider(self._adapters, snapshot.connector, snapshot.credentials) as runtime:
             if snapshot.attempt.completion_method == SetupCompletionMethod.browser_confirmation:
                 inspection = await runtime.inspect_setup(
                     setup_ref=snapshot.attempt.external_ref, context=_setup_context(snapshot.attempt, callback_url=None)
@@ -735,8 +732,6 @@ def _fail_setup(
 
 def _setup_context(attempt: SetupSnapshot, *, callback_url: str | None) -> SetupContext:
     return SetupContext(
-        attempt_id=attempt.id,
-        generation=attempt.generation,
         connector_key=attempt.connector_key,
         external_user_correlation=attempt.external_user_correlation,
         callback_url=callback_url,

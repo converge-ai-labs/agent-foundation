@@ -169,7 +169,7 @@ def local_app(config: dict, role: str):
             request_authenticator=authenticate,
             plugin_factory_catalog=catalog,
             environment_provider_catalog=environment_catalog,
-            connector_provider_registry=connector_host.registry if connector_host else None,
+            connector_providers=connector_host.registry if connector_host else None,
         ),
     )
     if config.get("bot_memory") and role in {"control", "worker"}:

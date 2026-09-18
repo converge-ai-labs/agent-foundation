@@ -6,11 +6,11 @@ from datetime import timedelta
 import httpx2
 import pytest
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.http import ProviderHttpError
 from a13n_service.bots.connectivity.models import BotReplyRecord
 from a13n_service.bots.connectivity.replies import BotReplyObserver
 from a13n_service.bots.connectivity.reply_queries import list_bot_replies
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.native_context import InboundRunContext
 from a13n_service.connectivity.providers.registry import require_native_provider
 from a13n_service.iam.models import RoleBindingRecord
@@ -108,7 +108,7 @@ async def test_observes_native_reply_before_hiding_receipt(reply_fixture, outcom
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(send)) as http:
         action = _reply(context, http)
         if outcome in {"rejected", "cancelled"}:
-            with pytest.raises(ConnectivityHttpError if outcome == "rejected" else asyncio.CancelledError):
+            with pytest.raises(ProviderHttpError if outcome == "rejected" else asyncio.CancelledError):
                 await action.call_observed({"text": "private reply body"}, observer)
         else:
             result = await action.call_observed({"text": "private reply body"}, observer)
@@ -259,7 +259,7 @@ async def test_worker_native_capability_wires_attempt_to_durable_observer(reply_
     from a13n_service.bots.connectivity import replies
     from a13n_service.bots.connectivity.replies import ReplyObservations
     from a13n_service.connectivity import execution
-    from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+    from a13n_service.connectivity.connectors.composition import ConnectorProviders
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
     from a13n_service.connectivity.mcp.transport import RemoteTransport
@@ -304,7 +304,7 @@ async def test_worker_native_capability_wires_attempt_to_durable_observer(reply_
         runtime = ExternalToolRuntime(
             sessions,
             protector,
-            ConnectorProviderRegistry(()),
+            ConnectorProviders(),
             RemoteTransport(policy),
             policy,
             http,

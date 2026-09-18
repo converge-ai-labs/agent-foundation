@@ -42,7 +42,8 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint("status IN ('active', 'disabled')", name=op.f("ck_connector_providers_status_valid")),
         sa.CheckConstraint(
-            "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
             name=op.f("ck_connector_providers_credential_material_consistent"),
         ),
         sa.CheckConstraint(

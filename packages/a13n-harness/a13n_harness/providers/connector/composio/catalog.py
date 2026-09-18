@@ -8,13 +8,12 @@ from dataclasses import dataclass
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
 
-from a13n_service.connectivity.domain import JsonObject
+from a13n_harness.providers.connector.contracts import JsonObject
 
-from ...contracts import BeforeSharedSetup, ConnectorProviderError, DiscoveredConnector
-from ...discovery import is_credential_field
-from ...http import ConnectorHttpClient
-from ...validation import optional_string, path_segment, required_object, required_string
-from ..discovery import DirectoryBudget, directory_items
+from ..contracts import BeforeSharedSetup, ConnectorProviderError, DiscoveredConnector
+from ..directory import DirectoryBudget, directory_items, is_credential_field
+from ..http import ConnectorHttpClient
+from ..validation import optional_string, path_segment, required_object, required_string
 from .configuration import COMPOSIO_ENDPOINT, ComposioSetup
 
 TOOLKIT_VERSION = re.compile(r"^[0-9]{8}_[0-9]{2}$")
@@ -151,9 +150,8 @@ class ComposioCatalog:
             return matching[0]
         if matching:
             raise ConnectorProviderError("auth_configuration_ambiguous")
-        if before_shared_setup is None:
-            raise ConnectorProviderError("shared_setup_unavailable")
-        await before_shared_setup(scheme)
+        if before_shared_setup is not None:
+            await before_shared_setup(scheme)
         value = await self._http.request(
             "POST",
             endpoint=COMPOSIO_ENDPOINT,

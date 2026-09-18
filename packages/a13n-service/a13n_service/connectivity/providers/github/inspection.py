@@ -3,10 +3,10 @@
 from urllib.parse import quote
 
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import EndpointValidator
 from a13n_service.connectivity.inspection import (
     ConversationCandidate,
     ConversationInfo,
@@ -16,7 +16,6 @@ from a13n_service.connectivity.inspection import (
 from a13n_service.temporal import utc_now
 
 from .adapter import GitHubAccountConfig, GitHubAccountCredentials
-from .api import GitHubApiError
 from .polling_config import GitHubPollingConfig, GitHubPollingCredentials
 from .rest import GitHubREST
 from .token import GitHubInstallationTokenProvider
@@ -24,7 +23,7 @@ from .token import GitHubInstallationTokenProvider
 
 class GitHubInspection:
     def __init__(
-        self, http: httpx2.AsyncClient, endpoints: EndpointValidator, config: JsonObject, credentials: JsonObject
+        self, http: httpx2.AsyncClient, endpoints: EndpointValidator, config: JsonObject, credentials: JsonObject | None
     ) -> None:
         self.config = (GitHubPollingConfig if "user_id" in config else GitHubAccountConfig).model_validate(config)
         self.rest = GitHubREST(http, endpoints, self.config.api_origin)
@@ -51,7 +50,7 @@ class GitHubInspection:
             assert self.personal_token is not None
             result = await discover_user(self.rest, self.personal_token)
             if result.bot_id != str(self.config.user_id):
-                raise GitHubApiError("bot_identity_mismatch")
+                raise ProviderHttpError("bot_identity_mismatch")
             return result
         assert self.tokens is not None
         jwt = self.tokens.app_token(utc_now())
@@ -60,7 +59,7 @@ class GitHubInspection:
         owner = installation.get("account")
         slug = app.get("slug")
         if not isinstance(owner, dict) or not isinstance(slug, str):
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         bot = await self.rest.object(f"/users/{quote(slug + '[bot]', safe='')}", token=await self.tokens.token())
         if (app.get("id"), installation.get("app_id"), owner.get("id"), bot.get("id")) != (
             self.config.app_id,
@@ -68,7 +67,7 @@ class GitHubInspection:
             self.config.installation_account_id,
             self.config.bot_account_id,
         ):
-            raise GitHubApiError("bot_identity_mismatch")
+            raise ProviderHttpError("bot_identity_mismatch")
         permissions = installation.get("permissions")
         enabled = (
             installation.get("suspended_at") is None
@@ -97,10 +96,10 @@ class GitHubInspection:
             or str(int(repository_id)) != repository_id
             or int(repository_id) < 1
         ):
-            raise GitHubApiError("invalid_binding")
+            raise ProviderHttpError("invalid_binding")
         value = await self.rest.object(f"/repositories/{repository_id}", token=await self._token())
         if value.get("id") != int(repository_id):
-            raise GitHubApiError("invalid_binding")
+            raise ProviderHttpError("invalid_binding")
         return ConversationInfo(
             id=repository_id,
             name=_name(value, "full_name"),
@@ -116,7 +115,7 @@ class GitHubInspection:
             if not 1 <= page <= 10000:
                 raise ValueError
         except ValueError:
-            raise GitHubApiError("invalid_cursor") from None
+            raise ProviderHttpError("invalid_cursor") from None
         response = await self.rest.request(
             "/user/repos" if self.personal_token else "/installation/repositories",
             token=await self._token(),
@@ -124,11 +123,11 @@ class GitHubInspection:
         )
         values = response.data.get("repositories") if isinstance(response.data, dict) else response.data
         if not isinstance(values, list) or len(values) > limit:
-            raise GitHubApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         items = []
         for value in values:
             if not isinstance(value, dict) or type(value.get("id")) is not int:
-                raise GitHubApiError("invalid_provider_response")
+                raise ProviderHttpError("invalid_provider_response")
             items.append(ConversationCandidate(id=str(value["id"]), name=_name(value, "full_name")))
         return ConversationPage(
             items=tuple(items), cursor=str(page + 1) if 'rel="next"' in response.headers.get("link", "") else None
@@ -138,11 +137,11 @@ class GitHubInspection:
 async def discover_user(rest: GitHubREST, token: str) -> InstallationInfo:
     user = await rest.object("/user", token=token)
     if type(user.get("id")) is not int or user.get("type") != "User":
-        raise GitHubApiError("bot_identity_mismatch")
+        raise ProviderHttpError("bot_identity_mismatch")
     # This also checks that the credential supports Notifications (classic PAT).
     response = await rest.request("/notifications", token=token, params={"per_page": "1"})
     if not isinstance(response.data, list):
-        raise GitHubApiError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     name, identity = _name(user, "login"), str(user["id"])
     return InstallationInfo(
         app_id=identity, organization_id=identity, organization_name=name, bot_id=identity, bot_name=name, enabled=True
@@ -152,5 +151,5 @@ async def discover_user(rest: GitHubREST, token: str) -> InstallationInfo:
 def _name(value: dict[str, JsonValue], key: str) -> str:
     name = value.get(key)
     if not isinstance(name, str) or not 1 <= len(name) <= 256:
-        raise GitHubApiError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     return name

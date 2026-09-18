@@ -6,10 +6,10 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from urllib.parse import quote, urlsplit, urlunsplit
 
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic import BaseModel, JsonValue, TypeAdapter
 
-from a13n_service.connectivity.domain import JsonObject
+from a13n_harness.providers.connector.contracts import JsonObject
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 from .contracts import ConnectorProviderError
 

@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
-from contextlib import aclosing
 from datetime import datetime, timedelta
 
+from a13n_harness.providers.connector.contracts import (
+    AdapterConnectionStatus,
+    ConnectorProviderError,
+    SetupCompletionMethod,
+)
 from anyio import move_on_after
 from sqlalchemy import and_, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -12,17 +16,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.connectivity.connections.domain import ConnectionStatus, ConnectionStatusReason
-from a13n_service.connectivity.connectors.contracts import (
-    AdapterConnectionStatus,
-    ConnectorProviderError,
-    SetupCompletionMethod,
-)
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .errors import ConnectorError
-from .management import configure_provider, require_active_provider
+from .management import open_provider, require_active_provider
 from .models import ConnectorAuthorizationRecord, ConnectorConnectionRecord
 from .setup import ConnectorSetupCoordinator, _setup_context
 
@@ -31,7 +30,7 @@ class ConnectorReconciler:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviderRegistry,
+        adapters: ConnectorProviders,
         setup: ConnectorSetupCoordinator,
         *,
         instance_id: str,
@@ -178,8 +177,7 @@ class ConnectorReconciler:
                 raise ConnectorError(
                     "setup_unavailable", "Setup reference is unavailable.", category=ErrorCategory.conflict
                 )
-            runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
-            async with aclosing(runtime):
+            async with open_provider(self._adapters, snapshot.connector, snapshot.credentials) as runtime:
                 inspection = await runtime.inspect_setup(
                     setup_ref=snapshot.attempt.setup_ref,
                     context=_setup_context(snapshot.attempt, callback_url=self._setup.callback_url()),

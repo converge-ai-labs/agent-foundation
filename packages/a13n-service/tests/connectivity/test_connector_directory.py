@@ -4,7 +4,7 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderError, DiscoveredConnector
+from a13n_harness.providers.connector.contracts import ConnectorProviderError, DiscoveredConnector
 from a13n_service.connectivity.connectors.domain import ConnectorProvider
 from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
@@ -120,4 +120,22 @@ async def _assert_shared_setup_claim_is_single_use(
             provider_id=provider.id,
             credential_generation=provider.credential_generation + 1,
             connector_key="github",
+        )
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"$ref": "https://malicious.example/schema"},
+        {"type": "object", "properties": {"access_token": {"type": "string"}}},
+        {"type": "object", "properties": {"option": {"type": "string", "writeOnly": True}}},
+    ],
+)
+def test_discovery_rejects_unsafe_setup_schemas(schema) -> None:
+    from a13n_harness.providers.connector.contracts import ConnectorProviderError, DiscoveredConnector
+    from a13n_service.connectivity.connectors.discovery import validate_connectors
+
+    with pytest.raises(ConnectorProviderError, match="unsafe_setup_schema"):
+        validate_connectors(
+            (DiscoveredConnector(key="github", name="GitHub", setup_schema=schema, authentication_methods=("oauth2",)),)
         )

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any
 
 import httpx2
 from anyio import fail_after, move_on_after, to_thread
@@ -12,6 +12,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from ..authentication import Authentication
 from ..endpoint_policy import EndpointPolicy
+from ..http import EndpointValidator
 from ..validation import validate_definition
 from .apis import MODEL_APIS
 from .credentials import ApiKeyCredential
@@ -25,10 +26,6 @@ if TYPE_CHECKING:
 
 
 _PROBE_TIMEOUT_SECONDS = 10
-
-
-class EndpointValidator(Protocol):
-    def validate(self, endpoint: str, *, resolve_dns: bool) -> Awaitable[str]: ...
 
 
 class ProviderOperationError(ValueError):

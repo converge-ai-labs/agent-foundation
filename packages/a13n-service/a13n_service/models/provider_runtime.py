@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
-from a13n_harness.providers.model.definition import EndpointValidator
+from a13n_harness.providers.http import EndpointValidator
 from a13n_harness.providers.model.types import ModelConnection
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker

@@ -55,7 +55,7 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     )
     components = Components(
         ingress_adapter_registry=ingress_registry,
-        connector_provider_registry=connector_registry,
+        connector_providers=connector_registry,
     )
 
     control = snapshot_components(
@@ -77,18 +77,19 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
             factory=Adapter,
         )
     )
-    connector_registry.register(replace(connector_registry.require("fake_connector"), type="later"))
+    with pytest.raises(TypeError):
+        connector_registry.catalog["later"] = replace(connector_registry.require("fake_connector"), type="later")
 
     assert control.ingress_adapter_registry is not None
     assert control.ingress_adapter_registry.keys() == ("fake",)
-    assert control.connector_provider_registry is not None
-    assert tuple(item.type for item in control.connector_provider_registry.definitions()) == ("fake_connector",)
+    assert control.connector_providers is not None
+    assert tuple(item.type for item in control.connector_providers.catalog.values()) == ("fake_connector",)
     assert connectivity.ingress_adapter_registry is not None
     assert connectivity.ingress_adapter_registry.keys() == ("fake",)
-    assert connectivity.connector_provider_registry is None
+    assert connectivity.connector_providers is None
     assert worker.ingress_adapter_registry is None
-    assert worker.connector_provider_registry is not None
-    assert tuple(item.type for item in worker.connector_provider_registry.definitions()) == ("fake_connector",)
+    assert worker.connector_providers is not None
+    assert tuple(item.type for item in worker.connector_providers.catalog.values()) == ("fake_connector",)
 
 
 @pytest.mark.anyio
@@ -151,7 +152,7 @@ async def test_connectivity_role_does_not_build_control_adapters(
         raise AssertionError("data-plane role built control-plane adapters")
 
     monkeypatch.setattr(
-        "a13n_service.process.connectivity.build_connector_provider_registry",
+        "a13n_service.process.connectivity.ConnectorProviders",
         fail_if_called,
     )
     app = create_app(local_settings(tmp_path, role=ProcessRole.connectivity))

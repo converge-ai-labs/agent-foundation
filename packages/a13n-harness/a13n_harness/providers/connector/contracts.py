@@ -9,7 +9,7 @@ from typing import Annotated, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
-from a13n_service.connectivity.domain import JsonObject
+type JsonObject = dict[str, JsonValue]
 
 ConnectorKey = Annotated[str, StringConstraints(pattern=r"^[a-z0-9_][a-z0-9._-]{0,127}$")]
 
@@ -31,8 +31,6 @@ class AdapterStatusReason(StrEnum):
 
 
 class SetupContext(StrictModel):
-    attempt_id: str
-    generation: int = Field(ge=1)
     connector_key: str = Field(min_length=1, max_length=128)
     external_user_correlation: str = Field(min_length=1, max_length=128, repr=False)
     callback_url: str | None = Field(default=None, max_length=4096, repr=False)
@@ -132,7 +130,7 @@ BeforeSharedSetup = Callable[[str], Awaitable[None]]
 
 
 class ConnectorConnectionRuntime(Protocol):
-    """One verified external account; construction and close have no remote effects."""
+    """One verified external account; creating a handle has no remote effects."""
 
     async def inspect(self) -> ConnectionInspection: ...
 
@@ -145,12 +143,10 @@ class ConnectorConnectionRuntime(Protocol):
         provider_version: str,
         arguments: JsonObject,
         request_id: str,
-        before_dispatch: BeforeDispatch,
+        before_dispatch: BeforeDispatch | None = None,
     ) -> ConnectorToolOutcome: ...
 
     async def revoke(self, *, operation_id: str) -> None: ...
-
-    async def aclose(self) -> None: ...
 
 
 class ToolCatalog(Protocol):
@@ -189,8 +185,6 @@ class ConnectorProviderRuntime(Protocol):
     def tool_catalog(self, connector_key: str) -> ToolCatalog: ...
 
     def connect(self, binding: ConnectionBinding) -> ConnectorConnectionRuntime: ...
-
-    async def aclose(self) -> None: ...
 
 
 class DiscoveredConnector(StrictModel):

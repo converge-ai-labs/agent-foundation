@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import record_command
 from a13n_service.digests import digest_request
@@ -47,7 +47,7 @@ class ConnectorConnectionService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviderRegistry,
+        adapters: ConnectorProviders,
         protector: SecretProtector,
         *,
         correlation_secret: bytes | None,

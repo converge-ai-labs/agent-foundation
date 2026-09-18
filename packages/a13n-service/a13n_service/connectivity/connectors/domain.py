@@ -6,13 +6,13 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from a13n_harness.providers.authentication import Authentication
+from a13n_harness.providers.connector.contracts import ConnectorKey, ProviderAccess, SetupCompletionMethod
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.connectivity.domain import AdapterKey, DisplayName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
-
-from .contracts import ConnectorKey, ProviderAccess, SetupCompletionMethod
 
 
 class StrictModel(BaseModel):
@@ -49,9 +49,8 @@ class CreateConnectorProviderRequest(StrictModel):
     name: DisplayName
     type: AdapterKey
     configuration: JsonObject
-    credentials: dict[str, SecretStr] = Field(
-        min_length=1,
-        max_length=8,
+    credentials: JsonObject | None = Field(
+        default=None,
         repr=False,
         json_schema_extra={"writeOnly": True},
     )
@@ -61,28 +60,22 @@ class UpdateConnectorProviderRequest(StrictModel):
     expected_version: int = Field(ge=1)
     name: DisplayName | None = None
     status: ConnectorProviderStatus | None = None
-    credentials: dict[str, SecretStr] | None = Field(
+    credentials: JsonObject | None = Field(
         default=None,
-        min_length=1,
-        max_length=8,
         repr=False,
         json_schema_extra={"writeOnly": True},
     )
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateConnectorProviderRequest:
-        if "credentials" in self.model_fields_set and self.credentials is None:
-            raise ValueError("ConnectorProvider credentials cannot be removed")
-        if self.name is None and self.status is None and self.credentials is None:
+        if self.name is None and self.status is None and "credentials" not in self.model_fields_set:
             raise ValueError("ConnectorProvider update must change at least one field")
         return self
 
 
 class ReplaceConnectorProviderCredentialsRequest(StrictModel):
     expected_version: int = Field(ge=1)
-    credentials: dict[str, SecretStr] = Field(
-        min_length=1,
-        max_length=8,
+    credentials: JsonObject | None = Field(
         repr=False,
         json_schema_extra={"writeOnly": True},
     )
@@ -129,3 +122,18 @@ class ConnectorCollection(StrictModel):
     items: tuple[Connector, ...] = Field(max_length=2_048)
     next_cursor: str | None = None
     refreshed_at: datetime | None = None
+
+
+class ConnectorProviderMetadata(StrictModel):
+    type: str
+    display_name: str
+    configuration_schema: JsonObject
+    credential_schema: JsonObject
+    authentication: Authentication
+    setup_url: str | None = None
+    setup_label: str | None = None
+
+
+class ConnectorProviderMetadataCollection(StrictModel):
+    items: tuple[ConnectorProviderMetadata, ...]
+    next_cursor: None = None

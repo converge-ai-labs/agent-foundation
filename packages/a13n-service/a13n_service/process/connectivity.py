@@ -7,6 +7,8 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
 import httpx2
+from a13n_harness.providers.connector import ConnectorProviderCatalog
+from a13n_harness.providers.connector.http import ConnectorHttpClient
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_harness.providers.memory import MemoryProviderCatalog
 
@@ -19,10 +21,9 @@ from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connections.authorization import AuthorizationService
 from a13n_service.connectivity.connections.checks import ConnectionChecks
 from a13n_service.connectivity.connections.service import ConnectionService
+from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
-from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.admission import IngressEventService
@@ -45,7 +46,6 @@ from a13n_service.connectivity.transports.supervisor import EventConnectionSuper
 from a13n_service.ids import new_object_id
 from a13n_service.process.background import BackgroundTask
 from a13n_service.provider_plugins import ProviderCatalogs
-from a13n_service.provider_plugins.connectors import build_connector_provider_registry
 from a13n_service.secrets import SecretProtector
 from a13n_service.settings import Settings
 from a13n_service.storage import StorageResources
@@ -78,7 +78,7 @@ async def build_connectivity_runtime(
     stack: AsyncExitStack,
     *,
     ingress_adapters: AdapterRegistry[IngressAdapter] | None,
-    connector_providers: ConnectorProviderRegistry | None,
+    connector_providers: ConnectorProviders | None,
     provider_catalogs: ProviderCatalogs,
     input_acceptor: InputAcceptor | None,
     control_plane: bool,
@@ -123,7 +123,7 @@ async def _build_control_runtime(
     settings: Settings,
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
-    connector_providers: ConnectorProviderRegistry | None,
+    connector_providers: ConnectorProviders | None,
     provider_catalogs: ProviderCatalogs,
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
@@ -139,8 +139,8 @@ async def _build_control_runtime(
                 timeout=connectivity_http_timeout(settings),
             )
         )
-        connector_providers = build_connector_provider_registry(
-            provider_catalogs.connector,
+        connector_providers = ConnectorProviders(
+            ConnectorProviderCatalog(provider_catalogs.connector),
             ConnectorHttpClient(
                 connector_http_client,
                 endpoint_policy,
@@ -215,7 +215,7 @@ async def _build_control_runtime(
 def _build_connector_control(
     settings: Settings,
     storage: StorageResources,
-    connector_providers: ConnectorProviderRegistry,
+    connector_providers: ConnectorProviders,
     secret_protector: SecretProtector,
     public_origin: str | None,
 ) -> _ConnectorControl:

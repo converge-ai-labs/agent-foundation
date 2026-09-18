@@ -5,6 +5,7 @@ from email.utils import format_datetime
 
 import httpx2
 import pytest
+from a13n_harness.providers.http import ProviderHttpError
 from a13n_service.bots.connectivity.collection import list_bots
 from a13n_service.bots.connectivity.domain import BotCheckRequest
 from a13n_service.bots.connectivity.service import BotService
@@ -13,7 +14,6 @@ from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_service import AccountTargetService
 from a13n_service.connectivity.accounts.targets import TargetConfig
-from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.admission_models import IngressAdmissionRecord
 from a13n_service.connectivity.ingress.provider import (
@@ -99,7 +99,7 @@ async def test_notification_identity_source_attribution_and_foreign_origin():
         assert await notification_event(rest, "secret", item, user_id=99, now=NOW) is None
         item.subject.latest_comment_url = "https://foreign.example/steal"
         count = len(calls)
-        with pytest.raises(ConnectivityHttpError, match="endpoint_denied"):
+        with pytest.raises(ProviderHttpError, match="endpoint_denied"):
             await notification_event(rest, "secret", item, user_id=99, now=NOW)
         assert len(calls) == count
 
@@ -264,7 +264,7 @@ async def test_polling_resumes_deduplicates_and_admits_only_configured_repositor
         clock[0] += timedelta(seconds=121)
         successor = await restarted.claim()
         assert successor and successor.generation > claim.generation
-        with pytest.raises(ConnectivityHttpError, match="poll_lease_lost"):
+        with pytest.raises(ProviderHttpError, match="poll_lease_lost"):
             async with transaction(connectivity_sessions) as db:
                 await poller.fence(claim)(db)
 
@@ -303,7 +303,7 @@ async def test_github_app_probe_checks_installation_identity(github_private_key_
         )
         assert (await probe.installation()).enabled
         wrong[0] = True
-        with pytest.raises(ConnectivityHttpError, match="bot_identity_mismatch"):
+        with pytest.raises(ProviderHttpError, match="bot_identity_mismatch"):
             await probe.installation()
 
 
@@ -320,7 +320,7 @@ async def test_polling_conditional_response_and_rate_limit_backoff(monkeypatch):
         rest = GitHubREST(http, _AllowEndpoint(), "https://api.github.com")
         items, cursor, interval = await scan_notifications(rest, "secret", NOW - timedelta(minutes=1), before=NOW)
         assert items == [] and cursor == NOW and interval == 180
-        with pytest.raises(ConnectivityHttpError, match="rate_limited") as error:
+        with pytest.raises(ProviderHttpError, match="rate_limited") as error:
             await rest.request("/notifications", token="secret")
         assert error.value.retry_after_seconds == 301
 
@@ -352,6 +352,6 @@ async def test_personal_token_never_posts_with_a_changed_user_or_repository(user
             api_origin="https://api.github.com",
             web_origin="https://github.com",
         )
-        with pytest.raises(ConnectivityHttpError, match=reason):
+        with pytest.raises(ProviderHttpError, match=reason):
             await native.add_comment(_binding(), GitHubAddCommentArguments(body="hello"), request_id="req_test")
         assert all(request.method == "GET" for request in requests)

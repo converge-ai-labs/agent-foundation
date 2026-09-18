@@ -7,6 +7,7 @@ from datetime import datetime
 
 import anyio
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -16,7 +17,6 @@ from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.connectivity.inspection import ConversationPage, InstallationInfo
 from a13n_service.connectivity.native_management import authorize, require_limit, require_version
 from a13n_service.connectivity.providers.github.inspection import discover_user
@@ -98,9 +98,9 @@ class BotService:
             with anyio.fail_after(self._timeout_seconds):
                 installation = await client.inspect_installation()
                 if not installation.enabled:
-                    raise ConnectivityHttpError("bot_inactive")
-        except (ConnectivityHttpError, TimeoutError) as error:
-            code = error.code if isinstance(error, ConnectivityHttpError) else "provider_unavailable"
+                    raise ProviderHttpError("bot_inactive")
+        except (ProviderHttpError, TimeoutError) as error:
+            code = error.code if isinstance(error, ProviderHttpError) else "provider_unavailable"
             message = (
                 "Enable and publish the Feishu bot before connecting it."
                 if code == "bot_inactive"
@@ -122,9 +122,9 @@ class BotService:
                     GitHubREST(self._http_client, self._endpoint_validator, "https://api.github.com"),
                     request.personal_access_token.get_secret_value(),
                 )
-        except (ConnectivityHttpError, TimeoutError) as error:
+        except (ProviderHttpError, TimeoutError) as error:
             raise NativeError(
-                error.code if isinstance(error, ConnectivityHttpError) else "provider_unavailable",
+                error.code if isinstance(error, ProviderHttpError) else "provider_unavailable",
                 "Could not verify the GitHub account. Supply a classic PAT with notification access.",
                 category=ErrorCategory.unavailable,
             ) from error
@@ -221,16 +221,16 @@ class BotService:
                 probe = self._probe(snapshot)
                 installation = await probe.installation()
                 if not installation.enabled:
-                    raise ConnectivityHttpError("bot_inactive")
+                    raise ProviderHttpError("bot_inactive")
                 conversation = await probe.conversation(request.conversation_id)
                 if conversation.is_member is not True:
-                    raise ConnectivityHttpError(
+                    raise ProviderHttpError(
                         "bot_not_in_conversation" if conversation.is_member is False else "bot_membership_unverified"
                     )
                 if conversation.is_active is not True:
-                    raise ConnectivityHttpError("bot_conversation_inactive")
-        except (ConnectivityHttpError, TimeoutError) as error:
-            code = error.code if isinstance(error, ConnectivityHttpError) else "provider_unavailable"
+                    raise ProviderHttpError("bot_conversation_inactive")
+        except (ProviderHttpError, TimeoutError) as error:
+            code = error.code if isinstance(error, ProviderHttpError) else "provider_unavailable"
             messages = {
                 "bot_inactive": "Enable or publish the app on the provider before enabling reception.",
                 "bot_not_in_conversation": "Invite the bot to this conversation, then verify and enable reception again.",
@@ -301,7 +301,7 @@ class BotService:
                     error_code = "bot_inactive"
                 elif request.conversation_id is not None:
                     conversation = await probe.conversation(request.conversation_id)
-        except ConnectivityHttpError as error:
+        except ProviderHttpError as error:
             error_code = error.code
         except TimeoutError:
             error_code = "provider_unavailable"
@@ -356,9 +356,9 @@ class BotService:
                 probe = self._probe(snapshot)
                 identity = await probe.installation()
                 if not identity.enabled:
-                    raise ConnectivityHttpError("bot_inactive")
+                    raise ProviderHttpError("bot_inactive")
                 result = await probe.conversations(limit=limit, cursor=cursor)
-        except ConnectivityHttpError as error:
+        except ProviderHttpError as error:
             raise NativeError(
                 error.code, "The Bot's conversations could not be verified.", category=ErrorCategory.unavailable
             ) from error

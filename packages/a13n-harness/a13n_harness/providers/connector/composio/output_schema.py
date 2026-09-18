@@ -2,7 +2,7 @@
 
 from copy import deepcopy
 
-from a13n_service.connectivity.domain import JsonObject
+from a13n_harness.providers.connector.contracts import JsonObject
 
 _REPOSITORY_NULLABLE = ("description", "homepage", "language", "license", "mirror_url")
 _NULLABLE_FIELDS = {

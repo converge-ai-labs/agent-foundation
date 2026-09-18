@@ -3,8 +3,8 @@
 from copy import deepcopy
 
 import pytest
-from a13n_service.connectivity.connectors.providers.composio.output_schema import corrected_output_schema
-from a13n_service.connectivity.connectors.providers.composio.runtime import _tool
+from a13n_harness.providers.connector.composio.output_schema import corrected_output_schema
+from a13n_harness.providers.connector.composio.runtime import _tool
 from jsonschema import Draft202012Validator, ValidationError
 
 

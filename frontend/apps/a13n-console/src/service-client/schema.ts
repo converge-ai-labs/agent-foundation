@@ -4945,7 +4945,7 @@ export interface components {
       selected_model?: components["schemas"]["SelectedAssistantModel"] | null;
       /** Setup Actions */
       setup_actions: (
-        "configure_provider" | "configure_model" | "contact_administrator"
+        "open_provider" | "configure_model" | "contact_administrator"
       )[];
       /** Setup Url */
       setup_url: string;
@@ -6101,8 +6101,9 @@ export interface components {
       /** Expected Version */
       expected_version: number;
     };
-    /** ConnectorProviderDefinition */
-    ConnectorProviderDefinition: {
+    /** ConnectorProviderMetadata */
+    ConnectorProviderMetadata: {
+      authentication: components["schemas"]["Authentication"];
       /** Configuration Schema */
       configuration_schema: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -6113,13 +6114,17 @@ export interface components {
       };
       /** Display Name */
       display_name: string;
+      /** Setup Label */
+      setup_label?: string | null;
+      /** Setup Url */
+      setup_url?: string | null;
       /** Type */
       type: string;
     };
-    /** ConnectorProviderDefinitionCollection */
-    ConnectorProviderDefinitionCollection: {
+    /** ConnectorProviderMetadataCollection */
+    ConnectorProviderMetadataCollection: {
       /** Items */
-      items: components["schemas"]["ConnectorProviderDefinition"][];
+      items: components["schemas"]["ConnectorProviderMetadata"][];
       /** Next Cursor */
       next_cursor?: null;
     };
@@ -6162,22 +6167,13 @@ export interface components {
     };
     /** ConnectorTool */
     ConnectorTool: {
-      /** Annotations */
-      annotations?: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
+      annotations?: components["schemas"]["JsonObject"];
       /** Description */
       description: string;
-      /** Input Schema */
-      input_schema: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
+      input_schema: components["schemas"]["JsonObject"];
       /** Key */
       key: string;
-      /** Output Schema */
-      output_schema?: {
-        [key: string]: components["schemas"]["JsonValue"];
-      } | null;
+      output_schema?: components["schemas"]["JsonObject"] | null;
       /** Provider Version */
       provider_version: string;
     };
@@ -6378,9 +6374,9 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       };
       /** Credentials */
-      credentials: {
-        [key: string]: string;
-      };
+      credentials?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
       /** Name */
       name: string;
       /** Type */
@@ -7748,6 +7744,10 @@ export interface components {
       /** State */
       state: string;
     };
+    /** JsonObject */
+    JsonObject: {
+      [key: string]: components["schemas"]["JsonValue"];
+    };
     /** JsonValue */
     JsonValue: unknown;
     /**
@@ -9084,8 +9084,8 @@ export interface components {
     ReplaceConnectorProviderCredentialsRequest: {
       /** Credentials */
       credentials: {
-        [key: string]: string;
-      };
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
       /** Expected Version */
       expected_version: number;
     };
@@ -10901,7 +10901,7 @@ export interface components {
     UpdateConnectorProviderRequest: {
       /** Credentials */
       credentials?: {
-        [key: string]: string;
+        [key: string]: components["schemas"]["JsonValue"];
       } | null;
       /** Expected Version */
       expected_version: number;
@@ -15038,7 +15038,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorProviderDefinitionCollection"];
+          "application/json": components["schemas"]["ConnectorProviderMetadataCollection"];
         };
       };
       /** @description Service error. */

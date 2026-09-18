@@ -5,11 +5,10 @@ from typing import Literal
 from urllib.parse import urlsplit
 
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue
 
-from a13n_service.connectivity.http import EndpointValidator
-
-from .api import GitHubApiError, read_github_response
+from .api import read_github_response
 from .token import GITHUB_API_VERSION
 
 
@@ -43,14 +42,14 @@ class GitHubREST:
             or target.password
             or target.fragment
         ):
-            raise GitHubApiError("endpoint_denied")
+            raise ProviderHttpError("endpoint_denied")
         # Enterprise API prefixes remain part of the credential boundary.
         if base.path and not target.path.startswith(base.path.rstrip("/") + "/"):
-            raise GitHubApiError("endpoint_denied")
+            raise ProviderHttpError("endpoint_denied")
         try:
             url = await self.endpoints.validate(url, resolve_dns=True)
         except ValueError as error:
-            raise GitHubApiError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         try:
             async with self.http.stream(
                 method,
@@ -70,12 +69,14 @@ class GitHubREST:
                 value = await read_github_response(response, max_bytes=2 * 1024 * 1024)
                 return GitHubResponse(value, response.headers, response.status_code)
         except httpx2.HTTPError as error:
-            raise GitHubApiError("provider_unavailable") from error
+            raise ProviderHttpError("provider_unavailable") from error
 
     async def object(self, path: str, *, token: str) -> dict[str, JsonValue]:
         response = await self.request(path, token=token)
         if not isinstance(response.data, dict):
-            raise GitHubApiError("provider_rejected" if response.status in {404, 410} else "invalid_provider_response")
+            raise ProviderHttpError(
+                "provider_rejected" if response.status in {404, 410} else "invalid_provider_response"
+            )
         return response.data
 
 
@@ -88,6 +89,6 @@ class GitHubPersonalTokenProvider:
         if not self.verified:
             user = await self.rest.object("/user", token=self.value)
             if user.get("id") != self.user_id:
-                raise GitHubApiError("bot_identity_mismatch")
+                raise ProviderHttpError("bot_identity_mismatch")
             self.verified = True
         return self.value

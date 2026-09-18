@@ -8,11 +8,11 @@ from datetime import datetime, timedelta
 
 import anyio
 import httpx2
+from a13n_harness.providers.http import EndpointValidator, ProviderHttpError
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.management import canonical_json
 from a13n_service.storage import transaction
@@ -114,7 +114,7 @@ class GitHubNotificationPoller:
                 or row.claim_expires_at is None
                 or assume_utc(row.claim_expires_at) <= self.clock()
             ):
-                raise ConnectivityHttpError("poll_lease_lost")
+                raise ProviderHttpError("poll_lease_lost")
 
         return check
 
@@ -132,13 +132,13 @@ class GitHubNotificationPoller:
                     claim.account_version,
                     claim.credential_generation,
                 ):
-                    raise ConnectivityHttpError("account_changed")
+                    raise ProviderHttpError("account_changed")
                 config = GitHubPollingConfig.model_validate(snapshot.provider_config)
                 secret = GitHubPollingCredentials.model_validate(credentials).personal_access_token.get_secret_value()
                 rest = GitHubREST(self.http, self.endpoints, config.api_origin)
                 user = await rest.object("/user", token=secret)
                 if user.get("id") != config.user_id:
-                    raise ConnectivityHttpError("bot_identity_mismatch")
+                    raise ProviderHttpError("bot_identity_mismatch")
                 notifications, next_cursor, minimum = await scan_notifications(
                     rest, secret, claim.since, before=self.clock()
                 )
@@ -159,8 +159,8 @@ class GitHubNotificationPoller:
                         )
                 cursor = next_cursor
         except Exception as error:
-            error_code = error.code if isinstance(error, ConnectivityHttpError) else "poll_failed"
-            if isinstance(error, ConnectivityHttpError) and error.retry_after_seconds is not None:
+            error_code = error.code if isinstance(error, ProviderHttpError) else "poll_failed"
+            if isinstance(error, ProviderHttpError) and error.retry_after_seconds is not None:
                 delay = max(delay, error.retry_after_seconds)
             logger.warning("github_poll_failed", extra={"account_id": claim.account_id, "reason_code": error_code})
         async with transaction(self.sessions) as db:

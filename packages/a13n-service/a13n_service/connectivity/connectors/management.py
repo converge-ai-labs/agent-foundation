@@ -3,15 +3,18 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import overload
 
+from a13n_harness.providers.connector import ConnectorProviderDefinition
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.connectors.registry import ConnectorProviderImplementation, ConnectorProviderRegistry
+from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.iam.audit import security_audit_record
@@ -24,14 +27,13 @@ from a13n_service.iam.models import SecurityAuditRecord
 from a13n_service.iam.resource_scope import ResourceScope, actor_scope, authorize_resource, authorize_scope
 from a13n_service.ids import new_object_id
 
-from .contracts import ConnectorProviderRuntime
 from .errors import ConnectorError
 from .models import ConnectorConnectionRecord, ConnectorProviderRecord
 
 _JSON_OBJECT = TypeAdapter(JsonObject)
 
 
-def require_implementation(registry: ConnectorProviderRegistry, provider_type: str) -> ConnectorProviderImplementation:
+def require_implementation(registry: ConnectorProviders, provider_type: str) -> ConnectorProviderDefinition:
     try:
         return registry.require(provider_type)
     except ValueError as error:
@@ -53,18 +55,21 @@ class ProviderSnapshot:
         return cls(record.type, dict(record.configuration_json), record.status)
 
 
-def configure_provider(
-    registry: ConnectorProviderRegistry, record: ConnectorProviderRecord | ProviderSnapshot, credentials: JsonObject
-) -> ConnectorProviderRuntime:
+@asynccontextmanager
+async def open_provider(
+    registry: ConnectorProviders, record: ConnectorProviderRecord | ProviderSnapshot, credentials: JsonObject | None
+):
     implementation = require_implementation(registry, record.type)
     try:
-        return implementation.configure(record.configuration_json, credentials)
+        context = implementation.open(record.configuration_json, credentials, http=registry.http)
     except ValueError as error:
         raise ConnectorError(
             "invalid_connector_provider_configuration",
             "Connector Provider configuration is invalid.",
             category=ErrorCategory.conflict,
         ) from error
+    async with context as provider:
+        yield provider
 
 
 async def authorize(
@@ -129,7 +134,17 @@ async def require_connection(
     return record
 
 
-def decode_credentials(value: str) -> JsonObject:
+@overload
+def decode_credentials(value: str) -> JsonObject: ...
+
+
+@overload
+def decode_credentials(value: None) -> None: ...
+
+
+def decode_credentials(value: str | None) -> JsonObject | None:
+    if value is None:
+        return None
     try:
         return _JSON_OBJECT.validate_python(json.loads(value))
     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as error:
