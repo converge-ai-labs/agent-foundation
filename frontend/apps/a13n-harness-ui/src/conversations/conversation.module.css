@@ -1399,7 +1399,19 @@
   cursor: default;
 }
 .executionContent {
-  padding-block: 8px;
+  position: relative;
+  max-height: min(480px, 52dvh);
+  overflow: auto;
+  overscroll-behavior: contain;
+  overflow-anchor: none;
+  padding: 8px 12px;
+  margin-block-start: 4px;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.executionContent:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
 }
 .executionContent[hidden] {
   display: none;

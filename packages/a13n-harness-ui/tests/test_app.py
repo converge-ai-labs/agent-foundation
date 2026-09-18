@@ -2273,6 +2273,20 @@ async def test_input_directory_and_bidirectional_history_use_saved_turn_boundari
         later = await app.get_thread_transcript(thread_id=thread.thread_id, cursor=middle.newer_cursor, limit=1)
         assert earlier.entries[0].position + 1 == middle.entries[0].position
         assert later.entries[0].position == middle.entries[0].position + 1
+        assert middle.earlier_turns_cursor and middle.later_turns_cursor
+        previous_turn = await app.get_thread_transcript(
+            thread_id=thread.thread_id, cursor=middle.earlier_turns_cursor, limit=1
+        )
+        next_turn = await app.get_thread_transcript(
+            thread_id=thread.thread_id, cursor=middle.later_turns_cursor, limit=1
+        )
+        assert previous_turn.turns == (index.turns[0],)
+        assert previous_turn.entries[0].position == index.turns[0].end_position - 1
+        assert previous_turn.earlier_turns_cursor is None
+        assert next_turn.turns == remaining.turns
+        assert next_turn.entries[0].position == remaining.turns[0].input_position
+        assert next_turn.later_turns_cursor is None
+        assert middle.next_cursor != middle.earlier_turns_cursor
         async with open_harness_ui_app(settings, configuration_path=root) as reopened:
             assert await reopened.get_thread_inputs(thread_id=thread.thread_id, limit=2) == index
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Fourth question")

@@ -12044,6 +12044,32 @@
             ],
             "title": "Newer Cursor"
           },
+          "earlier_turns_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earlier Turns Cursor"
+          },
+          "later_turns_cursor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Later Turns Cursor"
+          },
           "turns": {
             "items": {
               "$ref": "#/components/schemas/TranscriptTurn"

@@ -335,7 +335,26 @@ class ThreadProjectionService:
                 if boundary is not None and not position <= boundary < upper_bound
             }
         )
+        # Conversation navigation skips the process pages of turns already visible.
+        # Entry cursors remain available for each independent execution reader.
+        earlier_turn_position = min((turn.input_position for turn in visible_turns), default=position)
+        later_turn_position = max((turn.end_position for turn in visible_turns), default=upper_bound)
         return TranscriptPage(
+            earlier_turns_cursor=_encode_cursor(
+                _TranscriptCursor(thread_id=thread_id, continuation_id=continuation_id, position=earlier_turn_position)
+            )
+            if earlier_turn_position > 0
+            else None,
+            later_turns_cursor=_encode_cursor(
+                _TranscriptCursor(
+                    thread_id=thread_id,
+                    continuation_id=continuation_id,
+                    position=later_turn_position,
+                    direction="later",
+                )
+            )
+            if later_turn_position < header.message_count
+            else None,
             turns=visible_turns,
             boundary_entries=await self._inspection_entries(thread_id, continuation_id, tuple(boundaries)),
             newer_cursor=_encode_cursor(

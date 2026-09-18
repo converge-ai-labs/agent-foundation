@@ -230,8 +230,14 @@ export function useHistory(
           signal,
         }),
       ),
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
-    getPreviousPageParam: (first) => first.newer_cursor ?? undefined,
+    getNextPageParam: (last) =>
+      (last.earlier_turns_cursor === undefined
+        ? last.next_cursor
+        : last.earlier_turns_cursor) ?? undefined,
+    getPreviousPageParam: (first) =>
+      (first.later_turns_cursor === undefined
+        ? first.newer_cursor
+        : first.later_turns_cursor) ?? undefined,
   });
   // Keep the last successful history, with its real continuation identity, while
   // a replacement loads or fails. Query placeholder data disappears on errors.
@@ -263,4 +269,45 @@ export function useHistory(
     hasNextPage: !!query.data && query.hasNextPage,
     isPreviousHistory: !query.data && !!retained,
   };
+}
+
+// Execution pages never extend the conversation window or another turn's cache.
+export function useExecutionHistory(
+  threadId: string,
+  continuation: string | null | undefined,
+  turn: Schema<"TranscriptTurn">,
+  enabled: boolean,
+) {
+  const { client } = useTransport();
+  return useInfiniteQuery({
+    queryKey: [
+      "thread",
+      threadId,
+      "execution-history",
+      continuation,
+      turn.turn_id,
+    ],
+    enabled,
+    staleTime: Infinity,
+    initialPageParam: undefined as string | undefined,
+    queryFn: ({ pageParam, signal }) =>
+      result(
+        client.GET("/api/threads/{thread_id}/transcript", {
+          params: {
+            path: { thread_id: threadId },
+            query: {
+              expected_continuation_id: continuation ?? undefined,
+              turn_id: turn.turn_id,
+              cursor: pageParam,
+              limit: 30,
+            },
+          },
+          signal,
+        }),
+      ),
+    getNextPageParam: (last) =>
+      last.entries.length && last.entries[0].position > turn.input_position
+        ? (last.next_cursor ?? undefined)
+        : undefined,
+  });
 }

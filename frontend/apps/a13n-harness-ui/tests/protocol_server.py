@@ -148,6 +148,21 @@ async def main() -> None:
         async def model(messages, info):
             nonlocal attempts
             attempts += 1
+            if "--execution-layout" in sys.argv:
+                # Long, multi-page turns for independent conversation/execution QA.
+                step = attempts % 41
+                if step:
+                    yield f"Step {step}: " + "Reviewing saved observations in source order. " * 12 + "\n\n"
+                    yield {
+                        0: DeltaToolCall(
+                            name="note_write",
+                            tool_call_id=f"layout-step-{attempts}",
+                            json_args=json.dumps({"key": "layout", "value": f"Observed step {step}"}),
+                        )
+                    }
+                else:
+                    yield "Execution layout complete. " + "The final answer stays outside the execution reader. " * 12
+                return
             if "--work" in sys.argv:
                 if attempts == 1:
                     yield {

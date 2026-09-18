@@ -282,6 +282,8 @@ class TranscriptPage(SurfaceModel):
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
     newer_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+    earlier_turns_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
+    later_turns_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
     turns: tuple[TranscriptTurn, ...] = ()
     boundary_entries: tuple[TranscriptEntry, ...] = ()
 

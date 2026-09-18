@@ -7,6 +7,13 @@ export function captureReadingAnchor(
   const row = [
     ...reader.querySelectorAll<HTMLElement>("[data-reading-anchor]"),
   ].find((element) => {
+    // Nested execution readers own their anchors; their clipped rows must not
+    // become anchors for the surrounding conversation.
+    if (
+      element.closest("[data-execution-reader]") !==
+      reader.closest("[data-execution-reader]")
+    )
+      return false;
     const rect = element.getBoundingClientRect();
     return rect.height > 0 && rect.bottom > top;
   });
@@ -26,7 +33,12 @@ export function restoreReadingAnchor(
   if (!anchor) return;
   let target = [
     ...reader.querySelectorAll<HTMLElement>("[data-reading-anchor]"),
-  ].find((element) => element.dataset.readingAnchor === anchor.id);
+  ].find(
+    (element) =>
+      element.dataset.readingAnchor === anchor.id &&
+      element.closest("[data-execution-reader]") ===
+        reader.closest("[data-execution-reader]"),
+  );
   let offset = anchor.offset;
   if (!target || target.getBoundingClientRect().height === 0) {
     target = [...reader.querySelectorAll<HTMLElement>("[data-turn-id]")].find(
