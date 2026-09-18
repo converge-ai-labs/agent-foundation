@@ -307,6 +307,8 @@
   flex-wrap: wrap;
 }
 .reading {
+  /* Keep positioned transcript descendants inside this scroll container. */
+  position: relative;
   flex: 1;
   min-height: 100px;
   overflow: auto;
