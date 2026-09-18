@@ -64,11 +64,6 @@ async def resolve_selection(
     return selected
 
 
-def intersect_access(access: str, ceiling: str | None = None) -> str:
-    ranks = {"read_only": 0, "read_write": 1, "full": 2}
-    return min((access, ceiling or access), key=ranks.__getitem__)
-
-
 async def allocate_selection(
     session: AsyncSession,
     selected: EnvironmentRecord | EnvironmentTemplateRevisionRecord,
@@ -96,7 +91,6 @@ async def allocate_selection(
         provider_id=selected.provider_id,
         template_revision_id=selected.id,
         ownership="managed",
-        access=selected.to_resource().access.value,
         generation=0,
         status="unprepared",
         retention_condition="idle",

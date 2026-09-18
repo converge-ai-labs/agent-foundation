@@ -21,7 +21,6 @@ async def test_template_version_and_preparation_reach_harness(management, prepar
         template,
         revised,
         preparation=preparation,
-        initial_access=template_config["access"],
         roots=(root, second_root),
     )
 

@@ -225,7 +225,6 @@ async def _sync_environments(
         desired = {
             "provider_id": provider["id"],
             "configuration": configured.configuration,
-            "access": configured.access,
             "preparation": configured.preparation,
             "retention": {"idle": {"stop_after": configured.stop_after, "delete_after": configured.delete_after}},
         }

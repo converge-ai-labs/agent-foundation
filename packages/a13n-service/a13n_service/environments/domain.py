@@ -30,12 +30,6 @@ class DomainModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class EnvironmentAccess(StrEnum):
-    read_only = "read_only"
-    read_write = "read_write"
-    full = "full"
-
-
 class RetentionWindow(DomainModel):
     stop_after: Duration | None
     delete_after: Duration | None
@@ -86,7 +80,6 @@ class EnvironmentConfiguration(DomainModel):
 
 class TemplateConfiguration(EnvironmentConfiguration):
     provider_id: ObjectId
-    access: EnvironmentAccess = EnvironmentAccess.full
     preparation: Literal["on_run", "on_use"] = "on_run"
     retention: RetentionPolicy
 
@@ -131,7 +124,6 @@ class Environment(DomainModel):
     provider_id: ObjectId
     template_revision_id: ObjectId | None
     ownership: Literal["managed", "external"]
-    access: EnvironmentAccess
     generation: int
     status: EnvironmentStatus
     retention_condition: Literal["active", "idle"]
@@ -206,7 +198,6 @@ class RegisterEnvironmentRequest(EnvironmentConfiguration):
     provider_id: ObjectId
     name: EnvironmentName | None = None
     state: EnvironmentState | None = None
-    access: EnvironmentAccess = EnvironmentAccess.full
     labels: Labels = Field(default_factory=dict)
 
 

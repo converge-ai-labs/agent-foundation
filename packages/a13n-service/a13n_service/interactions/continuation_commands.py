@@ -167,7 +167,6 @@ class ContinuationCommands:
             delegation_id=source.delegation_id,
             parent_tool_call_id=source.parent_tool_call_id,
             environment_id=source.environment_id,
-            environment_access=source.environment_access,
             priority=source.priority,
             queue_name=source.queue_name,
             execution_budget=source.execution_budget,
@@ -394,7 +393,7 @@ class ContinuationCommands:
             workspace_id=actor.workspace_id,
             submitted=request.input,
             effective=source_state.envelope.effective_agent_config,
-            environment_access=source.environment_access,
+            environment_available=source.environment_id is not None,
             prepared_assets=prepared_assets,
         )
         normalized = normalize_waiting_continue(

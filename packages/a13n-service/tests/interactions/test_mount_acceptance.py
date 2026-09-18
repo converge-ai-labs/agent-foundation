@@ -7,7 +7,7 @@ from datetime import timedelta
 import pytest
 from a13n_harness import SafeFailure
 from a13n_service.environments.errors import EnvironmentManagementError
-from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentRecord
+from a13n_service.environments.models import EnvironmentProviderRecord
 from a13n_service.environments.mount_domain import AddEnvironmentMountRequest
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord
 from a13n_service.environments.mounts import RunEnvironmentMountService
@@ -51,7 +51,7 @@ async def _add(service, run, environment, *, name="computer", key="mount", actor
         actor=actor or hook_actor(),
         run_id=run.id,
         idempotency_key=key,
-        request=AddEnvironmentMountRequest(name=name, environment_id=environment.id, access="read_only"),
+        request=AddEnvironmentMountRequest(name=name, environment_id=environment.id),
     )
 
 
@@ -239,20 +239,6 @@ async def test_old_attempt_observations_are_pending_after_retry(interaction_sess
     pending = (await service.list(actor=hook_actor(), run_id=run.id)).items[0]
     assert pending.application_status == "pending" and pending.applied_attempt_id is None
     assert pending.observed_at is None and pending.error is None
-
-
-async def test_mount_does_not_exceed_target_access_ceiling(interaction_sessions, mount_run):
-    service, _, run, _, environment = mount_run
-    async with transaction(interaction_sessions) as database:
-        (await database.get(EnvironmentRecord, environment.id)).access = "read_only"
-    with pytest.raises(EnvironmentManagementError) as caught:
-        await service.add(
-            actor=hook_actor(),
-            run_id=run.id,
-            idempotency_key="too-much-access",
-            request=AddEnvironmentMountRequest(name="computer", environment_id=environment.id, access="full"),
-        )
-    assert caught.value.code == "environment_invalid"
 
 
 async def test_failed_signal_cannot_undo_committed_mount(interaction_sessions, mount_run):

@@ -748,3 +748,16 @@
     padding-left: 0;
   }
 }
+
+.debugBadge {
+  color: var(--a13n-secondary);
+  background: var(--a13n-surface);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.debugHint {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}

@@ -29,7 +29,7 @@ from .errors import EnvironmentManagementError, invalid_environment
 from .models import EnvironmentProviderRecord, EnvironmentRecord
 from .mount_domain import AddEnvironmentMountRequest, RunEnvironmentMount
 from .mount_models import RunEnvironmentMountRecord
-from .selection import intersect_access, resolve_selection
+from .selection import resolve_selection
 from .websocket.admission import OnlineAdmission, OnlineEvidence
 
 logger = logging.getLogger("a13n_service.environments.mounts")
@@ -108,8 +108,6 @@ class RunEnvironmentMountService:
                 environment.ownership == "external" and environment.status == "deleted"
             ):
                 raise _conflict("environment_unavailable", "Environment is unavailable for mount acceptance.")
-            if intersect_access(request.access.value, environment.access) != request.access.value:
-                raise invalid_environment("Mount access exceeds the Environment access ceiling")
             if provider.type == WEBSOCKET_PROVIDER_KEY:
                 online.require(run.organization_id, environment.id)
             previous = await database.scalar(
@@ -120,7 +118,6 @@ class RunEnvironmentMountService:
                 run_id=run_id,
                 name=request.name,
                 environment_id=environment.id,
-                access=request.access,
                 created_at=created_at,
                 accepting_principal=actor.principal,
             )
@@ -131,7 +128,6 @@ class RunEnvironmentMountService:
                     organization_id=run.organization_id,
                     workspace_id=workspace_id,
                     environment_id=environment.id,
-                    access=request.access.value,
                     created_at=created_at,
                     principal_type=actor.principal.principal_type.value,
                     principal_id=actor.principal.principal_id,
@@ -277,7 +273,6 @@ def _project(row: RunEnvironmentMountRecord, attempt: RunAttemptRecord | None) -
             "run_id": row.run_id,
             "name": row.name,
             "environment_id": row.environment_id,
-            "access": row.access,
             "created_at": row.created_at,
             "accepting_principal": {"principal_type": row.principal_type, "principal_id": row.principal_id},
             "use_started_at": row.use_started_at,

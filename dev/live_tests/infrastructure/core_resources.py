@@ -64,7 +64,6 @@ async def provision(client: LiveClient, *, on_created: Callable[[dict], None] | 
         {
             "provider_id": environment_provider_id,
             "configuration_schema_version": "1",
-            "access": "full",
             "configuration": {
                 "root": {"path": config["workspace_root"]},
                 "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],

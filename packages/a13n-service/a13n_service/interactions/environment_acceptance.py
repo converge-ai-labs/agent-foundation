@@ -53,18 +53,14 @@ async def add_run_with_environment(
             block = AcceptedBinaryContent.model_validate(content)
             if isinstance(block.source, PathBinarySource) and run.environment_id is None:
                 raise invalid_environment("Path input requires a selected Environment")
-            if block.delivery is BinaryContentDelivery.environment_path and (
-                run.environment_id is None or run.environment_access == "read_only"
-            ):
+            if block.delivery is BinaryContentDelivery.environment_path and run.environment_id is None:
                 raise invalid_environment("Environment-path delivery requires a writable Environment")
     config = state.effective_agent_config
     requires_writable = bool(config.skills) or any(
         child.effective_config.skills for _, child in inline_child_executions(config).values()
     )
-    if requires_writable and (run.environment_id is None or run.environment_access == "read_only"):
+    if requires_writable and run.environment_id is None:
         raise invalid_environment("Managed Skills require a writable Environment")
-    if (run.environment_id is None) != (run.environment_access is None):
-        raise invalid_environment("Environment selection and access must be supplied together")
     thread = await database.get(ThreadRecord, run.thread_id)
     previous = await database.get(RunRecord, thread.current_run_id) if thread and thread.current_run_id else None
     record = run_record(run)

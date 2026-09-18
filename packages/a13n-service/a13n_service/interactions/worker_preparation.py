@@ -232,11 +232,7 @@ class WorkerAttemptPreparer:
             if environment is not None:
                 stack.push_async_callback(environment.close)
             mounted = MountedHarnessEnvironments(
-                entries=(
-                    {"workspace": EnvironmentMount(environment, access=EnvironmentAccess(environment.access))}
-                    if environment is not None
-                    else {}
-                )
+                entries=({"workspace": EnvironmentMount(environment)} if environment is not None else {})
             )
 
             async def prepare_mount(mount: AcceptedRunMount):

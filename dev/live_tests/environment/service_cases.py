@@ -74,7 +74,7 @@ async def assert_managed_continuity(journey, environment, *, preserves_files, ro
     )
 
 
-async def assert_template_preparation(journey, template, revised, *, preparation, initial_access, roots=None):
+async def assert_template_preparation(journey, template, revised, *, preparation, roots=None):
     live = journey.live
     before_ids = {item["id"] for item in await live.collection(journey.base + "/environments")}
     proofs = ("TEMPLATE_ONE", "TEMPLATE_TWO") if roots is not None else (None, None)
@@ -83,9 +83,9 @@ async def assert_template_preparation(journey, template, revised, *, preparation
         {**revised, "expected_version": template["version"]},
     )
     allocated = []
-    for selection, revision_id, access, proof in (
-        ({"template_id": template["id"], "version": 1}, template["current_revision_id"], initial_access, proofs[0]),
-        ({"template_id": template["id"]}, revision["id"], revised["access"], proofs[1]),
+    for selection, revision_id, proof in (
+        ({"template_id": template["id"], "version": 1}, template["current_revision_id"], proofs[0]),
+        ({"template_id": template["id"]}, revision["id"], proofs[1]),
     ):
         first_use = view("proof.txt") if proof is not None else listing()
         case = await journey.case(gate_at=0, parallel_steps=[first_use, first_use])
@@ -99,14 +99,14 @@ async def assert_template_preparation(journey, template, revised, *, preparation
             root = roots[len(allocated) - 1] / "environments" / before["id"]
             root.mkdir(parents=True, exist_ok=True)
             (root / "proof.txt").write_text(proof)
-        assert before["template_revision_id"] == revision_id and before["access"] == access
+        assert before["template_revision_id"] == revision_id
         assert before["status"] == ("unprepared" if preparation == "on_use" else "running")
         assert before["generation"] == (0 if preparation == "on_use" else 1)
         await live.release(case)
         result = await live.finish(run["id"])
         observed = journey.observations(case)
         assert result["environment_id"] == before["id"]
-        assert has_tool(observed[0], "shell_exec") == (access == "full")
+        assert has_tool(observed[0], "shell_exec")
         messages = [message for message in observed[-1]["body"]["messages"] if message.get("role") == "tool"]
         assert len(messages) == 2
         if proof is not None:
@@ -125,66 +125,27 @@ async def assert_template_preparation(journey, template, revised, *, preparation
     assert len(set(allocated)) == 2 and after_ids - before_ids == set(allocated)
 
 
-async def assert_access_policy(journey, environment, access, *, root=None, read_text=None):
+async def assert_environment_tools(journey, environment, *, root=None, read_text=None):
     marker = "WRITTEN_BY_HARNESS_" + uuid4().hex
-    proof = "PREEXISTING_FILE_CONTENT"
+    steps = [
+        listing(),
+        write("output.txt", marker),
+        view("output.txt"),
+        {
+            "tool": "shell_exec",
+            "arguments": {
+                "command": "cat output.txt > shell-copy.txt && cat shell-copy.txt",
+                "cwd": ".",
+                "yield_time_seconds": 5,
+            },
+        },
+        view("shell-copy.txt"),
+    ]
+    result, observed = await execute(journey, environment, steps)
+    for name in ("view", "write", "shell_exec"):
+        assert has_tool(observed[0], name)
+    assert last_tool_result(observed[-1])["ok"] is True
+    assert marker in result["output_text"]
     if root is not None:
-        (root / "proof.txt").write_text(proof)
-    selection = environment if access != "none" else None
-    steps = [] if access == "none" else [listing()]
-    if access != "none" and root is not None:
-        steps.append(view("proof.txt"))
-    if access in {"read_write", "full"}:
-        steps.extend([write("output.txt", marker), view("output.txt")])
-    if access == "full":
-        source = "proof.txt" if root is not None else "output.txt"
-        steps.extend(
-            [
-                {
-                    "tool": "shell_exec",
-                    "arguments": {
-                        "command": f"cat {source} > shell-copy.txt && cat shell-copy.txt",
-                        "cwd": ".",
-                        "yield_time_seconds": 5,
-                    },
-                },
-                view("shell-copy.txt"),
-            ]
-        )
-    result, observed = await execute(journey, selection, steps)
-    assert has_tool(observed[0], "view") == (access != "none")
-    assert has_tool(observed[0], "write") == (access in {"read_write", "full"})
-    assert has_tool(observed[0], "shell_exec") == (access == "full")
-    if access != "none":
-        assert last_tool_result(observed[-1])["ok"] is True
-        if root is not None:
-            assert proof in json.dumps(observed[-1]["body"]["messages"])
-    if access in {"read_write", "full"}:
-        assert marker in json.dumps(observed[-1]["body"]["messages"])
-        assert (proof if access == "full" and root is not None else marker) in result["output_text"]
-    if root is not None:
-        assert (root / "output.txt").exists() == (access in {"read_write", "full"})
-        if access in {"read_write", "full"}:
-            assert (await read_text("output.txt") if read_text else (root / "output.txt").read_text()) == marker
-        if access == "full":
-            assert (await read_text("shell-copy.txt") if read_text else (root / "shell-copy.txt").read_text()) == proof
-        else:
-            assert not (root / "shell-copy.txt").exists()
-    if access != "full":
-        forbidden = (
-            write("forbidden.txt", "MUST_NOT_EXIST")
-            if access in {"none", "read_only"}
-            else {
-                "tool": "shell_exec",
-                "arguments": {"command": "printf forbidden > forbidden.txt", "cwd": "."},
-            }
-        )
-        denied, _ = await execute(
-            journey, selection, [{**forbidden, "force_unadvertised": True}], config_override={"retries": {"tools": 1}}
-        )
-        assert "MUST_NOT_EXIST" not in denied["output_text"]
-        if root is not None:
-            assert not (root / "forbidden.txt").exists()
-        if access != "none":
-            _, observed = await execute(journey, environment, [listing()])
-            assert_missing(observed[-1], "forbidden.txt")
+        for path in ("output.txt", "shell-copy.txt"):
+            assert (await read_text(path) if read_text else (root / path).read_text()) == marker

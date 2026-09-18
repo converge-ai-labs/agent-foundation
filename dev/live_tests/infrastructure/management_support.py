@@ -79,7 +79,7 @@ class ManagementJourney:
         return sorted(runs, key=lambda run: run["id"])
 
     async def environment_template(
-        self, *, preparation="on_run", access="full", name=None, provider_type="direct-local", retention=None
+        self, *, preparation="on_run", name=None, provider_type="direct-local", retention=None
     ):
         name = name or uuid4().hex
         root = self.lab.root / ("environment-" + name)
@@ -94,7 +94,6 @@ class ManagementJourney:
         )
         template_config = {
             "provider_id": provider["id"],
-            "access": access,
             "preparation": preparation,
             "retention": retention or {"idle": {"stop_after": None, "delete_after": None}},
             "configuration": {

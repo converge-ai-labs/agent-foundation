@@ -8,7 +8,7 @@ from a13n_service.environments.selection import Omitted
 from a13n_service.hooks.domain import InlineHookRequest, InlineHookSubscriptionInput
 from a13n_service.labels import Labels
 
-from .domain import StrictModel
+from .domain import SessionPurpose, StrictModel
 from .input import AgentInput
 from .protocol_context import ProtocolInputContext
 
@@ -17,6 +17,7 @@ class StartRunIntent(StrictModel):
     agent_id: str
     input: AgentInput
     session_id: str | None = None
+    session_purpose: SessionPurpose = SessionPurpose.execution
     agent_revision_id: str | None = None
     expected_default_revision_id: str | None = None
     config_override: AgentRunOverride | None = None

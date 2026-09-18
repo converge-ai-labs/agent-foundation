@@ -79,12 +79,11 @@ async def admitted_use(request, interaction_sessions, interaction_object_store, 
     await asyncio.sleep(coordination.limits.lease_ms / 1000 + 0.02)
     await coordination.promote(connection)
     await coordination.online(connection)
-    access = getattr(request, "param", "read_only")
+    has_primary = getattr(request, "param", True)
     _, run, _ = await _accept_root(
         interaction_sessions,
         interaction_object_store,
-        environment_id=environment.id if access is not None else None,
-        environment_access=access or "full",
+        environment_id=environment.id if has_primary else None,
         coordination=coordination,
     )
     await coordination.retire(connection)
@@ -104,12 +103,12 @@ async def admitted_use(request, interaction_sessions, interaction_object_store, 
     return AdmittedUse(identity, provider.id, service, run, claim)
 
 
-async def test_control_rechecks_persisted_attempt_and_accepted_access(interaction_sessions, admitted_use):
+async def test_control_rechecks_persisted_attempt_and_allows_provider_operations(interaction_sessions, admitted_use):
     identity = admitted_use.identity
     permissions = await ClientUseAuthorization(interaction_sessions)(identity)
     assert EnvironmentAction.FILE_READ_BYTES in permissions
-    assert EnvironmentAction.FILE_WRITE_BYTES not in permissions
-    assert EnvironmentAction.SHELL_EXEC not in permissions
+    assert EnvironmentAction.FILE_WRITE_BYTES in permissions
+    assert EnvironmentAction.SHELL_EXEC in permissions
     assert interaction_sessions.kw["bind"].sync_engine.pool.checkedout() == 0
 
 
@@ -138,7 +137,7 @@ async def test_disabled_provider_cannot_gain_use_from_old_online_presence(intera
         await ClientUseAuthorization(interaction_sessions)(identity)
 
 
-async def test_alias_authorization_does_not_broaden_primary_access(interaction_sessions, admitted_use):
+async def test_each_alias_requires_its_own_accepted_binding(interaction_sessions, admitted_use):
     identity = admitted_use.identity
     authorize = ClientUseAuthorization(interaction_sessions)
     primary = await authorize(identity, "workspace")
@@ -146,11 +145,10 @@ async def test_alias_authorization_does_not_broaden_primary_access(interaction_s
         await authorize(identity, "writer")
     async with transaction(interaction_sessions) as session:
         mount = accepted_mount(identity.run_id, identity.connection.environment_id, name="writer")
-        mount.access = "full"
         session.add(mount)
     writable = await authorize(identity, "writer")
     assert EnvironmentAction.SHELL_EXEC in writable
-    assert EnvironmentAction.SHELL_EXEC not in primary
+    assert writable == primary
     assert await authorize(identity, "workspace") == primary
     with pytest.raises(EnvironmentError):
         await authorize(identity, "unknown")

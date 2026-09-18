@@ -199,7 +199,6 @@ async def test_acceptance_during_preparation_waits_for_next_boundary(interaction
                         attempt.run_id,
                         environment_id,
                         name="later",
-                        access="full",
                         created_at=NOW + timedelta(microseconds=2),
                     )
                 )

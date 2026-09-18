@@ -23,7 +23,7 @@ from a13n_service.iam import (
     authorize_agent_scoped_collection,
 )
 from a13n_service.interactions.access import authorize_interaction, configuration_visibility
-from a13n_service.interactions.domain import RunLineageKind, RunStatus
+from a13n_service.interactions.domain import RunLineageKind, RunStatus, SessionPurpose
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 from a13n_service.labels import Labels, label_predicates
 from a13n_service.lifecycle import LifecycleEntityType
@@ -45,6 +45,7 @@ class _Resource(BaseModel):
 
 
 class ThreadResource(_Resource):
+    session_purpose: SessionPurpose
     configuration_draft_id: str | None = None
     id: str
     version: int
@@ -77,7 +78,6 @@ class RunResource(_Resource):
     agent_revision_id: str | None
     effective_agent_config_digest: str
     environment_id: str | None
-    environment_access: str | None
     status: RunStatus
     wait_reason: str | None
     input_kind: str
@@ -228,7 +228,7 @@ class NativeInteractionQueries:
             )
             conversation = await database.get(SessionRecord, thread.session_id)
             assert conversation is not None
-            return _thread(thread, configuration_draft_id=conversation.configuration_draft_id)
+            return _thread(thread, conversation=conversation)
 
     async def list_threads(
         self,
@@ -293,7 +293,7 @@ class NativeInteractionQueries:
             records = tuple((await database.scalars(query)).all())
         page, next_cursor = _page(records, limit=limit, scope=scope, kind="threads")
         return ThreadCollection(
-            items=tuple(_thread(item, configuration_draft_id=session.configuration_draft_id) for item in page),
+            items=tuple(_thread(item, conversation=session) for item in page),
             next_cursor=next_cursor,
         )
 
@@ -697,9 +697,10 @@ async def _authorize_collection(database: AsyncSession, **kwargs):
         raise _not_found() from error
 
 
-def _thread(record: ThreadRecord, *, configuration_draft_id: str | None) -> ThreadResource:
+def _thread(record: ThreadRecord, *, conversation: SessionRecord) -> ThreadResource:
     return ThreadResource(
-        configuration_draft_id=configuration_draft_id,
+        configuration_draft_id=conversation.configuration_draft_id,
+        session_purpose=SessionPurpose(conversation.purpose),
         id=record.id,
         version=record.version,
         queue_version=record.queue_version,
@@ -734,7 +735,6 @@ def _run(record: RunRecord) -> RunResource:
         agent_revision_id=resource.agent_revision_id,
         effective_agent_config_digest=resource.effective_agent_config_digest,
         environment_id=resource.environment_id,
-        environment_access=resource.environment_access,
         status=resource.status,
         wait_reason=None if resource.wait_reason is None else resource.wait_reason.value,
         input_kind=resource.input_kind.value,

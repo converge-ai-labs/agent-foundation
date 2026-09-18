@@ -596,9 +596,6 @@
       "AddEnvironmentMountRequest": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess"
-          },
           "environment_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -614,8 +611,7 @@
         },
         "required": [
           "name",
-          "environment_id",
-          "access"
+          "environment_id"
         ],
         "title": "AddEnvironmentMountRequest",
         "type": "object"
@@ -7365,10 +7361,6 @@
       "CreateTemplateRequest": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess",
-            "default": "full"
-          },
           "configuration": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -7445,10 +7437,6 @@
       "CreateTemplateRevisionRequest": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess",
-            "default": "full"
-          },
           "configuration": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -8290,9 +8278,6 @@
       "Environment": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess"
-          },
           "condition_since": {
             "format": "date-time",
             "title": "Condition Since",
@@ -8398,7 +8383,6 @@
           "provider_id",
           "template_revision_id",
           "ownership",
-          "access",
           "generation",
           "status",
           "retention_condition",
@@ -8408,15 +8392,6 @@
         ],
         "title": "Environment",
         "type": "object"
-      },
-      "EnvironmentAccess": {
-        "enum": [
-          "read_only",
-          "read_write",
-          "full"
-        ],
-        "title": "EnvironmentAccess",
-        "type": "string"
       },
       "EnvironmentCommand": {
         "additionalProperties": false,
@@ -8482,9 +8457,6 @@
       "EnvironmentDetail": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess"
-          },
           "condition_since": {
             "format": "date-time",
             "title": "Condition Since",
@@ -8608,7 +8580,6 @@
           "provider_id",
           "template_revision_id",
           "ownership",
-          "access",
           "generation",
           "status",
           "retention_condition",
@@ -8959,10 +8930,6 @@
       "EnvironmentTemplateRevision": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess",
-            "default": "full"
-          },
           "configuration": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -14265,10 +14232,6 @@
       "RegisterEnvironmentRequest": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess",
-            "default": "full"
-          },
           "configuration": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -15471,9 +15434,6 @@
           "accepting_principal": {
             "$ref": "#/components/schemas/PrincipalRef"
           },
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess"
-          },
           "application_status": {
             "$ref": "#/components/schemas/MountApplicationStatus",
             "default": "pending"
@@ -15564,7 +15524,6 @@
           "run_id",
           "name",
           "environment_id",
-          "access",
           "created_at",
           "accepting_principal"
         ],
@@ -15732,17 +15691,6 @@
           "effective_agent_config_digest": {
             "title": "Effective Agent Config Digest",
             "type": "string"
-          },
-          "environment_access": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment Access"
           },
           "environment_id": {
             "anyOf": [
@@ -15962,7 +15910,6 @@
           "agent_revision_id",
           "effective_agent_config_digest",
           "environment_id",
-          "environment_access",
           "status",
           "wait_reason",
           "input_kind",
@@ -16646,6 +16593,14 @@
         "title": "SessionPreview",
         "type": "object"
       },
+      "SessionPurpose": {
+        "enum": [
+          "execution",
+          "debug"
+        ],
+        "title": "SessionPurpose",
+        "type": "string"
+      },
       "SessionResource": {
         "additionalProperties": false,
         "properties": {
@@ -16683,6 +16638,9 @@
               }
             ]
           },
+          "purpose": {
+            "$ref": "#/components/schemas/SessionPurpose"
+          },
           "run_count": {
             "anyOf": [
               {
@@ -16706,6 +16664,7 @@
           }
         },
         "required": [
+          "purpose",
           "id",
           "workspace_id",
           "created_at",
@@ -17561,6 +17520,10 @@
             },
             "title": "Session Labels",
             "type": "object"
+          },
+          "session_purpose": {
+            "$ref": "#/components/schemas/SessionPurpose",
+            "default": "execution"
           },
           "thread_labels": {
             "maxProperties": 32,
@@ -18610,6 +18573,9 @@
             "title": "Session Id",
             "type": "string"
           },
+          "session_purpose": {
+            "$ref": "#/components/schemas/SessionPurpose"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -18621,6 +18587,7 @@
           }
         },
         "required": [
+          "session_purpose",
           "id",
           "version",
           "queue_version",

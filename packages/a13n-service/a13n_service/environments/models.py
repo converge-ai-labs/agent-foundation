@@ -207,7 +207,6 @@ class EnvironmentRecord(ResourceColumns[str], Base):
     provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
     template_revision_id: Mapped[str | None] = mapped_column(String(72))
     ownership: Mapped[str] = mapped_column(String(16), nullable=False)
-    access: Mapped[str] = mapped_column(String(16), nullable=False)
     external_configuration: Mapped[dict[str, JsonValue] | None] = mapped_column(JSON)
     state: Mapped[dict[str, JsonValue] | None] = mapped_column(JSON)
     target_identity: Mapped[str | None] = mapped_column(String(256))
@@ -233,7 +232,6 @@ class EnvironmentRecord(ResourceColumns[str], Base):
                 "provider_id": self.provider_id,
                 "template_revision_id": self.template_revision_id,
                 "ownership": self.ownership,
-                "access": self.access,
                 "generation": self.generation,
                 "status": self.status,
                 "retention_condition": self.retention_condition,

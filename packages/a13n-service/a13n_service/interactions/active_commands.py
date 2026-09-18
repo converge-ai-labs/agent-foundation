@@ -208,7 +208,7 @@ class ActiveRunCommands:
                 workspace_id=actor.workspace_id,
                 submitted=input,
                 effective=state.envelope.effective_agent_config,
-                environment_access=source.environment_access,
+                environment_available=source.environment_id is not None,
                 retained_secret_bindings=state.envelope.secret_bindings,
             )
         except (ObjectStoreError, RunObjectError, InteractionCommandError) as error:

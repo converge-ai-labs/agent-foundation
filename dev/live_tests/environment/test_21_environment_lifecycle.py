@@ -76,7 +76,7 @@ async def test_successor_inherits_environment_by_operation(management, operation
     successor = await journey.post(f"/api/v1/runs/{parent['id']}/{operation}", body, expected=202)
     live.track(successor)
     result = await live.finish(successor["run_id"])
-    assert result["environment_id"] == environment["id"] and result["environment_access"] == "full"
+    assert result["environment_id"] == environment["id"]
     assert (result["thread_id"] != parent["thread_id"]) == (operation == "fork")
     assert await live.run(parent["id"]) == parent
 

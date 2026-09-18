@@ -8,7 +8,7 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { Composer } from "../conversations/composer";
+import { Composer } from "./composer";
 
 export function ContinueWithoutFeedback({
   run,
