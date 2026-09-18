@@ -2309,7 +2309,7 @@ Get Environment.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Environment`).
+- **200** — Successful Response (`application/json: EnvironmentDetail`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
