@@ -15,6 +15,8 @@ from types import MappingProxyType
 from typing import Literal
 
 from a13n_environment import (
+    FILE_ACTIONS,
+    FILE_READ_ACTIONS,
     DirectLocalEnvironmentProvider,
     DirectLocalProviderRuntime,
     Environment,
@@ -403,7 +405,7 @@ class EnvironmentRunService:
                         root=BUILTIN_SKILLS_ROOT,
                         alias="builtin-skills",
                         mount_path=BUILTIN_SKILLS_PATH,
-                        read_only=True,
+                        file_actions=FILE_READ_ACTIONS,
                     )
                 )
                 if not (canonical_host_paths and Path(path_layout.user_skills) in roots):
@@ -435,7 +437,7 @@ class EnvironmentRunService:
                 mounts={
                     item.alias: EnvironmentMount(
                         environment=item.environment,
-                        access=item.permission_ceiling,
+                        permission_ceiling=item.permission_ceiling,
                         working_directory="/tmp" if item.alias == "thread-files" else None,
                         mount_path=item.mount_path,
                     )
@@ -473,7 +475,7 @@ class EnvironmentRunService:
             configuration = provider.validate_configuration(
                 schema_version="1",
                 value={
-                    "root": {"path": os.fspath(root), "read_only": False},
+                    "root": {"path": os.fspath(root)},
                     "shell_profiles": [],
                     "allowed_executables": [],
                     "allowed_ports": [],
@@ -486,9 +488,7 @@ class EnvironmentRunService:
                 state=None,
                 runtime=DirectLocalProviderRuntime(),
             )
-            operations = frozenset(
-                action for action in EnvironmentAction if action.value.startswith("environment.file.")
-            )
+            operations = FILE_ACTIONS
         return _PreparedMount(
             alias="thread-files",
             key=None,
@@ -505,7 +505,7 @@ class EnvironmentRunService:
         root: Path,
         alias: str,
         mount_path: str | None,
-        read_only: bool = False,
+        file_actions: frozenset[EnvironmentAction] = FILE_ACTIONS,
     ) -> _PreparedMount:
         try:
             normalized = await to_thread.run_sync(_validate_content_plugin_root, root)
@@ -513,7 +513,7 @@ class EnvironmentRunService:
             configuration = provider.validate_configuration(
                 schema_version="1",
                 value={
-                    "root": {"path": os.fspath(normalized), "read_only": read_only},
+                    "root": {"path": os.fspath(normalized)},
                     "shell_profiles": [],
                     "allowed_executables": [],
                     "allowed_ports": [],
@@ -532,21 +532,6 @@ class EnvironmentRunService:
                 code="host_files_mount_failed",
                 details={"mount": alias, "root": os.fspath(root)},
             ) from exc
-        file_actions = (
-            frozenset(
-                {
-                    EnvironmentAction.FILE_STAT,
-                    EnvironmentAction.FILE_READ_TEXT,
-                    EnvironmentAction.FILE_READ_BYTES,
-                    EnvironmentAction.FILE_LIST,
-                    EnvironmentAction.FILE_QUERY,
-                    EnvironmentAction.FILE_SEARCH_TEXT,
-                    EnvironmentAction.FILE_COPY_SOURCE,
-                }
-            )
-            if read_only
-            else frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
-        )
         return _PreparedMount(
             alias=alias,
             key=None,
@@ -565,7 +550,7 @@ class EnvironmentRunService:
             configuration = provider.validate_configuration(
                 schema_version="1",
                 value={
-                    "root": {"path": os.fspath(normalized), "read_only": False},
+                    "root": {"path": os.fspath(normalized)},
                     "shell_profiles": [],
                     "allowed_executables": [],
                     "allowed_ports": [],
@@ -584,14 +569,13 @@ class EnvironmentRunService:
                 code="user_skills_mount_failed",
                 details={"root": os.fspath(root)},
             ) from exc
-        file_actions = frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
         return _PreparedMount(
             alias="user-skills",
             key=None,
             expected_state_ref=None,
             supplied_state=None,
             environment=environment,
-            permission_ceiling=EnvironmentPermissionSet(operations=file_actions),
+            permission_ceiling=EnvironmentPermissionSet(operations=FILE_ACTIONS),
             mount_path=mount_path,
         )
 

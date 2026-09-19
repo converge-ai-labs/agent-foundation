@@ -324,3 +324,11 @@
   gap: 32px;
   min-width: 0;
 }
+
+/* File-backed conversation memory: settings, then the browser. */
+.fileMemory {
+  display: grid;
+  gap: 20px;
+  min-width: 0;
+  padding: 20px;
+}

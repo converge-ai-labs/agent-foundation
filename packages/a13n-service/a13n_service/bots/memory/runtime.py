@@ -4,6 +4,7 @@ from collections.abc import Callable
 from typing import Literal
 
 from a13n_harness.capabilities.memory import MemoryCapability
+from a13n_harness.context import AgentContext
 from a13n_harness.memory_documents import (
     MemoryDocumentContent,
     MemoryDocumentIndex,
@@ -18,6 +19,7 @@ from a13n_service.memory.service import MemoryService, failure
 from .access import RuntimeAuthority
 from .binding import BotMemoryBinding
 from .domain import CreateDocument, SearchDocuments
+from .files import filesystem_store
 from .mutations import create, delete
 from .service import BotMemoryService
 from .verification import BotMemoryVerifier
@@ -90,13 +92,33 @@ def bot_memory_capability(
     verifier: BotMemoryVerifier | None,
     agent_id: str,
     current_context: Callable[[], AttemptContext],
+    filesystem: bool = False,
 ) -> MemoryCapability | None:
     if not (binding.use_memory or binding.save_on_request):
         return None
     assert binding.scope_id is not None and binding.provider_id is not None
     authority = RuntimeAuthority(binding.account_id, binding.scope_id, binding.provider_id, agent_id, current_context)
+
+    async def resolve(context: AgentContext) -> MemoryDocumentStore:
+        if filesystem:
+            if verifier is None:
+                raise failure("memory_scope_unverified", "Conversation verification is unavailable.")
+            return await filesystem_store(
+                context,
+                service,
+                run=run,
+                binding=binding,
+                agent_id=agent_id,
+                current_context=current_context,
+                verifier=verifier,
+            )
+        return ConversationDocumentStore(BotMemoryService(service), authority, run.id, verifier)
+
     return MemoryCapability(
-        document_store=ConversationDocumentStore(BotMemoryService(service), authority, run.id, verifier),
+        document_factory=resolve if filesystem else None,
+        document_store=None
+        if filesystem
+        else ConversationDocumentStore(BotMemoryService(service), authority, run.id, verifier),
         document_read=binding.use_memory,
         document_write=binding.save_on_request,
     )

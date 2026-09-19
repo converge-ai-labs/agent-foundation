@@ -6,12 +6,16 @@ from pathlib import Path
 
 import pytest
 from a13n_environment import (
+    FILE_ACTIONS,
+    FILE_READ_ACTIONS,
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
     DirectLocalShellProfile,
+    EnvironmentAction,
+    EnvironmentPermissionSet,
 )
-from a13n_harness import EnvironmentAccess, EnvironmentMount, HarnessBuilder, RunBindings
+from a13n_harness import EnvironmentMount, HarnessBuilder, RunBindings
 from pydantic_ai.messages import ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -30,21 +34,21 @@ SHELL_TOOLS = (FILE_TOOLS - {"move", "copy", "delete"}) | {
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    ("access", "shell", "prepared", "expected_tools"),
+    ("ceiling", "shell", "prepared", "expected_tools"),
     [
         pytest.param(None, False, False, set(), id="no-environment"),
-        pytest.param(EnvironmentAccess.READ_ONLY, True, False, READ_TOOLS, id="read-only"),
-        pytest.param(EnvironmentAccess.READ_WRITE, True, False, FILE_TOOLS, id="read-write"),
-        pytest.param(EnvironmentAccess.FULL, False, False, FILE_TOOLS, id="provider-without-shell"),
-        pytest.param(EnvironmentAccess.FULL, True, False, SHELL_TOOLS, id="lazy-shell"),
-        pytest.param(EnvironmentAccess.FULL, True, True, SHELL_TOOLS, id="prepared-shell"),
+        pytest.param(FILE_READ_ACTIONS, True, False, READ_TOOLS, id="read-only-ceiling"),
+        pytest.param(FILE_ACTIONS, True, False, FILE_TOOLS, id="files-only-ceiling"),
+        pytest.param(frozenset(EnvironmentAction), False, False, FILE_TOOLS, id="provider-without-shell"),
+        pytest.param(frozenset(EnvironmentAction), True, False, SHELL_TOOLS, id="lazy-shell"),
+        pytest.param(frozenset(EnvironmentAction), True, True, SHELL_TOOLS, id="prepared-shell"),
     ],
 )
 async def test_root_and_inline_child_receive_and_use_environment_tools(
-    tmp_path, access, shell, prepared, expected_tools
+    tmp_path, ceiling, shell, prepared, expected_tools
 ):
     environment = None
-    if access is not None:
+    if ceiling is not None:
         executable = shutil.which("sh") if shell else None
         if shell and executable is None:
             pytest.skip("A POSIX shell is required for this Provider configuration")
@@ -108,7 +112,9 @@ async def test_root_and_inline_child_receive_and_use_environment_tools(
         .build(definition)
         .run(
             "Inspect the workspace, then delegate the same check.",
-            environment=EnvironmentMount(environment, access=access) if environment is not None else None,
+            environment=EnvironmentMount(environment, permission_ceiling=EnvironmentPermissionSet(operations=ceiling))
+            if environment is not None
+            else None,
             bindings=RunBindings.embedded(model_resolver=resolve_model),
         )
     )

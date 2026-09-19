@@ -27,14 +27,12 @@ from a13n_environment.direct_local.processes import LocalProcessManager
 pytestmark = pytest.mark.anyio
 
 
-def _environment(root: Path, *, read_only: bool = False) -> DirectLocalEnvironment:
+def _environment(root: Path, *, max_value_bytes: int | None = None) -> DirectLocalEnvironment:
     provider = DirectLocalEnvironmentProvider()
-    configuration = provider.validate_configuration(
-        schema_version="1",
-        value={
-            "root": {"path": str(root), "read_only": read_only},
-        },
-    )
+    value: dict[str, object] = {"root": {"path": str(root)}}
+    if max_value_bytes is not None:
+        value["max_value_bytes"] = max_value_bytes
+    configuration = provider.validate_configuration(schema_version="1", value=value)
     environment = provider.create_environment(
         environment_id="local-test",
         configuration=configuration,
@@ -163,8 +161,8 @@ async def test_direct_local_backing_survives_reentry_but_not_replacement_or_poli
     root = tmp_path / "workspace"
     root.mkdir()
 
-    async def observe(*, read_only: bool = False) -> tuple[str, str | None]:
-        environment = _environment(root, read_only=read_only)
+    async def observe(*, max_value_bytes: int | None = None) -> tuple[str, str | None]:
+        environment = _environment(root, max_value_bytes=max_value_bytes)
         assert environment.descriptor.backing_identity is None
         await environment.enter(thread_id="thread", run_id="run", agent_instance_id="agent", mount_id="mount")
         assert environment.descriptor.backing_identity is None
@@ -180,27 +178,10 @@ async def test_direct_local_backing_survives_reentry_but_not_replacement_or_poli
     next_generation, next_identity = await observe()
     assert next_generation != generation
     assert next_identity == identity
-    assert (await observe(read_only=True))[1] != identity
+    assert (await observe(max_value_bytes=1024))[1] != identity
     root.rename(tmp_path / "previous-workspace")
     root.mkdir()
     assert (await observe())[1] != identity
-
-
-async def test_direct_local_read_only_configuration_denies_writes(tmp_path: Path) -> None:
-    environment = _environment(tmp_path, read_only=True)
-    await environment.enter(
-        thread_id="thread-1",
-        run_id="run-1",
-        agent_instance_id="agent-1",
-        mount_id="workspace",
-    )
-    await environment.prepare()
-
-    assert EnvironmentAction.FILE_WRITE_TEXT not in environment.descriptor.permissions.operations
-    with pytest.raises(Exception) as captured:
-        await environment.operations.files.write_text("/denied.txt", "denied", mode="create")  # type: ignore[union-attr]
-    assert getattr(captured.value, "code", None) == "environment_denied"
-    await environment.close()
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Direct Local process groups require POSIX")

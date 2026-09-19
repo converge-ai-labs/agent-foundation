@@ -21,7 +21,6 @@ pytestmark = pytest.mark.anyio
 def files(tmp_path):
     return LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount",
         generation="generation",

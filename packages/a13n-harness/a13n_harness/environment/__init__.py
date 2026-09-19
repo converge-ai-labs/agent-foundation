@@ -90,7 +90,7 @@ from .retention import (
     OpaqueOutputReference,
     OpaqueProcessHandle,
 )
-from .sources import EnvironmentAccess, EnvironmentEntry, EnvironmentMount
+from .sources import EnvironmentEntry, EnvironmentMount
 from .virtual_files import VirtualFileOperator
 
 if TYPE_CHECKING:
@@ -128,7 +128,6 @@ __all__ = [
     "DynamicEnvironmentCapability",
     "DynamicEnvironmentConfiguration",
     "Environment",
-    "EnvironmentAccess",
     "EnvironmentAction",
     "EnvironmentActionDispatch",
     "EnvironmentAvailability",

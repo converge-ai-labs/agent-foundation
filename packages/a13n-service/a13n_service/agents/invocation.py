@@ -6,7 +6,7 @@ from typing import Literal
 
 from pydantic import Field, model_validator
 
-from a13n_service.memory.domain import MemorySelection
+from a13n_service.memory.domain import MemoryConfiguration
 from a13n_service.models.settings import JsonObject
 
 from .domain import (
@@ -35,7 +35,7 @@ class MergedAgentRunConfig(StrictModel):
     """Typed non-secret config after applying one Run override to a Revision."""
 
     toolsets: Toolsets = Field(default_factory=default_toolsets)
-    memory: MemorySelection | None = Field(default=None, exclude_if=lambda value: value is None)
+    memory: MemoryConfiguration | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel

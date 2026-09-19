@@ -47,7 +47,6 @@ class DirectLocalRootConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     path: Path
-    read_only: bool = False
 
 
 class DirectLocalShellProfile(BaseModel):
@@ -77,7 +76,7 @@ class DirectLocalProviderConfiguration(BaseModel):
     max_spool_bytes: int = 64 * 1024 * 1024 * 1024
 ```
 
-The root, shell executables, and allowed executables are absolute after user expansion. Host-supplied runtime identities are bounded and nonblank; profile IDs are unique; ports and limits are valid and positive. A read-only root cannot enable shell profiles or allowed executables because an allowed native process could mutate files through the embedding OS account.
+The root, shell executables, and allowed executables are absolute after user expansion. Host-supplied runtime identities are bounded and nonblank; profile IDs are unique; ports and limits are valid and positive. The root is always writable: a reference-only mount withholds write actions through the Harness permission ceiling, which the Provider cannot enforce against an allowed native process running under the embedding OS account.
 
 ### Bounded text reads
 
@@ -203,7 +202,7 @@ Native local rejection is `not_dispatched`; observed command completion is `know
 
 #### Configuration and runtime
 
-`e2b` configuration schema version `1` selects `template` (default `base`), logical filesystem `root` (default `/home/user`), sandbox `user`, the Python executable used by file/port helpers, sandbox and request timeouts, sandbox-wide internet access, read-only access, finite file/traversal bounds and local observation limits. `timeout_seconds` defaults to 3600 seconds for sandbox TTL; `request_timeout_seconds` defaults to 30 seconds for native requests. `max_active_observations` defaults to 128 concurrent native attachments, `max_observation_bytes` to 1 MiB cumulative combined stdout/stderr per observed command, and `max_retained_output_bytes` to 128 MiB retained text across the adapter. Configuration contains no credential, sandbox ID, endpoint or live SDK object.
+`e2b` configuration schema version `1` selects `template` (default `base`), logical filesystem `root` (default `/home/user`), sandbox `user`, the Python executable used by file/port helpers, sandbox and request timeouts, sandbox-wide internet access, finite file/traversal bounds and local observation limits. `timeout_seconds` defaults to 3600 seconds for sandbox TTL; `request_timeout_seconds` defaults to 30 seconds for native requests. `max_active_observations` defaults to 128 concurrent native attachments, `max_observation_bytes` to 1 MiB cumulative combined stdout/stderr per observed command, and `max_retained_output_bytes` to 128 MiB retained text across the adapter. Configuration contains no credential, sandbox ID, endpoint or live SDK object.
 
 `E2BProviderRuntime` supplies an explicit secret API key, backend domain, managed/external selection and optional Host operation correlation. Generic Provider Backend configuration contains the domain and an optional HTTP(S) `api_url`; its credential contains `api_key`. All SDK lifecycle calls use the explicit API URL or `https://api.<domain>`, without inheriting an ambient API URL. The domain remains the sandbox routing suffix. Compatible services may require their own template IDs and may not implement every lifecycle operation. The library does not load `.env` or acquire credentials. Construction, discovery of Provider definitions and scope entry are inert.
 

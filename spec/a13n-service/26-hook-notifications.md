@@ -486,7 +486,7 @@ Service owns each Run's fixed logical Environment selection. Preparation can hap
 | `environment.rebuilt`             | A new managed backing generation is observed                | Logical Environment ID and generation change; no claim of restored files |
 | `environment.adapter.closed`      | Local scope cleanup finishes or fails                       | Bounded local cleanup outcome; no implicit target stop/delete            |
 
-`environment.preparation.started` reports the supplied Harness mount ceiling in `access`: an `EnvironmentAccess` preset remains its `read_only`, `read_write`, or `full` string; an exact `EnvironmentPermissionSet` is an object with a sorted `operations` array of canonical action names. `environment.preparation.ready.permissions` is the sorted intersection of that ceiling and the prepared Provider descriptor. These bounded observations describe the actual mount without changing the Service Run's persisted Environment selection.
+`environment.preparation.started` reports the supplied Harness mount ceiling in `permission_ceiling` as a sorted array of canonical action names. `environment.preparation.ready.permissions` is the sorted intersection of that ceiling and the prepared Provider descriptor. These bounded observations describe the actual mount without changing the Service Run's persisted Environment selection.
 
 These are live Run SSE observations, not lifecycle authority. The Environment domain independently persists target-generation and operation evidence, including maintenance performed without an active Run. Missing observations neither authorize replay nor prove that a provider effect did not happen. The owning contract is [Environment Management](29-environment-management.md).
 

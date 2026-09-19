@@ -2,10 +2,10 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_environment import CommandRequest, EnvironmentOutputPolicy, ShellCommand
+from a13n_environment import FILE_ACTIONS, CommandRequest, EnvironmentOutputPolicy, ShellCommand
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.capabilities import SkillsCapability
-from a13n_harness.environment import EnvironmentAction, EnvironmentError
+from a13n_harness.environment import EnvironmentError
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import AgentReconstructor, ThreadCompositionSelection
 from a13n_harness_ui.configuration.setup import SetupSelection
@@ -113,9 +113,7 @@ async def test_scratch_cwd_and_selected_configuration_file_mount(tmp_path: Path,
             assert plan.default_environment == ("workspace" if with_project else "thread-files")
             assert ("workspace" in plan.environments) is with_project
             config_mount = next(mount for mount in plan._mounts if mount.alias == "configuration")
-            assert config_mount.permission_ceiling.operations == frozenset(
-                action for action in EnvironmentAction if action.value.startswith("environment.file.")
-            )
+            assert config_mount.permission_ceiling.operations == FILE_ACTIONS
             async with plan.runtime.bind(
                 thread_id=thread.thread_id,
                 run_id="run-projectless",

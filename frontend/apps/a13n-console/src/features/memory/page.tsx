@@ -12,18 +12,41 @@ import { ErrorNotice } from "../../shared/feedback";
 import { Page } from "../../shared/page";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { memoryKey, type MemoryTarget } from "./api";
+import { FileMemoryBrowser } from "./documents";
 import { MemoryContents } from "./contents";
 import { memoryProviderUsable, useMemoryProviders } from "./availability";
 import styles from "./memory.module.css";
 
 export function MemoriesPage() {
   const [params, setParams] = useSearchParams();
+  const { t } = useTranslation();
+  const [mode, setMode] = useState("records");
   return (
-    <MemoryPageSelection
-      key={params.toString()}
-      params={params}
-      onSelect={setParams}
-    />
+    <>
+      <div className="mb-5 flex gap-2">
+        <Button
+          variant={mode === "records" ? "default" : "outline"}
+          onClick={() => setMode("records")}
+        >
+          {t("Mem0 records")}
+        </Button>
+        <Button
+          variant={mode === "files" ? "default" : "outline"}
+          onClick={() => setMode("files")}
+        >
+          {t("File-based memory")}
+        </Button>
+      </div>
+      {mode === "files" ? (
+        <FileMemoryBrowser />
+      ) : (
+        <MemoryPageSelection
+          key={params.toString()}
+          params={params}
+          onSelect={setParams}
+        />
+      )}
+    </>
   );
 }
 

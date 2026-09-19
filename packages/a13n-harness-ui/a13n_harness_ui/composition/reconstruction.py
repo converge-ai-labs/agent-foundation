@@ -37,6 +37,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
+from pydantic_ai.usage import UsageLimits
 
 from a13n_harness_ui.environment_paths import EnvironmentPathLayout
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE
@@ -361,6 +362,7 @@ class AgentReconstructor:
         return AgentDefinition(
             agent=AgentSpec(
                 model=recipe_id,
+                usage_limits=UsageLimits(request_limit=None),
                 model_settings=dict(node.model.settings),
                 model_characteristics=node.model.model_characteristics,
                 system_prompt=list(node.instructions if node.system_prompt is None else node.system_prompt),

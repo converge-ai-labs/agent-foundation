@@ -40,7 +40,7 @@ def require_regular_file(path: Path) -> None:
         raise FileRequestError("path", "not_file", "Select a regular file, not a directory or special file.")
 
 
-def metadata(root: Path, path: Path, read_only: bool) -> dict:
+def metadata(root: Path, path: Path) -> dict:
     mode = path.lstat()
     kind = "other"
     for predicate, name in ((stat.S_ISLNK, "symlink"), (stat.S_ISREG, "file"), (stat.S_ISDIR, "directory")):
@@ -51,7 +51,7 @@ def metadata(root: Path, path: Path, read_only: bool) -> dict:
         "path": "/" if path == root else "/" + path.relative_to(root).as_posix(),
         "kind": kind,
         "size": mode.st_size if kind == "file" else None,
-        "writable": not read_only and path != root,
+        "writable": path != root,
     }
 
 
@@ -136,7 +136,7 @@ def query(root: Path, path: Path, request: dict, config: dict) -> dict:
     for child in entries(root, path, request, config["max_query_entries"]):
         if not matcher.matches(child.relative_to(path).as_posix()):
             continue
-        item = metadata(root, child, config["read_only"])
+        item = metadata(root, child)
         if request.get("kinds") and item["kind"] not in request["kinds"]:
             continue
         if seen < offset:
@@ -170,7 +170,7 @@ def search(root: Path, path: Path, request: dict, config: dict) -> dict:
         relative = Path(request["path"]).name if single_file else candidate.relative_to(path).as_posix()
         if not include.matches(relative):
             continue
-        item = metadata(root, candidate, config["read_only"])
+        item = metadata(root, candidate)
         if item["kind"] != "file" or item["size"] > request["max_file_bytes"]:
             continue
         if request["max_files"] is not None and files_scanned >= request["max_files"]:
@@ -229,7 +229,7 @@ def execute(request: dict) -> dict:
         "remove",
         "move",
     }
-    if action in mutations and (config["read_only"] or path == root):
+    if action in mutations and path == root:
         raise PermissionError()
     if action == "resolve":
         if arguments.get("regular_file"):
@@ -244,7 +244,7 @@ def execute(request: dict) -> dict:
             pass
         return {"path": str(path)}
     if action == "stat":
-        return metadata(root, path, config["read_only"])
+        return metadata(root, path)
     if action == "read":
         require_regular_file(path)
         with path.open("rb") as file:

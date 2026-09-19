@@ -217,31 +217,14 @@ def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDes
             "max_file_transfer_bytes": limits.max_file_transfer_bytes,
         },
         mounts=tuple(
-            EnvironmentMountDescriptor(
-                name=mount.mount_id,
-                path=mount.logical_root,
-                read_only=not mount.writable,
-            )
-            for mount in descriptor.mounts
+            EnvironmentMountDescriptor(name=mount.mount_id, path=mount.logical_root) for mount in descriptor.mounts
         ),
     )
 
 
-def configured_descriptor(*, read_only: bool = False, shell: bool = True) -> EnvironmentDescriptor:
+def configured_descriptor() -> EnvironmentDescriptor:
     actions = {action for values in _METHOD_ACTIONS.values() for action in values}
     actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
-    if not shell:
-        actions = {action for action in actions if action.value.startswith("environment.file.")}
-    if read_only:
-        actions -= {
-            EnvironmentAction.FILE_WRITE_TEXT,
-            EnvironmentAction.FILE_PATCH_TEXT,
-            EnvironmentAction.FILE_WRITE_BYTES,
-            EnvironmentAction.FILE_MKDIR,
-            EnvironmentAction.FILE_MOVE,
-            EnvironmentAction.FILE_REMOVE,
-            EnvironmentAction.FILE_COPY_DESTINATION,
-        }
     from ..models import ENVIRONMENT_ACTION_DISPATCH
 
     return EnvironmentDescriptor(

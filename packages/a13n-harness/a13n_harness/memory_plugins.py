@@ -5,14 +5,16 @@ from __future__ import annotations
 import importlib.metadata
 import re
 from abc import ABC, abstractmethod
-from collections.abc import Iterable, Iterator, Mapping
-from contextlib import AbstractAsyncContextManager
+from collections.abc import AsyncIterator, Iterable, Iterator, Mapping
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from pathlib import PurePosixPath
 from types import MappingProxyType
 from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
 from a13n_harness._urls import require_http_url
+from a13n_harness.filesystem_memory import FilesystemMemoryBinding, FilesystemMemoryStore
 from a13n_harness.memory import MemoryBackend
 
 MEMORY_BACKEND_ENTRY_POINT_GROUP = "a13n_harness.memory_backends"
@@ -29,7 +31,11 @@ class MemoryBackendPlugin[Configuration: BaseModel, Credential: BaseModel](ABC):
     display_name: ClassVar[str]
     configuration_model: type[Configuration]
     credential_model: type[Credential]
+    requires_credential: bool = True
     supports_documents: bool = False
+    supports_records: bool = True
+    supports_revisions: bool = False
+    supports_changes: bool = False
 
     @abstractmethod
     def open(
@@ -98,6 +104,74 @@ class Mem0PlatformBackendPlugin(MemoryBackendPlugin[Mem0PlatformConfiguration, M
         return open_mem0_platform(base_url=configuration.base_url, api_key=credential.api_key.get_secret_value())
 
 
+class FilesystemMemoryStorage(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    environment_id: str | None = Field(default=None, min_length=1, max_length=128)
+    root: str = Field(default="/memory", min_length=1, max_length=2048)
+
+    @field_validator("root")
+    @classmethod
+    def normalized_root(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if not path.is_absolute() or str(path) != value or ".." in path.parts or "\\" in value:
+            raise ValueError("Memory root must be a normalized absolute Environment path")
+        return value
+
+
+class FilesystemMemoryConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    storage: FilesystemMemoryStorage = Field(default_factory=FilesystemMemoryStorage)
+
+
+class FilesystemMemoryCredential(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class FilesystemMemoryBackendPlugin(MemoryBackendPlugin[FilesystemMemoryConfiguration, FilesystemMemoryCredential]):
+    """Inert discovery; the Host must supply an authorized, pinned file binding."""
+
+    key = "a13n.filesystem"
+    display_name = "File-based"
+    requires_credential = False
+    supports_records = False
+    supports_documents = True
+    supports_revisions = True
+    configuration_model = FilesystemMemoryConfiguration
+    credential_model = FilesystemMemoryCredential
+
+    def open(
+        self, configuration: FilesystemMemoryConfiguration, credential: FilesystemMemoryCredential
+    ) -> AbstractAsyncContextManager[MemoryBackend]:
+        from a13n_harness.document_memory import MemoryDocumentError
+
+        raise MemoryDocumentError("memory_document_binding_required")
+
+    @asynccontextmanager
+    async def open_documents(
+        self, configuration: FilesystemMemoryConfiguration, *, binding: FilesystemMemoryBinding
+    ) -> AsyncIterator[FilesystemMemoryStore]:
+        # Environment acquisition and authority belong to the Host. Never turn
+        # an authored root into a Path on this process or acquire a second adapter.
+        from a13n_harness.document_memory import MemoryDocumentError
+
+        if configuration.storage.root != binding.root or (
+            configuration.storage.environment_id is not None
+            and configuration.storage.environment_id != binding.environment_id
+        ):
+            raise MemoryDocumentError("memory_storage_binding_mismatch")
+        yield FilesystemMemoryStore(
+            files=binding.files,
+            root=configuration.storage.root,
+            scope=binding.scope,
+            store_id=binding.store_id,
+            principal=binding.principal,
+            authorize=binding.authorize,
+            authorize_sources=binding.authorize_sources,
+            coordinator=binding.coordinator,
+        )
+
+
 class MemoryBackendCatalog(Mapping[str, MemoryBackendPlugin[Any, Any]]):
     """Immutable, caller-owned snapshot; installation alone never enables a plugin."""
 
@@ -111,8 +185,17 @@ class MemoryBackendCatalog(Mapping[str, MemoryBackendPlugin[Any, Any]]):
             key = _key(plugin.key)
             if key in selected:
                 raise ValueError(f"Duplicate memory backend key: {key}")
-            if type(plugin.supports_documents) is not bool:
-                raise TypeError("Memory document support must be a boolean")
+            if any(
+                type(value) is not bool
+                for value in (
+                    plugin.requires_credential,
+                    plugin.supports_records,
+                    plugin.supports_documents,
+                    plugin.supports_revisions,
+                    plugin.supports_changes,
+                )
+            ):
+                raise TypeError("Memory backend capabilities must be booleans")
             if not plugin.display_name.strip():
                 raise ValueError("Memory backend display name cannot be empty")
             if not issubclass(plugin.configuration_model, BaseModel) or not issubclass(
@@ -146,6 +229,7 @@ def build_memory_backend_catalog(
 ) -> MemoryBackendCatalog:
     """Load only explicitly selected entry points, rejecting every key collision."""
     builtins = {
+        FilesystemMemoryBackendPlugin.key: FilesystemMemoryBackendPlugin,
         Mem0OSSBackendPlugin.key: Mem0OSSBackendPlugin,
         Mem0PlatformBackendPlugin.key: Mem0PlatformBackendPlugin,
     }

@@ -3,7 +3,8 @@ import socket
 
 import httpx2
 import pytest
-from a13n_harness import AgentDefinition, AgentSpec, EnvironmentAccess, EnvironmentMount, HarnessBuilder, RunBindings
+from a13n_environment import FILE_READ_ACTIONS, EnvironmentAction, EnvironmentPermissionSet
+from a13n_harness import AgentDefinition, AgentSpec, EnvironmentMount, HarnessBuilder, RunBindings
 from a13n_harness.errors import RunError
 from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 from a13n_service.agents.domain import AgentConfig, EffectiveAgentConfig
@@ -114,7 +115,7 @@ async def run_search(
     requests=1,
     after_first=None,
     operations=None,
-    access="full",
+    ceiling=None,
     instrumentation=None,
 ):
     calls = 0
@@ -158,7 +159,10 @@ async def run_search(
     )
     return await executable.run(
         "Find sources",
-        environment=EnvironmentMount(environment, access=EnvironmentAccess(access))
+        environment=EnvironmentMount(
+            environment,
+            permission_ceiling=EnvironmentPermissionSet(operations=ceiling or frozenset(EnvironmentAction)),
+        )
         if environment is not None
         else None,
         bindings=RunBindings.embedded(web=binding),
@@ -388,10 +392,10 @@ async def test_fetch_needs_no_provider_or_environment_but_download_needs_environ
     assert outgoing[0].headers["host"] == "example.com"
 
 
-@pytest.mark.parametrize("access", ["full", "read_only"])
+@pytest.mark.parametrize("writable", [True, False])
 @pytest.mark.parametrize("directory", ["", "downloads"])
 async def test_web_tools_fetch_and_download_through_environment(
-    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, access, directory
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, writable, directory
 ):
     outgoing = []
 
@@ -418,7 +422,7 @@ async def test_web_tools_fetch_and_download_through_environment(
         selection,
         binding,
         environment,
-        access=access,
+        ceiling=frozenset(EnvironmentAction) if writable else FILE_READ_ACTIONS,
         operations=[
             ("fetch", {"url": "https://example.com/page"}),
             ("download", {"urls": ["https://example.com/file.txt"], "save_dir": f"/workspace/{directory}"}),
@@ -427,7 +431,7 @@ async def test_web_tools_fetch_and_download_through_environment(
     assert result.output_or_raise() == "done"
     assert "page evidence" in repr(result.state)
     files = list((tmp_path / "workspace" / directory).glob("*.txt"))
-    if access == "full":
+    if writable:
         assert len(outgoing) == 2
         assert len(files) == 1 and files[0].read_bytes() == b"page evidence"
     else:

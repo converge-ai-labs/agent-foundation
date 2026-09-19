@@ -381,7 +381,6 @@ async def test_host_can_scan_non_virtual_local_file_operator(tmp_path: Path) -> 
     )
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="cli-files",
         generation="generation-1",
@@ -1376,7 +1375,6 @@ async def test_file_source_can_skip_invalid_plugin_entries_without_hiding_valid_
     (bad / "SKILL.md").write_text("Incomplete frontmatter")
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="plugin-test",
         generation="generation-1",

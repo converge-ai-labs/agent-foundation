@@ -1,4 +1,4 @@
-"""Deployment-owned Skill files exposed through confined read-only Direct Local."""
+"""Deployment-owned Skill files exposed through a confined Direct Local root."""
 
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ class KnowledgeFiles:
         root = self.validate()
         provider = DirectLocalEnvironmentProvider()
         configuration = provider.validate_configuration(
-            schema_version="1", value={"root": {"path": str(root), "read_only": True}, "max_value_bytes": 512 * 1024}
+            schema_version="1", value={"root": {"path": str(root)}, "max_value_bytes": 512 * 1024}
         )
         return provider.create_environment(
             environment_id="configuration-knowledge",

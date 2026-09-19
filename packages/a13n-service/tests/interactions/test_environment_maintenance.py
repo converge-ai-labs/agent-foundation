@@ -174,3 +174,70 @@ async def test_competing_loops_dispatch_once_without_holding_the_environment_loc
     async with short_session(sessions) as session:
         row = await session.get(EnvironmentRecord, environment_id)
         assert row.status == "stopped" and row.operation_id is None
+
+
+async def test_existing_file_lease_prevents_retention_until_release(due_environment, tmp_path, monkeypatch):
+    from a13n_environment import (
+        EnvironmentDescriptor,
+        EnvironmentOperations,
+        EnvironmentPermissionSet,
+        EnvironmentState,
+    )
+    from a13n_environment.direct_local.files import LocalFileOperator
+    from a13n_environment.direct_local.provider import _DirectLocalFilePolicy
+    from a13n_service.environments.file_access import ExistingEnvironmentFiles
+    from a13n_service.environments.models import EnvironmentFileUseRecord
+    from a13n_service.environments.retention import has_active_use
+
+    sessions, environment_id, lifecycle = due_environment
+    state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "same"})
+    async with transaction(sessions) as session:
+        row = await session.get(EnvironmentRecord, environment_id)
+        row.state = state.model_dump(mode="json")
+        generation = row.generation
+    files = LocalFileOperator(
+        root=tmp_path,
+        policy=_DirectLocalFilePolicy(max_value_bytes=1024),
+        mount_id="test",
+        generation="same",
+    )
+
+    class FileTarget(Target):
+        @property
+        def operations(self):
+            return EnvironmentOperations(files=files)
+
+        @property
+        def descriptor(self):
+            return EnvironmentDescriptor(
+                generation="same", operation_families=frozenset({"files"}), permissions=EnvironmentPermissionSet()
+            )
+
+    async def construct(operation):
+        return FileTarget(operation.state, [])
+
+    monkeypatch.setattr(lifecycle, "construct", construct)
+
+    async def authorize():
+        pass
+
+    access = ExistingEnvironmentFiles(lifecycle)
+    async with access.open(
+        actor=hook_actor(),
+        environment_id=environment_id,
+        backing_identity=f"{environment_id}:{generation}",
+        authorize=authorize,
+    ):
+        async with short_session(sessions) as session:
+            assert await has_active_use(session, environment_id)
+        assert await lifecycle.acquire_maintenance(environment_id) is None
+    async with short_session(sessions) as session:
+        assert not list(await session.scalars(select(EnvironmentFileUseRecord)))
+    with pytest.raises(ValueError, match="unavailable"):
+        async with access.open(
+            actor=hook_actor(),
+            environment_id=environment_id,
+            backing_identity=f"{environment_id}:{generation + 1}",
+            authorize=authorize,
+        ):
+            pytest.fail("Recreated targets cannot satisfy a retained memory binding")

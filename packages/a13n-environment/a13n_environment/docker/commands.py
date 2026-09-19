@@ -25,7 +25,6 @@ _OBJECT = TypeAdapter(dict[str, JsonValue])
 @dataclass(frozen=True)
 class DockerFileConfiguration:
     max_file_bytes: int
-    read_only: bool = False
 
 
 class DockerCommands:
@@ -90,7 +89,6 @@ class DockerCommands:
         request = {
             "configuration": {
                 "root": "/",
-                "read_only": False,
                 "max_file_bytes": self.config.max_file_bytes,
                 "max_query_entries": self.config.max_query_entries,
                 "request_timeout_seconds": self.config.request_timeout_seconds,

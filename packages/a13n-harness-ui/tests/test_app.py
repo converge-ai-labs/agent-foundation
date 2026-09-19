@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from a13n_environment import (
+    FILE_ACTIONS,
     CommandRequest,
     EnvironmentOutputPolicy,
     LocalEnvdEnvironment,
@@ -25,7 +26,7 @@ from a13n_harness import (
     HarnessRunStream,
 )
 from a13n_harness.capabilities import SkillsCapability, SubagentCancelResult, SubagentSteerResult, WebCapability
-from a13n_harness.environment import EnvironmentAction, EnvironmentError
+from a13n_harness.environment import EnvironmentError
 from a13n_harness.model_auth import GrokCredentials
 from a13n_harness_ui.app import AppState, HarnessUiIntegrations, open_harness_ui_app
 from a13n_harness_ui.composition import (
@@ -871,9 +872,7 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
             (tmp_path / "state/threads" / composition.thread_id).as_posix(),
         )
         plugin_mount = plan._mounts[1]
-        assert plugin_mount.permission_ceiling.operations == frozenset(
-            action for action in EnvironmentAction if action.value.startswith("environment.file.")
-        )
+        assert plugin_mount.permission_ceiling.operations == FILE_ACTIONS
         async with plan.runtime.bind(
             thread_id=stored.thread_id,
             run_id="run-native-plugin-skills",

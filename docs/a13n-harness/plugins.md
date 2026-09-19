@@ -212,24 +212,25 @@ To support optional grouped presentation, a plugin can expose source factories o
 
 ## Environment Inputs and Advanced Bindings
 
-When a Provider has already constructed an `Environment`, pass it directly to `run(environment=...)` or wrap it in `EnvironmentMount` to select access and paths. Explicit runtimes and their dynamic `mount()` and `replace()` methods accept the same inputs. Harness owns entry and local cleanup; Host code does not need to implement a forwarding binding class:
+When a Provider has already constructed an `Environment`, pass it directly to `run(environment=...)` or wrap it in `EnvironmentMount` to select a permission ceiling and paths. Explicit runtimes and their dynamic `mount()` and `replace()` methods accept the same inputs. Harness owns entry and local cleanup; Host code does not need to implement a forwarding binding class:
 
 ```python
-from a13n_harness.environment import EnvironmentAccess, EnvironmentMount
+from a13n_environment import FILE_ACTIONS, EnvironmentPermissionSet
+from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
 
 environment_runtime = create_environment_runtime(
     mounts={
         "workspace": EnvironmentMount(
             environment=environment,
-            access=EnvironmentAccess.READ_WRITE,
+            permission_ceiling=EnvironmentPermissionSet(operations=FILE_ACTIONS),
         ),
     },
     default_mount="workspace",
 )
 ```
 
-`access` also accepts an `EnvironmentPermissionSet` with an exact action ceiling. This is useful for a setup extension that needs only selected file operations. Provider permissions always narrow the ceiling. Each underlying Environment transfers only once, even if it is wrapped in another `EnvironmentMount`; invalid initial routes do not transfer it, and a failed attempt to reuse it cannot close its existing scope.
+`permission_ceiling` accepts any exact action set, which is useful for a setup extension that needs only selected file operations. Provider permissions always narrow the ceiling. Each underlying Environment transfers only once, even if it is wrapped in another `EnvironmentMount`; invalid initial routes do not transfer it, and a failed attempt to reuse it cannot close its existing scope.
 
 ### Advanced Provider Binding Scopes
 

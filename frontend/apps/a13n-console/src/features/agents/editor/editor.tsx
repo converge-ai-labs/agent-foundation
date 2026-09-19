@@ -3,7 +3,6 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../service-client";
 import { ErrorToast } from "../../../shared/feedback";
 import { DetailLayout, SaveBar, Section } from "../../../shared/page";
-import { useMemoryProviders } from "../../memory/availability";
 import { AgentMemorySelection } from "../../memory/selection";
 import { ModelIcon } from "../../models/model-icon";
 import { useModelProviderDefinitions } from "../../models/provider-definitions";
@@ -72,7 +71,6 @@ export function AgentEditor({
     [modelValidation, setModelValidation] = useState<Error>();
   const choices = useAgentChoices();
   const definitions = useModelProviderDefinitions();
-  const { visible: memoryVisible } = useMemoryProviders();
   const selectedModel = choices.data?.models.find(
     (item) => item.key === draft.model,
   );
@@ -173,22 +171,24 @@ export function AgentEditor({
             onChange={draft.setEnvironmentTemplateId}
             disabled={readonly || pending}
           />
-          {(memoryVisible || draft.memory || initial.memory) && (
-            <Section
-              title={t("Memory")}
-              description={t(
-                "Remember useful information across runs, with explicit control over what is stored.",
-              )}
-            >
-              <AgentMemorySelection
-                agentId={agentId}
-                savedProviderId={initial.memory?.provider_id}
-                readOnly={readonly}
-                value={draft.memory}
-                onChange={draft.setMemory}
-              />
-            </Section>
-          )}
+          <Section
+            title={t("Memory")}
+            description={t(
+              "Remember useful information across runs, with explicit control over what is stored.",
+            )}
+          >
+            <AgentMemorySelection
+              agentId={agentId}
+              savedProviderId={
+                initial.memory && "provider_id" in initial.memory
+                  ? initial.memory.provider_id
+                  : undefined
+              }
+              readOnly={readonly}
+              value={draft.memory}
+              onChange={draft.setMemory}
+            />
+          </Section>
           <AdvancedSection
             draft={draft}
             readOnly={readonly}

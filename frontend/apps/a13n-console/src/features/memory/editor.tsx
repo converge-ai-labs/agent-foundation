@@ -81,7 +81,11 @@ export function memoryCredentialState(
   const schema = (definition?.credential_schema ?? {}) as {
     properties?: Record<string, unknown>;
   };
-  if (definition && !Object.keys(schema.properties ?? {}).length)
+  if (
+    definition &&
+    (definition.requires_credential === false ||
+      !Object.keys(schema.properties ?? {}).length)
+  )
     return "not_required" as const;
   return provider.credential_configured
     ? ("configured" as const)
@@ -494,34 +498,37 @@ export function MemoryProviderForm({
             onCheckedChange={setEnabled}
             description={t("Stored records stay in place.")}
           />
-          <CredentialRow
-            label={t(credentialLabel(credentialSchema))}
-            configured={!!original.value.credential_configured}
-            removing={removeCredential}
-            onRemovingChange={setRemoveCredential}
-            onDiscard={() => setCredential({})}
-          >
-            {definition ? (
-              <SchemaFields
-                secret
-                autoFocus
-                labelAction={
-                  providerKeyUrls[type] && (
-                    <ProviderKeyLink {...providerKeyUrls[type]} />
-                  )
-                }
-                schema={{ ...credentialSchema, required: [] }}
-                value={credential}
-                onChange={setCredential}
-              />
-            ) : (
-              <p className={styles.muted}>
-                {t(
-                  "The backend definition is unavailable. Credential replacement requires its installed schema.",
-                )}
-              </p>
-            )}
-          </CredentialRow>
+          {memoryCredentialState(original.value, definition) !==
+            "not_required" && (
+            <CredentialRow
+              label={t(credentialLabel(credentialSchema))}
+              configured={!!original.value.credential_configured}
+              removing={removeCredential}
+              onRemovingChange={setRemoveCredential}
+              onDiscard={() => setCredential({})}
+            >
+              {definition ? (
+                <SchemaFields
+                  secret
+                  autoFocus
+                  labelAction={
+                    providerKeyUrls[type] && (
+                      <ProviderKeyLink {...providerKeyUrls[type]} />
+                    )
+                  }
+                  schema={{ ...credentialSchema, required: [] }}
+                  value={credential}
+                  onChange={setCredential}
+                />
+              ) : (
+                <p className={styles.muted}>
+                  {t(
+                    "The backend definition is unavailable. Credential replacement requires its installed schema.",
+                  )}
+                </p>
+              )}
+            </CredentialRow>
+          )}
           <ProviderFacts
             configuration={original.value.configuration}
             schema={configSchema}

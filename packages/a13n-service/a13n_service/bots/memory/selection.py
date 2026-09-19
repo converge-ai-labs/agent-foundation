@@ -38,4 +38,5 @@ async def select_binding(
         scope_version=scope.version,
         use_memory=eligible and settings.use_memory and group.use_memory,
         save_on_request=eligible and settings.save_on_request and group.save_on_request,
+        auto_organize=eligible and settings.auto_organize and group.auto_organize,
     )

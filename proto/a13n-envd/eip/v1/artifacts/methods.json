@@ -1,6 +1,6 @@
 {
   "generated": true,
-  "method_count": 35,
+  "method_count": 36,
   "methods": [
     {
       "error_family": "common",
@@ -49,6 +49,18 @@
       "rpc_name": "FileCloseReader",
       "transfer_action": "close",
       "transfer_direction": "server_to_client"
+    },
+    {
+      "error_family": "resource",
+      "introduced": "0.1",
+      "jsonrpc_method": "file.commit",
+      "kind": "request_response",
+      "params_type": "FileCommitParams",
+      "replay_class": "terminal_evidence",
+      "result_type": "FileCommitResult",
+      "rpc_name": "FileCommit",
+      "transfer_action": null,
+      "transfer_direction": null
     },
     {
       "error_family": "resource",

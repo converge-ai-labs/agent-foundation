@@ -188,6 +188,7 @@ it("configures only this target and preserves existing toggles and the draft ver
   expect(state.http.POST.mock.calls[0][1].body).toEqual({
     external_conversation_id: "C1",
     expected_version: 3,
+    auto_organize: false,
     visibility: "group",
     enabled: false,
     use_memory: true,

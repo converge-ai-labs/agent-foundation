@@ -12,7 +12,6 @@ class CommandConfiguration(BaseModel):
     root: str = "/"
     python: str = Field(default="python3", description="Guest Python executable name on its PATH, or absolute path.")
     shell: str = "/bin/bash"
-    read_only: bool = False
     request_timeout_seconds: float = Field(default=120, gt=0, le=600, allow_inf_nan=False)
     max_file_bytes: int = Field(default=16 * 1024 * 1024, gt=0, le=64 * 1024 * 1024)
     max_query_entries: int = Field(default=10_000, gt=0, le=100_000)

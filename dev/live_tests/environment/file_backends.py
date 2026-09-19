@@ -78,7 +78,7 @@ class FileBackend:
         async with AsyncExitStack() as stack:
             if self.kind == "direct-local":
                 self.provider = DirectLocalEnvironmentProvider()
-                configuration = {"root": {"path": str(self.root), "read_only": self.read_only}}
+                configuration = {"root": {"path": str(self.root)}}
                 self.runtime = DirectLocalProviderRuntime()
             elif self.kind == "local-envd":
                 self.provider = LocalEnvdEnvironmentProvider()

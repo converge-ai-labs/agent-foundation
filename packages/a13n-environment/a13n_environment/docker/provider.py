@@ -62,9 +62,9 @@ def descriptor(generation: str, config: DockerProviderConfiguration) -> Environm
             )
         ),
         mounts=(
-            EnvironmentMountDescriptor(name="workspace", path="/workspace", read_only=False),
+            EnvironmentMountDescriptor(name="workspace", path="/workspace"),
             *(
-                EnvironmentMountDescriptor(name=f"external-{i}", path=str(m.target), read_only=m.read_only)
+                EnvironmentMountDescriptor(name=f"external-{i}", path=str(m.target))
                 for i, m in enumerate(config.mounts)
             ),
         ),

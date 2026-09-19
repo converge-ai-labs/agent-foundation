@@ -1,3 +1,4 @@
+import { FileMemoryBrowser } from "../memory/documents";
 import type { BotAccount } from "./account";
 import {
   ArrowLeftIcon,
@@ -253,6 +254,7 @@ function MemoryBrowser({
           scopeId={scopeId}
           scopeName={selected?.name ?? t("Selected conversation")}
           scope={selected}
+          target={target}
         />
       ) : (
         <Empty
@@ -265,6 +267,26 @@ function MemoryBrowser({
 }
 
 function ScopeDocuments({
+  target,
+  ...props
+}: Parameters<typeof NativeScopeDocuments>[0] & {
+  target?: Schema["AccountTarget"];
+}) {
+  return props.scope?.backend_type === "a13n.filesystem" ? (
+    <div className={styles.fileMemory}>
+      <GroupMemorySettings
+        account={props.account}
+        initialScope={props.scope}
+        target={target}
+      />
+      <FileMemoryBrowser conversationScopeId={props.scopeId} />
+    </div>
+  ) : (
+    <NativeScopeDocuments {...props} />
+  );
+}
+
+function NativeScopeDocuments({
   account,
   scopeId,
   scopeName,

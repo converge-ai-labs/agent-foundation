@@ -36,6 +36,8 @@ from .models import (
     DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_DISPATCH,
+    FILE_ACTIONS,
+    FILE_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentChange,
@@ -201,17 +203,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "operations": cast(JsonValue, operations),
                 "availability": availability,
                 "ready": cast(JsonValue, ready),
-                "read_only": not any(
-                    action.value.startswith(("environment.file.write", "environment.file.patch"))
-                    or action.value
-                    in {
-                        "environment.file.mkdir",
-                        "environment.file.move",
-                        "environment.file.remove",
-                        "environment.file.copy_destination",
-                    }
-                    for action in mount.permission_ceiling.operations
-                ),
+                "read_only": not mount.permission_ceiling.operations & (FILE_ACTIONS - FILE_READ_ACTIONS),
             }
             if reason is not None:
                 projected["reason"] = reason
