@@ -7,7 +7,7 @@ use std::{
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use tokio::sync::{Notify, oneshot, watch};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, oneshot, watch};
 
 use crate::eip::{
     EIPCallContext, EIPError, OperationCancelStatus, OperationReceipt, ReceiptOutcome, ReceiptStage,
@@ -42,9 +42,11 @@ struct LedgerInner {
     owned_idle: Notify,
     #[cfg(test)]
     pending_wait_entered: Notify,
-    environment_id: String,
+    device_id: String,
+    session_id: String,
     generation: u64,
     ordinary_record_capacity: usize,
+    device_capacity: Arc<Semaphore>,
     terminal_ttl: Duration,
     max_duration: Duration,
 }
@@ -71,6 +73,8 @@ pub(crate) enum ReplayClass {
 }
 
 struct OperationRecord {
+    _capacity: Option<OwnedSemaphorePermit>,
+    last_access: Instant,
     method: String,
     request_digest: String,
     replay_class: ReplayClass,
@@ -153,11 +157,13 @@ pub(crate) enum OperationInterruption {
 
 impl OperationLedger {
     pub(crate) fn new(
-        environment_id: String,
+        device_id: String,
         generation: u64,
+        session_id: String,
         ordinary_record_capacity: usize,
         terminal_ttl: Duration,
         max_duration: Duration,
+        device_capacity: Arc<Semaphore>,
     ) -> Self {
         Self {
             inner: Arc::new(LedgerInner {
@@ -166,9 +172,11 @@ impl OperationLedger {
                 owned_idle: Notify::new(),
                 #[cfg(test)]
                 pending_wait_entered: Notify::new(),
-                environment_id,
+                device_id,
+                session_id,
                 generation,
                 ordinary_record_capacity,
+                device_capacity,
                 terminal_ttl,
                 max_duration,
             }),
@@ -367,7 +375,8 @@ impl OperationLedger {
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
         state.prune(now, self.inner.terminal_ttl);
-        if let Some(record) = state.records.get(&context.operation_id) {
+        if let Some(record) = state.records.get_mut(&context.operation_id) {
+            record.last_access = now;
             let outcome = if record.method != method || record.request_digest != request_digest {
                 Err(LedgerError::Collision)
             } else {
@@ -426,6 +435,19 @@ impl OperationLedger {
                 return Err(LedgerError::Capacity);
             }
         }
+        let capacity = if reconciliation {
+            // Per-Session reconciliation reserve remains available under global pressure.
+            None
+        } else {
+            loop {
+                if let Ok(permit) = self.inner.device_capacity.clone().try_acquire_owned() {
+                    break Some(permit);
+                }
+                if !state.reclaim_oldest_terminal(false) {
+                    return Err(LedgerError::Capacity);
+                }
+            }
+        };
         state.next_attempt = state
             .next_attempt
             .checked_add(1)
@@ -434,6 +456,8 @@ impl OperationLedger {
         state.records.insert(
             context.operation_id.clone(),
             OperationRecord {
+                _capacity: capacity,
+                last_access: now,
                 method: method.to_owned(),
                 request_digest,
                 replay_class,
@@ -515,8 +539,11 @@ impl OperationLedger {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .records
-            .get(operation_id)
-            .and_then(|record| record.receipt.clone())
+            .get_mut(operation_id)
+            .and_then(|record| {
+                record.last_access = Instant::now();
+                record.receipt.clone()
+            })
     }
 
     pub(crate) fn failure_by_operation(&self, operation_id: &str) -> Option<EIPError> {
@@ -610,6 +637,29 @@ impl OperationLedger {
             attempt: record.attempt,
             completed: false,
         })
+    }
+
+    pub(crate) fn collect(&self, pressure: bool) {
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.prune(Instant::now(), self.inner.terminal_ttl);
+        if pressure {
+            while state.reclaim_oldest_terminal(false) {}
+            while state.reclaim_oldest_terminal(true) {}
+        }
+    }
+
+    pub(crate) fn under_pressure(&self) -> bool {
+        let state = self
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.records.len() >= self.inner.ordinary_record_capacity
+            || self.inner.device_capacity.available_permits() == 0
     }
 
     pub(crate) fn release_selector(&self, kind: &str, value: &str) {
@@ -740,7 +790,8 @@ impl OperationLease {
         Ok(OperationReceipt {
             operation_id: self.operation_id.clone(),
             method: method.to_owned(),
-            environment_id: self.ledger.inner.environment_id.clone(),
+            device_id: self.ledger.inner.device_id.clone(),
+            session_id: self.ledger.inner.session_id.clone(),
             generation: self.ledger.inner.generation,
             request_digest: self.request_digest(),
             stage,
@@ -817,6 +868,7 @@ impl OperationLease {
         });
         if let Some(record) = state.records.get_mut(&self.operation_id) {
             record.status = RecordStatus::Terminal { completed_at: now };
+            record.last_access = now;
             record.result = result;
             record.failure = failure;
             record.receipt = receipt;
@@ -902,7 +954,7 @@ impl LedgerState {
                     && matches!(
                         record.status,
                         RecordStatus::Terminal { completed_at }
-                            if now.duration_since(completed_at) >= ttl
+                            if now.duration_since(record.last_access.max(completed_at)) >= ttl
                     )
             });
             if expired {
@@ -915,25 +967,24 @@ impl LedgerState {
     }
 
     fn reclaim_oldest_terminal(&mut self, reconciliation: bool) -> bool {
-        let mut retained = VecDeque::with_capacity(self.terminal_order.len());
-        let mut reclaimed = false;
-        while let Some(operation_id) = self.terminal_order.pop_front() {
-            let eligible = !reclaimed
-                && self.records.get(&operation_id).is_some_and(|record| {
-                    record.reconciliation == reconciliation
-                        && !record.owned
-                        && record.pins.is_empty()
-                        && matches!(record.status, RecordStatus::Terminal { .. })
-                });
-            if eligible {
-                self.remove_record(&operation_id);
-                reclaimed = true;
-            } else if self.records.contains_key(&operation_id) {
-                retained.push_back(operation_id);
-            }
+        let oldest = self
+            .records
+            .iter()
+            .filter(|(_, record)| {
+                record.reconciliation == reconciliation
+                    && !record.owned
+                    && record.pins.is_empty()
+                    && matches!(record.status, RecordStatus::Terminal { .. })
+            })
+            .min_by_key(|(_, record)| record.last_access)
+            .map(|(id, _)| id.clone());
+        if let Some(id) = oldest {
+            self.remove_record(&id);
+            self.terminal_order.retain(|retained| retained != &id);
+            true
+        } else {
+            false
         }
-        self.terminal_order = retained;
-        reclaimed
     }
 
     fn remove_record(&mut self, operation_id: &str) -> Option<OperationRecord> {
@@ -1154,10 +1205,10 @@ mod tests {
     fn canonical_digest_omits_context_correlation_fields() {
         let first = serde_json::json!({
             "context": {"operation_id": "one", "timeout_ms": 1_000},
-            "path": {"mount_id": "workspace", "path": "/file"}
+            "path": {"path": "/file"}
         });
         let second = serde_json::json!({
-            "path": {"path": "/file", "mount_id": "workspace"},
+            "path": {"path": "/file"},
             "context": {"operation_id": "two"}
         });
         assert_eq!(
@@ -1171,9 +1222,11 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             2,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let params = serde_json::json!({
             "context": {"operation_id": "one"},
@@ -1218,13 +1271,15 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             2,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let params = serde_json::json!({
             "context": {"operation_id": "failed"},
-            "path": {"mount_id": "workspace", "path": "/missing"}
+            "path": {"path": "/missing"}
         });
         let context = EIPCallContext {
             operation_id: "failed".to_owned(),
@@ -1270,9 +1325,11 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             2,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let params = serde_json::json!({
             "context": {"operation_id": "page"},
@@ -1331,9 +1388,11 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             3,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let mut leases = Vec::new();
         for index in 0..4 {
@@ -1376,9 +1435,11 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             2,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         for index in 0..3 {
             let operation_id = format!("release-{index}");
@@ -1403,7 +1464,7 @@ mod tests {
 
         let ordinary_params = serde_json::json!({
             "context": {"operation_id": "write"},
-            "path": {"mount_id": "workspace", "path": "/file"},
+            "path": {"path": "/file"},
             "text": "value"
         });
         let ordinary_context = EIPCallContext {
@@ -1424,9 +1485,11 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             1,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let first_params = serde_json::json!({
             "context": {"operation_id": "first-page"},
@@ -1496,13 +1559,15 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             2,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let params = serde_json::json!({
             "context": {"operation_id": "open-reader"},
-            "path": {"mount_id": "workspace", "path": "/file"}
+            "path": {"path": "/file"}
         });
         let context = EIPCallContext {
             operation_id: "open-reader".to_owned(),
@@ -1533,9 +1598,11 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             1,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let start_params = serde_json::json!({
             "context": {"operation_id": "start"},
@@ -1568,7 +1635,7 @@ mod tests {
 
         let ordinary_params = serde_json::json!({
             "context": {"operation_id": "ordinary"},
-            "path": {"mount_id": "workspace", "path": "/file"},
+            "path": {"path": "/file"},
             "text": "value"
         });
         let ordinary_context = EIPCallContext {
@@ -1622,9 +1689,11 @@ mod tests {
             let ledger = OperationLedger::new(
                 "env".to_owned(),
                 7,
+                "session-test".to_owned(),
                 4,
                 std::time::Duration::from_secs(60),
                 std::time::Duration::from_secs(60),
+                std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
             );
             let target_context = EIPCallContext {
                 operation_id: target_id.to_owned(),
@@ -1689,9 +1758,11 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             1,
             std::time::Duration::from_millis(1),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let context = EIPCallContext {
             operation_id: "owned".to_owned(),
@@ -1749,9 +1820,11 @@ mod tests {
         let ledger = OperationLedger::new(
             "env".to_owned(),
             7,
+            "session-test".to_owned(),
             4,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_millis(1),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let context = EIPCallContext {
             operation_id: "timed".to_owned(),

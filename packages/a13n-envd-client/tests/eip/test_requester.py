@@ -2,18 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
-import time
-from typing import Any
 
-import a13n_envd_client.requester as requester_module
 import pytest
 from a13n_envd_client import (
     ControlFrame,
+    EIPDeviceConnection,
     EIPMethodError,
     EIPProtocolError,
     EIPRequestTimeoutError,
-    EIPSession,
     EIPSessionStateError,
+    EIPTransferError,
     EIPTransportClosedError,
     EIPTransportFrame,
     RequestCoordinator,
@@ -22,41 +20,29 @@ from a13n_envd_client.eip.v1 import (
     DataFrame,
     DataFrameKind,
     DataResetStatus,
-    DispatchStage,
+    DeviceDescribeParams,
+    DeviceDescriptor,
     EIPCallContext,
-    EIPClient,
-    EIPError,
-    EIPErrorData,
     EIPLimits,
-    EIPServerInfo,
-    EnvironmentDescribeParams,
-    EnvironmentDescribeResult,
-    EnvironmentDescriptor,
-    EnvironmentReadinessResult,
-    ErrorType,
+    EnvironmentReadinessParams,
     ExecutionFeatures,
-    InitializeResult,
-    IsolationBackend,
-    IsolationCleanupGuarantee,
-    IsolationMode,
-    IsolationNetworkPolicy,
-    IsolationPosture,
-    JsonRpcErrorResponse,
     JsonRpcRequest,
-    JsonRpcSuccessResponse,
-    RetryHint,
-    SessionCloseResult,
+    PathStyle,
+    SessionCloseParams,
+    SessionDescriptor,
+    SessionKeepaliveParams,
+    SessionLifecyclePolicy,
     decode_model,
-    encode_model,
 )
+from a13n_envd_client.eip.v1.methods import DEVICE_DESCRIBE, ENVIRONMENT_READINESS, SESSION_CLOSE, SESSION_KEEPALIVE
 
 
 class FakeTransport:
     def __init__(self) -> None:
         self.sent: asyncio.Queue[EIPTransportFrame] = asyncio.Queue()
-        self.responses: asyncio.Queue[EIPTransportFrame | bytes | BaseException] = asyncio.Queue()
+        self.responses: asyncio.Queue[EIPTransportFrame | BaseException] = asyncio.Queue()
         self.closed = False
-        self.limits: tuple[int, int, int] | None = None
+        self.limits: dict[str, int] = {}
 
     async def send(self, frame: EIPTransportFrame) -> None:
         await self.sent.put(frame)
@@ -65,867 +51,733 @@ class FakeTransport:
         response = await self.responses.get()
         if isinstance(response, BaseException):
             raise response
-        return ControlFrame(response) if isinstance(response, bytes) else response
+        return response
 
     async def close(self) -> None:
         self.closed = True
 
-    def set_limits(
-        self,
-        *,
-        max_request_bytes: int,
-        max_response_bytes: int,
-        max_transfer_frame_bytes: int,
-    ) -> None:
-        self.limits = (max_request_bytes, max_response_bytes, max_transfer_frame_bytes)
+    def set_limits(self, **limits: int) -> None:
+        self.limits = limits
+
+    async def request(self) -> JsonRpcRequest:
+        frame = await asyncio.wait_for(self.sent.get(), 1)
+        assert isinstance(frame, ControlFrame)
+        return decode_model(frame.payload, JsonRpcRequest)
+
+    def reply(self, request: JsonRpcRequest, result: dict) -> None:
+        envelope = {"jsonrpc": "2.0", "id": request.id, "result": result}
+        if request.eip_session is not None:
+            envelope["eip_session"] = request.eip_session
+        self.responses.put_nowait(ControlFrame(json.dumps(envelope).encode()))
 
 
-class BlockingCloseTransport(FakeTransport):
-    def __init__(self) -> None:
-        super().__init__()
-        self.close_started = asyncio.Event()
-        self.allow_close = asyncio.Event()
+def limits() -> EIPLimits:
+    return EIPLimits(
+        max_request_bytes=4096,
+        max_response_bytes=4096,
+        max_concurrent_operations=4,
+        max_processes=4,
+        max_operation_duration_ms=1000,
+        max_output_preview_bytes=128,
+        max_output_bytes_per_stream=1024,
+        max_transfer_frame_bytes=1024,
+        max_concurrent_file_transfers=2,
+        max_file_transfer_bytes=4096,
+        max_file_bytes=4096,
+    )
 
-    async def close(self) -> None:
-        self.close_started.set()
-        await self.allow_close.wait()
-        self.closed = True
 
-
-def decode_sent_request(frame: EIPTransportFrame) -> JsonRpcRequest:
-    assert isinstance(frame, ControlFrame)
-    return decode_model(frame.payload, JsonRpcRequest)
-
-
-def descriptor(generation: int) -> EnvironmentDescriptor:
-    return EnvironmentDescriptor(
-        environment_id="env-test",
-        generation=generation,
-        available_methods=("environment.describe", "environment.readiness", "session.close"),
-        limits=EIPLimits(
-            max_request_bytes=1024,
-            max_response_bytes=1024,
-            max_concurrent_operations=4,
-            max_processes=1,
-            max_operation_duration_ms=1000,
-            max_output_preview_bytes=1,
-            max_output_bytes_per_stream=1,
-            max_transfer_frame_bytes=1024,
-            max_concurrent_file_transfers=1,
-            max_file_transfer_bytes=1,
-        ),
-        isolation=IsolationPosture(
-            mode=IsolationMode.DISABLED,
-            backend=IsolationBackend.OUTER_HOST,
-            filesystem_containment=False,
-            process_containment=False,
-            network_containment=False,
-            network_policy=IsolationNetworkPolicy.HOST,
-            cleanup_guarantee=IsolationCleanupGuarantee.OUTER_HOST,
-        ),
+def descriptor(session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000) -> SessionDescriptor:
+    return SessionDescriptor(
+        device_id="device-test",
+        generation=1,
+        session_id=session_id,
+        working_directory="/work",
+        available_methods=("environment.readiness", "environment.describe", "session.keepalive", "session.close"),
+        limits=limits(),
         execution_features=ExecutionFeatures(
             process_count_limit=False,
             memory_bytes_limit=False,
             cpu_time_limit=False,
-            per_command_network_deny=False,
             signal_interrupt=False,
             signal_terminate=False,
         ),
+        lifecycle=SessionLifecyclePolicy(idle_timeout_ms=idle_timeout_ms, disconnect_grace_ms=1000),
     )
 
 
-def success_response(
-    request_id: str | int,
-    generation: int,
-    descriptor_value: EnvironmentDescriptor | None = None,
-) -> bytes:
-    result = EnvironmentDescribeResult(descriptor=descriptor_value or descriptor(generation))
-    return encode_model(
-        JsonRpcSuccessResponse(
-            jsonrpc="2.0",
-            id=request_id,
-            result=json.loads(encode_model(result)),
-        )
+def device_descriptor() -> DeviceDescriptor:
+    return DeviceDescriptor(
+        device_id="device-test",
+        generation=1,
+        path_style=PathStyle.POSIX,
+        default_working_directory="/work",
+        directory_discovery=True,
+        available_methods=("device.describe", "directory.list", "session.open"),
+        limits=limits(),
+        lifecycle=descriptor().lifecycle,
     )
 
 
-def initialize_response(
-    request_id: str | int,
-    generation: int,
-    descriptor_value: EnvironmentDescriptor | None = None,
-) -> bytes:
-    result = InitializeResult(
-        protocol_version="0.1",
-        server=EIPServerInfo(name="a13n-envd", version="1.0.0"),
-        descriptor=descriptor_value or descriptor(generation),
+def readiness(session_id: str = "ses-a") -> dict:
+    return {"ready": True, "device_id": "device-test", "generation": 1, "session_id": session_id}
+
+
+def params(operation: str = "op-test", timeout_ms: int | None = None) -> EnvironmentReadinessParams:
+    return EnvironmentReadinessParams(context=EIPCallContext(operation_id=operation, timeout_ms=timeout_ms))
+
+
+async def initialized(transport: FakeTransport) -> EIPDeviceConnection:
+    task = asyncio.create_task(EIPDeviceConnection.initialize(transport, expected_device_id="device-test"))
+    request = await transport.request()
+    assert request.method == "initialize" and request.eip_session is None
+    assert request.params["supported_protocol_versions"] == ["0.1"]
+    transport.reply(
+        request,
+        {
+            "protocol_version": "0.1",
+            "server": {"name": "a13n-envd", "version": "0"},
+            "descriptor": device_descriptor().model_dump(mode="json", exclude_none=True),
+        },
     )
-    return encode_model(
-        JsonRpcSuccessResponse(
-            jsonrpc="2.0",
-            id=request_id,
-            result=json.loads(encode_model(result)),
-        )
+    return await task
+
+
+async def opened(
+    device: EIPDeviceConnection, transport: FakeTransport, session_id: str = "ses-a", *, idle_timeout_ms: int = 30_000
+):
+    task = asyncio.create_task(device.open_session(working_directory="/work"))
+    request = await transport.request()
+    assert request.method == "session.open" and request.eip_session is None
+    assert request.params["expected_device_id"] == "device-test"
+    transport.reply(
+        request, {"descriptor": descriptor(session_id, idle_timeout_ms=idle_timeout_ms).model_dump(mode="json")}
     )
+    request = await transport.request()
+    assert request.method == "environment.readiness" and request.eip_session == session_id
+    assert not task.done()
+    transport.reply(request, readiness(session_id))
+    return await task
 
 
-def readiness_response(
-    request_id: str | int,
-    *,
-    ready: bool,
-    environment_id: str = "env-test",
-    generation: int = 1,
-) -> bytes:
-    result = EnvironmentReadinessResult(
-        ready=ready,
-        environment_id=environment_id,
-        generation=generation,
-    )
-    return encode_model(
-        JsonRpcSuccessResponse(
-            jsonrpc="2.0",
-            id=request_id,
-            result=json.loads(encode_model(result)),
-        )
-    )
+async def closed(session, transport: FakeTransport) -> None:
+    task = asyncio.create_task(session.close())
+    request = await transport.request()
+    assert request.method == "session.close" and request.params == {}
+    transport.reply(request, {"closed": True})
+    await task
 
 
-def close_response(request_id: str | int) -> bytes:
-    result = SessionCloseResult(closed=True)
-    return encode_model(
-        JsonRpcSuccessResponse(
-            jsonrpc="2.0",
-            id=request_id,
-            result=json.loads(encode_model(result)),
-        )
-    )
-
-
-def test_session_initialize_requires_and_confirms_readiness_before_returning() -> None:
-    async def scenario() -> None:
+def test_device_handshake_opens_no_session_and_close_is_session_local():
+    async def scenario():
         transport = FakeTransport()
-        task = asyncio.create_task(
-            EIPSession.initialize(
-                transport,
-                expected_environment_id="env-test",
-                required_methods=("environment.describe",),
-                initialization_timeout=1,
-            )
-        )
-
-        initialize_request = decode_sent_request(await transport.sent.get())
-        assert initialize_request.method == "initialize"
-        assert initialize_request.params["required_methods"] == [
-            "environment.describe",
-            "environment.readiness",
-        ]
-        await transport.responses.put(initialize_response(initialize_request.id, 1))
-
-        readiness_request = decode_sent_request(await transport.sent.get())
-        assert readiness_request.method == "environment.readiness"
-        assert readiness_request.params["context"]["operation_id"].startswith("op-")
-        assert 1 <= readiness_request.params["context"]["timeout_ms"] <= 1000
-        await transport.responses.put(readiness_response(readiness_request.id, ready=True))
-
-        session = await task
-        assert session.generation == 1
-        await session.abort()
+        device = await initialized(transport)
+        assert transport.sent.empty()
+        a = await opened(device, transport)
+        b = await opened(device, transport, "ses-b")
+        await closed(a, transport)
+        assert not transport.closed
+        task = asyncio.create_task(b.readiness())
+        request = await transport.request()
+        transport.reply(request, readiness("ses-b"))
+        assert (await task).ready
+        c = await opened(device, transport, "ses-c")
+        assert c.generation == b.generation
+        await closed(b, transport)
+        await closed(c, transport)
+        await device.close()
+        assert transport.closed
 
     asyncio.run(scenario())
 
 
-def test_session_initialize_rejects_false_or_mismatched_readiness() -> None:
-    async def scenario(*, ready: bool, environment_id: str, generation: int) -> None:
+def test_independent_scopes_and_out_of_order_replies():
+    async def scenario():
         transport = FakeTransport()
-        task = asyncio.create_task(
-            EIPSession.initialize(
-                transport,
-                expected_environment_id="env-test",
-                initialization_timeout=1,
-            )
-        )
-        initialize_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(initialize_response(initialize_request.id, 1))
-        readiness_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(
-            readiness_response(
-                readiness_request.id,
-                ready=ready,
-                environment_id=environment_id,
-                generation=generation,
-            )
-        )
-        expected_error = EIPSessionStateError if not ready else EIPProtocolError
-        with pytest.raises(expected_error):
-            await task
-        assert transport.closed
-
-    asyncio.run(scenario(ready=False, environment_id="env-test", generation=1))
-    asyncio.run(scenario(ready=True, environment_id="env-other", generation=1))
-    asyncio.run(scenario(ready=True, environment_id="env-test", generation=2))
-
-
-def test_session_later_readiness_uses_fresh_operations_and_fences_on_false() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        session = EIPSession(requester, descriptor(1))
-
-        first_task = asyncio.create_task(session.readiness(timeout=1))
-        first_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(readiness_response(first_request.id, ready=True))
-        assert (await first_task).ready
-
-        second_task = asyncio.create_task(session.readiness(timeout=1))
-        second_request = decode_sent_request(await transport.sent.get())
-        assert second_request.params["context"]["operation_id"] != first_request.params["context"]["operation_id"]
-        await transport.responses.put(readiness_response(second_request.id, ready=False))
-        assert not (await second_task).ready
-        assert transport.closed
-        with pytest.raises(EIPSessionStateError):
-            _ = session.client
+        device = RequestCoordinator(transport)
+        a = device.session("ses-a", limits=limits())
+        b = device.session("ses-b", limits=limits())
+        tasks = [asyncio.create_task(owner.request(ENVIRONMENT_READINESS, params())) for owner in (a, b)]
+        requests = [await transport.request(), await transport.request()]
+        assert requests[0].id != requests[1].id
+        for request in reversed(requests):
+            transport.reply(request, readiness(request.eip_session))
+        assert [result.session_id for result in await asyncio.gather(*tasks)] == ["ses-a", "ses-b"]
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_session_later_readiness_enforces_local_timeout_and_fences_session() -> None:
-    async def scenario() -> None:
+@pytest.mark.parametrize("cancel", [True, False])
+def test_abandoned_request_keeps_admission_until_late_reply_without_harming_sibling(cancel: bool):
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=None)
-        session = EIPSession(requester, descriptor(1))
-
-        task = asyncio.create_task(session.readiness(timeout=0.01))
-        request = decode_sent_request(await transport.sent.get())
-        assert request.params["context"]["timeout_ms"] == 10
-        with pytest.raises(TimeoutError):
-            await task
-        assert transport.closed
-        with pytest.raises(EIPSessionStateError):
-            _ = session.client
+        device = RequestCoordinator(transport, request_timeout=0.05)
+        a = device.session("ses-a", limits=limits(), max_in_flight=1)
+        b = device.session("ses-b", limits=limits(), max_in_flight=1)
+        abandoned = asyncio.create_task(a.request(ENVIRONMENT_READINESS, params()))
+        first = await transport.request()
+        if cancel:
+            abandoned.cancel()
+        with pytest.raises(asyncio.CancelledError if cancel else EIPRequestTimeoutError):
+            await abandoned
+        for index in range(3):
+            with pytest.raises(EIPRequestTimeoutError) as caught:
+                await a.request(ENVIRONMENT_READINESS, params(f"blocked-{index}", timeout_ms=1))
+            assert not caught.value.dispatched
+        assert len(device._pending) == 1 and a._admission.active == 1
+        sibling = asyncio.create_task(b.request(ENVIRONMENT_READINESS, params()))
+        request = await transport.request()
+        assert request.eip_session == "ses-b"
+        transport.reply(request, readiness("ses-b"))
+        assert (await sibling).ready
+        keepalive = asyncio.create_task(a.request(SESSION_KEEPALIVE, SessionKeepaliveParams()))
+        request = await transport.request()
+        transport.reply(request, {"alive": True})
+        assert (await keepalive).alive
+        transport.reply(first, readiness())
+        later = asyncio.create_task(a.request(ENVIRONMENT_READINESS, params("later")))
+        request = await transport.request()
+        transport.reply(request, readiness())
+        assert (await later).ready and not transport.closed
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_session_later_readiness_cancellation_fences_ambiguous_session_state() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=None)
-        session = EIPSession(requester, descriptor(1))
+def test_cancel_during_send_does_not_cancel_shared_carrier_write():
+    async def scenario():
+        class BlockedSend(FakeTransport):
+            def __init__(self):
+                super().__init__()
+                self.release = asyncio.Event()
+                self.cancelled = False
 
-        task = asyncio.create_task(session.readiness(timeout=1))
-        await transport.sent.get()
+            async def send(self, frame):
+                await super().send(frame)
+                try:
+                    await self.release.wait()
+                except asyncio.CancelledError:
+                    self.cancelled = True
+                    raise
+
+        transport = BlockedSend()
+        device = RequestCoordinator(transport)
+        a = device.session("ses-a", limits=limits())
+        task = asyncio.create_task(a.request(ENVIRONMENT_READINESS, params()))
+        request = await transport.request()
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await task
-        assert transport.closed
-        with pytest.raises(EIPSessionStateError):
-            _ = session.client
-
-    asyncio.run(scenario())
-
-
-def test_session_concurrent_close_shares_cleanup_and_survives_waiter_cancellation() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        session = EIPSession(requester, descriptor(1), reuse_transport=True)
-
-        cancelled_waiter = asyncio.create_task(session.close())
-        request = decode_sent_request(await transport.sent.get())
-        completing_waiter = asyncio.create_task(session.close())
+        assert not transport.cancelled and a._admission.active == 1
+        transport.release.set()
+        transport.reply(request, readiness())
         await asyncio.sleep(0)
-        assert transport.sent.empty()
-
-        cancelled_waiter.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await cancelled_waiter
-        await transport.responses.put(close_response(request.id))
-        await completing_waiter
-
-        assert not transport.closed
-        await session.close()
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_session_abort_is_terminal_and_closes_reusable_transport() -> None:
-    async def scenario() -> None:
+def test_close_and_keepalive_have_independent_admission_when_device_full():
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        session = EIPSession(requester, descriptor(1), reuse_transport=True)
-
-        await session.abort()
-        assert transport.closed
-        with pytest.raises(EIPSessionStateError, match="did not close cleanly"):
-            await session.close()
+        device = RequestCoordinator(transport, max_in_flight=1)
+        a = device.session("ses-a", limits=limits(), max_in_flight=1)
+        normal = asyncio.create_task(a.request(ENVIRONMENT_READINESS, params()))
+        normal_request = await transport.request()
+        keepalive = asyncio.create_task(a.request(SESSION_KEEPALIVE, SessionKeepaliveParams()))
+        keepalive_request = await transport.request()
+        closing = asyncio.create_task(a.request(SESSION_CLOSE, SessionCloseParams()))
+        close_request = await transport.request()
+        for request, result in (
+            (close_request, {"closed": True}),
+            (keepalive_request, {"alive": True}),
+            (normal_request, readiness()),
+        ):
+            transport.reply(request, result)
+        await asyncio.gather(normal, keepalive, closing)
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_request_coordinator_correlates_out_of_order_responses() -> None:
-    async def scenario() -> None:
+def test_stalled_transfer_is_bounded_and_does_not_block_sibling_control_or_data():
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport, max_in_flight=2, request_timeout=1)
-        client = EIPClient(requester)
-        first = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="first")))
+        device = RequestCoordinator(transport)
+        a = device.session("ses-a", limits=limits())
+        b = device.session("ses-b", limits=limits())
+        ca = a.register_transfer("same-handle", inbound_frames=1)
+        cb = b.register_transfer("same-handle", inbound_frames=1)
+        for session_id in ("ses-a", "ses-a", "ses-b"):
+            transport.responses.put_nowait(
+                DataFrame(kind=DataFrameKind.CHUNK, session_id=session_id, handle="same-handle", payload=b"x")
+            )
+        keepalive = asyncio.create_task(b.request(SESSION_KEEPALIVE, SessionKeepaliveParams()))
+        # A's overflow RESET may race B's request; neither waits for A's consumer.
+        request = None
+        reset = None
+        for _ in range(2):
+            frame = await asyncio.wait_for(transport.sent.get(), 1)
+            if isinstance(frame, ControlFrame):
+                request = decode_model(frame.payload, JsonRpcRequest)
+            else:
+                reset = frame
+        assert reset is not None and reset.session_id == "ses-a" and reset.kind is DataFrameKind.RESET
+        assert request is not None
+        transport.reply(request, {"alive": True})
+        assert (await keepalive).alive
+        with pytest.raises(EIPTransferError):
+            await ca.receive()
+        assert (await cb.receive()).payload == b"x"
+        transport.responses.put_nowait(
+            DataFrame(
+                kind=DataFrameKind.RESET, session_id="ses-a", handle="same-handle", reset_status=DataResetStatus.LIMIT
+            )
         )
-        second = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="second")))
-        )
-
-        first_request = decode_sent_request(await transport.sent.get())
-        second_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(second_request.id, 2))
-        await transport.responses.put(success_response(first_request.id, 1))
-
-        first_result, second_result = await asyncio.gather(first, second)
-        assert first_result.descriptor.generation == 1
-        assert second_result.descriptor.generation == 2
-        await requester.close()
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_request_coordinator_detaches_without_closing_a_clean_transport() -> None:
-    async def scenario() -> None:
+def test_peer_reset_has_reserved_inbox_slot():
+    async def scenario():
         transport = FakeTransport()
-        first_requester = RequestCoordinator(transport, request_timeout=1)
-        first_client = EIPClient(first_requester)
-        first_call = asyncio.create_task(
-            first_client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="first")))
+        device = RequestCoordinator(transport)
+        owner = device.session("ses-a", limits=limits())
+        channel = owner.register_transfer("reader", inbound_frames=1)
+        channel.deliver(DataFrame(kind=DataFrameKind.CHUNK, session_id="ses-a", handle="reader", payload=b"x"))
+        channel.deliver(
+            DataFrame(
+                kind=DataFrameKind.RESET, session_id="ses-a", handle="reader", reset_status=DataResetStatus.SOURCE
+            )
         )
-        first_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(first_request.id, 1))
-        assert (await first_call).descriptor.generation == 1
-
-        await first_requester.detach()
-        assert not transport.closed
-
-        second_requester = RequestCoordinator(transport, request_timeout=1)
-        second_client = EIPClient(second_requester)
-        second_call = asyncio.create_task(
-            second_client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="second")))
-        )
-        second_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(second_request.id, 2))
-        assert (await second_call).descriptor.generation == 2
-        await second_requester.close()
-        assert transport.closed
+        assert (await channel.receive()).kind is DataFrameKind.CHUNK
+        assert (await channel.receive()).kind is DataFrameKind.RESET
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_request_coordinator_detach_closes_ambiguous_transport() -> None:
-    async def scenario() -> None:
+def test_bad_session_result_closes_only_that_session():
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=None)
-        client = EIPClient(requester)
-        call = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="pending")))
-        )
-        await transport.sent.get()
-
-        with pytest.raises(EIPSessionStateError, match="ambiguous"):
-            await requester.detach()
-        assert transport.closed
-        with pytest.raises(EIPSessionStateError):
-            await call
+        device = RequestCoordinator(transport)
+        a = device.session("ses-a", limits=limits())
+        b = device.session("ses-b", limits=limits())
+        bad = asyncio.create_task(a.request(ENVIRONMENT_READINESS, params()))
+        request = await transport.request()
+        transport.reply(request, {"ready": "not-a-boolean"})
+        with pytest.raises(EIPProtocolError):
+            await bad
+        close_request = await transport.request()
+        assert close_request.eip_session == "ses-a" and close_request.method == "session.close"
+        transport.reply(close_request, {"closed": True})
+        good = asyncio.create_task(b.request(ENVIRONMENT_READINESS, params()))
+        request = await transport.request()
+        transport.reply(request, readiness("ses-b"))
+        assert (await good).ready and not transport.closed
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_request_coordinator_raises_typed_method_error() -> None:
-    async def scenario() -> None:
+def test_carrier_eof_wakes_pending_and_admission_waiters():
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        client = EIPClient(requester)
-        call = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="describe")))
-        )
-        request = decode_sent_request(await transport.sent.get())
-        error = EIPError(
-            code=-32012,
-            message="unsupported",
-            data=EIPErrorData(
-                error_type=ErrorType.UNSUPPORTED,
-                retry_hint=RetryHint.NEVER,
-                dispatch_stage=DispatchStage.PRE_DISPATCH,
-            ),
-        )
-        await transport.responses.put(encode_model(JsonRpcErrorResponse(jsonrpc="2.0", id=request.id, error=error)))
-
-        with pytest.raises(EIPMethodError) as captured:
-            await call
-        assert captured.value.error is error or captured.value.error == error
-        await requester.close()
+        device = RequestCoordinator(transport)
+        a = device.session("ses-a", limits=limits(), max_in_flight=1)
+        first = asyncio.create_task(a.request(ENVIRONMENT_READINESS, params()))
+        await transport.request()
+        second = asyncio.create_task(a.request(ENVIRONMENT_READINESS, params()))
+        transport.responses.put_nowait(EIPTransportClosedError("EOF"))
+        for task in (first, second):
+            with pytest.raises((EIPTransportClosedError, EIPSessionStateError)):
+                await asyncio.wait_for(task, 1)
+        await device.close()
+        assert not device._pending
 
     asyncio.run(scenario())
 
 
-def test_unknown_response_id_terminates_requester() -> None:
-    async def scenario() -> None:
+def test_session_close_survives_caller_cancellation_without_closing_device():
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        client = EIPClient(requester)
-        call = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="describe")))
-        )
-        await transport.sent.get()
-        await transport.responses.put(success_response(999, 1))
-
-        with pytest.raises(EIPProtocolError, match="unknown or duplicate"):
-            await call
-        assert transport.closed
-        await requester.close()
-
-    asyncio.run(scenario())
-
-
-def test_cancelled_wait_releases_admission_and_discards_late_response() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, max_in_flight=1, request_timeout=None)
-        client = EIPClient(requester)
-        cancelled = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="cancelled")))
-        )
-        first_request = decode_sent_request(await transport.sent.get())
-        cancelled.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await cancelled
-
-        next_call = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="next")))
-        )
-        second_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(second_request.id, 2))
-        assert (await next_call).descriptor.generation == 2
-
-        await transport.responses.put(success_response(first_request.id, 1))
-        await asyncio.sleep(0)
-        assert requester._abandoned_ids == set()
-        assert requester._terminal_error is None
-        await requester.close()
-
-    asyncio.run(scenario())
-
-
-def test_repeated_abandonment_closes_before_correlation_can_grow() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, max_in_flight=1, request_timeout=None)
-        client = EIPClient(requester)
-
-        first = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="first")))
-        )
-        await transport.sent.get()
+        device = await initialized(transport)
+        session = await opened(device, transport)
+        first = asyncio.create_task(session.close())
+        request = await transport.request()
         first.cancel()
         with pytest.raises(asyncio.CancelledError):
             await first
-        assert len(requester._abandoned_ids) == 1
-
-        second = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="second")))
-        )
-        await transport.sent.get()
-        second.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await second
-        await requester.close()
-
-        assert transport.closed
-        assert isinstance(requester._terminal_error, EIPProtocolError)
-        assert requester._abandoned_ids == set()
-
-    asyncio.run(scenario())
-
-
-def test_relative_timeout_covers_waiting_for_admission() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, max_in_flight=1, request_timeout=None)
-        client = EIPClient(requester)
-        first = asyncio.create_task(
-            client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="first")))
-        )
-        first_request = decode_sent_request(await transport.sent.get())
-
-        with pytest.raises(EIPRequestTimeoutError) as captured:
-            await client.environment_describe(
-                EnvironmentDescribeParams(context=EIPCallContext(operation_id="timed", timeout_ms=20))
-            )
-        assert captured.value.dispatched is False
-        assert transport.sent.empty()
-
-        await transport.responses.put(success_response(first_request.id, 1))
-        assert (await first).descriptor.generation == 1
-        await requester.close()
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.parametrize("delayed_encoding", [1, 2])
-def test_request_timeout_expired_during_encoding_is_not_dispatched(
-    monkeypatch: pytest.MonkeyPatch,
-    delayed_encoding: int,
-) -> None:
-    original_encode_model = requester_module.encode_model
-    encode_count = 0
-
-    def delayed_encode_model(model: Any) -> bytes:
-        nonlocal encode_count
-        encode_count += 1
-        if encode_count == delayed_encoding:
-            time.sleep(0.01)
-        return original_encode_model(model)
-
-    monkeypatch.setattr(requester_module, "encode_model", delayed_encode_model)
-
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=0.001)
-        client = EIPClient(requester)
-
-        with pytest.raises(EIPRequestTimeoutError) as captured:
-            await client.environment_describe(EnvironmentDescribeParams(context=EIPCallContext(operation_id="expired")))
-        assert captured.value.dispatched is False
-        assert transport.sent.empty()
-        await requester.close()
-
-    asyncio.run(scenario())
-
-
-def test_requester_close_finishes_cleanup_before_propagating_repeated_cancellation() -> None:
-    async def scenario() -> None:
-        transport = BlockingCloseTransport()
-        requester = RequestCoordinator(transport)
-        close = asyncio.create_task(requester.close())
-        await transport.close_started.wait()
-        close.cancel()
-        await asyncio.sleep(0)
-        close.cancel()
-        await asyncio.sleep(0)
-        assert not close.done()
-
-        transport.allow_close.set()
-        with pytest.raises(asyncio.CancelledError):
-            await close
-        assert transport.closed
-        await requester.close()
-
-    asyncio.run(scenario())
-
-
-def test_descriptor_refresh_narrows_limits_and_identity_violation_is_terminal() -> None:
-    async def narrowing() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, max_in_flight=4, request_timeout=1)
-        session = EIPSession(requester, descriptor(1))
-        narrowed_limits = descriptor(1).limits.model_copy(
-            update={
-                "max_request_bytes": 512,
-                "max_response_bytes": 512,
-                "max_concurrent_operations": 1,
-            }
-        )
-        narrowed = descriptor(1).model_copy(update={"limits": narrowed_limits})
-        refresh = asyncio.create_task(session.describe())
-        request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(request.id, 1, narrowed))
-        assert (await refresh).limits.max_concurrent_operations == 1
-        assert transport.limits == (512, 512, 1024)
-
-        first = asyncio.create_task(
-            session.client.environment_describe(
-                EnvironmentDescribeParams(context=EIPCallContext(operation_id="after-narrow-1"))
-            )
-        )
-        second = asyncio.create_task(
-            session.client.environment_describe(
-                EnvironmentDescribeParams(context=EIPCallContext(operation_id="after-narrow-2"))
-            )
-        )
-        first_request = decode_sent_request(await transport.sent.get())
-        await asyncio.sleep(0)
-        assert transport.sent.empty()
-        await transport.responses.put(success_response(first_request.id, 1, narrowed))
-        await first
-        second_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(second_request.id, 1, narrowed))
+        second = asyncio.create_task(session.close())
+        transport.reply(request, {"closed": True})
         await second
-        await session.abort()
+        assert transport.sent.empty() and not transport.closed
+        await device.close()
 
-    async def identity_violation() -> None:
+    asyncio.run(scenario())
+
+
+def test_keepalive_runs_without_any_operations():
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        session = EIPSession(requester, descriptor(1))
-        refresh = asyncio.create_task(session.describe())
-        request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(request.id, 2))
-        with pytest.raises(EIPProtocolError, match="generation changed"):
-            await refresh
-        assert transport.closed
+        device = await initialized(transport)
+        session = await opened(device, transport, idle_timeout_ms=300)
+        request = await transport.request()
+        assert request.method == "session.keepalive" and request.eip_session == session.session_id
+        transport.reply(request, {"alive": True})
+        await closed(session, transport)
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+def test_attachment_requires_same_device_generation_before_dispatch():
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        with pytest.raises(EIPProtocolError):
+            await device.attach_session(descriptor().model_copy(update={"generation": 2}))
+        assert transport.sent.empty()
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+def test_device_and_session_method_scopes_are_enforced_locally():
+    async def scenario():
+        transport = FakeTransport()
+        device = RequestCoordinator(transport)
+        owner = device.session("ses-a", limits=limits())
         with pytest.raises(EIPSessionStateError):
-            _ = session.client
-
-    async def limit_widening_violation() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        session = EIPSession(requester, descriptor(1))
-        narrowed_limits = descriptor(1).limits.model_copy(update={"max_request_bytes": 512})
-        narrowed = descriptor(1).model_copy(update={"limits": narrowed_limits})
-        first_refresh = asyncio.create_task(session.describe())
-        first_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(first_request.id, 1, narrowed))
-        assert (await first_refresh).limits.max_request_bytes == 512
-
-        second_refresh = asyncio.create_task(session.describe())
-        second_request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(second_request.id, 1, descriptor(1)))
-        with pytest.raises(EIPProtocolError, match="limits widened"):
-            await second_refresh
-        assert session.descriptor.limits.max_request_bytes == 512
-        assert transport.closed
-
-    async def method_widening_violation() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        initial = descriptor(1).model_copy(update={"available_methods": ("environment.describe",)})
-        session = EIPSession(requester, initial)
-        refresh = asyncio.create_task(session.describe())
-        request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(request.id, 1, descriptor(1)))
-        with pytest.raises(EIPProtocolError, match="available methods widened"):
-            await refresh
-        assert transport.closed
-
-    async def posture_change_violation() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        session = EIPSession(requester, descriptor(1))
-        changed_isolation = descriptor(1).isolation.model_copy(update={"network_policy": IsolationNetworkPolicy.DENY})
-        changed = descriptor(1).model_copy(update={"isolation": changed_isolation})
-        refresh = asyncio.create_task(session.describe())
-        request = decode_sent_request(await transport.sent.get())
-        await transport.responses.put(success_response(request.id, 1, changed))
-        with pytest.raises(EIPProtocolError, match="isolation posture changed"):
-            await refresh
-        assert transport.closed
-
-    asyncio.run(narrowing())
-    asyncio.run(identity_violation())
-    asyncio.run(limit_widening_violation())
-    asyncio.run(method_widening_violation())
-    asyncio.run(posture_change_violation())
-
-
-def test_session_rejects_invalid_local_admission_before_initialize() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        with pytest.raises(ValueError, match="max_in_flight"):
-            await EIPSession.initialize(
-                transport,
-                expected_environment_id="env-test",
-                max_in_flight=0,
-            )
+            await device.request(ENVIRONMENT_READINESS, params())
+        with pytest.raises(EIPSessionStateError):
+            await owner.request(DEVICE_DESCRIBE, DeviceDescribeParams())
         assert transport.sent.empty()
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+def test_typed_error_is_not_connection_terminal():
+    async def scenario():
+        transport = FakeTransport()
+        device = RequestCoordinator(transport)
+        owner = device.session("ses-a", limits=limits())
+        task = asyncio.create_task(owner.request(ENVIRONMENT_READINESS, params()))
+        request = await transport.request()
+        transport.responses.put_nowait(
+            ControlFrame(
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": request.id,
+                        "eip_session": "ses-a",
+                        "error": {
+                            "code": -32602,
+                            "message": "not ready",
+                            "data": {
+                                "error_type": "invalid_params",
+                                "retry_hint": "never",
+                                "dispatch_stage": "pre_dispatch",
+                            },
+                        },
+                    }
+                ).encode()
+            )
+        )
+        with pytest.raises(EIPMethodError):
+            await task
         assert not transport.closed
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_request_coordinator_demultiplexes_data_without_blocking_control() -> None:
-    async def scenario() -> None:
+def test_closed_sessions_keep_bounded_correlation_ownership_until_late_reply():
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport, max_in_flight=1, request_timeout=1)
-        requester.configure_limits(
-            max_in_flight=1,
-            max_request_bytes=1024,
-            max_response_bytes=1024,
-            max_transfer_frame_bytes=1024,
-            max_concurrent_file_transfers=1,
-        )
-        channel = requester.register_transfer("reader-test", inbound_frames=2)
-        call = asyncio.create_task(
-            EIPClient(requester).environment_describe(
-                EnvironmentDescribeParams(context=EIPCallContext(operation_id="interleaved"))
-            )
-        )
-        request = decode_sent_request(await transport.sent.get())
-
-        attached = DataFrame(kind=DataFrameKind.ATTACHED, handle=channel.handle)
-        await transport.responses.put(attached)
-        await transport.responses.put(success_response(request.id, 7))
-
-        assert await channel.receive() == attached
-        assert (await call).descriptor.generation == 7
-        requester.unregister_transfer(channel)
-        await requester.close()
+        device = RequestCoordinator(transport, max_sessions=1)
+        owner = device.session("ses-a", limits=limits())
+        task = asyncio.create_task(owner.request(ENVIRONMENT_READINESS, params()))
+        request = await transport.request()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        owner.finish(EIPSessionStateError("local abort"))
+        with pytest.raises(EIPSessionStateError, match="capacity"):
+            device.session("ses-b", limits=limits())
+        transport.reply(request, readiness())
+        for _ in range(10):
+            if not device._pending:
+                break
+            await asyncio.sleep(0)
+        assert not device._pending
+        device.session("ses-b", limits=limits())
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_slow_transfer_consumer_applies_backpressure_without_reset() -> None:
-    async def scenario() -> None:
+def test_stalled_reset_ack_closes_affected_session_not_shared_carrier(monkeypatch):
+    import a13n_envd_client.requester as runtime
+
+    monkeypatch.setattr(runtime, "_TRANSFER_TEARDOWN_TIMEOUT", 0.02)
+
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport)
-        requester.configure_limits(
-            max_in_flight=1,
-            max_request_bytes=1024,
-            max_response_bytes=1024,
-            max_transfer_frame_bytes=1024,
-            max_concurrent_file_transfers=1,
-        )
-        channel = requester.register_transfer("reader-full", inbound_frames=1)
-        first = DataFrame(kind=DataFrameKind.CHUNK, handle=channel.handle, payload=b"a")
-        second = DataFrame(kind=DataFrameKind.CHUNK, handle=channel.handle, offset=1, payload=b"b")
-        await transport.responses.put(first)
-        await transport.responses.put(second)
-        await asyncio.sleep(0)
-
-        assert transport.sent.empty()
-        assert await channel.receive() == first
-        assert await channel.receive() == second
-        assert transport.sent.empty()
-
-        requester.unregister_transfer(channel)
-        await requester.close()
-
-    asyncio.run(scenario())
-
-
-def test_peer_reset_bypasses_a_full_transfer_inbox() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport)
-        requester.configure_limits(
-            max_in_flight=1,
-            max_request_bytes=1024,
-            max_response_bytes=1024,
-            max_transfer_frame_bytes=1024,
-            max_concurrent_file_transfers=1,
-        )
-        channel = requester.register_transfer("reader-reset", inbound_frames=1)
-        chunk = DataFrame(kind=DataFrameKind.CHUNK, handle=channel.handle, payload=b"queued")
-        reset = DataFrame(
-            kind=DataFrameKind.RESET,
-            handle=channel.handle,
-            reset_status=DataResetStatus.SOURCE,
-        )
-        await channel.deliver(chunk)
-        await asyncio.wait_for(channel.deliver(reset), timeout=1)
-        assert channel.peer_reset_received
-        channel.fail(RuntimeError("carrier also failed"))
-        assert await channel.receive() == chunk
-        assert await channel.receive() == reset
-
-        requester.unregister_transfer(channel)
-        await requester.close()
-
-    asyncio.run(scenario())
-
-
-def test_missing_reset_acknowledgement_closes_the_carrier(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(requester_module, "_TRANSFER_TEARDOWN_TIMEOUT", 0.01)
-
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport)
-        requester.configure_limits(
-            max_in_flight=1,
-            max_request_bytes=1024,
-            max_response_bytes=1024,
-            max_transfer_frame_bytes=1024,
-            max_concurrent_file_transfers=1,
-        )
-        channel = requester.register_transfer("reader-silent")
-        await requester.reset_transfer(
+        device = RequestCoordinator(transport)
+        owner = device.session("ses-a", limits=limits())
+        channel = owner.register_transfer("reader")
+        await owner.reset_transfer(
             channel,
             DataFrame(
                 kind=DataFrameKind.RESET,
-                handle=channel.handle,
+                session_id="ses-a",
+                handle="reader",
                 reset_status=DataResetStatus.CANCELLED,
             ),
         )
-
-        await asyncio.sleep(0.02)
-        await requester.close()
-        assert transport.closed
-        assert isinstance(requester._terminal_error, EIPProtocolError)
+        assert isinstance(await transport.sent.get(), DataFrame)
+        request = await transport.request()
+        assert request.method == "session.close" and request.eip_session == "ses-a"
+        transport.reply(request, {"closed": True})
+        await asyncio.sleep(0)
+        assert not transport.closed
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_retired_transfer_capacity_exhaustion_closes_the_carrier() -> None:
-    async def scenario() -> None:
-        transport = FakeTransport()
-        requester = RequestCoordinator(transport)
-        requester.configure_limits(
-            max_in_flight=1,
-            max_request_bytes=1024,
-            max_response_bytes=1024,
-            max_transfer_frame_bytes=1024,
-            max_concurrent_file_transfers=1,
-        )
-        first = requester.register_transfer("reader-first")
-        requester.retire_transfer(first)
-        second = requester.register_transfer("reader-second")
+def test_encoding_deadline_expiry_does_not_dispatch(monkeypatch):
+    import time
 
-        with pytest.raises(EIPTransportClosedError, match="teardown stalled"):
-            requester.retire_transfer(second)
-        await requester.close()
-        assert transport.closed
-        assert isinstance(requester._terminal_error, EIPProtocolError)
+    import a13n_envd_client.requester as runtime
+
+    original = runtime.encode_model
+
+    def delayed(model):
+        encoded = original(model)
+        time.sleep(0.01)
+        return encoded
+
+    monkeypatch.setattr(runtime, "encode_model", delayed)
+
+    async def scenario():
+        transport = FakeTransport()
+        device = RequestCoordinator(transport)
+        owner = device.session("ses-a", limits=limits())
+        with pytest.raises(EIPRequestTimeoutError) as caught:
+            await owner.request(ENVIRONMENT_READINESS, params(timeout_ms=1))
+        assert not caught.value.dispatched and transport.sent.empty()
+        assert owner._admission.active == 0
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_retired_transfer_ignores_already_queued_terminal_frames() -> None:
-    async def scenario() -> None:
+def test_exact_session_reattachment_does_not_initialize_or_replay_operations():
+    async def scenario():
         transport = FakeTransport()
-        requester = RequestCoordinator(transport)
-        requester.configure_limits(
-            max_in_flight=1,
-            max_request_bytes=1024,
-            max_response_bytes=1024,
-            max_transfer_frame_bytes=1024,
-            max_concurrent_file_transfers=1,
-        )
-        channel = requester.register_transfer("reader-retired", inbound_frames=1)
-        await channel.deliver(DataFrame(kind=DataFrameKind.CHUNK, handle=channel.handle, payload=b"queued"))
-        blocked_delivery = asyncio.create_task(
-            channel.deliver(
-                DataFrame(
-                    kind=DataFrameKind.CHUNK,
-                    handle=channel.handle,
-                    offset=6,
-                    payload=b"blocked",
-                )
+        device = await initialized(transport)
+        task = asyncio.create_task(device.attach_session(descriptor()))
+        request = await transport.request()
+        assert request.method == "session.attach" and request.eip_session == "ses-a" and request.params == {}
+        transport.reply(request, {"descriptor": descriptor().model_dump(mode="json")})
+        ready = await transport.request()
+        assert ready.method == "environment.readiness"
+        transport.reply(ready, readiness())
+        session = await task
+        assert session.session_id == "ses-a"
+        await closed(session, transport)
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("abandon", ["cancel", "timeout", "response-race"])
+def test_abandoned_session_open_keeps_capacity_through_exact_cleanup(abandon: str):
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        sibling = await opened(device, transport, "ses-sibling")
+        coordinator = device._requester
+        coordinator._request_timeout = 0.05
+        coordinator._device_admission.limit = 1
+        task = asyncio.create_task(device.open_session())
+        request = await transport.request()
+        result = {"descriptor": descriptor("ses-abandoned").model_dump(mode="json")}
+        if abandon == "response-race":
+            # Deliver synchronously, then cancel before the waiting task resumes.
+            coordinator._handle_control(
+                ControlFrame(json.dumps({"jsonrpc": "2.0", "id": request.id, "result": result}).encode())
             )
-        )
+        if abandon != "timeout":
+            task.cancel()
+        with pytest.raises(EIPRequestTimeoutError if abandon == "timeout" else asyncio.CancelledError):
+            await task
+        if abandon != "response-race":
+            transport.reply(request, result)
+        cleanup = await transport.request()
+        assert cleanup.method == "session.close" and cleanup.eip_session == "ses-abandoned"
+        assert len(coordinator._pending) == coordinator._device_admission.active == 1
+        assert set(device._sessions) == {"ses-sibling"}
+        assert set(coordinator._sessions) == {"ses-sibling"}
+        with pytest.raises(EIPRequestTimeoutError) as caught:
+            await device.open_session()
+        assert not caught.value.dispatched and transport.sent.empty()
+        alive = asyncio.create_task(sibling.readiness())
+        keepalive = await transport.request()
+        transport.reply(keepalive, readiness("ses-sibling"))
+        assert (await alive).ready and not transport.closed
+        transport.reply(cleanup, {"closed": True})
+        replacement = await opened(device, transport, "ses-replacement")
+        assert coordinator._device_admission.active == 0
+        await closed(replacement, transport)
+        await closed(sibling, transport)
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+def test_session_open_binding_failure_closes_unclaimed_session_at_local_capacity():
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        sibling = await opened(device, transport, "ses-sibling")
+        device._requester._max_sessions = 1
+        task = asyncio.create_task(device.open_session())
+        request = await transport.request()
+        transport.reply(request, {"descriptor": descriptor("ses-overflow").model_dump(mode="json")})
+        with pytest.raises(EIPSessionStateError, match="capacity"):
+            await task
+        cleanup = await transport.request()
+        assert cleanup.method == "session.close" and cleanup.eip_session == "ses-overflow"
+        assert device._requester._device_admission.active == 1
+        transport.reply(cleanup, {"closed": True})
+        await closed(sibling, transport)
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("cancel", [False, True])
+def test_device_shutdown_drains_open_response_and_cleanup_before_carrier_close(cancel: bool):
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        task = asyncio.create_task(device.open_session())
+        request = await transport.request()
+        if cancel:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        shutdown = asyncio.create_task(device.close())
         await asyncio.sleep(0)
-        assert not blocked_delivery.done()
-        requester.retire_transfer(channel)
-        await asyncio.wait_for(blocked_delivery, timeout=1)
-        await transport.responses.put(DataFrame(kind=DataFrameKind.CHUNK, handle=channel.handle, payload=b"late"))
-        await transport.responses.put(DataFrame(kind=DataFrameKind.END, handle=channel.handle, offset=6))
-        await transport.responses.put(DataFrame(kind=DataFrameKind.END_ACK, handle=channel.handle, offset=6))
+        transport.reply(request, {"descriptor": descriptor("ses-late").model_dump(mode="json")})
+        if not cancel:
+            with pytest.raises(EIPSessionStateError, match="closed"):
+                await task
+        cleanup = await transport.request()
+        assert cleanup.method == "session.close" and cleanup.eip_session == "ses-late"
+        assert not transport.closed and not shutdown.done()
+        transport.reply(cleanup, {"closed": True})
+        await asyncio.wait_for(shutdown, 1)
+        assert transport.closed and not device._requester._pending
+        assert not device._sessions
+
+    asyncio.run(scenario())
+
+
+def test_abandoned_open_cannot_close_a_duplicate_live_session_descriptor():
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        sibling = await opened(device, transport)
+        task = asyncio.create_task(device.open_session())
+        request = await transport.request()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        transport.reply(request, {"descriptor": sibling.descriptor.model_dump(mode="json")})
+        alive = asyncio.create_task(sibling.readiness())
+        request = await transport.request()
+        assert request.method == "environment.readiness"
+        transport.reply(request, readiness())
+        assert (await alive).ready
+        await closed(sibling, transport)
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+def test_host_scope_rejection_does_not_close_device_or_sibling(monkeypatch):
+    async def scenario():
+        transport = FakeTransport()
+        device = await initialized(transport)
+        first = await opened(device, transport)
+        second = await opened(device, transport, "ses-b")
+        original_send = transport.send
+
+        async def send(frame):
+            if isinstance(frame, ControlFrame):
+                request = decode_model(frame.payload, JsonRpcRequest)
+                if request.eip_session == first.session_id or request.method == "session.open":
+                    raise EIPSessionStateError("Host use authority expired before dispatch")
+            await original_send(frame)
+
+        monkeypatch.setattr(transport, "send", send)
+        with pytest.raises(EIPSessionStateError):
+            await first.readiness()
+        with pytest.raises(EIPSessionStateError):
+            await device.open_session(working_directory="/work")
+        assert not transport.closed
+        request_task = asyncio.create_task(second.readiness())
+        request = await transport.request()
+        assert request.eip_session == "ses-b"
+        transport.reply(request, readiness("ses-b"))
+        assert (await request_task).ready
+        describe_task = asyncio.create_task(device.describe())
+        request = await transport.request()
+        transport.reply(request, {"descriptor": device_descriptor().model_dump(mode="json")})
+        assert (await describe_task).device_id == "device-test"
+        await closed(second, transport)
+        await device.close()
+
+    asyncio.run(scenario())
+
+
+def test_abandoned_session_open_cleanup_preserves_its_host_dispatch_context(monkeypatch):
+    from contextvars import ContextVar
+
+    async def scenario():
+        authority = ContextVar("test_use", default=None)
+        transport = FakeTransport()
+        device = await initialized(transport)
+        original_send = transport.send
+        observed = []
+
+        async def send(frame):
+            if isinstance(frame, ControlFrame):
+                request = decode_model(frame.payload, JsonRpcRequest)
+                observed.append((request.method, authority.get()))
+            await original_send(frame)
+
+        monkeypatch.setattr(transport, "send", send)
+        token = authority.set("binding-a")
+        opening = asyncio.create_task(device.open_session(working_directory="/work"))
+        authority.reset(token)
+        request = await transport.request()
+        opening.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await opening
+        transport.reply(request, {"descriptor": descriptor().model_dump(mode="json")})
+        cleanup = await transport.request()
+        assert cleanup.method == "session.close" and cleanup.eip_session == "ses-a"
+        transport.reply(cleanup, {"closed": True})
         await asyncio.sleep(0)
-        assert channel.handle in requester._retired_transfers
-        assert requester._terminal_error is None
-        await transport.responses.put(
-            DataFrame(
-                kind=DataFrameKind.RESET,
-                handle=channel.handle,
-                reset_status=DataResetStatus.CANCELLED,
-            )
-        )
-        await asyncio.sleep(0)
-        assert channel.handle not in requester._retired_transfers
-        assert requester._terminal_error is None
-        await requester.close()
+        assert observed == [("session.open", "binding-a"), ("session.close", "binding-a")]
+        await device.close()
 
     asyncio.run(scenario())

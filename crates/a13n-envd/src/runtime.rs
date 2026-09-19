@@ -16,15 +16,10 @@ pub(crate) struct RuntimeState {
 
 #[derive(Debug)]
 struct RuntimeInner {
-    parent: PathBuf,
     parent_dir: Dir,
     generation_name: OsString,
     _generation: PathBuf,
     spool: PathBuf,
-    _control: PathBuf,
-    _probe: PathBuf,
-    home: PathBuf,
-    temp: PathBuf,
     _lock: File,
 }
 
@@ -97,28 +92,15 @@ impl RuntimeState {
         };
         protect_directory(&generation)?;
         let spool = create_private_child(&generation, "spool")?;
-        let control = create_private_child(&generation, "control")?;
-        let probe = create_private_child(&generation, "probe")?;
-        let home = create_private_child(&generation, "home")?;
-        let temp = create_private_child(&generation, "temp")?;
         Ok(Self {
             inner: Arc::new(RuntimeInner {
-                parent,
                 parent_dir,
                 generation_name,
                 _generation: generation,
                 spool,
-                _control: control,
-                _probe: probe,
-                home,
-                temp,
                 _lock: lock,
             }),
         })
-    }
-
-    pub(crate) fn parent(&self) -> &Path {
-        &self.inner.parent
     }
 
     #[cfg(test)]
@@ -129,14 +111,6 @@ impl RuntimeState {
     pub(crate) fn spool(&self) -> &Path {
         &self.inner.spool
     }
-
-    pub(crate) fn home(&self) -> &Path {
-        &self.inner.home
-    }
-
-    pub(crate) fn temp(&self) -> &Path {
-        &self.inner.temp
-    }
 }
 
 impl Drop for RuntimeInner {
@@ -144,6 +118,42 @@ impl Drop for RuntimeInner {
         let _ = self.parent_dir.remove_dir_all(&self.generation_name);
         let _ = self._lock.unlock();
     }
+}
+
+/// Persistent installation state is separate from generation-private runtime data.
+pub(crate) fn installation_identity(directory: &Path) -> Result<String, String> {
+    use std::io::{Read, Seek, SeekFrom, Write};
+    if !directory.is_absolute() {
+        return Err("installation state directory must be absolute".to_owned());
+    }
+    fs::create_dir_all(directory)
+        .map_err(|error| format!("cannot create installation state: {error}"))?;
+    protect_directory(directory)?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(directory.join("device-id"))
+        .map_err(|error| format!("cannot open Device identity: {error}"))?;
+    file.lock_exclusive()
+        .map_err(|error| format!("cannot lock Device identity: {error}"))?;
+    let mut identity = String::new();
+    (&mut file)
+        .take(257)
+        .read_to_string(&mut identity)
+        .map_err(|error| format!("cannot read Device identity: {error}"))?;
+    if identity.is_empty() {
+        let mut random = [0_u8; 16];
+        getrandom::fill(&mut random).map_err(|_| "cannot generate Device identity".to_owned())?;
+        identity = format!("device-{}", hex(&random));
+        file.seek(SeekFrom::Start(0))
+            .map_err(|error| format!("cannot seek Device identity: {error}"))?;
+        file.write_all(identity.as_bytes())
+            .and_then(|()| file.sync_all())
+            .map_err(|error| format!("cannot persist Device identity: {error}"))?;
+    }
+    Ok(identity)
 }
 
 fn create_private_child(parent: &Path, name: &str) -> Result<PathBuf, String> {
@@ -190,10 +200,7 @@ mod tests {
         fs::write(parent.join("generation-stale/spool/output"), b"bytes").expect("stale bytes");
         let runtime = RuntimeState::prepare(&parent).expect("runtime");
         assert!(runtime.spool().is_dir());
-        assert!(runtime.generation().join("control").is_dir());
-        assert!(runtime.generation().join("probe").is_dir());
-        assert!(runtime.home().is_dir());
-        assert!(runtime.temp().is_dir());
+        assert_eq!(fs::read_dir(runtime.generation()).unwrap().count(), 1);
         assert!(!parent.join("generation-stale").exists());
         drop(runtime);
         fs::remove_file(parent.join(".a13n-envd.lock")).expect("lock file");

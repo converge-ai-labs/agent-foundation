@@ -75,11 +75,16 @@ def parse_timestamp(value: datetime | str | None) -> datetime | None:
 def convert_receipt(
     receipt: eip.OperationReceipt,
     *,
-    environment_id: str,
+    session: EIPSession,
     mount_id: str,
     generation: str,
 ) -> EnvironmentOperationReceipt:
-    if receipt.environment_id != environment_id or str(receipt.generation) != generation:
+    descriptor = session.descriptor
+    if (receipt.device_id, receipt.generation, receipt.session_id) != (
+        descriptor.device_id,
+        descriptor.generation,
+        descriptor.session_id,
+    ):
         raise EnvironmentError(
             "EIP receipt identity does not match the bound environment",
             code="environment_stale_mount",

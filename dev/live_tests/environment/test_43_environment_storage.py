@@ -28,12 +28,7 @@ async def test_full_filesystem_preserves_files_and_releases_candidates(request, 
                 mem_limit="512m",
                 pids_limit=128,
                 tmpfs={"/limited": "size=1m,uid=10001,gid=10001,mode=0700"},
-                security_opt=["seccomp=unconfined", "apparmor=unconfined"] if backend == "local-envd" else None,
             )
-            if backend == "local-envd":
-                # Docker CLI's systempaths=unconfined permits the native isolation
-                # probe to mount proc inside its own nested PID namespace.
-                host_config.update(MaskedPaths=[], ReadonlyPaths=[])
             created = client.api.create_container(
                 image, [backend], name="a13n-file-storage-" + uuid4().hex, host_config=host_config
             )

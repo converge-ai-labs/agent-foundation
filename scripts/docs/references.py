@@ -12,7 +12,7 @@ from a13n_environment.direct_local.configuration import DirectLocalProviderConfi
 from a13n_environment.docker.configuration import DockerProviderConfiguration
 from a13n_environment.docker.factory import DockerBackendConfiguration
 from a13n_environment.e2b.configuration import E2BBackendConfiguration, E2BCredential, E2BProviderConfiguration
-from a13n_environment.local_envd.configuration import LocalEnvdProviderConfiguration
+from a13n_environment.local_envd.configuration import LocalEnvdLaunchConfiguration, LocalEnvdProviderConfiguration
 from a13n_environment.management import HostLocalProviderConfiguration
 from a13n_environment.modal.provider import ModalBackendConfiguration, ModalConfiguration, ModalCredential
 from a13n_environment.native.configuration import TokenCredential
@@ -186,6 +186,7 @@ This document excludes non-Native boundaries: operational probes, schema/documen
 ENVIRONMENT_CONFIGURATION_MODELS = (
     DirectLocalProviderConfiguration,
     LocalEnvdProviderConfiguration,
+    LocalEnvdLaunchConfiguration,
     DockerProviderConfiguration,
     E2BProviderConfiguration,
     DaytonaConfiguration,

@@ -36,7 +36,7 @@ REQUIRED_METHODS = frozenset({"environment.describe", "environment.readiness", "
 
 def provider_error(key: str, code: str, category: Category) -> EnvironmentProviderError:
     return EnvironmentProviderError(
-        "Remote Envd provider could not complete the requested action.",
+        "Envd provider could not complete the requested action.",
         code=code,
         category=category,
         certainty=Certainty.NOT_DISPATCHED,
@@ -111,11 +111,16 @@ class RemoteEnvdEnvironment(Environment):
             self._descriptor = self._bound.descriptor
             self._operations = self._bound.operations
             self._availability = self._bound.availability
-        except BaseException:
+        except BaseException as error:
             self._availability = EnvironmentAvailability(status="unavailable")
-            if self._entered_session:
+            try:
                 await self._close()
-            raise
+            except Exception as cleanup_error:
+                # Keep the preparation failure primary and retain cleanup evidence.
+                error.__cause__ = cleanup_error
+            if not isinstance(error, Exception) or isinstance(error, (EnvironmentError, EnvironmentProviderError)):
+                raise
+            raise provider_error(self.provider_key, "provider_session_failed", Category.UNAVAILABLE) from error
 
     def _bind_mount(self, mount_id: str) -> None:
         if self._bound is not None:
@@ -146,10 +151,17 @@ class RemoteEnvdEnvironment(Environment):
                 await self._session_context.__aexit__(None, None, None)
             except BaseException as error:
                 errors.append(error)
-        if len(errors) == 1:
-            raise errors[0]
-        if errors:
-            raise BaseExceptionGroup("Remote Envd local cleanup failed", errors)
+        if not errors:
+            return
+        cause = errors[0] if len(errors) == 1 else BaseExceptionGroup("Remote Envd local cleanup failed", errors)
+        for error in errors:
+            if not isinstance(error, Exception):
+                if len(errors) == 1:
+                    raise error
+                raise error from cause
+        if isinstance(cause, (EnvironmentError, EnvironmentProviderError)):
+            raise cause
+        raise provider_error(self.provider_key, "provider_session_close_failed", Category.UNAVAILABLE) from cause
 
     async def reconcile(self) -> Literal["running", "stopped", "absent"]:
         # A connection probe cannot prove external target absence or reconcile provisioning.

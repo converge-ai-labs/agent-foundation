@@ -19,14 +19,30 @@ option (eip_data_frame_profile) = {
   kind_bytes: 1
   status_bytes: 2
   handle_length_bytes: 2
-  reserved_bytes: 2
+  session_length_bytes: 2
   stream_offset_bytes: 8
   payload_length_bytes: 4
+  transfer_window_chunks: 8
 };
 
 service EnvironmentInteractionProtocol {
   rpc Initialize(InitializeParams) returns (InitializeResult) {
-    option (eip_method) = { jsonrpc_method: "initialize" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_INITIALIZATION };
+    option (eip_method) = { jsonrpc_method: "initialize" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_INITIALIZATION device_scoped: true };
+  }
+  rpc DeviceDescribe(DeviceDescribeParams) returns (DeviceDescribeResult) {
+    option (eip_method) = { jsonrpc_method: "device.describe" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_INITIALIZATION device_scoped: true };
+  }
+  rpc DirectoryList(DirectoryListParams) returns (DirectoryListResult) {
+    option (eip_method) = { jsonrpc_method: "directory.list" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE device_scoped: true };
+  }
+  rpc SessionOpen(SessionOpenParams) returns (SessionOpenResult) {
+    option (eip_method) = { jsonrpc_method: "session.open" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION device_scoped: true };
+  }
+  rpc SessionAttach(SessionAttachParams) returns (SessionOpenResult) {
+    option (eip_method) = { jsonrpc_method: "session.attach" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION };
+  }
+  rpc SessionKeepalive(SessionKeepaliveParams) returns (SessionKeepaliveResult) {
+    option (eip_method) = { jsonrpc_method: "session.keepalive" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION };
   }
   rpc EnvironmentReadiness(EnvironmentReadinessParams) returns (EnvironmentReadinessResult) {
     option (eip_method) = { jsonrpc_method: "environment.readiness" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_COMMON };
@@ -131,6 +147,6 @@ service EnvironmentInteractionProtocol {
     option (eip_method) = { jsonrpc_method: "receipt.get" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_COMMON };
   }
   rpc SessionClose(SessionCloseParams) returns (SessionCloseResult) {
-    option (eip_method) = { jsonrpc_method: "session.close" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION };
+    option (eip_method) = { jsonrpc_method: "session.close" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_LEDGER_EXTERNAL introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_SESSION };
   }
 }

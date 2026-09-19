@@ -109,14 +109,11 @@ Direct Local restrictions apply through the current Environment mount. They do n
 
 ## Use Local Envd
 
-Local Envd launches one compatible `a13n-envd` generation for a Host-selected workspace. The Host supplies the executable and private-runtime allocator when constructing the adapter:
+The Host owns a shared Local Envd runtime and its lazily launched Device. Each fresh adapter opens an independent Session with a fixed Device working directory:
 
 ```python
-from pathlib import Path
-
 from a13n_environment import (
     LocalEnvdProviderRuntime,
-    LocalEnvdWorkspaceConfiguration,
     TemporaryLocalEnvdRuntimeAllocator,
     build_environment_provider_catalog,
     resolve_a13n_envd_executable,
@@ -128,32 +125,29 @@ catalog = build_environment_provider_catalog(
 provider = catalog.require("a13n.local-envd")
 configuration = provider.validate_configuration(
     schema_version="1",
-    value={
-        "workspace": LocalEnvdWorkspaceConfiguration(
-            path=Path("./workspace").resolve(),
-        ).model_dump(mode="json"),
-        "execution_network": "deny",
-    },
+    value={"working_directory": "/absolute/path/to/workspace"},
 )
-environment = provider.create_environment(
-    configuration=configuration,
-    environment_id="workspace",
-    state=None,
-    runtime=LocalEnvdProviderRuntime(
-        executable=resolve_a13n_envd_executable(),
-        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
-    ),
-)
-
-result = await executable.run(
-    "Inspect the sandboxed workspace",
-    environment=environment,
-)
+async with LocalEnvdProviderRuntime(
+    executable=resolve_a13n_envd_executable(),
+    allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
+) as runtime:
+    environment = provider.create_environment(
+        configuration=configuration,
+        environment_id="workspace",
+        state=None,
+        runtime=runtime,
+    )
+    result = await executable.run(
+        "Inspect the working directory",
+        environment=environment,
+    )
+    # Harness closes this adapter's Session. The Host can use another adapter
+    # on the same runtime; leaving this context closes the shared Device.
 ```
 
 Executable resolution checks an explicit argument, `A13N_ENVD_EXECUTABLE`, then `a13n-envd` on `PATH`. The client and Provider packages do not install or download the native binary.
 
-Local Envd validates exact daemon/client compatibility and the required isolation probe. It does not fall back to Direct Local or silently disable isolation. Read the [`a13n-envd` guide](../a13n-envd/index.md) for installation and platform prerequisites.
+Local Envd validates exact daemon/client compatibility and never falls back to Direct Local. Envd paths address the Device filesystem; a fixed cwd is not containment. Host-managed accounts, containers, or sandboxes own filesystem and network isolation. Read the [`a13n-envd` guide](../a13n-envd/index.md) for setup and security boundaries.
 
 ## Re-enter and retain a target
 

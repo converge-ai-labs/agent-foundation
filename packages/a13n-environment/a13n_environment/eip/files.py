@@ -39,38 +39,19 @@ class EIPFileOperator:
         self._environment_id = environment_id
         self._mount_id = mount_id
         self._generation = generation
-        self._mounts = tuple(sorted(session.descriptor.mounts, key=lambda mount: len(mount.logical_root), reverse=True))
-        self._mount_by_id = {mount.mount_id: mount for mount in self._mounts}
 
     @property
     def _client(self) -> eip.EIPClient:
         return session_client(self._session)
 
     def to_eip_path(self, path: str) -> eip.EIPPath:
-        if not isinstance(path, str) or not path.startswith("/") or "\x00" in path:
-            raise EnvironmentError("Environment path is invalid", code="environment_request_invalid")
-        for mount in self._mounts:
-            root = mount.logical_root.rstrip("/") or "/"
-            if root == "/":
-                relative = path
-            elif path == root:
-                relative = "/"
-            elif path.startswith(root + "/"):
-                relative = path[len(root) :]
-            else:
-                continue
-            try:
-                return eip.EIPPath(mount_id=mount.mount_id, path=relative)
-            except ValidationError:
-                raise EnvironmentError("Environment path is invalid", code="environment_request_invalid") from None
-        raise EnvironmentError("Environment path is outside advertised mounts", code="environment_not_found")
+        try:
+            return eip.EIPPath(path=path)
+        except ValidationError:
+            raise EnvironmentError("Environment path is invalid", code="environment_request_invalid") from None
 
     def from_eip_path(self, path: eip.EIPPath) -> str:
-        mount = self._mount_by_id.get(path.mount_id)
-        if mount is None:
-            raise EnvironmentError("EIP returned an unknown mount", code="environment_provider_failure")
-        root = mount.logical_root.rstrip("/") or "/"
-        return path.path if root == "/" else root + ("" if path.path == "/" else path.path)
+        return path.path
 
     async def commit(self, request: FileCommitRequest) -> FileMutationResult:
         self._require_transfer_method("file.commit")
@@ -399,20 +380,17 @@ class EIPFileOperator:
         )
 
     def _metadata(self, info: eip.FileInfo) -> FileMetadata:
-        mount = self._mount_by_id.get(info.path.mount_id)
-        if mount is None:
-            raise EnvironmentError("EIP returned an unknown mount", code="environment_provider_failure")
         return FileMetadata(
             path=self.from_eip_path(info.path),
             kind=info.kind.value,
             size=info.size_bytes,
-            writable=mount.writable,
+            writable="file.write_text" in self._session.descriptor.available_methods,
         )
 
     def _receipt(self, receipt: eip.OperationReceipt):
         return convert_receipt(
             receipt,
-            environment_id=self._session.descriptor.environment_id,
+            session=self._session,
             mount_id=self._mount_id,
             generation=self._generation,
         )

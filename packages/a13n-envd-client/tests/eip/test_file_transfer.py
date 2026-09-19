@@ -6,15 +6,15 @@ import json
 from typing import Any
 
 import pytest
-from a13n_envd_client import ControlFrame, EIPSession, EIPTransportFrame, RequestCoordinator
+from a13n_envd_client import ControlFrame, EIPDeviceConnection, EIPTransportFrame, RequestCoordinator
 from a13n_envd_client.eip.v1 import (
     ContentDigest,
     DataFrame,
     DataFrameKind,
     DataResetStatus,
+    DeviceDescriptor,
     EIPLimits,
     EIPPath,
-    EnvironmentDescriptor,
     ExecutionFeatures,
     FileByteRange,
     FileInfo,
@@ -32,16 +32,13 @@ from a13n_envd_client.eip.v1 import (
     FileWriterCommitResult,
     FileWriterHandle,
     FileWriterOpenResult,
-    IsolationBackend,
-    IsolationCleanupGuarantee,
-    IsolationMode,
-    IsolationNetworkPolicy,
-    IsolationPosture,
     JsonRpcRequest,
     JsonRpcSuccessResponse,
     OperationReceipt,
     ReceiptOutcome,
     ReceiptStage,
+    SessionDescriptor,
+    SessionLifecyclePolicy,
     decode_model,
     encode_model,
 )
@@ -56,6 +53,22 @@ class FakeTypedTransport:
         self.closed = False
 
     async def send(self, frame: EIPTransportFrame) -> None:
+        if isinstance(frame, ControlFrame):
+            request = decode_model(frame.payload, JsonRpcRequest)
+            if request.method == "session.close":
+                await self.inbound.put(
+                    ControlFrame(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": request.id,
+                                "eip_session": request.eip_session,
+                                "result": {"closed": True},
+                            }
+                        ).encode()
+                    )
+                )
+                return
         await self.outbound.put(frame)
 
     async def receive(self) -> EIPTransportFrame:
@@ -93,6 +106,7 @@ async def respond(
                 JsonRpcSuccessResponse(
                     jsonrpc="2.0",
                     id=request.id,
+                    eip_session=request.eip_session,
                     result=json.loads(encode_model(result)),
                 )
             )
@@ -104,10 +118,13 @@ def decode_params(request: JsonRpcRequest, model_type: type[BaseModel]) -> Any:
     return decode_model(json.dumps(request.params).encode(), model_type)
 
 
-def descriptor() -> EnvironmentDescriptor:
-    return EnvironmentDescriptor(
-        environment_id="env-transfer",
+def descriptor() -> SessionDescriptor:
+    return SessionDescriptor(
+        device_id="device-transfer",
+        session_id="ses-transfer",
         generation=1,
+        working_directory="/",
+        lifecycle=SessionLifecyclePolicy(idle_timeout_ms=30_000, disconnect_grace_ms=1000),
         available_methods=(
             "file.open_reader",
             "file.close_reader",
@@ -126,21 +143,12 @@ def descriptor() -> EnvironmentDescriptor:
             max_transfer_frame_bytes=128,
             max_concurrent_file_transfers=2,
             max_file_transfer_bytes=1024,
-        ),
-        isolation=IsolationPosture(
-            mode=IsolationMode.DISABLED,
-            backend=IsolationBackend.OUTER_HOST,
-            filesystem_containment=False,
-            process_containment=False,
-            network_containment=False,
-            network_policy=IsolationNetworkPolicy.HOST,
-            cleanup_guarantee=IsolationCleanupGuarantee.OUTER_HOST,
+            max_file_bytes=1024,
         ),
         execution_features=ExecutionFeatures(
             process_count_limit=False,
             memory_bytes_limit=False,
             cpu_time_limit=False,
-            per_command_network_deny=False,
             signal_interrupt=False,
             signal_terminate=False,
         ),
@@ -160,7 +168,8 @@ def receipt(operation_id: str) -> OperationReceipt:
     return OperationReceipt(
         operation_id=operation_id,
         method="file.commit_writer",
-        environment_id="env-transfer",
+        device_id="device-transfer",
+        session_id="ses-transfer",
         generation=1,
         request_digest="0" * 64,
         stage=ReceiptStage.COMPLETED,
@@ -172,16 +181,23 @@ def receipt(operation_id: str) -> OperationReceipt:
 def test_high_level_reader_withholds_ack_until_iteration_drains_and_verifies() -> None:
     async def scenario() -> None:
         transport = FakeTypedTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        requester.configure_limits(
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
             max_in_flight=4,
-            max_request_bytes=1024 * 1024,
-            max_response_bytes=1024 * 1024,
-            max_transfer_frame_bytes=128,
-            max_concurrent_file_transfers=2,
         )
-        session = EIPSession(requester, descriptor())
-        path = EIPPath(mount_id="workspace", path="/source.bin")
+        session = connection._bind(descriptor())
+        session._ready = True
+        path = EIPPath(path="/source.bin")
         content = b"first-second"
 
         async def peer() -> None:
@@ -197,12 +213,28 @@ def test_high_level_reader_withholds_ack_until_iteration_drains_and_verifies() -
             )
             attach = await transport.outbound.get()
             assert isinstance(attach, DataFrame) and attach.kind is DataFrameKind.ATTACH
-            await transport.inbound.put(DataFrame(kind=DataFrameKind.ATTACHED, handle="reader-one"))
-            await transport.inbound.put(DataFrame(kind=DataFrameKind.CHUNK, handle="reader-one", payload=b"first-"))
             await transport.inbound.put(
-                DataFrame(kind=DataFrameKind.CHUNK, handle="reader-one", offset=6, payload=b"second")
+                DataFrame(session_id="ses-transfer", kind=DataFrameKind.ATTACHED, handle="reader-one")
             )
-            await transport.inbound.put(DataFrame(kind=DataFrameKind.END, handle="reader-one", offset=len(content)))
+            await transport.inbound.put(
+                DataFrame(session_id="ses-transfer", kind=DataFrameKind.CHUNK, handle="reader-one", payload=b"first-")
+            )
+            await transport.inbound.put(
+                DataFrame(
+                    session_id="ses-transfer",
+                    kind=DataFrameKind.CHUNK,
+                    handle="reader-one",
+                    offset=6,
+                    payload=b"second",
+                )
+            )
+            for offset in (6, len(content)):
+                credit = await transport.outbound.get()
+                assert isinstance(credit, DataFrame) and credit.kind is DataFrameKind.CREDIT
+                assert credit.offset == offset
+            await transport.inbound.put(
+                DataFrame(session_id="ses-transfer", kind=DataFrameKind.END, handle="reader-one", offset=len(content))
+            )
             closed = await next_control(transport, "file.close_reader")
             close_params = decode_params(closed, FileReaderCloseParams)
             assert isinstance(close_params, FileReaderCloseParams)
@@ -227,23 +259,31 @@ def test_high_level_reader_withholds_ack_until_iteration_drains_and_verifies() -
             assert reader.completion.digest.algorithm == "sha256"
         await peer_task
         await session.abort()
+        await device.close()
 
     asyncio.run(scenario())
 
 
-def test_high_level_reader_rejects_unverified_completion_and_closes_carrier() -> None:
+def test_high_level_reader_rejects_unverified_completion_and_closes_only_session() -> None:
     async def scenario() -> None:
         transport = FakeTypedTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        requester.configure_limits(
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
             max_in_flight=4,
-            max_request_bytes=1024 * 1024,
-            max_response_bytes=1024 * 1024,
-            max_transfer_frame_bytes=128,
-            max_concurrent_file_transfers=2,
         )
-        session = EIPSession(requester, descriptor())
-        path = EIPPath(mount_id="workspace", path="/source.bin")
+        session = connection._bind(descriptor())
+        session._ready = True
+        path = EIPPath(path="/source.bin")
         content = b"content"
 
         async def peer() -> None:
@@ -259,16 +299,23 @@ def test_high_level_reader_rejects_unverified_completion_and_closes_carrier() ->
             )
             attach = await transport.outbound.get()
             assert isinstance(attach, DataFrame) and attach.kind is DataFrameKind.ATTACH
-            await transport.inbound.put(DataFrame(kind=DataFrameKind.ATTACHED, handle="reader-invalid-completion"))
+            await transport.inbound.put(
+                DataFrame(session_id="ses-transfer", kind=DataFrameKind.ATTACHED, handle="reader-invalid-completion")
+            )
             await transport.inbound.put(
                 DataFrame(
+                    session_id="ses-transfer",
                     kind=DataFrameKind.CHUNK,
                     handle="reader-invalid-completion",
                     payload=content,
                 )
             )
+            credit = await transport.outbound.get()
+            assert isinstance(credit, DataFrame) and credit.kind is DataFrameKind.CREDIT
+            assert credit.offset == len(content)
             await transport.inbound.put(
                 DataFrame(
+                    session_id="ses-transfer",
                     kind=DataFrameKind.END,
                     handle="reader-invalid-completion",
                     offset=len(content),
@@ -294,7 +341,9 @@ def test_high_level_reader_rejects_unverified_completion_and_closes_carrier() ->
         await peer_task
         with pytest.raises(EIPSessionStateError, match="not completed successfully"):
             _ = reader.completion
-        assert transport.closed is True
+        assert transport.closed is False
+        assert session._requester._error is not None
+        await device.close()
 
     asyncio.run(scenario())
 
@@ -314,16 +363,23 @@ def test_high_level_reader_rejects_bytes_beyond_requested_maximum(
 ) -> None:
     async def scenario() -> None:
         transport = FakeTypedTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        requester.configure_limits(
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
             max_in_flight=4,
-            max_request_bytes=1024 * 1024,
-            max_response_bytes=1024 * 1024,
-            max_transfer_frame_bytes=128,
-            max_concurrent_file_transfers=2,
         )
-        session = EIPSession(requester, descriptor())
-        path = EIPPath(mount_id="workspace", path="/source.bin")
+        session = connection._bind(descriptor())
+        session._ready = True
+        path = EIPPath(path="/source.bin")
 
         async def peer() -> None:
             opened = await next_control(transport, "file.open_reader")
@@ -338,22 +394,24 @@ def test_high_level_reader_rejects_bytes_beyond_requested_maximum(
             )
             attach = await transport.outbound.get()
             assert isinstance(attach, DataFrame) and attach.kind is DataFrameKind.ATTACH
-            await transport.inbound.put(DataFrame(kind=DataFrameKind.ATTACHED, handle="reader-excess"))
-            await transport.inbound.put(DataFrame(kind=DataFrameKind.CHUNK, handle="reader-excess", payload=payload))
+            await transport.inbound.put(
+                DataFrame(session_id="ses-transfer", kind=DataFrameKind.ATTACHED, handle="reader-excess")
+            )
+            await transport.inbound.put(
+                DataFrame(session_id="ses-transfer", kind=DataFrameKind.CHUNK, handle="reader-excess", payload=payload)
+            )
 
             protocol_reset = await transport.outbound.get()
             assert isinstance(protocol_reset, DataFrame)
             assert protocol_reset.kind is DataFrameKind.RESET
             assert protocol_reset.reset_status is DataResetStatus.PROTOCOL
-            cancellation_reset = await transport.outbound.get()
-            assert isinstance(cancellation_reset, DataFrame)
-            assert cancellation_reset.kind is DataFrameKind.RESET
             await transport.inbound.put(
                 DataFrame(
+                    session_id="ses-transfer",
                     kind=DataFrameKind.RESET,
                     handle="reader-excess",
-                    offset=cancellation_reset.offset,
-                    reset_status=cancellation_reset.reset_status,
+                    offset=protocol_reset.offset,
+                    reset_status=protocol_reset.reset_status,
                 )
             )
 
@@ -363,6 +421,7 @@ def test_high_level_reader_rejects_bytes_beyond_requested_maximum(
                 await anext(reader)
         await peer_task
         await session.abort()
+        await device.close()
 
     asyncio.run(scenario())
 
@@ -370,16 +429,23 @@ def test_high_level_reader_rejects_bytes_beyond_requested_maximum(
 def test_repeated_writer_abandonment_consumes_reset_acknowledgements() -> None:
     async def scenario() -> None:
         transport = FakeTypedTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        requester.configure_limits(
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
             max_in_flight=4,
-            max_request_bytes=1024 * 1024,
-            max_response_bytes=1024 * 1024,
-            max_transfer_frame_bytes=128,
-            max_concurrent_file_transfers=2,
         )
-        session = EIPSession(requester, descriptor())
-        path = EIPPath(mount_id="workspace", path="/abandoned.bin")
+        session = connection._bind(descriptor())
+        session._ready = True
+        path = EIPPath(path="/abandoned.bin")
 
         async def peer() -> None:
             for index in range(6):
@@ -396,11 +462,14 @@ def test_repeated_writer_abandonment_consumes_reset_acknowledgements() -> None:
                 )
                 attach = await transport.outbound.get()
                 assert isinstance(attach, DataFrame) and attach.kind is DataFrameKind.ATTACH
-                await transport.inbound.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=handle))
+                await transport.inbound.put(
+                    DataFrame(session_id="ses-transfer", kind=DataFrameKind.ATTACHED, handle=handle)
+                )
                 reset = await transport.outbound.get()
                 assert isinstance(reset, DataFrame) and reset.kind is DataFrameKind.RESET
                 await transport.inbound.put(
                     DataFrame(
+                        session_id="ses-transfer",
                         kind=DataFrameKind.RESET,
                         handle=handle,
                         offset=reset.offset,
@@ -421,8 +490,9 @@ def test_repeated_writer_abandonment_consumes_reset_acknowledgements() -> None:
             async with session.open_writer(path, mode=FileWriteMode.CREATE):
                 pass
         await peer_task
-        assert not requester._retired_transfers
+        assert not session._requester._retired
         await session.abort()
+        await device.close()
 
     asyncio.run(scenario())
 
@@ -430,16 +500,23 @@ def test_repeated_writer_abandonment_consumes_reset_acknowledgements() -> None:
 def test_queued_peer_reader_reset_does_not_consume_retired_capacity() -> None:
     async def scenario() -> None:
         transport = FakeTypedTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        requester.configure_limits(
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
             max_in_flight=4,
-            max_request_bytes=1024 * 1024,
-            max_response_bytes=1024 * 1024,
-            max_transfer_frame_bytes=128,
-            max_concurrent_file_transfers=2,
         )
-        session = EIPSession(requester, descriptor())
-        path = EIPPath(mount_id="workspace", path="/reset.bin")
+        session = connection._bind(descriptor())
+        session._ready = True
+        path = EIPPath(path="/reset.bin")
         reset_delivered = [asyncio.Event() for _ in range(6)]
 
         async def peer() -> None:
@@ -457,15 +534,18 @@ def test_queued_peer_reader_reset_does_not_consume_retired_capacity() -> None:
                 )
                 attach = await transport.outbound.get()
                 assert isinstance(attach, DataFrame) and attach.kind is DataFrameKind.ATTACH
-                await transport.inbound.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=handle))
+                await transport.inbound.put(
+                    DataFrame(session_id="ses-transfer", kind=DataFrameKind.ATTACHED, handle=handle)
+                )
                 await transport.inbound.put(
                     DataFrame(
+                        session_id="ses-transfer",
                         kind=DataFrameKind.RESET,
                         handle=handle,
                         reset_status=DataResetStatus.SOURCE,
                     )
                 )
-                while not requester._transfers[handle].peer_reset_received:
+                while not session._requester._transfers[handle].peer_reset_received:
                     await asyncio.sleep(0)
                 delivered.set()
 
@@ -474,8 +554,9 @@ def test_queued_peer_reader_reset_does_not_consume_retired_capacity() -> None:
             async with session.open_reader(path):
                 await delivered.wait()
         await peer_task
-        assert not requester._retired_transfers
+        assert not session._requester._retired
         await session.abort()
+        await device.close()
 
     asyncio.run(scenario())
 
@@ -483,16 +564,23 @@ def test_queued_peer_reader_reset_does_not_consume_retired_capacity() -> None:
 def test_high_level_writer_frames_chunks_and_commits_local_digest() -> None:
     async def scenario() -> None:
         transport = FakeTypedTransport()
-        requester = RequestCoordinator(transport, request_timeout=1)
-        requester.configure_limits(
+        device = RequestCoordinator(transport, request_timeout=1)
+        connection = EIPDeviceConnection(
+            device,
+            DeviceDescriptor(
+                device_id="device-transfer",
+                generation=1,
+                path_style="posix",
+                default_working_directory="/",
+                directory_discovery=True,
+                limits=descriptor().limits,
+                lifecycle=descriptor().lifecycle,
+            ),
             max_in_flight=4,
-            max_request_bytes=1024 * 1024,
-            max_response_bytes=1024 * 1024,
-            max_transfer_frame_bytes=128,
-            max_concurrent_file_transfers=2,
         )
-        session = EIPSession(requester, descriptor())
-        path = EIPPath(mount_id="workspace", path="/target.bin")
+        session = connection._bind(descriptor())
+        session._ready = True
+        path = EIPPath(path="/target.bin")
         content = b"uploaded-content"
 
         async def peer() -> None:
@@ -508,7 +596,9 @@ def test_high_level_writer_frames_chunks_and_commits_local_digest() -> None:
             )
             attach = await transport.outbound.get()
             assert isinstance(attach, DataFrame) and attach.kind is DataFrameKind.ATTACH
-            await transport.inbound.put(DataFrame(kind=DataFrameKind.ATTACHED, handle="writer-one"))
+            await transport.inbound.put(
+                DataFrame(session_id="ses-transfer", kind=DataFrameKind.ATTACHED, handle="writer-one")
+            )
 
             received = bytearray()
             while True:
@@ -517,12 +607,22 @@ def test_high_level_writer_frames_chunks_and_commits_local_digest() -> None:
                 if frame.kind is DataFrameKind.END:
                     assert frame.offset == len(received)
                     await transport.inbound.put(
-                        DataFrame(kind=DataFrameKind.END_ACK, handle="writer-one", offset=len(received))
+                        DataFrame(
+                            session_id="ses-transfer",
+                            kind=DataFrameKind.END_ACK,
+                            handle="writer-one",
+                            offset=len(received),
+                        )
                     )
                     break
                 assert frame.kind is DataFrameKind.CHUNK
                 assert frame.offset == len(received)
                 received.extend(frame.payload)
+                await transport.inbound.put(
+                    DataFrame(
+                        session_id="ses-transfer", kind=DataFrameKind.CREDIT, handle="writer-one", offset=len(received)
+                    )
+                )
             assert bytes(received) == content
 
             committed = await next_control(transport, "file.commit_writer")
@@ -548,5 +648,6 @@ def test_high_level_writer_frames_chunks_and_commits_local_digest() -> None:
             assert result.transferred_bytes == len(content)
         await peer_task
         await session.abort()
+        await device.close()
 
     asyncio.run(scenario())

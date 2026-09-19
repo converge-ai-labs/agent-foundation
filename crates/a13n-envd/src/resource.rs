@@ -19,7 +19,7 @@ use crate::{
         FileSearchMatch, FileSearchParams, FileSearchResult, FileStatParams, FileStatResult,
         FileWriteMode, FileWriteTextParams, SearchMode,
     },
-    mount::{Mount, MountPathError, MountRegistry, StagedCandidate},
+    filesystem::{CommitDirectory, DeviceFilesystem, PathError, StagedCandidate},
     operation::{OperationInterruption, OperationLedger},
     transfer::file_info,
 };
@@ -112,27 +112,29 @@ impl ResourceRegistry {
 
     pub(crate) fn stat(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileStatParams,
     ) -> Result<FileStatResult, ResourceError> {
         self.check_cancelled(&params.context.operation_id)?;
-        let mount = read_mount(mounts, &params.path, "stat")?;
-        let metadata = mount
+        let filesystem = Arc::clone(filesystem);
+        let metadata = filesystem
             .metadata(&params.path, params.follow_symlinks)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         Ok(FileStatResult {
-            info: cap_file_info(&params.path, &metadata),
+            info: file_info(&params.path, &metadata),
         })
     }
 
     pub(crate) fn read_text(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileReadTextParams,
     ) -> Result<FileReadTextResult, ResourceError> {
         self.check_cancelled(&params.context.operation_id)?;
-        let mount = read_mount(mounts, &params.path, "read_text")?;
-        let opened = mount.open_regular(&params.path).map_err(map_mount_error)?;
+        let filesystem = Arc::clone(filesystem);
+        let opened = filesystem
+            .open_regular(&params.path)
+            .map_err(map_path_error)?;
         let info = file_info(&params.path, &opened.metadata);
         let max_bytes = self
             .inner
@@ -164,16 +166,16 @@ impl ResourceRegistry {
 
     pub(crate) fn list(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileListParams,
     ) -> Result<FileListResult, ResourceError> {
         if params.max_results == 0 {
             return Err(ResourceError::Limit);
         }
-        let mount = read_mount(mounts, &params.path, "list")?;
-        let metadata = mount
+        let filesystem = Arc::clone(filesystem);
+        let metadata = filesystem
             .metadata(&params.path, true)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         if !metadata.is_dir() {
             return Err(ResourceError::Denied);
         }
@@ -183,7 +185,7 @@ impl ResourceRegistry {
             self.response_item_limit(),
         );
         let omitted = walk_entries(
-            &mount,
+            &filesystem,
             &params.path,
             WalkOptions {
                 max_depth: 1,
@@ -211,21 +213,21 @@ impl ResourceRegistry {
 
     pub(crate) fn find(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileFindParams,
     ) -> Result<FileFindResult, ResourceError> {
         if params.max_results == 0 {
             return Err(ResourceError::Limit);
         }
         let matcher = PathMatcher::new(&params.pattern, "pattern")?;
-        let mount = read_mount(mounts, &params.root, "find")?;
+        let filesystem = Arc::clone(filesystem);
         let mut page = PageCollector::new(
             params.offset,
             params.max_results,
             self.response_item_limit(),
         );
         let omitted = walk_entries(
-            &mount,
+            &filesystem,
             &params.root,
             WalkOptions {
                 max_depth: if params.recursive {
@@ -260,7 +262,7 @@ impl ResourceRegistry {
 
     pub(crate) fn search(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileSearchParams,
     ) -> Result<FileSearchResult, ResourceError> {
         if params.max_results == 0
@@ -274,25 +276,23 @@ impl ResourceRegistry {
         }
         let content = ContentMatcher::new(params.mode, &params.query, params.case_sensitive)?;
         let include = PathMatcher::new(&params.include_pattern, "include_pattern")?;
-        let mount = read_mount(mounts, &params.root, "search")?;
+        let filesystem = Arc::clone(filesystem);
         // Inspect shape without opening the final component. Canonicalizing a FIFO
         // can open/block on some platforms; special files are never search input.
-        let relative = mount
-            .resolve_nofollow_relative(&params.root)
-            .map_err(map_mount_error)?;
-        let shape = mount
-            .root
-            .metadata(&relative)
-            .map_err(|error| map_mount_error(MountPathError::from_io(error)))?;
+        let relative = filesystem
+            .resolve_entry(&params.root)
+            .map_err(map_path_error)?;
+        let shape = std::fs::metadata(&relative)
+            .map_err(|error| map_path_error(PathError::from_io(error)))?;
         if !shape.is_file() && !shape.is_dir() {
             return Err(ResourceError::InvalidInput {
                 field: "root",
                 reason: "not_searchable",
             });
         }
-        let metadata = mount
+        let metadata = filesystem
             .metadata(&params.root, true)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         let single_file = metadata.is_file();
         let mut page = PageCollector::new(
             params.offset,
@@ -322,7 +322,7 @@ impl ResourceRegistry {
             scanned_files = scanned_files.checked_add(1).ok_or(ResourceError::Limit)?;
             self.check_cancelled(&params.context.operation_id)?;
             let file_matches = match search_file(
-                &mount,
+                &filesystem,
                 &entry.info.path,
                 &content,
                 params.max_line_length,
@@ -348,12 +348,12 @@ impl ResourceRegistry {
         let omitted = if single_file {
             search_entry(FileListEntry {
                 relative_path: params.root.path.rsplit('/').next().unwrap_or("").to_owned(),
-                info: cap_file_info(&params.root, &metadata),
+                info: file_info(&params.root, &metadata),
             })?;
             0
         } else {
             walk_entries(
-                &mount,
+                &filesystem,
                 &params.root,
                 WalkOptions {
                     max_depth: MAX_TRAVERSAL_DEPTH,
@@ -378,15 +378,13 @@ impl ResourceRegistry {
     /// remain independent observations of the filesystem.
     pub(crate) fn commit(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileCommitParams,
     ) -> Result<u64, ResourceError> {
-        let mount = write_mount(mounts, &params.root, "commit")?;
-        for operation in ["open_reader", "write_text", "mkdir", "remove"] {
-            if !mount.allows(operation) {
-                return Err(ResourceError::Denied);
-            }
+        if !cfg!(unix) {
+            return Err(ResourceError::Unsupported);
         }
+        crate::device_path::to_native(&params.root.path).map_err(map_path_error)?;
         let count = params.conditions.len()
             + params.directories.len()
             + params.writes.len()
@@ -401,21 +399,15 @@ impl ResourceRegistry {
         {
             return Err(ResourceError::Limit);
         }
-        let relative = |path: &EIPPath| -> Result<EIPPath, ResourceError> {
-            mount.relative_path(path).map_err(map_mount_error)?;
+        let relative = |path: &EIPPath| -> Result<PathBuf, ResourceError> {
+            crate::device_path::to_native(&path.path).map_err(map_path_error)?;
             let prefix = format!("{}/", params.root.path.trim_end_matches('/'));
             let suffix = path
                 .path
                 .strip_prefix(&prefix)
                 .filter(|value| !value.is_empty())
                 .ok_or(ResourceError::Denied)?;
-            if path.mount_id != params.root.mount_id {
-                return Err(ResourceError::Denied);
-            }
-            Ok(EIPPath {
-                mount_id: path.mount_id.clone(),
-                path: format!("/{suffix}"),
-            })
+            Ok(PathBuf::from(suffix))
         };
         let mut conditions = BTreeMap::new();
         for condition in &params.conditions {
@@ -436,20 +428,17 @@ impl ResourceRegistry {
             {
                 return Err(ResourceError::Invalid);
             }
-            if write.text.len() as u64 > mount.max_file_bytes {
+            if write.text.len() as u64 > filesystem.max_file_bytes {
                 return Err(ResourceError::Limit);
             }
         }
         for path in params.directories.iter().chain(&params.removals) {
             relative(path)?;
         }
-        // Lock a retained directory inode, never a removable lock file.
-        // Dir handles may use O_PATH on Linux; flock needs a readable file descriptor.
-        let lock = mount
-            .root
-            .open(".")
-            .map_err(|_| ResourceError::Io)?
-            .into_std();
+        // The batch's retained root inode coordinates cooperating writers across
+        // Devices and Sessions. It does not restrict ordinary Device operations.
+        let scope = CommitDirectory::open(&params.root).map_err(map_path_error)?;
+        let lock = scope.lock_file().map_err(map_path_error)?;
         loop {
             self.check_cancelled(&params.context.operation_id)?;
             match fs2::FileExt::try_lock_exclusive(&lock) {
@@ -460,22 +449,6 @@ impl ResourceRegistry {
                 Err(_) => return Err(ResourceError::Unsupported),
             }
         }
-        self.mkdir(
-            mounts,
-            &FileMkdirParams {
-                context: params.context.clone(),
-                path: params.root.clone(),
-                parents: true,
-                exist_ok: true,
-            },
-        )?;
-        mount
-            .sync_ancestors(&params.root)
-            .map_err(map_mount_error)?;
-        let scoped = mounts.scoped(&params.root).map_err(map_mount_error)?;
-        let scope = scoped
-            .get(&params.root.mount_id)
-            .ok_or(ResourceError::Denied)?;
         let mut observed_bytes = 0_u64;
         for condition in &params.conditions {
             let path = relative(&condition.path)?;
@@ -496,8 +469,8 @@ impl ResourceRegistry {
                     }
                     Some(format!("{:x}", Sha256::digest(&bytes)))
                 }
-                Err(MountPathError::NotFound) => None,
-                Err(error) => return Err(map_mount_error(error)),
+                Err(PathError::NotFound) => None,
+                Err(error) => return Err(map_path_error(error)),
             };
             if current.as_deref()
                 != condition
@@ -510,44 +483,25 @@ impl ResourceRegistry {
         }
         let publish = || -> Result<(), ResourceError> {
             for path in &params.directories {
-                self.mkdir(
-                    &scoped,
-                    &FileMkdirParams {
-                        context: params.context.clone(),
-                        path: relative(path)?,
-                        parents: true,
-                        exist_ok: true,
-                    },
-                )?;
-                scope
-                    .sync_ancestors(&relative(path)?)
-                    .map_err(map_mount_error)?;
+                self.check_cancelled(&params.context.operation_id)?;
+                scope.mkdir(&relative(path)?).map_err(map_path_error)?;
             }
             for write in &params.writes {
-                self.write_text(
-                    &scoped,
-                    &FileWriteTextParams {
-                        context: params.context.clone(),
-                        path: relative(&write.path)?,
-                        mode: FileWriteMode::Upsert,
-                        text: write.text.clone(),
-                        executable: None,
-                    },
-                )?;
+                self.check_cancelled(&params.context.operation_id)?;
+                scope
+                    .write_text(
+                        filesystem,
+                        &relative(&write.path)?,
+                        &write.path,
+                        &write.text,
+                    )
+                    .map_err(map_path_error)?;
             }
             for path in &params.removals {
-                match self.remove(
-                    &scoped,
-                    &FileRemoveParams {
-                        context: params.context.clone(),
-                        path: relative(path)?,
-                        expected_kind: FileKind::Directory,
-                        recursive: true,
-                        max_entries: MAX_TRAVERSAL_ENTRIES as u64,
-                    },
-                ) {
-                    Ok(_) | Err(ResourceError::NotFound) => {}
-                    Err(error) => return Err(error),
+                self.check_cancelled(&params.context.operation_id)?;
+                match scope.remove(&relative(path)?, MAX_TRAVERSAL_ENTRIES) {
+                    Ok(_) | Err(PathError::NotFound) => {}
+                    Err(error) => return Err(map_path_error(error)),
                 }
             }
             Ok(())
@@ -558,15 +512,15 @@ impl ResourceRegistry {
 
     pub(crate) fn write_text(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileWriteTextParams,
     ) -> Result<(FileInfo, u64), ResourceError> {
         if params.text.contains('\0') {
             return Err(ResourceError::Unsupported);
         }
-        let mount = write_mount(mounts, &params.path, "write_text")?;
+        let filesystem = Arc::clone(filesystem);
         let input = params.text.as_bytes();
-        let current = observe_regular(&mount, &params.path)?;
+        let current = observe_regular(&filesystem, &params.path)?;
         validate_write_mode(params.mode, current.as_ref())?;
         let final_size = if params.mode == FileWriteMode::Append {
             current.as_ref().map_or(0, std::fs::Metadata::len)
@@ -575,25 +529,25 @@ impl ResourceRegistry {
         }
         .checked_add(input.len() as u64)
         .ok_or(ResourceError::Limit)?;
-        if final_size > mount.max_file_bytes {
+        if final_size > filesystem.max_file_bytes {
             return Err(ResourceError::Limit);
         }
         self.check_cancelled(&params.context.operation_id)?;
-        let mut candidate = mount
+        let mut candidate = filesystem
             .create_candidate(&params.path)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         candidate
             .reserve_bytes(final_size)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         let mut intended = Sha256::new();
         if params.mode == FileWriteMode::Append {
-            let source = mount
+            let source = filesystem
                 .open_regular(&params.path)
-                .map_err(map_mount_error)?
+                .map_err(map_path_error)?
                 .file;
             let prefix = read_file_bounded(
                 source,
-                mount.max_file_bytes,
+                filesystem.max_file_bytes,
                 &self.inner.operations,
                 &params.context.operation_id,
             )?;
@@ -618,7 +572,7 @@ impl ResourceRegistry {
         }
         self.check_cancelled(&params.context.operation_id)?;
         let info = commit_candidate(
-            &mount,
+            &filesystem,
             &params.path,
             params.mode,
             &mut candidate,
@@ -630,98 +584,64 @@ impl ResourceRegistry {
 
     pub(crate) fn mkdir(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileMkdirParams,
     ) -> Result<(FileInfo, u64), ResourceError> {
-        let mount = write_mount(mounts, &params.path, "mkdir")?;
-        let relative = mount.relative_path(&params.path).map_err(map_mount_error)?;
-        if relative == Path::new(".") {
-            return if params.exist_ok {
-                let metadata = mount
-                    .metadata(&params.path, false)
-                    .map_err(map_mount_error)?;
-                Ok((cap_file_info(&params.path, &metadata), 0))
-            } else {
-                Err(ResourceError::Conflict)
-            };
-        }
-        let mut created = 0_u64;
-        let segments = params.path.path[1..].split('/').collect::<Vec<_>>();
-        let components = relative.components().collect::<Vec<_>>();
-        for (index, _component) in components.iter().enumerate() {
-            let prefix_path = EIPPath {
-                mount_id: params.path.mount_id.clone(),
-                path: format!("/{}", segments[..=index].join("/")),
-            };
-            let prefix = match mount.resolve_nofollow_relative(&prefix_path) {
-                Ok(relative) => relative,
-                Err(MountPathError::NotFound) => {
-                    let parent_path = if index == 0 {
-                        EIPPath {
-                            mount_id: params.path.mount_id.clone(),
-                            path: "/".to_owned(),
-                        }
-                    } else {
-                        EIPPath {
-                            mount_id: params.path.mount_id.clone(),
-                            path: format!("/{}", segments[..index].join("/")),
-                        }
-                    };
-                    let parent = mount
-                        .resolve_followed_relative(&parent_path)
-                        .map_err(map_mount_error)?;
-                    let relative = parent.join(segments[index]);
-                    mount
-                        .ensure_unprotected(&relative)
-                        .map_err(map_mount_error)?;
-                    relative
-                }
-                Err(error) => return Err(map_mount_error(error)),
-            };
-            match mount.root.symlink_metadata(&prefix) {
-                Ok(metadata) => {
-                    if !metadata.is_dir() || metadata.file_type().is_symlink() {
-                        return Err(ResourceError::Conflict);
-                    }
-                    if index + 1 == components.len() && !params.exist_ok {
-                        return Err(ResourceError::Conflict);
-                    }
-                }
+        let native = crate::device_path::to_native(&params.path.path).map_err(map_path_error)?;
+        let mut missing = Vec::new();
+        for ancestor in native.ancestors() {
+            match std::fs::metadata(ancestor) {
+                Ok(metadata) if metadata.is_dir() => break,
+                Ok(_) => return Err(ResourceError::Conflict),
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    if !params.parents && index + 1 != components.len() {
-                        return Err(ResourceError::NotFound);
-                    }
-                    mount.create_dir(&prefix).map_err(map_mount_error)?;
-                    created += 1;
+                    missing.push(ancestor)
                 }
-                Err(error) => return Err(map_mount_error(MountPathError::from_io(error))),
+                Err(error) => return Err(map_path_error(PathError::from_io(error))),
             }
         }
-        let metadata = mount
-            .metadata(&params.path, false)
-            .map_err(map_mount_error)?;
-        Ok((cap_file_info(&params.path, &metadata), created))
+        if missing.is_empty() && !params.exist_ok {
+            return Err(ResourceError::Conflict);
+        }
+        if !params.parents && missing.len() > 1 {
+            return Err(ResourceError::NotFound);
+        }
+        let mut created = 0;
+        for path in missing.into_iter().rev() {
+            self.check_cancelled(&params.context.operation_id)?;
+            let path = EIPPath {
+                path: crate::device_path::from_native(path).map_err(map_path_error)?,
+            };
+            let (parent, name) = filesystem.open_parent(&path).map_err(map_path_error)?;
+            parent
+                .create_dir(name)
+                .map_err(|error| map_path_error(PathError::from_io(error)))?;
+            created += 1;
+        }
+        let metadata = filesystem
+            .metadata(&params.path, true)
+            .map_err(map_path_error)?;
+        Ok((file_info(&params.path, &metadata), created))
     }
 
     pub(crate) fn patch_text(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FilePatchTextParams,
     ) -> Result<(FileInfo, u64), ResourceError> {
         if params.patch_format != "unified_diff" || params.patch.contains('\0') {
             return Err(ResourceError::Invalid);
         }
-        let mount = write_mount(mounts, &params.path, "patch_text")?;
-        if params.patch.len() as u64 > mount.max_file_bytes {
+        let filesystem = Arc::clone(filesystem);
+        if params.patch.len() as u64 > filesystem.max_file_bytes {
             return Err(ResourceError::Limit);
         }
-        let target = mount
-            .resolve_contained_target(&params.path)
-            .map_err(map_mount_error)?;
-        let opened = mount.open_regular(&target).map_err(map_mount_error)?;
+        let target = filesystem
+            .resolve_target(&params.path)
+            .map_err(map_path_error)?;
+        let opened = filesystem.open_regular(&target).map_err(map_path_error)?;
         let bytes = read_file_bounded(
             opened.file,
-            mount.max_file_bytes,
+            filesystem.max_file_bytes,
             &self.inner.operations,
             &params.context.operation_id,
         )?;
@@ -730,14 +650,16 @@ impl ResourceRegistry {
             return Err(ResourceError::Unsupported);
         }
         let (result, hunks) = apply_unified_diff(source, &params.patch)?;
-        if result.len() as u64 > mount.max_file_bytes {
+        if result.len() as u64 > filesystem.max_file_bytes {
             return Err(ResourceError::Limit);
         }
         self.check_cancelled(&params.context.operation_id)?;
-        let mut candidate = mount.create_candidate(&target).map_err(map_mount_error)?;
+        let mut candidate = filesystem
+            .create_candidate(&target)
+            .map_err(map_path_error)?;
         candidate
             .reserve_bytes(result.len() as u64)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         candidate
             .file
             .write_all(result.as_bytes())
@@ -746,7 +668,7 @@ impl ResourceRegistry {
         let expected_digest = format!("{:x}", Sha256::digest(result.as_bytes()));
         self.check_cancelled(&params.context.operation_id)?;
         let mut info = commit_candidate(
-            &mount,
+            &filesystem,
             &target,
             FileWriteMode::Replace,
             &mut candidate,
@@ -759,40 +681,35 @@ impl ResourceRegistry {
 
     pub(crate) fn copy(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileCopyParams,
     ) -> Result<(FileInfo, u64), ResourceError> {
-        let source_mount = mounts
-            .get(&params.source.mount_id)
-            .ok_or(ResourceError::Denied)?;
-        if !source_mount.allows("open_reader") {
-            return Err(ResourceError::Denied);
-        }
-        let destination_mount = write_mount(mounts, &params.destination, "copy")?;
-        let mut source = source_mount
+        let source_filesystem = Arc::clone(filesystem);
+        let destination_filesystem = Arc::clone(filesystem);
+        let mut source = source_filesystem
             .open_regular(&params.source)
-            .map_err(map_mount_error)?;
-        let destination = observe_regular(&destination_mount, &params.destination)?;
+            .map_err(map_path_error)?;
+        let destination = observe_regular(&destination_filesystem, &params.destination)?;
         if destination.is_some() && !params.replace {
             return Err(ResourceError::Conflict);
         }
-        if source.metadata.len() > destination_mount.max_file_bytes {
+        if source.metadata.len() > destination_filesystem.max_file_bytes {
             return Err(ResourceError::Limit);
         }
-        let mut candidate = destination_mount
+        let mut candidate = destination_filesystem
             .create_candidate(&params.destination)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         let (bytes, expected_digest) = copy_with_digest(
             &mut source.file,
             &mut candidate,
-            destination_mount.max_file_bytes,
+            destination_filesystem.max_file_bytes,
             &self.inner.operations,
             &params.context.operation_id,
         )?;
         set_permissions_from(&candidate.file, &source.metadata).map_err(|_| ResourceError::Io)?;
         self.check_cancelled(&params.context.operation_id)?;
         let info = commit_candidate(
-            &destination_mount,
+            &destination_filesystem,
             &params.destination,
             if params.replace {
                 FileWriteMode::Upsert
@@ -808,54 +725,50 @@ impl ResourceRegistry {
 
     pub(crate) fn move_path(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileMoveParams,
     ) -> Result<FileInfo, ResourceError> {
-        if params.source.mount_id != params.destination.mount_id {
-            return Err(ResourceError::Unsupported);
-        }
-        let mount = write_mount(mounts, &params.source, "move")?;
-        let destination = match mount.metadata(&params.destination, false) {
+        let filesystem = Arc::clone(filesystem);
+        let destination = match filesystem.metadata(&params.destination, false) {
             Ok(metadata) => Some(metadata),
-            Err(MountPathError::NotFound) => None,
-            Err(error) => return Err(map_mount_error(error)),
+            Err(PathError::NotFound) => None,
+            Err(error) => return Err(map_path_error(error)),
         };
         if destination.is_some() && !params.replace {
             return Err(ResourceError::Conflict);
         }
         self.check_cancelled(&params.context.operation_id)?;
-        mount
-            .rename_within(&params.source, &params.destination, params.replace)
-            .map_err(map_mount_error)?;
-        let metadata = mount
+        filesystem
+            .rename(&params.source, &params.destination, params.replace)
+            .map_err(map_path_error)?;
+        let metadata = filesystem
             .metadata(&params.destination, false)
             .map_err(|_| ResourceError::UnknownOutcome)?;
-        Ok(cap_file_info(&params.destination, &metadata))
+        Ok(file_info(&params.destination, &metadata))
     }
 
     pub(crate) fn remove(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileRemoveParams,
     ) -> Result<u64, ResourceError> {
-        let mount = write_mount(mounts, &params.path, "remove")?;
-        let relative = mount
-            .resolve_nofollow_relative(&params.path)
-            .map_err(map_mount_error)?;
-        if relative == Path::new(".") || params.max_entries == 0 {
+        let filesystem = Arc::clone(filesystem);
+        let relative = filesystem
+            .resolve_entry(&params.path)
+            .map_err(map_path_error)?;
+        if relative.parent().is_none() || params.max_entries == 0 {
             return Err(ResourceError::Denied);
         }
-        let metadata = mount
+        let metadata = filesystem
             .metadata(&params.path, false)
-            .map_err(map_mount_error)?;
-        let info = cap_file_info(&params.path, &metadata);
+            .map_err(map_path_error)?;
+        let info = file_info(&params.path, &metadata);
         if info.kind != params.expected_kind {
             return Err(ResourceError::Conflict);
         }
         if metadata.is_dir() {
             if params.recursive {
                 let plan = build_remove_plan(
-                    &mount,
                     &relative,
                     params.max_entries.min(MAX_TRAVERSAL_ENTRIES as u64),
                     &self.inner.operations,
@@ -865,20 +778,21 @@ impl ResourceRegistry {
                 for entry in plan {
                     let step = (|| {
                         self.check_cancelled(&params.context.operation_id)?;
-                        let current = mount
-                            .root
-                            .symlink_metadata(&entry.relative)
+                        let current = std::fs::symlink_metadata(&entry.relative)
                             .map_err(|_| ResourceError::Conflict)?;
-                        let current_is_directory = current.is_dir() && !current.is_symlink();
+                        let current_is_directory =
+                            current.is_dir() && !current.file_type().is_symlink();
                         if current_is_directory != entry.directory {
                             return Err(ResourceError::Conflict);
                         }
                         if entry.directory {
-                            mount.remove_dir(&entry.relative).map_err(map_mount_error)?;
+                            filesystem
+                                .remove_dir(&entry.relative)
+                                .map_err(map_path_error)?;
                         } else {
-                            mount
+                            filesystem
                                 .remove_file(&entry.relative)
-                                .map_err(map_mount_error)?;
+                                .map_err(map_path_error)?;
                         }
                         Ok(())
                     })();
@@ -897,12 +811,12 @@ impl ResourceRegistry {
                 Ok(removed)
             } else {
                 self.check_cancelled(&params.context.operation_id)?;
-                mount.remove_dir(&relative).map_err(map_mount_error)?;
+                filesystem.remove_dir(&relative).map_err(map_path_error)?;
                 Ok(1)
             }
         } else {
             self.check_cancelled(&params.context.operation_id)?;
-            mount.remove_file(&relative).map_err(map_mount_error)?;
+            filesystem.remove_file(&relative).map_err(map_path_error)?;
             Ok(1)
         }
     }
@@ -923,40 +837,18 @@ impl ResourceRegistry {
     }
 }
 
-fn read_mount(
-    mounts: &MountRegistry,
-    path: &EIPPath,
-    operation: &str,
-) -> Result<Arc<Mount>, ResourceError> {
-    mounts
-        .get(&path.mount_id)
-        .filter(|mount| mount.allows(operation))
-        .ok_or(ResourceError::Denied)
-}
-
-fn write_mount(
-    mounts: &MountRegistry,
-    path: &EIPPath,
-    operation: &str,
-) -> Result<Arc<Mount>, ResourceError> {
-    mounts
-        .get(&path.mount_id)
-        .filter(|mount| mount.writable && mount.allows(operation))
-        .ok_or(ResourceError::Denied)
-}
-
 fn observe_regular(
-    mount: &Arc<Mount>,
+    filesystem: &Arc<DeviceFilesystem>,
     path: &EIPPath,
 ) -> Result<Option<std::fs::Metadata>, ResourceError> {
-    match mount.metadata(path, false) {
-        Ok(metadata) if metadata.is_symlink() => return Err(ResourceError::Denied),
+    match filesystem.metadata(path, false) {
+        Ok(metadata) if metadata.file_type().is_symlink() => return Err(ResourceError::Denied),
         Ok(metadata) if !metadata.is_file() => return Err(ResourceError::Denied),
         Ok(_) => {}
-        Err(MountPathError::NotFound) => return Ok(None),
-        Err(error) => return Err(map_mount_error(error)),
+        Err(PathError::NotFound) => return Ok(None),
+        Err(error) => return Err(map_path_error(error)),
     }
-    let opened = mount.open_regular(path).map_err(map_mount_error)?;
+    let opened = filesystem.open_regular(path).map_err(map_path_error)?;
     Ok(Some(opened.metadata))
 }
 
@@ -974,7 +866,7 @@ fn validate_write_mode(
 }
 
 fn commit_candidate(
-    mount: &Arc<Mount>,
+    filesystem: &Arc<DeviceFilesystem>,
     path: &EIPPath,
     mode: FileWriteMode,
     candidate: &mut StagedCandidate,
@@ -983,7 +875,7 @@ fn commit_candidate(
 ) -> Result<FileInfo, ResourceError> {
     if !candidate
         .verify_complete(expected_size)
-        .map_err(map_mount_error)?
+        .map_err(map_path_error)?
     {
         return Err(ResourceError::Conflict);
     }
@@ -1009,18 +901,18 @@ fn commit_candidate(
     let replace = match mode {
         FileWriteMode::Create => false,
         FileWriteMode::Replace | FileWriteMode::Append => {
-            validate_write_mode(mode, observe_regular(mount, path)?.as_ref())?;
+            validate_write_mode(mode, observe_regular(filesystem, path)?.as_ref())?;
             true
         }
         FileWriteMode::Upsert => {
-            let _ = observe_regular(mount, path)?;
+            let _ = observe_regular(filesystem, path)?;
             true
         }
     };
-    mount
+    filesystem
         .publish_candidate(candidate, path, replace)
-        .map_err(map_mount_error)?;
-    let opened = mount
+        .map_err(map_path_error)?;
+    let opened = filesystem
         .open_regular(path)
         .map_err(|_| ResourceError::UnknownOutcome)?;
     Ok(file_info(path, &opened.metadata))
@@ -1048,7 +940,7 @@ fn copy_with_digest(
         }
         destination
             .reserve_bytes(read as u64)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         destination
             .file
             .write_all(&buffer[..read])
@@ -1068,7 +960,6 @@ fn check_operation(operations: &OperationLedger, operation_id: &str) -> Result<(
 }
 
 fn build_remove_plan(
-    mount: &Arc<Mount>,
     root: &Path,
     max_entries: u64,
     operations: &OperationLedger,
@@ -1082,9 +973,6 @@ fn build_remove_plan(
     let mut discovered = 0_u64;
     while let Some((relative, depth, expanded)) = pending.pop() {
         check_operation(operations, operation_id)?;
-        mount
-            .ensure_unprotected(&relative)
-            .map_err(map_mount_error)?;
         if expanded {
             plan.push(RemovePlanEntry {
                 relative,
@@ -1096,21 +984,15 @@ fn build_remove_plan(
         if discovered > max_entries || discovered > MAX_TRAVERSAL_ENTRIES as u64 {
             return Err(ResourceError::Limit);
         }
-        let metadata = mount
-            .root
-            .symlink_metadata(&relative)
-            .map_err(|_| ResourceError::Conflict)?;
-        if !metadata.is_dir() || metadata.is_symlink() {
+        let metadata = std::fs::symlink_metadata(&relative).map_err(|_| ResourceError::Conflict)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
             plan.push(RemovePlanEntry {
                 relative,
                 directory: false,
             });
             continue;
         }
-        let reader = mount
-            .root
-            .read_dir(&relative)
-            .map_err(|_| ResourceError::Io)?;
+        let reader = std::fs::read_dir(&relative).map_err(|_| ResourceError::Io)?;
         let pending_entries = pending.iter().filter(|(_, _, expanded)| !expanded).count() as u64;
         let remaining = max_entries
             .min(MAX_TRAVERSAL_ENTRIES as u64)
@@ -1140,7 +1022,7 @@ fn build_remove_plan(
 }
 
 fn walk_entries<F>(
-    mount: &Arc<Mount>,
+    filesystem: &Arc<DeviceFilesystem>,
     root: &EIPPath,
     options: WalkOptions,
     operations: &OperationLedger,
@@ -1150,9 +1032,7 @@ fn walk_entries<F>(
 where
     F: FnMut(FileListEntry) -> Result<bool, ResourceError>,
 {
-    let root_relative = mount
-        .resolve_followed_relative(root)
-        .map_err(map_mount_error)?;
+    let root_relative = filesystem.resolve_followed(root).map_err(map_path_error)?;
     let mut ignore_specs = Arc::new(Vec::new());
     if options.respect_git_ignore {
         let mut ancestors = root_relative.ancestors().collect::<Vec<_>>();
@@ -1161,11 +1041,10 @@ where
             if ancestor == root_relative {
                 break;
             }
-            ignore_specs = extend_ignore_specs(mount, ancestor, ignore_specs)?;
+            ignore_specs = extend_ignore_specs(ancestor, ignore_specs)?;
         }
     }
     let (mut pending, mut omitted) = read_children_counting(
-        mount,
         &root_relative,
         "",
         1,
@@ -1183,16 +1062,15 @@ where
             return Err(ResourceError::Limit);
         }
         let path = EIPPath {
-            mount_id: root.mount_id.clone(),
             path: join_logical(&root.path, &relative_path),
         };
-        let metadata = match mount.metadata(&path, false) {
+        let metadata = match filesystem.metadata(&path, false) {
             Ok(metadata) => metadata,
-            Err(MountPathError::Denied) => continue,
-            Err(error) => return Err(map_mount_error(error)),
+            Err(PathError::Denied) => continue,
+            Err(error) => return Err(map_path_error(error)),
         };
         let directory = metadata.is_dir() && !metadata.file_type().is_symlink();
-        let info = cap_file_info(&path, &metadata);
+        let info = file_info(&path, &metadata);
         if !visit(FileListEntry {
             relative_path: relative_path.clone(),
             info,
@@ -1204,7 +1082,6 @@ where
                 .saturating_sub(discovered)
                 .saturating_sub(pending.len());
             let (mut children, skipped) = read_children_counting(
-                mount,
                 &relative,
                 &relative_path,
                 depth + 1,
@@ -1223,7 +1100,6 @@ where
 
 #[allow(clippy::too_many_arguments)]
 fn read_children_counting(
-    mount: &Arc<Mount>,
     directory: &Path,
     prefix: &str,
     depth: u32,
@@ -1232,18 +1108,13 @@ fn read_children_counting(
     ignore_specs: IgnoreStack,
     max_children: usize,
 ) -> Result<(Vec<TraversalEntry>, u64), ResourceError> {
-    mount
-        .ensure_unprotected(directory)
-        .map_err(map_mount_error)?;
     let ignore_specs = if respect_git_ignore {
-        extend_ignore_specs(mount, directory, ignore_specs)?
+        extend_ignore_specs(directory, ignore_specs)?
     } else {
         ignore_specs
     };
-    let reader = mount
-        .root
-        .read_dir(directory)
-        .map_err(|error| map_mount_error(MountPathError::from_io(error)))?;
+    let reader =
+        std::fs::read_dir(directory).map_err(|error| map_path_error(PathError::from_io(error)))?;
     let mut children = Vec::new();
     let mut omitted = 0_u64;
     for entry in reader {
@@ -1260,11 +1131,6 @@ fn read_children_counting(
             continue;
         }
         let child_relative = directory.join(&name);
-        match mount.ensure_unprotected(&child_relative) {
-            Ok(()) => {}
-            Err(MountPathError::Denied) => continue,
-            Err(error) => return Err(map_mount_error(error)),
-        }
         let relative_path = if prefix.is_empty() {
             name
         } else {
@@ -1284,12 +1150,11 @@ fn read_children_counting(
 }
 
 fn extend_ignore_specs(
-    mount: &Arc<Mount>,
     directory: &Path,
     ignore_specs: IgnoreStack,
 ) -> Result<IgnoreStack, ResourceError> {
     let path = directory.join(".gitignore");
-    let Ok(file) = mount.root.open(&path) else {
+    let Ok(file) = std::fs::File::open(&path) else {
         return Ok(ignore_specs);
     };
     let mut bytes = Vec::new();
@@ -1753,7 +1618,7 @@ struct PendingSearchMatch {
 
 #[allow(clippy::too_many_arguments)]
 fn search_file(
-    mount: &Arc<Mount>,
+    filesystem: &Arc<DeviceFilesystem>,
     path: &EIPPath,
     matcher: &ContentMatcher,
     max_line_length: u64,
@@ -1764,7 +1629,7 @@ fn search_file(
     operations: &OperationLedger,
     operation_id: &str,
 ) -> Result<Vec<FileSearchMatch>, ResourceError> {
-    let opened = mount.open_regular(path).map_err(map_mount_error)?;
+    let opened = filesystem.open_regular(path).map_err(map_path_error)?;
     let requested_chars = usize::try_from(max_line_length).map_err(|_| ResourceError::Limit)?;
     let match_limit = max_matches_per_file
         .unwrap_or(MAX_TRAVERSAL_ENTRIES as u32)
@@ -2079,51 +1944,17 @@ fn set_permissions_from(
     Ok(())
 }
 
-fn cap_file_info(path: &EIPPath, metadata: &cap_std::fs::Metadata) -> FileInfo {
-    let kind = if metadata.is_file() {
-        FileKind::File
-    } else if metadata.is_dir() {
-        FileKind::Directory
-    } else if metadata.is_symlink() {
-        FileKind::Symlink
-    } else {
-        FileKind::Other
-    };
-    FileInfo {
-        path: path.clone(),
-        kind,
-        size_bytes: metadata.is_file().then_some(metadata.len()),
-        modified_at: metadata
-            .modified()
-            .ok()
-            .map(cap_std::time::SystemTime::into_std)
-            .map(chrono::DateTime::from),
-        executable: cap_executable(metadata),
-    }
-}
-
-#[cfg(unix)]
-fn cap_executable(metadata: &cap_std::fs::Metadata) -> Option<bool> {
-    use cap_std::fs::MetadataExt;
-    metadata.is_file().then(|| metadata.mode() & 0o111 != 0)
-}
-
-#[cfg(not(unix))]
-fn cap_executable(metadata: &cap_std::fs::Metadata) -> Option<bool> {
-    metadata.is_file().then_some(false)
-}
-
-fn map_mount_error(error: MountPathError) -> ResourceError {
+pub(crate) fn map_path_error(error: PathError) -> ResourceError {
     match error {
-        MountPathError::Invalid => ResourceError::Invalid,
-        MountPathError::Denied | MountPathError::NotRegular => ResourceError::Denied,
-        MountPathError::NotFound => ResourceError::NotFound,
-        MountPathError::AlreadyExists => ResourceError::Conflict,
-        MountPathError::Quota => ResourceError::Limit,
-        MountPathError::Unsupported => ResourceError::Unsupported,
-        MountPathError::UnknownOutcome => ResourceError::UnknownOutcome,
-        MountPathError::Io => ResourceError::Io,
-        MountPathError::Internal => ResourceError::Internal,
+        PathError::Invalid => ResourceError::Invalid,
+        PathError::Denied | PathError::NotRegular => ResourceError::Denied,
+        PathError::NotFound => ResourceError::NotFound,
+        PathError::AlreadyExists => ResourceError::Conflict,
+        PathError::Quota => ResourceError::Limit,
+        PathError::Unsupported => ResourceError::Unsupported,
+        PathError::UnknownOutcome => ResourceError::UnknownOutcome,
+        PathError::Io => ResourceError::Io,
+        PathError::Internal => ResourceError::Internal,
     }
 }
 
@@ -2139,20 +1970,17 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use sha2::{Digest, Sha256};
 
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    use crate::eip::{FileCopyParams, FileMkdirParams, FileMoveParams, FilePatchTextParams};
     use crate::{
-        config::{Config, TrustedMountConfig},
+        config::Config,
         eip::{
             EIPCallContext, EIPPath, FileFindParams, FileKind, FileListParams, FileReadTextParams,
             FileRemoveParams, FileSearchParams, FileStatParams, FileWriteMode, FileWriteTextParams,
             SearchMode,
         },
-        mount::MountRegistry,
+        filesystem::DeviceFilesystem,
         operation::{OperationLedger, random_selector},
-    };
-    #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use crate::{
-        eip::{FileCopyParams, FileMkdirParams, FileMoveParams, FilePatchTextParams},
-        runtime::RuntimeState,
     };
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
@@ -2244,53 +2072,45 @@ mod tests {
     struct Fixture {
         _tree: TempTree,
         native: PathBuf,
-        mounts: MountRegistry,
+        filesystem: std::sync::Arc<DeviceFilesystem>,
         resources: ResourceRegistry,
     }
 
     impl Fixture {
         #[cfg(any(target_os = "linux", target_os = "macos"))]
         fn new() -> Self {
-            Self::with_mount(true, 64 * 1024 * 1024, 64)
+            Self::with_staging_limits(64 * 1024 * 1024, 64)
         }
 
         fn read_only() -> Self {
-            Self::with_mount(false, 64 * 1024 * 1024, 64)
+            Self::with_staging_limits(64 * 1024 * 1024, 64)
         }
 
-        #[cfg(any(target_os = "linux", target_os = "macos"))]
         fn with_staging_limits(max_bytes: u64, max_objects: u64) -> Self {
-            Self::with_mount(true, max_bytes, max_objects)
-        }
-
-        fn with_mount(writable: bool, max_bytes: u64, max_objects: u64) -> Self {
             let tree = TempTree::new();
             let native = tree.child("native");
             fs::create_dir(&native).expect("native root");
             let mut config = Config::for_test("env-resource-test");
             config.limits.max_staged_file_bytes = max_bytes;
             config.limits.max_staged_file_objects = max_objects;
-            config.mounts.push(TrustedMountConfig {
-                mount_id: "workspace".to_owned(),
-                native_root: native.clone(),
-                writable,
-                allow_command_execution: false,
-                max_file_bytes: 1024 * 1024,
-                allowed_operations: Vec::new(),
-            });
+            config.limits.max_file_bytes = 1024 * 1024;
             let operations = OperationLedger::new(
-                config.environment_id.clone(),
+                config.device_id.clone(),
                 7,
+                "session-test".to_owned(),
                 256,
                 Duration::from_secs(60),
                 Duration::from_secs(60),
+                std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
             );
-            let mounts = MountRegistry::initialize_scoped(&config).expect("mounts initialize");
+            let filesystem = DeviceFilesystem::new(&config)
+                .expect("filesystem")
+                .for_session();
             let resources = ResourceRegistry::new(&config, operations);
             Self {
                 _tree: tree,
                 native,
-                mounts,
+                filesystem,
                 resources,
             }
         }
@@ -2303,10 +2123,16 @@ mod tests {
         }
     }
 
-    fn path(value: &str) -> EIPPath {
-        EIPPath {
-            mount_id: "workspace".to_owned(),
-            path: value.to_owned(),
+    impl Fixture {
+        fn path(&self, value: &str) -> EIPPath {
+            EIPPath {
+                path: crate::device_path::from_native(&if value == "/" {
+                    self.native.clone()
+                } else {
+                    self.native.join(value.trim_start_matches('/'))
+                })
+                .unwrap(),
+            }
         }
     }
 
@@ -2317,21 +2143,21 @@ mod tests {
         let fixture = Fixture::new();
         let request = FileCommitParams {
             context: context("op-commit"),
-            root: path("/memory"),
+            root: fixture.path("/memory"),
             conditions: vec![FileCommitCondition {
-                path: path("/memory/head"),
+                path: fixture.path("/memory/head"),
                 digest: None,
             }],
             directories: vec![],
             writes: vec![FileCommitWrite {
-                path: path("/memory/head"),
+                path: fixture.path("/memory/head"),
                 text: "one".into(),
             }],
             removals: vec![],
         };
         let results = std::thread::scope(|scope| {
             let workers: Vec<_> = (0..8)
-                .map(|_| scope.spawn(|| fixture.resources.commit(&fixture.mounts, &request)))
+                .map(|_| scope.spawn(|| fixture.resources.commit(&fixture.filesystem, &request)))
                 .collect();
             workers
                 .into_iter()
@@ -2362,20 +2188,20 @@ mod tests {
         std::os::unix::fs::symlink("../outside", fixture.native.join("memory/link")).unwrap();
         let request = FileCommitParams {
             context: context("op-commit"),
-            root: path("/memory"),
+            root: fixture.path("/memory"),
             conditions: vec![FileCommitCondition {
-                path: path("/memory/link/head"),
+                path: fixture.path("/memory/link/head"),
                 digest: None,
             }],
             directories: vec![],
             writes: vec![FileCommitWrite {
-                path: path("/memory/link/head"),
+                path: fixture.path("/memory/link/head"),
                 text: "bad".into(),
             }],
             removals: vec![],
         };
         assert_eq!(
-            fixture.resources.commit(&fixture.mounts, &request),
+            fixture.resources.commit(&fixture.filesystem, &request),
             Err(ResourceError::Denied)
         );
         assert!(!fixture.native.join("outside/head").exists());
@@ -2394,7 +2220,7 @@ mod tests {
         fs::write(fixture.native.join("other"), "harness-ui\n").unwrap();
         let mut params = FileSearchParams {
             context: context("single-file"),
-            root: path("/ignored/.Makefile"),
+            root: fixture.path("/ignored/.Makefile"),
             query: "harness-ui|^test".to_owned(),
             mode: SearchMode::Regex,
             case_sensitive: true,
@@ -2409,21 +2235,27 @@ mod tests {
             max_files: Some(1),
             max_file_bytes: super::MAX_SEARCH_BYTES_PER_FILE,
         };
-        let first = fixture.resources.search(&fixture.mounts, &params).unwrap();
+        let first = fixture
+            .resources
+            .search(&fixture.filesystem, &params)
+            .unwrap();
         assert_eq!(first.matches.len(), 1);
         assert_eq!(first.matches[0].path, params.root);
         assert_eq!(first.matches[0].line_number, 2);
         assert_eq!(first.matches[0].context, "before\nharness-ui\nafter\n");
         assert!(first.has_more);
         params.offset = 1;
-        let second = fixture.resources.search(&fixture.mounts, &params).unwrap();
+        let second = fixture
+            .resources
+            .search(&fixture.filesystem, &params)
+            .unwrap();
         assert_eq!(second.matches[0].line_number, 4);
         assert!(!second.has_more);
         params.offset = 2;
         assert!(
             fixture
                 .resources
-                .search(&fixture.mounts, &params)
+                .search(&fixture.filesystem, &params)
                 .unwrap()
                 .matches
                 .is_empty()
@@ -2433,7 +2265,7 @@ mod tests {
         assert!(
             fixture
                 .resources
-                .search(&fixture.mounts, &params)
+                .search(&fixture.filesystem, &params)
                 .unwrap()
                 .matches
                 .is_empty()
@@ -2443,7 +2275,7 @@ mod tests {
         assert!(
             fixture
                 .resources
-                .search(&fixture.mounts, &params)
+                .search(&fixture.filesystem, &params)
                 .unwrap()
                 .matches
                 .is_empty()
@@ -2454,38 +2286,41 @@ mod tests {
             ("invalid", b"\xffharness-ui".as_slice()),
         ] {
             fs::write(fixture.native.join(name), bytes).unwrap();
-            params.root = path(&format!("/{name}"));
+            params.root = fixture.path(&format!("/{name}"));
             assert!(
                 fixture
                     .resources
-                    .search(&fixture.mounts, &params)
+                    .search(&fixture.filesystem, &params)
                     .unwrap()
                     .matches
                     .is_empty()
             );
         }
-        params.root = path("/missing");
+        params.root = fixture.path("/missing");
         assert_eq!(
-            fixture.resources.search(&fixture.mounts, &params),
+            fixture.resources.search(&fixture.filesystem, &params),
             Err(ResourceError::NotFound)
         );
 
         #[cfg(unix)]
         {
             std::os::unix::fs::symlink("ignored/.Makefile", fixture.native.join("alias")).unwrap();
-            params.root = path("/alias");
-            let linked = fixture.resources.search(&fixture.mounts, &params).unwrap();
-            assert_eq!(linked.matches[0].path, path("/alias"));
-            std::os::unix::fs::symlink(
-                fixture.native.parent().unwrap(),
-                fixture.native.join("outside"),
-            )
-            .unwrap();
-            params.root = path("/outside");
-            assert_eq!(
-                fixture.resources.search(&fixture.mounts, &params),
-                Err(ResourceError::Denied)
-            );
+            params.root = fixture.path("/alias");
+            let linked = fixture
+                .resources
+                .search(&fixture.filesystem, &params)
+                .unwrap();
+            assert_eq!(linked.matches[0].path, fixture.path("/alias"));
+            let outside = fixture._tree.child("outside-source");
+            fs::create_dir(&outside).unwrap();
+            fs::write(outside.join("visible.txt"), "harness-ui").unwrap();
+            std::os::unix::fs::symlink(&outside, fixture.native.join("outside")).unwrap();
+            params.root = fixture.path("/outside");
+            let external = fixture
+                .resources
+                .search(&fixture.filesystem, &params)
+                .unwrap();
+            assert_eq!(external.matches.len(), 1);
             let pipe =
                 std::ffi::CString::new(fixture.native.join("pipe").as_os_str().as_encoded_bytes())
                     .unwrap();
@@ -2493,9 +2328,9 @@ mod tests {
             assert_eq!(unsafe { libc::mkfifo(pipe.as_ptr(), 0o600) }, 0);
             std::os::unix::fs::symlink("pipe", fixture.native.join("pipe-alias")).unwrap();
             for root in ["/pipe", "/pipe-alias"] {
-                params.root = path(root);
+                params.root = fixture.path(root);
                 assert_eq!(
-                    fixture.resources.search(&fixture.mounts, &params),
+                    fixture.resources.search(&fixture.filesystem, &params),
                     Err(ResourceError::InvalidInput {
                         field: "root",
                         reason: "not_searchable"
@@ -2529,7 +2364,7 @@ mod tests {
     }
 
     #[test]
-    fn joins_mount_relative_paths() {
+    fn joins_device_absolute_paths() {
         assert_eq!(join_logical("/", "a/b"), "/a/b");
         assert_eq!(join_logical("/root", "a"), "/root/a");
     }
@@ -2539,10 +2374,10 @@ mod tests {
     fn resource_candidates_enforce_and_release_shared_staging_quota() {
         let fixture = Fixture::with_staging_limits(8, 1);
         let oversized = fixture.resources.write_text(
-            &fixture.mounts,
+            &fixture.filesystem,
             &FileWriteTextParams {
                 context: context("oversized-staging-write"),
-                path: path("/oversized.txt"),
+                path: fixture.path("/oversized.txt"),
                 mode: FileWriteMode::Create,
                 text: "123456789".to_owned(),
                 executable: None,
@@ -2554,10 +2389,10 @@ mod tests {
         let written = fixture
             .resources
             .write_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileWriteTextParams {
                     context: context("bounded-staging-write"),
-                    path: path("/bounded.txt"),
+                    path: fixture.path("/bounded.txt"),
                     mode: FileWriteMode::Create,
                     text: "12345678".to_owned(),
                     executable: None,
@@ -2584,8 +2419,8 @@ mod tests {
     #[test]
     fn candidate_path_substitution_cannot_publish_unverified_content() {
         let fixture = Fixture::new();
-        let mount = fixture.mounts.get("workspace").expect("workspace mount");
-        let destination = path("/verified.bin");
+        let mount = fixture.filesystem.clone();
+        let destination = fixture.path("/verified.bin");
         let expected = b"verified";
         let mut candidate = mount
             .create_candidate(&destination)
@@ -2625,9 +2460,9 @@ mod tests {
     #[test]
     fn publication_respects_create_and_upsert_during_external_writes() {
         let fixture = Fixture::new();
-        let mount = fixture.mounts.get("workspace").expect("workspace mount");
+        let mount = fixture.filesystem.clone();
 
-        let upsert_path = path("/upsert.bin");
+        let upsert_path = fixture.path("/upsert.bin");
         let upsert_bytes = b"envd-upsert";
         let mut upsert = mount
             .create_candidate(&upsert_path)
@@ -2654,7 +2489,7 @@ mod tests {
             upsert_bytes
         );
 
-        let create_path = path("/create.bin");
+        let create_path = fixture.path("/create.bin");
         let create_bytes = b"envd-create";
         let mut create = mount
             .create_candidate(&create_path)
@@ -2711,10 +2546,10 @@ mod tests {
         let stat = fixture
             .resources
             .stat(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileStatParams {
                     context: context("stat"),
-                    path: path("/docs/main.txt"),
+                    path: fixture.path("/docs/main.txt"),
                     follow_symlinks: true,
                 },
             )
@@ -2724,10 +2559,10 @@ mod tests {
         let first = fixture
             .resources
             .read_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("text-1"),
-                    path: path("/docs/main.txt"),
+                    path: fixture.path("/docs/main.txt"),
                     line_offset: 0,
                     line_limit: 1,
                     max_line_length: 2_000,
@@ -2740,10 +2575,10 @@ mod tests {
         let second = fixture
             .resources
             .read_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("text-2"),
-                    path: path("/docs/main.txt"),
+                    path: fixture.path("/docs/main.txt"),
                     line_offset: first.line_offset + first.lines_read,
                     line_limit: 1,
                     max_line_length: 2_000,
@@ -2757,10 +2592,10 @@ mod tests {
         let valid_page = fixture
             .resources
             .read_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("text-invalid-after-page"),
-                    path: path("/docs/invalid-after-page.bin"),
+                    path: fixture.path("/docs/invalid-after-page.bin"),
                     line_offset: 0,
                     line_limit: 1,
                     max_line_length: 2_000,
@@ -2774,10 +2609,10 @@ mod tests {
         let boundaries = fixture
             .resources
             .read_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("text-boundaries"),
-                    path: path("/docs/boundaries.txt"),
+                    path: fixture.path("/docs/boundaries.txt"),
                     line_offset: 1,
                     line_limit: 1,
                     max_line_length: 2_000,
@@ -2791,10 +2626,10 @@ mod tests {
         let first_list = fixture
             .resources
             .list(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileListParams {
                     context: context("list-1"),
-                    path: path("/docs"),
+                    path: fixture.path("/docs"),
                     offset: 0,
                     max_results: 3,
                     include_hidden: false,
@@ -2806,10 +2641,10 @@ mod tests {
         let continued = fixture
             .resources
             .list(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileListParams {
                     context: context("list-2"),
-                    path: path("/docs"),
+                    path: fixture.path("/docs"),
                     offset: first_list.offset + first_list.entries.len() as u64,
                     max_results: 3,
                     include_hidden: false,
@@ -2823,10 +2658,10 @@ mod tests {
         let found = fixture
             .resources
             .find(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileFindParams {
                     context: context("find"),
-                    root: path("/"),
+                    root: fixture.path("/"),
                     pattern: "*.txt".to_owned(),
                     offset: 0,
                     max_results: 100,
@@ -2843,10 +2678,10 @@ mod tests {
         let searched = fixture
             .resources
             .search(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileSearchParams {
                     context: context("search"),
-                    root: path("/docs"),
+                    root: fixture.path("/docs"),
                     query: "needle".to_owned(),
                     mode: SearchMode::Literal,
                     case_sensitive: true,
@@ -2875,10 +2710,10 @@ mod tests {
         let boundary_search = fixture
             .resources
             .search(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileSearchParams {
                     context: context("search-boundaries"),
-                    root: path("/docs"),
+                    root: fixture.path("/docs"),
                     query: "d".to_owned(),
                     mode: SearchMode::Literal,
                     case_sensitive: true,
@@ -2898,7 +2733,7 @@ mod tests {
         let boundary_match = boundary_search
             .matches
             .iter()
-            .find(|matched| matched.path.path == "/docs/boundaries.txt")
+            .find(|matched| matched.path == fixture.path("/docs/boundaries.txt"))
             .expect("boundary file match");
         assert_eq!(boundary_match.line_number, 2);
         assert_eq!(boundary_match.preview, "c\u{2028}d\r");
@@ -2914,10 +2749,10 @@ mod tests {
         let read = fixture
             .resources
             .read_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileReadTextParams {
                     context: context("large-read"),
-                    path: path("/large.txt"),
+                    path: fixture.path("/large.txt"),
                     line_offset: 0,
                     line_limit: 1,
                     max_line_length: 32,
@@ -2931,10 +2766,10 @@ mod tests {
         let searched = fixture
             .resources
             .search(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileSearchParams {
                     context: context("large-search"),
-                    root: path("/"),
+                    root: fixture.path("/"),
                     query: "needle".to_owned(),
                     mode: SearchMode::Literal,
                     case_sensitive: true,
@@ -2952,7 +2787,7 @@ mod tests {
             )
             .expect("search uses its own scan ceiling");
         assert_eq!(searched.matches.len(), 1);
-        assert_eq!(searched.matches[0].path, path("/large.txt"));
+        assert_eq!(searched.matches[0].path, fixture.path("/large.txt"));
     }
 
     #[test]
@@ -2971,10 +2806,10 @@ mod tests {
         let found = fixture
             .resources
             .find(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileFindParams {
                     context: context("ordered-find"),
-                    root: path("/"),
+                    root: fixture.path("/"),
                     pattern: "*.txt".to_owned(),
                     offset: 0,
                     max_results: 2,
@@ -2997,10 +2832,10 @@ mod tests {
         let searched = fixture
             .resources
             .search(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileSearchParams {
                     context: context("hidden-search"),
-                    root: path("/"),
+                    root: fixture.path("/"),
                     query: "absent".to_owned(),
                     mode: SearchMode::Literal,
                     case_sensitive: true,
@@ -3038,10 +2873,10 @@ mod tests {
         let found = fixture
             .resources
             .find(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileFindParams {
                     context: context("gitignore-find"),
-                    root: path("/"),
+                    root: fixture.path("/"),
                     pattern: "*.py".to_owned(),
                     offset: 0,
                     max_results: 10,
@@ -3064,10 +2899,10 @@ mod tests {
         let searched = fixture
             .resources
             .search(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileSearchParams {
                     context: context("filtered-search"),
-                    root: path("/"),
+                    root: fixture.path("/"),
                     query: "needle".to_owned(),
                     mode: SearchMode::Literal,
                     case_sensitive: true,
@@ -3085,7 +2920,7 @@ mod tests {
             )
             .expect("bounded filtered search succeeds");
         assert_eq!(searched.matches.len(), 1);
-        assert_eq!(searched.matches[0].path, path("/src/match.py"));
+        assert_eq!(searched.matches[0].path, fixture.path("/src/match.py"));
         assert_eq!(searched.matches[0].line_number, 2);
         assert_eq!(searched.matches[0].context, "before\nneedle one\nafter\n");
         assert_eq!(searched.matches[0].context_start_line, 1);
@@ -3110,10 +2945,10 @@ mod tests {
         let listed = fixture
             .resources
             .list(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileListParams {
                     context: context("unrepresentable-list"),
-                    path: path("/"),
+                    path: fixture.path("/"),
                     offset: 0,
                     max_results: 10,
                     include_hidden: true,
@@ -3127,104 +2962,37 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn broad_mount_subtracts_the_runtime_parent_from_all_resource_paths() {
+    fn absolute_paths_and_symlinks_can_access_outside_the_working_directory() {
         use std::os::unix::fs::symlink;
-
-        let tree = TempTree::new();
-        let runtime_parent = tree.child("container/runtime");
-        fs::create_dir_all(tree.child("container/data")).expect("visible sibling directory");
-        fs::write(tree.child("container/data/file.txt"), "visible").expect("visible file");
-        let runtime = RuntimeState::prepare(&runtime_parent).expect("runtime state");
-        symlink("container/runtime", tree.child("runtime-link")).expect("runtime symlink");
-
-        let mut config = Config::for_test("env-broad-mount-test");
-        config.runtime = Some(runtime);
-        config.mounts.push(TrustedMountConfig {
-            mount_id: "workspace".to_owned(),
-            native_root: tree.0.clone(),
-            writable: true,
-            allow_command_execution: false,
-            max_file_bytes: 1024 * 1024,
-            allowed_operations: Vec::new(),
-        });
-        let operations = OperationLedger::new(
-            config.environment_id.clone(),
-            11,
-            256,
-            Duration::from_secs(60),
-            Duration::from_secs(60),
-        );
-        let mounts = MountRegistry::initialize_scoped(&config).expect("broad mount initializes");
-        let resources = ResourceRegistry::new(&config, operations);
-
-        let listed = resources
-            .list(
-                &mounts,
-                &FileListParams {
-                    context: context("protected-list"),
-                    path: path("/container"),
-                    offset: 0,
-                    max_results: 10,
-                    include_hidden: true,
-                },
-            )
-            .expect("protected child is subtracted from traversal");
-        assert_eq!(
-            listed
-                .entries
-                .iter()
-                .map(|entry| entry.relative_path.as_str())
-                .collect::<Vec<_>>(),
-            vec!["data"]
-        );
-        assert_eq!(
-            resources.stat(
-                &mounts,
-                &FileStatParams {
-                    context: context("protected-stat"),
-                    path: path("/container/runtime"),
-                    follow_symlinks: false,
-                },
-            ),
-            Err(ResourceError::Denied)
-        );
-        assert_eq!(
-            resources.stat(
-                &mounts,
-                &FileStatParams {
-                    context: context("protected-link"),
-                    path: path("/runtime-link"),
-                    follow_symlinks: true,
-                },
-            ),
-            Err(ResourceError::Denied)
-        );
-
-        assert_eq!(
-            mounts
-                .get("workspace")
-                .expect("workspace mount")
-                .ensure_unprotected(std::path::Path::new("container/runtime")),
-            Err(crate::mount::MountPathError::Denied)
-        );
-        let removed = resources.remove(
-            &mounts,
-            &FileRemoveParams {
-                context: context("protected-remove"),
-                path: path("/container"),
-                expected_kind: FileKind::Directory,
-                recursive: true,
-                max_entries: 100,
+        let fixture = Fixture::read_only();
+        let outside = fixture._tree.child("outside.txt");
+        fs::write(&outside, "outside").unwrap();
+        symlink(&outside, fixture.native.join("link")).unwrap();
+        for path in [
+            EIPPath {
+                path: crate::device_path::from_native(&outside).unwrap(),
             },
-        );
-        assert_eq!(removed, Err(ResourceError::Denied));
-        assert!(tree.child("container/data/file.txt").exists());
+            fixture.path("/link"),
+        ] {
+            let stat = fixture
+                .resources
+                .stat(
+                    &fixture.filesystem,
+                    &FileStatParams {
+                        context: context("outside-stat"),
+                        path,
+                        follow_symlinks: true,
+                    },
+                )
+                .unwrap();
+            assert_eq!(stat.info.kind, FileKind::File);
+        }
     }
 
     #[cfg(windows)]
     #[test]
     fn recursively_removes_a_windows_directory_tree() {
-        let fixture = Fixture::with_mount(true, 64 * 1024 * 1024, 64);
+        let fixture = Fixture::with_staging_limits(64 * 1024 * 1024, 64);
         fs::create_dir_all(fixture.native.join("tree/first/nested"))
             .expect("first directory branch");
         fs::create_dir_all(fixture.native.join("tree/second")).expect("second directory branch");
@@ -3234,10 +3002,10 @@ mod tests {
         let removed = fixture
             .resources
             .remove(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileRemoveParams {
                     context: context("recursive-remove"),
-                    path: path("/tree"),
+                    path: fixture.path("/tree"),
                     expected_kind: FileKind::Directory,
                     recursive: true,
                     max_entries: 6,
@@ -3252,16 +3020,16 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn replaces_an_existing_windows_file_without_native_identity() {
-        let fixture = Fixture::with_mount(true, 64 * 1024 * 1024, 64);
+        let fixture = Fixture::with_staging_limits(64 * 1024 * 1024, 64);
         fs::write(fixture.native.join("target.txt"), "old").expect("existing target");
 
         let (info, bytes) = fixture
             .resources
             .write_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileWriteTextParams {
                     context: context("replace"),
-                    path: path("/target.txt"),
+                    path: fixture.path("/target.txt"),
                     mode: FileWriteMode::Replace,
                     text: "new content".to_owned(),
                     executable: None,
@@ -3269,7 +3037,7 @@ mod tests {
             )
             .expect("replace succeeds");
 
-        assert_eq!(info.path, path("/target.txt"));
+        assert_eq!(info.path, fixture.path("/target.txt"));
         assert_eq!(bytes, 11);
         assert_eq!(
             fs::read_to_string(fixture.native.join("target.txt")).expect("replaced target"),
@@ -3284,10 +3052,10 @@ mod tests {
         fixture
             .resources
             .mkdir(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileMkdirParams {
                     context: context("mkdir"),
-                    path: path("/work/nested"),
+                    path: fixture.path("/work/nested"),
                     parents: true,
                     exist_ok: false,
                 },
@@ -3296,10 +3064,10 @@ mod tests {
         let (_created, bytes) = fixture
             .resources
             .write_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileWriteTextParams {
                     context: context("write"),
-                    path: path("/work/nested/source.txt"),
+                    path: fixture.path("/work/nested/source.txt"),
                     mode: FileWriteMode::Create,
                     text: "hello world\n".to_owned(),
                     executable: Some(false),
@@ -3310,10 +3078,10 @@ mod tests {
         let (_appended, _) = fixture
             .resources
             .write_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileWriteTextParams {
                     context: context("append"),
-                    path: path("/work/nested/source.txt"),
+                    path: fixture.path("/work/nested/source.txt"),
                     mode: FileWriteMode::Append,
                     text: "tail\n".to_owned(),
                     executable: None,
@@ -3323,10 +3091,10 @@ mod tests {
         fixture
             .resources
             .patch_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FilePatchTextParams {
                     context: context("patch"),
-                    path: path("/work/nested/source.txt"),
+                    path: fixture.path("/work/nested/source.txt"),
                     patch_format: "unified_diff".to_owned(),
                     patch: "@@ -1,2 +1,2 @@\n-hello world\n+hello block2\n tail\n".to_owned(),
                 },
@@ -3341,11 +3109,11 @@ mod tests {
         fixture
             .resources
             .copy(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileCopyParams {
                     context: context("copy"),
-                    source: path("/work/nested/source.txt"),
-                    destination: path("/work/nested/copy.txt"),
+                    source: fixture.path("/work/nested/source.txt"),
+                    destination: fixture.path("/work/nested/copy.txt"),
                     replace: false,
                 },
             )
@@ -3353,11 +3121,11 @@ mod tests {
         let moved = fixture
             .resources
             .move_path(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileMoveParams {
                     context: context("move"),
-                    source: path("/work/nested/copy.txt"),
-                    destination: path("/work/moved.txt"),
+                    source: fixture.path("/work/nested/copy.txt"),
+                    destination: fixture.path("/work/moved.txt"),
                     replace: false,
                 },
             )
@@ -3365,7 +3133,7 @@ mod tests {
         fixture
             .resources
             .remove(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileRemoveParams {
                     context: context("remove"),
                     path: moved.path,
@@ -3385,10 +3153,10 @@ mod tests {
         fs::write(fixture.native.join("long.txt"), vec![b'a'; 64 * 1024 + 1])
             .expect("long-line fixture");
         let searched = fixture.resources.search(
-            &fixture.mounts,
+            &fixture.filesystem,
             &FileSearchParams {
                 context: context("long-search"),
-                root: path("/"),
+                root: fixture.path("/"),
                 query: "a".to_owned(),
                 mode: SearchMode::Literal,
                 case_sensitive: true,
@@ -3412,10 +3180,10 @@ mod tests {
         fs::create_dir_all(fixture.native.join("tree/child")).expect("remove tree");
         fs::write(fixture.native.join("tree/child/file"), b"data").expect("remove file");
         let bounded = fixture.resources.remove(
-            &fixture.mounts,
+            &fixture.filesystem,
             &FileRemoveParams {
                 context: context("remove-bounded"),
-                path: path("/tree"),
+                path: fixture.path("/tree"),
                 expected_kind: FileKind::Directory,
                 recursive: true,
                 max_entries: 2,
@@ -3427,10 +3195,10 @@ mod tests {
         let removed = fixture
             .resources
             .remove(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FileRemoveParams {
                     context: context("remove-complete"),
-                    path: path("/tree"),
+                    path: fixture.path("/tree"),
                     expected_kind: FileKind::Directory,
                     recursive: true,
                     max_entries: 3,
@@ -3460,17 +3228,17 @@ mod tests {
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[test]
-    fn staged_replacement_refuses_symlink_leaf_but_patch_follows_contained_target() {
+    fn staged_replacement_refuses_symlink_leaf_but_patch_follows_native_target() {
         use std::os::unix::fs::symlink;
 
         let fixture = Fixture::new();
         fs::write(fixture.native.join("target.txt"), b"original").expect("target fixture");
         symlink("target.txt", fixture.native.join("link.txt")).expect("symlink fixture");
         let result = fixture.resources.write_text(
-            &fixture.mounts,
+            &fixture.filesystem,
             &FileWriteTextParams {
                 context: context("symlink-write"),
-                path: path("/link.txt"),
+                path: fixture.path("/link.txt"),
                 mode: FileWriteMode::Replace,
                 text: "replacement".to_owned(),
                 executable: None,
@@ -3486,16 +3254,16 @@ mod tests {
         let (info, hunks) = fixture
             .resources
             .patch_text(
-                &fixture.mounts,
+                &fixture.filesystem,
                 &FilePatchTextParams {
                     context: context("symlink-patch"),
-                    path: path("/link.txt"),
+                    path: fixture.path("/link.txt"),
                     patch_format: "unified_diff".to_owned(),
                     patch: patch.to_owned(),
                 },
             )
             .expect("patches contained symlink target");
-        assert_eq!(info.path, path("/link.txt"));
+        assert_eq!(info.path, fixture.path("/link.txt"));
         assert_eq!(hunks, 1);
         assert!(
             fs::symlink_metadata(fixture.native.join("link.txt"))

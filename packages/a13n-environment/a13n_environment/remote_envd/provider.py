@@ -23,4 +23,4 @@ class RemoteEnvdProvider(EnvironmentProvider):
 
     def target_identity(self, *, configuration: BaseModel, state: EnvironmentState | None) -> str:
         self.describe_configuration(configuration)
-        return decode_state(self.key, state).daemon_environment_id
+        return decode_state(self.key, state).device_id

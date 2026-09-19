@@ -65,6 +65,10 @@ class _ProcessRecord:
 
 
 def convert_command_request(request: CommandRequest, *, files: EIPFileOperator) -> eip.CommandRequest:
+    if request.network != "configured":
+        raise EnvironmentError(
+            "Per-command network policy requires an outer Host boundary", code="environment_unsupported"
+        )
     command = request.command
     if isinstance(command, ArgvCommand):
         executable = (
@@ -89,12 +93,11 @@ def convert_command_request(request: CommandRequest, *, files: EIPFileOperator) 
     limits = request.limits
     return eip.CommandRequest(
         command=converted_command,
-        cwd=files.to_eip_path(request.cwd or "/"),
+        cwd=None if request.cwd is None else files.to_eip_path(request.cwd),
         environment=eip.CommandEnvironment(
             set=dict(request.environment.set),
             unset=request.environment.unset,
         ),
-        network=eip.CommandNetwork(request.network),
         limits=eip.CommandLimits(
             wall_time_ms=None
             if limits.wall_time_seconds is None
@@ -170,8 +173,9 @@ class _ProcessConversions:
 
     def _validate_process_identity(self, process: eip.ProcessInfo) -> None:
         if (
-            process.environment_id != self._session.descriptor.environment_id
-            or str(process.generation) != self._generation
+            process.device_id != self._session.descriptor.device_id
+            or process.session_id != self._session.descriptor.session_id
+            or process.generation != self._session.descriptor.generation
         ):
             raise EnvironmentError("EIP process identity is stale", code="environment_stale_mount")
 
@@ -199,7 +203,7 @@ class _ProcessConversions:
     def receipt(self, receipt: eip.OperationReceipt) -> EnvironmentOperationReceipt:
         return convert_receipt(
             receipt,
-            environment_id=self._session.descriptor.environment_id,
+            session=self._session,
             mount_id=self._mount_id,
             generation=self._generation,
         )

@@ -126,17 +126,23 @@ def normalize_operation_path(value: str) -> str:
     return normalized or "."
 
 
-def provider_path_from_suffix(suffix: tuple[str, ...]) -> str:
+def provider_path_from_suffix(suffix: tuple[str, ...], provider_root: str = "/") -> str:
     """Render a matched aggregate suffix as a provider-local absolute path."""
 
-    return "/" if not suffix else f"/{'/'.join(suffix)}"
+    return provider_root if not suffix else f"{provider_root.rstrip('/')}/{'/'.join(suffix)}"
 
 
-def mount_path_from_provider_path(root: str, provider_path: str) -> str:
+def mount_path_from_provider_path(root: str, provider_path: str, provider_root: str = "/") -> str:
     """Render one canonical provider-local path below its aggregate mount root."""
 
     if not provider_path.startswith("/") or "\x00" in provider_path:
         raise ValueError("provider path must be absolute")
+    if provider_root != "/":
+        if provider_path == provider_root:
+            return root
+        if not provider_path.startswith(provider_root.rstrip("/") + "/"):
+            raise ValueError("provider path is outside the mapped root")
+        provider_path = provider_path[len(provider_root) :]
     if provider_path == "/":
         return root
     if provider_path.endswith("/"):

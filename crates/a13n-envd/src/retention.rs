@@ -2,7 +2,10 @@ use std::{
     collections::BTreeMap,
     io,
     path::PathBuf,
-    sync::{Arc, Mutex, PoisonError},
+    sync::{
+        Arc, Mutex, PoisonError,
+        atomic::{AtomicU64, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -25,6 +28,9 @@ pub(crate) struct RetentionQuota {
     inner: Arc<Mutex<QuotaState>>,
     max_bytes: u64,
     max_objects: usize,
+    parent: Option<Arc<RetentionQuota>>,
+    cleanup_failures: Arc<AtomicU64>,
+    collected_objects: Arc<AtomicU64>,
 }
 
 #[derive(Default)]
@@ -61,6 +67,7 @@ struct OutputObject {
 }
 
 struct OutputState {
+    last_access: Instant,
     producer_complete: bool,
     content_complete: bool,
     produced_bytes: u64,
@@ -82,7 +89,6 @@ struct PairReservationState {
     complete: [bool; 2],
     charged: [u64; 2],
     settled: bool,
-    aborted: bool,
 }
 
 #[derive(Clone)]
@@ -111,10 +117,35 @@ impl RetentionQuota {
     pub(crate) fn new(config: &crate::config::Config) -> Result<Self, RetentionError> {
         Ok(Self {
             inner: Arc::new(Mutex::new(QuotaState::default())),
+            max_bytes: config.limits.max_device_spool_bytes,
+            max_objects: usize::try_from(config.limits.max_device_spool_objects)
+                .map_err(|_| RetentionError::Internal)?,
+            parent: None,
+            cleanup_failures: Arc::new(AtomicU64::new(0)),
+            collected_objects: Arc::new(AtomicU64::new(0)),
+        })
+    }
+
+    fn for_session(&self, config: &crate::config::Config) -> Result<Self, RetentionError> {
+        Ok(Self {
+            inner: Arc::new(Mutex::new(QuotaState::default())),
             max_bytes: config.limits.max_spool_bytes,
             max_objects: usize::try_from(config.limits.max_spool_objects)
                 .map_err(|_| RetentionError::Internal)?,
+            parent: Some(Arc::new(self.clone())),
+            cleanup_failures: self.cleanup_failures.clone(),
+            collected_objects: self.collected_objects.clone(),
         })
+    }
+
+    fn under_pressure(&self, bytes: u64, objects: usize) -> bool {
+        let state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
+        state.bytes.saturating_add(bytes) > self.max_bytes
+            || state.objects.saturating_add(objects) > self.max_objects
+            || self
+                .parent
+                .as_ref()
+                .is_some_and(|parent| parent.under_pressure(bytes, objects))
     }
 
     fn reserve(&self, bytes: u64, objects: usize) -> bool {
@@ -128,6 +159,13 @@ impl RetentionQuota {
         if next_bytes > self.max_bytes || next_objects > self.max_objects {
             return false;
         }
+        if self
+            .parent
+            .as_ref()
+            .is_some_and(|parent| !parent.reserve(bytes, objects))
+        {
+            return false;
+        }
         state.bytes = next_bytes;
         state.objects = next_objects;
         true
@@ -137,9 +175,18 @@ impl RetentionQuota {
         let mut state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         state.bytes = state.bytes.saturating_sub(bytes);
         state.objects = state.objects.saturating_sub(objects);
+        if let Some(parent) = &self.parent {
+            parent.release(bytes, objects);
+        }
     }
 
-    #[cfg(test)]
+    pub(crate) fn diagnostics(&self) -> (u64, u64) {
+        (
+            self.cleanup_failures.load(Ordering::Relaxed),
+            self.collected_objects.load(Ordering::Relaxed),
+        )
+    }
+
     pub(crate) fn usage(&self) -> (u64, usize) {
         let state = self.inner.lock().unwrap_or_else(PoisonError::into_inner);
         (state.bytes, state.objects)
@@ -149,13 +196,13 @@ impl RetentionQuota {
 impl RetentionStore {
     pub(crate) fn new(
         config: &crate::config::Config,
-        generation: u64,
+        selector_ids: ShortIdAllocator,
         quota: RetentionQuota,
     ) -> Result<Self, RetentionError> {
         Ok(Self {
             inner: Arc::new(RetentionInner {
                 objects: Mutex::new(BTreeMap::new()),
-                quota,
+                quota: quota.for_session(config)?,
                 spool: config
                     .runtime
                     .as_ref()
@@ -164,7 +211,7 @@ impl RetentionStore {
                 max_preview_bytes: usize::try_from(config.limits.max_output_preview_bytes)
                     .map_err(|_| RetentionError::Internal)?,
                 max_response_bytes: config.limits.max_response_bytes,
-                selector_ids: ShortIdAllocator::for_generation(generation),
+                selector_ids,
             }),
         })
     }
@@ -185,7 +232,6 @@ impl RetentionStore {
                 complete: [false; 2],
                 charged: [0; 2],
                 settled: false,
-                aborted: false,
             }),
         });
         let mut created: Vec<Arc<OutputObject>> = Vec::with_capacity(2);
@@ -215,6 +261,7 @@ impl RetentionStore {
                 reference: OutputReference(selector),
                 path,
                 state: Mutex::new(OutputState {
+                    last_access: Instant::now(),
                     producer_complete: false,
                     content_complete: true,
                     produced_bytes: 0,
@@ -267,20 +314,20 @@ impl RetentionStore {
         created: &[Arc<OutputObject>],
         reservation: &PairReservation,
     ) {
-        let mut removed_all = true;
-        for object in created {
-            match fs::remove_file(&object.path).await {
-                Ok(()) => {
-                    self.objects().remove(&object.reference.0);
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    self.objects().remove(&object.reference.0);
-                }
-                Err(_) => removed_all = false,
-            }
+        // Even a partial pair retains a registry owner until native deletion succeeds.
+        // The uncreated half has no native resource and can release its object charge now.
+        for index in created.len()..2 {
+            reservation.complete(index, 0);
+            self.inner.quota.release(0, 1);
         }
-        if removed_all {
-            reservation.abort();
+        for object in created {
+            self.objects()
+                .entry(object.reference.0.clone())
+                .or_insert_with(|| Arc::clone(object));
+            self.abort_output(&LiveOutput {
+                object: Arc::clone(object),
+            })
+            .await;
         }
     }
 
@@ -294,6 +341,11 @@ impl RetentionStore {
             .get(&params.reference.0)
             .cloned()
             .ok_or(RetentionError::InvalidSelector)?;
+        object
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .last_access = Instant::now();
         let initial = object.snapshot()?;
         if params.start_offset > initial.retained_bytes {
             return Err(RetentionError::InvalidOffset);
@@ -363,6 +415,7 @@ impl RetentionStore {
             .get(&reference.0)
             .cloned()
             .ok_or(RetentionError::InvalidSelector)?;
+        let _io = object.io.lock().await;
         {
             let state = object.state.lock().unwrap_or_else(PoisonError::into_inner);
             if !state.producer_complete || state.attached {
@@ -372,11 +425,16 @@ impl RetentionStore {
                 return Err(RetentionError::InvalidSelector);
             }
         }
-        let _io = object.io.lock().await;
         match fs::remove_file(&object.path).await {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(_) => return Err(RetentionError::CleanupFailed),
+            Err(_) => {
+                self.inner
+                    .quota
+                    .cleanup_failures
+                    .fetch_add(1, Ordering::Relaxed);
+                return Err(RetentionError::CleanupFailed);
+            }
         }
         let charged = {
             let mut state = object.state.lock().unwrap_or_else(PoisonError::into_inner);
@@ -391,27 +449,75 @@ impl RetentionStore {
             return Err(RetentionError::Internal);
         }
         self.inner.quota.release(charged, 1);
+        self.inner
+            .quota
+            .collected_objects
+            .fetch_add(1, Ordering::Relaxed);
         Ok(true)
     }
 
-    pub(crate) async fn abort_pair(&self, outputs: [&LiveOutput; 2]) {
-        let reservation = &outputs[0].object.reservation;
-        let mut removed_all = true;
-        for output in outputs {
-            let _io = output.object.io.lock().await;
-            match fs::remove_file(&output.object.path).await {
-                Ok(()) => {
-                    self.objects().remove(&output.object.reference.0);
-                }
-                Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                    self.objects().remove(&output.object.reference.0);
-                }
-                Err(_) => removed_all = false,
+    pub(crate) fn under_pressure(&self) -> bool {
+        self.inner
+            .quota
+            .under_pressure(self.inner.max_output_bytes_per_stream.saturating_mul(2), 2)
+    }
+
+    /// The Session history gate excludes admitted reads and response handoffs.
+    pub(crate) async fn collect(&self, ttl: Duration, pressure: bool) -> Vec<String> {
+        let mut candidates: Vec<_> = self
+            .objects()
+            .values()
+            .filter_map(|object| {
+                let state = object.state.lock().unwrap_or_else(PoisonError::into_inner);
+                (state.producer_complete
+                    && !state.attached
+                    && (pressure || state.last_access.elapsed() >= ttl))
+                    .then(|| (state.last_access, object.reference.clone()))
+            })
+            .collect();
+        candidates.sort_by_key(|(access, _)| *access);
+        let mut released = Vec::new();
+        for (_, reference) in candidates {
+            if self.release_reference(&reference).await.is_ok() {
+                released.push(reference.0);
             }
         }
-        if removed_all {
-            reservation.abort();
+        released
+    }
+
+    pub(crate) async fn close(&self) -> bool {
+        let objects: Vec<_> = self.objects().values().cloned().collect();
+        let mut complete = true;
+        for object in objects {
+            let terminal = {
+                let mut state = object.state.lock().unwrap_or_else(PoisonError::into_inner);
+                if state.producer_complete {
+                    state.attached = false;
+                    true
+                } else {
+                    false
+                }
+            };
+            if !terminal || self.release_reference(&object.reference).await.is_err() {
+                complete = false;
+            }
         }
+        complete
+    }
+
+    pub(crate) async fn abort_pair(&self, outputs: [&LiveOutput; 2]) {
+        for output in outputs {
+            self.abort_output(output).await;
+        }
+    }
+
+    async fn abort_output(&self, output: &LiveOutput) {
+        output.mark_write_failed(true);
+        output.complete().await;
+        output.detach();
+        // Failed deletion remains terminal and detached in the ordinary registry;
+        // maintenance and Session close retry it without losing quota ownership.
+        let _ = self.release_reference(output.reference()).await;
     }
 
     #[cfg(test)]
@@ -428,6 +534,17 @@ impl RetentionStore {
 }
 
 impl LiveOutput {
+    pub(crate) fn last_access(&self) -> Instant {
+        self.object
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .last_access
+    }
+
+    pub(crate) fn reference(&self) -> &OutputReference {
+        &self.object.reference
+    }
     pub(crate) async fn append(&self, bytes: &[u8]) -> AppendOutcome {
         let _io = self.object.io.lock().await;
         let (prior_retained, write_len, crossed) = {
@@ -530,6 +647,7 @@ impl LiveOutput {
                 return;
             }
             state.producer_complete = true;
+            state.last_access = Instant::now();
             state.quota_bytes = if state.charge_full_allowance {
                 self.object.reservation.limit
             } else {
@@ -576,7 +694,7 @@ impl OutputObject {
 impl PairReservation {
     fn complete(&self, index: usize, charged: u64) {
         let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.aborted || state.complete[index] {
+        if state.complete[index] {
             return;
         }
         state.complete[index] = true;
@@ -587,20 +705,6 @@ impl PairReservation {
             let actual = state.charged[0].saturating_add(state.charged[1]);
             self.quota.release(reserved.saturating_sub(actual), 0);
         }
-    }
-
-    fn abort(&self) {
-        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
-        if state.aborted {
-            return;
-        }
-        state.aborted = true;
-        let bytes = if state.settled {
-            state.charged[0].saturating_add(state.charged[1])
-        } else {
-            self.limit.saturating_mul(2)
-        };
-        self.quota.release(bytes, 2);
     }
 }
 
@@ -632,6 +736,31 @@ mod tests {
 
     static NEXT_TEST: AtomicU64 = AtomicU64::new(1);
 
+    #[test]
+    fn scoped_quota_preserves_sibling_capacity_and_rolls_back_device_rejection() {
+        let mut config = Config::for_test("device-test");
+        config.limits.max_spool_bytes = 8;
+        config.limits.max_spool_objects = 2;
+        config.limits.max_device_spool_bytes = 12;
+        config.limits.max_device_spool_objects = 4;
+        let device = RetentionQuota::new(&config).unwrap();
+        let first = device.for_session(&config).unwrap();
+        let sibling = device.for_session(&config).unwrap();
+        assert!(first.reserve(8, 2));
+        assert!(!first.reserve(1, 0));
+        assert!(!first.reserve(0, 1));
+        assert_eq!(device.usage(), (8, 2));
+        assert!(!sibling.reserve(8, 2));
+        assert_eq!(sibling.usage(), (0, 0));
+        assert!(sibling.reserve(4, 2));
+        assert_eq!(device.usage(), (12, 4));
+        first.release(8, 2);
+        assert_eq!(device.usage(), (4, 2));
+        assert_eq!(sibling.usage(), (4, 2));
+        sibling.release(4, 2);
+        assert_eq!(device.usage(), (0, 0));
+    }
+
     fn setup(
         stream_limit: u64,
         spool_limit: u64,
@@ -651,7 +780,12 @@ mod tests {
         config.limits.max_spool_bytes = spool_limit;
         config.limits.max_spool_objects = object_limit;
         let quota = RetentionQuota::new(&config).expect("quota");
-        let store = RetentionStore::new(&config, 1, quota).expect("store");
+        let store = RetentionStore::new(
+            &config,
+            crate::operation::ShortIdAllocator::for_generation(1),
+            quota,
+        )
+        .expect("store");
         (parent, config, store)
     }
 
@@ -672,6 +806,83 @@ mod tests {
             start_offset,
             wait_ms: 0,
         }
+    }
+
+    #[tokio::test]
+    async fn partial_creation_rolls_back_without_deleting_the_conflicting_path() {
+        let (parent, config, store) = setup(4, 8, 2);
+        let conflict = config
+            .runtime
+            .as_ref()
+            .unwrap()
+            .spool()
+            .join("output-1-2.spool");
+        fs::create_dir(&conflict).unwrap();
+        assert!(matches!(
+            store.create_live_pair().await,
+            Err(RetentionError::Internal)
+        ));
+        assert_eq!(store.quota(), (0, 0));
+        assert!(store.objects().is_empty());
+        assert!(conflict.is_dir());
+        fs::remove_dir(conflict).unwrap();
+        cleanup(parent, config, store);
+    }
+
+    #[tokio::test]
+    async fn failed_partial_creation_cleanup_keeps_an_owner_and_charge_until_retry() {
+        let (parent, config, store) = setup(4, 8, 2);
+        let (stdout, stderr) = store.create_live_pair().await.unwrap();
+        // Reproduce rollback after the first native object was created, before registry publication.
+        stderr.object.writer.lock().await.take();
+        fs::remove_file(&stderr.object.path).unwrap();
+        store.objects().clear();
+        let displaced = stdout.object.path.with_extension("held");
+        fs::rename(&stdout.object.path, &displaced).unwrap();
+        fs::create_dir(&stdout.object.path).unwrap();
+        store
+            .rollback_creation(
+                std::slice::from_ref(&stdout.object),
+                &stdout.object.reservation,
+            )
+            .await;
+        assert_eq!(store.quota(), (4, 1));
+        assert_eq!(store.objects().len(), 1);
+        assert!(!store.close().await);
+        assert_eq!(store.quota(), (4, 1));
+        fs::remove_dir(&stdout.object.path).unwrap();
+        fs::rename(displaced, &stdout.object.path).unwrap();
+        assert!(store.close().await);
+        assert_eq!(store.quota(), (0, 0));
+        drop((stdout, stderr));
+        cleanup(parent, config, store);
+    }
+
+    #[tokio::test]
+    async fn failed_abort_deletion_is_retried_without_losing_pair_accounting() {
+        let (parent, config, store) = setup(4, 8, 2);
+        let (stdout, stderr) = store.create_live_pair().await.unwrap();
+        stdout.append(b"data").await;
+        let displaced = stdout.object.path.with_extension("held");
+        fs::rename(&stdout.object.path, &displaced).unwrap();
+        fs::create_dir(&stdout.object.path).unwrap();
+        store.abort_pair([&stdout, &stderr]).await;
+        assert_eq!(store.quota(), (4, 1));
+        assert_eq!(store.objects().len(), 1);
+        assert!(stdout.snapshot().unwrap().producer_complete);
+        assert_eq!(stdout.append(b"late").await, AppendOutcome::WriteFailed);
+        assert!(!store.close().await);
+        fs::remove_dir(&stdout.object.path).unwrap();
+        fs::rename(displaced, &stdout.object.path).unwrap();
+        assert_eq!(
+            store.collect(Duration::ZERO, true).await,
+            vec![stdout.reference().0.clone()]
+        );
+        assert_eq!(store.quota(), (0, 0));
+        store.abort_pair([&stdout, &stderr]).await;
+        assert_eq!(store.quota(), (0, 0));
+        drop((stdout, stderr));
+        cleanup(parent, config, store);
     }
 
     #[tokio::test]
