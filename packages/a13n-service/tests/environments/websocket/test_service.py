@@ -14,6 +14,7 @@ from a13n_service.environments.websocket.resources import ConnectionResources
 from a13n_service.environments.websocket.service import ClientConnectionService, websocket_origin
 from a13n_service.ids import new_object_id
 from a13n_service.storage import short_session
+from anyio import create_task_group, fail_after
 
 from ..conftest import actor
 
@@ -24,7 +25,7 @@ pytestmark = pytest.mark.anyio
 def client_service(environment_service, redis_client):
     return ClientConnectionService(
         ConnectionResources(environment_service),
-        ConnectionCoordination(redis_client, limits=CoordinationLimits(lease_ms=500)),
+        ConnectionCoordination(redis_client, limits=CoordinationLimits(lease_ms=5_000)),
         public_origin="wss://control.example.test:443/",
     )
 
@@ -35,7 +36,7 @@ async def connect(service, target):
         target.organization_id, target.environment_id, ticket=ticket.ticket, owner_instance_id="control"
     )
     connection = admitted.value.connection
-    await asyncio.sleep(0.52)
+    await asyncio.sleep(service.coordination.limits.lease_ms / 1000 + 0.02)
     await service.coordination.promote(connection)
     await service.coordination.online(connection)
     return connection
@@ -88,16 +89,34 @@ async def test_online_reply_expired_in_transit_is_retried_and_never_exposed(clie
 async def test_reconciliation_observes_online_and_recovers_owner_loss(client_service, environment_service, target):
     connection = await connect(client_service, target)
     reconciler = ClientConnectionReconciler(client_service)
-    await reconciler.run_once()
-    async with short_session(environment_service.sessions) as session:
-        row = await session.get(EnvironmentRecord, target.environment_id)
-        assert row.status == "running"
+
+    async def keep_online():
+        while True:
+            observed = await client_service.coordination.renew(connection)
+            assert observed.value.connection == connection and observed.value.status == "online"
+            await asyncio.sleep(client_service.coordination.limits.lease_ms / 3000)
+
+    async def reconcile_until(status):
+        # A publication can legitimately lose its short evidence deadline while
+        # waiting for PostgreSQL. The next pass must obtain a fresh observation.
+        with fail_after(10):
+            while True:
+                await reconciler.run_once()
+                async with short_session(environment_service.sessions) as session:
+                    row = await session.get(EnvironmentRecord, target.environment_id)
+                    assert row.generation == target.generation
+                    if row.status == status:
+                        return
+                await asyncio.sleep(0.05)
+
+    async with create_task_group() as tasks:
+        tasks.start_soon(keep_online)
+        try:
+            await reconcile_until("running")
+        finally:
+            tasks.cancel_scope.cancel()
     await client_service.coordination.retire(connection)
-    await reconciler.run_once()
-    async with short_session(environment_service.sessions) as session:
-        row = await session.get(EnvironmentRecord, target.environment_id)
-        assert row.status == "unavailable"
-        assert row.generation == target.generation
+    await reconcile_until("unavailable")
 
 
 async def test_reconciliation_defers_dependency_failure_without_pg_mutation(
