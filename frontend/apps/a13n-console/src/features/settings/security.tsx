@@ -16,8 +16,9 @@ import { useNavigate } from "react-router";
 import { useAuth, useClient } from "../../auth/context";
 import { data } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { FormActions } from "../../shared/forms";
 import styles from "./security.module.css";
+import settings from "./settings.module.css";
 
 export function Security() {
   const { t } = useTranslation();
@@ -68,7 +69,7 @@ export function Security() {
     changePassword.reset();
   };
   return (
-    <div className={styles.sections}>
+    <div className={settings.sections}>
       <SettingsSection
         title={t("Email address")}
         description={t(

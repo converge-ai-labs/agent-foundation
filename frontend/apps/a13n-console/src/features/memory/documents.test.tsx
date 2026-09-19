@@ -15,7 +15,10 @@ vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" } }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 const document = {
   id: "mdoc_test",

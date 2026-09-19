@@ -1,25 +1,26 @@
-import { Identifier } from "../../shared/copy";
-import { useResourceRows } from "../../shared/resource-modal";
-import type { Schema } from "../../shared/api";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { ResourceIdentity } from "../../shared/collection";
-import { ScopeBadge } from "../../shared/scope-badge";
 import { useQuery } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
+import type { Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { PageActions } from "../../shared/page-actions";
+import { useResourceRows } from "../../shared/dialogs";
+import { ErrorNotice, Loading } from "../../shared/feedback";
+import { Identifier } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
+import { ProviderTable } from "../providers";
+import {
+  AddMemoryProvider,
+  MemoryProviderEditor,
+  memoryCredentialState,
+  useMemoryProviderDefinitions,
+} from "./editor";
 import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
-import { MemoryProviderEditor } from "./editor";
 
 export function MemoryProviders({ scope }: { scope: MemoryProviderScope }) {
   const client = useClient(),
-    { t } = useTranslation(),
     { can, organizationAdmin } = useAccess(),
     page = useCursor();
   const rows = useResourceRows<Schema["MemoryProvider"]>();
@@ -28,15 +29,14 @@ export function MemoryProviders({ scope }: { scope: MemoryProviderScope }) {
     queryFn: ({ signal }) =>
       memoryProviderApi(client, scope).providers(signal, page.cursor),
   });
+  const definitions = useMemoryProviderDefinitions(scope);
   const manage =
     scope.kind === "organization"
       ? organizationAdmin
       : can("memory_provider.manage");
+  const add = manage ? <AddMemoryProvider scope={scope} /> : undefined;
   return (
-    <div className={styles.stack}>
-      <PageActions>
-        {manage && <MemoryProviderEditor scope={scope} />}
-      </PageActions>
+    <>
       {rows.selected && (
         <MemoryProviderEditor
           key={rows.selected.id}
@@ -51,75 +51,41 @@ export function MemoryProviders({ scope }: { scope: MemoryProviderScope }) {
           }
           {...rows.control}
           extra={
-            <div className={styles.actions}>
-              <MemoryReferences scope={scope} providerId={rows.selected.id} />
-            </div>
+            <MemoryReferences scope={scope} providerId={rows.selected.id} />
           }
         />
       )}
-      {query.isPending ? (
-        <Loading variant="table" columns={4} />
-      ) : query.error ? (
-        <ErrorNotice error={query.error} />
-      ) : query.data?.items.length ? (
-        <>
-          <ResourceTable
-            items={query.data.items}
-            onRowActivate={rows.activate}
-            columns={[
-              {
-                label: t("Provider"),
-                tone: "primary",
-                render: (item) => (
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProviderIcon key={item.type} type={item.type} />
-                    <ResourceIdentity
-                      name={item.name}
-                      description={item.type}
-                      resourceId={item.id}
-                    />
-                  </div>
-                ),
-              },
-              {
-                label: t("Scope"),
-                tone: "muted",
-                render: (item) => (
-                  <ScopeBadge workspaceId={item.workspace_id} />
-                ),
-              },
-              {
-                label: t("Credentials"),
-                render: (item) =>
-                  t(
-                    item.type === "a13n.filesystem"
-                      ? "Not required"
-                      : item.credential_configured
-                        ? "Configured"
-                        : "Not configured",
-                  ),
-              },
-              {
-                label: t("Status"),
-                render: (item) => (
-                  <StateBadge state={item.enabled ? "enabled" : "disabled"} />
-                ),
-              },
-            ]}
-          />
-          <Pagination page={page} next={query.data.next_cursor} />
-        </>
-      ) : (
-        <Empty
-          title={t("No memory providers yet")}
-          description={t(
-            "Add a memory provider, then select it in your agent.",
-          )}
-        />
-      )}
-    </div>
+      <ProviderTable
+        category="memory"
+        items={query.data?.items}
+        isPending={query.isPending}
+        error={query.error}
+        page={page}
+        nextCursor={query.data?.next_cursor}
+        action={add}
+        onRowActivate={rows.activate}
+        row={(item) => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          definition: definitions.data?.items.find(
+            (definition) => definition.type === item.type,
+          )?.display_name,
+          workspaceId: item.workspace_id,
+          credentials: memoryCredentialState(
+            item,
+            definitions.data?.items.find(
+              (definition) => definition.type === item.type,
+            ),
+          ),
+          state: item.enabled ? "enabled" : "disabled",
+        })}
+      />
+    </>
   );
 }
+
+/** Which agent revisions still point at this backend. */
 function MemoryReferences({
   scope,
   providerId,
@@ -167,8 +133,9 @@ function MemoryReferences({
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : (
-        <>
+        <div className={styles.stack}>
           <ResourceTable
+            caption={t("Agent references")}
             items={(query.data?.items ?? []).map((item) => ({
               ...item,
               id: item.agent_revision_id,
@@ -192,7 +159,7 @@ function MemoryReferences({
             ]}
           />
           <Pagination page={page} next={query.data?.next_cursor} />
-        </>
+        </div>
       )}
     </ModalFrame>
   );

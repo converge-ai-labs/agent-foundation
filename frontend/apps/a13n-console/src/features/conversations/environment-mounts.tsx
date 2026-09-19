@@ -12,8 +12,8 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
-import { ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
+import { FormActions } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import { DeviceDirectory } from "../environments/device-directory";
 import { EnvironmentReference } from "../environments/reference";
@@ -82,7 +82,7 @@ export function RunEnvironmentMounts({ run }: { run: Schema["RunResource"] }) {
             <li key={mount.name} className="flex flex-col gap-1 text-sm">
               <div className="flex items-center justify-between gap-2">
                 <strong>{mount.name}</strong>
-                <StateBadge state={mount.application_status ?? "pending"} />
+                <StatePill state={mount.application_status ?? "pending"} />
               </div>
               <EnvironmentReference id={mount.environment_id} />
               {mount.working_directory && (

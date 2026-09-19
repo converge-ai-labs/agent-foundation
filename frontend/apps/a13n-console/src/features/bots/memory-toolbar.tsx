@@ -1,5 +1,5 @@
 import type { BotAccount } from "./account";
-import { Button } from "a13n-ui";
+import { Button, StatusPill } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -9,6 +9,7 @@ import { data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { GroupMemorySettings } from "./memory-settings";
 import { MemoryOperations } from "./memory-operations";
+import styles from "./bots.module.css";
 
 export function GroupMemoryActions({
   account,
@@ -79,11 +80,14 @@ export function GroupMemoryActions({
             <Button
               ref={pendingRef}
               size="sm"
-              variant="outline"
+              variant="ghost"
+              className={styles.attention}
               onClick={() => setOperations(true)}
             >
-              {t("Memory needs attention")} · {count}
-              {pending.data?.next_cursor ? "+" : ""}
+              <StatusPill variant="warning">
+                {t("Memory needs attention")} · {count}
+                {pending.data?.next_cursor ? "+" : ""}
+              </StatusPill>
             </Button>
           )}
           <MemoryOperations

@@ -10,7 +10,7 @@ export function Preferences() {
   const { t, i18n } = useTranslation(),
     { theme, setTheme } = useAppearance();
   return (
-    <div className={styles.preferences}>
+    <div className={styles.sections}>
       <SettingsSection title={t("Appearance")}>
         <SettingsRow label={t("Color theme")}>
           <ChoiceField
@@ -47,7 +47,7 @@ export function Preferences() {
           />
         </SettingsRow>
       </SettingsSection>
-      <p className={styles.preferenceNote}>
+      <p className={styles.note}>
         {t("Preferences are saved automatically in this browser.")}
       </p>
     </div>

@@ -22,7 +22,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 
 const connection: Schema["Connection"] = {
@@ -94,7 +97,7 @@ it("offers verification retry without repeating OAuth metadata discovery", async
   renderSetup({ ...connection, credential_configured: true });
 
   await userEvent.click(
-    screen.getByRole("button", { name: "Retry verification" }),
+    screen.getByRole("button", { name: "Check connection" }),
   );
 
   expect(http.GET).not.toHaveBeenCalled();

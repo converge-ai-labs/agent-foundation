@@ -1,6 +1,7 @@
-import { DisclosureSection } from "a13n-ui";
+import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import { Button, DisclosureSection } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/identity";
 import styles from "./connect.module.css";
 
 const slackManifest = JSON.stringify(
@@ -51,14 +52,14 @@ export function BotSetupInstructions({
 }) {
   const { t } = useTranslation();
   return (
-    <section>
-      <h2>
+    <div className={styles.instructions}>
+      <h3>
         {t(
           platform === "slack"
             ? "Connect your Slack app"
             : "Connect your Feishu app",
         )}
-      </h2>
+      </h3>
       <p>
         {t(
           "Attach images, PDFs, or UTF-8 text files to a message that triggers the bot (up to 5 files, 20 MiB each). Image and PDF reading depends on the selected model or environment. To return generated files, the agent needs an environment and the Publish asset tool.",
@@ -66,7 +67,7 @@ export function BotSetupInstructions({
       </p>
       {platform === "slack" ? (
         <>
-          <ol className={styles.instructions}>
+          <ol>
             <li>
               {t(
                 "Create an app in your own Slack workspace, enable its bot, and install it in the workspace you want to connect.",
@@ -88,15 +89,20 @@ export function BotSetupInstructions({
               "For image and file input, grant files:read; for generated file replies, grant files:write. Reauthorize existing installations after adding these scopes.",
             )}
           </p>
-          <p>
-            <a
-              href="https://api.slack.com/apps"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t("Open Slack app settings")}
-            </a>
-          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            render={
+              <a
+                href="https://api.slack.com/apps"
+                target="_blank"
+                rel="noreferrer"
+              />
+            }
+          >
+            {t("Open Slack app settings")}
+            <ArrowSquareOutIcon size={13} aria-hidden="true" />
+          </Button>
           <DisclosureSection title={t("Slack manifest template")}>
             <p>
               {t(
@@ -116,7 +122,7 @@ export function BotSetupInstructions({
         </>
       ) : (
         <>
-          <ol className={styles.instructions}>
+          <ol>
             <li>
               {t(
                 "Create an enterprise custom app in Feishu and enable Bot capability.",
@@ -148,17 +154,22 @@ export function BotSetupInstructions({
               "To receive standalone group file messages, Feishu requires im:message.group_msg and a reception mode that accepts messages without a mention. This permission gives the app access to all messages in groups it joins; enable it only when needed.",
             )}
           </p>
-          <p>
-            <a
-              href="https://open.feishu.cn/app"
-              target="_blank"
-              rel="noreferrer"
-            >
-              {t("Open Feishu app settings")}
-            </a>
-          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            render={
+              <a
+                href="https://open.feishu.cn/app"
+                target="_blank"
+                rel="noreferrer"
+              />
+            }
+          >
+            {t("Open Feishu app settings")}
+            <ArrowSquareOutIcon size={13} aria-hidden="true" />
+          </Button>
         </>
       )}
-    </section>
+    </div>
   );
 }

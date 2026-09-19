@@ -1,9 +1,3 @@
-import { ResourceModalTitle } from "../../shared/resource-modal-title";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
-import {
-  useResourceEditorState,
-  type ResourceEditorControl,
-} from "../../shared/resource-modal";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   FormField,
@@ -20,12 +14,25 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, representation, type Schema } from "../../shared/api";
+import {
+  BrandTitle,
+  ResourceModalTitle,
+  useResourceEditorState,
+  type ResourceEditorControl,
+} from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/form";
+import { FormActions, TextAreaField } from "../../shared/forms";
+import { ProviderIcon, ResourceEditorButton } from "../../shared/identity";
 import styles from "../../shared/shared.module.css";
 import { type EnvironmentScope } from "./api";
-import { TemplateConfig } from "./template-config";
+import { TemplateConfig, type ChosenProvider } from "./template-config";
+import { TemplateHistory } from "./template-history";
 
+/**
+ * Templates are authored in one dialog: creation walks the provider catalog
+ * into a configuration; editing opens the current revision beside its version
+ * history and its settings.
+ */
 export function TemplateEditor({
   scope,
   templateId,
@@ -41,6 +48,7 @@ export function TemplateEditor({
   const client = useClient(),
     { t } = useTranslation(),
     [generation, setGeneration] = useState(0),
+    [chosen, setChosen] = useState<ChosenProvider>(),
     { open, setOpen, modalProps } = useResourceEditorState({
       controlledOpen,
       onClose,
@@ -61,56 +69,69 @@ export function TemplateEditor({
     await query.refetch();
     setGeneration((value) => value + 1);
   }
+  const creating = !templateId;
+  const title =
+    !creating && query.data ? (
+      <ResourceModalTitle
+        name={query.data.value.name}
+        id={query.data.value.id}
+      />
+    ) : creating && chosen ? (
+      <BrandTitle mark={<ProviderIcon type={chosen.provider.type} />}>
+        {t("New template on {{provider}}", {
+          provider: chosen.provider.name,
+        })}
+      </BrandTitle>
+    ) : (
+      t(creating ? "Create environment template" : "Environment template")
+    );
+  const description =
+    !creating && query.data
+      ? t("Environment template · Version {{version}}", {
+          version: query.data.value.version,
+        })
+      : creating && chosen
+        ? t("Name the template and configure how its environments are created.")
+        : t("Choose the provider that will run this environment.");
   return (
     <ModalFrame
       {...modalProps}
       trigger={
         controlledOpen === undefined ? (
           <ResourceEditorButton
-            editing={!!templateId}
+            editing={!creating}
             createLabel="Create template"
-            editLabel="Details"
+            editLabel="Edit template"
           />
         ) : undefined
       }
       size={"lg"}
-      title={
-        templateId && query.data ? (
-          <ResourceModalTitle
-            name={query.data.value.name}
-            id={query.data.value.id}
-          />
-        ) : (
-          t(templateId ? "Environment template" : "Create environment template")
-        )
-      }
-      description={
-        templateId && query.data
-          ? t("Environment template · Version {{version}}", {
-              version: query.data.value.version,
-            })
-          : t("Choose a provider and define the template configuration.")
-      }
+      placement="top"
+      title={title}
+      description={description}
       closeLabel={t("Close")}
     >
       {open &&
-        (templateId && query.isPending ? (
+        (!creating && query.isPending ? (
           <Loading variant="form" rows={5} />
         ) : query.error ? (
           <ErrorNotice error={query.error} />
-        ) : !templateId ? (
-          <TemplateConfig scope={scope} close={() => setOpen(false)} />
+        ) : creating ? (
+          <TemplateConfig
+            scope={scope}
+            close={() => setOpen(false)}
+            onProviderChange={setChosen}
+          />
         ) : (
           query.data && (
             <div className={styles.stack}>
-              <Tabs key={generation} defaultValue="templateConfig">
+              <Tabs key={generation} defaultValue="configuration">
                 <TabsList aria-label={t("Environment template")}>
-                  <TabsTab value="templateConfig">
-                    {t("Template configuration")}
-                  </TabsTab>
-                  <TabsTab value={"settings"}>{t("Settings")}</TabsTab>
+                  <TabsTab value="configuration">{t("Configuration")}</TabsTab>
+                  <TabsTab value="versions">{t("Versions")}</TabsTab>
+                  <TabsTab value="settings">{t("Settings")}</TabsTab>
                 </TabsList>
-                <TabsPanel value="templateConfig" keepMounted>
+                <TabsPanel value="configuration" keepMounted>
                   <CurrentTemplateConfig
                     template={query.data.value}
                     scope={scope}
@@ -119,15 +140,21 @@ export function TemplateEditor({
                     reload={reload}
                   />
                 </TabsPanel>
+                <TabsPanel value="versions">
+                  <TemplateHistory
+                    template={query.data.value}
+                    scope={scope}
+                    editable={editable}
+                    close={() => setOpen(false)}
+                  />
+                </TabsPanel>
                 <TabsPanel value="settings" keepMounted>
-                  {
-                    <TemplateSettings
-                      initial={query.data}
-                      editable={editable}
-                      close={() => setOpen(false)}
-                      reload={reload}
-                    />
-                  }
+                  <TemplateSettings
+                    initial={query.data}
+                    editable={editable}
+                    close={() => setOpen(false)}
+                    reload={reload}
+                  />
                 </TabsPanel>
               </Tabs>
             </div>
@@ -234,6 +261,7 @@ export function TemplateSettings({
         label={t("Description")}
         value={description}
         onChange={setDescription}
+        maxLength={4096}
         readOnly={!editable}
       />
       <Label className="flex items-center gap-2">
@@ -244,6 +272,9 @@ export function TemplateSettings({
         />
         {t("Archived")}
       </Label>
+      <p className={styles.muted}>
+        {t("Archived templates stay available to existing environments.")}
+      </p>
       <ErrorNotice error={save.error} retry={() => void reload()} />
       {editable && (
         <FormActions

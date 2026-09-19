@@ -153,7 +153,7 @@ it("resumes a steer test with confirmed reply without claiming Run completion", 
     ),
   );
   setup();
-  expect(await screen.findByText("Provider confirmed test reply")).toBeTruthy();
+  expect(await screen.findByText("Provider confirmed reply")).toBeTruthy();
   expect(
     screen.getByText("Delivered to an existing run as a follow-up message."),
   ).toBeTruthy();
@@ -198,7 +198,7 @@ it("separates stale configuration, expired receipt, and unknown reply", async ()
   expect(
     screen.queryByRole("button", { name: "Copy test message" }),
   ).toBeNull();
-  expect(screen.queryByText("Provider confirmed test reply")).toBeNull();
+  expect(screen.queryByText("Provider confirmed reply")).toBeNull();
 });
 
 it("prevents preparing a test with reception disabled", async () => {

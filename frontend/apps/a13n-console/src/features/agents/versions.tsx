@@ -13,7 +13,8 @@ import {
 } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
-import { Confirm, JsonView } from "../../shared/form";
+import { Confirm } from "../../shared/dialogs";
+import { JsonView } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 

@@ -3,12 +3,15 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
-import { MemorySearch } from "./memory-search";
+import { MemorySearchField, MemorySearchResults } from "./memory-search";
 
 const http = vi.hoisted(() => ({ POST: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 afterEach(() => {
   cleanup();
@@ -29,16 +32,19 @@ it("searches only after submission and lets the user narrow to local memory with
   render(
     <QueryClientProvider client={cache}>
       <MemoryRouter>
-        <MemorySearch
-          accountId="acct_test"
-          scopeId="mscope_test"
-          onSelect={select}
-        />
+        <>
+          <MemorySearchField />
+          <MemorySearchResults
+            accountId="acct_test"
+            scopeId="mscope_test"
+            onSelect={select}
+          />
+        </>
       </MemoryRouter>
     </QueryClientProvider>,
   );
   await userEvent.type(
-    screen.getByRole("textbox", { name: "Search memory" }),
+    screen.getByRole("searchbox", { name: "Search memory" }),
     "release",
   );
   expect(http.POST).not.toHaveBeenCalled();

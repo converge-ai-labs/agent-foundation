@@ -9,9 +9,10 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { FormActions } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
+import mcp from "./mcp.module.css";
 
 export function MCPAuthorization({
   initial,
@@ -78,12 +79,12 @@ export function MCPAuthorization({
     },
   });
   return (
-    <div className="grid justify-items-start gap-4">
-      <div className="grid gap-1">
-        <h3 className="text-sm font-medium">
+    <div className={mcp.authorization}>
+      <div>
+        <h3 className={mcp.authorizationTitle}>
           {t(`auth.${source.kind === "mcp" ? source.auth_mode : "none"}`)}
         </h3>
-        <p className="text-sm text-muted-foreground">
+        <p className={mcp.hint}>
           {t(
             (source.kind === "mcp" ? source.auth_mode : "none") === "none"
               ? "This server does not require credentials. Verify the connection to refresh its available tools."
@@ -135,11 +136,7 @@ export function MCPAuthorization({
           onClick={() => reconnect.mutate()}
           type="button"
         >
-          {t(
-            basis.status === "pending"
-              ? "Retry verification"
-              : "Verify connection",
-          )}
+          {t(basis.status === "pending" ? "Retry check" : "Check connection")}
         </Button>
       )}
       <ErrorNotice

@@ -4,9 +4,9 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
-import { CopyButton } from "../../shared/copy";
+import { CopyButton } from "../../shared/identity";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 
 type ClientInput = Schema["MCPOAuthClientInput"];

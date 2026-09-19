@@ -6,7 +6,7 @@ import { MemoryRouter, Routes, Route } from "react-router";
 import type { Schema } from "../../shared/api";
 import { ApiError } from "../../service-client";
 import { BotOverview } from "./overview";
-import { BotDetail } from "./page";
+import { BotDetail } from "./detail";
 
 const state = vi.hoisted(() => ({ admin: false, GET: vi.fn(), POST: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http: state }) }));
@@ -134,12 +134,10 @@ it("shows metadata to viewers without mounting private test requests or manageme
     ),
   ).toBe("/workspace/test/agents/support-agent");
   expect(screen.queryByText("agt_test")).toBeNull();
-  expect(
-    screen.getByRole("heading", { name: "Message responses" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Reception" })).toBeTruthy();
   expect(screen.getByRole("heading", { name: "Group memory" })).toBeTruthy();
   expect(
-    screen.getByRole("heading", { name: "Platform connection status" }),
+    screen.getByRole("heading", { name: "Platform connection" }),
   ).toBeTruthy();
   expect(state.GET).toHaveBeenCalledTimes(2);
   expect(
@@ -207,10 +205,8 @@ it("provides recovery links for incomplete setup without hiding independent memo
   expect(
     screen.getByRole("link", { name: "Resume setup" }).getAttribute("href"),
   ).toBe("/workspace/test/bots/connect?account=acct_test");
-  expect(screen.getByText("Refer to memory when answering")).toBeTruthy();
-  expect(
-    screen.getByText("Allow saving or deleting memory through chat"),
-  ).toBeTruthy();
+  expect(screen.getByText("Referenced in answers")).toBeTruthy();
+  expect(screen.getByText("Editable from chat")).toBeTruthy();
 });
 
 it("shows verified organization in the shell and rejects a different Workspace before dependent reads", async () => {
@@ -264,9 +260,7 @@ it("keeps the overview readable when the default agent cannot be viewed", async 
   setup();
   expect(await screen.findByText("Agent unavailable")).toBeTruthy();
   expect(screen.queryByText("agt_test")).toBeNull();
-  expect(
-    screen.getByRole("heading", { name: "Message responses" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Reception" })).toBeTruthy();
 });
 
 it("shows GitHub repositories without offering unsupported memory settings", async () => {
@@ -284,7 +278,7 @@ it("shows GitHub repositories without offering unsupported memory settings", asy
     response(path.endsWith("/summary") ? github : { latest: null }),
   );
   setup(github, true);
-  expect(await screen.findByRole("tab", { name: "Repositories" })).toBeTruthy();
+  expect(await screen.findByRole("tab", { name: /Repositories/ })).toBeTruthy();
   expect(screen.queryByRole("tab", { name: "Memory" })).toBeNull();
   expect(screen.queryByText("Group memory")).toBeNull();
   expect(screen.getByText("Notification updates")).toBeTruthy();

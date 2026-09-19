@@ -1,280 +1,381 @@
-import { useState } from "react";
 import {
   BrandIcon,
-  DisclosureSection,
   Button,
-  FormField,
+  DisclosureSection,
+  Input,
   ModalFrame,
-  SearchPicker,
 } from "a13n-ui";
-import { ArrowLeftIcon, PlusIcon } from "@phosphor-icons/react";
+import { PlusIcon } from "@phosphor-icons/react";
+import type { TFunction } from "i18next";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
-import { ErrorToast, Loading } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
-import { ManageProvidersLink } from "../providers/manage-link";
+import {
+  BrandTitle,
+  CatalogStep,
+  DirectoryEmpty,
+  DirectoryGroup,
+  DirectoryList,
+  DirectoryRow,
+} from "../../shared/dialogs";
+import { ErrorToast, Loading } from "../../shared/feedback";
 import { ConnectionSetup } from "../connectors/setup";
 import { ConnectorToolPreview } from "../connectors/tools";
 import { CreateMCP } from "../mcp/create";
+import { providersPath } from "../providers/navigation";
 import { useConnectionDirectory } from "./directory";
+import styles from "./connections.module.css";
 
-type Selection =
+export type Selection =
   | {
       kind: "connector";
       connector: Schema["Connector"];
       provider: Schema["ConnectorProvider"];
     }
   | { kind: "mcp"; preset?: Schema["MCPServer"] };
+
+export function sourceName(selected: Selection, t: TFunction) {
+  return selected.kind === "connector"
+    ? selected.connector.name
+    : (selected.preset?.name ?? t("Custom Remote MCP"));
+}
+
+export function sourceOrigin(selected: Selection, t: TFunction) {
+  return selected.kind === "connector"
+    ? selected.provider.name
+    : t("Remote MCP");
+}
+
+export function SourceIcon({
+  selected,
+  size,
+}: {
+  selected: Selection;
+  size?: number;
+}) {
+  return selected.kind === "connector" ? (
+    <BrandIcon
+      alias={selected.connector.key}
+      logo={selected.connector.logo_url}
+      size={size}
+    />
+  ) : (
+    <BrandIcon
+      identity={selected.preset?.key}
+      endpoint={selected.preset?.endpoint_url}
+      logo={selected.preset?.logo_url}
+      fallbackIdentity="mcp"
+      size={size}
+    />
+  );
+}
+
+/** Setup form for a chosen source: connector authorization or MCP creation. */
+export function SourceSetup({
+  selected,
+  onStarted,
+  onCancel,
+  onConnected,
+}: {
+  selected: Selection;
+  onStarted: () => void;
+  onCancel: () => void;
+  onConnected: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  if (selected.kind === "mcp")
+    return (
+      <CreateMCP
+        onCancel={onCancel}
+        preset={selected.preset}
+        onStarted={onStarted}
+        onSuccess={(connection) => onConnected(connection.id)}
+      />
+    );
+  return (
+    <>
+      <ConnectionSetup connector={selected.connector} onStarted={onStarted} />
+      {selected.provider.type === "composio" && (
+        <div className={styles.composioHelp}>
+          {selected.connector.authentication_methods.includes("OAUTH2") && (
+            <DisclosureSection title={t("Use your own OAuth app")}>
+              <ol className={styles.steps}>
+                <li>
+                  {t(
+                    "In Composio Dashboard, create an auth config for this application and select custom credentials.",
+                  )}
+                </li>
+                <li>
+                  {t(
+                    "Enter your client ID, client secret and scopes there. Register the redirect URI shown by Composio with your OAuth app.",
+                  )}
+                </li>
+                <li>
+                  {t(
+                    "Return here, refresh configurations, and select your new config.",
+                  )}
+                </li>
+              </ol>
+            </DisclosureSection>
+          )}
+          <a
+            href="https://dashboard.composio.dev"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t("Manage auth configs in Composio Dashboard")}
+          </a>
+        </div>
+      )}
+      <ConnectorToolPreview connector={selected.connector} />
+    </>
+  );
+}
+
+/** Catalog-first creation: choose a source, then complete its setup step. */
 export function NewConnection({
   onConnected,
 }: {
   onConnected: (id: string) => void;
 }) {
-  const { t } = useTranslation(),
-    [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(false),
+    [generation, setGeneration] = useState(0);
+  return (
+    <NewConnectionDialog
+      key={generation}
+      open={open}
+      onOpenChange={(value) => {
+        setOpen(value);
+        if (!value) setGeneration((current) => current + 1);
+      }}
+      onConnected={(id) => {
+        setOpen(false);
+        onConnected(id);
+      }}
+    />
+  );
+}
+
+function NewConnectionDialog({
+  open,
+  onOpenChange,
+  onConnected,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConnected: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [selected, setSelected] = useState<Selection>(),
+    [started, setStarted] = useState(false);
   return (
     <ModalFrame
       open={open}
-      onOpenChange={setOpen}
-      title={t("New connection")}
-      description={t(
-        "Connect an application or a remote MCP server to this workspace.",
-      )}
-      closeLabel={t("Close")}
+      onOpenChange={onOpenChange}
       size="lg"
+      placement="top"
+      closeLabel={t("Close")}
       trigger={
         <Button type="button">
-          <PlusIcon />
+          <PlusIcon aria-hidden="true" />
           {t("New connection")}
         </Button>
       }
+      title={
+        selected ? (
+          <BrandTitle mark={<SourceIcon selected={selected} size={22} />}>
+            {sourceName(selected, t)}
+          </BrandTitle>
+        ) : (
+          t("New connection")
+        )
+      }
+      description={
+        selected
+          ? sourceOrigin(selected, t)
+          : t(
+              "Connect an application or a remote MCP server to this workspace.",
+            )
+      }
     >
-      {open && (
-        <ConnectionChoice
-          onCancel={() => setOpen(false)}
-          onConnected={(id) => {
-            setOpen(false);
-            onConnected(id);
-          }}
-        />
-      )}
+      {open &&
+        (selected ? (
+          <CatalogStep
+            backLabel={t("All sources")}
+            onBack={started ? undefined : () => setSelected(undefined)}
+          >
+            {started && (
+              <p className={styles.progressNote} role="status">
+                {t("Authorization in progress")}
+              </p>
+            )}
+            <SourceSetup
+              selected={selected}
+              onStarted={() => setStarted(true)}
+              onCancel={() => onOpenChange(false)}
+              onConnected={onConnected}
+            />
+          </CatalogStep>
+        ) : (
+          <SourceDirectory onSelect={setSelected} />
+        ))}
     </ModalFrame>
   );
 }
-function ConnectionChoice({
-  onConnected,
-  onCancel,
+
+function SourceDirectory({
+  onSelect,
 }: {
-  onConnected: (id: string) => void;
-  onCancel: () => void;
+  onSelect: (selection: Selection) => void;
 }) {
   const { t } = useTranslation(),
-    { can } = useWorkspace(),
-    [search, setSearch] = useState(""),
-    [selected, setSelected] = useState<Selection>(),
-    [started, setStarted] = useState(false);
+    { can, workspace } = useWorkspace();
+  const [search, setSearch] = useState("");
   const directory = useConnectionDirectory(search);
+  const manage = can("connection.manage");
   const term = search.trim().toLocaleLowerCase();
-  const rank = (label: string) =>
-    label.toLocaleLowerCase() === term
+  const matches = (...values: (string | null | undefined)[]) =>
+    !term || values.some((value) => value?.toLocaleLowerCase().includes(term));
+  // Name matches outrank description matches; ties keep alphabetical order.
+  const rank = (name: string, ...rest: (string | null | undefined)[]) => {
+    const lower = name.toLocaleLowerCase();
+    return !term || lower.startsWith(term)
       ? 0
-      : label.toLocaleLowerCase().startsWith(term)
+      : lower.includes(term)
         ? 1
-        : 2;
-  const options = [
-    ...directory.entries.map(({ connector, provider }) => ({
-      value: `connector:${provider.id}:${connector.key}`,
-      label: connector.name,
-      description: connector.description ?? "",
-      badge: provider.name,
-      keywords: [connector.key],
-      icon: <BrandIcon alias={connector.key} logo={connector.logo_url} />,
-    })),
-    ...(can("connection.manage")
-      ? [
-          ...directory.mcpServers.map((preset) => ({
-            value: `mcp:${preset.key}`,
-            label: preset.name,
-            description: t(preset.description),
-            badge: t("Remote MCP"),
-            keywords: [preset.key, preset.endpoint_url],
-            icon: (
-              <BrandIcon
-                identity={preset.key}
-                endpoint={preset.endpoint_url}
-                logo={preset.logo_url}
-                fallbackIdentity="mcp"
-              />
-            ),
-          })),
-          {
-            value: "mcp:custom",
-            label: t("Custom Remote MCP"),
-            description: t("Connect any compatible remote MCP server."),
-            badge: t("Remote MCP"),
-            keywords: ["custom", "remote", "mcp"],
-            icon: <BrandIcon identity="mcp" />,
-          },
-        ]
-      : []),
-  ].sort(
-    (a, b) =>
-      rank(a.label) - rank(b.label) ||
-      a.label.localeCompare(b.label) ||
-      a.badge.localeCompare(b.badge),
-  );
-  if (selected)
-    return (
-      <div className="flex flex-col gap-5">
-        {!started && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="self-start"
-            onClick={() => setSelected(undefined)}
-          >
-            <ArrowLeftIcon aria-hidden="true" />
-            {t("Choose another source")}
-          </Button>
-        )}
-        <div className="flex items-center gap-3">
-          {selected.kind === "connector" ? (
-            <BrandIcon
-              alias={selected.connector.key}
-              logo={selected.connector.logo_url}
-            />
-          ) : (
-            <BrandIcon
-              identity={selected.preset?.key}
-              endpoint={selected.preset?.endpoint_url}
-              logo={selected.preset?.logo_url}
-              fallbackIdentity="mcp"
-            />
-          )}
-          <div>
-            <h3 className="font-medium">
-              {selected.kind === "connector"
-                ? selected.connector.name
-                : (selected.preset?.name ?? t("Custom Remote MCP"))}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              {selected.kind === "connector"
-                ? selected.provider.name
-                : t("Remote MCP")}
-            </p>
-          </div>
-        </div>
-        {selected.kind === "connector" ? (
-          <>
-            <ConnectionSetup
-              connector={selected.connector}
-              onStarted={() => setStarted(true)}
-            />
-            {selected.provider.type === "composio" && (
-              <div className="space-y-3 text-sm text-muted-foreground">
-                {selected.connector.authentication_methods.includes(
-                  "OAUTH2",
-                ) && (
-                  <DisclosureSection title={t("Use your own OAuth app")}>
-                    <ol className="list-decimal space-y-2 pl-5">
-                      <li>
-                        {t(
-                          "In Composio Dashboard, create an auth config for this application and select custom credentials.",
-                        )}
-                      </li>
-                      <li>
-                        {t(
-                          "Enter your client ID, client secret and scopes there. Register the redirect URI shown by Composio with your OAuth app.",
-                        )}
-                      </li>
-                      <li>
-                        {t(
-                          "Return here, refresh configurations, and select your new config.",
-                        )}
-                      </li>
-                    </ol>
-                  </DisclosureSection>
-                )}
-                <a
-                  href="https://dashboard.composio.dev"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {t("Manage auth configs in Composio Dashboard")}
-                </a>
-              </div>
-            )}
-            <ConnectorToolPreview connector={selected.connector} />
-          </>
-        ) : (
-          <CreateMCP
-            onCancel={onCancel}
-            preset={selected.preset}
-            onStarted={() => setStarted(true)}
-            onSuccess={(connection) => onConnected(connection.id)}
-          />
-        )}
-      </div>
+        : matches(...rest)
+          ? 2
+          : 3;
+  };
+  const applications = directory.entries
+    .map((entry) => ({
+      ...entry,
+      rank: rank(
+        entry.connector.name,
+        entry.connector.key,
+        entry.connector.description,
+      ),
+    }))
+    .filter((entry) => entry.rank < 3)
+    .sort(
+      (a, b) =>
+        a.rank - b.rank || a.connector.name.localeCompare(b.connector.name),
     );
+  const servers = manage
+    ? directory.mcpServers
+        .map((preset) => ({
+          preset,
+          rank: rank(preset.name, preset.key, preset.description),
+        }))
+        .filter((entry) => entry.rank < 3)
+        .sort(
+          (a, b) =>
+            a.rank - b.rank || a.preset.name.localeCompare(b.preset.name),
+        )
+        .map((entry) => entry.preset)
+    : [];
+  const empty = !applications.length && !servers.length;
   return (
-    <div className="flex flex-col gap-4">
-      <FormField label={t("Source")}>
-        <SearchPicker
-          label={t("Source")}
-          placeholder={t("Search sources…")}
-          emptyMessage={
-            directory.pending ? t("Loading sources…") : t("No matching sources")
-          }
-          groups={[{ label: "", options }]}
-          onSearchChange={setSearch}
-          onValueChange={(value) => {
-            const connector = directory.entries.find(
-              (entry) =>
-                value ===
-                `connector:${entry.provider.id}:${entry.connector.key}`,
-            );
-            if (connector) {
-              setSelected({ kind: "connector", ...connector });
-              return;
-            }
-            const preset = directory.mcpServers.find(
-              (entry) => value === `mcp:${entry.key}`,
-            );
-            if (preset) setSelected({ kind: "mcp", preset });
-            else if (value === "mcp:custom") setSelected({ kind: "mcp" });
-          }}
-          footer={
-            directory.pending ? (
-              <Loading variant="list" rows={3} />
-            ) : directory.hasMore ? (
+    <>
+      <DirectoryList
+        search={
+          <Input
+            type="search"
+            autoFocus
+            aria-label={t("Search applications and MCP servers…")}
+            placeholder={t("Search applications and MCP servers…")}
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        }
+        footer={
+          <>
+            <Link to={providersPath("connectors", "workspace", workspace.key)}>
+              {t("Manage providers")}
+            </Link>
+            {!!directory.providers.length && (
               <Button
-                className="w-full"
+                type="button"
                 variant="ghost"
                 size="sm"
                 loading={directory.loadingMore}
-                onClick={directory.loadMore}
+                onClick={directory.refresh}
               >
-                {t("Load more applications")}
+                {t("Refresh applications")}
               </Button>
-            ) : undefined
-          }
-        />
-      </FormField>
-      <ErrorToast error={directory.error} />
-      <div className="flex items-center justify-between gap-3 border-t border-border pt-4">
-        <ManageProvidersLink category="connectors" scope="workspace" />
-        {!!directory.providers.length && (
+            )}
+          </>
+        }
+      >
+        {manage && !term && (
+          <DirectoryRow
+            icon={<BrandIcon identity="mcp" />}
+            name={t("Custom Remote MCP")}
+            detail={t("Connect any compatible remote MCP server.")}
+            tone="elevated"
+            onClick={() => onSelect({ kind: "mcp" })}
+          />
+        )}
+        {!!applications.length && (
+          <DirectoryGroup label={t("Applications")}>
+            {applications.map(({ connector, provider }) => (
+              <DirectoryRow
+                key={`${provider.id}:${connector.key}`}
+                icon={
+                  <BrandIcon alias={connector.key} logo={connector.logo_url} />
+                }
+                name={connector.name}
+                detail={connector.description}
+                meta={provider.name}
+                onClick={() =>
+                  onSelect({ kind: "connector", connector, provider })
+                }
+              />
+            ))}
+          </DirectoryGroup>
+        )}
+        {!!servers.length && (
+          <DirectoryGroup label={t("Remote MCP servers")}>
+            {servers.map((preset) => (
+              <DirectoryRow
+                key={preset.key}
+                icon={
+                  <BrandIcon
+                    identity={preset.key}
+                    endpoint={preset.endpoint_url}
+                    logo={preset.logo_url}
+                    fallbackIdentity="mcp"
+                  />
+                }
+                name={preset.name}
+                detail={preset.description}
+                onClick={() => onSelect({ kind: "mcp", preset })}
+              />
+            ))}
+          </DirectoryGroup>
+        )}
+        {empty &&
+          (directory.pending ? (
+            <Loading variant="list" rows={4} />
+          ) : (
+            <DirectoryEmpty>{t("No matching sources")}</DirectoryEmpty>
+          ))}
+        {directory.hasMore && (
           <Button
             type="button"
             variant="ghost"
             size="sm"
+            className={styles.loadMore}
             loading={directory.loadingMore}
-            onClick={directory.refresh}
+            onClick={directory.loadMore}
           >
-            {t("Refresh applications")}
+            {t("Load more applications")}
           </Button>
         )}
-      </div>
-    </div>
+      </DirectoryList>
+      <ErrorToast error={directory.error} />
+    </>
   );
 }

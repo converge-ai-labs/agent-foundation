@@ -15,7 +15,7 @@ import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { webProviderApi } from "../web/api";
 import { providersPath } from "../providers/navigation";
-import { EditorSection } from "./section";
+import { Section } from "../../shared/page";
 import type { AgentConfig } from "./configuration";
 import { toolState } from "./toolset-state";
 import { ToolPermissions } from "./tool-permissions";
@@ -180,7 +180,7 @@ export function AgentToolsets({
     }));
   }
   return (
-    <EditorSection
+    <Section
       title={t("Tools")}
       description={t(
         "Choose the tools this agent can use and set access for each action.",
@@ -448,8 +448,6 @@ export function AgentToolsets({
                 ·{" "}
                 <a
                   href={providersPath("web", "workspace", workspace.key)}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="underline"
                 >
                   {t("Manage Web Providers")}
@@ -462,8 +460,6 @@ export function AgentToolsets({
                 ·{" "}
                 <a
                   href={`/workspace/${encodeURIComponent(workspace.key)}/models`}
-                  target="_blank"
-                  rel="noopener noreferrer"
                   className="underline"
                 >
                   {t("Manage models")}
@@ -472,6 +468,6 @@ export function AgentToolsets({
             )}
           </p>
         ))}
-    </EditorSection>
+    </Section>
   );
 }

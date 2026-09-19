@@ -2,6 +2,7 @@ import { useState } from "react";
 import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import {
   Badge,
+  StatusPill,
   Button,
   Calendar,
   Checkbox,
@@ -78,6 +79,15 @@ export function Controls({ t }: { t: Translate }) {
               <Badge key={variant} variant={variant}>
                 {variant}
               </Badge>
+            ),
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          {(["success", "warning", "danger", "info", "neutral"] as const).map(
+            (variant) => (
+              <StatusPill key={variant} variant={variant}>
+                {variant}
+              </StatusPill>
             ),
           )}
         </div>

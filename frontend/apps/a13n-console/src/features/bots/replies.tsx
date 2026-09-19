@@ -1,25 +1,15 @@
+import { ArrowClockwiseIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
-import { Pagination, useCursor } from "../../shared/collection";
-import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  StateBadge,
-  Timestamp,
-} from "../../shared/feedback";
+import { Empty, Pagination, useCursor } from "../../shared/collection";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import { CopyableId } from "../../shared/identity";
+import { ReplyPill } from "../integrations/platform";
 import styles from "./bots.module.css";
-
-const labels = {
-  dispatching: "Awaiting reply confirmation",
-  succeeded: "Provider confirmed reply",
-  rejected: "Reply rejected",
-  outcome_unknown: "Reply outcome unknown",
-} as const;
 
 export function BotReplies({
   accountId,
@@ -32,7 +22,9 @@ export function BotReplies({
     { t } = useTranslation();
   if (!can("application_account.read"))
     return (
-      <p>{t("Reply observations require application account read access.")}</p>
+      <p className={styles.hint}>
+        {t("Reply observations require application account read access.")}
+      </p>
     );
   return (
     <ReplyList
@@ -62,36 +54,29 @@ function ReplyList({ accountId, runId }: { accountId: string; runId: string }) {
         .then(data),
   });
   return (
-    <section
-      className={styles.replyEvidence}
-      aria-label={t("Platform reply observations")}
-    >
-      <div className={styles.memoryHeading}>
-        <div>
-          <h2>{t("Platform reply observations")}</h2>
-          <p>{runId}</p>
-        </div>
+    <div className={styles.replyPanel}>
+      <div className={styles.replyPanelHead}>
+        <CopyableId value={runId} />
         <Button
-          variant="outline"
+          size="sm"
+          variant="ghost"
           disabled={query.isFetching}
           onClick={() => void query.refetch()}
         >
-          {t("Refresh observations")}
+          <ArrowClockwiseIcon aria-hidden="true" />
+          {t("Refresh")}
         </Button>
       </div>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
-        <Loading variant="detail" />
+        <Loading variant="list" rows={2} />
       ) : query.data?.items.length ? (
         <>
           <ol className={styles.replyList}>
             {query.data.items.map((item) => (
               <li key={item.id}>
-                <StateBadge
-                  state={item.status}
-                  label={t(labels[item.status])}
-                />
-                <dl>
+                <ReplyPill status={item.status} />
+                <dl className={styles.facts} data-dense="true">
                   <div>
                     <dt>{t("Started")}</dt>
                     <dd>
@@ -108,23 +93,31 @@ function ReplyList({ accountId, runId }: { accountId: string; runId: string }) {
                   )}
                   <div>
                     <dt>{t("Attempt")}</dt>
-                    <dd>{item.run_attempt_id}</dd>
+                    <dd>
+                      <CopyableId value={item.run_attempt_id} />
+                    </dd>
                   </div>
                   {item.receipt && (
                     <>
                       <div>
                         <dt>{t("Message ID")}</dt>
                         <dd>
-                          {"message_ts" in item.receipt
-                            ? item.receipt.message_ts
-                            : "comment_id" in item.receipt
-                              ? item.receipt.comment_id
-                              : item.receipt.message_id}
+                          <CopyableId
+                            value={String(
+                              "message_ts" in item.receipt
+                                ? item.receipt.message_ts
+                                : "comment_id" in item.receipt
+                                  ? item.receipt.comment_id
+                                  : item.receipt.message_id,
+                            )}
+                          />
                         </dd>
                       </div>
                       <div>
                         <dt>{t("Request ID")}</dt>
-                        <dd>{item.receipt.request_id}</dd>
+                        <dd>
+                          <CopyableId value={item.receipt.request_id} />
+                        </dd>
                       </div>
                     </>
                   )}
@@ -144,7 +137,7 @@ function ReplyList({ accountId, runId }: { accountId: string; runId: string }) {
                   </div>
                 </dl>
                 {item.status === "outcome_unknown" && (
-                  <p>
+                  <p className={styles.hint}>
                     {t(
                       "The platform may have received this reply. Check the conversation before deciding whether another reply is needed. Refreshing does not resend it.",
                     )}
@@ -165,11 +158,11 @@ function ReplyList({ accountId, runId }: { accountId: string; runId: string }) {
           />
         )
       )}
-      <p className={styles.historyNote}>
+      <p className={styles.hint}>
         {t(
           "Confirmation means the platform accepted the reply. It does not mean a person read it.",
         )}
       </p>
-    </section>
+    </div>
   );
 }

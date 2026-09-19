@@ -1,0 +1,164 @@
+.body {
+  display: grid;
+  gap: 22px;
+  min-width: 0;
+  padding-top: 4px;
+}
+.section {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.section > h3 {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.empty {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+}
+.facts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 6px 16px;
+  margin: 0;
+  min-width: 0;
+}
+.facts dt {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.facts dd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 0;
+  min-width: 0;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.attempt {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-elevated);
+}
+.attemptTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Events ----------------------------------------------------------------- */
+.events {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.eventRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--a13n-radius-row);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.eventRow:hover {
+  background: var(--a13n-hover);
+}
+.eventRow:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
+}
+.eventDot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--a13n-text) 28%, transparent);
+}
+.eventName {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.eventTime {
+  margin-left: auto;
+  flex: none;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.pager {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+/* Lineage ---------------------------------------------------------------- */
+.lineage {
+  display: grid;
+  gap: 2px;
+}
+.lineageRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: var(--a13n-radius-row);
+  font-size: 13px;
+}
+.lineageRow:hover {
+  background: var(--a13n-hover);
+}
+.lineageRow a {
+  color: var(--a13n-text);
+  text-decoration: none;
+}
+.lineageRow a:hover {
+  text-decoration: underline;
+}
+.lineageRow small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.lineageId {
+  margin-left: auto;
+  flex: none;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.lineageRow:hover .lineageId,
+.lineageRow:focus-within .lineageId {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .lineageId {
+    opacity: 1;
+  }
+}
+
+/* Session map summary ---------------------------------------------------- */
+.summary {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}

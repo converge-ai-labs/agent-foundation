@@ -57,6 +57,19 @@ function setup(
     ),
   };
 }
+/** Deletion lives behind the panel overflow menu and its confirmation. */
+async function deleteMemory(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    await screen.findByRole("button", { name: "Memory actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Delete memory" }),
+  );
+  const confirm = await screen.findByRole("dialog");
+  await user.click(
+    within(confirm).getByRole("button", { name: "Delete memory" }),
+  );
+}
 afterEach(cleanup);
 beforeEach(() => {
   vi.resetAllMocks();
@@ -82,7 +95,7 @@ test("loads a bounded 1000-record window, pages locally by 20 and never invents 
   setup();
   expect(await screen.findByText("41 records loaded")).toBeTruthy();
   expect(screen.getByText("Bounded list · not a total count")).toBeTruthy();
-  expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(20);
+  expect(screen.getAllByRole("row")).toHaveLength(21);
   expect(screen.queryByText("Memory text 20")).toBeNull();
   await user.click(screen.getByRole("button", { name: "Next" }));
   expect(screen.getByText("Memory text 20")).toBeTruthy();
@@ -96,9 +109,10 @@ test("loads a bounded 1000-record window, pages locally by 20 and never invents 
     limit: 1000,
     cursor: undefined,
   });
-  expect(
-    screen.queryByRole("button", { name: "Load more records" }),
-  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Previous" })).toHaveProperty(
+    "disabled",
+    false,
+  );
 });
 
 test("empty bounded results do not claim completeness; native continuation is explicit", async () => {
@@ -114,9 +128,7 @@ test("empty bounded results do not claim completeness; native continuation is ex
   items = [record(1)];
   setup();
   const user = userEvent.setup();
-  await user.click(
-    await screen.findByRole("button", { name: "Load more records" }),
-  );
+  await user.click(await screen.findByRole("button", { name: "Next" }));
   await waitFor(() =>
     expect(
       http.GET.mock.calls.some(
@@ -134,7 +146,7 @@ test("semantic search has independent results and options, including threshold z
   setup();
   await screen.findByText("41 records loaded");
   await user.type(
-    screen.getByRole("searchbox", { name: "Semantic search" }),
+    screen.getByRole("searchbox", { name: "Search memories" }),
     "remember language",
   );
   await user.click(screen.getByRole("button", { name: "Search options" }));
@@ -155,17 +167,33 @@ test("semantic search has independent results and options, including threshold z
   expect(screen.getByText("Memory text 0")).toBeTruthy();
 });
 
+test("turning Semantic off filters only the loaded window and never queries the backend", async () => {
+  const user = userEvent.setup();
+  setup();
+  await screen.findByText("41 records loaded");
+  await user.click(screen.getByRole("button", { name: "Semantic" }));
+  await user.type(
+    screen.getByRole("searchbox", { name: "Search memories" }),
+    "Memory text 7",
+  );
+  expect(await screen.findByText("1 of 41 loaded records match")).toBeTruthy();
+  expect(screen.getByText("Memory text 7")).toBeTruthy();
+  expect(screen.queryByText("Memory text 0")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Search" })).toBeNull();
+  expect(http.POST).not.toHaveBeenCalled();
+});
+
 test("subject permission projection controls read-only UI independently of provider administration", async () => {
   canWrite = false;
   setup();
   const user = userEvent.setup();
   await screen.findByText("Read only");
   expect(screen.queryByRole("button", { name: "Add memory" })).toBeNull();
-  await user.click((await screen.findAllByRole("button", { name: "View" }))[0]);
-  const dialog = await screen.findByRole("dialog");
-  expect(await within(dialog).findByText("Memory text 0")).toBeTruthy();
-  expect(within(dialog).queryByRole("textbox")).toBeNull();
-  expect(within(dialog).queryByRole("button", { name: "Save" })).toBeNull();
+  await user.click((await screen.findAllByRole("row"))[1]);
+  const panel = await screen.findByRole("complementary", { name: "Memory" });
+  expect(await within(panel).findByText("Memory text 0")).toBeTruthy();
+  expect(within(panel).queryByRole("textbox")).toBeNull();
+  expect(within(panel).queryByRole("button", { name: "Save" })).toBeNull();
 });
 
 test("uncertain add preserves exact text, does not retry, and requires inspection and acknowledgement", async () => {
@@ -216,10 +244,7 @@ test("uncertain delete is never automatically repeated, and inspection can obser
       onClose={vi.fn()}
     />,
   );
-  await user.click(
-    await screen.findByRole("button", { name: "Delete memory" }),
-  );
-  await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
+  await deleteMemory(user);
   await screen.findByText("Change not confirmed");
   http.GET.mockRejectedValueOnce(
     new ApiError(404, "memory_not_found", "Memory not found.", {}, null),
@@ -292,10 +317,7 @@ test("confirmed update and 204 deletion close successfully without another write
       onClose={onClose}
     />,
   );
-  await user.click(
-    await screen.findByRole("button", { name: "Delete memory" }),
-  );
-  await user.click(screen.getByRole("button", { name: "Confirm deletion" }));
+  await deleteMemory(user);
   await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   expect(http.DELETE).toHaveBeenCalledOnce();
   expect(screen.queryByText("Change not confirmed")).toBeNull();
@@ -323,7 +345,9 @@ test.each([false, true])(
     await cache.invalidateQueries({
       queryKey: [...memoryKey(target), "access"],
     });
-    const dialog = await screen.findByRole("dialog");
+    const dialog = await screen.findByRole("complementary", {
+      name: "Add memory",
+    });
     await within(dialog).findByText("Permission refresh unavailable");
     expect(within(dialog).getByText("Keep my draft")).toBeTruthy();
     expect(within(dialog).queryByRole("button", { name: "Save" })).toBeNull();

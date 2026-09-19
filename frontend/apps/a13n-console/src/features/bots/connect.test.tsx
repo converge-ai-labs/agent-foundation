@@ -20,7 +20,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 const account = {
   id: "acct_test",
@@ -164,7 +167,9 @@ it("chooses a platform before accounts and filters reuse without creating duplic
     screen.queryByRole("tab", { name: "Use an existing account" }),
   ).toBeNull();
   expect(state.http.GET).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^Slack") }),
+  );
   expect(
     (await screen.findByRole("link", { name: /Pilot/ })).getAttribute("href"),
   ).toBe("/workspace/test/bots/acct_test");
@@ -186,7 +191,9 @@ it("chooses a platform before accounts and filters reuse without creating duplic
   await userEvent.click(
     screen.getByRole("button", { name: "Change platform" }),
   );
-  await userEvent.click(screen.getByRole("button", { name: "Feishu" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^Feishu") }),
+  );
   await screen.findByRole("link", { name: /Feishu pilot/ });
   expect(screen.queryByRole("link", { name: /^Pilot/ })).toBeNull();
   expect(screen.queryByLabelText("Bot token")).toBeNull();
@@ -198,14 +205,16 @@ it("chooses a platform before accounts and filters reuse without creating duplic
   await userEvent.click(
     screen.getByRole("tab", { name: "Create a new account" }),
   );
-  await screen.findByLabelText("App Secret");
+  await screen.findByLabelText("App secret");
   expect(screen.queryByLabelText("Bot token")).toBeNull();
   expect(state.http.POST).not.toHaveBeenCalled();
 });
 
 it("opens creation for an empty platform and keeps the platform when cancelled", async () => {
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^Slack") }),
+  );
   await screen.findByLabelText("Bot token");
   expect(
     screen
@@ -223,7 +232,9 @@ it("opens creation for an empty platform and keeps the platform when cancelled",
 it("shows account lookup failures instead of assuming no accounts exist", async () => {
   state.http.GET.mockRejectedValue(new Error("Account lookup unavailable"));
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^Slack") }),
+  );
   await screen.findByText("Account lookup unavailable");
   expect(screen.queryByLabelText("Bot token")).toBeNull();
   expect(state.http.POST).not.toHaveBeenCalled();
@@ -232,7 +243,9 @@ it("shows account lookup failures instead of assuming no accounts exist", async 
 it("saves a new pilot with reception off and clears credentials before verification", async () => {
   state.http.POST.mockResolvedValue(response(account));
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^Slack") }),
+  );
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Pilot",
@@ -250,7 +263,7 @@ it("saves a new pilot with reception off and clears credentials before verificat
   await userEvent.click(
     screen.getByRole("button", { name: "Save and verify" }),
   );
-  await screen.findByText("Configure HTTP events");
+  await screen.findByText("Event endpoint");
   expect(screen.queryByLabelText("Bot token")).toBeNull();
   expect(state.http.POST).toHaveBeenCalledWith(
     "/api/v1/workspaces/{workspace}/application-accounts",
@@ -268,15 +281,19 @@ it("saves a new pilot with reception off and clears credentials before verificat
   expect(
     (
       screen.getByRole("button", {
-        name: "Confirm installation and continue",
+        name: "Continue",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
   expect(
-    await screen.findByText(
-      "https://events.example.test/connectivity/v1/accounts/acct_test/events",
-    ),
-  ).toBeTruthy();
+    (
+      (await screen.findByRole("textbox", {
+        name: "Event endpoint",
+      })) as HTMLInputElement
+    ).value,
+  ).toBe(
+    "https://events.example.test/connectivity/v1/accounts/acct_test/events",
+  );
 });
 
 it("reconciles a lost save using the same command and rejects changed credentials", async () => {
@@ -284,7 +301,9 @@ it("reconciles a lost save using the same command and rejects changed credential
     new TypeError("Network error"),
   ).mockResolvedValue(response(account));
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^Slack") }),
+  );
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Pilot",
@@ -327,7 +346,7 @@ it("reconciles a lost save using the same command and rejects changed credential
   await userEvent.click(
     screen.getByRole("button", { name: "Save and verify" }),
   );
-  await screen.findByText("Configure HTTP events");
+  await screen.findByText("Event endpoint");
   expect(state.http.POST).toHaveBeenCalledTimes(2);
   expect(state.http.POST.mock.calls[1][1].params.header).toEqual(
     state.http.POST.mock.calls[0][1].params.header,
@@ -336,7 +355,7 @@ it("reconciles a lost save using the same command and rejects changed credential
 
 it("resumes a saved account without creating another account or claiming a test passed", async () => {
   setup("/workspace/test/bots/connect?account=acct_test&step=test");
-  await screen.findByText("Configure HTTP events");
+  await screen.findByText("Event endpoint");
   expect(screen.queryByLabelText("Bot token")).toBeNull();
   expect(screen.queryByText("Test in your pilot conversation")).toBeNull();
   expect(state.http.POST).not.toHaveBeenCalled();
@@ -356,11 +375,11 @@ it("does not reuse an installation check from an older credential generation", a
       : original(path, options),
   );
   setup("/workspace/test/bots/connect?account=acct_test&step=reception");
-  await screen.findByText("Configure HTTP events");
+  await screen.findByText("Event endpoint");
   expect(
     (
       screen.getByRole("button", {
-        name: "Confirm installation and continue",
+        name: "Continue",
       }) as HTMLButtonElement
     ).disabled,
   ).toBe(true);
@@ -377,17 +396,19 @@ const feishuIdentity = {
 };
 async function fillFeishuCredentials() {
   await userEvent.type(
-    screen.getByLabelText("App Secret"),
+    screen.getByLabelText("App secret"),
     "fictional-app-secret",
   );
   await userEvent.type(
-    screen.getByLabelText("Verification Token"),
+    screen.getByLabelText("Verification token"),
     "fictional-verification",
   );
 }
 async function startFeishu() {
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "Feishu" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^Feishu") }),
+  );
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Pilot",
@@ -396,8 +417,8 @@ async function startFeishu() {
     screen.getByRole("textbox", { name: "App ID" }),
     "cli_test",
   );
-  expect(screen.queryByLabelText("Tenant Key")).toBeNull();
-  expect(screen.queryByLabelText("Bot Open Id")).toBeNull();
+  expect(screen.queryByLabelText("Tenant key")).toBeNull();
+  expect(screen.queryByLabelText("Bot open ID")).toBeNull();
   await fillFeishuCredentials();
 }
 it("discovers Feishu identity before saving without asking for installation IDs", async () => {
@@ -408,7 +429,7 @@ it("discovers Feishu identity before saving without asking for installation IDs"
   await userEvent.click(
     screen.getByRole("button", { name: "Save and verify" }),
   );
-  await screen.findByText("Configure HTTP events");
+  await screen.findByText("Event endpoint");
   expect(state.http.POST).toHaveBeenNthCalledWith(
     1,
     "/api/v1/workspaces/{workspace}/bots/feishu/installation",
@@ -444,7 +465,7 @@ it("does not create an account when Feishu discovery fails", async () => {
   );
   await screen.findByText("Feishu app credentials rejected");
   expect(state.http.POST).toHaveBeenCalledTimes(1);
-  expect((screen.getByLabelText("App Secret") as HTMLInputElement).value).toBe(
+  expect((screen.getByLabelText("App secret") as HTMLInputElement).value).toBe(
     "",
   );
 });
@@ -461,7 +482,7 @@ it("reuses discovered identity and the creation command after an uncertain Feish
   await userEvent.click(
     screen.getByRole("button", { name: "Save and verify" }),
   );
-  await screen.findByText("Configure HTTP events");
+  await screen.findByText("Event endpoint");
   expect(state.http.POST).toHaveBeenCalledTimes(3);
   expect(state.http.POST.mock.calls[2]).toEqual(state.http.POST.mock.calls[1]);
 });
@@ -483,10 +504,10 @@ it("creates a Feishu long connection with app credentials only", async () => {
     screen.getByRole("combobox", { name: "Event connection" }),
   );
   await userEvent.click(
-    screen.getByRole("option", { name: "Long connection (WebSocket)" }),
+    await screen.findByRole("option", { name: "Long connection (WebSocket)" }),
   );
-  expect(screen.queryByLabelText("Verification Token")).toBeNull();
-  await userEvent.type(screen.getByLabelText("App Secret"), "socket-secret");
+  expect(screen.queryByLabelText("Verification token")).toBeNull();
+  await userEvent.type(screen.getByLabelText("App secret"), "socket-secret");
   await userEvent.click(
     screen.getByRole("button", { name: "Save and verify" }),
   );
@@ -520,7 +541,7 @@ it("shows live socket status without an HTTP callback instruction", async () => 
   );
   setup("/workspace/test/bots/connect?account=acct_test");
   await screen.findByText("Connected");
-  expect(screen.queryByText("Configure HTTP events")).toBeNull();
+  expect(screen.queryByText("Event endpoint")).toBeNull();
   expect(
     screen.getByText(
       "Connected confirms the event connection only. Use the setup test to verify message reception, agent execution, and replies.",
@@ -571,7 +592,9 @@ it("connects a GitHub polling account without a public callback or claimed user 
       : response(github),
   );
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "GitHub" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^GitHub") }),
+  );
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "GitHub helper",
@@ -586,7 +609,7 @@ it("connects a GitHub polling account without a public callback or claimed user 
     screen.getByRole("button", { name: "Save and verify" }),
   );
   expect(await screen.findByText("Notification polling")).toBeTruthy();
-  expect(screen.queryByText("Configure HTTP events")).toBeNull();
+  expect(screen.queryByText("Event endpoint")).toBeNull();
   expect(screen.queryByLabelText("Personal access token")).toBeNull();
   expect(state.http.POST).toHaveBeenCalledWith(
     "/api/v1/workspaces/{workspace}/application-accounts",
@@ -662,7 +685,9 @@ it("reuses both GitHub account types under one filtered platform without creatin
   );
   setup();
   expect(state.http.GET).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("button", { name: "GitHub" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^GitHub") }),
+  );
   expect(
     (
       await screen.findByRole("link", { name: /Repository helper/ })
@@ -692,13 +717,15 @@ it("clears credentials when switching GitHub connection type or leaving the plat
       : original(path, options),
   );
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "GitHub" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: new RegExp("^GitHub") }),
+  );
   await userEvent.type(
     await screen.findByLabelText("Personal access token"),
     "fictional-pat",
   );
   await userEvent.click(
-    screen.getByRole("button", { name: /GitHub App · Webhook/ }),
+    screen.getByRole("radio", { name: /GitHub App · Webhook/ }),
   );
   expect(await screen.findByLabelText("App private key")).toBeTruthy();
   expect(screen.queryByLabelText("Personal access token")).toBeNull();
@@ -707,7 +734,7 @@ it("clears credentials when switching GitHub connection type or leaving the plat
     "fictional-secret",
   );
   await userEvent.click(
-    screen.getByRole("button", { name: /GitHub account · Polling/ }),
+    screen.getByRole("radio", { name: /GitHub account · Polling/ }),
   );
   expect(
     (
@@ -720,6 +747,8 @@ it("clears credentials when switching GitHub connection type or leaving the plat
     screen.getByRole("button", { name: "Change platform" }),
   );
   expect(screen.queryByLabelText("Personal access token")).toBeNull();
-  expect(screen.getByRole("button", { name: "Slack" })).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: new RegExp("^Slack") }),
+  ).toBeTruthy();
   expect(state.http.POST).not.toHaveBeenCalled();
 });

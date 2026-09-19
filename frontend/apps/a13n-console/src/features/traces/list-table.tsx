@@ -8,30 +8,35 @@ import { Link, useNavigate } from "react-router";
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { ResourceTable, type ResourceColumn } from "../../shared/collection";
-import { ResourceReference } from "../../shared/resource-reference";
+import { CopyButton, Identifier, IconTile } from "../../shared/identity";
 import { Timestamp } from "../../shared/feedback";
 import {
   compareObservations,
   compareValues,
   type ObservationSort,
 } from "./sorting";
-import { contentPreview } from "./preview";
 import { formatCost } from "./cost";
-import { Duration, Level } from "./values";
-import { MetadataChips } from "./metadata";
+import { ObservationGlyph } from "./identity";
+import { Duration, TracePill } from "./values";
 import styles from "./traces.module.css";
+
+const sortable = [
+  { field: "duration", label: "Duration" },
+  { field: "cost", label: "Cost" },
+  { field: "started", label: "Started" },
+] as const;
+
+type SortField = (typeof sortable)[number]["field"];
 
 export function TraceTable({
   items,
   basePath,
-  view,
   costs,
   sort,
   onSortChange,
 }: {
   items: readonly Schema["Trace"][];
   basePath: string;
-  view: Schema["TraceView"];
   costs: Readonly<Record<string, string | null>>;
   sort: ObservationSort;
   onSortChange: (sort: ObservationSort) => void;
@@ -43,79 +48,84 @@ export function TraceTable({
       ? compareValues(costs[a.id] ?? null, costs[b.id] ?? null, sort.direction)
       : compareObservations(a.root, b.root, sort),
   );
-  const sortable = [
-    { field: "started", label: "Started", align: "left" },
-    { field: "duration", label: "Duration", align: "right" },
-    { field: "cost", label: "Cost", align: "right" },
-  ] as const;
   const detailUrl = (id: string) =>
     `${basePath}/traces/${encodeURIComponent(id)}`;
-  const sortHeader = (field: (typeof sortable)[number]["field"]) => (
-    <Button
-      variant="ghost"
-      size="sm"
-      className={styles.sortButton}
-      onClick={() =>
-        onSortChange({
-          field,
-          direction:
-            sort.field === field && sort.direction === "desc" ? "asc" : "desc",
-        })
-      }
-    >
-      {t(sortable.find((column) => column.field === field)?.label ?? field)}{" "}
-      {sort.field !== field ? (
-        <ArrowsDownUpIcon size={13} />
-      ) : sort.direction === "asc" ? (
-        <ArrowUpIcon size={13} />
-      ) : (
-        <ArrowDownIcon size={13} />
-      )}
-    </Button>
-  );
+  const pageSortHint = t("Sorts the traces on this page only.");
+  const sortHeader = (field: SortField, label: string) => {
+    const active = sort.field === field;
+    const Icon = !active
+      ? ArrowsDownUpIcon
+      : sort.direction === "asc"
+        ? ArrowUpIcon
+        : ArrowDownIcon;
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className={styles.sortButton}
+        data-active={active || undefined}
+        title={pageSortHint}
+        onClick={() =>
+          onSortChange({
+            field,
+            direction: active && sort.direction === "desc" ? "asc" : "desc",
+          })
+        }
+      >
+        {label}
+        <Icon size={12} aria-hidden="true" />
+      </Button>
+    );
+  };
   const columns: ResourceColumn<Schema["Trace"]>[] = [
     {
       label: t("Trace"),
+      tone: "primary",
       render: (item) => (
         <div className={styles.traceIdentity}>
-          <div className={styles.traceTitle}>
+          <IconTile size={32}>
+            <ObservationGlyph observation={item.root} />
+          </IconTile>
+          <div className={styles.traceCopy}>
             <Link className={styles.traceName} to={detailUrl(item.id)}>
               {item.root.name}
             </Link>
-            <ResourceReference
-              id={item.id}
-              idLabel={t("Trace ID")}
-              idCopyLabel={t("Copy trace ID")}
-              references={[
-                {
-                  label: t("Session ID"),
-                  value: item.correlation.session_id,
-                  copyLabel: t("Copy session ID"),
-                },
-                {
-                  label: t("Thread ID"),
-                  value: item.correlation.thread_id,
-                  copyLabel: t("Copy thread ID"),
-                },
-                {
-                  label: t("Run ID"),
-                  value: item.correlation.run_id,
-                  copyLabel: t("Copy run ID"),
-                },
-              ]}
-            />
-          </div>
-          <div className={styles.identityLabels}>
-            <Level level={item.root.level} />
-            <MetadataChips observation={item.root} />
+            <span className={styles.traceMeta}>
+              <Identifier value={item.id} />
+              <CopyButton
+                value={item.id}
+                iconOnly
+                copyLabel={t("Copy trace ID")}
+              />
+            </span>
           </div>
         </div>
       ),
     },
-    ...sortable.map(
-      ({ field, label, align }): ResourceColumn<Schema["Trace"]> => ({
-        label: t(label),
-        align,
+    {
+      label: t("Run"),
+      dataColumn: "run",
+      render: (item) => (
+        <Link
+          className={styles.runLink}
+          title={`${t("Run ID")}: ${item.correlation.run_id}`}
+          to={`${basePath}/sessions/${item.correlation.session_id}/threads/${item.correlation.thread_id}/runs/${item.correlation.run_id}`}
+        >
+          {item.correlation.run_id}
+        </Link>
+      ),
+    },
+    {
+      label: t("Level"),
+      dataColumn: "level",
+      render: (item) => <TracePill level={item.root.level} />,
+    },
+    ...sortable.map(({ field, label }): ResourceColumn<Schema["Trace"]> => {
+      const translated = t(label);
+      return {
+        label: translated,
+        // Numbers line up at the right; a timestamp reads from the left.
+        align: field === "started" ? "left" : "right",
         dataColumn: field,
         ariaSort:
           sort.field === field
@@ -123,13 +133,11 @@ export function TraceTable({
               ? "ascending"
               : "descending"
             : "none",
-        header: sortHeader(field),
+        header: sortHeader(field, translated),
         render: (item) =>
-          field === "started" ? (
-            <Timestamp value={item.root.started_at} />
-          ) : field === "duration" ? (
+          field === "duration" ? (
             <Duration observation={item.root} />
-          ) : (
+          ) : field === "cost" ? (
             <span
               title={t(
                 "Reported observation costs; missing costs are not estimated.",
@@ -137,27 +145,11 @@ export function TraceTable({
             >
               {formatCost(costs[item.id] ?? null)}
             </span>
+          ) : (
+            <Timestamp value={item.root.started_at} />
           ),
-      }),
-    ),
-    ...(view === "full"
-      ? (["input", "output"] as const).map(
-          (key): ResourceColumn<Schema["Trace"]> => ({
-            label: t(key === "input" ? "Input" : "Output"),
-            render: (item) =>
-              item.root[key] === null ? (
-                <span className={styles.missing}>-</span>
-              ) : (
-                <Link
-                  to={`${detailUrl(item.id)}?tab=content`}
-                  className={styles.listPreview}
-                >
-                  {contentPreview(item.root[key])}
-                </Link>
-              ),
-          }),
-        )
-      : []),
+      };
+    }),
   ];
   return (
     <ResourceTable

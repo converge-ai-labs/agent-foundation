@@ -1,0 +1,193 @@
+.identifier,
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+}
+.identifierText {
+  display: inline-block;
+  min-width: 0;
+  max-width: min(100%, 32ch);
+  font: 400 12px/18px var(--a13n-font);
+  color: var(--a13n-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.identifierText[data-primary] {
+  font-size: 13px;
+  color: var(--a13n-text-supporting);
+}
+.control {
+  position: relative;
+  flex-shrink: 0;
+}
+
+/* Identity cell used as the first column of every resource collection. */
+.resourceIdentity {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 180px;
+}
+.resourceIdentityLink {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+.resourceCopy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.resourceCopy strong {
+  display: block;
+  max-width: min(420px, 40vw);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
+  font-size: 13.5px;
+  line-height: 1.35;
+}
+.resourceCopy small {
+  display: block;
+  max-width: min(420px, 40vw);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+
+/* Surface tile that frames an icon, avatar, or brand mark. */
+.iconTile {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: var(--a13n-radius-tile);
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  overflow: hidden;
+}
+.iconTile[data-tone="elevated"] {
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow-subtle);
+}
+.iconTile[data-size="32"] {
+  width: 32px;
+  height: 32px;
+}
+.iconTile[data-size="36"] {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+.iconTile[data-size="44"] {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+}
+
+/* Popover listing the identifiers behind a resource. */
+.marker {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--a13n-secondary);
+  opacity: 0.42;
+  cursor: pointer;
+  transition:
+    color 120ms ease,
+    background 120ms ease,
+    opacity 120ms ease;
+}
+.marker svg {
+  width: 13px;
+  height: 13px;
+}
+/* Inside a row the marker waits for the pointer, so lists stay quiet. */
+:where(tr, .resourceIdentity) .marker {
+  opacity: 0;
+}
+:where(tr, .resourceIdentity):hover .marker,
+:where(tr, .resourceIdentity):focus-within .marker,
+.marker:focus-visible,
+.marker[data-popup-open] {
+  opacity: 1;
+}
+.marker:hover,
+.marker:focus-visible,
+.marker[data-popup-open] {
+  color: var(--a13n-text);
+  background: var(--a13n-hover);
+  opacity: 1;
+  outline: none;
+}
+.marker:focus-visible {
+  box-shadow: 0 0 0 2px var(--a13n-focus);
+}
+.popup {
+  display: grid;
+  width: min(340px, calc(100vw - 24px));
+}
+.row {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 2px 0 2px 8px;
+}
+.row + .row {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.label {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.row code {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--a13n-text);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Key chip shown beside a detail-page title. */
+.resourceKeyChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  padding: 1px 4px 1px 7px;
+  border-radius: 999px;
+  background: var(--a13n-surface);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.resourceKeyChip > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(320px, 30vw);
+}

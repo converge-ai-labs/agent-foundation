@@ -1,0 +1,202 @@
+.confirmSubject {
+  margin: 0;
+  padding: 16px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Brand title used by catalog-first creation steps. */
+.brandTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* Catalog tiles ---------------------------------------------------------- */
+.catalog {
+  display: grid;
+  gap: 14px;
+}
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.tile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 11px 14px;
+  border: 0;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease,
+    transform 120ms ease;
+}
+.tile:hover {
+  background: var(--a13n-hover);
+}
+.tile:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}
+.tile:active {
+  transform: scale(0.99);
+}
+.tileCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.tileCopy strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1.3;
+}
+.tileCopy small {
+  color: var(--a13n-secondary);
+  font-size: 11.5px;
+}
+
+/* Searchable directory --------------------------------------------------- */
+.directory {
+  display: grid;
+  gap: 12px;
+}
+.directoryList {
+  display: grid;
+  gap: 2px;
+  max-height: min(460px, 58dvh);
+  margin: 0 -8px;
+  padding: 0 8px;
+  overflow-y: auto;
+}
+.group {
+  display: grid;
+  gap: 2px;
+  padding-top: 8px;
+}
+.group h4 {
+  margin: 0 0 4px;
+  padding: 0 12px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+.directoryRow {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: var(--a13n-radius-row);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 100ms ease;
+}
+.directoryRow:hover,
+.directoryRow:focus-visible {
+  background: var(--a13n-hover);
+  outline: none;
+}
+.directoryRow:disabled {
+  background: transparent;
+  cursor: default;
+}
+.directoryRow:disabled .directoryCopy strong {
+  color: var(--a13n-secondary);
+}
+.directoryRow:disabled > span:first-child {
+  opacity: 0.55;
+}
+.directoryCopy {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.directoryCopy strong {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.directoryCopy small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.directoryMeta {
+  color: var(--a13n-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.catalogEmpty {
+  margin: 0;
+  padding: 32px 16px;
+  text-align: center;
+  color: var(--a13n-secondary);
+  font-size: 13px;
+}
+.catalogNote {
+  margin: 4px 0 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.catalogFooter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+}
+.catalogFooter a {
+  color: inherit;
+  text-decoration: none;
+}
+.catalogFooter a:hover {
+  color: var(--a13n-text);
+}
+
+/* Step layout ------------------------------------------------------------ */
+.step {
+  display: grid;
+  gap: 16px;
+}
+.stepBack {
+  justify-self: start;
+  margin-left: -8px;
+  color: var(--a13n-secondary);
+}
+@media (max-width: 640px) {
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

@@ -1,54 +1,66 @@
-import { useSuggestedName } from "../../shared/suggested-name";
-import { FormSection, formSectionStyles } from "../../shared/form-section";
-import { CredentialEditor } from "../../shared/credential-editor";
-import { ConfigurationSummary } from "../../shared/configuration-summary";
-import { ResourceReference } from "../../shared/resource-reference";
-import { ProviderTypeField } from "../../shared/provider-type-field";
-import { ProviderEnabled } from "../../shared/provider-enabled";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { ProviderKeyLink } from "../../shared/provider-key-link";
-import {
-  useResourceEditorState,
-  useResourceRows,
-  type ResourceEditorControl,
-} from "../../shared/resource-modal";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
-import { ResourceIdentity } from "../../shared/collection";
-import { ScopeBadge } from "../../shared/scope-badge";
-import {
-  Button,
-  FormField,
-  ReadOnlyField,
-  DisclosureSection,
-  Input,
-  ModalFrame,
-} from "a13n-ui";
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { DisclosureSection } from "a13n-ui";
 import { useState } from "react";
-import { PageActions } from "../../shared/page-actions";
-
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
-import { useIdempotency } from "../../shared/idempotency";
-import { SchemaFields } from "../../shared/schema-fields";
-import styles from "../../shared/shared.module.css";
+import { useCursor } from "../../shared/collection";
 import {
+  CatalogStep,
+  useResourceEditorState,
+  useResourceRows,
+  type ResourceEditorControl,
+} from "../../shared/dialogs";
+import { ErrorNotice } from "../../shared/feedback";
+import {
+  FormActions,
+  ProviderEnabled,
+  ProviderKeyLink,
+  SchemaFields,
   jsonObject,
   stringValues,
   validateSettings,
-} from "../../shared/validation";
+} from "../../shared/forms";
+import { useIdempotency } from "../../shared/idempotency";
+import styles from "../../shared/shared.module.css";
+import {
+  AddProviderDialog,
+  ConnectionTest,
+  CredentialRow,
+  EditProviderDialog,
+  ProviderConnectFields,
+  ProviderEditor,
+  ProviderFacts,
+  ProviderGroup,
+  ProviderName,
+  ProviderReadOnly,
+  ProviderTable,
+  credentialDescription,
+  credentialHint,
+  credentialLabel,
+  providerKeyUrls,
+  providerStyles,
+} from "../providers";
 import { connectorApi, type ConnectorScope } from "./api";
+
+type Definition = Schema["ConnectorProviderDefinition"];
+
+function useConnectorDefinitions(enabled = true) {
+  const client = useClient();
+  return useQuery({
+    queryKey: ["connector-provider-types"],
+    enabled,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/connector-provider-types", { signal })
+        .then(data),
+  });
+}
 
 export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
   const client = useClient(),
     { can, organizationAdmin } = useAccess(),
-    { t } = useTranslation(),
     page = useCursor();
   const rows = useResourceRows<Schema["ConnectorProvider"]>();
   const query = useQuery({
@@ -67,10 +79,9 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
       ? organizationAdmin
       : can("connector_provider.manage");
   return (
-    <div className={styles.stack}>
-      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+    <>
       {rows.selected && (
-        <ProviderEditor
+        <EditConnectorProvider
           key={rows.selected.id}
           scope={
             rows.selected.workspace_id
@@ -82,66 +93,76 @@ export function ConnectorProviders({ scope }: { scope: ConnectorScope }) {
           {...rows.control}
         />
       )}
-      <ErrorNotice error={query.error} />
-      {query.isPending ? (
-        <Loading variant="table" columns={3} />
-      ) : query.data?.items.length ? (
-        <>
-          <ResourceTable
-            items={query.data.items}
-            canActivateRow={(item) =>
-              (item.workspace_id ? manage : organizationAdmin) ||
-              (scope.kind === "workspace" && item.status === "active")
-            }
-            onRowActivate={rows.activate}
-            columns={[
-              {
-                label: t("Provider"),
-                tone: "primary",
-                render: (item) => (
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProviderIcon type={item.type} />
-                    <ResourceIdentity
-                      name={item.name}
-                      description={item.type}
-                      resourceId={item.id}
-                    />
-                  </div>
-                ),
-              },
-              {
-                label: t("Scope"),
-                tone: "muted",
-                render: (item) => (
-                  <ScopeBadge workspaceId={item.workspace_id} />
-                ),
-              },
-              {
-                label: t("Status"),
-                render: (item) => (
-                  <StateBadge
-                    state={item.status === "active" ? "enabled" : "disabled"}
-                  />
-                ),
-              },
-            ]}
-          />
-          <Pagination page={page} next={query.data.next_cursor} />
-        </>
-      ) : (
-        !query.error && (
-          <Empty
-            title={t("No connector providers")}
-            description={t(
-              "Add an integration-service provider to discover available connectors.",
-            )}
-          />
-        )
-      )}
-    </div>
+      <ProviderTable
+        category="connectors"
+        items={query.data?.items}
+        isPending={query.isPending}
+        error={query.error}
+        page={page}
+        nextCursor={query.data?.next_cursor}
+        action={manage ? <AddConnectorProvider scope={scope} /> : undefined}
+        canActivateRow={(item) =>
+          (item.workspace_id ? manage : organizationAdmin) ||
+          (scope.kind === "workspace" && item.status === "active")
+        }
+        onRowActivate={rows.activate}
+        row={(item) => ({
+          id: item.id,
+          name: item.name,
+          definition: item.type,
+          type: item.type,
+          workspaceId: item.workspace_id,
+          credentials: item.credential_configured
+            ? "configured"
+            : "not_configured",
+          state: item.status === "active" ? "enabled" : "disabled",
+        })}
+      />
+    </>
   );
 }
-function ProviderEditor({
+
+/** Catalog-first creation: choose the broker, then connect it. */
+function AddConnectorProvider({ scope }: { scope: ConnectorScope }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  const definitions = useConnectorDefinitions();
+  // Closing discards the step and the draft, whoever asked for it.
+  function change(value: boolean) {
+    setOpen(value);
+    if (!value) setGeneration((current) => current + 1);
+  }
+  return (
+    <AddProviderDialog<Definition>
+      key={generation}
+      definitions={definitions.data?.items}
+      error={definitions.error}
+      open={open}
+      onOpenChange={change}
+      description={t("Choose the service that brokers your agents' accounts.")}
+      hint={(definition) => credentialHint(definition.credential_schema)}
+      connectDescription={(definition) =>
+        t(credentialDescription(definition.credential_schema), {
+          provider: definition.display_name,
+        })
+      }
+    >
+      {(definition, back) => (
+        <CatalogStep backLabel={t("All providers")} onBack={back}>
+          <ProviderForm
+            scope={scope}
+            definition={definition}
+            close={() => change(false)}
+            reload={async () => {}}
+          />
+        </CatalogStep>
+      )}
+    </AddProviderDialog>
+  );
+}
+
+function EditConnectorProvider({
   scope,
   providerId,
   controlledOpen,
@@ -150,25 +171,13 @@ function ProviderEditor({
   readOnly = false,
 }: ResourceEditorControl & {
   scope: ConnectorScope;
-  providerId?: string;
+  providerId: string;
   readOnly?: boolean;
 }) {
   const client = useClient(),
-    { t } = useTranslation(),
     [generation, setGeneration] = useState(0);
-  const { open, setOpen, modalProps } = useResourceEditorState({
-    controlledOpen,
-    onClose,
-    finalFocus,
-  });
-
-  const definitions = useQuery({
-    queryKey: ["connector-provider-types"],
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/connector-provider-types", { signal })
-        .then(data),
-  });
+  const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
+  const definitions = useConnectorDefinitions(state.open);
   const resource = useQuery({
     queryKey: [
       "connector-providers",
@@ -177,72 +186,95 @@ function ProviderEditor({
       "detail",
       providerId,
     ],
-    enabled: open && !!providerId,
+    enabled: state.open,
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/connector-providers/{connector_provider_id}", {
-          params: { path: { connector_provider_id: providerId! } },
+          params: { path: { connector_provider_id: providerId } },
           signal,
         })
         .then(data),
   });
-  async function reload() {
-    await resource.refetch();
-    setGeneration((value) => value + 1);
-  }
+  const definition = definitions.data?.items.find(
+    (item) => item.type === resource.data?.type,
+  );
   return (
-    <ModalFrame
-      {...modalProps}
-      trigger={
-        controlledOpen === undefined ? (
-          <ResourceEditorButton
-            editing={!!providerId}
-            createLabel="Add provider"
-            editLabel="Edit"
-          />
-        ) : undefined
-      }
-      size="lg"
-      title={t(providerId ? "Edit provider" : "Add provider")}
-      description={
-        providerId
-          ? undefined
-          : t("Connect a service to browse connectors and authorize accounts.")
-      }
-      closeLabel={t("Close")}
+    <EditProviderDialog
+      modalProps={state.modalProps}
+      open={state.open}
+      name={resource.data?.name}
+      id={providerId}
+      type={resource.data?.type}
+      definition={definition?.display_name}
+      scope={resource.data?.workspace_id ? "workspace" : "organization"}
+      readOnly={readOnly}
+      loading={definitions.isPending || resource.isPending}
+      error={definitions.error ?? resource.error}
     >
-      {open &&
-        (definitions.isPending || (providerId && resource.isPending) ? (
-          <Loading variant="form" rows={4} />
-        ) : definitions.error || resource.error ? (
-          <ErrorNotice error={definitions.error ?? resource.error} />
-        ) : readOnly && resource.data ? (
-          <div className={styles.stack}>
-            <ConfigurationSummary value={resource.data.configuration} />
-          </div>
+      {resource.data &&
+        (readOnly ? (
+          <ProviderReadOnly
+            enabled={resource.data.status === "active"}
+            credentials={
+              resource.data.credential_configured
+                ? "configured"
+                : "not_configured"
+            }
+            configuration={resource.data.configuration}
+            schema={definition?.configuration_schema}
+            only={["endpoint"]}
+            onClose={() => state.setOpen(false)}
+          />
         ) : (
           <ProviderForm
             key={generation}
             scope={scope}
-            initial={providerId ? resource.data : undefined}
-            definitions={definitions.data?.items ?? []}
-            close={() => setOpen(false)}
-            reload={reload}
+            initial={resource.data}
+            definition={definition}
+            close={() => state.setOpen(false)}
+            reload={async () => {
+              await resource.refetch();
+              setGeneration((value) => value + 1);
+            }}
           />
         ))}
-    </ModalFrame>
+    </EditProviderDialog>
   );
 }
+
+/** Where the broker's own OAuth callback has to point for account authorization. */
+function OAuthCallbackSetup() {
+  const { t } = useTranslation();
+  return (
+    <DisclosureSection title={t("OAuth callback setup")}>
+      <p className={styles.muted}>
+        {t(
+          "For OAuth, open that project's Settings → OAuth user verification and set the callback URL to your Service HTTPS origin followed by /connection-authorizations/browser. Local development can use an exact localhost or loopback-IP HTTP origin.",
+        )}
+      </p>
+      <p className={styles.muted}>
+        {t(
+          "Composio managed apps work without your own OAuth client. To use a custom app or different scopes, create an auth config in Composio Dashboard. Account credentials are collected on Composio's hosted page.",
+        )}
+      </p>
+      <ProviderKeyLink
+        href="https://docs.composio.dev/docs/tools-direct/authenticating-tools"
+        label="Open setup guide"
+      />
+    </DisclosureSection>
+  );
+}
+
 function ProviderForm({
   scope,
   initial,
-  definitions,
+  definition,
   close,
   reload,
 }: {
   scope: ConnectorScope;
   initial?: Schema["ConnectorProvider"];
-  definitions: Schema["ConnectorProviderDefinition"][];
+  definition?: Definition;
   close: () => void;
   reload: () => Promise<void>;
 }) {
@@ -251,14 +283,14 @@ function ProviderForm({
     { t } = useTranslation(),
     key = useIdempotency(),
     [basis] = useState(initial),
-    { name, setName, suggestName } = useSuggestedName(initial?.name),
+    [name, setName] = useState(initial?.name ?? definition?.display_name ?? ""),
     [enabled, setEnabled] = useState(initial?.status === "active"),
-    [type, setType] = useState(initial?.type ?? ""),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       initial?.configuration ?? {},
     ),
+    [advancedOpen, setAdvancedOpen] = useState(false),
     [credentials, setCredentials] = useState<Record<string, unknown>>({});
-  const definition = definitions.find((item) => item.type === type);
+  const type = initial?.type ?? definition?.type ?? "";
   function done() {
     void cache.invalidateQueries({ queryKey: ["connector-providers"] });
     close();
@@ -315,146 +347,91 @@ function ProviderForm({
         .then(data);
     },
   });
-  return (
-    <form
-      className={formSectionStyles.form}
-      onSubmit={(event) => {
-        event.preventDefault();
-        save.mutate();
-      }}
-    >
-      <FormSection>
-        <FormField
-          className="min-w-0 w-full"
-          label={t("Name")}
-          labelAction={basis && <ResourceReference id={basis.id} />}
+  function submit(event: React.FormEvent) {
+    event.preventDefault();
+    save.mutate();
+  }
+  if (!basis)
+    return (
+      <form className={providerStyles.connectForm} onSubmit={submit}>
+        <ProviderConnectFields
+          credentialSchema={definition?.credential_schema}
+          configurationSchema={definition?.configuration_schema}
+          credential={credentials}
+          onCredentialChange={setCredentials}
+          configuration={configuration}
+          onConfigurationChange={setConfiguration}
+          name={name}
+          onNameChange={setName}
+          keyLink={providerKeyUrls[type]}
+          advancedOpen={advancedOpen}
+          onAdvancedOpenChange={setAdvancedOpen}
         >
-          <Input
-            required={true}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            maxLength={128}
-          />
-        </FormField>
-      </FormSection>
-      <FormSection title={t("Connection")}>
-        <ProviderTypeField
-          definitions={definitions}
-          value={type}
-          readOnly={!!basis}
-          onValueChange={(value) => {
-            setType(value);
-            suggestName(
-              definitions.find((item) => item.type === value)?.display_name ??
-                value,
-            );
-            setConfiguration({});
-            setCredentials({});
-          }}
+          {type === "composio" && <OAuthCallbackSetup />}
+        </ProviderConnectFields>
+        <ErrorNotice error={save.error} />
+        <FormActions
+          pending={save.isPending}
+          onCancel={close}
+          label={t("Add provider")}
         />
-        {type === "composio" && (
-          <DisclosureSection
-            title={t("Composio setup")}
-            summary={t("OAuth and connected accounts")}
-          >
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "For OAuth, open that project's Settings → OAuth user verification and set the callback URL to your Service HTTPS origin followed by /connection-authorizations/browser. Local development can use an exact localhost or loopback-IP HTTP origin.",
-              )}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "Composio managed apps work without your own OAuth client. To use a custom app or different scopes, create an auth config in Composio Dashboard. Account credentials are collected on Composio's hosted page.",
-              )}
-            </p>
-            <ProviderKeyLink
-              href="https://docs.composio.dev/docs/tools-direct/authenticating-tools"
-              label="Open setup guide"
-            />
-          </DisclosureSection>
-        )}
-        {basis ? (
-          <>
-            {Object.keys(configuration).length > 0 && (
-              <div className={styles.stack}>
-                {typeof configuration.endpoint === "string" && (
-                  <ReadOnlyField label={t("Endpoint")}>
-                    {configuration.endpoint}
-                  </ReadOnlyField>
-                )}
-                <DisclosureSection title={t("Configuration details")}>
-                  <ConfigurationSummary
-                    value={Object.fromEntries(
-                      Object.entries(configuration).filter(
-                        ([key]) => key !== "endpoint",
-                      ),
-                    )}
-                    schema={definition?.configuration_schema}
-                  />
-                </DisclosureSection>
-              </div>
-            )}
-          </>
-        ) : (
-          <>
-            {definition && (
-              <>
-                <SchemaFields
-                  key={type}
-                  schema={definition.configuration_schema}
-                  value={configuration}
-                  onChange={setConfiguration}
-                />
-                <SchemaFields
-                  secret
-                  key={`${type}-credentials`}
-                  schema={definition.credential_schema}
-                  value={credentials}
-                  onChange={setCredentials}
-                />
-              </>
-            )}
-          </>
-        )}
-        {basis &&
-          definition &&
+      </form>
+    );
+  return (
+    <ProviderEditor onSubmit={submit}>
+      <ProviderName value={name} onChange={setName} />
+      <ProviderGroup>
+        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+        {definition &&
           Object.keys(definition.credential_schema.properties ?? {}).length >
             0 && (
-            <CredentialEditor configured={basis.credential_configured}>
+            <CredentialRow
+              label={t(credentialLabel(definition.credential_schema))}
+              configured={!!basis.credential_configured}
+              onDiscard={() => setCredentials({})}
+            >
               <SchemaFields
                 secret
+                autoFocus
+                labelAction={
+                  providerKeyUrls[type] && (
+                    <ProviderKeyLink {...providerKeyUrls[type]} />
+                  )
+                }
                 schema={{ ...definition.credential_schema, required: [] }}
                 value={credentials}
                 onChange={setCredentials}
               />
-            </CredentialEditor>
+            </CredentialRow>
           )}
-        {basis && (
-          <>
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <Button
-                size="sm"
-                variant="outline"
-                loading={test.isPending}
-                disabled={
-                  save.isPending ||
-                  name !== basis.name ||
-                  enabled !== (basis.status === "active") ||
-                  Object.keys(credentials).length > 0
-                }
-                onClick={() => test.mutate()}
-                type="button"
-              >
-                {t("Check connection")}
-              </Button>
-              <span className="text-xs text-muted-foreground">
-                {t("May consume quota or incur cost.")}
-              </span>
-            </div>
-            <ErrorNotice error={test.error} retry={() => void reload()} />
-            {test.data && (
-              <p role="status" className={styles.muted}>
-                {test.data.verified_access
+        <ProviderFacts
+          configuration={configuration}
+          schema={definition?.configuration_schema}
+          only={["endpoint"]}
+        />
+      </ProviderGroup>
+      {type === "composio" && <OAuthCallbackSetup />}
+      <ErrorNotice error={save.error} retry={() => void reload()} />
+      <FormActions
+        pending={save.isPending}
+        onCancel={close}
+        label={t("Save changes")}
+        leading={
+          <ConnectionTest
+            placement="footer"
+            description="May consume quota or incur cost."
+            retry={() => void reload()}
+            dirty={
+              save.isPending ||
+              name !== basis.name ||
+              enabled !== (basis.status === "active") ||
+              Object.keys(credentials).length > 0
+            }
+            action={async () => {
+              const result = await test.mutateAsync();
+              return {
+                success: true,
+                message: `${result.verified_access
                   .map((access) =>
                     t(
                       access === "account_read"
@@ -462,29 +439,14 @@ function ProviderForm({
                         : "Catalog access verified.",
                     ),
                   )
-                  .join(" ")}{" "}
-                {t(
+                  .join(" ")} ${t(
                   "OAuth callback configuration and upstream account credentials were not tested.",
-                )}
-              </p>
-            )}
-          </>
-        )}
-      </FormSection>
-      {basis && (
-        <FormSection>
-          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        </FormSection>
-      )}
-      <ErrorNotice
-        error={save.error}
-        retry={basis ? () => void reload() : undefined}
+                )}`,
+              };
+            }}
+          />
+        }
       />
-      <FormActions
-        pending={save.isPending}
-        onCancel={close}
-        label={t(basis ? "Save changes" : "Add provider")}
-      />
-    </form>
+    </ProviderEditor>
   );
 }

@@ -1,0 +1,210 @@
+/*
+ * Layout for the Environments area: the template editor dialog, the provider
+ * configuration group, and the instance inspector panel. Colors and type come
+ * from the shared tokens; this file only places things.
+ */
+
+/* Template editor -------------------------------------------------------- */
+
+.editorFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 20px;
+}
+
+.advanced {
+  font-size: 13px;
+}
+.advancedBody {
+  display: grid;
+  gap: 20px;
+  padding: 0;
+}
+
+/* "Test image" sits on the row below the image field with its result pill. */
+.testRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.testResult {
+  min-width: 0;
+  flex: 1 1 12rem;
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+/* The chosen provider sits above the configuration group, on its own. */
+.chosenProviderBlock {
+  padding-bottom: 4px;
+}
+
+/* The chosen provider, shown above the configuration with a way to change it. */
+.chosenProvider {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
+.chosenProviderCopy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.chosenProviderCopy strong {
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chosenProviderCopy small {
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+}
+.chosenProviderIdentity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.revisionNote {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* Versions tab ----------------------------------------------------------- */
+
+.versions {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.versionMeta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* Instance inspector ----------------------------------------------------- */
+
+.panelTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.panelTitle strong {
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.panelBody {
+  display: grid;
+  gap: 24px;
+  min-width: 0;
+}
+
+.factGroup {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.factGroup h3 {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.facts {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  min-width: 0;
+}
+.fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 7px 0;
+}
+.fact + .fact {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.fact dt {
+  flex: none;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.fact dd {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+  margin: 0;
+  font-size: 13px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.panelNote {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.panelNotes {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.rename {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+}
+.renameActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Instances list --------------------------------------------------------- */
+
+.providerCell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.providerCell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -9,11 +9,12 @@ const http = vi.hoisted(() => ({ GET: vi.fn(), POST: vi.fn() }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
 vi.mock("../../layout/workspace", () => ({
   useWorkspace: () => ({ workspace: { id: "ws_test" }, can: () => true }),
+  useAccess: () => ({ workspace: { id: "ws_test" } }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-vi.mock("../../shared/page-actions", () => ({
+vi.mock("../../shared/page", () => ({
   PageActions: ({ children }: { children: React.ReactNode }) => children,
 }));
 
@@ -43,7 +44,7 @@ it.each(["a13n.http-envd", "a13n.websocket-envd"])(
       screen.getByRole("button", { name: "Create environment" }),
     );
     await user.click(screen.getByRole("combobox", { name: "Ownership" }));
-    await user.click(screen.getByRole("option", { name: "External target" }));
+    await user.click(screen.getByRole("option", { name: /^External target/ }));
     await user.click(screen.getByRole("combobox", { name: "Provider" }));
     await user.click(
       await screen.findByRole("option", { name: "My connection" }),

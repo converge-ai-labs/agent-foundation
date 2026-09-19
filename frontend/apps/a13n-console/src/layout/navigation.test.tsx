@@ -68,11 +68,11 @@ afterEach(() => {
 });
 
 it.each([
-  ["Workspace menu", "Workspace profile"],
-  ["Alex", "Personal profile"],
+  ["Workspace menu", "Workspace settings", "Workspace general"],
+  ["Alex", "Profile", "Personal profile"],
 ])(
   "opens settings from %s at its own scope and restores navigation on return",
-  async (trigger, landing) => {
+  async (trigger, entry, landing) => {
     const user = userEvent.setup();
     render(
       <QueryClientProvider client={new QueryClient()}>
@@ -81,12 +81,12 @@ it.each([
             <Route path="/workspace/:workspaceKey" element={<Shell />}>
               <Route path="agents" element={<h1>Agent directory</h1>} />
               <Route
-                path="settings"
+                path="settings/:section?"
                 element={
                   <SettingsLayout
                     scope="workspace"
                     content={{
-                      profile: <p>Workspace profile</p>,
+                      general: <p>Workspace general</p>,
                       members: <p>Workspace members</p>,
                     }}
                   />
@@ -94,7 +94,7 @@ it.each([
               />
             </Route>
             <Route
-              path="/settings/profile"
+              path="/settings/:section?"
               element={
                 <SettingsLayout
                   scope="personal"
@@ -110,11 +110,13 @@ it.each([
     expect(
       screen.getByRole("complementary", { name: "Main navigation" }),
     ).toBeTruthy();
-    expect(screen.queryByRole("link", { name: "Settings" })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Settings" }).getAttribute("href"),
+    ).toBe("/workspace/design/settings");
     await user.hover(
       screen.getByRole("button", { name: new RegExp(`${trigger}$`) }),
     );
-    await user.click(await screen.findByRole("menuitem", { name: "Settings" }));
+    await user.click(await screen.findByRole("menuitem", { name: entry }));
     expect(screen.getByText(landing)).toBeTruthy();
     expect(
       screen.queryByRole("complementary", { name: "Main navigation" }),
@@ -123,9 +125,13 @@ it.each([
       screen.getByRole("navigation", { name: "Settings navigation" }),
     ).toBeTruthy();
     expect(screen.getAllByRole("complementary")).toHaveLength(1);
-    await user.click(screen.getByRole("link", { name: "Members" }));
+    await user.click(
+      within(
+        screen.getByRole("navigation", { name: "Settings navigation" }),
+      ).getByRole("link", { name: "Members" }),
+    );
     expect(screen.getByText("Workspace members")).toBeTruthy();
-    expect(screen.queryByText("Workspace profile")).toBeNull();
+    expect(screen.queryByText("Workspace general")).toBeNull();
     await user.click(screen.getByRole("link", { name: "Back to workspace" }));
     expect(
       screen.getByRole("complementary", { name: "Main navigation" }),
@@ -169,7 +175,7 @@ it("keeps resource categories in sidebar links and restores the selected categor
   expect(screen.queryByRole("tablist")).toBeNull();
 });
 
-it("keeps workspace switching available with one workspace and marks the current item", async () => {
+it("lists workspaces in the switcher and marks the current one", async () => {
   const user = userEvent.setup();
   render(
     <QueryClientProvider client={new QueryClient()}>
@@ -182,54 +188,46 @@ it("keeps workspace switching available with one workspace and marks the current
   );
   await user.click(screen.getByRole("button", { name: "Workspace menu" }));
   expect(
-    await screen.findByRole("menuitem", { name: "Settings" }),
+    await screen.findByRole("menuitem", { name: "Workspace settings" }),
   ).toBeTruthy();
-  const switcher = await screen.findByRole("menuitem", {
-    name: "Switch workspace",
-  });
-  switcher.focus();
-  await user.keyboard("{ArrowRight}");
   expect(
     (await screen.findByRole("menuitem", { name: "Design" })).getAttribute(
       "aria-current",
     ),
   ).toBe("true");
+  expect(
+    screen.queryByRole("menuitem", { name: "Create workspace" }),
+  ).toBeNull();
 });
 
-it("shows all authorized settings groups and searches without changing the selected page", async () => {
+it("searches the settings navigation without changing the selected page", async () => {
   access.organizationAdmin = true;
   const user = userEvent.setup();
   render(
-    <MemoryRouter
-      initialEntries={["/workspace/design/settings?section=profile"]}
-    >
-      <SettingsLayout
-        scope="workspace"
-        content={{ profile: <p>Workspace profile</p> }}
-      />
+    <MemoryRouter initialEntries={["/workspace/design/settings/general"]}>
+      <Routes>
+        <Route
+          path="/workspace/:workspaceKey/settings/:section?"
+          element={
+            <SettingsLayout
+              scope="workspace"
+              content={{ general: <p>Workspace general</p> }}
+            />
+          }
+        />
+      </Routes>
     </MemoryRouter>,
   );
   const navigation = within(
     screen.getByRole("navigation", { name: "Settings navigation" }),
   );
-  expect(navigation.getByRole("heading", { name: "Workspace" })).toBeTruthy();
-  const organization = navigation.getByRole("button", {
-    name: /Organization/,
-  });
-  for (const toggle of [
-    navigation.getByRole("button", { name: "Personal" }),
-    organization,
-  ])
-    expect(toggle.getAttribute("aria-expanded")).toBe("false");
-  await user.click(organization);
-  expect(organization.getAttribute("aria-expanded")).toBe("true");
   expect(navigation.getByRole("link", { name: "Models" })).toBeTruthy();
   await user.type(
     screen.getByRole("searchbox", { name: "Search settings" }),
     "password",
   );
   expect(screen.getByText("No matching settings")).toBeTruthy();
-  expect(screen.getByText("Workspace profile")).toBeTruthy();
+  expect(screen.getByText("Workspace general")).toBeTruthy();
   await user.clear(screen.getByRole("searchbox", { name: "Search settings" }));
   await user.type(
     screen.getByRole("searchbox", { name: "Search settings" }),
@@ -241,14 +239,21 @@ it("shows all authorized settings groups and searches without changing the selec
 it("collapses the settings navigation after selecting a section", async () => {
   const user = userEvent.setup();
   render(
-    <MemoryRouter initialEntries={["/settings/profile?section=profile"]}>
-      <SettingsLayout
-        scope="personal"
-        content={{
-          profile: <p>Profile form</p>,
-          security: <p>Security form</p>,
-        }}
-      />
+    <MemoryRouter initialEntries={["/settings/profile"]}>
+      <Routes>
+        <Route
+          path="/settings/:section?"
+          element={
+            <SettingsLayout
+              scope="personal"
+              content={{
+                profile: <p>Profile form</p>,
+                security: <p>Security form</p>,
+              }}
+            />
+          }
+        />
+      </Routes>
     </MemoryRouter>,
   );
   const toggle = screen.getByRole("button", { name: "Settings" });

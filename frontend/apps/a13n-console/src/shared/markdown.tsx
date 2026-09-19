@@ -3,7 +3,7 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import styles from "./markdown.module.css";
-import { CodeBlock } from "./code-block";
+import { CodeBlock } from "./forms";
 
 export function MarkdownContent({
   text,

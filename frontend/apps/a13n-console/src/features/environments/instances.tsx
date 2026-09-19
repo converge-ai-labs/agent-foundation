@@ -1,41 +1,61 @@
-import { EnvironmentDetails } from "./instance-details";
-import { ResourceIdentity } from "../../shared/collection";
+import { MonitorIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  useMutation,
+  useQueries,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import {
   Button,
-  ChoiceField,
   DisclosureSection,
   FormField,
   Input,
   ModalFrame,
+  SearchPicker,
 } from "a13n-ui";
-
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { PageActions } from "../../shared/page-actions";
-
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, commandHeaders, data, type Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
+  CollectionFooter,
   Empty,
+  Pagination,
+  ResourceIdentity,
+  ResourceTable,
+  useCursor,
+} from "../../shared/collection";
+import {
   ErrorNotice,
+  InlineLoading,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/form";
+import {
+  FormActions,
+  jsonObject,
+  jsonValue,
+  TextAreaField,
+} from "../../shared/forms";
+import { ProviderIcon } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
+import { PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
-import { jsonObject, jsonValue } from "../../shared/validation";
 import { environmentApi } from "./api";
+import instanceStyles from "./environments.module.css";
+import { EnvironmentPanel } from "./instance-details";
+import { useEnvironmentTypes } from "./providers";
 
+/** The environments that exist right now, with their lifecycle state. */
 export function EnvironmentInstances() {
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     { t } = useTranslation(),
-    page = useCursor();
+    page = useCursor(),
+    [selected, setSelected] = useState<Schema["Environment"]>();
+  const scope = { kind: "workspace", id: workspace.id } as const;
   const query = useQuery({
     queryKey: ["environments", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
@@ -50,6 +70,61 @@ export function EnvironmentInstances() {
         .then(data),
     refetchInterval: 15_000,
   });
+  const providers = useQuery({
+    queryKey: ["environment-provider-options", "workspace", workspace.id],
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        environmentApi(client, scope).providers(signal, cursor),
+      ),
+    enabled: can("environment_provider.read"),
+  });
+  const templates = useQuery({
+    queryKey: ["environment-template-options", workspace.id],
+    queryFn: ({ signal }) =>
+      allPages((cursor) =>
+        environmentApi(client, scope).templates(signal, cursor),
+      ),
+    enabled: can("environment_template.read"),
+  });
+  const revisionIds = [
+    ...new Set(
+      (query.data?.items ?? []).flatMap((item) =>
+        item.template_revision_id ? [item.template_revision_id] : [],
+      ),
+    ),
+  ];
+  const revisions = useQueries({
+    queries: revisionIds.map((id) => ({
+      queryKey: ["environment-revision", id],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        client.http
+          .GET("/api/v1/environment-template-revisions/{revision_id}", {
+            params: { path: { revision_id: id } },
+            signal,
+          })
+          .then(data),
+    })),
+  });
+  const providerById = new Map(
+    providers.data?.map((provider) => [provider.id, provider]),
+  );
+  const templateById = new Map(
+    templates.data?.map((template) => [template.id, template]),
+  );
+  const revisionById = new Map(
+    revisions.flatMap((revision) =>
+      revision.data ? [[revision.data.id, revision.data] as const] : [],
+    ),
+  );
+  const resolving =
+    templates.isPending || revisions.some((entry) => entry.isPending);
+  function templateName(item: Schema["Environment"]) {
+    if (!item.template_revision_id) return t("External target");
+    const revision = revisionById.get(item.template_revision_id);
+    const template = revision && templateById.get(revision.template_id);
+    if (template) return template.name;
+    return resolving ? <InlineLoading width="6rem" /> : t("Managed");
+  }
   return (
     <div className={styles.stack}>
       <PageActions>
@@ -57,37 +132,58 @@ export function EnvironmentInstances() {
       </PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading variant="table" columns={6} />
+        <Loading variant="table" columns={5} />
       ) : query.data?.items.length ? (
         <>
           <ResourceTable
+            caption={t("Environment instances")}
             items={query.data.items}
+            onRowActivate={(item) => setSelected(item)}
             columns={[
               {
                 label: t("Environment"),
                 tone: "primary",
                 render: (item) => (
-                  <>
-                    <ResourceIdentity name={item.name} resourceId={item.id} />
-                    <small>
-                      {t(item.ownership === "managed" ? "Managed" : "External")}
-                    </small>
-                  </>
+                  <ResourceIdentity
+                    name={item.name}
+                    resourceId={item.id}
+                    icon={
+                      <MonitorIcon
+                        aria-hidden="true"
+                        className="size-4 text-muted-foreground"
+                      />
+                    }
+                    description={templateName(item)}
+                  />
                 ),
               },
               {
-                label: t("Status"),
-                render: (item) => <StateBadge state={item.status} />,
+                label: t("Provider"),
+                render: (item) => {
+                  const provider = providerById.get(item.provider_id);
+                  if (!provider)
+                    return providers.isPending &&
+                      providers.fetchStatus !== "idle" ? (
+                      <InlineLoading width="5rem" />
+                    ) : (
+                      <span className={styles.muted}>{t("Not available")}</span>
+                    );
+                  return (
+                    <span className={instanceStyles.providerCell}>
+                      <ProviderIcon type={provider.type} />
+                      <span>{provider.name}</span>
+                    </span>
+                  );
+                },
               },
               {
-                label: t("Generation"),
-                align: "right",
-                render: (item) => item.generation,
+                label: t("Status"),
+                render: (item) => <StatePill state={item.status} />,
               },
               {
                 label: t("Activity"),
                 render: (item) => (
-                  <StateBadge state={item.retention_condition} />
+                  <StatePill state={item.retention_condition} />
                 ),
               },
               {
@@ -95,28 +191,42 @@ export function EnvironmentInstances() {
                 tone: "muted",
                 render: (item) => <Timestamp value={item.updated_at} />,
               },
-              {
-                label: t("Actions"),
-                align: "right",
-                render: (item) => <EnvironmentDetails environment={item} />,
-              },
             ]}
           />
-          <Pagination page={page} next={query.data.next_cursor} />
+          <CollectionFooter
+            count={t("{{count}} environments on this page", {
+              count: query.data.items.length,
+            })}
+          >
+            <Pagination page={page} next={query.data.next_cursor} />
+          </CollectionFooter>
         </>
       ) : (
         !query.error && (
           <Empty
+            icon={<MonitorIcon aria-hidden="true" />}
             title={t("No environments yet")}
             description={t(
               "Choose an environment template when starting a conversation, or register an external environment.",
             )}
+            action={
+              can("environment.manage") ? <CreateEnvironment /> : undefined
+            }
           />
         )
+      )}
+      {selected && (
+        <EnvironmentPanel
+          key={selected.id}
+          environment={selected}
+          open
+          onClose={() => setSelected(undefined)}
+        />
       )}
     </div>
   );
 }
+
 function CreateEnvironment() {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
@@ -125,10 +235,12 @@ function CreateEnvironment() {
       onOpenChange={setOpen}
       trigger={
         <Button variant="default" type="button">
+          <PlusIcon aria-hidden="true" />
           {t("Create environment")}
         </Button>
       }
       size={"md"}
+      placement="top"
       title={t("Create environment")}
       description={t(
         "Allocate from a template or connect an externally managed target.",
@@ -140,6 +252,7 @@ function CreateEnvironment() {
     </ModalFrame>
   );
 }
+
 function EnvironmentForm({ close }: { close: () => void }) {
   const client = useClient(),
     { workspace } = useWorkspace(),
@@ -161,6 +274,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
         environmentApi(client, scope).providers(signal, cursor),
       ),
   });
+  const types = useEnvironmentTypes();
   const [kind, setKind] = useState("managed"),
     [name, setName] = useState(""),
     [templateId, setTemplateId] = useState(""),
@@ -177,6 +291,8 @@ function EnvironmentForm({ close }: { close: () => void }) {
     provider?.type === "a13n.websocket-envd";
   const save = useMutation({
     mutationFn: () => {
+      if (kind === "managed" && !templateId)
+        throw new Error(t("Select an environment template."));
       if (kind === "external" && !provider)
         throw new Error(t("Select an environment provider."));
       const body:
@@ -219,6 +335,26 @@ function EnvironmentForm({ close }: { close: () => void }) {
       close();
     },
   });
+  const templateOptions =
+    templates.data
+      ?.filter((item) => !item.archived_at)
+      .map((item) => ({
+        value: item.id,
+        label: item.name,
+        description: item.description ?? undefined,
+        badge: t("Version {{version}}", { version: item.version }),
+      })) ?? [];
+  const providerOptions =
+    providers.data
+      ?.filter((item) => item.enabled)
+      .map((item) => ({
+        value: item.id,
+        label: item.name,
+        icon: <ProviderIcon type={item.type} />,
+        description:
+          types.data?.items.find((definition) => definition.type === item.type)
+            ?.display_name ?? undefined,
+      })) ?? [];
   return (
     <form
       className={styles.form}
@@ -237,33 +373,49 @@ function EnvironmentForm({ close }: { close: () => void }) {
           maxLength={128}
         />
       </FormField>
-      <ChoiceField
-        placeholder={t("Select ownership")}
-        value={kind}
-        className="min-w-0"
-        onValueChange={setKind}
-        label={t("Ownership")}
-        options={[
-          { value: "managed", label: t("Managed from template") },
-          { value: "external", label: t("External target") },
-        ]}
-      />
-      <ErrorNotice error={templates.error ?? providers.error} />
+      <FormField label={t("Ownership")}>
+        <SearchPicker
+          label={t("Ownership")}
+          placeholder={t("Select ownership")}
+          emptyMessage={t("No options")}
+          value={kind}
+          onValueChange={setKind}
+          groups={[
+            {
+              label: t("Ownership"),
+              options: [
+                {
+                  value: "managed",
+                  label: t("Managed from template"),
+                  description: t(
+                    "Service allocates and retires the target for you.",
+                  ),
+                },
+                {
+                  value: "external",
+                  label: t("External target"),
+                  description: t(
+                    "Register a target you run and keep control of.",
+                  ),
+                },
+              ],
+            },
+          ]}
+        />
+      </FormField>
+      <ErrorNotice error={templates.error ?? providers.error ?? types.error} />
       {kind === "managed" ? (
         <>
-          <ChoiceField
-            placeholder={t("Select template")}
-            value={templateId}
-            className="min-w-0"
-            required
-            onValueChange={setTemplateId}
-            label={t("Template")}
-            options={
-              templates.data
-                ?.filter((item) => !item.archived_at)
-                .map((item) => ({ value: item.id, label: item.name })) ?? []
-            }
-          />
+          <FormField label={t("Template")}>
+            <SearchPicker
+              label={t("Template")}
+              placeholder={t("Select template")}
+              emptyMessage={t("No matching templates")}
+              value={templateId}
+              onValueChange={setTemplateId}
+              groups={[{ label: t("Templates"), options: templateOptions }]}
+            />
+          </FormField>
           <FormField
             className="min-w-0 w-full"
             label={t("Template version (optional)")}
@@ -280,19 +432,16 @@ function EnvironmentForm({ close }: { close: () => void }) {
         </>
       ) : (
         <>
-          <ChoiceField
-            placeholder={t("Select provider")}
-            value={providerId}
-            className="min-w-0"
-            required
-            onValueChange={setProviderId}
-            label={t("Provider")}
-            options={
-              providers.data
-                ?.filter((item) => item.enabled)
-                .map((item) => ({ value: item.id, label: item.name })) ?? []
-            }
-          />
+          <FormField label={t("Provider")}>
+            <SearchPicker
+              label={t("Provider")}
+              placeholder={t("Select provider")}
+              emptyMessage={t("No matching providers")}
+              value={providerId}
+              onValueChange={setProviderId}
+              groups={[{ label: t("Providers"), options: providerOptions }]}
+            />
+          </FormField>
           {isDevice ? (
             <FormField
               label={t("Device ID")}
@@ -307,26 +456,27 @@ function EnvironmentForm({ close }: { close: () => void }) {
               />
             </FormField>
           ) : (
-            <>
-              <FormField
-                className="min-w-0 w-full"
-                label={t("Configuration schema version")}
-              >
-                <Input
-                  required={true}
-                  value={schemaVersion}
-                  onChange={(event) => setSchemaVersion(event.target.value)}
+            <DisclosureSection
+              title={t("Provider configuration (JSON)")}
+              defaultOpen
+            >
+              <div className={styles.stack}>
+                <FormField
+                  className="min-w-0 w-full"
+                  label={t("Configuration schema version")}
+                >
+                  <Input
+                    required={true}
+                    value={schemaVersion}
+                    onChange={(event) => setSchemaVersion(event.target.value)}
+                  />
+                </FormField>
+                <TextAreaField
+                  label={t("Connection configuration (JSON)")}
+                  value={configuration}
+                  onChange={setConfiguration}
+                  code
                 />
-              </FormField>
-              <TextAreaField
-                label={t("Connection configuration (JSON)")}
-                value={configuration}
-                onChange={setConfiguration}
-                code
-              />
-              <DisclosureSection
-                title={<>{t("Existing target state (optional)")}</>}
-              >
                 <FormField
                   className="min-w-0 w-full"
                   label={t("State version")}
@@ -338,12 +488,15 @@ function EnvironmentForm({ close }: { close: () => void }) {
                 </FormField>
                 <TextAreaField
                   label={t("Provider state (JSON)")}
+                  hint={t(
+                    "Leave empty unless you are adopting a target that already exists.",
+                  )}
                   value={state}
                   onChange={setState}
                   code
                 />
-              </DisclosureSection>
-            </>
+              </div>
+            </DisclosureSection>
           )}
         </>
       )}

@@ -192,7 +192,7 @@ export function ComboboxPopup({
       >
         <span
           className={cn(
-            "relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-lg border bg-popover not-dark:bg-clip-padding shadow-lg/5 transition-[scale,opacity] before:pointer-events-none before:absolute before:inset-0 before:rounded-[calc(var(--radius-lg)-1px)] before:shadow-[0_1px_--theme(--color-black/4%)] dark:before:shadow-[0_-1px_--theme(--color-white/6%)]",
+            "relative flex max-h-full min-w-(--anchor-width) max-w-(--available-width) origin-(--transform-origin) rounded-[10px] border-0 bg-popover not-dark:bg-clip-padding shadow-[0_10px_32px_--theme(--color-black/14%),0_1px_3px_--theme(--color-black/8%)] transition-[scale,opacity] dark:shadow-[0_10px_32px_--theme(--color-black/48%),0_0_0_1px_--theme(--color-white/6%)]",
             className,
           )}
         >

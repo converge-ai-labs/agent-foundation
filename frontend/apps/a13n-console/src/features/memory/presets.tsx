@@ -1,18 +1,33 @@
 import {
-  ArrowSquareOutIcon,
+  CaretDownIcon,
   FilesIcon,
+  NotebookIcon,
+  PlusIcon,
   UserCircleIcon,
+  XIcon,
 } from "@phosphor-icons/react";
-import { Button, ChoiceField, DisclosureSection, Switch } from "a13n-ui";
-import { useId, useRef, useState } from "react";
+import {
+  Button,
+  ChoiceField,
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+  DisclosureSection,
+  SettingsRow,
+  Switch,
+} from "a13n-ui";
+import { useId, useRef, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router";
 import { useWorkspace } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { providersPath } from "../providers/navigation";
+import { IconTile } from "../../shared/identity";
+import { ManageProvidersLink } from "../providers/manage-link";
 import { memoriesPath } from "./api";
 import { useMemoryProviders } from "./availability";
 import { fileEntry, MemoryEntryFields } from "./entries";
+import styles from "./memory.module.css";
 
 type Entry = Schema["MemoryEntrySelection"];
 type Kind = "personal" | "project";
@@ -51,18 +66,15 @@ export function MemoryPresets({
   savedProviderId?: string;
 }) {
   const { t } = useTranslation();
-  const { workspace, basePath, can } = useWorkspace();
+  const { basePath, can } = useWorkspace();
   const { providers } = useMemoryProviders();
-  const id = useId();
-  const [chosenProvider, setChosenProvider] = useState("");
   const removed = useRef<Partial<Record<Kind, Entry>>>({});
   const entries = asEntries(value);
   const available = (providers.data ?? []).filter(
     (item) =>
       mem0Types.has(item.type) && item.enabled && item.credential_configured,
   );
-  const selectedProvider =
-    available.find((item) => item.id === chosenProvider) ?? available[0];
+  const selectedProvider = available[0];
   // Recognize the supplied purpose and scope, never a tool-prefix name alone.
   const personalIndex = entries.findIndex(
     (entry) =>
@@ -146,72 +158,43 @@ export function MemoryPresets({
       entries: [...entries, { ...fileEntry(), name, description: "" }],
     });
   }
-  const manageLink = can("memory_provider.read") && (
-    <a
-      className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-      href={providersPath("memory", "workspace", workspace.key)}
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      {t("Manage memory providers")}
-      <ArrowSquareOutIcon size={14} aria-hidden="true" />
-    </a>
-  );
+  const manageLink = can("memory_provider.read") ? (
+    <ManageProvidersLink category="memory" scope="workspace" variant="ghost" />
+  ) : null;
+  const personalUnavailable = !personal && !selectedProvider;
+  const personalDescription = !personalUnavailable
+    ? t("Language, working style, and background, remembered per person.")
+    : t(
+        !can("memory_provider.read")
+          ? "Ask your workspace administrator to connect Mem0 to enable personal preferences."
+          : providers.isPending
+            ? "Loading memory providers…"
+            : providers.isError
+              ? "Memory providers could not be loaded. Your configuration is unchanged."
+              : "Connect Mem0 in memory providers to enable personal preferences.",
+      );
   return (
-    <div className="flex min-w-0 flex-col gap-5">
-      <div>
-        <p className="font-medium">{t("What should this agent remember?")}</p>
-        <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-          {t(
-            "Help it understand people and build on past work. Enable either, or use both together.",
-          )}
-        </p>
-      </div>
-      <div className="divide-y rounded-xl border">
-        <section className="p-5" aria-labelledby={`${id}-personal-title`}>
-          <div className="flex items-start gap-3">
-            <UserCircleIcon
-              size={22}
-              className="mt-0.5 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <div className="min-w-0 flex-1">
-              <label
-                id={`${id}-personal-title`}
-                htmlFor={`${id}-personal`}
-                className="font-medium"
-              >
-                {t("Personal preferences")}
-              </label>
-              <p
-                id={`${id}-personal-description`}
-                className="mt-1 text-sm leading-relaxed text-muted-foreground"
-              >
-                {t(
-                  "Remember each person's language, working style, and background across conversations.",
-                )}
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {t("For example: “Answer in Chinese and keep it concise.”")}
-              </p>
-            </div>
-            <Switch
-              id={`${id}-personal`}
-              aria-describedby={`${id}-personal-description`}
-              checked={!!personal}
-              disabled={
-                readOnly ||
-                (!personal && entries.length >= 16) ||
-                (!personal && !selectedProvider && !removed.current.personal)
-              }
-              onCheckedChange={(checked) => toggle("personal", checked)}
-            />
-          </div>
-          <div className="mt-4 grid gap-3 sm:ml-9">
-            {personal ? (
-              <>
-                {providerId ? (
+    <div className={styles.selection}>
+      <div className={styles.group}>
+        <PresetRow
+          icon={<UserCircleIcon size={16} />}
+          title={t("Personal preferences")}
+          description={personalDescription}
+          warning={personalUnavailable}
+          checked={!!personal}
+          disabled={
+            readOnly ||
+            (!personal && entries.length >= 16) ||
+            (!personal && !selectedProvider && !removed.current.personal)
+          }
+          onCheckedChange={(checked) => toggle("personal", checked)}
+        >
+          {personal && (
+            <>
+              {providerId ? (
+                <div className={styles.entryControl}>
                   <ChoiceField
+                    className={styles.entryChoice}
                     label={t("Stored with")}
                     readOnly={readOnly}
                     value={providerId}
@@ -236,127 +219,61 @@ export function MemoryPresets({
                       })
                     }
                   />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {t("Storage is configured in advanced settings.")}
-                  </p>
-                )}
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <label htmlFor={`${id}-recall`} className="text-sm">
-                      {t("Automatic recall")}
-                    </label>
-                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                      {t(
-                        "Bring relevant saved preferences into each reply. This does not save every message.",
-                      )}
-                    </p>
-                  </div>
-                  <Switch
-                    id={`${id}-recall`}
-                    checked={personal.auto_recall ?? true}
-                    disabled={readOnly}
-                    onCheckedChange={(checked) =>
-                      update(personalIndex, {
-                        ...personal,
-                        auto_recall: checked,
-                      })
-                    }
-                  />
+                  {manageLink}
                 </div>
-                {providerUnavailable && (
-                  <p
-                    role="alert"
-                    className="text-sm text-destructive-foreground"
-                  >
-                    {t(
-                      "The selected provider is unavailable or disabled. Choose another provider before saving.",
-                    )}
-                  </p>
-                )}
-              </>
-            ) : available.length ? (
-              <ChoiceField
-                readOnly={readOnly}
-                label={t("Stored with")}
-                value={selectedProvider?.id ?? ""}
-                options={available.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                }))}
-                onValueChange={setChosenProvider}
-              />
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                {t(
-                  !can("memory_provider.read")
-                    ? "Ask your workspace administrator to connect Mem0 to enable personal preferences."
-                    : providers.isPending
-                      ? "Loading memory providers…"
-                      : providers.isError
-                        ? "Memory providers could not be loaded. Your configuration is unchanged."
-                        : "Connect Mem0 in memory providers to enable personal preferences.",
-                )}
+              ) : (
+                <p className={styles.entryHint}>
+                  {t("Storage is configured in advanced settings.")}
+                </p>
+              )}
+              <p className={styles.entryHint}>
+                {t("For example: “Answer in Chinese and keep it concise.”")}
               </p>
-            )}
-            {manageLink}
-            {personal && (
-              <MemoryDetails
-                title={t("Personal preference settings")}
+              {providerUnavailable && (
+                <p role="alert" className={styles.entryAlert}>
+                  {t(
+                    "The selected provider is unavailable or disabled. Choose another provider before saving.",
+                  )}
+                </p>
+              )}
+              <SettingsRow
+                label={t("Automatic recall")}
+                description={t(
+                  "Bring relevant saved preferences into each reply. This does not save every message.",
+                )}
+              >
+                <Switch
+                  aria-label={t("Automatic recall")}
+                  checked={personal.auto_recall ?? true}
+                  disabled={readOnly}
+                  onCheckedChange={(checked) =>
+                    update(personalIndex, { ...personal, auto_recall: checked })
+                  }
+                />
+              </SettingsRow>
+              <RecallSettings
                 entry={personal}
                 readOnly={readOnly}
-                preset
                 onChange={(next) => update(personalIndex, next)}
               />
-            )}
-          </div>
-        </section>
-        <section className="p-5" aria-labelledby={`${id}-project-title`}>
-          <div className="flex items-start gap-3">
-            <FilesIcon
-              size={22}
-              className="mt-0.5 shrink-0 text-muted-foreground"
-              aria-hidden="true"
-            />
-            <div className="min-w-0 flex-1">
-              <label
-                id={`${id}-project-title`}
-                htmlFor={`${id}-project`}
-                className="font-medium"
-              >
-                {t("Project memory")}
-              </label>
-              <p
-                id={`${id}-project-description`}
-                className="mt-1 text-sm leading-relaxed text-muted-foreground"
-              >
-                {t(
-                  "Keep requirements, decisions, and procedures in documents you can review and edit.",
-                )}
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                {t(
-                  "For example: “We chose PostgreSQL; releases need a review.”",
-                )}
-              </p>
-            </div>
-            <Switch
-              id={`${id}-project`}
-              aria-describedby={`${id}-project-description`}
-              checked={!!project}
-              disabled={readOnly || (!project && entries.length >= 16)}
-              onCheckedChange={(checked) => toggle("project", checked)}
-            />
-          </div>
-          <div className="mt-4 grid gap-3 sm:ml-9">
-            <p className="text-xs text-muted-foreground">
-              {t(
-                "File-based · Kept in the run environment. Files last as long as that environment's storage.",
-              )}
-            </p>
-            {project && (
+            </>
+          )}
+        </PresetRow>
+        <PresetRow
+          icon={<FilesIcon size={16} />}
+          title={t("Project memory")}
+          description={t(
+            "Requirements, decisions, and procedures, kept as documents.",
+          )}
+          checked={!!project}
+          disabled={readOnly || (!project && entries.length >= 16)}
+          onCheckedChange={(checked) => toggle("project", checked)}
+        >
+          {project && (
+            <>
               <ChoiceField
-                label={t("Use these documents in")}
+                className={styles.entryChoice}
+                label={t("Scope")}
                 readOnly={readOnly}
                 value={project.scope ?? "thread"}
                 options={[
@@ -373,109 +290,212 @@ export function MemoryPresets({
                   "To reuse files across conversations, reuse the same environment and choose This agent.",
                 )}
               />
-            )}
-            {project && (
-              <MemoryDetails
-                title={t("Project memory settings")}
+              <p className={styles.entryHint}>
+                {t(
+                  "For example: “We chose PostgreSQL; releases need a review.”",
+                )}
+              </p>
+              <RecallSettings
                 entry={project}
                 readOnly={readOnly}
-                preset
                 onChange={(next) => update(projectIndex, next)}
               />
-            )}
-          </div>
-        </section>
+            </>
+          )}
+        </PresetRow>
+        {custom.map(({ entry, index }) => (
+          <CustomRow
+            key={index}
+            entry={entry}
+            readOnly={readOnly}
+            onChange={(next) => update(index, next)}
+            onRemove={() => remove(index)}
+          />
+        ))}
+        {!readOnly && (
+          <Button
+            type="button"
+            variant="ghost"
+            className={styles.addEntry}
+            disabled={entries.length >= 16}
+            onClick={addCustom}
+          >
+            <PlusIcon size={14} aria-hidden="true" />
+            {t("Add custom memory")}
+          </Button>
+        )}
       </div>
-      <div className="space-y-2 text-xs leading-relaxed text-muted-foreground">
-        <p>
-          {t(
-            "With both enabled, the agent uses each purpose to choose where to save. Preferences and project documents stay separate.",
+      <div className={styles.footnote}>
+        <p>{t("Turning an option off does not delete saved memories.")}</p>
+        <div className={styles.footnoteActions}>
+          {!personal && manageLink}
+          {agentId && (
+            <Button
+              variant="outline"
+              size="sm"
+              render={
+                <Link
+                  to={memoriesPath(basePath, {
+                    scope: "agent",
+                    subject_id: agentId,
+                    provider_id: savedProviderId,
+                  })}
+                />
+              }
+            >
+              {t("View agent memories")}
+            </Button>
           )}
-        </p>
-        <p>
-          {t(
-            "Turning an option off does not delete saved memories. Save the agent to apply your changes.",
-          )}
-        </p>
+        </div>
       </div>
       <ErrorNotice error={providers.error} />
-      {agentId && (
-        <a
-          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground"
-          href={memoriesPath(basePath, {
-            scope: "agent",
-            subject_id: agentId,
-            provider_id: savedProviderId,
-          })}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {t("View agent memories")}
-          <ArrowSquareOutIcon size={14} aria-hidden="true" />
-        </a>
-      )}
-      {custom.map(({ entry, index }) => (
-        <MemoryDetails
-          key={index}
-          title={entry.name || t("Custom memory")}
-          entry={entry}
-          readOnly={readOnly}
-          onChange={(next) => update(index, next)}
-          onRemove={() => remove(index)}
-        />
-      ))}
-      {!readOnly && (
-        <Button
-          type="button"
-          variant="outline"
-          className="self-start"
-          disabled={entries.length >= 16}
-          onClick={addCustom}
-        >
-          {t("Add custom memory")}
-        </Button>
-      )}
     </div>
   );
 }
 
-function MemoryDetails({
+/** One preset row: tile, purpose, a switch, and its settings once it is on. */
+function PresetRow({
+  icon,
   title,
+  description,
+  warning = false,
+  checked,
+  disabled,
+  onCheckedChange,
+  children,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+  warning?: boolean;
+  checked: boolean;
+  disabled: boolean;
+  onCheckedChange: (checked: boolean) => void;
+  children?: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <section className={styles.entry} aria-labelledby={`${id}-title`}>
+      <div className={styles.entryHeader}>
+        <IconTile size={32} tone="elevated">
+          {icon}
+        </IconTile>
+        <span className={styles.entryCopy}>
+          <label id={`${id}-title`} htmlFor={`${id}-switch`}>
+            {title}
+          </label>
+          <small
+            id={`${id}-description`}
+            data-tone={warning ? "warning" : undefined}
+          >
+            {description}
+          </small>
+        </span>
+        <Switch
+          id={`${id}-switch`}
+          aria-describedby={`${id}-description`}
+          checked={checked}
+          disabled={disabled}
+          onCheckedChange={onCheckedChange}
+        />
+      </div>
+      {checked && children && (
+        <div className={styles.entryBody}>{children}</div>
+      )}
+    </section>
+  );
+}
+
+/** A custom entry: the row names it, and opens its own fields in place. */
+function CustomRow({
   entry,
+  readOnly,
   onChange,
   onRemove,
-  readOnly,
-  preset = false,
 }: {
-  title: string;
   entry: Entry;
+  readOnly: boolean;
   onChange: (entry: Entry) => void;
-  onRemove?: () => void;
-  readOnly?: boolean;
-  preset?: boolean;
+  onRemove: () => void;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(!entry.description);
+  const name = entry.name || t("Custom memory");
   return (
-    <div className="min-w-0" onInvalidCapture={() => setOpen(true)}>
-      <DisclosureSection title={title} open={open} onOpenChange={setOpen}>
+    <div className={styles.entry} onInvalidCapture={() => setOpen(true)}>
+      <Collapsible open={open} onOpenChange={setOpen}>
+        <div className={styles.entryHeader}>
+          <IconTile size={32} tone="elevated">
+            <NotebookIcon size={16} />
+          </IconTile>
+          <CollapsibleTrigger
+            aria-label={name}
+            render={<button type="button" className={styles.entryTrigger} />}
+          >
+            <span className={styles.entryCopy}>
+              <strong>{name}</strong>
+              <small>{entry.description || t("Custom memory")}</small>
+            </span>
+            <CaretDownIcon
+              size={14}
+              className={open ? styles.caretOpen : styles.caret}
+              aria-hidden="true"
+            />
+          </CollapsibleTrigger>
+          {!readOnly && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              aria-label={t("Remove entry")}
+              onClick={onRemove}
+            >
+              <XIcon />
+            </Button>
+          )}
+        </div>
+        <CollapsiblePanel>
+          <div className={styles.entryBody}>
+            <MemoryEntryFields
+              entry={entry}
+              onChange={onChange}
+              readOnly={readOnly}
+            />
+          </div>
+        </CollapsiblePanel>
+      </Collapsible>
+    </div>
+  );
+}
+
+/** The rare knobs of a preset, closed until someone asks for them. */
+function RecallSettings({
+  entry,
+  onChange,
+  readOnly,
+}: {
+  entry: Entry;
+  onChange: (entry: Entry) => void;
+  readOnly?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className={styles.recall} onInvalidCapture={() => setOpen(true)}>
+      <DisclosureSection
+        title={t(
+          entry.mode === "documents" ? "Storage and recall" : "Recall settings",
+        )}
+        open={open}
+        onOpenChange={setOpen}
+      >
         <MemoryEntryFields
           entry={entry}
           onChange={onChange}
           readOnly={readOnly}
-          preset={preset}
+          preset
         />
-        {!readOnly && onRemove && (
-          <Button type="button" variant="outline" onClick={onRemove}>
-            {t("Remove entry")}
-          </Button>
-        )}
       </DisclosureSection>
-      {!open && !preset && (
-        <p className="mt-2 text-sm text-muted-foreground">
-          {entry.description}
-        </p>
-      )}
     </div>
   );
 }

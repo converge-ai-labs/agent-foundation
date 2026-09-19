@@ -65,9 +65,10 @@ it("searches the server by name or key from the first page and links by key", as
   await screen.findByRole("link", { name: /Second skill/ });
   const search = screen.getByRole("searchbox", { name: "Search skills" });
   await user.type(search, "REVIEW");
-  await user.click(screen.getByRole("tab", { name: "GitHub" }));
+  await user.click(screen.getByRole("combobox", { name: "Source" }));
+  await user.click(await screen.findByRole("option", { name: "GitHub" }));
   await waitFor(() =>
-    expect(http.GET).toHaveBeenLastCalledWith(
+    expect(http.GET).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
         params: expect.objectContaining({
@@ -83,7 +84,7 @@ it("searches the server by name or key from the first page and links by key", as
   const found = await screen.findByRole("link", { name: /Document helper/ });
   expect(found.getAttribute("href")).toBe("/workspace/test/skills/review-docs");
   const matching = http.GET.mock.calls.filter(
-    ([, options]) => options.params.query.q === "review",
+    ([, options]) => options.params.query?.q === "review",
   );
   expect(matching.length).toBeGreaterThan(0);
   expect(

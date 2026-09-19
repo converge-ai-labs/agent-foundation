@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  Badge,
+  StatusPill,
   Button,
   ChoiceField,
   Empty,
@@ -76,11 +76,11 @@ export function CollectionDemo({ t }: { t: Translate }) {
                 <TableCell className="font-medium">{item.name}</TableCell>
                 <TableCell>{item.kind}</TableCell>
                 <TableCell>
-                  <Badge
-                    variant={item.status === "Ready" ? "default" : "secondary"}
+                  <StatusPill
+                    variant={item.status === "Ready" ? "success" : "neutral"}
                   >
                     {item.status}
-                  </Badge>
+                  </StatusPill>
                 </TableCell>
               </TableRow>
             ))}

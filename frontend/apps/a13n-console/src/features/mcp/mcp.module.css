@@ -1,0 +1,121 @@
+/* Tool browser ----------------------------------------------------------- */
+.tools {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.toolsHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.toolsHeader p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.toolList {
+  display: grid;
+  min-width: 0;
+}
+.toolList > * + * {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.toolRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 4px;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+.toolRow:hover {
+  background: var(--a13n-hover);
+}
+.toolRow svg {
+  margin-top: 3px;
+  flex: none;
+  color: var(--a13n-secondary);
+  transition: transform 150ms ease;
+}
+.toolRow[aria-expanded="true"] svg {
+  transform: rotate(180deg);
+}
+.toolCopy {
+  display: grid;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+.toolCopy strong {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.toolCopy small {
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.toolDetail {
+  display: grid;
+  gap: 12px;
+  padding: 0 4px 14px;
+}
+.toolSchema h4 {
+  margin: 0 0 6px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* Authorization ---------------------------------------------------------- */
+.authorization {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+.authorizationState {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  font-size: 13px;
+}
+.hint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.copyField {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.copyField input {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+}
+.authorizationActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.authorizationTitle {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+}
