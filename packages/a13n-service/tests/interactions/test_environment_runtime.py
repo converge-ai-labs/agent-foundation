@@ -690,10 +690,9 @@ async def test_environment_operations_use_no_database_queries_or_commits(
                 await context.authorization.admit_model_request()
             assert sum("from environment_providers" in statement for statement in statements) == 1
             assert sum("from workspaces" in statement for statement in statements) == 1
-            assert not any(
-                "from environments" in statement or "run_attempts" in statement or "from runs" in statement
-                for statement in statements
-            )
+            # Device revocation is refreshed with IAM, never on individual file or shell operations.
+            assert sum("from environments" in statement for statement in statements) == 1
+            assert not any("run_attempts" in statement or "from runs" in statement for statement in statements)
         assert commits == []
     finally:
         event.remove(engine, "before_cursor_execute", record)

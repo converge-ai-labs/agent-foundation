@@ -1,5 +1,6 @@
 {
   "Connect device": "连接设备",
+  "Copy command": "复制命令",
   "Connect an envd device": "连接 envd 设备",
   "Device connections are unavailable on this Service. Ask the operator to enable the WebSocket envd provider with Redis.": "当前 Service 不支持设备连接。请联系管理员配置 Redis 并启用 WebSocket envd Provider。",
   "Connect your computer once, then choose its directories when starting a conversation.": "连接电脑后，即可在发起对话时选择其工作目录。",

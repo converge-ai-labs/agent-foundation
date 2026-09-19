@@ -1,5 +1,6 @@
 {
   "Connect device": "Connect device",
+  "Copy command": "Copy command",
   "Connect an envd device": "Connect an envd device",
   "Device connections are unavailable on this Service. Ask the operator to enable the WebSocket envd provider with Redis.": "Device connections are unavailable on this Service. Ask the operator to enable the WebSocket envd provider with Redis.",
   "Connect your computer once, then choose its directories when starting a conversation.": "Connect your computer once, then choose its directories when starting a conversation.",

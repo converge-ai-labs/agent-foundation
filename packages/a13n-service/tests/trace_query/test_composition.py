@@ -107,7 +107,7 @@ async def test_app_preserves_authorizer_override_and_disabled_provider(
     provider = Provider(items=(summary(correlation=trace_correlation),))
     registry = TraceQueryProviderRegistry()
     registry.register("fixture", lambda: provider)
-    payload = trace_settings.model_dump(mode="python")
+    payload = trace_settings.model_dump(mode="python", exclude_unset=True)
     payload["observability"]["query"]["provider"] = provider_key
     trace_settings = Settings.model_validate(payload)
     app = create_app(
