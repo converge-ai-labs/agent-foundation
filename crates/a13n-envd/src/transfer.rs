@@ -2732,13 +2732,31 @@ mod tests {
             .await
             .unwrap();
         transfers.abort_writer(&opened.writer).await.unwrap();
-        let age = || {
-            let mut state = transfers.inner.state.lock().unwrap();
-            state.terminal_order.front_mut().unwrap().1 =
-                std::time::Instant::now() - transfers.inner.terminal_ttl;
-        };
-        age();
+        // A future sentinel proves access replaces the recorded timestamp without
+        // subtracting a full retention period from a freshly booted Windows clock.
+        let sentinel = std::time::Instant::now() + transfers.inner.terminal_ttl;
+        transfers
+            .inner
+            .state
+            .lock()
+            .unwrap()
+            .terminal_order
+            .front_mut()
+            .unwrap()
+            .1 = sentinel;
         let observer = transfers.record(&opened.writer.0).unwrap();
+        assert!(
+            transfers
+                .inner
+                .state
+                .lock()
+                .unwrap()
+                .terminal_order
+                .front()
+                .unwrap()
+                .1
+                < sentinel
+        );
         transfers.collect(false);
         assert!(
             transfers
@@ -2749,8 +2767,13 @@ mod tests {
                 .records
                 .contains_key(&opened.writer.0)
         );
-        age();
-        transfers.collect(false);
+        let collect_expired = || {
+            transfers.inner.state.lock().unwrap().prune(
+                std::time::Instant::now() + transfers.inner.terminal_ttl,
+                transfers.inner.terminal_ttl,
+            );
+        };
+        collect_expired();
         assert!(
             transfers
                 .inner
@@ -2761,7 +2784,7 @@ mod tests {
                 .contains_key(&opened.writer.0)
         );
         drop(observer);
-        transfers.collect(false);
+        collect_expired();
         assert!(matches!(
             transfers.record(&opened.writer.0),
             Err(TransferError::InvalidHandle)
