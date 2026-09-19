@@ -30,6 +30,7 @@ from a13n_service.interactions.control_wakeups import AttemptControlWakeups
 from a13n_service.interactions.harness_results import AttemptDisposition, AttemptOutcome, StoredHarnessOutcomeAdapter
 from a13n_service.interactions.harness_runtime import HarnessDriver
 from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, RedisThreadControlSignals, ThreadInboxStore
+from a13n_service.interactions.lease_renewals import LeaseRenewalBatcher
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
@@ -101,6 +102,7 @@ class WorkerAttempts:
         self._observability = observability
         self._queue_drain = queue_drain
         self._execution = AttemptExecutionService(shared.storage.sessions, lifecycle=shared.lifecycle)
+        self.renewals = LeaseRenewalBatcher(self._execution)
         self._states = RunStateStore(shared.storage.objects)
         self._payloads = RunPayloadStore(shared.storage.objects)
         self._signals = RedisThreadControlSignals(shared.storage.redis)
@@ -261,6 +263,7 @@ class WorkerAttempts:
                 committer=self._committer,
                 capacity_slot=slot,
                 activate_publication=PublicationActivator(sessions, self._stream).activate,
+                renewals=self.renewals,
             )
             await register(control)
             receipt = await executor.run()

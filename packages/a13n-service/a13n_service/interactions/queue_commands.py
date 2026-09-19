@@ -15,7 +15,8 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     IdempotencyConflict,
     IdempotencyIdentity,
-    load_evidence,
+    find_evidence,
+    insert_evidence,
     new_evidence,
 )
 from a13n_service.environments.selection import Omitted
@@ -52,7 +53,7 @@ from a13n_service.interactions.objects import RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
 from a13n_service.interactions.queue_validity import permanent_queue_failure
 from a13n_service.interactions.state import RunCheckpoint
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
 from .command_evidence import (
@@ -209,7 +210,8 @@ class QueuedRunCommands:
                 # Automatic drain recovers from the queue row, not a synthetic HTTP command.
                 if stored_key is None:
                     return
-                database.add(
+                await insert_evidence(
+                    database,
                     new_evidence(
                         organization_id=run.organization_id,
                         scope=run_command_scope(actor),
@@ -218,7 +220,7 @@ class QueuedRunCommands:
                         result_ref=run.id,
                         receipt=receipt.model_dump(mode="json"),
                         now=self._clock(),
-                    )
+                    ),
                 )
 
             try:
@@ -350,9 +352,9 @@ class QueuedRunCommands:
         stored_key: str,
         request_fingerprint: str,
     ) -> QueuedSubmissionConsumptionReceipt | None:
-        async with transaction(self._sessions) as database:
+        async with short_session(self._sessions) as database:
             try:
-                evidence = await load_evidence(
+                evidence = await find_evidence(
                     database,
                     scope=run_command_scope(actor),
                     identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),

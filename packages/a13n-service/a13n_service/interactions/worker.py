@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Awaitable, Callable
+from contextlib import nullcontext
 from datetime import timedelta
 from typing import Protocol
 
@@ -17,6 +18,7 @@ from a13n_service.storage import is_database_contention, is_database_unavailable
 
 from .attempts import AttemptContext, AttemptLease
 from .domain import RunAttemptYieldReason, RunStatus
+from .lease_renewals import LeaseRenewalBatcher
 from .models import RunRecord
 from .run_control import RunAttemptControl
 from .scheduling import AttemptScheduler, ClaimedAttempt, WorkerClaim
@@ -65,6 +67,7 @@ class WorkerExecutionLoop:
         lease_seconds: float = 30,
         cleanup_seconds: float = 10,
         drain_seconds: float = 30,
+        renewals: LeaseRenewalBatcher | None = None,
     ) -> None:
         if concurrency < 1 or min(poll_seconds, lease_seconds, cleanup_seconds, drain_seconds) <= 0:
             raise ValueError("Worker execution bounds must be positive")
@@ -88,6 +91,7 @@ class WorkerExecutionLoop:
         self._drain_deadline = float("inf")
         self._admission_scope: CancelScope | None = None
         self._candidate_offset = 0
+        self._renewals = renewals
 
     def is_draining(self) -> bool:
         return self._draining.is_set()
@@ -124,7 +128,10 @@ class WorkerExecutionLoop:
 
     async def run(self) -> None:
         try:
-            async with create_task_group() as roots:
+            async with (
+                nullcontext() if self._renewals is None else self._renewals.open(),
+                create_task_group() as roots,
+            ):
                 roots.start_soon(self._request_handoffs_on_drain)
                 while not self.is_draining():
                     productive = False

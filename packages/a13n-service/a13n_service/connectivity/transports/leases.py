@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -99,10 +99,13 @@ class ConnectionLeases:
 
     async def release(self, claim: ConnectionClaim) -> None:
         async with transaction(self.sessions) as session:
-            record = await session.scalar(
-                select(EventConnectionRecord).where(EventConnectionRecord.key == claim.key).with_for_update()
+            now = utc_now()
+            await session.execute(
+                update(EventConnectionRecord)
+                .where(
+                    EventConnectionRecord.key == claim.key,
+                    EventConnectionRecord.owner == claim.owner,
+                    EventConnectionRecord.generation == claim.generation,
+                )
+                .values(lease_expires_at=now, state="disconnected", observed_at=now)
             )
-            if record is not None and record.owner == claim.owner and record.generation == claim.generation:
-                record.lease_expires_at = utc_now()
-                record.state = "disconnected"
-                record.observed_at = utc_now()

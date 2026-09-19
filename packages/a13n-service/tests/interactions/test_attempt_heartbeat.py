@@ -201,3 +201,80 @@ async def test_renewal_prevents_takeover_using_stale_scan_candidate(heartbeat_ca
             await database.scalars(select(RunAttemptRecord).where(RunAttemptRecord.run_id == authority.run_id))
         )
         assert len(attempts) == 1 and attempts[0].id == claim.attempt.id
+
+
+@pytest.mark.parametrize("invalid", ["token", "expired", "terminal", "missing"])
+async def test_batch_renews_valid_sibling_in_two_statements(heartbeat_case, invalid):
+    sessions, objects, first, authority = heartbeat_case
+    _, run, _ = await _accept_root(
+        sessions,
+        objects,
+        session_id="sess_2222222222222222",
+        thread_id="thread-22222222222222222222222222222222",
+        run_id="run_2222222222222222",
+    )
+    second = await AttemptScheduler(
+        sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+    ).claim(run.id, _worker(lease_seconds=60))
+    assert isinstance(second, ClaimedAttempt)
+    sibling = _authority(second)
+    now = NOW + timedelta(seconds=2)
+    if invalid == "token":
+        authority = replace(authority, lease_token="not-the-owner")
+    elif invalid == "expired":
+        now = first.attempt.lease_expires_at
+    elif invalid == "terminal":
+        await AttemptExecutionService(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer()).yield_attempt(
+            authority, RunAttemptYieldReason.service_drain
+        )
+    else:
+        authority = replace(authority, run_attempt_id="rat_missing")
+    execution = AttemptExecutionService(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
+    async with transaction(sessions) as blocker:
+        await blocker.scalar(select(ThreadRecord).where(ThreadRecord.id == sibling.thread_id).with_for_update())
+        await blocker.scalar(select(RunRecord).where(RunRecord.id == sibling.run_id).with_for_update())
+        with fail_after(5), capture_sql(sessions) as statements:
+            receipts = await execution.heartbeat_many((authority, sibling))
+    assert len(statements) == 2, statements
+    assert "FOR UPDATE OF run_attempts" in statements[0]
+    assert "FROM (VALUES" in statements[1]
+    assert set(receipts) == {sibling.run_attempt_id}
+    assert receipts[sibling.run_attempt_id].lease_expires_at == now + sibling.lease_duration
+    assert receipts[sibling.run_attempt_id].attempt_version == second.attempt.version + 1
+    # Storage alone cannot extend the executor's local authority observation.
+    assert sibling.lease.expires_at == second.attempt.lease_expires_at
+    async with short_session(sessions) as database:
+        untouched = await database.get(RunAttemptRecord, first.attempt.id)
+        assert untouched.version == first.attempt.version + int(invalid == "terminal")
+        renewed = await database.get(RunAttemptRecord, second.attempt.id)
+        assert renewed.lease_expires_at == receipts[second.attempt.id].lease_expires_at
+
+
+async def test_batch_renews_multiple_attempts_with_one_update(heartbeat_case):
+    sessions, objects, first, authority = heartbeat_case
+    authorities = [authority]
+    for index in (2, 3):
+        _, run, _ = await _accept_root(
+            sessions,
+            objects,
+            session_id=f"sess_{index:016x}",
+            thread_id=f"thread-{index:032x}",
+            run_id=f"run_{index:016x}",
+        )
+        claim = await AttemptScheduler(
+            sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+        ).claim(run.id, _worker())
+        assert isinstance(claim, ClaimedAttempt)
+        authorities.append(_authority(claim))
+    execution = AttemptExecutionService(
+        sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
+    )
+    with capture_sql(sessions) as statements:
+        receipts = await execution.heartbeat_many(authorities)
+    assert len(statements) == 2, statements
+    assert set(receipts) == {item.run_attempt_id for item in authorities}
+    async with short_session(sessions) as database:
+        attempts = list(await database.scalars(select(RunAttemptRecord)))
+        assert len(attempts) == 3
+        assert all(item.version == first.attempt.version + 1 for item in attempts)
+        assert all(item.lease_expires_at == NOW + timedelta(seconds=32) for item in attempts)

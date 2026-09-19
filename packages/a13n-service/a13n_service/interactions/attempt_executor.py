@@ -10,7 +10,7 @@ from a13n_harness import SafeFailure
 from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.observation import record_span_metadata
 from a13n_logging import exception_details, get_logger
-from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
+from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, current_time, fail_after, sleep
 from anyio.abc import TaskStatus
 from opentelemetry.trace import Span
 
@@ -31,6 +31,7 @@ from .attempts import (
 )
 from .harness_results import AttemptCommitter, AttemptOutcome, HarnessOutcomeAdapter
 from .harness_runtime import HarnessDriver, HarnessInvocation
+from .lease_renewals import LeaseRenewalBatcher
 from .run_control import RunAttemptControl
 from .state import WaitingOutcomeCandidate
 from .state_admission import StateClaimExhausted
@@ -65,17 +66,23 @@ class CapacitySlot(Protocol):
 class LeaseMonitor:
     """Renew the exact Attempt and fence local control when authority is lost."""
 
-    def __init__(self, context: AttemptContext, control: RunAttemptControl) -> None:
+    def __init__(
+        self, context: AttemptContext, control: RunAttemptControl, renewals: LeaseRenewalBatcher | None = None
+    ) -> None:
         self._context = context
         self._control = control
+        self._renewals = renewals
 
     async def run(self, *, task_status: TaskStatus[None] = TASK_STATUS_IGNORED) -> None:
         task_status.started()
         while True:
-            await sleep(self._context.renewal_interval.total_seconds())
+            interval = self._context.renewal_interval.total_seconds()
+            # Align Worker monitors without delaying any first renewal beyond
+            # its original interval. Standalone executors retain their own timer.
+            await sleep(interval if self._renewals is None else interval - current_time() % interval)
             try:
                 with fail_after(self._context.renewal_timeout.total_seconds()):
-                    await self._control.renew_lease()
+                    await self._control.renew_lease(None if self._renewals is None else self._renewals.renew)
             except Exception:
                 await self._control.authority_lost()
                 raise
@@ -126,6 +133,7 @@ class RunAttemptExecutor[OutputT]:
         committer: AttemptCommitter,
         capacity_slot: CapacitySlot,
         activate_publication: Callable[[AttemptContext], Awaitable[None]],
+        renewals: LeaseRenewalBatcher | None = None,
     ) -> None:
         if control.current_context is not context:
             raise ValueError("executor, control, and monitor must share one Attempt context")
@@ -138,6 +146,7 @@ class RunAttemptExecutor[OutputT]:
         self._committer = committer
         self._capacity_slot = capacity_slot
         self._activate_publication = activate_publication
+        self._renewals = renewals
 
     async def run(self) -> AttemptOutcome | AttemptMutationReceipt | AttemptPreparationRejected:
         finalization: AttemptOutcome | AttemptMutationReceipt | AttemptPreparationRejected | None = None
@@ -145,7 +154,7 @@ class RunAttemptExecutor[OutputT]:
             async with create_task_group() as tasks:
                 self._control.bind_executor(self._driver, tasks.cancel_scope.cancel)
                 try:
-                    await tasks.start(LeaseMonitor(self._context, self._control).run)
+                    await tasks.start(LeaseMonitor(self._context, self._control, self._renewals).run)
                     await tasks.start(ControlWatcher(self._context, self._control, self._wakeups).run)
                     with ExitStack() as reconstruction:
                         reconstruction_span = reconstruction.enter_context(

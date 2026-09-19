@@ -2,6 +2,8 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_service.interactions.attempts import AttemptAuthorityError, AttemptExecutionService
+from a13n_service.interactions.lease_renewals import LeaseRenewalBatcher
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.worker import WorkerExecutionLoop
@@ -45,6 +47,10 @@ async def test_worker_reserves_before_claim_releases_losers_and_drains_owned_roo
         drain_seconds=0.5,
     )
     monkeypatch.setattr(loop, "_organizations", AsyncMock(return_value=(ORGANIZATION_ID,)))
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
+    renewals = LeaseRenewalBatcher(execution)
+    loop._renewals = renewals
+    renewed_during_drain = []
     claims = []
 
     async def claim(run_id, worker):
@@ -57,6 +63,7 @@ async def test_worker_reserves_before_claim_releases_losers_and_drains_owned_roo
         await register(control)
         started.set()
         await handed_off.wait()
+        renewed_during_drain.append(await renewals.renew(acceptance._authority(owned)))
         slot.release()
 
     scheduler.claim = AsyncMock(side_effect=claim)
@@ -71,6 +78,9 @@ async def test_worker_reserves_before_claim_releases_losers_and_drains_owned_roo
             else:
                 await loop.drain()
             await loop.wait_stopped()
+    assert len(renewed_during_drain) == 1
+    with pytest.raises(AttemptAuthorityError):
+        await renewals.renew(acceptance._authority(owned))
     assert claims == ["loser", run.id]
     assert loop._capacity.value == 1
     assert runner.run.await_count == 1

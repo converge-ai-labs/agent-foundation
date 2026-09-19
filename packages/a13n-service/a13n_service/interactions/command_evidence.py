@@ -17,7 +17,8 @@ from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     InvalidIdempotencyKey,
     digest_visible_ascii_key,
-    load_evidence,
+    find_evidence,
+    insert_evidence,
     new_evidence,
 )
 from a13n_service.durable_operations.requests import request_scope
@@ -25,7 +26,7 @@ from a13n_service.environments.selection import Omitted
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt
 from a13n_service.interactions.models import RunRecord
-from a13n_service.storage import transaction
+from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
 from .access import authorize_interaction
@@ -73,8 +74,8 @@ class RunCommandEvidence:
 
     async def replay(self) -> RunAcceptanceReceipt | None:
         try:
-            async with transaction(self._sessions) as database:
-                evidence = await load_evidence(database, scope=self._scope, identity=self._identity, now=self._clock())
+            async with short_session(self._sessions) as database:
+                evidence = await find_evidence(database, scope=self._scope, identity=self._identity, now=self._clock())
                 if evidence is None:
                     return None
                 run = await database.get(RunRecord, evidence.result_ref)
@@ -105,7 +106,8 @@ class RunCommandEvidence:
         run = await database.get(RunRecord, receipt.run_id)
         if run is None:
             raise RuntimeError("accepted Run is missing")
-        database.add(
+        await insert_evidence(
+            database,
             new_evidence(
                 organization_id=run.organization_id,
                 scope=self._scope,
@@ -114,7 +116,7 @@ class RunCommandEvidence:
                 result_ref=run.id,
                 now=now,
                 receipt=receipt.model_dump(mode="json"),
-            )
+            ),
         )
 
     async def reconcile(self, error: RunAcceptanceError) -> RunAcceptanceReceipt:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import Update, and_, case, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import OutboxRecord
@@ -40,42 +40,50 @@ async def claim_outbox(
         and_(OutboxRecord.status == "pending", OutboxRecord.available_at <= now),
         and_(OutboxRecord.status == "publishing", OutboxRecord.lease_expires_at <= now),
     )
-    statement = select(OutboxRecord).where(
+    candidates = select(OutboxRecord.id).where(
         OutboxRecord.source_kind == source_kind,
         OutboxRecord.destination_kind == destination_kind,
         due,
     )
     if destination_ref is not None:
-        statement = statement.where(OutboxRecord.destination_ref == destination_ref)
+        candidates = candidates.where(OutboxRecord.destination_ref == destination_ref)
+    selected = (
+        candidates.order_by(OutboxRecord.available_at, OutboxRecord.id)
+        .limit(limit)
+        .with_for_update(skip_locked=True)
+        .cte("claimable_outbox")
+    )
+    await database.flush()
     records = (
         await database.scalars(
-            statement.order_by(OutboxRecord.available_at, OutboxRecord.id)
-            .limit(limit)
-            .with_for_update(skip_locked=True)
+            update(OutboxRecord)
+            .where(OutboxRecord.id == selected.c.id)
+            .values(
+                status="publishing",
+                claim_generation=OutboxRecord.claim_generation + 1,
+                attempt_count=OutboxRecord.attempt_count + 1,
+                lease_expires_at=now + lease_duration,
+                updated_at=now,
+                published_at=None,
+                dead_lettered_at=None,
+            )
+            .returning(OutboxRecord)
+            .execution_options(synchronize_session="fetch", populate_existing=True)
         )
     ).all()
-    claims: list[OutboxClaim] = []
-    for record in records:
-        record.status = "publishing"
-        record.claim_generation += 1
-        record.attempt_count += 1
-        record.lease_expires_at = now + lease_duration
-        record.updated_at = now
-        record.published_at = None
-        record.dead_lettered_at = None
-        claims.append(
-            OutboxClaim(
-                outbox_id=record.id,
-                source_kind=record.source_kind,
-                source_id=record.source_id,
-                destination_kind=record.destination_kind,
-                destination_ref=record.destination_ref,
-                generation=record.claim_generation,
-                attempt_count=record.attempt_count,
-            )
+    # UPDATE RETURNING has no ordering guarantee; retain the admission order.
+    return tuple(
+        OutboxClaim(
+            outbox_id=record.id,
+            source_kind=record.source_kind,
+            source_id=record.source_id,
+            destination_kind=record.destination_kind,
+            destination_ref=record.destination_ref,
+            generation=record.claim_generation,
+            attempt_count=record.attempt_count,
         )
-    await database.flush()
-    return tuple(claims)
+        for record in sorted(records, key=lambda record: (record.available_at, record.id))
+    )
 
 
 async def complete_outbox(
@@ -84,17 +92,20 @@ async def complete_outbox(
     *,
     completed_at: datetime,
 ) -> bool:
-    record = await _lock_current_claim(database, claim, settled_at=completed_at)
-    if record is None:
-        return False
-    record.status = "published"
-    record.lease_expires_at = None
-    record.updated_at = completed_at
-    record.published_at = completed_at
-    record.dead_lettered_at = None
-    record.last_error_code = None
     await database.flush()
-    return True
+    return (
+        await database.scalar(
+            _current_claim_update(claim, settled_at=completed_at).values(
+                status="published",
+                lease_expires_at=None,
+                updated_at=completed_at,
+                published_at=completed_at,
+                dead_lettered_at=None,
+                last_error_code=None,
+            )
+        )
+        is not None
+    )
 
 
 async def fail_outbox(
@@ -111,19 +122,22 @@ async def fail_outbox(
         raise ValueError("Outbox error code must contain 1 through 64 characters")
     if retry_after < timedelta(0) or max_attempts < 1:
         raise ValueError("Outbox retry policy is invalid")
-    record = await _lock_current_claim(database, claim, settled_at=failed_at)
-    if record is None:
-        return False
-    dead_lettered = not retryable or record.attempt_count >= max_attempts
-    record.status = "dead_lettered" if dead_lettered else "pending"
-    record.available_at = failed_at if dead_lettered else failed_at + retry_after
-    record.lease_expires_at = None
-    record.updated_at = failed_at
-    record.published_at = None
-    record.dead_lettered_at = failed_at if dead_lettered else None
-    record.last_error_code = error_code
+    dead_lettered = true() if not retryable else OutboxRecord.attempt_count >= max_attempts
     await database.flush()
-    return True
+    return (
+        await database.scalar(
+            _current_claim_update(claim, settled_at=failed_at).values(
+                status=case((dead_lettered, "dead_lettered"), else_="pending"),
+                available_at=case((dead_lettered, failed_at), else_=failed_at + retry_after),
+                lease_expires_at=None,
+                updated_at=failed_at,
+                published_at=None,
+                dead_lettered_at=case((dead_lettered, failed_at), else_=None),
+                last_error_code=error_code,
+            )
+        )
+        is not None
+    )
 
 
 async def redrive_outbox(
@@ -135,39 +149,39 @@ async def redrive_outbox(
     destination_ref: str,
     redriven_at: datetime,
 ) -> bool:
-    record = await database.scalar(
-        select(OutboxRecord)
-        .where(
-            OutboxRecord.id == outbox_id,
-            OutboxRecord.source_kind == source_kind,
-            OutboxRecord.destination_kind == destination_kind,
-            OutboxRecord.destination_ref == destination_ref,
-            OutboxRecord.status == "dead_lettered",
-        )
-        .with_for_update()
-    )
-    if record is None:
-        return False
-    record.status = "pending"
-    record.available_at = redriven_at
-    record.attempt_count = 0
-    record.lease_expires_at = None
-    record.updated_at = redriven_at
-    record.published_at = None
-    record.dead_lettered_at = None
-    record.last_error_code = None
     await database.flush()
-    return True
+    return (
+        await database.scalar(
+            update(OutboxRecord)
+            .where(
+                OutboxRecord.id == outbox_id,
+                OutboxRecord.source_kind == source_kind,
+                OutboxRecord.destination_kind == destination_kind,
+                OutboxRecord.destination_ref == destination_ref,
+                OutboxRecord.status == "dead_lettered",
+            )
+            .values(
+                status="pending",
+                available_at=redriven_at,
+                attempt_count=0,
+                lease_expires_at=None,
+                updated_at=redriven_at,
+                published_at=None,
+                dead_lettered_at=None,
+                last_error_code=None,
+            )
+            .returning(OutboxRecord.id)
+            .execution_options(synchronize_session="fetch")
+        )
+        is not None
+    )
 
 
-async def _lock_current_claim(
-    database: AsyncSession,
-    claim: OutboxClaim,
-    *,
-    settled_at: datetime,
-) -> OutboxRecord | None:
-    return await database.scalar(
-        select(OutboxRecord)
+def _current_claim_update(claim: OutboxClaim, *, settled_at: datetime) -> Update:
+    """Keep settlement and its complete claim fence in one statement."""
+
+    return (
+        update(OutboxRecord)
         .where(
             OutboxRecord.id == claim.outbox_id,
             OutboxRecord.source_kind == claim.source_kind,
@@ -178,7 +192,8 @@ async def _lock_current_claim(
             OutboxRecord.claim_generation == claim.generation,
             OutboxRecord.lease_expires_at > settled_at,
         )
-        .with_for_update()
+        .returning(OutboxRecord.id)
+        .execution_options(synchronize_session="fetch")
     )
 
 

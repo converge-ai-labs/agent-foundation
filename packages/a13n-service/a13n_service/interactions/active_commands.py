@@ -14,6 +14,7 @@ from a13n_service.durable_operations.idempotency import (
     EvidenceScope,
     IdempotencyConflict,
     IdempotencyIdentity,
+    find_evidence,
     is_evidence_unique_race,
     load_evidence,
     new_evidence,
@@ -404,7 +405,7 @@ class ActiveRunCommands:
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_interrupt,
                 )
-                evidence = await load_evidence(database, scope=scope, identity=identity, now=now)
+                evidence = await find_evidence(database, scope=scope, identity=identity, now=now)
             except AuthorizationError as error:
                 raise command_not_found() from error
             except IdempotencyConflict as error:

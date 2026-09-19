@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import TYPE_CHECKING, Any, Literal, Protocol
@@ -477,14 +477,20 @@ class RunAttemptControl:
                 await self._fence()
                 raise
 
-    async def renew_lease(self) -> None:
+    async def renew_lease(
+        self, renew: Callable[[AttemptContext], Awaitable[AttemptMutationReceipt]] | None = None
+    ) -> None:
         """Renew only this exact Attempt under the same serialized authority context."""
 
         async with self._authority_lock:
             if self._gate.phase in {_CoordinatorPhase.terminal, _CoordinatorPhase.yielded, _CoordinatorPhase.fenced}:
                 return
             try:
-                receipt = await self._execution.heartbeat(self._context, lease_duration=self._context.lease_duration)
+                receipt = (
+                    await self._execution.heartbeat(self._context, lease_duration=self._context.lease_duration)
+                    if renew is None
+                    else await renew(self._context)
+                )
             except BaseException:
                 self._context.lease.invalidate()
                 raise
