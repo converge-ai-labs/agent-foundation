@@ -40,15 +40,18 @@ export function NewResourceButton({
   kind,
   label,
   initial = {},
+  variant = "default",
 }: {
   kind: ResourceKind;
   label?: string;
+  variant?: "default" | "outline" | "ghost";
   initial?: Record<string, unknown>;
 }) {
   const drafts = useContext(DraftContext);
   const navigate = useNavigate();
   return (
     <Button
+      variant={variant}
       onClick={() => {
         const choice = resourceKinds.find((item) => item.value === kind)!;
         const id = `${choice.prefix}-${crypto.randomUUID().slice(0, 8)}`;

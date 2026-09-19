@@ -326,3 +326,73 @@ it.each([
     cache.clear();
   },
 );
+
+it("shows revocation for a paired external device without stop or destroy capabilities", async () => {
+  let revoked = false;
+  const device = {
+    ...environment,
+    ownership: "external" as const,
+    template_revision_id: null,
+    device_id: "work-laptop",
+    device_registration: "paired" as const,
+  };
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.includes("environment-providers")
+      ? {
+          id: "envp_test",
+          name: "Connected devices",
+          type: "a13n.websocket-envd",
+        }
+      : path.endsWith("/connection")
+        ? { status: revoked ? "offline" : "online" }
+        : {
+            ...device,
+            device_registration: revoked ? "revoked" : "paired",
+            retention: null,
+            supports_stop: false,
+            supports_destroy: false,
+          },
+    response: new Response(null, { headers: { ETag: '"v1"' } }),
+  }));
+  http.POST.mockReset().mockImplementation(async () => {
+    revoked = true;
+    return { data: { ...device, device_registration: "revoked" } };
+  });
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const user = userEvent.setup();
+  render(
+    <QueryClientProvider client={cache}>
+      <EnvironmentDetails environment={device} />
+    </QueryClientProvider>,
+  );
+  await user.click(screen.getByRole("button", { name: "Details" }));
+  expect(await screen.findAllByText("online")).toHaveLength(2);
+  expect(screen.queryByText("unavailable")).toBeNull();
+  await lifecycle(user, "Revoke connection");
+  expect(screen.queryByRole("menuitem", { name: "Stop target" })).toBeNull();
+  expect(
+    screen.getByText(
+      /Files, the operating-system process, and Environment history are not deleted/,
+    ),
+  ).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Revoke device connection" }),
+  );
+  await waitFor(() =>
+    expect(http.POST).toHaveBeenCalledWith(
+      "/api/v1/environments/{environment_id}/revoke-device",
+      {
+        params: { path: { environment_id: environment.id } },
+      },
+    ),
+  );
+  await waitFor(() =>
+    expect(screen.getAllByText("revoked").length).toBeGreaterThan(0),
+  );
+  expect(
+    screen.queryByRole("button", { name: "Environment actions" }),
+  ).toBeNull();
+  cache.clear();
+});

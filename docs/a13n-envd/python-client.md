@@ -179,6 +179,7 @@ Availability remains the initialized descriptor's decision. A generated method e
 | `environment.readiness` | `environment_readiness` | `EnvironmentReadinessParams` | `EnvironmentReadinessResult` | `active_only`       |
 | `file.abort_writer`     | `file_abort_writer`     | `FileWriterAbortParams`      | `FileWriterAbortResult`      | `active_only`       |
 | `file.close_reader`     | `file_close_reader`     | `FileReaderCloseParams`      | `FileReaderCloseResult`      | `active_only`       |
+| `file.commit`           | `file_commit`           | `FileCommitParams`           | `FileCommitResult`           | `terminal_evidence` |
 | `file.commit_writer`    | `file_commit_writer`    | `FileWriterCommitParams`     | `FileWriterCommitResult`     | `terminal_evidence` |
 | `file.copy`             | `file_copy`             | `FileCopyParams`             | `FileCopyResult`             | `terminal_evidence` |
 | `file.find`             | `file_find`             | `FileFindParams`             | `FileFindResult`             | `active_only`       |

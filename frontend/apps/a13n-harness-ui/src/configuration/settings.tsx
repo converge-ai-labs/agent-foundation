@@ -213,6 +213,7 @@ export function EnvironmentsPage() {
           <NewResourceButton
             kind="environment_profile"
             label="Add local profile"
+            variant="outline"
           />
         }
       />

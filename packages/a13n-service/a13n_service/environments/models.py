@@ -203,6 +203,10 @@ class EnvironmentRecord(ResourceColumns[str], Base):
             postgresql_ops={"labels": "jsonb_path_ops"},
         ),
     )
+    # Device credentials authorize only the registered reverse connection. They
+    # are never part of portable Provider state or recoverable resource secrets.
+    device_credential_digest: Mapped[str | None] = mapped_column(String(64), unique=True)
+    device_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     name: Mapped[str] = mapped_column(String(128), nullable=False, default="Environment")
     labels: Mapped[dict[str, str]] = mapped_column(
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
@@ -241,12 +245,31 @@ class EnvironmentRecord(ResourceColumns[str], Base):
                 "template_revision_id": self.template_revision_id,
                 "ownership": self.ownership,
                 "device_id": device_id,
+                "device_registration": (
+                    "revoked"
+                    if self.device_revoked_at is not None
+                    else "paired"
+                    if self.device_credential_digest is not None
+                    else None
+                ),
                 "generation": self.generation,
                 "status": self.status,
                 "retention_condition": self.retention_condition,
                 "condition_since": assume_utc(self.condition_since),
             }
         )
+
+
+class DevicePairingRecord(Base):
+    """Bounded, expiring requests with no Workspace authority until approval."""
+
+    __tablename__ = "environment_device_pairings"
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    credential_digest: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    device_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    rejected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
 class EnvironmentCommandRecord(Base):

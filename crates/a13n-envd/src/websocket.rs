@@ -620,10 +620,18 @@ fn build_tls_connector(config: &ReverseWebSocketConfig) -> io::Result<Connector>
     if config.endpoint.starts_with("ws://") {
         return Ok(Connector::Plain);
     }
+    Ok(Connector::Rustls(tls_client_config(
+        config.tls_ca_file.as_deref(),
+    )?))
+}
+
+pub(crate) fn tls_client_config(
+    ca_file: Option<&std::path::Path>,
+) -> io::Result<Arc<rustls::ClientConfig>> {
     let native = rustls_native_certs::load_native_certs();
     let mut roots = rustls::RootCertStore::empty();
     let (accepted, _) = roots.add_parsable_certificates(native.certs);
-    if let Some(path) = &config.tls_ca_file {
+    if let Some(path) = ca_file {
         let file = std::fs::File::open(path).map_err(|_| {
             io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -654,7 +662,7 @@ fn build_tls_connector(config: &ReverseWebSocketConfig) -> io::Result<Connector>
     let tls = rustls::ClientConfig::builder()
         .with_root_certificates(roots)
         .with_no_client_auth();
-    Ok(Connector::Rustls(Arc::new(tls)))
+    Ok(Arc::new(tls))
 }
 
 async fn read_credential(path: &std::path::Path) -> io::Result<String> {

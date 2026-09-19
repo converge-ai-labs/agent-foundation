@@ -33,13 +33,14 @@ class ClientConnectionStatus(DomainModel):
 
 
 def websocket_origin(value: str) -> str:
-    """Accept only an operator-configured credential-free WSS origin."""
+    """Accept an operator-configured WSS origin (WS only on loopback)."""
     parsed = urlsplit(value)
     if (
         value != value.strip()
         or len(value) > 2048
         or any(character.isspace() or ord(character) < 32 for character in value)
-        or parsed.scheme != "wss"
+        or parsed.scheme not in {"wss", "ws"}
+        or (parsed.scheme == "ws" and parsed.hostname not in {"localhost", "127.0.0.1", "::1"})
         or not parsed.hostname
         or parsed.username is not None
         or parsed.password is not None
@@ -55,7 +56,7 @@ def websocket_origin(value: str) -> str:
     # Accessing port validates its syntax and range, including bracketed IPv6.
     if parsed.port == 0:
         raise ValueError("Client Environment public origin port must be positive")
-    return f"wss://{parsed.netloc}"
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
 class ClientConnectionService:
@@ -68,6 +69,10 @@ class ClientConnectionService:
 
     async def issue_ticket(self, actor: AuthenticatedActor, environment_id: str) -> ClientConnectionTicket:
         target = await self.resources.authorized(actor, environment_id, manage=True)
+        if target.device_credential_digest is not None:
+            from ..errors import invalid_environment
+
+            raise invalid_environment("Paired Devices reconnect with their saved credential, not connection tickets")
         try:
             ticket = await self.coordination.issue(target.organization_id, target.environment_id)
         except CoordinationError as error:
@@ -86,7 +91,7 @@ class ClientConnectionService:
         if safe_error not in (None, "environment_unavailable", "environment_initialization_failed", "control_draining"):
             safe_error = "environment_unavailable"
         # Disabled Providers remain readable, but cannot promise eligibility.
-        disabled = not target.provider_enabled
+        disabled = not target.provider_enabled or target.device_revoked
         return ClientConnectionStatus(
             status="offline" if disabled else observation.status,
             connection_id=(

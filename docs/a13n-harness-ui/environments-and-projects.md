@@ -87,7 +87,44 @@ Changing these defaults does not update existing conversations. Use the [HTTP co
 
 A Device is one configured connection to an Envd daemon. Adding an environment selects that Device, an existing absolute working directory, and a unique alias; it does not start a Run or create a directory. Each execution gets its own Session. Multiple aliases can use the same Device without sharing process handles or retained output.
 
-In **Settings → Environments**, choose **Connect Device** and configure its transport and credential reference. For HTTP, a `devices/build.yaml` resource looks like:
+### Connect and approve envd
+
+In **Settings → Environments**, choose **Connect Device**. Copy the command and run it on the computer whose files you want to use:
+
+```console
+a13n-envd connect https://your-harness-ui.example.com
+```
+
+Use the actual reachable WebUI origin. `http://127.0.0.1:8765` works for a same-computer setup; a remote connection requires HTTPS. The daemon initiates the connection, so its computer does not need an inbound port.
+
+1. Keep the terminal open and note the verification code.
+2. In **Settings → Environments → Waiting for approval**, check the Device name and matching code, then choose **Approve Device**.
+3. Choose **Check connection**, then add a working directory below.
+
+Approval creates the Device configuration automatically. You do not need to copy an API key, choose a transport, or create a Provider. Your browser login key is not the Device credential. Pending requests expire after ten minutes; reject requests you do not recognize.
+
+After stopping envd, run the same command to reconnect with its saved identity and credential. For a friendly saved Host name, add `--host personal` on the first connection and later run `a13n-envd connect personal`. Keep the state directory: deleting it loses that identity and credential. See [daemon configuration](../a13n-envd/configuration.md) for state-directory and TLS options.
+
+Shell execution is opt-in on the **Device computer**, independently of the Host's local Full Control/Sandbox selection:
+
+```bash
+A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://your-harness-ui.example.com
+```
+
+On PowerShell:
+
+```powershell
+$env:A13N_ENVD_FULL_CONTROL = "1"
+a13n-envd connect https://your-harness-ui.example.com
+```
+
+This runs commands with envd's launching account and inherited command environment; it is not a sandbox. Without it, file operations remain available but shell execution needs manually configured profiles.
+
+One envd process connects to one Host. To connect the same physical computer to another Host, run another process with a different `--instance` name and repeat its approval. A named Host is a saved connection, not a multi-Host scheduler.
+
+### Manual connections
+
+For an existing HTTP daemon or a credential you manage yourself, open **Connect Device → Manual connection → Configure manually**. For HTTP, a `devices/build.yaml` resource looks like:
 
 ```yaml
 schema_version: "1"
@@ -105,6 +142,8 @@ authentication:
 ```
 
 `id` is the Harness UI resource ID; `device_id` is the daemon's stable identity. Configure the actual endpoint and export the referenced credential before starting Harness UI. Do not store the credential itself in YAML. For a Device that connects outward to Harness UI, use `transport: {kind: websocket, configuration: {}}` and point Envd at `/api/devices/device-build/connect` on the WebUI listener with the Device credential, not the browser instance key. See [daemon transports](../a13n-envd/configuration.md#carrier-profiles).
+
+### Choose working directories
 
 Under **Settings → Projects → Working environments**, or **Conversation details → Configuration → Change next Run selections**, choose **Add environment**:
 
@@ -133,6 +172,12 @@ defaults:
 A mixed Project keeps its local `roots` alongside these defaults. Local mounts use `workspace`, `workspace-2`, and so on; `thread-files` is available without a Project. These and other Host-owned mount names cannot be reused as Device aliases. Added environments require an explicit default selected from the resulting mounts. The local execution profile controls local mounts only; it does not sandbox an external Device. A Device directory is a working-directory default, not a filesystem access boundary. Run mutually untrusted workloads behind separate Host-managed security boundaries.
 
 For Project defaults, an unspecified binding collection leaves an existing Thread's collection unchanged when defaults are applied; an explicitly empty collection removes its added environments. The editor offers separate actions for these cases. Editing only the default does not silently turn an unspecified collection into an empty override. Saved Threads retain their selections until explicitly edited or updated through **Apply Project defaults**. Active and historical Runs retain their captured selections.
+
+### Revoke a Device
+
+Use **Settings → Environments → Revoke** to disconnect a paired Device and block its saved credential. This also interrupts access for Runs using that connection, but preserves remote files and captured history. A revoked registration remains visible after restart. The daemon stops on authentication rejection rather than silently creating a new credential.
+
+Use revocation when you want to withdraw access. Use removal when you only want to stop selecting a directory, or forgetting when you only want to remove local configuration. These are different operations.
 
 ### Remove an unavailable environment
 

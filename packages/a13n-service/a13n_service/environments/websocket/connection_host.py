@@ -1,10 +1,11 @@
-"""Control ingress capacity, ticket admission and owned socket task lifetime."""
+"""Control ingress capacity, Device/ticket admission and owned socket lifetime."""
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
 
+from a13n_environment.remote_envd.pairing import credential_matches
 from a13n_logging import get_logger
 from anyio import move_on_after
 from redis.asyncio import Redis
@@ -51,11 +52,18 @@ class ClientConnectionHost:
         connection_id: str | None = None
         identity = None
         try:
-            ticket = self._ticket(websocket)
+            credential = self._credential(websocket)
             target = await self._service.resources.resolve(environment_id)
-            admission = await self._service.coordination.admit(
-                target.organization_id, environment_id, ticket=ticket, owner_instance_id=self.instance_id
-            )
+            if target.device_credential_digest is not None:
+                if not credential_matches(credential, target.device_credential_digest):
+                    raise CoordinationError("ticket_invalid")
+                admission = await self._service.coordination.admit_device(
+                    target.organization_id, environment_id, owner_instance_id=self.instance_id
+                )
+            else:
+                admission = await self._service.coordination.admit(
+                    target.organization_id, environment_id, ticket=credential, owner_instance_id=self.instance_id
+                )
             identity = admission.value.connection
             if identity is None:
                 raise CoordinationError("candidate_expired")
@@ -66,6 +74,7 @@ class ClientConnectionHost:
                 admission,
                 ConnectionRelayStore(self._redis, identity, reader=self._reader),
                 self._authorize_use,
+                credential_digest=target.device_credential_digest,
             )
             self._active[current] = session.begin_drain
             await websocket.accept(subprotocol="eip.v1")
@@ -106,7 +115,7 @@ class ClientConnectionHost:
             self._active.pop(current, None)
 
     @staticmethod
-    def _ticket(websocket: WebSocket) -> str:
+    def _credential(websocket: WebSocket) -> str:
         values = websocket.headers.getlist("authorization")
         if (
             len(values) != 1

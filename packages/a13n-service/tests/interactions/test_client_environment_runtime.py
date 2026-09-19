@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import secrets
 import socket
 from pathlib import Path
 
@@ -10,12 +11,14 @@ import pytest
 import uvicorn
 from a13n_environment import EnvironmentAction, EnvironmentError
 from a13n_environment.commands import ArgvCommand, CommandRequest
+from a13n_environment.remote_envd.pairing import PairingRequest
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.mount_domain import AddEnvironmentMountRequest
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord
 from a13n_service.environments.mount_observations import RunMountObservations
 from a13n_service.environments.mounts import RunEnvironmentMountService
+from a13n_service.environments.pairing import DevicePairingService
 from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.environments.websocket.admission import OnlineAdmission
 from a13n_service.environments.websocket.connection_host import ClientConnectionHost
@@ -48,7 +51,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def native_client(client_environment, interaction_sessions, relay_redis, envd_binary, tmp_path):
+async def native_client(request, client_environment, interaction_sessions, relay_redis, envd_binary, tmp_path):
     environment_service, _, environment = client_environment
     service = ClientConnectionService(
         ConnectionResources(environment_service),
@@ -56,8 +59,16 @@ async def native_client(client_environment, interaction_sessions, relay_redis, e
         public_origin="wss://service.example",
     )
     host = ClientConnectionHost(service, relay_redis, ClientUseAuthorization(interaction_sessions))
+    if hasattr(request, "param") and request.param == "paired":
+        credential = secrets.token_hex(32)
+        pairing = DevicePairingService(environment_service, service.coordination, public_origin="wss://service.example")
+        pending = await pairing.pair(credential, PairingRequest(device_id="paired-native", name="Paired computer"))
+        environment = await pairing.approve(hook_actor(), environment.workspace_id, pending.challenge.pairing_id)
+        connection_id = None
+    else:
+        ticket = await service.issue_ticket(hook_actor(), environment.id)
+        credential, connection_id = ticket.ticket, ticket.connection_id
     target = await service.resources.authorized(hook_actor(), environment.id)
-    ticket = await service.issue_ticket(hook_actor(), environment.id)
     app = FastAPI()
 
     @app.websocket("/connect")
@@ -74,12 +85,21 @@ async def native_client(client_environment, interaction_sessions, relay_redis, e
                 while not server.started:
                     assert not serving.done()
                     await asyncio.sleep(0.01)
-            async with daemon(envd_binary, tmp_path / "client", url, ticket.ticket, "native", expected_exit=1) as (
+            async with daemon(
+                envd_binary, tmp_path / "client", url, credential, environment.device_id, expected_exit=1
+            ) as (
                 process,
                 workspace,
             ):
                 try:
-                    await online(service, target, ticket.connection_id)
+                    if connection_id is None:
+                        async with asyncio.timeout(8):
+                            while (
+                                await service.observe(target.organization_id, target.environment_id)
+                            ).value.status != "online":
+                                await asyncio.sleep(0.02)
+                    else:
+                        await online(service, target, connection_id)
                     yield service, target, workspace, url
                 finally:
                     await host.close()
@@ -113,7 +133,7 @@ async def client_runtime(admitted_use, native_client, interaction_sessions, rela
 
 
 @pytest.mark.parametrize("admitted_use", [True], indirect=True)
-async def test_worker_facets_renew_without_database_io_and_fence_lost_attempt(client_runtime, interaction_sessions):
+async def test_worker_facets_dispatch_without_database_io_and_fence_lost_attempt(client_runtime, interaction_sessions):
     lifecycle, connections, attempt, workspace, service, target = client_runtime
     environment = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
     assert environment is not None
@@ -124,7 +144,11 @@ async def test_worker_facets_renew_without_database_io_and_fence_lost_attempt(cl
     statements = []
 
     def statement(*args):
-        statements.append(args[2])
+        task = asyncio.current_task()
+        # Durable registration checks belong to the bounded Control heartbeat,
+        # not operation dispatch or Worker-use renewal.
+        if task is None or task.get_name() != "client-environment-connection-renew":
+            statements.append(args[2])
 
     engine = interaction_sessions.kw["bind"].sync_engine
     event.listen(engine, "before_cursor_execute", statement)

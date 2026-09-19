@@ -20,6 +20,7 @@ import { Panel } from "../../shared/page";
 import { environmentQuery } from "./api";
 import styles from "./environments.module.css";
 import { EnvironmentNameEditor } from "./instance-name";
+import { DeviceConnectionStatus } from "./device-status";
 
 /**
  * Standalone entry point: a "Details" button that opens the same inspector.
@@ -133,10 +134,26 @@ export function EnvironmentPanel({
     key.reset();
     setCommandId(receipt.id);
   }
+  async function revoke() {
+    await client.http
+      .POST("/api/v1/environments/{environment_id}/revoke-device", {
+        params: { path: { environment_id: environment.id } },
+      })
+      .then(data);
+    await Promise.all([
+      cache.invalidateQueries({ queryKey: ["environment", environment.id] }),
+      cache.invalidateQueries({ queryKey: ["environments"] }),
+      cache.invalidateQueries({
+        queryKey: ["environment-connection", environment.id],
+      }),
+      cache.invalidateQueries({ queryKey: ["run-options"] }),
+    ]);
+  }
   const value = detail.data?.value;
+  const canRevoke = value?.device_registration === "paired";
   const lifecycle =
     can("environment.manage") &&
-    (value?.supports_stop || value?.supports_destroy);
+    (value?.supports_stop || value?.supports_destroy || canRevoke);
   return (
     <Panel
       open={open}
@@ -148,7 +165,13 @@ export function EnvironmentPanel({
           <strong title={value?.name ?? environment.name}>
             {value?.name ?? environment.name}
           </strong>
-          {value && <StatePill state={value.status} />}
+          {value &&
+            (value.device_registration ||
+            provider.data?.type === "a13n.websocket-envd" ? (
+              <DeviceConnectionStatus environment={value} />
+            ) : (
+              <StatePill state={value.status} />
+            ))}
         </span>
       }
       actions={
@@ -168,6 +191,22 @@ export function EnvironmentPanel({
               <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
             </MenuTrigger>
             <MenuPopup align="end">
+              {canRevoke && (
+                <Confirm
+                  subject={environment.id}
+                  title={t("Revoke device connection")}
+                  description={t(
+                    "This permanently blocks this envd credential and ends its active connection. Files, the operating-system process, and Environment history are not deleted. Use a new envd instance to enroll again.",
+                  )}
+                  danger
+                  triggerElement={
+                    <MenuItem closeOnClick={false} variant="destructive">
+                      {t("Revoke connection")}
+                    </MenuItem>
+                  }
+                  action={revoke}
+                />
+              )}
               {value?.supports_stop && (
                 <Confirm
                   subject={environment.id}
@@ -226,6 +265,22 @@ export function EnvironmentPanel({
                       </Button>
                     )}
                   </Fact>
+                  {(value.device_registration ||
+                    provider.data?.type === "a13n.websocket-envd") && (
+                    <Fact label={t("Connection")}>
+                      <DeviceConnectionStatus environment={value} />
+                    </Fact>
+                  )}
+                  {value.device_registration && (
+                    <Fact label={t("Device registration")}>
+                      <StatePill state={value.device_registration} />
+                    </Fact>
+                  )}
+                  {value.device_id && (
+                    <Fact label={t("Device ID")}>
+                      <CopyableId value={value.device_id} />
+                    </Fact>
+                  )}
                   <Fact label={t("Activity")}>
                     <StatePill state={value.retention_condition} />
                   </Fact>

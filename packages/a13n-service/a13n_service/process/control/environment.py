@@ -48,7 +48,11 @@ async def build_client_connections(
         return None
     origin = settings.environments.client_public_origin
     if origin is None:
-        raise ValueError("WebSocket Environments require environments.client_public_origin")
+        origin = (
+            settings.identity_configuration()
+            .public_origin.replace("https://", "wss://", 1)
+            .replace("http://", "ws://", 1)
+        )
     service = ClientConnectionService(
         ConnectionResources(environments), ConnectionCoordination(shared.storage.redis), public_origin=origin
     )

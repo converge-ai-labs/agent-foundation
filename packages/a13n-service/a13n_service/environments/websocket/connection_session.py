@@ -34,6 +34,8 @@ class ClientConnectionSession:
         admission: ConfirmedObservation,
         store: ConnectionRelayStore,
         authorize_use: UseAuthorizer,
+        *,
+        credential_digest: str | None,
     ) -> None:
         if admission.value.connection != store.connection or admission.value.status != "connecting":
             raise ValueError("Connection Session requires its exact admitted candidate")
@@ -42,6 +44,7 @@ class ClientConnectionSession:
         self._admission = admission
         self._initialize_by = admission.deadline().monotonic_at
         self._authorize_use = authorize_use
+        self._credential_digest = credential_digest
         self._current = admission
         self._dispatch: ConnectionDispatch | None = None
         self._detached = False
@@ -79,6 +82,14 @@ class ClientConnectionSession:
                     except CoordinationError:
                         pass
 
+    async def _capture(self) -> ConnectionTarget:
+        target = await self._service.resources.capture(
+            self._connection.organization_id, self._connection.environment_id
+        )
+        if target.device_credential_digest != self._credential_digest:
+            raise DispatchDenied("Device connection credential changed")
+        return target
+
     async def _promote(self) -> tuple[ConnectionTarget, ConfirmedObservation]:
         coordination = self._service.coordination
         observed = self._admission
@@ -87,9 +98,7 @@ class ClientConnectionSession:
             if value.connection != self._connection or value.status != "connecting":
                 raise CoordinationError("candidate_expired")
             if value.now_ms >= value.barrier_ms or (value.retiring is not None and value.retiring.acknowledged):
-                target = await self._service.resources.capture(
-                    self._connection.organization_id, self._connection.environment_id
-                )
+                target = await self._capture()
                 try:
                     granted = await coordination.promote(self._connection)
                     return target, granted
@@ -131,6 +140,7 @@ class ClientConnectionSession:
             async with asyncio.timeout_at(self._initialize_by):
                 await self._publish_running(target, authority)
                 await self._store.prepare()
+                await self._capture()
                 online = await self._service.coordination.online(self._connection)
                 self._record(online, authority)
             self._failure = "environment_unavailable"
@@ -175,6 +185,7 @@ class ClientConnectionSession:
         try:
             while True:
                 await asyncio.sleep(self._service.coordination.limits.lease_ms / 3000)
+                await self._capture()
                 observation = await self._service.coordination.renew(self._connection)
                 self._record(observation, authority)
                 if observation.value.status == "online":
@@ -203,9 +214,7 @@ class ClientConnectionSession:
             if published:
                 return
             if capture == 0:
-                target = await self._service.resources.capture(
-                    self._connection.organization_id, self._connection.environment_id
-                )
+                target = await self._capture()
         raise DispatchDenied("Connection target publication was superseded")
 
     async def _publish_disconnected(self) -> None:

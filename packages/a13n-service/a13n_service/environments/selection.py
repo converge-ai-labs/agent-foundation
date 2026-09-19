@@ -67,6 +67,8 @@ async def resolve_selection(
     if isinstance(choice, ExistingEnvironmentSelection):
         if not isinstance(selected, EnvironmentRecord):
             raise TypeError("Existing Environment selection must resolve to an Environment")
+        if selected.device_revoked_at is not None:
+            raise invalid_environment("Device registration is revoked")
         if choice.working_directory is not None and provider.type not in ENVD_PROVIDER_KEYS:
             raise invalid_environment("Native Environment selections do not accept a working-directory override")
     return selected

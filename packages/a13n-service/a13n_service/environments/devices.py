@@ -56,6 +56,7 @@ async def capture_device_target(
         or provider.type not in ENVD_PROVIDER_KEYS
         or environment.ownership != "external"
         or environment.status == "deleted"
+        or environment.device_revoked_at is not None
         or provider.organization_id != environment.organization_id
         or provider.workspace_id not in {None, environment.workspace_id}
     ):

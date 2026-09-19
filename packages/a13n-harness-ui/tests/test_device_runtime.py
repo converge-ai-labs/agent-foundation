@@ -58,10 +58,11 @@ def resource(carrier: str, endpoint: str) -> DeviceResource:
 
 
 @asynccontextmanager
-async def app_listener(tmp_path, recipe):
+async def app_listener(tmp_path, recipe=None):
     root = _write_configuration(tmp_path)
-    (tmp_path / "devices").mkdir()
-    (tmp_path / "devices/build.yaml").write_text(recipe.model_dump_json())
+    if recipe is not None:
+        (tmp_path / "devices").mkdir()
+        (tmp_path / "devices/build.yaml").write_text(recipe.model_dump_json())
     async with open_harness_ui_app(_settings(tmp_path / "data"), configuration_path=root, host_mode="webui") as app:
 
         @asynccontextmanager
@@ -177,7 +178,7 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                         await asyncio.sleep(0.03)
                 assert (await api.get("/api/devices", headers={"Authorization": "Bearer wrong"})).status_code == 401
                 assert (await api.get("/api/devices")).json() == [
-                    {"id": recipe.id, "name": "Build", "transport": carrier}
+                    {"id": recipe.id, "name": "Build", "transport": carrier, "registration": "configured"}
                 ]
                 info = await api.get(f"/api/devices/{recipe.id}")
                 assert info.status_code == 200, info.text
@@ -186,6 +187,7 @@ async def test_device_browsing_and_independent_sessions_share_carrier(tmp_path, 
                     "name",
                     "transport",
                     "available",
+                    "registration",
                     "path_style",
                     "default_working_directory",
                     "directory_discovery",

@@ -56,7 +56,15 @@ Standard Harness deferred approvals bind resolved paths, not backing generations
 
 ### Connect a client computer
 
-A deployment with `a13n.websocket-envd` enabled can use a user-operated envd that connects outward to Control over WSS. Control ingress and all Workers that can execute these Runs must support this provider and live mounts. The relay requires shared Redis; the in-memory backend is not supported. Registration, connection, and Run access are separate steps.
+Open **Environments → Instances → Connect device** in Console and copy the command to the computer running envd. Open its terminal approval link, sign in, compare the verification code and choose the destination Workspace. Approval creates the Provider and external Environment for you; no controller or manually copied ticket is needed. The [shared connection guide](../a13n-environment/remote-envd.md#connect-to-harness-ui-or-service) covers installation flow, shell authority, PowerShell, restart, multiple instances and troubleshooting.
+
+Wait for **Online**, then select that Environment and a directory in the conversation composer. Registration, connection, and Run access remain separate steps. An omitted working directory captures the Device default before acceptance. Each execution opens a fresh Session; its directory is not an access boundary.
+
+The default deployment supports this with real Redis. Control owns ingress and Workers use the relay. Memory-only profiles show the capability as unavailable. Device details show the live connection and registration state, allow renaming, and expose **Revoke device** even though the Provider cannot stop or destroy the computer. Revocation permanently disables the credential and preserves files/history; fresh enrollment requires another daemon instance.
+
+#### Optional controller-managed connection
+
+Use this advanced path only when an existing controller needs to manage short-lived connection tickets instead of native self-registration. Paired registrations cannot issue these tickets.
 
 1. Create a Workspace Environment Provider with `type: "a13n.websocket-envd"`, using the Provider catalog schema.
 

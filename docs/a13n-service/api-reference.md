@@ -2331,6 +2331,20 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `POST /api/v1/environments/{environment_id}/revoke-device`
+
+Revoke Device.
+
+| Parameter        | Location | Required | Type / schema | Constraints and default |
+| ---------------- | -------- | -------- | ------------- | ----------------------- |
+| `environment_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Environment`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `POST /api/v1/environments/{environment_id}/stop`
 
 Stop Environment.
@@ -2462,6 +2476,51 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: RunEnvironmentMount`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/device-pairings/{pairing_id}`
+
+Inspect Pairing.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default         |
+| ------------ | -------- | -------- | ------------- | ------------------------------- |
+| `pairing_id` | path     | true     | string        | `pattern="^pair-[0-9a-f]{24}$"` |
+| `workspace`  | path     | true     | string        | —                               |
+
+Responses:
+
+- **200** — Successful Response (`application/json: PairingChallenge`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/device-pairings/{pairing_id}/approve`
+
+Approve Pairing.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default         |
+| ------------ | -------- | -------- | ------------- | ------------------------------- |
+| `pairing_id` | path     | true     | string        | `pattern="^pair-[0-9a-f]{24}$"` |
+| `workspace`  | path     | true     | string        | —                               |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Environment`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/device-pairings/{pairing_id}/reject`
+
+Reject Pairing.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default         |
+| ------------ | -------- | -------- | ------------- | ------------------------------- |
+| `pairing_id` | path     | true     | string        | `pattern="^pair-[0-9a-f]{24}$"` |
+| `workspace`  | path     | true     | string        | —                               |
+
+Responses:
+
+- **204** — Successful Response.
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

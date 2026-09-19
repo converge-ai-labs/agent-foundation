@@ -31,6 +31,7 @@ from .worker_helpers import worker_runtime
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("native_client", ["ticket", "paired"], indirect=True)
 async def test_live_client_mount_is_usable_by_the_next_model_request(
     native_client,
     client_environment,

@@ -467,7 +467,8 @@
             "vercel",
             "sprites",
             "runloop",
-            "a13n.http-envd"
+            "a13n.http-envd",
+            "a13n.websocket-envd"
           ],
           "items": {
             "type": "string"

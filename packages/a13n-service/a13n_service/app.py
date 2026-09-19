@@ -26,6 +26,7 @@ from a13n_service.connectivity.connectors.router import router as connector_rout
 from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
 from a13n_service.connectivity.mcp.router import router as mcp_router
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.environments.pairing_router import public_router as envd_pairing_router
 from a13n_service.environments.router import router as environment_router
 from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.router import router as gateway_router
@@ -199,6 +200,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(agent_router)
         app.include_router(configuration_router)
         app.include_router(environment_router)
+        app.include_router(envd_pairing_router)
         app.include_router(thread_router)
         app.include_router(asset_router)
         app.include_router(model_router)

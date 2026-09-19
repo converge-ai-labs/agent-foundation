@@ -25,15 +25,14 @@ The connect-only `a13n.websocket-envd` Provider supplies no listener or distribu
 ```mermaid
 flowchart TB
     subgraph Client["User computer"]
-        Controller["Client controller"]
+        Operator["Operator / Console"]
         Envd["a13n-envd"]
         Computer["Files / shell / processes"]
-        Controller -->|"Protected ticket input"| Envd
         Envd --> Computer
     end
     Caller["Run caller / application"]
     subgraph Service["Foundation Service"]
-        Control["Control: registration, tickets and status<br/>WebSocket / Device connection / Session relay<br/>Run acceptance and live mounts"]
+        Control["Control: pairing, registration and status<br/>WebSocket / Device connection / Session relay<br/>Run acceptance and live mounts"]
         subgraph Worker["Current RunAttempt Worker"]
             Reconcile["Control watcher and DB reconciliation"]
             Boundary["Service Capability at model-request boundary"]
@@ -51,7 +50,8 @@ flowchart TB
         Requests["Operation request Stream per connection"]
         Responses["Operation response Stream per Worker incarnation"]
     end
-    Controller -->|"Register once; request ticket; read status"| Control
+    Operator -->|"Approve into Workspace; read status; revoke"| Control
+    Envd -->|"Pair with persistent narrow credential"| Control
     Envd <-->|"Client-initiated WSS / EIP"| Control
     Caller -->|"Start Run or add live mount; Environment must be online"| Control
     Control <-->|"Authorized durable operations"| DB
@@ -116,11 +116,25 @@ Control periodically reconciles retained WebSocket Environments observed as runn
 
 Redis leases decide current connection eligibility even while PG observations lag. Neither a stored running value nor an earlier UI read substitutes for an online admission check.
 
-## Registration, Tickets and Acknowledgement
+## Registration, Credentials and Acknowledgement
 
-### Client connection lifecycle
+### Self-registration
 
-Registration returns the stable Environment ID without connecting or creating a Run/mount. For each connection, the client requests a short-lived, one-use ticket. Control checks `environment.manage`, Organization/Workspace, enabled Provider and native identity in a short database scope, then issues the ticket through Redis. The response contains the ticket, expiry, credential-free WSS URL and non-secret `connection_id`. Protected ticket metadata binds that ID to the target; no Run or mount intent is accepted.
+`a13n-envd connect` uses the shared [pairing protocol](../a13n-environment/04-remote-envd.md). One daemon process connects to one Host; multiple instances on one computer are independent registrations. The daemon retains its instance identity and a protected Host-specific persistent credential. Service stores only its SHA-256 digest; the credential authenticates pairing and that Device's reverse WebSocket, never management or Run APIs.
+
+`POST /api/envd/pair` accepts the narrow Bearer credential and Device identity/name without a browser session. This exact ingress is outside `/api/v1`; it is not a general IAM bypass or part of the Service management OpenAPI export. Pending requests expire after ten minutes, are bounded to 128 entries, and retain immutable details. The terminal supplies an unguessable pairing link and matching verification code. Service exposes no cross-Workspace pending-request directory.
+
+An authenticated operator opens the link in Console, compares the code and explicitly chooses a Workspace. Inspection, approval and rejection require `environment.manage` in that Workspace. Device input cannot choose its Workspace. Approval atomically creates or reuses an ordinary Workspace-owned WebSocket Provider, registers the external Environment, persists its credential digest and consumes the pending request. Repeated approval returns the same authorized registration. A different credential cannot replace an existing target or revive a revoked registration.
+
+The approved response supplies the stable Environment ID and credential-free WebSocket endpoint. Reconnect authenticates with the same credential and receives a fresh connection ID and epoch through the existing candidate/takeover coordination. No controller, ticket refresh or broad Service credential is required. Service rechecks durable eligibility and the captured digest before promotion, online publication and each bounded connection renewal. Denied credentials do not initiate automatic replacement pairing.
+
+Revocation permanently records the credential as revoked before retiring Redis owner/candidate authority. Retirement retains outstanding dispatch barriers; deleting presence is insufficient. Redis failure does not undo durable revocation, and bounded eligibility renewal fences remaining connections. New Device reads, selection and execution uses reject revoked registrations. The Environment remains readable with `device_registration=revoked`; revocation neither deletes files/history nor controls the remote process. Fresh enrollment requires a new daemon instance identity.
+
+The default catalog enables this path with real Redis. Memory-only deployments omit the implicitly enabled WebSocket Provider; explicitly requesting it without Redis is invalid. The endpoint origin comes from the trusted configured client origin, or the IAM public origin with the WebSocket scheme. Non-loopback connections require TLS. Console shows unavailable capability rather than an executable connect command when the running catalog lacks this Provider.
+
+### Optional ticket-managed connections
+
+For manually registered, non-paired Environments, registration returns the stable Environment ID without connecting or creating a Run/mount. A controller requests a short-lived, one-use ticket for each connection. Paired registrations cannot issue these tickets. Control checks `environment.manage`, Organization/Workspace, enabled Provider and native identity in a short database scope, then issues the ticket through Redis. The response contains the ticket, expiry, credential-free WSS URL and non-secret `connection_id`. Protected ticket metadata binds that ID to the target; no Run or mount intent is accepted.
 
 The controller supplies the ticket through envd's protected credential input; envd sends it in the WebSocket authorization header. Ticket secrets never enter URL queries, logs, prompts, PG or Provider state. Redis verification material expires and is atomically consumed. An uncertain issuance can be retried with a new ticket; consumed-ticket expiry does not end an admitted connection.
 
@@ -133,17 +147,17 @@ Every reconnect obtains a fresh ticket and connection ID through the controller'
 3. On the exact fenced acknowledgement or expiry of all outstanding old authority, Control rechecks resource eligibility outside the Redis operation, then atomically revalidates its candidate slot, deadline and retirement evidence before acquiring the new connection epoch. It then attaches to the SDK, initializes the Device and validates identity/protocol capabilities and completes PG/online publication. Worker acquires fresh use before sending to the new connection's Stream; old requests, transfers and use leases do not migrate.
 4. Candidate waiting, initialization and publication have finite bounds compatible with envd's initialization deadline. Timeout, disconnect, failed eligibility revalidation or initialization failure closes only that candidate and releases its slot. Retirement is irreversible: failure does not restore the old tuple's renewal rights. Retirement evidence survives candidate cleanup through the outstanding authority horizon, and any subsequent candidate respects it. Redis uncertainty cannot authorize early promotion.
 
-At most one candidate is retained per Environment, with bounded process capacity; additional attempts cannot reset its deadline or repeatedly displace it. The daemon's initialization timeout is not disabled or extended by a Service wait. The Host delays SDK attachment only within that timeout and closes/retries with a fresh ticket if the remaining budget cannot cover handover and initialization. Two physical sockets may overlap, but new-command dispatch authority cannot. Already dispatched effects retain the ordinary unknown-outcome and cancellation rules.
+At most one candidate is retained per Environment, with bounded process capacity; additional attempts cannot reset its deadline or repeatedly displace it. The daemon's initialization timeout is not disabled or extended by a Service wait. The Host delays SDK attachment only within that timeout and closes the candidate if the remaining budget cannot cover handover and initialization. A paired daemon retries with its retained credential; a ticket-managed controller obtains a fresh ticket. Two physical sockets may overlap, but new-command dispatch authority cannot. Already dispatched effects retain the ordinary unknown-outcome and cancellation rules.
 
 ### Connection success
 
-The client confirms connection through `GET /environments/{environment_id}/connection`: `status=online` and `connection_id` must match its ticket response. During takeover or initialization, the read returns `connecting` with the candidate ID, never advertises the retiring tuple as available for new admission, and does not imply the old socket has closed. If the candidate fails, it returns `offline`, null connection ID and a bounded error while retained retirement evidence continues fencing old authority. Online publication never waits for a Run or Worker; HTTP upgrade or another connection's online observation is insufficient.
+Console and authenticated clients observe connection through `GET /environments/{environment_id}/connection`. `status=online` means the current admitted connection is ready. A ticket-managed controller additionally matches `connection_id` to its ticket response. During takeover or initialization, the read returns `connecting` with the candidate ID, never advertises the retiring tuple as available for new admission, and does not imply the old socket has closed. If the candidate fails, it returns `offline`, null connection ID and a bounded error while retained retirement evidence continues fencing old authority. Online publication never waits for a Run or Worker; HTTP upgrade or another connection's online observation is insufficient.
 
 The read requires `environment.read` and returns safe status, current connection ID, observation time and bounded error. No presence means offline with null connection ID; an authoritative read failure returns a dependency error. Placement and native handles remain private. envd observes standard EIP initialization, with no extra Service acknowledgement frame or competing carrier reader.
 
-### Connection sequence
+### Optional ticket-managed connection sequence
 
-Diagram paths omit `/api/v1`. Control represents the role; management requests may reach another replica, which resolves current ownership through shared presence.
+Self-registration uses the persistent credential described above; both paths share candidate admission and handover. Diagram paths omit `/api/v1`. Control represents the role; management requests may reach another replica, which resolves current ownership through shared presence.
 
 ```mermaid
 sequenceDiagram
@@ -250,18 +264,22 @@ Before the acceptance transaction, Control resolves an omitted working directory
 
 ### Product API
 
-Control owns all routes below, relative to `/api/v1`.
+Control owns all routes below, relative to `/api/v1`. The shared `POST /api/envd/pair` ingress is the separate pairing boundary described above.
 
-| Method and route                                         | Result                                                                                        |
-| -------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `POST /workspaces/{workspace}/environments`              | Register external identity                                                                    |
-| `POST /environments/{environment_id}/connection-tickets` | Ticket, expiry, WSS URL and connection ID                                                     |
-| `GET /environments/{environment_id}/connection`          | Safe current connection observation                                                           |
-| `WS /environments/{environment_id}/connect`              | Ticket-authorized EIP ingress                                                                 |
-| `POST /workspaces/{workspace}/runs`                      | Start with selected primary Environment                                                       |
-| `POST /threads/{thread_id}/runs`                         | Ordinary submission under existing queue/continuation rules                                   |
-| `POST /runs/{run_id}/environment-mounts`                 | Accepted additional association                                                               |
-| `GET /runs/{run_id}/environment-mounts`                  | Bounded additional-mount list in acceptance order with per-mount current-Attempt observations |
+| Method and route                                                    | Result                                                                                        |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `GET /workspaces/{workspace}/device-pairings/{pairing_id}`          | Inspect the terminal challenge under Workspace authority                                      |
+| `POST /workspaces/{workspace}/device-pairings/{pairing_id}/approve` | Atomically approve the Device into this Workspace                                             |
+| `POST /workspaces/{workspace}/device-pairings/{pairing_id}/reject`  | Reject this pending request until expiry                                                      |
+| `POST /environments/{environment_id}/revoke-device`                 | Permanently revoke the paired credential and retire connection authority                      |
+| `POST /workspaces/{workspace}/environments`                         | Register external identity                                                                    |
+| `POST /environments/{environment_id}/connection-tickets`            | Ticket, expiry, WSS URL and connection ID                                                     |
+| `GET /environments/{environment_id}/connection`                     | Safe current connection observation                                                           |
+| `WS /environments/{environment_id}/connect`                         | Paired-credential or one-use-ticket-authorized EIP ingress                                    |
+| `POST /workspaces/{workspace}/runs`                                 | Start with selected primary Environment                                                       |
+| `POST /threads/{thread_id}/runs`                                    | Ordinary submission under existing queue/continuation rules                                   |
+| `POST /runs/{run_id}/environment-mounts`                            | Accepted additional association                                                               |
+| `GET /runs/{run_id}/environment-mounts`                             | Bounded additional-mount list in acceptance order with per-mount current-Attempt observations |
 
 Mount reads expose observations from the current Attempt while a Run is active. A sealed Run retains its final Attempt's observations as history, not as current availability. Retry and handoff never carry a previous Attempt's ready observation into the next execution; an unapplied association remains pending.
 
@@ -439,6 +457,7 @@ Mount concurrency uses unique association names, idempotency and lifecycle locks
 
 Verification covers cross-Control management/socket ownership and separate Workers, plus these failure boundaries:
 
+- **Pairing:** bounded/expired/rejected requests, code and Workspace approval, replica-idempotent durable registration, same-credential native restart, target-conflict rejection, revoked-credential denial and durable revocation despite Redis failure.
 - **Admission:** duplicate/expired tickets, cross-Workspace authority, candidate-slot conflicts, PG publication failure, stale presence, disconnect racing commit, queue-time versus actual acceptance, and idempotent replay.
 - **Application:** empty-Run first mount, acceptance-order default, lost wake-ups, concurrent distinct names, same-name/idempotency conflicts, terminal races, timestamp ties/rollback, failed candidates, failed observation publication, and Attempt recovery/inheritance.
 - **Relay:** Device reads without Run/Session/use allocation, rejection of Session methods in Device scope, response isolation between originating Controls and Workers, wrong owner/epoch, reconnect/restart isolation, fast/out-of-order/duplicate/late responses, atomic response/ACK completion, lost script replies, partial script errors, completion retries and redelivery without re-execution, supported key placement, lost append/result, and owner failure after possible dispatch.

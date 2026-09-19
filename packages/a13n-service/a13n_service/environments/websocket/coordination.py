@@ -160,6 +160,21 @@ class ConnectionCoordination:
             organization_id, environment_id, "admit", ticket=ticket, payload={"connection": asdict(connection)}
         )
 
+    async def admit_device(
+        self, organization_id: str, environment_id: str, *, owner_instance_id: str
+    ) -> ConfirmedObservation:
+        """Admit a durably authenticated Device without manufacturing a ticket."""
+        connection = ConnectionIdentity(
+            organization_id, environment_id, new_object_id("ec"), new_object_id("ece"), owner_instance_id
+        )
+        return await self._observe_call(
+            organization_id, environment_id, "admit_device", payload={"connection": asdict(connection)}
+        )
+
+    async def revoke(self, organization_id: str, environment_id: str) -> None:
+        """Atomically retire the owner and candidate, retaining dispatch barriers."""
+        await self._observe_call(organization_id, environment_id, "revoke")
+
     async def observe(self, organization_id: str, environment_id: str) -> ConfirmedObservation:
         return await self._observe_call(organization_id, environment_id, "observe")
 

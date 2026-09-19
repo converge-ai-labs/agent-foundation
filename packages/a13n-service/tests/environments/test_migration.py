@@ -13,6 +13,7 @@ ENVIRONMENT_TABLES = {
     "environment_templates",
     "environments",
     "environment_commands",
+    "environment_device_pairings",
     "environment_template_revisions",
 }
 

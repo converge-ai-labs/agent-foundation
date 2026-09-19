@@ -133,7 +133,6 @@ async def test_native_envd_connects_through_official_route(client_api, envd_bina
 @pytest.mark.parametrize(
     ("origin", "error"),
     [
-        (None, "client_public_origin"),
         ("ws://foundation.example", "WSS origin"),
         ("wss://foundation.example", "shared Redis server"),
     ],
@@ -153,3 +152,14 @@ async def test_unsupported_client_deployment_fails_before_readiness(
     with pytest.raises(ValueError, match=error):
         async with app.router.lifespan_context(app):
             pytest.fail("unsupported client ingress became ready")
+
+
+async def test_memory_profile_keeps_default_startup_without_device_relay(tmp_path, service_database):
+    values = settings(tmp_path, service_database).model_dump()
+    values["environments"] = {}
+    config = Settings.model_validate(values)
+    await seed_database(config)
+    app = create_app(config, components=Components(request_authenticator=authenticate))
+    async with app.router.lifespan_context(app):
+        assert app.state.runtime.control.client_connections is None
+        assert "a13n.websocket-envd" not in app.state.runtime.control.environments.catalog

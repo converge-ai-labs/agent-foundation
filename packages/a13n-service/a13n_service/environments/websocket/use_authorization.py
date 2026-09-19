@@ -67,6 +67,7 @@ class ClientUseAuthorization:
                 EnvironmentRecord.workspace_id == SessionRecord.workspace_id,
                 EnvironmentRecord.ownership == "external",
                 EnvironmentRecord.status != "deleted",
+                EnvironmentRecord.device_revoked_at.is_(None),
                 EnvironmentProviderRecord.type == WEBSOCKET_PROVIDER_KEY,
                 EnvironmentProviderRecord.enabled.is_(True),
                 EnvironmentProviderRecord.organization_id == use.connection.organization_id,

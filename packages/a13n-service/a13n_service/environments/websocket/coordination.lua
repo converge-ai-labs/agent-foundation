@@ -26,7 +26,8 @@ if not state then
     -- Even an empty Redis after data loss cannot prove that cached dispatch
     -- authority has expired. Wait the maximum grant horizon before new use.
     state = {version = 1, server_id = server_id, barrier_ms = now + input.lease_ms, uses = {}}
-    if operation ~= 'issue' and operation ~= 'observe' then return fail('authority_lost') end
+    if operation ~= 'issue' and operation ~= 'observe' and operation ~= 'admit_device' and
+       operation ~= 'revoke' then return fail('authority_lost') end
 end
 local function same(left, right)
     if not left or not right then return false end
@@ -105,17 +106,19 @@ elseif operation == 'issue' then
     end
     persist()
     return cjson.encode({code = 'ok', now_ms = now, expires_at_ms = ticket.expires_at_ms})
-elseif operation == 'admit' then
-    local ticket_raw = redis.call('GET', ticket_key)
-    if not ticket_raw then return fail('ticket_invalid') end
-    local ticket = cjson.decode(ticket_raw)
-    if ticket.organization_id ~= input.connection.organization_id or
-       ticket.environment_id ~= input.connection.environment_id or ticket.expires_at_ms <= now then
-        return fail('ticket_invalid')
+elseif operation == 'admit' or operation == 'admit_device' then
+    if operation == 'admit' then
+        local ticket_raw = redis.call('GET', ticket_key)
+        if not ticket_raw then return fail('ticket_invalid') end
+        local ticket = cjson.decode(ticket_raw)
+        if ticket.organization_id ~= input.connection.organization_id or
+           ticket.environment_id ~= input.connection.environment_id or ticket.expires_at_ms <= now then
+            return fail('ticket_invalid')
+        end
+        redis.call('DEL', ticket_key)
+        input.connection.connection_id = ticket.connection_id
     end
-    redis.call('DEL', ticket_key)
     if state.candidate and state.candidate.expires_at_ms > now then return fail('candidate_busy') end
-    input.connection.connection_id = ticket.connection_id
     retire_owner()
     state.candidate = {identity = input.connection, expires_at_ms = now + input.candidate_ms}
     state.error = nil
@@ -175,6 +178,10 @@ elseif operation == 'release_use' then
         return fail('authority_lost')
     end
     current.released = true
+elseif operation == 'revoke' then
+    retire_owner()
+    state.candidate = nil
+    state.error = 'environment_unavailable'
 elseif operation == 'retire' then
     if not state.owner or not same(state.owner.identity, input.connection) then return fail('authority_lost') end
     retire_owner()

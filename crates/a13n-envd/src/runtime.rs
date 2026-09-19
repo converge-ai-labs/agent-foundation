@@ -163,7 +163,7 @@ fn create_private_child(parent: &Path, name: &str) -> Result<PathBuf, String> {
     Ok(path)
 }
 
-fn protect_directory(path: &Path) -> Result<(), String> {
+pub(crate) fn protect_directory(path: &Path) -> Result<(), String> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt as _;

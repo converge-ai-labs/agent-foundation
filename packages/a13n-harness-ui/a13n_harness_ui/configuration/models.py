@@ -299,6 +299,17 @@ class WebSocketDeviceTransport(StrictModel):
 type DeviceTransport = Annotated[HttpDeviceTransport | WebSocketDeviceTransport, Field(discriminator="kind")]
 
 
+class PairedDeviceAuthentication(StrictModel):
+    """Host-approved daemon credential; the original secret stays on the Device."""
+
+    kind: Literal["paired"] = "paired"
+    credential_digest: str = Field(pattern=r"^[0-9a-f]{64}$", repr=False)
+    revoked: bool = False
+
+
+type DeviceAuthentication = Annotated[ApiKeyAuthentication | PairedDeviceAuthentication, Field(discriminator="kind")]
+
+
 class DeviceResource(StrictModel):
     """Credential references and connection recipe, never live Session state."""
 
@@ -308,12 +319,16 @@ class DeviceResource(StrictModel):
     name: str = Field(min_length=1, max_length=256)
     device_id: str = Field(min_length=1, max_length=128)
     transport: DeviceTransport
-    authentication: ApiKeyAuthentication
+    authentication: DeviceAuthentication
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "device-")
         RemoteEnvdStateData(device_id=self.device_id)
+        if isinstance(self.authentication, PairedDeviceAuthentication) and not isinstance(
+            self.transport, WebSocketDeviceTransport
+        ):
+            raise ValueError("Paired Device authentication requires WebSocket transport")
         return self
 
 

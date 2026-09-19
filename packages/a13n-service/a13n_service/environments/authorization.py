@@ -24,11 +24,11 @@ async def read_environment_authorization(
     workspace_id: str,
     previous: EnvironmentAuthorization | None,
 ) -> EnvironmentAuthorization:
-    """Resolve ownership once; refresh only the fixed Provider's eligibility."""
+    """Retain the fixed binding; refresh Provider and Device eligibility."""
+    row = await session.get(EnvironmentRecord, environment_id)
+    if row is None or (row.organization_id, row.workspace_id) != (organization_id, workspace_id):
+        raise AuthorizationError("environment_not_found", concealed=True)
     if previous is None:
-        row = await session.get(EnvironmentRecord, environment_id)
-        if row is None or (row.organization_id, row.workspace_id) != (organization_id, workspace_id):
-            raise AuthorizationError("environment_not_found", concealed=True)
         provider_id = row.provider_id
     else:
         if previous.environment_id != environment_id:
@@ -38,6 +38,7 @@ async def read_environment_authorization(
     enabled = (
         provider is not None
         and provider.enabled
+        and row.device_revoked_at is None
         and provider.organization_id == organization_id
         and provider.workspace_id in {None, workspace_id}
     )

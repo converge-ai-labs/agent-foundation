@@ -15,6 +15,21 @@ export function DeviceFields({
     onChange(updateDocument(source, path, value));
   const carrier = text(["transport", "kind"]);
   const storedKey = document.hasIn(["authentication", "credential_ref"]);
+  if (text(["authentication", "kind"]) === "paired") {
+    return (
+      <SettingsSection
+        title="Paired Device"
+        description="This connection was approved on this Host. The credential stays on the Device and does not need to be entered here."
+      >
+        <p>Native Device ID: {text(["device_id"])}</p>
+        <p>
+          {document.getIn(["authentication", "revoked"])
+            ? "Revoked. This credential can no longer connect."
+            : "Registered. Use Environments settings to check or revoke the connection."}
+        </p>
+      </SettingsSection>
+    );
+  }
   return (
     <SettingsSection
       title="Device connection"

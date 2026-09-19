@@ -118,6 +118,91 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/envd/pair": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Pair Device */
+        post: operations["pair_device_api_envd_pair_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/device-pairings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Device Pairings */
+        get: operations["device_pairings_api_device_pairings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/device-pairings/{pairing_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Approve Device Pairing */
+        post: operations["approve_device_pairing_api_device_pairings__pairing_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/device-pairings/{pairing_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject Device Pairing */
+        post: operations["reject_device_pairing_api_device_pairings__pairing_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/devices/{device_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke Device */
+        post: operations["revoke_device_api_devices__device_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/devices": {
         parameters: {
             query?: never;
@@ -2293,6 +2378,12 @@ export interface components {
              * @enum {string}
              */
             transport: "http" | "websocket";
+            /**
+             * Registration
+             * @default configured
+             * @enum {string}
+             */
+            registration?: "configured" | "paired" | "revoked";
             /** Available */
             available: boolean;
             /** Path Style */
@@ -2318,6 +2409,12 @@ export interface components {
              * @enum {string}
              */
             transport: "http" | "websocket";
+            /**
+             * Registration
+             * @default configured
+             * @enum {string}
+             */
+            registration?: "configured" | "paired" | "revoked";
         };
         /** DirectoryEntry */
         DirectoryEntry: {
@@ -3129,6 +3226,56 @@ export interface components {
             root_thread_id?: string | null;
         };
         PageTarget: components["schemas"]["WorkbenchPage"] | components["schemas"]["ConversationPage"] | components["schemas"]["ProjectPage"] | components["schemas"]["ResourcePage"] | components["schemas"]["FilePage"] | components["schemas"]["ChangesPage"] | components["schemas"]["TerminalPage"];
+        /** PairingApproved */
+        PairingApproved: {
+            /**
+             * Status
+             * @default approved
+             * @constant
+             */
+            status?: "approved";
+            /** Resource Id */
+            resource_id: string;
+            /** Websocket Url */
+            websocket_url: string;
+        };
+        /**
+         * PairingChallenge
+         * @description Safe details shown to both the registering operator and approving user.
+         */
+        PairingChallenge: {
+            /** Device Id */
+            device_id: string;
+            /** Name */
+            name: string;
+            /** Pairing Id */
+            pairing_id: string;
+            /** Verification Code */
+            verification_code: string;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+        };
+        /** PairingPending */
+        PairingPending: {
+            /**
+             * Status
+             * @default pending
+             * @constant
+             */
+            status?: "pending";
+            challenge: components["schemas"]["PairingChallenge"];
+            /** Approval Url */
+            approval_url?: string | null;
+            /**
+             * Poll After Seconds
+             * @default 2
+             */
+            poll_after_seconds?: number;
+        };
+        PairingResponse: components["schemas"]["PairingPending"] | components["schemas"]["PairingApproved"];
         /** ParticipantPresence */
         ParticipantPresence: {
             /**
@@ -5079,6 +5226,13 @@ export interface components {
             /** Origin */
             origin: string;
         };
+        /** PairingRequest */
+        PairingRequest: {
+            /** Device Id */
+            device_id: string;
+            /** Name */
+            name: string;
+        };
         /** TerminalCreate */
         TerminalCreate: {
             /**
@@ -5660,6 +5814,141 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PresenceFrame"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pair_device_api_envd_pair_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PairingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairingResponse"];
+                };
+            };
+        };
+    };
+    device_pairings_api_device_pairings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PairingChallenge"][];
+                };
+            };
+        };
+    };
+    approve_device_pairing_api_device_pairings__pairing_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pairing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_device_pairing_api_device_pairings__pairing_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pairing_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_device_api_devices__device_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                device_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeviceSummary"];
                 };
             };
             /** @description Validation Error */

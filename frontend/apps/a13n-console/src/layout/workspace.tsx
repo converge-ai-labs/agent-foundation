@@ -7,6 +7,7 @@ import { Link, Navigate, Outlet, useLocation, useParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../auth/context";
 import { CreateWorkspace } from "../features/settings/create-workspace";
+import { pairingSearch } from "../features/environments/pairing-link";
 import { workspacePath } from "../shared/paths";
 import { allPages, data, type Schema } from "../shared/api";
 import { Empty } from "../shared/collection";
@@ -121,8 +122,15 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
         actions={<WorkspaceRecoveryActions workspaces={items} />}
       />
     );
-  if (!workspaceKey && location.pathname === "/")
-    return <Navigate to={`${workspacePath(workspace)}/agents`} replace />;
+  if (!workspaceKey && location.pathname === "/") {
+    const pairing = pairingSearch(location.search);
+    return (
+      <Navigate
+        to={`${workspacePath(workspace)}/${pairing ? `environments/instances${pairing}` : "agents"}`}
+        replace
+      />
+    );
+  }
   return (
     <Context.Provider
       value={{

@@ -162,8 +162,65 @@ Configure the daemon to use `reverse_websocket`, the matching credential file, n
 
 The WebSocket SDK is process-local. If the listener and executing worker live in different processes, your Host must route execution to the connection owner or provide an explicit integration. No automatic relay, distributed registry or global connection pool is implied.
 
-## Hosted use
+## Connect to Harness UI or Service
 
-a13n Service includes HTTP Envd in its default Provider catalog. Create a Provider with `HttpEnvdBackendConfiguration` and a separate write-only `{"token": "..."}` credential, then externally register an Environment with the recipe and state shown above. Remote Providers report `supports_managed=False`, so managed templates are rejected before target I/O.
+Both first-party Hosts support the same self-registration command. Install `a13n-envd` on the computer whose files and tools you want to use, then copy the command from **Connect device** in Harness UI's Devices settings or Console's Environment instances page:
 
-WebSocket Envd is available as a library Provider but is not enabled by default in a13n Service: the Host must wire its SDK and connection routing. Enabling a key alone does not supply a listener or runtime. Harness UI recognizes both keys in its catalog; project integration still requires a Host-approved adapter supplying remote state and runtime. Neither becomes a default local execution mode.
+```bash
+a13n-envd connect https://your-host.example --host work --instance work
+```
+
+Keep the process running. Open the approval link printed in the terminal, sign in to the Host and compare the verification code before approving. In Console, explicitly choose the destination Workspace: approval grants that Workspace access, not every Workspace on the Service. Do not approve an unfamiliar device or mismatched code. Registration alone does not start a conversation or grant a Run access to the device.
+
+Once the device is online, choose it and a working directory when configuring a conversation. Directory discovery works before a Run exists. A working directory is the Session's starting directory, **not** a filesystem sandbox.
+
+### Enable shell execution
+
+The default connection does not implicitly grant unrestricted shell execution. To use the current operating-system account's full authority:
+
+```bash
+A13N_ENVD_FULL_CONTROL=1 a13n-envd connect https://your-host.example --host work --instance work
+```
+
+PowerShell:
+
+```powershell
+$env:A13N_ENVD_FULL_CONTROL = "1"
+a13n-envd connect https://your-host.example --host work --instance work
+```
+
+Alternatively, provide an explicit envd configuration for the execution policy you need. See [envd configuration](../a13n-envd/configuration.md). Full control is not tenant isolation; only connect to a Host and Workspace you trust.
+
+### Restart or connect another Host
+
+After approval, envd saves the Host endpoint and a protected, narrow credential locally. Restart with the saved alias and the same instance:
+
+```bash
+a13n-envd connect work --instance work
+```
+
+Keep the same `--state-dir` too if you supplied one. Reconnection does not require another approval. The secret is never a Console login or general Service API credential, and the Host retains only its digest.
+
+One process connects to **one Host**. For a second Host on the same physical computer, run another process with a different instance:
+
+```bash
+a13n-envd connect https://other-host.example --host personal --instance personal
+```
+
+Instances have independent daemon identities, state and credentials. There is no multi-Host scheduler inside one daemon. Stopping a process takes its connection offline without deleting its files or Host registration.
+
+### Manage and revoke
+
+Console lists approved devices as ordinary external Environments, including their live connection status and registration state. Open the Environment details and choose **Revoke device** to permanently revoke its credential. Harness UI provides the corresponding action in Devices settings. Revocation prevents new access and fences the existing connection within its bounded authority window; it does not undo already dispatched effects, delete files/history, or remotely manage the daemon process. The revoked record remains visible.
+
+A revoked credential is not silently replaced. If you intentionally want to enroll again, use a new `--instance` and explicitly approve it. Deleting local credentials is not a way to take over an existing registration.
+
+### Service deployment and troubleshooting
+
+- Service enables WebSocket envd by default with real Redis. Memory-only deployments do not offer this capability; explicitly configuring it without Redis fails validation. Control owns the connection; Worker uses the existing Redis relay. No separate ticket controller or Connectivity role is needed.
+- Configure the Service's trusted IAM public origin to the externally reachable Console/API origin. The optional `environments.client_public_origin` overrides the WebSocket origin; keep it on the same Host origin used by `connect`. Reverse proxies must forward `/api/envd/pair` and the `/api/v1/environments/{id}/connect` WebSocket upgrade.
+- HTTPS is required except on loopback. `localhost` means the computer running envd, not a remote Service computer. Use the public reachable hostname for another computer. Use `--ca-file` for a private certificate authority rather than disabling verification.
+- If a pending approval expires, rerun the same command to request approval again. If authentication is denied after revocation, envd exits instead of generating a replacement credential.
+- A stored lifecycle status of `running` is not proof of an online connection. Use Console's connection status; check the envd process, proxy WebSocket forwarding and Redis when it is offline.
+
+For an existing HTTP daemon, Service also supports manual registration: create an HTTP Envd Provider with `HttpEnvdBackendConfiguration` and a separate write-only `{"token": "..."}` credential, then register the external Device. Advanced controllers may manually register a WebSocket Device and issue one-use connection tickets instead of using self-registration. Paired devices do not use those tickets. Remote Providers remain connect-only and cannot create managed templates.

@@ -2,6 +2,7 @@ use std::{error::Error, sync::Arc};
 
 mod capacity;
 mod config;
+mod connect;
 mod daemon;
 mod data_dispatch;
 mod device_path;
@@ -29,7 +30,25 @@ pub async fn run_internal_supervisor() -> Result<(), Box<dyn Error + Send + Sync
 
 /// Runs one a13n-envd instance from trusted process configuration.
 pub async fn run_from_environment() -> Result<(), Box<dyn Error + Send + Sync>> {
-    let config = config::Config::from_environment()?;
+    let arguments: Vec<_> = std::env::args_os().skip(1).collect();
+    if arguments.as_slice() == [std::ffi::OsString::from("--help")]
+        || arguments.as_slice()
+            == [
+                std::ffi::OsString::from("connect"),
+                std::ffi::OsString::from("--help"),
+            ]
+    {
+        println!("{}", connect::HELP);
+        return Ok(());
+    }
+    let config = if arguments
+        .first()
+        .is_some_and(|argument| argument == "connect")
+    {
+        connect::prepare(arguments.into_iter().skip(1).collect()).await?
+    } else {
+        config::Config::from_environment()?
+    };
     let daemon = Arc::new(daemon::Daemon::new(&config)?);
     match &config.transport {
         config::TransportConfig::Stdio => stdio::serve(daemon, &config).await?,

@@ -13,6 +13,7 @@ import "./app.css";
 import { AuthProvider, useAuth } from "./auth/context";
 import { AuthPage } from "./auth/pages";
 import { ConnectionAuthorizationCallback } from "./features/connections/callback";
+import { pairingSearch } from "./features/environments/pairing-link";
 import { AppearanceProvider } from "./layout/appearance";
 import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
@@ -159,9 +160,11 @@ const RunPage = lazy(() =>
 
 function Authenticated() {
   const auth = useAuth();
+  const location = useLocation();
   const { t } = useTranslation();
   if (auth.isPending) return <Loading page />;
-  if (auth.anonymous) return <Navigate to="/login" replace />;
+  if (auth.anonymous)
+    return <Navigate to={`/login${pairingSearch(location.search)}`} replace />;
   if (auth.error)
     return (
       <ErrorPage

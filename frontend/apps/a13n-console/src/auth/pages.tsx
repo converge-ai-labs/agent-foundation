@@ -31,6 +31,7 @@ import {
   useParams,
 } from "react-router";
 
+import { pairingSearch } from "../features/environments/pairing-link";
 import { ApiError } from "../service-client";
 import { data } from "../shared/api";
 import { Loading } from "../shared/feedback";
@@ -178,7 +179,7 @@ export function AuthPage() {
               }),
             );
       auth.authenticated(result.csrf_token);
-      navigate("/", { replace: true });
+      navigate(`/${pairingSearch(location.search)}`, { replace: true });
     },
   });
   useEffect(() => {
@@ -227,7 +228,7 @@ export function AuthPage() {
     email: t("Confirm email"),
   };
   if (mode === "login" && auth.data && !auth.anonymous)
-    return <Navigate to="/" replace />;
+    return <Navigate to={`/${pairingSearch(location.search)}`} replace />;
   function submit(event: FormEvent) {
     event.preventDefault();
     mutation.mutate();

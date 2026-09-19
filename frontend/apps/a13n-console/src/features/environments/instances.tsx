@@ -44,6 +44,8 @@ import { useIdempotency } from "../../shared/idempotency";
 import { PageActions } from "../../shared/page";
 import styles from "../../shared/shared.module.css";
 import { environmentApi } from "./api";
+import { ConnectDevice } from "./device-pairing";
+import { DeviceConnectionStatus } from "./device-status";
 import instanceStyles from "./environments.module.css";
 import { EnvironmentPanel } from "./instance-details";
 import { useEnvironmentTypes } from "./providers";
@@ -128,7 +130,12 @@ export function EnvironmentInstances() {
   return (
     <div className={styles.stack}>
       <PageActions>
-        {can("environment.manage") && <CreateEnvironment />}
+        {can("environment.manage") && (
+          <>
+            <CreateEnvironment />
+            <ConnectDevice onApproved={setSelected} />
+          </>
+        )}
       </PageActions>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
@@ -178,7 +185,14 @@ export function EnvironmentInstances() {
               },
               {
                 label: t("Status"),
-                render: (item) => <StatePill state={item.status} />,
+                render: (item) =>
+                  item.device_registration ||
+                  providerById.get(item.provider_id)?.type ===
+                    "a13n.websocket-envd" ? (
+                    <DeviceConnectionStatus environment={item} />
+                  ) : (
+                    <StatePill state={item.status} />
+                  ),
               },
               {
                 label: t("Activity"),
@@ -209,9 +223,6 @@ export function EnvironmentInstances() {
             description={t(
               "Choose an environment template when starting a conversation, or register an external environment.",
             )}
-            action={
-              can("environment.manage") ? <CreateEnvironment /> : undefined
-            }
           />
         )
       )}
@@ -234,7 +245,7 @@ function CreateEnvironment() {
     <ModalFrame
       onOpenChange={setOpen}
       trigger={
-        <Button variant="default" type="button">
+        <Button variant="outline" type="button">
           <PlusIcon aria-hidden="true" />
           {t("Create environment")}
         </Button>

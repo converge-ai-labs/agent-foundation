@@ -123,7 +123,16 @@ class SubagentsSettings(Section):
 
 
 class EnvironmentsSettings(Section):
-    provider_builtins: tuple[str, ...] = ("e2b", "daytona", "modal", "vercel", "sprites", "runloop", "a13n.http-envd")
+    provider_builtins: tuple[str, ...] = (
+        "e2b",
+        "daytona",
+        "modal",
+        "vercel",
+        "sprites",
+        "runloop",
+        "a13n.http-envd",
+        "a13n.websocket-envd",
+    )
     client_public_origin: str | None = None
     client_max_connections: int = Field(default=128, ge=1, le=1000)
     local_providers: dict[LocalProviderType, JsonObject] = Field(default_factory=dict)

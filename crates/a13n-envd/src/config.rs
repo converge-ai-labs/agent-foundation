@@ -38,6 +38,7 @@ const KNOWN_ENVIRONMENT_VARIABLES: &[&str] = &[
     "A13N_ENVD_STATE_DIR",
     "A13N_ENVD_DEFAULT_WORKING_DIRECTORY",
     "A13N_ENVD_DIRECTORY_DISCOVERY",
+    "A13N_ENVD_FULL_CONTROL",
 ];
 
 const HTTP_VARIABLES: &[&str] = &[
@@ -71,6 +72,7 @@ pub(crate) struct TrustedShellProfileConfig {
 
 #[derive(Debug, Clone)]
 pub(crate) struct CommandConfig {
+    pub(crate) full_control: bool,
     pub(crate) base_environment: BTreeMap<String, String>,
     pub(crate) trusted_executable_roots: Vec<PathBuf>,
     pub(crate) shell_profiles: Vec<TrustedShellProfileConfig>,
@@ -89,6 +91,7 @@ struct FileConfig {
     default_working_directory: Option<PathBuf>,
     installation_state_directory: Option<PathBuf>,
     directory_discovery: Option<bool>,
+    full_control: Option<bool>,
     idle_timeout_ms: Option<u64>,
     disconnect_grace_ms: Option<u64>,
     #[serde(default)]
@@ -182,6 +185,13 @@ pub(crate) struct ReverseWebSocketConfig {
     pub(crate) tls_ca_file: Option<PathBuf>,
 }
 
+pub(crate) struct ConnectionBootstrap {
+    pub(crate) device_id: String,
+    pub(crate) name: Option<String>,
+    pub(crate) runtime_directory: PathBuf,
+    pub(crate) transport: ReverseWebSocketConfig,
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct Config {
     pub(crate) device_id: String,
@@ -201,38 +211,64 @@ pub(crate) struct Config {
 impl Config {
     pub(crate) fn from_environment() -> Result<Self, ConfigError> {
         reject_unknown_environment_variables()?;
-        let arguments = StartupArguments::parse(env::args_os().skip(1))?;
+        Self::from_arguments(StartupArguments::parse(env::args_os().skip(1))?, None)
+    }
+
+    pub(crate) fn for_connection(
+        arguments: Vec<std::ffi::OsString>,
+        connection: ConnectionBootstrap,
+    ) -> Result<Self, ConfigError> {
+        reject_unknown_environment_variables()?;
+        let mut arguments = StartupArguments::parse(arguments)?;
+        arguments.device_id = Some(connection.device_id.clone());
+        if connection.name.is_some() {
+            arguments.name = connection.name.clone();
+        }
+        Self::from_arguments(arguments, Some(connection))
+    }
+
+    fn from_arguments(
+        arguments: StartupArguments,
+        connection: Option<ConnectionBootstrap>,
+    ) -> Result<Self, ConfigError> {
         let mut file = load_file_config(arguments.config.clone())?;
         arguments.apply(&mut file)?;
 
         let transport_name =
             optional_unicode("A13N_ENVD_TRANSPORT")?.unwrap_or_else(|| "stdio".to_owned());
-        let transport = match transport_name.as_str() {
-            "stdio" => {
-                reject_transport_variables(HTTP_VARIABLES, "stdio")?;
-                reject_transport_variables(REVERSE_WEBSOCKET_VARIABLES, "stdio")?;
-                TransportConfig::Stdio
-            }
-            "http" => {
-                reject_transport_variables(REVERSE_WEBSOCKET_VARIABLES, "http")?;
-                TransportConfig::Http(parse_http_config()?)
-            }
-            "reverse_websocket" => {
-                reject_transport_variables(HTTP_VARIABLES, "reverse_websocket")?;
-                TransportConfig::ReverseWebSocket(parse_reverse_websocket_config(
-                    required_unicode("A13N_ENVD_REVERSE_WS_URL")?,
-                    PathBuf::from(required_unicode("A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE")?),
-                    optional_unicode("A13N_ENVD_REVERSE_WS_CA_FILE")?.map(PathBuf::from),
-                )?)
-            }
-            _ => {
-                return Err(ConfigError::new(
-                    "A13N_ENVD_TRANSPORT must be stdio, http, or reverse_websocket",
-                ));
+        let transport = if let Some(connection) = &connection {
+            TransportConfig::ReverseWebSocket(connection.transport.clone())
+        } else {
+            match transport_name.as_str() {
+                "stdio" => {
+                    reject_transport_variables(HTTP_VARIABLES, "stdio")?;
+                    reject_transport_variables(REVERSE_WEBSOCKET_VARIABLES, "stdio")?;
+                    TransportConfig::Stdio
+                }
+                "http" => {
+                    reject_transport_variables(REVERSE_WEBSOCKET_VARIABLES, "http")?;
+                    TransportConfig::Http(parse_http_config()?)
+                }
+                "reverse_websocket" => {
+                    reject_transport_variables(HTTP_VARIABLES, "reverse_websocket")?;
+                    TransportConfig::ReverseWebSocket(parse_reverse_websocket_config(
+                        required_unicode("A13N_ENVD_REVERSE_WS_URL")?,
+                        PathBuf::from(required_unicode("A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE")?),
+                        optional_unicode("A13N_ENVD_REVERSE_WS_CA_FILE")?.map(PathBuf::from),
+                    )?)
+                }
+                _ => {
+                    return Err(ConfigError::new(
+                        "A13N_ENVD_TRANSPORT must be stdio, http, or reverse_websocket",
+                    ));
+                }
             }
         };
 
-        let runtime_dir = PathBuf::from(required_unicode("A13N_ENVD_RUNTIME_DIR")?);
+        let runtime_dir = match connection {
+            Some(connection) => connection.runtime_directory,
+            None => PathBuf::from(required_unicode("A13N_ENVD_RUNTIME_DIR")?),
+        };
         if !runtime_dir.is_absolute() {
             return Err(ConfigError::new(
                 "A13N_ENVD_RUNTIME_DIR must be an absolute path",
@@ -288,7 +324,20 @@ impl Config {
         let limits = file.limits;
         validate_limits(&limits)?;
         let runtime = Some(RuntimeState::prepare(&runtime_dir).map_err(ConfigError::new)?);
-        let command = prepare_command_config(file.trusted_executable_roots, file.shell_profiles)?;
+        let full_control = match file.full_control {
+            Some(value) => value,
+            None => parse_full_control(optional_unicode("A13N_ENVD_FULL_CONTROL")?.as_deref())?,
+        };
+        let command = if full_control {
+            if !file.trusted_executable_roots.is_empty() || !file.shell_profiles.is_empty() {
+                return Err(ConfigError::new(
+                    "full_control cannot be combined with executable roots or shell profiles",
+                ));
+            }
+            Some(full_control_commands()?)
+        } else {
+            prepare_command_config(file.trusted_executable_roots, file.shell_profiles)?
+        };
         Ok(Self {
             device_id,
             default_working_directory,
@@ -620,6 +669,7 @@ fn prepare_command_config(
     prepared_profiles.sort_by(|left, right| left.profile_id.cmp(&right.profile_id));
 
     Ok(Some(CommandConfig {
+        full_control: false,
         base_environment: inherited_command_environment(),
         trusted_executable_roots: canonical_roots,
         shell_profiles: prepared_profiles,
@@ -628,6 +678,83 @@ fn prepare_command_config(
         max_environment_entries: DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES,
         max_environment_bytes: DEFAULT_MAX_COMMAND_ENVIRONMENT_BYTES,
     }))
+}
+
+fn parse_full_control(value: Option<&str>) -> Result<bool, ConfigError> {
+    match value {
+        None | Some("0" | "false") => Ok(false),
+        Some("1" | "true") => Ok(true),
+        _ => Err(ConfigError::new(
+            "A13N_ENVD_FULL_CONTROL must be 1, 0, true, or false",
+        )),
+    }
+}
+
+fn full_control_commands() -> Result<CommandConfig, ConfigError> {
+    let base_environment = inherited_command_environment();
+    let cwd = env::current_dir().map_err(|error| ConfigError::new(error.to_string()))?;
+    // PATH order is meaningful. Missing entries are normal and do not prevent startup.
+    let roots: Vec<PathBuf> = env::split_paths(&env::var_os("PATH").unwrap_or_default())
+        .map(|path| {
+            if path.is_absolute() {
+                path
+            } else {
+                cwd.join(path)
+            }
+        })
+        .filter(|path| path.is_dir())
+        .collect();
+    #[cfg(unix)]
+    let (executable, arguments, display_name) = (
+        PathBuf::from("/bin/sh"),
+        vec!["-c".to_owned()],
+        "POSIX shell",
+    );
+    #[cfg(windows)]
+    let (executable, arguments, display_name) = {
+        let powershell = ["pwsh.exe", "powershell.exe"]
+            .into_iter()
+            .find_map(|name| {
+                roots
+                    .iter()
+                    .map(|root| root.join(name))
+                    .find(|path| path.is_file())
+            })
+            .or_else(|| {
+                env::var_os("SystemRoot").map(|root| {
+                    PathBuf::from(root).join("System32/WindowsPowerShell/v1.0/powershell.exe")
+                })
+            })
+            .ok_or_else(|| ConfigError::new("Full Control requires PowerShell"))?;
+        (
+            powershell,
+            vec!["-NoLogo", "-NoProfile", "-NonInteractive", "-Command"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect(),
+            "PowerShell",
+        )
+    };
+    let executable = canonical_regular_file(&executable, "Full Control shell")?;
+    Ok(CommandConfig {
+        full_control: true,
+        base_environment,
+        trusted_executable_roots: roots.clone(),
+        shell_profiles: vec![TrustedShellProfileConfig {
+            profile_id: "default".to_owned(),
+            display_name: display_name.to_owned(),
+            native_executable: executable,
+            fixed_arguments: arguments,
+            safe_base_environment: BTreeMap::new(),
+            executable_search_roots: roots,
+            max_script_bytes: DEFAULT_MAX_COMMAND_ARGUMENT_BYTES as u64,
+            allow_login_mode: false,
+        }],
+        max_arguments: DEFAULT_MAX_COMMAND_ARGUMENTS,
+        max_argument_bytes: DEFAULT_MAX_COMMAND_ARGUMENT_BYTES,
+        max_environment_entries: DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES,
+        max_environment_bytes: DEFAULT_MAX_COMMAND_ENVIRONMENT_BYTES,
+    })
 }
 
 fn canonical_directory(path: &Path, label: &str) -> Result<PathBuf, ConfigError> {
@@ -937,6 +1064,36 @@ mod tests {
         DEFAULT_MAX_COMMAND_ENVIRONMENT_BYTES, DEFAULT_MAX_COMMAND_ENVIRONMENT_ENTRIES,
         parse_reverse_websocket_config,
     };
+
+    #[test]
+    fn full_control_is_an_explicit_opt_in() {
+        for value in [None, Some("0"), Some("false")] {
+            assert!(!super::parse_full_control(value).unwrap());
+        }
+        for value in [Some("1"), Some("true")] {
+            assert!(super::parse_full_control(value).unwrap());
+        }
+        assert!(super::parse_full_control(Some("yes")).is_err());
+    }
+
+    #[test]
+    fn full_control_provides_a_native_shell_without_profile_configuration() {
+        let commands = super::full_control_commands().unwrap();
+        assert!(commands.full_control);
+        assert_eq!(commands.shell_profiles.len(), 1);
+        assert_eq!(commands.shell_profiles[0].profile_id, "default");
+        assert!(commands.shell_profiles[0].native_executable.is_file());
+        assert_eq!(
+            commands.base_environment,
+            super::inherited_command_environment()
+        );
+        assert!(
+            commands
+                .base_environment
+                .keys()
+                .all(|name| !super::reserved_environment_name(name))
+        );
+    }
 
     #[test]
     fn reverse_websocket_accepts_ws_and_wss_but_rejects_credential_bearing_urls() {

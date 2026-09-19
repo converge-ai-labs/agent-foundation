@@ -448,7 +448,7 @@ impl ExecutionManager {
             self.inner.command.max_arguments,
             self.inner.command.max_argument_bytes,
         )?;
-        if !roots.is_empty() {
+        if !self.inner.command.full_control && !roots.is_empty() {
             let path = std::env::join_paths(&roots).map_err(|_| ProcessError::Invalid)?;
             environment.insert("PATH".to_owned(), path.to_string_lossy().into_owned());
         }
@@ -518,6 +518,7 @@ impl ExecutionManager {
                         resolve_bare_executable(
                             &selector.name,
                             &self.inner.command.trusted_executable_roots,
+                            self.inner.command.full_control,
                         )?
                     }
                     eip::ExecutableSpec::Path(selector) => filesystem
@@ -550,7 +551,16 @@ impl ExecutionManager {
                 if shell.login {
                     arguments.insert(0, "-l".to_owned());
                 }
-                arguments.push(shell.script.clone());
+                let script = shell.script.clone();
+                #[cfg(windows)]
+                let script = if self.inner.command.full_control {
+                    format!(
+                        "$OutputEncoding = [Console]::InputEncoding = [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false); {script}"
+                    )
+                } else {
+                    script
+                };
+                arguments.push(script);
                 let mut environment = self.inner.command.base_environment.clone();
                 environment.extend(profile.safe_base_environment.clone());
                 Ok(ResolvedCommand {
@@ -1625,13 +1635,23 @@ fn valid_bare_executable_name(name: &str) -> bool {
             .any(|character| matches!(character, '\0' | '/' | '\\' | ':'))
 }
 
-fn resolve_bare_executable(name: &str, roots: &[PathBuf]) -> Result<PathBuf, ProcessError> {
+fn resolve_bare_executable(
+    name: &str,
+    roots: &[PathBuf],
+    full_control: bool,
+) -> Result<PathBuf, ProcessError> {
     for root in roots {
         let candidate = root.join(name);
+        #[cfg(windows)]
+        let candidate = if full_control && candidate.extension().is_none() {
+            candidate.with_extension("exe")
+        } else {
+            candidate
+        };
         let Ok(canonical) = std::fs::canonicalize(&candidate) else {
             continue;
         };
-        if !canonical.starts_with(root) || !canonical.is_file() {
+        if (!full_control && !canonical.starts_with(root)) || !canonical.is_file() {
             continue;
         }
         #[cfg(unix)]

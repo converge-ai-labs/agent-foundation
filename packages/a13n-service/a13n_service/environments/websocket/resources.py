@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from time import monotonic
 from typing import Literal
@@ -46,10 +46,12 @@ class ConnectionTarget:
     operation_id: str | None
     operation_action: str | None
     operation_expires_at: datetime | None
+    device_credential_digest: str | None = field(repr=False)
+    device_revoked: bool
 
     def require_eligible(self) -> None:
-        if not self.provider_enabled:
-            raise invalid_environment("Client WebSocket Provider is disabled")
+        if not self.provider_enabled or self.device_revoked:
+            raise invalid_environment("Client WebSocket Provider is disabled or Device registration is revoked")
 
 
 class ConnectionResources:
@@ -78,14 +80,14 @@ class ConnectionResources:
             return target
 
     async def capture(self, organization_id: str, environment_id: str) -> ConnectionTarget:
-        """Revalidate a ticket-bound target without carrying an actor or DB session."""
+        """Revalidate a connection target without carrying an actor or DB session."""
         target = await self.resolve(environment_id)
         if target.organization_id != organization_id:
             raise environment_not_found()
         return target
 
     async def resolve(self, environment_id: str) -> ConnectionTarget:
-        """Internal target lookup; the ingress still requires a matching one-use ticket."""
+        """Internal target lookup; ingress separately authenticates its credential."""
         async with short_session(self._sessions) as session:
             row = await session.get(EnvironmentRecord, environment_id)
             if row is None:
@@ -132,6 +134,8 @@ class ConnectionResources:
             operation_id=row.operation_id,
             operation_action=row.operation_action,
             operation_expires_at=optional_assume_utc(row.operation_expires_at),
+            device_credential_digest=row.device_credential_digest,
+            device_revoked=row.device_revoked_at is not None,
         )
 
     async def publish(
@@ -177,7 +181,7 @@ class ConnectionResources:
                 or provider.type != WEBSOCKET_PROVIDER_KEY
                 or row.status == "deleted"
                 or self._target(row, provider) != target
-                or (status == "running" and not target.provider_enabled)
+                or (status == "running" and (not target.provider_enabled or target.device_revoked))
             ):
                 return False
             if monotonic() >= evidence_deadline.monotonic_at:

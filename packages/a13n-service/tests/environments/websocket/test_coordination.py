@@ -452,3 +452,41 @@ async def test_takeover_barrier_covers_every_binding_grant(coordination):
     await coordination.acknowledge(connection)
     promoted = await coordination.promote(replacement)
     assert not promoted.value.uses
+
+
+async def test_direct_device_admission_persists_lost_history_quarantine(coordination, redis_client):
+    admitted = await coordination.admit_device("org_test", "env_test", owner_instance_id="control")
+    identity = admitted.value.connection
+    assert identity is not None and identity.connection_id
+    assert admitted.value.barrier_ms > admitted.value.now_ms
+    assert await redis_client.get(environment_key("org_test", "env_test")) is not None
+    assert not await redis_client.keys("a13n:environment:ticket:*")
+    with pytest.raises(CoordinationError) as waiting:
+        await coordination.promote(identity)
+    assert waiting.value.code == "handover_pending"
+    await asyncio.sleep(LIMITS.lease_ms / 1000 + 0.02)
+    await coordination.promote(identity)
+    await coordination.online(identity)
+    await redis_client.delete(environment_key("org_test", "env_test"))
+    replacement = await coordination.admit_device("org_test", "env_test", owner_instance_id="new_control")
+    assert replacement.value.connection != identity
+    with pytest.raises(CoordinationError):
+        await coordination.renew(identity)
+    with pytest.raises(CoordinationError) as quarantined:
+        await coordination.promote(replacement.value.connection)
+    assert quarantined.value.code == "handover_pending"
+
+
+async def test_device_revoke_atomically_fences_owner_and_candidate(coordination):
+    owner = await online(coordination)
+    replacement = await coordination.admit_device("org_test", "env_test", owner_instance_id="replacement")
+    before = await coordination.observe("org_test", "env_test")
+    await coordination.revoke("org_test", "env_test")
+    revoked = await coordination.observe("org_test", "env_test")
+    assert revoked.value.status == "offline" and revoked.value.connection is None
+    assert revoked.value.barrier_ms == before.value.barrier_ms
+    for operation in (coordination.renew(owner), coordination.promote(replacement.value.connection)):
+        with pytest.raises(CoordinationError):
+            await operation
+    await coordination.revoke("org_test", "env_test")
+    assert (await coordination.observe("org_test", "env_test")).value.barrier_ms == revoked.value.barrier_ms

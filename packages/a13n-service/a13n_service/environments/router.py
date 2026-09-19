@@ -40,12 +40,14 @@ from .domain import (
 from .errors import EnvironmentManagementError
 from .image_jobs import ImageTestResponse, ProviderConnectivity
 from .mount_router import router as mount_router
+from .pairing_router import router as pairing_router
 from .service import EnvironmentService
 from .websocket.router import router as client_connection_router
 
 router = APIRouter(prefix="/api/v1", tags=["environments"])
 router.include_router(client_connection_router)
 router.include_router(mount_router)
+router.include_router(pairing_router)
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 Limit = Annotated[int, Query(ge=1, le=100)]
 

@@ -90,8 +90,8 @@ async def lock_run_environment_use(
         actions=frozenset({WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}),
         snapshot=attempt.authorization.snapshot,
     )
-    if not provider.enabled:
-        raise ValueError("Environment Provider is disabled")
+    if not provider.enabled or row.device_revoked_at is not None:
+        raise ValueError("Environment Provider is disabled or Device registration is revoked")
     return binding, row, provider
 
 

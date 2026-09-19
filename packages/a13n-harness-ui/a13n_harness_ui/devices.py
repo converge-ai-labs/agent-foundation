@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import hmac
 import os
+from collections.abc import Iterable
 from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from typing import Literal
@@ -25,12 +26,14 @@ from a13n_environment import (
     WebSocketEnvdEnvironmentProvider,
     WebSocketEnvdProviderRuntime,
 )
+from a13n_environment.remote_envd.pairing import credential_matches
 from pydantic import SecretStr, ValidationError
 
 from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
 from a13n_harness_ui.configuration.models import (
     DeviceResource,
     HttpDeviceTransport,
+    PairedDeviceAuthentication,
     StrictModel,
     WebSocketDeviceTransport,
     canonical_digest,
@@ -43,6 +46,15 @@ class DeviceSummary(StrictModel):
     id: str
     name: str
     transport: Literal["http", "websocket"]
+    registration: Literal["configured", "paired", "revoked"] = "configured"
+
+    @classmethod
+    def from_resource(cls, resource: DeviceResource) -> DeviceSummary:
+        authentication = resource.authentication
+        registration = "configured"
+        if isinstance(authentication, PairedDeviceAuthentication):
+            registration = "revoked" if authentication.revoked else "paired"
+        return cls(id=resource.id, name=resource.name, transport=resource.transport.kind, registration=registration)
 
 
 class DeviceInfo(DeviceSummary):
@@ -61,7 +73,14 @@ class DeviceAttachment:
     connections: WebSocketEnvdConnections
 
     async def attach(self, connection: WebSocketConnection) -> None:
-        await self.connections.attach(self.device_id, connection)
+        try:
+            await self.connections.attach(self.device_id, connection)
+        except asyncio.CancelledError:
+            # Revocation cancels the SDK-owned carrier task, not this HTTP handler.
+            # Treat that as normal closure while preserving handler cancellation.
+            task = asyncio.current_task()
+            if task is None or task.cancelling():
+                raise
 
 
 class DeviceConnections:
@@ -73,10 +92,13 @@ class DeviceConnections:
         self._websocket: dict[tuple[str, str], WebSocketEnvdConnections] = {}
         self._stack = AsyncExitStack()
         self._closed = False
+        self._revoked: set[str] = set()
         self._close_task: asyncio.Task[None] | None = None
 
     async def _credential(self, resource: DeviceResource) -> str:
         authentication = resource.authentication
+        if isinstance(authentication, PairedDeviceAuthentication):
+            raise TypeError("Paired Device credentials cannot be recovered")
         if authentication.env is not None:
             token = os.environ.get(authentication.env)
         elif self._api_keys is not None and authentication.credential_ref is not None:
@@ -88,13 +110,21 @@ class DeviceConnections:
         return token
 
     async def _runtime_key(self, resource: DeviceResource, token: str | None = None) -> tuple[tuple[str, str], str]:
-        token = await self._credential(resource) if token is None else token
+        authentication = resource.authentication
+        if isinstance(authentication, PairedDeviceAuthentication):
+            fingerprint = authentication.credential_digest
+            if authentication.revoked or fingerprint in self._revoked:
+                raise EnvironmentLifecycleError("Device registration is revoked.", code="device_revoked")
+            token = ""
+        else:
+            token = await self._credential(resource) if token is None else token
+            fingerprint = hashlib.sha256(token.encode()).hexdigest()
         if self._closed:
             raise EnvironmentLifecycleError("Device connections are closed.", code="device_connections_closed")
         recipe = resource.model_dump(mode="json", exclude={"id", "name"})
         # Runtime-only fingerprint allows credential rotation without interrupting
         # execution owners still using the previous connection. Neither is persisted.
-        return (canonical_digest(recipe), hashlib.sha256(token.encode()).hexdigest()), token
+        return (canonical_digest(recipe), fingerprint), token
 
     async def _http_runtime(self, resource: DeviceResource) -> HttpEnvdProviderRuntime:
         if not isinstance(resource.transport, HttpDeviceTransport):
@@ -121,17 +151,36 @@ class DeviceConnections:
         return self._websocket[key]
 
     async def authenticate_attachment(self, resource: DeviceResource, token: str) -> DeviceAttachment:
-        if not isinstance(resource.transport, WebSocketDeviceTransport) or not hmac.compare_digest(
-            token.encode(), (await self._credential(resource)).encode()
-        ):
+        authentication = resource.authentication
+        authenticated = (
+            not authentication.revoked and credential_matches(token, authentication.credential_digest)
+            if isinstance(authentication, PairedDeviceAuthentication)
+            else hmac.compare_digest(token.encode(), (await self._credential(resource)).encode())
+        )
+        if not isinstance(resource.transport, WebSocketDeviceTransport) or not authenticated:
             raise EnvironmentLifecycleError(
                 "Device attachment authentication failed.", code="device_authentication_failed"
             )
 
         return DeviceAttachment(resource.device_id, await self._websocket_connections(resource, token))
 
+    async def synchronize_registrations(self, resources: Iterable[DeviceResource]) -> None:
+        for resource in resources:
+            if isinstance(resource.authentication, PairedDeviceAuthentication) and resource.authentication.revoked:
+                await self.revoke(resource)
+
+    async def revoke(self, resource: DeviceResource) -> None:
+        authentication = resource.authentication
+        if not isinstance(authentication, PairedDeviceAuthentication):
+            raise TypeError("Paired Device resource required")
+        digest = authentication.credential_digest
+        self._revoked.add(digest)
+        for key, connections in tuple(self._websocket.items()):
+            if key[1] == digest:
+                await connections.close()
+
     async def info(self, resource: DeviceResource) -> DeviceInfo:
-        summary = DeviceSummary(id=resource.id, name=resource.name, transport=resource.transport.kind)
+        summary = DeviceSummary.from_resource(resource)
         try:
             descriptor = await self.describe(resource)
         except EnvironmentLifecycleError as error:

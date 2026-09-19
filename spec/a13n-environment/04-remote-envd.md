@@ -19,6 +19,20 @@ HTTP is Host-dialed; reverse WebSocket is daemon-dialed, with envd always the re
 
 A Session is a resource owner, not a tenant sandbox. Device and working-directory selection are trusted inputs; the model receives only the resulting operation routes. The SDK owns no listener, global registry, credential issuer or distributed relay.
 
+## Host Pairing
+
+Harness UI and Service expose the same daemon enrollment boundary, `POST /api/envd/pair` beneath their configured Host base URL. Enrollment is separate from EIP and opens no Session. The daemon sends `{device_id, name}` and a generated 256-bit, lowercase hexadecimal Bearer credential. It saves the credential before contacting the Host. The Host retains only its SHA-256 verification digest, bound to the approved resource and native identity; this credential authorizes only the registered daemon's attachment, not ordinary product APIs.
+
+A pending response contains `status: pending`, a `challenge` with `pairing_id`, `device_id`, `name`, `verification_code` and `expires_at`, an optional `approval_url`, and `poll_after_seconds`. The daemon repeats the authenticated request to observe approval. A challenge expires after ten minutes; polling does not extend its lifetime. Host admission bounds pending requests. Browsers receive only the safe challenge, never the credential. Approval requires the Host's ordinary authenticated management authority and explicit confirmation of the displayed code. Service approval selects an authorized Workspace; a daemon's claimed scope cannot grant that authority.
+
+Approval atomically binds the verifier to the Host's existing Device or Environment resource. Repeated confirmation and lost-response recovery reuse that binding rather than creating another resource. A response with `status: approved` includes `resource_id` and a credential-free `websocket_url`. Identity changes under an existing pairing are rejected. Denied, expired or revoked requests return an explicit error; the daemon never replaces its credential or obtains new authority automatically after rejection.
+
+The daemon saves the approved connection recipe and authenticates subsequent reverse WebSocket connections directly with the retained credential. It requires no external controller or per-reconnection ticket. Registration approval, transport connection, Device initialization and Host online publication remain distinct observations. Service's distributed connection admission, takeover and dispatch fences remain Host responsibilities, independent of how the attachment credential is verified.
+
+Each daemon process selects one Host. One machine may run multiple independent instances or Host-targeted processes; each has separate runtime ownership. Installation identity and named Host profiles persist outside disposable runtime data. Host profiles isolate credentials by target; changing a profile's address cannot silently reuse its existing authority. Remote enrollment requires verified HTTPS, with explicit loopback HTTP available for local use. Credentials never enter URLs, redirects, logs or inherited command environment. Revoking a pairing prevents subsequent attachments and retires its active connection without deleting native files or rewriting execution history.
+
+The shared Environment integration layer owns enrollment values and verification helpers, not product user authentication, credential storage, HTTP listener ownership or a distributed registration service. Both Hosts consume that same contract and retain their existing resource and storage models.
+
 ## Configuration and State
 
 The Provider's credential-free configuration contains `working_directory` and exact `required_methods`. Paths use the [Device path model](../a13n-envd/04-resource-operations.md#path-model), never the requester's filesystem. An omitted working directory resolves from Device info at preparation; Hosts with immutable Run acceptance resolve and capture it before acceptance. Validation is structural and inert; Session opening checks availability.

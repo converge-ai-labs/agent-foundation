@@ -1582,6 +1582,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/revoke-device": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Revoke Device */
+    post: operations["post_environments_environment_id_revoke_device"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/stop": {
     parameters: {
       query?: never;
@@ -3479,6 +3496,57 @@ export interface paths {
     put?: never;
     /** Create Connector Provider */
     post: operations["post_workspaces_workspace_connector_providers"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/device-pairings/{pairing_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Inspect Pairing */
+    get: operations["get_workspaces_workspace_device_pairings_pairing_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/device-pairings/{pairing_id}/approve": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Approve Pairing */
+    post: operations["post_workspaces_workspace_device_pairings_pairing_id_approve"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/device-pairings/{pairing_id}/reject": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reject Pairing */
+    post: operations["post_workspaces_workspace_device_pairings_pairing_id_reject"];
     delete?: never;
     options?: never;
     head?: never;
@@ -7206,6 +7274,8 @@ export interface components {
       created_at: string;
       /** Device Id */
       device_id?: string | null;
+      /** Device Registration */
+      device_registration?: ("paired" | "revoked") | null;
       /** Generation */
       generation: number;
       /** Id */
@@ -7279,6 +7349,8 @@ export interface components {
       created_at: string;
       /** Device Id */
       device_id?: string | null;
+      /** Device Registration */
+      device_registration?: ("paired" | "revoked") | null;
       /** Generation */
       generation: number;
       /** Id */
@@ -9195,6 +9267,59 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** PairingApproved */
+    PairingApproved: {
+      /** Resource Id */
+      resource_id: string;
+      /**
+       * Status
+       * @default approved
+       * @constant
+       */
+      status?: "approved";
+      /** Websocket Url */
+      websocket_url: string;
+    };
+    /**
+     * PairingChallenge
+     * @description Safe details shown to both the registering operator and approving user.
+     */
+    PairingChallenge: {
+      /** Device Id */
+      device_id: string;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** Name */
+      name: string;
+      /** Pairing Id */
+      pairing_id: string;
+      /** Verification Code */
+      verification_code: string;
+    };
+    /** PairingPending */
+    PairingPending: {
+      /** Approval Url */
+      approval_url?: string | null;
+      challenge: components["schemas"]["PairingChallenge"];
+      /**
+       * Poll After Seconds
+       * @default 2
+       */
+      poll_after_seconds?: number;
+      /**
+       * Status
+       * @default pending
+       * @constant
+       */
+      status?: "pending";
+    };
+    /** PairingResponse */
+    PairingResponse:
+      | components["schemas"]["PairingPending"]
+      | components["schemas"]["PairingApproved"];
     /** PasswordResetRequest */
     PasswordResetRequest: {
       /**
@@ -17112,6 +17237,50 @@ export interface operations {
       };
     };
   };
+  post_environments_environment_id_revoke_device: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Environment"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   post_environments_environment_id_stop: {
     parameters: {
       query?: never;
@@ -24546,6 +24715,139 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["ConnectorProvider"];
         };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_device_pairings_pairing_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pairing_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PairingChallenge"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_device_pairings_pairing_id_approve: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pairing_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Environment"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_device_pairings_pairing_id_reject: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        pairing_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Invalid request. */
       400: {

@@ -248,7 +248,7 @@ Type these in the terminal composer, not your shell. Tab completes supported syn
 | `/ps`                                   | —       | Yes        | Inspect observed background processes and their last reported status.     |
 | `/subagents [execution-id\|next]`       | —       | Yes        | Inspect this conversation's child executions and retained output.         |
 | `/usage [details\|subscription\|reset]` | —       | Yes        | Show recorded Thread usage; subscription/reset inspect Codex limits.      |
-| `/goal objective`                       | —       | No         | Start a Goal with bounded self-checks against the authored objective.     |
+| `/goal task description`                | —       | No         | Start a Goal with bounded self-checks against the authored objective.     |
 | `/steer message`                        | —       | Yes        | Add guidance while the agent is working.                                  |
 | `/import`                               | —       | No         | Preview and optionally enable external subagents with parent inheritance. |
 | `/agent [agent-id]`                     | —       | No         | Switch agent, including its model, instructions, and tools.               |

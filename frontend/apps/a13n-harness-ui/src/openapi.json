@@ -219,6 +219,166 @@
         }
       }
     },
+    "/api/envd/pair": {
+      "post": {
+        "summary": "Pair Device",
+        "operationId": "pair_device_api_envd_pair_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PairingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairingResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/device-pairings": {
+      "get": {
+        "summary": "Device Pairings",
+        "operationId": "device_pairings_api_device_pairings_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/PairingChallenge"
+                  },
+                  "type": "array",
+                  "title": "Response Device Pairings Api Device Pairings Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/device-pairings/{pairing_id}/approve": {
+      "post": {
+        "summary": "Approve Device Pairing",
+        "operationId": "approve_device_pairing_api_device_pairings__pairing_id__approve_post",
+        "parameters": [
+          {
+            "name": "pairing_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pairing Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/device-pairings/{pairing_id}/reject": {
+      "post": {
+        "summary": "Reject Device Pairing",
+        "operationId": "reject_device_pairing_api_device_pairings__pairing_id__reject_post",
+        "parameters": [
+          {
+            "name": "pairing_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Pairing Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/devices/{device_id}/revoke": {
+      "post": {
+        "summary": "Revoke Device",
+        "operationId": "revoke_device_api_devices__device_id__revoke_post",
+        "parameters": [
+          {
+            "name": "device_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Device Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/devices": {
       "get": {
         "summary": "Devices",
@@ -6873,6 +7033,16 @@
             ],
             "title": "Transport"
           },
+          "registration": {
+            "type": "string",
+            "enum": [
+              "configured",
+              "paired",
+              "revoked"
+            ],
+            "title": "Registration",
+            "default": "configured"
+          },
           "available": {
             "type": "boolean",
             "title": "Available"
@@ -6943,6 +7113,16 @@
               "websocket"
             ],
             "title": "Transport"
+          },
+          "registration": {
+            "type": "string",
+            "enum": [
+              "configured",
+              "paired",
+              "revoked"
+            ],
+            "title": "Registration",
+            "default": "configured"
           }
         },
         "additionalProperties": false,
@@ -9117,6 +9297,117 @@
           },
           {
             "$ref": "#/components/schemas/TerminalPage"
+          }
+        ]
+      },
+      "PairingApproved": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "approved",
+            "title": "Status",
+            "default": "approved"
+          },
+          "resource_id": {
+            "type": "string",
+            "title": "Resource Id"
+          },
+          "websocket_url": {
+            "type": "string",
+            "title": "Websocket Url"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "resource_id",
+          "websocket_url"
+        ],
+        "title": "PairingApproved"
+      },
+      "PairingChallenge": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Device Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "pairing_id": {
+            "type": "string",
+            "title": "Pairing Id"
+          },
+          "verification_code": {
+            "type": "string",
+            "title": "Verification Code"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expires At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id",
+          "name",
+          "pairing_id",
+          "verification_code",
+          "expires_at"
+        ],
+        "title": "PairingChallenge",
+        "description": "Safe details shown to both the registering operator and approving user."
+      },
+      "PairingPending": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "const": "pending",
+            "title": "Status",
+            "default": "pending"
+          },
+          "challenge": {
+            "$ref": "#/components/schemas/PairingChallenge"
+          },
+          "approval_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Url"
+          },
+          "poll_after_seconds": {
+            "type": "integer",
+            "title": "Poll After Seconds",
+            "default": 2
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "challenge"
+        ],
+        "title": "PairingPending"
+      },
+      "PairingResponse": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PairingPending"
+          },
+          {
+            "$ref": "#/components/schemas/PairingApproved"
           }
         ]
       },
@@ -14325,6 +14616,30 @@
           "origin"
         ],
         "title": "PushSubscriptionInput"
+      },
+      "PairingRequest": {
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Device Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "device_id",
+          "name"
+        ],
+        "title": "PairingRequest"
       },
       "TerminalCreate": {
         "properties": {

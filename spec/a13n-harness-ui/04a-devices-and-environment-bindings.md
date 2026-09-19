@@ -8,7 +8,15 @@ Harness UI stores Device connections and Project/Thread working-directory select
 
 ## Devices
 
-`devices/*.yaml` uses the ordinary accepted configuration generation. Each resource contains a stable Host Device ID, expected envd `device_id`, display name, transport configuration and credential references. HTTP names an origin; reverse WebSocket names an expected attachment identity. Credential values, sockets, Session selectors and observed generations are not resource configuration.
+`devices/*.yaml` uses the ordinary accepted configuration generation. Each resource contains a stable Host Device ID, expected envd `device_id`, display name, transport configuration and authentication. Manually configured authentication references a Host environment variable or saved API key. Paired authentication stores only the daemon credential digest and its revocation state and requires reverse WebSocket transport. HTTP names an origin; reverse WebSocket names an expected attachment identity. Raw credentials, sockets, Session selectors and observed generations are not resource configuration.
+
+### Self-registration
+
+The App implements the shared [Host pairing protocol](../a13n-environment/04-remote-envd.md). Only `POST /api/envd/pair` admits a daemon's narrow pairing credential without browser authentication. Pending requests grant no Device access and remain bounded, expiring process-local state. Their safe challenge is visible to authenticated users. Approval publishes an ordinary Device resource through validated configuration mutation; retried approval or polling resolves the approved resource, including after App restart. A native identity already registered with a different credential is a conflict, not implicit credential replacement.
+
+The approved credential authenticates only that Device's reverse WebSocket attachment. Human management APIs retain normal browser authentication. Device discovery and Run preparation use the same digest-scoped connection without requiring recoverable credential bytes. Each daemon process selects one Host; independent envd instances on one physical machine have independent registration identities.
+
+**Revoke** persists revoked trust before retiring its live connection. It denies later attachment and use through captured configurations, including after restart, and does not delete remote files, Project/Thread selections or Run history. Revocation is distinct from forgetting local configuration. A failed or revoked credential never triggers automatic replacement or approval.
 
 Registration and connection checks are trusted Host actions. Catalog loading performs no connection or filesystem I/O. Online status and Device info are runtime observations. Missing or unavailable Devices never fall back to local execution. Paths use the selected Device's path format, not the UI server's filesystem.
 

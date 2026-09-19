@@ -22,11 +22,13 @@ Bootstrap contains only what the daemon needs to run:
 - installation-state and disposable-runtime directories;
 - stdio, HTTP or reverse-WebSocket transport settings and credentials;
 - `default_working_directory` and `directory_discovery` (default `true`);
-- shell profiles and executable search configuration;
+- explicit Full Control or shell profiles and executable search configuration;
 - generous finite per-Session and aggregate resource limits;
 - inactivity, short disconnect grace, completed-history retention and collection settings.
 
 An omitted default working directory uses the daemon's startup cwd. An explicit value is an absolute native path. Envd resolves it to an absolute Device path and returns it in Device info. The default is a working starting point, not an access boundary. No discovery-entry list or filesystem allowlist is configured. Unavailable defaults remain visible but fail Session opening; they do not prevent clients from selecting another path.
+
+`full_control: true`, or `A13N_ENVD_FULL_CONTROL=1` when the file does not select it, enables native command execution without shell-profile declarations. It selects a platform shell and preserves inherited `PATH` order and command environment, excluding daemon bootstrap variables. Full Control uses the daemon account's authority, not a daemon-owned sandbox. Explicit shell profiles and executable roots are an alternative to Full Control, not an additional policy layered over it. The flag does not alter an outer container, account or sandbox.
 
 Clients may override the default at `session.open`. Existing Sessions retain their resolved working directory. Disabling directory discovery removes only Device-level enumeration; known paths and ordinary Session file access remain usable. No EIP method changes launch identity or networking.
 

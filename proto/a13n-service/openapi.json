@@ -8638,6 +8638,21 @@
             ],
             "title": "Device Id"
           },
+          "device_registration": {
+            "anyOf": [
+              {
+                "enum": [
+                  "paired",
+                  "revoked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Registration"
+          },
           "generation": {
             "title": "Generation",
             "type": "integer"
@@ -8827,6 +8842,21 @@
               }
             ],
             "title": "Device Id"
+          },
+          "device_registration": {
+            "anyOf": [
+              {
+                "enum": [
+                  "paired",
+                  "revoked"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Registration"
           },
           "generation": {
             "title": "Generation",
@@ -14316,6 +14346,118 @@
         ],
         "title": "Page_Workspace_",
         "type": "object"
+      },
+      "PairingApproved": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_id": {
+            "title": "Resource Id",
+            "type": "string"
+          },
+          "status": {
+            "const": "approved",
+            "default": "approved",
+            "title": "Status",
+            "type": "string"
+          },
+          "websocket_url": {
+            "title": "Websocket Url",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_id",
+          "websocket_url"
+        ],
+        "title": "PairingApproved",
+        "type": "object"
+      },
+      "PairingChallenge": {
+        "additionalProperties": false,
+        "description": "Safe details shown to both the registering operator and approving user.",
+        "properties": {
+          "device_id": {
+            "maxLength": 128,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9._-]+$",
+            "title": "Device Id",
+            "type": "string"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "pairing_id": {
+            "title": "Pairing Id",
+            "type": "string"
+          },
+          "verification_code": {
+            "title": "Verification Code",
+            "type": "string"
+          }
+        },
+        "required": [
+          "device_id",
+          "name",
+          "pairing_id",
+          "verification_code",
+          "expires_at"
+        ],
+        "title": "PairingChallenge",
+        "type": "object"
+      },
+      "PairingPending": {
+        "additionalProperties": false,
+        "properties": {
+          "approval_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Approval Url"
+          },
+          "challenge": {
+            "$ref": "#/components/schemas/PairingChallenge"
+          },
+          "poll_after_seconds": {
+            "default": 2,
+            "title": "Poll After Seconds",
+            "type": "integer"
+          },
+          "status": {
+            "const": "pending",
+            "default": "pending",
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge"
+        ],
+        "title": "PairingPending",
+        "type": "object"
+      },
+      "PairingResponse": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PairingPending"
+          },
+          {
+            "$ref": "#/components/schemas/PairingApproved"
+          }
+        ],
+        "title": "PairingResponse"
       },
       "PasswordResetRequest": {
         "additionalProperties": false,
@@ -33747,6 +33889,92 @@
         ]
       }
     },
+    "/api/v1/environments/{environment_id}/revoke-device": {
+      "post": {
+        "operationId": "post_environments_environment_id_revoke_device",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Revoke Device",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
     "/api/v1/environments/{environment_id}/stop": {
       "post": {
         "operationId": "post_environments_environment_id_stop",
@@ -50102,6 +50330,287 @@
         "summary": "Create Connector Provider",
         "tags": [
           "connectivity-management"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/device-pairings/{pairing_id}": {
+      "get": {
+        "operationId": "get_workspaces_workspace_device_pairings_pairing_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "pattern": "^pair-[0-9a-f]{24}$",
+              "title": "Pairing Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PairingChallenge"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Inspect Pairing",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/device-pairings/{pairing_id}/approve": {
+      "post": {
+        "operationId": "post_workspaces_workspace_device_pairings_pairing_id_approve",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "pattern": "^pair-[0-9a-f]{24}$",
+              "title": "Pairing Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Environment"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Approve Pairing",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/device-pairings/{pairing_id}/reject": {
+      "post": {
+        "operationId": "post_workspaces_workspace_device_pairings_pairing_id_reject",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "pairing_id",
+            "required": true,
+            "schema": {
+              "pattern": "^pair-[0-9a-f]{24}$",
+              "title": "Pairing Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Reject Pairing",
+        "tags": [
+          "environments"
         ]
       }
     },
