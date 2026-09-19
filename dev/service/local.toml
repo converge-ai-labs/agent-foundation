@@ -15,7 +15,7 @@ deployment_environment_name = "local"
 concurrency = 8
 
 # Publish one read-only local Provider for every Workspace in this OSS instance.
-[environments.local_providers."direct-local"]
+[environments.local_providers.direct_local]
 
 [database]
 url = "postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.1:15432/a13n_service_dev"

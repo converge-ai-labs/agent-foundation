@@ -27,8 +27,8 @@ import { ProviderConfiguration } from "./provider-configuration";
 import { useEnvironmentTypes } from "./providers";
 
 export interface ChosenProvider {
-  provider: Schema["EnvironmentProvider"];
-  definition?: Schema["EnvironmentProviderDefinition"];
+  provider: Schema["EnvironmentProviderAccount"];
+  definition?: Schema["EnvironmentProviderMetadata"];
 }
 
 /**
@@ -71,15 +71,15 @@ export function TemplateConfig({
     [description, setDescription] = useState(""),
     [providerId, setProviderId] = useState(revision?.provider_id ?? ""),
     [choosing, setChoosing] = useState(!revision?.provider_id),
-    [version, setVersion] = useState(
-      revision?.configuration_schema_version ?? "1",
-    ),
     [preparation, setPreparation] = useState<"on_run" | "on_use">(
       revision?.preparation ?? "on_run",
     );
   const [configurations, setConfigurations] = useState<Record<string, string>>({
-    [`${revision?.provider_id ?? ""}:${revision?.configuration_schema_version ?? "1"}`]:
-      JSON.stringify(revision?.configuration ?? {}, null, 2),
+    [revision?.provider_id ?? ""]: JSON.stringify(
+      revision?.configuration ?? {},
+      null,
+      2,
+    ),
   });
   const [configurationError, setConfigurationError] = useState<string>();
   const activeImageTest = useRef<{
@@ -87,10 +87,9 @@ export function TemplateConfig({
     requestId: string;
     providerId: string;
   } | null>(null);
-  const configurationKey = `${providerId}:${version}`;
-  const configuration = configurations[configurationKey] ?? "{}";
+  const configuration = configurations[providerId] ?? "{}";
   function setConfiguration(value: string) {
-    setConfigurations((current) => ({ ...current, [configurationKey]: value }));
+    setConfigurations((current) => ({ ...current, [providerId]: value }));
     setConfigurationError(undefined);
     cancelImageTest();
   }
@@ -104,8 +103,7 @@ export function TemplateConfig({
   const definition = types.data?.items.find(
     (item) => item.type === provider?.type,
   );
-  const configurationSchema =
-    definition?.template_configuration_schemas[version];
+  const configurationSchema = definition?.template_configuration_schema;
   const report = useRef(onProviderChange);
   report.current = onProviderChange;
   useEffect(() => {
@@ -165,11 +163,6 @@ export function TemplateConfig({
   useEffect(() => () => cancelActiveImageTest(), []);
   function chooseProvider(id: string) {
     setProviderId(id);
-    const type = providers.data?.find((item) => item.id === id)?.type;
-    const versions = types.data?.items.find(
-      (entry) => entry.type === type,
-    )?.configuration_versions;
-    setVersion(versions?.at(-1) ?? "1");
     setConfigurationError(undefined);
     cancelImageTest();
     setChoosing(false);
@@ -191,8 +184,6 @@ export function TemplateConfig({
       const templateConfig = {
         provider_id: providerId,
         configuration: parsedConfiguration,
-        configuration_schema_version: version,
-
         preparation,
         retention: {
           idle: {
@@ -297,14 +288,14 @@ export function TemplateConfig({
           </div>
         )}
         <ProviderConfiguration
-          key={configurationKey}
+          key={providerId}
           readOnly={readOnly}
           schema={configurationSchema}
           text={configuration}
           onChange={setConfiguration}
           error={configurationError}
           note={
-            definition?.type === "direct-local"
+            definition?.type === "direct_local"
               ? t(
                   "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.",
                 )
@@ -343,20 +334,6 @@ export function TemplateConfig({
                     { value: "on_use", label: t("On first use") },
                   ]}
                 />
-                {(definition?.configuration_versions.length ?? 0) > 1 && (
-                  <ChoiceField
-                    readOnly={readOnly}
-                    label={t("Configuration schema version")}
-                    value={version}
-                    onValueChange={setVersion}
-                    options={
-                      definition?.configuration_versions.map((value) => ({
-                        value,
-                        label: value,
-                      })) ?? []
-                    }
-                  />
-                )}
               </div>
               <div className={styles.twoColumns}>
                 <FormField
@@ -443,8 +420,8 @@ function ProviderCatalog({
   loading,
   onChoose,
 }: {
-  providers?: Schema["EnvironmentProvider"][];
-  definitions?: Schema["EnvironmentProviderDefinition"][];
+  providers?: Schema["EnvironmentProviderAccount"][];
+  definitions?: Schema["EnvironmentProviderMetadata"][];
   loading: boolean;
   onChoose: (id: string) => void;
 }) {
@@ -496,8 +473,8 @@ function ChosenProviderRow({
   pending,
   onChange,
 }: {
-  provider?: Schema["EnvironmentProvider"];
-  definition?: Schema["EnvironmentProviderDefinition"];
+  provider?: Schema["EnvironmentProviderAccount"];
+  definition?: Schema["EnvironmentProviderMetadata"];
   pending: boolean;
   onChange?: () => void;
 }) {

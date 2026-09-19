@@ -25,7 +25,11 @@ import { ErrorNotice } from "../../shared/feedback";
 import { IconTile } from "../../shared/identity";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { memoriesPath } from "./api";
-import { useMemoryProviders } from "./availability";
+import {
+  eligibleMemoryProvider,
+  useMemoryProviders,
+  useWorkspaceMemoryProviderDefinitions,
+} from "./availability";
 import { fileEntry, MemoryEntryFields } from "./entries";
 import styles from "./memory.module.css";
 
@@ -33,7 +37,7 @@ type Entry = Schema["MemoryEntrySelection"];
 type Kind = "personal" | "project";
 const personalPurpose = "User preferences and personal facts.";
 const projectPurpose = "Project requirements, decisions, and procedures.";
-const mem0Types = new Set(["a13n.mem0-oss", "a13n.mem0-platform"]);
+const mem0Types = new Set(["mem0_oss", "mem0_platform"]);
 
 function asEntries(
   value: Schema["MemoryConfiguration"] | null | undefined,
@@ -68,11 +72,13 @@ export function MemoryPresets({
   const { t } = useTranslation();
   const { basePath, can } = useWorkspace();
   const { providers } = useMemoryProviders();
+  const definitions = useWorkspaceMemoryProviderDefinitions();
   const removed = useRef<Partial<Record<Kind, Entry>>>({});
   const entries = asEntries(value);
   const available = (providers.data ?? []).filter(
     (item) =>
-      mem0Types.has(item.type) && item.enabled && item.credential_configured,
+      mem0Types.has(item.type) &&
+      eligibleMemoryProvider(item, definitions.data?.items ?? []),
   );
   const selectedProvider = available[0];
   // Recognize the supplied purpose and scope, never a tool-prefix name alone.
@@ -88,12 +94,12 @@ export function MemoryPresets({
       entry.description === projectPurpose &&
       entry.scope !== "user" &&
       ("type" in entry.backend
-        ? entry.backend.type === "a13n.filesystem"
+        ? entry.backend.type === "filesystem"
         : providers.data?.some(
             (item) =>
               "provider_id" in entry.backend &&
               item.id === entry.backend.provider_id &&
-              item.type === "a13n.filesystem",
+              item.type === "filesystem",
           )),
   );
   const personal = entries[personalIndex];
@@ -111,7 +117,9 @@ export function MemoryPresets({
   const providerUnavailable =
     !!providerId &&
     providers.isSuccess &&
-    (!currentProvider?.enabled || !currentProvider.credential_configured);
+    definitions.isSuccess &&
+    (!currentProvider ||
+      !eligibleMemoryProvider(currentProvider, definitions.data.items));
 
   function update(index: number, entry: Entry) {
     onChange({

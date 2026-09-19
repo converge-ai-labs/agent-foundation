@@ -1,5 +1,6 @@
 import pytest
-from a13n_harness.memory_plugins import FilesystemMemoryBackendPlugin, Mem0OSSBackendPlugin, MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory.builtins import FILESYSTEM, MEM0_OSS
 from a13n_service.memory.domain import CreateMemoryProviderRequest, MemoryEntries, MemoryEntrySelection
 from a13n_service.memory.providers import MemoryProviderService
 from a13n_service.memory.resources import MemoryProviderError, require_memory_configuration, require_provider
@@ -13,7 +14,7 @@ def document(**updates):
         "name": "project",
         "mode": "documents",
         "description": "Project facts",
-        "backend": {"type": "a13n.filesystem"},
+        "backend": {"type": "filesystem"},
         **updates,
     }
 
@@ -38,26 +39,22 @@ def test_entries_roundtrip_and_mode_validation():
     assert MemoryEntrySelection(**document(auto_organize=True)).auto_organize
     with pytest.raises(ValidationError):
         MemoryEntrySelection(**document(auto_recall=True))
-    with pytest.raises(ValidationError):
-        MemoryEntrySelection(
-            **document(backend={"type": "a13n.filesystem", "configuration": {"storage": {"root": "/memory/../other"}}})
-        )
 
 
 @pytest.mark.anyio
 async def test_filesystem_provider_needs_no_credential_and_rejects_records(memory_sessions):
-    catalog = MemoryBackendCatalog((FilesystemMemoryBackendPlugin(), Mem0OSSBackendPlugin()))
+    catalog = ProviderCatalog((FILESYSTEM, MEM0_OSS))
     providers = MemoryProviderService(memory_sessions, protector(), catalog)
     provider = await providers.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateMemoryProviderRequest(type="a13n.filesystem", name="Project files"),
+        request=CreateMemoryProviderRequest(type="filesystem", name="Project files"),
     )
     assert provider.credential_configured is False
-    definitions = await providers.type_definitions(actor=actor())
-    definition = next(item for item in definitions.items if item.type == "a13n.filesystem")
+    definitions = await providers.provider_types(actor=actor())
+    definition = next(item for item in definitions.items if item.type == "filesystem")
     assert definition.supports_documents and definition.supports_revisions
-    assert not definition.requires_credential and not definition.supports_records
+    assert definition.authentication.mode == "forbidden" and not definition.supports_records
     async with short_session(memory_sessions) as session:
         await require_provider(
             session,
@@ -75,6 +72,40 @@ async def test_filesystem_provider_needs_no_credential_and_rejects_records(memor
             await require_memory_configuration(
                 session,
                 selection=MemoryEntries(entries=[document(mode="records", backend={"provider_id": provider.id})]),
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
+                catalog=catalog,
+            )
+
+
+@pytest.mark.anyio
+async def test_inline_backends_are_validated_by_the_selected_definition(memory_sessions):
+    catalog = ProviderCatalog((FILESYSTEM, MEM0_OSS))
+    async with short_session(memory_sessions) as session:
+        await require_memory_configuration(
+            session,
+            selection=MemoryEntries(entries=[document()]),
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            catalog=catalog,
+        )
+        with pytest.raises(MemoryProviderError, match="configuration is invalid"):
+            await require_memory_configuration(
+                session,
+                selection=MemoryEntries(
+                    entries=[
+                        document(backend={"type": "filesystem", "configuration": {"storage": {"root": "/a/../b"}}})
+                    ]
+                ),
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
+                catalog=catalog,
+            )
+        # A record backend is not a document backend, whatever its declared document support.
+        with pytest.raises(MemoryProviderError, match="memory mode"):
+            await require_memory_configuration(
+                session,
+                selection=MemoryEntries(entries=[document(backend={"type": "mem0_oss"})]),
                 organization_id=ORG_ID,
                 workspace_id=WORKSPACE_ID,
                 catalog=catalog,

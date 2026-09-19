@@ -8,17 +8,17 @@ Connection, durable Run/mount acceptance, and Worker application are separate co
 
 ## Boundaries
 
-| Concern                                                                                                  | Owner                                                                                                                |
-| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
-| External identity, Provider, lifecycle and retention                                                     | [Environment Management](29-environment-management.md)                                                               |
-| Registration, tickets, WebSocket/EIP Session, connection observations, Run/mount APIs and relay dispatch | Control, under this contract                                                                                         |
-| Accepted associations and application observations                                                       | PostgreSQL, under this contract                                                                                      |
-| Connection placement, use leases and operation transport                                                 | Redis, under this contract                                                                                           |
-| Attempt authority, reconciliation and model-boundary application                                         | Worker and [Active Execution Control](19-agent-control-active-execution.md)                                          |
-| Local routing, tools, context and operation leases                                                       | [Harness Environment Integration](../a13n-harness/08-environment-integration.md)                                     |
-| EIP and remote Provider semantics                                                                        | [Envd Sessions](../a13n-envd/03-transports-and-sessions.md) and [Remote Envd](../a13n-environment/04-remote-envd.md) |
+| Concern                                                                                                  | Owner                                                                                                                                   |
+| -------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| External identity, Provider, lifecycle and retention                                                     | [Environment Management](29-environment-management.md)                                                                                  |
+| Registration, tickets, WebSocket/EIP Session, connection observations, Run/mount APIs and relay dispatch | Control, under this contract                                                                                                            |
+| Accepted associations and application observations                                                       | PostgreSQL, under this contract                                                                                                         |
+| Connection placement, use leases and operation transport                                                 | Redis, under this contract                                                                                                              |
+| Attempt authority, reconciliation and model-boundary application                                         | Worker and [Active Execution Control](19-agent-control-active-execution.md)                                                             |
+| Local routing, tools, context and operation leases                                                       | [Harness Environment Integration](../a13n-harness/08-environment-integration.md)                                                        |
+| EIP and remote Provider semantics                                                                        | [Envd Sessions](../a13n-envd/03-transports-and-sessions.md) and [Remote Envd](../a13n-harness/08a-environment-providers.md#remote-envd) |
 
-The connect-only `a13n.websocket-envd` Provider supplies no listener or distributed registry. Service owns the Control Device connection, independent Attempt/binding Sessions and fresh Worker operation proxies; Redis stays outside the shared library. This path requires no Connectivity role or private cross-pod HTTP API. `all` composes the same responsibilities once. All database work uses short scopes outside socket, Redis and operation waits under [Storage](03-storage.md).
+The connect-only `websocket_envd` Provider supplies no listener or distributed registry. Service owns the Control Device connection, independent Attempt/binding Sessions and fresh Worker operation proxies; Redis stays outside the shared library. This path requires no Connectivity role or private cross-pod HTTP API. `all` composes the same responsibilities once. All database work uses short scopes outside socket, Redis and operation waits under [Storage](03-storage.md).
 
 ## Architecture
 

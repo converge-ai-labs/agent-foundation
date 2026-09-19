@@ -12,7 +12,7 @@ from a13n_service.etags import resource_etag
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.objects import RunStateStore
 from a13n_service.models.model_factory import NativeModelFactory
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session
@@ -120,7 +120,7 @@ async def test_real_worker_edits_draft_and_post_apply_input_keeps_shared_draft(
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=respond)
-    resolver = AgentResolver(agent_sessions, AcceptedModelSelector(agent_sessions, built_in_provider_registry()))
+    resolver = AgentResolver(agent_sessions, AcceptedModelSelector(agent_sessions, built_in_model_provider_catalog()))
     async with worker_runtime(
         agent_sessions,
         objects,

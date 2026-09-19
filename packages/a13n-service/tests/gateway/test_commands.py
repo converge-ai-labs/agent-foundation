@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock
 import pytest
 import rfc8785
 import zstandard
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType

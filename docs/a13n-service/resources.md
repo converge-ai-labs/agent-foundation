@@ -36,7 +36,7 @@ Preparation can occur for the Run or on first use under the selected Template po
 
 Stop and delete have distinct retention/lifecycle intentions. A command receipt records what the Service knows; it is not proof that an unavailable Provider performed a mutation. Reconnection to an existing generation and replacement of a lost target also differ. Never automatically replay an uncertain command merely because a process handle disappeared.
 
-The underlying [Environment SDK](../a13n-environment/index.md) owns Provider operations and non-destructive adapter close. Service adds durable ownership, scheduling, capacity, and target retention. A mount root or provider label alone does not establish isolation.
+The underlying [Environment Providers](../environments/index.md) own Provider operations and non-destructive adapter close. Service adds durable ownership, scheduling, capacity, and target retention. A mount root or provider label alone does not establish isolation.
 
 ### Author template configurations and name instances
 
@@ -56,9 +56,9 @@ Standard Harness deferred approvals bind resolved paths, not backing generations
 
 ### Connect a client computer
 
-A deployment with `a13n.websocket-envd` enabled can use a user-operated envd that connects outward to Control over WSS. Control ingress and all Workers that can execute these Runs must support this provider and live mounts. The relay requires shared Redis; the in-memory backend is not supported. Registration, connection, and Run access are separate steps.
+A deployment with `websocket_envd` enabled can use a user-operated envd that connects outward to Control over WSS. Control ingress and all Workers that can execute these Runs must support this provider and live mounts. The relay requires shared Redis; the in-memory backend is not supported. Registration, connection, and Run access are separate steps.
 
-1. Create a Workspace Environment Provider with `type: "a13n.websocket-envd"`, using the Provider catalog schema.
+1. Create a Workspace Environment Provider with `type: "websocket_envd"`, using the Provider catalog schema.
 
 2. Register an external Environment under that Provider. Supply its returned `provider_id`, empty `configuration`, and the native identity that the client will use:
 

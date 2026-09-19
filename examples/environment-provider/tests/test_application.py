@@ -4,11 +4,11 @@ import asyncio
 from pathlib import Path
 
 import pytest
-from a13n_environment import (
-    DirectLocalEnvironment,
-    DirectLocalProviderConfiguration,
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
+from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
 
 from a13n_environment_example import application as application_module
 from a13n_environment_example import run_direct_local
@@ -24,9 +24,9 @@ def test_direct_local_example_runs_offline_and_preserves_host_workspace(tmp_path
 
     result = asyncio.run(run_direct_local(workspace))
 
-    assert result.provider_key == "direct-local"
+    assert result.provider_key == "direct_local"
     assert result.environment_id == "direct-local-example"
-    assert result.text == "hello from direct-local\n"
+    assert result.text == "hello from direct_local\n"
     assert result.workspace == workspace.resolve()
     assert result.workspace_preserved
     assert result.state is None
@@ -47,7 +47,7 @@ def test_direct_local_example_constructs_a_fresh_stateless_adapter_each_time(tmp
 
 def test_run_and_close_preserves_use_and_cleanup_failures(tmp_path: Path) -> None:
     environment = _CloseFailingEnvironment(
-        DirectLocalProviderConfiguration(
+        DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=tmp_path),
         ),
         environment_id="failure-test",
@@ -70,7 +70,7 @@ def test_local_envd_example_closes_host_runtime_and_preserves_workspace(tmp_path
         pytest.skip("A13N_ENVD_TEST_BINARY enables the real Local Device example")
     workspace = tmp_path / "workspace"
     result = asyncio.run(application_module.run_local_envd(workspace, executable=Path(configured)))
-    assert result.provider_key == "a13n.local-envd"
+    assert result.provider_key == "local_envd"
     assert result.state is None and result.workspace_preserved
-    assert result.text == "hello from a13n.local-envd\n"
+    assert result.text == "hello from local_envd\n"
     assert (workspace / "provider-example.txt").read_text() == result.text

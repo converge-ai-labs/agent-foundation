@@ -31,7 +31,7 @@ uv run pytest
 
 cd ../environment-provider
 uv sync --locked
-uv run environment-provider-example direct-local
+uv run environment-provider-example direct_local
 uv run pytest
 
 cd ../plugins

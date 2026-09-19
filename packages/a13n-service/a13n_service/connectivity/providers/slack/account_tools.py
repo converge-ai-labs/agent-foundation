@@ -1,12 +1,12 @@
 """Slack Account send tools and channel scope."""
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic import Field
 
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.native_actions import NativeAction, action, credential
 from a13n_service.connectivity.providers.slack.client import SlackNativeClient
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 
 from ...accounts.domain import StrictModel

@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 from a13n_envd_client import EIPDeviceConnection
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 from a13n_service.environments.domain import (
     CreateProviderRequest,
     ExistingEnvironmentSelection,
@@ -90,13 +91,13 @@ async def http_device(interaction_sessions, tmp_path):
             encoded_key=base64.b64encode(b"k" * 32).decode(), encryption_key_id="test"
         )
         service = EnvironmentService(
-            interaction_sessions, build_environment_provider_catalog(builtin_keys=("a13n.http-envd",)), protector
+            interaction_sessions, ProviderCatalog(select_builtin_environment_providers(("http_envd",))), protector
         )
         provider = await service.create_provider(
             actor=hook_actor(),
             workspace_id=WORKSPACE_ID,
             request=CreateProviderRequest(
-                type="a13n.http-envd",
+                type="http_envd",
                 name="Device",
                 configuration={"endpoint": f"http://127.0.0.1:{port}"},
                 credential={"token": "service-test-token"},
@@ -319,7 +320,7 @@ async def test_primary_and_mount_same_device_have_independent_sessions(
     assert isinstance(claim, ClaimedAttempt)
     context = await prepare_permissions(interaction_sessions, run, _authority(claim))
     lifecycle = EnvironmentLifecycle(
-        interaction_sessions, service.catalog, service.protector, tmp_path, clock=lambda: NOW + timedelta(seconds=2)
+        interaction_sessions, service.catalog, service.protector, clock=lambda: NOW + timedelta(seconds=2)
     )
     async with short_session(interaction_sessions) as database:
         mount = AcceptedRunMount.from_record(await database.get(RunEnvironmentMountRecord, (run.id, "other")))
@@ -328,7 +329,7 @@ async def test_primary_and_mount_same_device_have_independent_sessions(
     try:
         assert len(sessions) == 2 and sessions[0] is not sessions[1]
         for adapter, name, directory in ((primary, "workspace", "alpha"), (sibling, "other", "beta")):
-            await adapter.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent", mount_id=name)
+            await adapter.enter(mount_id=name)
             await adapter.ensure_ready(frozenset({"files"}))
             assert adapter.descriptor.working_directory == str(root / directory)
             await adapter.operations.files.write_text(str(root / directory / "marker.txt"), name, mode="create")
@@ -343,7 +344,6 @@ async def test_primary_and_mount_same_device_have_independent_sessions(
     finally:
         await primary.close()
         await sibling.close()
-    assert not lifecycle._http_runtimes
 
 
 async def test_invalid_directory_fails_only_execution_and_cleans_http_owner(
@@ -362,13 +362,12 @@ async def test_invalid_directory_fails_only_execution_and_cleans_http_owner(
     assert isinstance(claim, ClaimedAttempt)
     context = await prepare_permissions(interaction_sessions, run, _authority(claim))
     lifecycle = EnvironmentLifecycle(
-        interaction_sessions, service.catalog, service.protector, tmp_path, clock=lambda: NOW + timedelta(seconds=2)
+        interaction_sessions, service.catalog, service.protector, clock=lambda: NOW + timedelta(seconds=2)
     )
-    from a13n_environment import EnvironmentProviderError
+    from a13n_harness.providers.environment.errors import EnvironmentProviderError
 
     with pytest.raises(EnvironmentProviderError):
         await prepare_run_environment(lifecycle, context)
-    assert not lifecycle._http_runtimes
     assert (
         await service.device_info(actor=hook_actor(), environment_id=environment.id)
     ).default_working_directory == str(root)

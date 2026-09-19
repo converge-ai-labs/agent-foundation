@@ -5,14 +5,13 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_environment import (
-    FILE_READ_ACTIONS,
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-    EnvironmentPermissionSet,
-)
 from a13n_harness import EnvironmentMount
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness.tools.invocation import current_invocation_scope
 from a13n_service.agents.domain import PreparedAgentPlugins, SecretRequirement
 from a13n_service.agents.models import AgentRevisionRecord
@@ -208,10 +207,13 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         @asynccontextmanager
         async def prepare_with_environment(self, context):
             async with original_prepare(self, context) as invocation:
-                environment = DirectLocalEnvironmentProvider().create_environment(
-                    configuration=DirectLocalProviderConfiguration(root=DirectLocalRootConfiguration(path=workspace)),
+                environment = DIRECT_LOCAL.construct(
+                    configuration=DirectLocalEnvironmentConfiguration(
+                        root=DirectLocalRootConfiguration(path=workspace)
+                    ),
                     environment_id="worker-assets",
                     state=None,
+                    runtime=None,
                 )
                 yield replace(
                     invocation,

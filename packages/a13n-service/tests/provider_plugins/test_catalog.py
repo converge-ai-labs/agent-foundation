@@ -4,15 +4,9 @@ from dataclasses import dataclass
 from typing import cast
 
 import pytest
-from a13n_service.provider_plugins import (
-    ProviderPluginError,
-    ProviderPluginRegistry,
-    WebProviderRegistration,
-    load_provider_catalogs,
-    provider_plugin,
-)
-from a13n_service.web.registry import WebProviderRegistry
-from anyio import current_time, fail_after, sleep_forever
+from a13n_harness.providers.plugins import ProviderManifest
+from a13n_harness.providers.web import WebProviderDefinition
+from a13n_service.provider_plugins import ProviderPluginError, load_provider_catalogs
 from pydantic import BaseModel, ConfigDict
 
 
@@ -26,26 +20,18 @@ class Credential(BaseModel):
     token: str
 
 
-class Runtime:
-    async def search(self, **kwargs):
-        raise NotImplementedError
-
-    async def scrape(self, **kwargs):
-        raise NotImplementedError
-
-    async def aclose(self) -> None:
-        pass
+async def search(configuration, credentials, request, options, transport):
+    raise NotImplementedError
 
 
-def registration(provider_type: str = "custom_web") -> WebProviderRegistration:
-    return WebProviderRegistration(
+def registration(provider_type: str = "custom_web") -> WebProviderDefinition:
+    return WebProviderDefinition(
         type=provider_type,
         display_name="Custom Web",
         configuration_model=Configuration,
         credential_model=Credential,
         setup_url="https://example.com/setup",
-        factory=Runtime,
-        supports_search=True,
+        search=search,
     )
 
 
@@ -72,21 +58,16 @@ class EntryPoint:
         return self._register
 
 
-def compatible(register):
-    return provider_plugin(api_version=1)(register)
-
-
 def install(monkeypatch: pytest.MonkeyPatch, *entry_points: EntryPoint) -> None:
+    """Service selects installed plugins only through the shared Harness loader."""
     monkeypatch.setattr(
-        "a13n_service.provider_plugins.catalog.importlib.metadata.entry_points",
+        "a13n_harness.providers.plugins.importlib.metadata.entry_points",
         lambda *, group: entry_points,
     )
 
 
 def test_only_selected_entry_point_is_imported(monkeypatch: pytest.MonkeyPatch) -> None:
-    @compatible
-    def selected(registry) -> None:
-        registry.web.register(registration())
+    selected = ProviderManifest(api_version=1, web=(registration(),))
 
     def broken(_registry) -> None:
         raise AssertionError("unselected entry point was imported")
@@ -100,12 +81,12 @@ def test_only_selected_entry_point_is_imported(monkeypatch: pytest.MonkeyPatch) 
     assert chosen.loads == 1
     assert unselected.loads == 0
     assert catalogs.plugins[0].distribution_name == "provider-package"
-    assert any(item.type == "custom_web" for item in catalogs.web)
+    assert catalogs.web["custom_web"].type == "custom_web"
 
 
 def test_empty_selection_does_not_enumerate_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "a13n_service.provider_plugins.catalog.importlib.metadata.entry_points",
+        "a13n_harness.providers.plugins.importlib.metadata.entry_points",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError(f"metadata scanned: {kwargs}")),
     )
 
@@ -122,24 +103,19 @@ def test_missing_and_duplicate_selection_fail(monkeypatch: pytest.MonkeyPatch, e
 
 
 def test_ambiguous_entry_point_fails_without_import(monkeypatch: pytest.MonkeyPatch) -> None:
-    entry_points = (EntryPoint("same", compatible(lambda registry: None)),) * 2
+    entry_points = (EntryPoint("same", ProviderManifest(api_version=1)),) * 2
     install(monkeypatch, *entry_points)
-    with pytest.raises(ProviderPluginError, match="ambiguous"):
+    with pytest.raises(ProviderPluginError, match="ValueError"):
         load_provider_catalogs(("same",))
     assert entry_points[0].loads == 0
 
 
-def test_incompatible_api_duplicate_type_and_bad_schema_fail(monkeypatch: pytest.MonkeyPatch) -> None:
-    def incompatible(_registry) -> None:
-        pass
-
-    install(monkeypatch, EntryPoint("incompatible", incompatible))
+def test_incompatible_export_duplicate_type_and_bad_schema_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    install(monkeypatch, EntryPoint("incompatible", object()))
     with pytest.raises(ProviderPluginError, match="TypeError"):
         load_provider_catalogs(("incompatible",))
 
-    @compatible
-    def duplicate(registry) -> None:
-        registry.web.register(registration("brave"))
+    duplicate = ProviderManifest(api_version=1, web=(registration("brave"),))
 
     install(monkeypatch, EntryPoint("duplicate", duplicate))
     with pytest.raises(ProviderPluginError, match="ValueError"):
@@ -151,43 +127,15 @@ def test_incompatible_api_duplicate_type_and_bad_schema_fail(monkeypatch: pytest
             del args, kwargs
             return {"type": "array"}
 
-    @compatible
-    def bad_schema(registry) -> None:
-        registry.web.register(
-            WebProviderRegistration(
-                type="bad_schema",
-                display_name="Bad",
-                configuration_model=BadSchema,
-                credential_model=Credential,
-                setup_url="https://example.com",
-                factory=Runtime,
-                supports_search=True,
-            )
+    with pytest.raises(ValueError, match="invalid schema"):
+        WebProviderDefinition(
+            type="bad_schema",
+            display_name="Bad",
+            configuration_model=BadSchema,
+            credential_model=Credential,
+            setup_url="https://example.com",
+            search=search,
         )
-
-    install(monkeypatch, EntryPoint("bad_schema", bad_schema))
-    with pytest.raises(ProviderPluginError, match="invalid schema"):
-        load_provider_catalogs(("bad_schema",))
-
-
-def test_declared_old_api_is_rejected_before_callback_on_newer_service(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    called = False
-
-    @provider_plugin(api_version=1)
-    def old_plugin(_registry) -> None:
-        nonlocal called
-        called = True
-
-    monkeypatch.setattr("a13n_service.provider_plugins.api.PROVIDER_EXTENSION_API_VERSION", 2)
-    monkeypatch.setattr("a13n_service.provider_plugins.catalog.PROVIDER_EXTENSION_API_VERSION", 2)
-    install(monkeypatch, EntryPoint("old", old_plugin))
-
-    with pytest.raises(ProviderPluginError, match="TypeError"):
-        load_provider_catalogs(("old",))
-
-    assert not called
 
 
 def test_schema_exporter_must_be_a_pydantic_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -196,23 +144,15 @@ def test_schema_exporter_must_be_a_pydantic_model(monkeypatch: pytest.MonkeyPatc
         def model_json_schema(cls) -> dict[str, str]:
             return {"type": "object"}
 
-    @compatible
-    def fake_schema(registry) -> None:
-        registry.web.register(
-            WebProviderRegistration(
-                type="fake_schema",
-                display_name="Fake Schema",
-                configuration_model=cast(type[BaseModel], FakeSchema),
-                credential_model=Credential,
-                setup_url="https://example.com",
-                factory=Runtime,
-                supports_search=True,
-            )
+    with pytest.raises(ValueError, match="invalid schema"):
+        WebProviderDefinition(
+            type="fake_schema",
+            display_name="Fake Schema",
+            configuration_model=cast(type[BaseModel], FakeSchema),
+            credential_model=Credential,
+            setup_url="https://example.com",
+            search=search,
         )
-
-    install(monkeypatch, EntryPoint("fake_schema", fake_schema))
-    with pytest.raises(ProviderPluginError, match="invalid schema"):
-        load_provider_catalogs(("fake_schema",))
 
 
 def test_registration_shape_is_checked_before_type_attribute() -> None:
@@ -221,116 +161,42 @@ def test_registration_shape_is_checked_before_type_attribute() -> None:
         def type(self) -> str:
             raise AssertionError("registration attributes must not be read")
 
-    plugin_registry = ProviderPluginRegistry(api_version=1)
-
-    with pytest.raises(TypeError, match="invalid type"):
-        plugin_registry.web.register(cast(WebProviderRegistration, FakeRegistration()))
+    with pytest.raises(TypeError, match="immutable tuple"):
+        ProviderManifest(api_version=1, web=(cast(WebProviderDefinition, FakeRegistration()),))
 
 
-@pytest.mark.anyio
-async def test_web_runtime_hanging_cleanup_is_bounded_and_preserves_operation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cleanup_started = 0
-
-    class HangingRuntime(Runtime):
-        async def aclose(self) -> None:
-            nonlocal cleanup_started
-            cleanup_started += 1
-            await sleep_forever()
-
-    monkeypatch.setattr("a13n_service.web.registry._RUNTIME_CLEANUP_TIMEOUT_SECONDS", 0.01)
-    runtimes = [HangingRuntime(), HangingRuntime(), HangingRuntime()]
-    provider = registration()
-    registry = WebProviderRegistry(
-        (
-            WebProviderRegistration(
-                type=provider.type,
-                display_name=provider.display_name,
-                configuration_model=provider.configuration_model,
-                credential_model=provider.credential_model,
-                setup_url=provider.setup_url,
-                factory=runtimes.pop,
-                supports_search=True,
-            ),
-        )
-    )
-
-    started = current_time()
-    async with registry.runtime("custom_web"):
-        result = "paid operation completed"
-    assert result == "paid operation completed"
-    assert current_time() - started < 0.5
-
-    original_error = RuntimeError("operation failed")
-    with pytest.raises(RuntimeError, match="operation failed") as raised:
-        async with registry.runtime("custom_web"):
-            raise original_error
-    assert raised.value is original_error
-
-    with pytest.raises(TimeoutError):
-        with fail_after(0.01):
-            async with registry.runtime("custom_web"):
-                await sleep_forever()
-
-    assert cleanup_started == 3
-    assert runtimes == []
-    assert current_time() - started < 0.5
+def test_manifest_rejects_an_unsupported_api_version():
+    with pytest.raises(ValueError, match="API version"):
+        ProviderManifest(api_version=2)
 
 
-@pytest.mark.anyio
-async def test_web_runtime_cleanup_log_excludes_external_error_details(caplog: pytest.LogCaptureFixture) -> None:
-    class FailingRuntime(Runtime):
-        async def aclose(self) -> None:
-            raise RuntimeError("credential=must-not-appear")
+def test_environment_manifest_joins_builtins_and_rejects_builtin_collision(monkeypatch):
+    from dataclasses import replace
 
-    provider = registration()
-    registry = WebProviderRegistry(
-        (
-            WebProviderRegistration(
-                type=provider.type,
-                display_name=provider.display_name,
-                configuration_model=provider.configuration_model,
-                credential_model=provider.credential_model,
-                setup_url=provider.setup_url,
-                factory=FailingRuntime,
-                supports_search=True,
-            ),
-        )
-    )
+    from a13n_harness.providers.environment.builtins import DIRECT_LOCAL
 
-    with caplog.at_level("WARNING", logger="a13n_service.web.registry"):
-        async with registry.runtime("custom_web"):
-            result = "operation completed"
-
-    assert result == "operation completed"
-    assert "credential=must-not-appear" not in caplog.text
-    assert caplog.records[0].cleanup_error_type == "RuntimeError"
-
-
-def test_memory_registration_reuses_shared_plugin_and_rejects_builtin_collision(monkeypatch):
-    from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, MemoryBackendCatalog
-
-    class CustomMemoryPlugin(Mem0OSSBackendPlugin):
-        key = "custom.memory"
-        display_name = "Custom Memory"
-
-    plugin = CustomMemoryPlugin()
-
-    @compatible
-    def selected(registry):
-        registry.memory.register(plugin)
-
-    chosen = EntryPoint("memory", selected)
+    definition = replace(DIRECT_LOCAL, type="custom_workspace", display_name="Custom Workspace")
+    chosen = EntryPoint("workspace", ProviderManifest(api_version=1, environment=(definition,)))
     install(monkeypatch, chosen)
-    catalog = MemoryBackendCatalog(load_provider_catalogs(("memory",)).memory)
-    assert catalog[plugin.key] is plugin
+    catalogs = load_provider_catalogs(("workspace",))
+    assert catalogs.environment[definition.type] is definition
+    assert len(catalogs.environment) == 12
+    install(monkeypatch, EntryPoint("collision", ProviderManifest(api_version=1, environment=(DIRECT_LOCAL,))))
+    with pytest.raises(ProviderPluginError, match="ValueError"):
+        load_provider_catalogs(("collision",))
+
+
+def test_memory_manifest_reuses_shared_definition_and_rejects_builtin_collision(monkeypatch):
+    from dataclasses import replace
+
+    from a13n_harness.providers.memory.builtins import MEM0_OSS
+
+    definition = replace(MEM0_OSS, type="custom_memory", display_name="Custom Memory")
+    chosen = EntryPoint("memory", ProviderManifest(api_version=1, memory=(definition,)))
+    install(monkeypatch, chosen)
+    catalog = load_provider_catalogs(("memory",)).memory
+    assert catalog[definition.type] is definition
     assert chosen.loads == 1
-
-    @compatible
-    def collision(registry):
-        registry.memory.register(Mem0OSSBackendPlugin())
-
-    install(monkeypatch, EntryPoint("collision", collision))
+    install(monkeypatch, EntryPoint("collision", ProviderManifest(api_version=1, memory=(MEM0_OSS,))))
     with pytest.raises(ProviderPluginError, match="ValueError"):
         load_provider_catalogs(("collision",))

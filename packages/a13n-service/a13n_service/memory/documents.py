@@ -4,11 +4,11 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import Literal
 
-from a13n_environment.files import FileCommitOperator, FileCommitRequest, FileMutationResult
-from a13n_harness.document_memory import MemoryDocumentError
-from a13n_harness.filesystem_memory import FilesystemMemoryStore
-from a13n_harness.memory import MemoryScope as ScopeKind
-from a13n_harness.memory_file_commit import EnvironmentMemoryFileCoordinator
+from a13n_harness.providers.environment.files import FileCommitOperator, FileCommitRequest, FileMutationResult
+from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
+from a13n_harness.providers.memory.documents import MemoryDocumentError
+from a13n_harness.providers.memory.filesystem.commit import EnvironmentMemoryFileCoordinator
+from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryStore
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ from a13n_service.storage import short_session
 
 from .domain import MemoryScope
 from .models import MemoryStorageRecord
-from .resources import require_provider
+from .resources import binds_host_files, require_provider
 from .scopes import authorize_memory_subject
 from .service import MemoryService, failure, memory_io
 from .sources import authorize_sources
@@ -79,7 +79,9 @@ async def authorize_storage(
     )
     if (subject.value, organization_id) != (storage.subject, storage.organization_id):
         raise AuthorizationError("memory_scope_unavailable", concealed=True)
-    if storage.provider_identity != "a13n.filesystem":
+    # An inline backend records its Provider type as the identity; a saved one records its ID.
+    provider_type = storage.provider_identity
+    if provider_type not in memory.catalog:
         provider = await require_provider(
             session,
             organization_id=organization_id,
@@ -88,8 +90,9 @@ async def authorize_storage(
             eligible=True,
             catalog=memory.catalog,
         )
-        if provider.type != "a13n.filesystem":
-            raise AuthorizationError("memory_scope_unavailable", concealed=True)
+        provider_type = provider.type
+    if not binds_host_files(provider_type, memory.catalog):
+        raise AuthorizationError("memory_scope_unavailable", concealed=True)
 
 
 class FileDocuments:

@@ -86,7 +86,7 @@ Supply actual URLs and secrets through protected deployment inputs. The filesyst
 Local backends are disabled by default. For a self-hosted OSS instance, enable the types you need in the deployment file:
 
 ```toml
-[environments.local_providers."direct-local"]
+[environments.local_providers."direct_local"]
 
 
 [environments.local_providers."docker"]
@@ -100,7 +100,7 @@ Restart Control after configuration changes. The same normalized configuration r
 
 All six cloud Providers (E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop) and HTTP Envd are in the default implementation catalog. Configure backend settings and protected credentials through the Provider API or Console. Do not add local types to `environments.provider_builtins`; use `local_providers`.
 
-For client-initiated Envd connections, include `a13n.websocket-envd` in `environments.provider_builtins` and configure `environments.client_public_origin` on Control as the externally reachable WSS origin, such as `wss://foundation.example.com`. Tickets derive their connection URL from this operator setting. The origin cannot include a path, query, fragment, or credentials. Route WebSocket upgrades to Control; the `all` role owns the same ingress. `environments.client_max_connections` bounds sockets, including takeover candidates, per Control process. Blocking operation readers use a separate Redis pool so they cannot exhaust publication and lease-renewal connections. This Provider requires shared Redis with atomic Stream scripting; Control verifies that capability before serving traffic. Enable the same Provider on Workers that execute these Runs; the public WSS origin is required only on Control-capable roles. It is not enabled by default.
+For client-initiated Envd connections, include `websocket_envd` in `environments.provider_builtins` and configure `environments.client_public_origin` on Control as the externally reachable WSS origin, such as `wss://foundation.example.com`. Tickets derive their connection URL from this operator setting. The origin cannot include a path, query, fragment, or credentials. Route WebSocket upgrades to Control; the `all` role owns the same ingress. `environments.client_max_connections` bounds sockets, including takeover candidates, per Control process. Blocking operation readers use a separate Redis pool so they cannot exhaust publication and lease-renewal connections. This Provider requires shared Redis with atomic Stream scripting; Control verifies that capability before serving traffic. Enable the same Provider on Workers that execute these Runs; the public WSS origin is required only on Control-capable roles. It is not enabled by default.
 
 ## Install deployment Provider packages
 
@@ -111,9 +111,9 @@ Service can load trusted implementations for the existing Environment, Model, Co
 enabled = ["acme"]
 ```
 
-The package declares `acme` under the `a13n.providers` entry-point group and exposes one registration callable decorated with an explicit contract literal such as `@provider_plugin(api_version=1)`. A package must not derive that declaration from the installed Service version; this lets a newer Service reject an older incompatible package before invoking its registration callback. Its distribution name, entry-point name, and registered Provider `type` values are separate identities. Service imports only selected names, combines their inert definitions and factories with built-ins, validates the complete typed catalog, and fails startup before readiness when a selected entry is missing, ambiguous, incompatible, or invalid. Changing installation or selection requires a restart and the same selection must be used by every role in one deployment.
+The package declares `acme` under the `a13n_harness.providers.plugins` entry-point group and exposes one immutable `ProviderManifest` with an explicit contract literal such as `ProviderManifest(api_version=1, environment=(ACME_SANDBOX,))`. A package must not derive that declaration from the installed Service version; this lets a newer Service reject an older incompatible package before reading its manifest. Its distribution name, entry-point name, and contributed Provider `type` values are separate identities. Service imports only selected names, combines their inert definitions with built-ins, validates one catalog per domain, and fails startup before readiness when a selected entry is missing, ambiguous, incompatible, or invalid. Changing installation or selection requires a restart and the same selection must be used by every role in one deployment.
 
-Provider packages do not add a generic execute API or arbitrary new Provider domains. Each registered implementation enters its domain's existing management and runtime path, with domain-specific configuration and credential schemas. The `[plugins]` section independently selects installed Harness run plugins and is not an alias for `[provider_plugins]`. See the runnable [deployment Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin).
+Provider packages do not add a generic execute API or arbitrary new Provider domains. Each contributed definition enters its domain's existing management and runtime path, with domain-specific configuration and credential schemas. [Provider plugins](../a13n-harness/plugins.md#provider-plugins) owns the authoring contract. The `[plugins]` section independently selects installed Harness run plugins and is not an alias for `[provider_plugins]`. See the runnable [deployment Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin).
 
 ## Environment variable mapping
 

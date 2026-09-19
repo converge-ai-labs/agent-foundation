@@ -24,7 +24,7 @@ async def test_org_template_allocates_independent_workspace_environments(
     provider = await service.create_provider(
         actor=admin,
         workspace_id=None,
-        request=CreateProviderRequest(type="direct-local", name="Organization local"),
+        request=CreateProviderRequest(type="direct_local", name="Organization local"),
     )
     template_config = CreateTemplateRequest(
         name="Standard",
@@ -82,7 +82,7 @@ async def test_org_template_allocates_independent_workspace_environments(
 async def test_org_template_cannot_reference_local_provider(environment_service, environment_sessions, tmp_path):
     admin = await organization_admin(environment_sessions, actor())
     provider = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Local")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct_local", name="Local")
     )
     with pytest.raises(EnvironmentManagementError):
         await environment_service.create_template(

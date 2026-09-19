@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Literal, Protocol
 
-from a13n_environment import (
-    EnvironmentError,
-    EnvironmentProviderError,
-)
-from a13n_environment.management import EnvironmentScope
 from a13n_harness import EnvironmentEntry, EnvironmentMount
+from a13n_harness.environment.sources import EnvironmentScope
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_logging import get_logger
 from pydantic import JsonValue, TypeAdapter
 
@@ -125,14 +123,10 @@ class EnvironmentObserver:
             )
 
 
-def observe_environment_entry(
-    entry: EnvironmentEntry,
-    projector: EnvironmentHookProjector,
-) -> EnvironmentEntry:
+def observe_environment_entry(entry: EnvironmentEntry, projector: EnvironmentHookProjector) -> EnvironmentMount:
+    """Declare live observation on the mount, before the Run binds and enters it."""
     mount = entry if isinstance(entry, EnvironmentMount) else EnvironmentMount(entry)
-    observer = EnvironmentObserver(mount, projector)
-    mount.environment.observe(observer.observe)
-    return mount
+    return replace(mount, observer=EnvironmentObserver(mount, projector).observe)
 
 
 def _safe_failure(error: BaseException, *, phase: Literal["preparation", "close"]) -> dict[str, JsonValue]:

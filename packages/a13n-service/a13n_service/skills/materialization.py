@@ -10,9 +10,9 @@ from typing import Protocol
 from uuid import uuid4
 
 from a13n_harness.capabilities import FileSkillSource, SkillCatalogItem
-from a13n_harness.environment.files import FileKind, FileOperator
-from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
+from a13n_harness.providers.environment.files import FileKind, FileOperator
+from a13n_harness.providers.environment.models import EnvironmentError
 from anyio import Lock, move_on_after
 
 from .domain import SkillPackageFile, SkillPackageManifest, SkillRevisionLock

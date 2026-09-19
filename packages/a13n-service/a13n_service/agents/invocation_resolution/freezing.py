@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.selection_domain import ConnectionRunSelection
@@ -21,7 +23,6 @@ from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.models.settings import effective_settings
 from a13n_service.skills.domain import SkillRevisionLock
-from a13n_service.web.registry import WebProviderRegistry
 
 from ..connectivity_resolution import freeze_invocation_connectivity
 from ..domain import (
@@ -55,13 +56,13 @@ class AgentInvocationFreezer:
         model_selector: AcceptedModelSelector,
         *,
         connectivity_resolver: ConnectivitySelectionResolver,
-        web_provider_registry: WebProviderRegistry,
-        memory_backend_catalog: MemoryBackendCatalog,
+        web_provider_catalog: ProviderCatalog[WebProviderDefinition],
+        memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition],
     ) -> None:
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver
-        self._web_provider_registry = web_provider_registry
-        self._memory_backend_catalog = memory_backend_catalog
+        self._web_provider_catalog = web_provider_catalog
+        self._memory_provider_catalog = memory_provider_catalog
 
     async def freeze_in_transaction(
         self,
@@ -142,8 +143,8 @@ class AgentInvocationFreezer:
                 workspace_id=prepared.workspace_id,
                 authored=authored,
                 selected=prepared.merged,
-                memory_backend_catalog=self._memory_backend_catalog,
-                web_provider_registry=self._web_provider_registry,
+                memory_provider_catalog=self._memory_provider_catalog,
+                web_provider_catalog=self._web_provider_catalog,
             )
             skills = await freeze_skills(session, prepared)
             connectivity = await freeze_invocation_connectivity(

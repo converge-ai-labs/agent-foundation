@@ -65,7 +65,7 @@ class LiveProviderModel(WrapperModel):
             snapshot=self._snapshot,
         )
         model = await self._model_factory.build(self._snapshot, provider)
-        header = provider.configuration.get("session_affinity_header")
+        header = provider.configuration.session_affinity_header
         if isinstance(header, str) and self._harness_thread_id is not None:
             return RequestHeadersModel(
                 model, common_headers={header: derive_model_affinity_id(self._harness_thread_id)}

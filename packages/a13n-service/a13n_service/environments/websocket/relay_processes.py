@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from a13n_environment.commands import (
+from a13n_harness.providers.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     PortObservation,
@@ -19,8 +19,8 @@ from a13n_environment.commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from a13n_environment.models import EnvironmentOperationReceipt
-from a13n_environment.retention import (
+from a13n_harness.providers.environment.models import EnvironmentOperationReceipt
+from a13n_harness.providers.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputPolicy,

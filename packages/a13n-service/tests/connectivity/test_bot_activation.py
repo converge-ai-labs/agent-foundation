@@ -2,6 +2,7 @@
 
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.bots.connectivity.domain import ActivateBotRequest
 from a13n_service.bots.connectivity.service import BotService
 from a13n_service.connectivity.accounts.domain import UpdateAccountRequest
@@ -10,7 +11,6 @@ from a13n_service.connectivity.accounts.targets import ReplaceTargetRequest, Tar
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.providers.slack.adapter import SlackIngressAdapter
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.domain import AuthorizationError
 from a13n_service.iam.models import ServiceAccountRecord
 from a13n_service.storage import transaction

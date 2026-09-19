@@ -89,13 +89,13 @@ def test_catalog_refresh_failure_retains_previous_snapshot(
         lambda: {"vendor.new": (entry,)},
     )
 
-    def fail_provider_discovery():  # type: ignore[no-untyped-def]
+    def fail_extension_discovery():  # type: ignore[no-untyped-def]
         raise RuntimeError("metadata unavailable")
 
     monkeypatch.setattr(
         catalog_module,
-        "discover_environment_provider_references",
-        fail_provider_discovery,
+        "discover_environment_run_extension_factory_references",
+        fail_extension_discovery,
     )
 
     with pytest.raises(RuntimeError, match="metadata unavailable"):

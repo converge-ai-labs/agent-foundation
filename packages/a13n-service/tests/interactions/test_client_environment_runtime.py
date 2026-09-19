@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-from a13n_environment import EnvironmentAction, EnvironmentError
-from a13n_environment.commands import ArgvCommand, CommandRequest
+from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.mount_domain import AddEnvironmentMountRequest
@@ -94,9 +94,7 @@ async def client_runtime(admitted_use, native_client, interaction_sessions, rela
     case = admitted_use
     service, target, workspace, _ = native_client
     attempt = await prepare_permissions(interaction_sessions, case.run, _authority(case.claim))
-    lifecycle = EnvironmentLifecycle(
-        interaction_sessions, case.service.catalog, case.service.protector, tmp_path / "service-files"
-    )
+    lifecycle = EnvironmentLifecycle(interaction_sessions, case.service.catalog, case.service.protector)
     async with open_redis(RedisServerConfig(url=redis_url, max_connections=1)) as reader:
         responses = RelayResponseRuntime(relay_redis, reader, attempt.worker_id)
         await responses.prepare()
@@ -117,9 +115,7 @@ async def test_worker_facets_renew_without_database_io_and_fence_lost_attempt(cl
     lifecycle, connections, attempt, workspace, service, target = client_runtime
     environment = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
     assert environment is not None
-    await environment.enter(
-        thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="mount-harness"
-    )
+    await environment.enter(mount_id="mount-harness")
     await environment.ensure_ready(frozenset({"files", "shell"}))
     statements = []
 
@@ -173,9 +169,7 @@ async def test_accepted_addition_prepares_with_its_own_retained_use(client_runti
     lifecycle, connections, attempt, workspace, service, target = client_runtime
     primary = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
     if primary is not None:
-        await primary.enter(
-            thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="primary-harness"
-        )
+        await primary.enter(mount_id="primary-harness")
     mounts = RunEnvironmentMountService(
         interaction_sessions, OnlineAdmission(interaction_sessions, service.coordination)
     )
@@ -190,9 +184,7 @@ async def test_accepted_addition_prepares_with_its_own_retained_use(client_runti
     mount = (await RunMountObservations(interaction_sessions).snapshot(attempt))[0]
     addition = await prepare_run_environment(lifecycle, attempt, mount=mount, client_connections=connections)
     assert addition is not None
-    await addition.enter(
-        thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="writer-harness"
-    )
+    await addition.enter(mount_id="writer-harness")
     await addition.ensure_ready(frozenset({"files"}))
     files = addition.operations.files
     assert files is not None
@@ -227,9 +219,7 @@ async def test_client_takeover_recovers_fresh_use_without_reviving_old_operation
     _, _, _, url = native_client
     environment = await prepare_run_environment(lifecycle, attempt, client_connections=connections)
     assert environment is not None
-    await environment.enter(
-        thread_id=attempt.thread_id, run_id=attempt.run_id, agent_instance_id="agent", mount_id="mount-reconnect"
-    )
+    await environment.enter(mount_id="mount-reconnect")
     await environment.ensure_ready(frozenset({"files"}))
     old_files = environment.operations.files
     assert old_files is not None

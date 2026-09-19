@@ -7,9 +7,9 @@ import {
 import { BrandIcon } from "a13n-ui";
 
 const localIcons = {
-  "direct-local": DesktopIcon,
-  "a13n.http-envd": GlobeIcon,
-  "a13n.websocket-envd": ArrowsLeftRightIcon,
+  direct_local: DesktopIcon,
+  http_envd: GlobeIcon,
+  websocket_envd: ArrowsLeftRightIcon,
 };
 export function ProviderIcon({ type }: { type: string }) {
   const LocalIcon = localIcons[type as keyof typeof localIcons];

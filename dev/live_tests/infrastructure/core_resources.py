@@ -33,7 +33,7 @@ async def provision(client: LiveClient, *, on_created: Callable[[dict], None] | 
         {
             "type": "openai",
             "name": "Local live-test model",
-            "credential": config["token"],
+            "credential": {"api_key": config["token"]},
             "configuration": {"base_url": config["control_url"] + "/__live__/model/v1", "auth_mode": "bearer"},
         },
     )
@@ -53,7 +53,7 @@ async def provision(client: LiveClient, *, on_created: Callable[[dict], None] | 
         "environment_provider_id",
         base + "/environment-providers",
         {
-            "type": "direct-local",
+            "type": "direct_local",
             "name": "Live-test local files",
             "configuration": {},
         },
@@ -63,7 +63,6 @@ async def provision(client: LiveClient, *, on_created: Callable[[dict], None] | 
         base + "/environments",
         {
             "provider_id": environment_provider_id,
-            "configuration_schema_version": "1",
             "configuration": {
                 "root": {"path": config["workspace_root"]},
                 "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],

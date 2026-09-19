@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from a13n_harness.environment import DynamicEnvironmentConfiguration
+from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.tools import ToolPermissionMode, ToolPermissionSetting
-from a13n_harness.toolsets.domains import DomainRestrictions
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, JsonValue, StringConstraints
 
 from a13n_service.ids import ObjectId

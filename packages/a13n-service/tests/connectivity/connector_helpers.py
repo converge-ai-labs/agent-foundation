@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from typing import Literal
 
-from a13n_service.connectivity.connectors.contracts import (
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorProviderDefinition, ConnectorSetupPolicy
+from a13n_harness.providers.connector.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
     BeforeDispatch,
@@ -18,7 +21,6 @@ from a13n_service.connectivity.connectors.contracts import (
     SetupStarted,
     StrictModel,
 )
-from a13n_service.connectivity.connectors.registry import ConnectorProviderImplementation, ConnectorProviderRegistry
 from a13n_service.connectivity.domain import JsonObject
 
 
@@ -35,7 +37,7 @@ class FakeSetup(StrictModel):
     scopes: tuple[Literal["read"], ...]
 
 
-def validate_fake_setup(configuration: JsonObject, connector_key: str, value: object) -> JsonObject:
+def validate_fake_setup(configuration: FakeConfiguration, connector_key: str, value: object) -> JsonObject:
     FakeConfiguration.model_validate(configuration)
     if connector_key != "github":
         raise ValueError("invalid connector")
@@ -72,9 +74,6 @@ class FakeConnectorProvider:
 
     def __init__(self, backend: FakeConnectorBackend) -> None:
         self.backend = backend
-
-    async def aclose(self) -> None:
-        pass
 
     def connect(self, binding: ConnectionBinding) -> FakeConnection:
         return FakeConnection(self.backend, binding)
@@ -143,9 +142,6 @@ class FakeConnection:
         self.backend = backend
         self.binding = binding
 
-    async def aclose(self) -> None:
-        pass
-
     async def inspect(self) -> ConnectionInspection:
         reason = (
             AdapterStatusReason.reauthorization_required
@@ -177,21 +173,31 @@ class FakeConnection:
         provider_version: str,
         arguments: JsonObject,
         request_id: str,
-        before_dispatch: BeforeDispatch,
+        before_dispatch: BeforeDispatch | None = None,
     ) -> ConnectorToolOutcome:
         raise NotImplementedError
 
 
-def fake_registry(backend: FakeConnectorBackend) -> ConnectorProviderRegistry:
-    return ConnectorProviderRegistry(
+NO_SETUP_POLICY = ConnectorSetupPolicy()
+
+
+def fake_catalog(
+    backend: FakeConnectorBackend, *, setup_policy: ConnectorSetupPolicy = NO_SETUP_POLICY
+) -> ProviderCatalog[ConnectorProviderDefinition]:
+    @asynccontextmanager
+    async def open_provider(configuration, credentials, http):
+        yield FakeConnectorProvider(backend)
+
+    return ProviderCatalog(
         (
-            ConnectorProviderImplementation(
+            ConnectorProviderDefinition(
                 type="fake_connector",
                 display_name="Fake",
                 configuration_model=FakeConfiguration,
                 credential_model=FakeCredentials,
                 setup_validator=validate_fake_setup,
-                factory=lambda configuration, credentials: FakeConnectorProvider(backend),
+                open_provider=open_provider,
+                setup_policy=setup_policy,
             ),
         )
     )

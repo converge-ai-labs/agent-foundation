@@ -2,9 +2,9 @@
 
 ## Design Position
 
-Harness integrates already constructed `Environment` instances from `a13n-environment`. It owns Run-local multi-mount routing, access ceilings, mount-incarnation fencing, readiness aggregation, model projection, portable state aggregation, and non-destructive cleanup. It does not discover Providers, construct provider targets or connections, or choose preparation timing and backing-target retention policy. Hosts supply ready objects or objects that transparently prepare on first actual operation.
+Harness integrates already constructed `Environment` instances from the [Environment Provider domain](08a-environment-providers.md). It owns Run-local multi-mount routing, access ceilings, mount-incarnation fencing, readiness aggregation, model projection, portable state aggregation, and non-destructive cleanup. It does not discover Providers, construct provider targets or connections, or choose preparation timing and backing-target retention policy. Hosts supply ready objects or objects that transparently prepare on first actual operation.
 
-The Environment package owns the only shared lifecycle entities: `EnvironmentProvider`, `Environment`, and `EnvironmentState`. Harness adds only lightweight mount configuration and a process-local bound aggregate. Those Harness values are not provider lifecycle entities.
+The Environment Provider domain owns the only shared lifecycle entities: `EnvironmentProviderDefinition`, `Environment`, and `EnvironmentState`. Harness adds only lightweight mount configuration and a process-local bound aggregate. Those Harness values are not provider lifecycle entities.
 
 Every independent Harness Run receives fresh Environment instances. Harness enters them before Agent input production and closes them after the terminal Run fence. `close()` releases local adapter resources and never destroys a Docker container, E2B sandbox, Host workspace, or other backing target. Inline child execution borrows the parent Run's entered facade; an async child is an independent Run and receives fresh adapters from its Host. Envd-backed adapters own independent Sessions even when their Host reuses a Device connection. Their close cleans Session-owned processes/output/transfers, not the daemon or workspace. The Session default working directory is fixed; changing it requires a fresh adapter through the existing mount replacement boundary. It does not restrict file access to that directory. Harness action ceilings and file routes do not turn shell cwd into an OS sandbox, and remote native paths are not Host-path-preserving aggregate routes.
 
@@ -61,7 +61,7 @@ The rules are:
 6. An empty mapping, invalid mount name, duplicate Environment instance, invalid policy, equal aggregate route owned by different mounts, or conflict with `RunBindings` fails before `enter()`.
 7. Omitting all Environment input creates an empty bound facade and exposes no Environment tools.
 8. `environment_run_extensions` is the ordered finite set of fresh extension instances for this Run; duplicate extension IDs fail before Environment entry.
-9. Inputs never accept an `EnvironmentProvider`, provider specification, Provider Resource, attachment, state envelope, or catalog key.
+9. Inputs never accept an `EnvironmentProviderDefinition`, Provider configuration, Provider Resource, attachment, state envelope, or Provider type.
 
 A mount without `mount_path` retains the compatibility routes: every such mount is addressable at `/environment/{name}`, and the current default is also addressable at `/workspace`. Without a default, `/workspace` is unavailable. A mount with `mount_path` is addressable only at that explicit root; the Harness does not also expose `/workspace` or `/environment/{name}` for it. Relative paths still select the explicit alias or current default and begin at that mount's provider-local `working_directory`.
 
@@ -289,7 +289,7 @@ class HarnessState(BaseModel):
 
 There is no `EnvironmentMapState` or `EnvironmentMountState` type.
 
-Keys are Harness mount names. Values are imported `a13n-environment` `EnvironmentState` envelopes. Singular Environment input uses `workspace`. A mount whose adapter returns `None` is omitted; Direct Local and Local Envd are normally stateless.
+Keys are Harness mount names. Values are imported `EnvironmentState` envelopes. Singular Environment input uses `workspace`. A mount whose adapter returns `None` is omitted; Direct Local and Local Envd are normally stateless.
 
 Export rules:
 
@@ -380,7 +380,7 @@ Completion inside the yield window returns observed terminal status and bounded 
 
 The `alias` argument selects an existing public mount name from the active Environment context; it never labels a command or process. Schemas and model guidance make this distinction explicit. An omitted alias uses the default mount unless an absolute command `cwd` or an existing process reference selects its own mount. Unknown or conflicting selections remain errors; Harness does not silently retry on another mount.
 
-`shell_wait` waits boundedly and reads available output at explicit caller offsets. Zero is a poll. Output provenance and evidence follow the [Provider observation contract](../a13n-environment/02-environment-lifecycle.md#process-and-output-observations). Returned `requested_offset`, `start_offset`, `next_offset`, available bounds and `omitted_before_bytes` describe this page only. `next_offset` advances only across returned bytes. Unknown producer totals are null rather than buffer lengths. Repeating offsets is valid; Harness has no hidden unread cursor.
+`shell_wait` waits boundedly and reads available output at explicit caller offsets. Zero is a poll. Output provenance and evidence follow the [Provider observation contract](08a-environment-providers.md#process-and-output-observations). Returned `requested_offset`, `start_offset`, `next_offset`, available bounds and `omitted_before_bytes` describe this page only. `next_offset` advances only across returned bytes. Unknown producer totals are null rather than buffer lengths. Repeating offsets is valid; Harness has no hidden unread cursor.
 
 A transient native reconnect preserves the reference and accumulated observation offsets, appends newly observed text and reports partial coverage. A new Run creates fresh references and observations at zero. Target replacement invalidates identities rather than reusing a PID against another sandbox. Capped output remains readable but cannot be reset by querying or waiting.
 

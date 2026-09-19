@@ -7,24 +7,47 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from a13n_environment.daytona.provider import DaytonaBackendConfiguration, DaytonaConfiguration
-from a13n_environment.direct_local.configuration import DirectLocalProviderConfiguration
-from a13n_environment.docker.configuration import DockerProviderConfiguration
-from a13n_environment.docker.factory import DockerBackendConfiguration
-from a13n_environment.e2b.configuration import E2BBackendConfiguration, E2BCredential, E2BProviderConfiguration
-from a13n_environment.local_envd.configuration import LocalEnvdLaunchConfiguration, LocalEnvdProviderConfiguration
-from a13n_environment.management import HostLocalProviderConfiguration
-from a13n_environment.modal.provider import ModalBackendConfiguration, ModalConfiguration, ModalCredential
-from a13n_environment.native.configuration import TokenCredential
-from a13n_environment.remote_envd.configuration import (
-    HttpEnvdBackendConfiguration,
-    HttpEnvdCredential,
-    RemoteEnvdProviderConfiguration,
-    WebSocketEnvdBackendConfiguration,
+from a13n_harness.providers.environment.daytona.provider import (
+    DaytonaConnectionConfiguration,
+    DaytonaEnvironmentConfiguration,
 )
-from a13n_environment.runloop.provider import RunloopBackendConfiguration, RunloopConfiguration
-from a13n_environment.sprites.provider import SpritesBackendConfiguration, SpritesConfiguration
-from a13n_environment.vercel.provider import VercelBackendConfiguration, VercelConfiguration
+from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
+from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
+from a13n_harness.providers.environment.docker.provider import DockerConnectionConfiguration
+from a13n_harness.providers.environment.e2b.configuration import (
+    E2BConnectionConfiguration,
+    E2BCredential,
+    E2BEnvironmentConfiguration,
+)
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdEnvironmentConfiguration,
+    LocalEnvdLaunchConfiguration,
+)
+from a13n_harness.providers.environment.management import HostLocalProviderConfiguration
+from a13n_harness.providers.environment.modal.provider import (
+    ModalConnectionConfiguration,
+    ModalCredential,
+    ModalEnvironmentConfiguration,
+)
+from a13n_harness.providers.environment.native.configuration import TokenCredential
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    HttpEnvdConnectionConfiguration,
+    HttpEnvdCredential,
+    RemoteEnvdEnvironmentConfiguration,
+    WebSocketEnvdConnectionConfiguration,
+)
+from a13n_harness.providers.environment.runloop.provider import (
+    RunloopConnectionConfiguration,
+    RunloopEnvironmentConfiguration,
+)
+from a13n_harness.providers.environment.sprites.provider import (
+    SpritesConnectionConfiguration,
+    SpritesEnvironmentConfiguration,
+)
+from a13n_harness.providers.environment.vercel.provider import (
+    VercelConnectionConfiguration,
+    VercelEnvironmentConfiguration,
+)
 from a13n_service.configuration.sources import configuration_fields
 from a13n_service.settings import Settings
 
@@ -184,31 +207,31 @@ This document excludes non-Native boundaries: operational probes, schema/documen
 
 
 ENVIRONMENT_CONFIGURATION_MODELS = (
-    DirectLocalProviderConfiguration,
-    LocalEnvdProviderConfiguration,
+    DirectLocalEnvironmentConfiguration,
+    LocalEnvdEnvironmentConfiguration,
     LocalEnvdLaunchConfiguration,
-    DockerProviderConfiguration,
-    E2BProviderConfiguration,
-    DaytonaConfiguration,
-    ModalConfiguration,
-    VercelConfiguration,
-    SpritesConfiguration,
-    RunloopConfiguration,
-    RemoteEnvdProviderConfiguration,
+    DockerEnvironmentConfiguration,
+    E2BEnvironmentConfiguration,
+    DaytonaEnvironmentConfiguration,
+    ModalEnvironmentConfiguration,
+    VercelEnvironmentConfiguration,
+    SpritesEnvironmentConfiguration,
+    RunloopEnvironmentConfiguration,
+    RemoteEnvdEnvironmentConfiguration,
     HostLocalProviderConfiguration,
-    DockerBackendConfiguration,
-    E2BBackendConfiguration,
+    DockerConnectionConfiguration,
+    E2BConnectionConfiguration,
     E2BCredential,
-    DaytonaBackendConfiguration,
-    ModalBackendConfiguration,
+    DaytonaConnectionConfiguration,
+    ModalConnectionConfiguration,
     ModalCredential,
-    VercelBackendConfiguration,
-    SpritesBackendConfiguration,
-    RunloopBackendConfiguration,
+    VercelConnectionConfiguration,
+    SpritesConnectionConfiguration,
+    RunloopConnectionConfiguration,
     TokenCredential,
-    HttpEnvdBackendConfiguration,
+    HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
-    WebSocketEnvdBackendConfiguration,
+    WebSocketEnvdConnectionConfiguration,
 )
 
 
@@ -225,12 +248,12 @@ All six cloud providers use the same configuration, backend, and private-credent
 
 | Provider | Recipe | Backend | Credential |
 | --- | --- | --- | --- |
-| E2B | [E2BProviderConfiguration](#e2bproviderconfiguration) | [E2BBackendConfiguration](#e2bbackendconfiguration) | [E2BCredential](#e2bcredential) |
-| Daytona | [DaytonaConfiguration](#daytonaconfiguration) | [DaytonaBackendConfiguration](#daytonabackendconfiguration) | [TokenCredential](#tokencredential) |
-| Modal | [ModalConfiguration](#modalconfiguration) | [ModalBackendConfiguration](#modalbackendconfiguration) | [ModalCredential](#modalcredential) |
-| Vercel Sandbox | [VercelConfiguration](#vercelconfiguration) | [VercelBackendConfiguration](#vercelbackendconfiguration) | [TokenCredential](#tokencredential) |
-| Fly.io Sprites | [SpritesConfiguration](#spritesconfiguration) | [SpritesBackendConfiguration](#spritesbackendconfiguration) | [TokenCredential](#tokencredential) |
-| Runloop | [RunloopConfiguration](#runloopconfiguration) | [RunloopBackendConfiguration](#runloopbackendconfiguration) | [TokenCredential](#tokencredential) |
+| E2B | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration) | [E2BConnectionConfiguration](#e2bconnectionconfiguration) | [E2BCredential](#e2bcredential) |
+| Daytona | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Modal | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration) | [ModalConnectionConfiguration](#modalconnectionconfiguration) | [ModalCredential](#modalcredential) |
+| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration) | [VercelConnectionConfiguration](#vercelconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Runloop | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
 
 """
     emitted: set[str] = set()
@@ -277,7 +300,7 @@ All six cloud providers use the same configuration, backend, and private-credent
 
 def main() -> None:
     outputs = {
-        "docs/a13n-environment/configuration-reference.md": render_environment_configuration(),
+        "docs/environments/configuration-reference.md": render_environment_configuration(),
         "docs/a13n-service/configuration-reference.md": render_configuration(),
         "docs/a13n-service/api-reference.md": render_native_api(),
         "scripts/docs/service-settings.schema.json": json.dumps(Settings.model_json_schema(), indent=2) + "\n",

@@ -6,9 +6,10 @@ on:
     paths:
       - ".github/workflows/ci-a13n-harness.yml"
       - ".github/workflows/release-a13n-harness.yml"
-      - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "dev/observation-demo/**"
+      - "scripts/check-a13n-distributions.py"
+      - "scripts/release_version.py"
       - "pyproject.toml"
       - "uv.lock"
   push:
@@ -16,9 +17,10 @@ on:
     paths:
       - ".github/workflows/ci-a13n-harness.yml"
       - ".github/workflows/release-a13n-harness.yml"
-      - "packages/a13n-environment/**"
       - "packages/a13n-harness/**"
       - "dev/observation-demo/**"
+      - "scripts/check-a13n-distributions.py"
+      - "scripts/release_version.py"
       - "pyproject.toml"
       - "uv.lock"
   workflow_dispatch:
@@ -49,6 +51,7 @@ jobs:
             test_targets: >-
               packages/a13n-harness/tests/test_environment_core.py
               packages/a13n-harness/tests/test_monitored_process.py
+              packages/a13n-harness/tests/providers_environment
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 10
     steps:

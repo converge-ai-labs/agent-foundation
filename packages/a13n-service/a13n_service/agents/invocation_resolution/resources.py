@@ -1,13 +1,14 @@
 """Eligibility of optional resources selected by an invocation."""
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_workspace
 from a13n_service.memory.domain import memory_provider_ids
 from a13n_service.memory.resources import require_memory_configuration
 from a13n_service.web.domain import ScrapeSelection, provider_selections
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.resources import require_operation
 from a13n_service.web.resources import require_provider as require_web_provider
 
@@ -24,8 +25,8 @@ async def validate_selected_resources(
     workspace_id: str,
     authored: AgentConfig | MergedAgentRunConfig,
     selected: MergedAgentRunConfig,
-    memory_backend_catalog: MemoryBackendCatalog,
-    web_provider_registry: WebProviderRegistry,
+    memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition],
+    web_provider_catalog: ProviderCatalog[WebProviderDefinition],
 ) -> None:
     memory = selected.memory
     if memory is not None:
@@ -38,7 +39,7 @@ async def validate_selected_resources(
             organization_id=organization_id,
             workspace_id=workspace_id,
             selection=memory,
-            catalog=memory_backend_catalog,
+            catalog=memory_provider_catalog,
         )
     original_by_operation = dict(provider_selections(web_selection(authored.toolsets)))
     for operation, selection in provider_selections(web_selection(selected.toolsets)):
@@ -48,12 +49,12 @@ async def validate_selected_resources(
             workspace_id=workspace_id,
             provider_id=selection.provider_id,
             eligible=True,
-            registry=web_provider_registry,
+            catalog=web_provider_catalog,
         )
         require_operation(
             provider,
             operation,
-            web_provider_registry,
+            web_provider_catalog,
             selection=selection if isinstance(selection, ScrapeSelection) else None,
         )
         original = original_by_operation.get(operation)

@@ -5,7 +5,8 @@ from uuid import uuid4
 
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_service.application_errors import ApplicationError
 from a13n_service.bots.memory.binding import BotMemoryBinding
 from a13n_service.bots.memory.bindings import bind, require_binding
@@ -18,7 +19,6 @@ from a13n_service.bots.memory.service import BotMemoryService
 from a13n_service.bots.memory.settings import AccountSettingsRecord
 from a13n_service.bots.memory.verification import BotMemoryVerifier
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.inheritance import inherited_run_fields
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
@@ -691,14 +691,15 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
     import os
     from pathlib import Path
 
-    from a13n_environment import (
-        LocalEnvdEnvironmentProvider,
+    from a13n_harness import AgentSpec, HarnessBuilder
+    from a13n_harness.providers.catalog import ProviderCatalog
+    from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+    from a13n_harness.providers.environment.local_envd.runtime import (
         LocalEnvdProviderRuntime,
         TemporaryLocalEnvdRuntimeAllocator,
     )
-    from a13n_harness import AgentSpec, HarnessBuilder
-    from a13n_harness.document_memory import DocumentInput
-    from a13n_harness.memory_plugins import FilesystemMemoryBackendPlugin, MemoryBackendCatalog
+    from a13n_harness.providers.memory.builtins import FILESYSTEM
+    from a13n_harness.providers.memory.documents import DocumentInput
     from a13n_service.memory.models import MemoryProviderRecord, MemoryStorageRecord
     from pydantic_ai.models.function import FunctionModel
 
@@ -706,12 +707,14 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
     if not executable:
         pytest.skip("Native file memory requires envd")
     memory, _service, run, context, _document, _calls, binding, verifier = runtime_memory
-    catalog = MemoryBackendCatalog((FilesystemMemoryBackendPlugin(),))
+    catalog = ProviderCatalog((FILESYSTEM,))
     memory.catalog = memory.authorizer.catalog = catalog
     async with transaction(interaction_sessions) as session:
         provider = await session.get(MemoryProviderRecord, binding.provider_id)
-        provider.type = "a13n.filesystem"
+        provider.type = "filesystem"
         provider.configuration = {"storage": {"root": str(tmp_path / "workspace" / "memory")}}
+        # Filesystem memory forbids a credential, so the mem0 material cannot stay.
+        provider.ciphertext = provider.nonce = provider.encryption_key_id = None
     run = run.model_copy(update={"environment_id": "env_1234567890abcdef"})
     monkeypatch.setattr("a13n_service.memory.file_runtime.utc_now", lambda: NOW)
     capability = bot_memory_capability(
@@ -751,14 +754,14 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
 
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    provider = LocalEnvdEnvironmentProvider()
-    config = provider.validate_configuration(schema_version="1", value={"working_directory": str(workspace)})
+    provider = LOCAL_ENVD
+    config = provider.validate_environment({"working_directory": str(workspace)})
     for _ in range(2):
         async with LocalEnvdProviderRuntime(
             executable=Path(executable),
             allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
         ) as runtime:
-            environment = provider.create_environment(
+            environment = provider.construct(
                 environment_id=run.environment_id,
                 configuration=config,
                 state=None,

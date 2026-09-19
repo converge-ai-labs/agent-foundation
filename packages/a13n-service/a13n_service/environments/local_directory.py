@@ -10,10 +10,13 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
 from anyio import to_thread
 from pydantic import JsonValue
 
 from .domain import EnvironmentConfiguration, TemplateConfiguration
+
+DIRECT_LOCAL_PROVIDER_TYPE = "direct_local"
 
 
 @dataclass(frozen=True)
@@ -79,31 +82,40 @@ class ManagedLocalDirectory:
     async def delete(self) -> None:
         await to_thread.run_sync(self._delete)
 
+    def rooted(self, configuration: DirectLocalEnvironmentConfiguration) -> DirectLocalEnvironmentConfiguration:
+        """Point the template recipe at this Environment's own allocated directory."""
+        return configuration.model_copy(update={"root": configuration.root.model_copy(update={"path": self.path})})
+
+
+def _managed_direct_local(
+    provider_type: str, configuration: EnvironmentConfiguration | TemplateConfiguration
+) -> DirectLocalEnvironmentConfiguration | None:
+    """Only a managed Direct Local template gets a Service-allocated directory."""
+    if provider_type != DIRECT_LOCAL_PROVIDER_TYPE or not isinstance(configuration, TemplateConfiguration):
+        return None
+    return DirectLocalEnvironmentConfiguration.model_validate(configuration.configuration)
+
+
+def _allocated_directory(template: DirectLocalEnvironmentConfiguration, environment_id: str) -> ManagedLocalDirectory:
+    if re.fullmatch(r"env_[A-Za-z0-9]+", environment_id) is None:
+        raise ValueError("Managed local directory requires a canonical Environment ID")
+    if ".." in template.root.path.parts:
+        raise ValueError("Direct Local base must be an absolute normalized path")
+    return ManagedLocalDirectory(template.root.path, environment_id)
+
 
 def managed_local_directory(
     provider_type: str, environment_id: str, configuration: EnvironmentConfiguration | TemplateConfiguration
 ) -> ManagedLocalDirectory | None:
-    if provider_type != "direct-local" or not isinstance(configuration, TemplateConfiguration):
-        return None
-    if re.fullmatch(r"env_[A-Za-z0-9]+", environment_id) is None:
-        raise ValueError("Managed local directory requires a canonical Environment ID")
-    root = configuration.configuration.get("root")
-    if not isinstance(root, dict) or not isinstance(root.get("path"), str):
-        raise ValueError("Direct Local template requires a base root path")
-    path = root["path"]
-    assert isinstance(path, str)
-    base = Path(path).expanduser()
-    if not base.is_absolute() or ".." in base.parts:
-        raise ValueError("Direct Local base must be an absolute normalized path")
-    return ManagedLocalDirectory(base, environment_id)
+    template = _managed_direct_local(provider_type, configuration)
+    return None if template is None else _allocated_directory(template, environment_id)
 
 
 def instance_configuration(
     provider_type: str, environment_id: str, configuration: EnvironmentConfiguration | TemplateConfiguration
 ) -> dict[str, JsonValue]:
-    directory = managed_local_directory(provider_type, environment_id, configuration)
-    if directory is None:
+    """Service owns per-Environment host allocation; the Provider schema stays unchanged."""
+    template = _managed_direct_local(provider_type, configuration)
+    if template is None:
         return configuration.configuration
-    root = configuration.configuration["root"]
-    assert isinstance(root, dict)
-    return {**configuration.configuration, "root": {**root, "path": str(directory.path)}}
+    return _allocated_directory(template, environment_id).rooted(template).model_dump(mode="json")

@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.domain import EffectiveAgentConfig
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import ExistingEnvironmentSelection
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator
@@ -911,8 +911,8 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     from unittest.mock import Mock
 
     import httpx2
+    from a13n_harness.providers.catalog import ProviderCatalog
     from a13n_service.connectivity import execution
-    from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
     from a13n_service.connectivity.mcp.transport import RemoteTransport
@@ -969,7 +969,8 @@ async def test_external_tool_scope_rechecks_durable_attempt_and_principal(
     runtime = ExternalToolRuntime(
         interaction_sessions,
         SecretProtector(key=b"k" * 32, encryption_key_id="test"),
-        ConnectorProviderRegistry(()),
+        ProviderCatalog(),
+        None,
         RemoteTransport(policy),
         policy,
         Mock(spec=httpx2.AsyncClient),

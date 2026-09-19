@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 import anyio
 from a2a.types import a2a_pb2 as a2a
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy import and_, delete, exists, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -29,7 +30,6 @@ from a13n_service.collection_cursors import (
 )
 from a13n_service.digests import digest_request
 from a13n_service.durable_operations.models import OutboxRecord
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt

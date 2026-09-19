@@ -3,8 +3,8 @@
 from collections.abc import Callable
 
 from a13n_harness.context import AgentContext
-from a13n_harness.filesystem_memory import FilesystemMemoryStore
-from a13n_harness.memory_plugins import FilesystemMemoryConfiguration
+from a13n_harness.providers.memory.filesystem.configuration import FilesystemMemoryConfiguration
+from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryStore
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction
@@ -12,7 +12,7 @@ from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.domain import Run
 from a13n_service.memory.file_runtime import bind_filesystem_store
 from a13n_service.memory.models import MemoryStorageRecord
-from a13n_service.memory.resources import require_provider
+from a13n_service.memory.resources import binds_host_files, require_provider
 from a13n_service.memory.service import MemoryService, failure
 from a13n_service.storage import short_session
 
@@ -89,8 +89,8 @@ async def filesystem_store(
             catalog=service.catalog,
             eligible=True,
         )
-        if provider.type != "a13n.filesystem":
-            raise failure("memory_documents_unsupported", "A File-based provider is required.")
+        if not binds_host_files(provider.type, service.catalog):
+            raise failure("memory_documents_unsupported", "A file-based Memory Provider is required.")
         configuration = FilesystemMemoryConfiguration.model_validate(provider.configuration)
     return await bind_filesystem_store(
         context,

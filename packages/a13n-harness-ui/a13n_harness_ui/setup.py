@@ -6,7 +6,8 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Literal
 
-from a13n_environment import EnvironmentError, EnvironmentProviderError
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.models import EnvironmentError
 from anyio import fail_after
 from pydantic import Field
 

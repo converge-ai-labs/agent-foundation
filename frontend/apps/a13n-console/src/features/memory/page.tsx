@@ -13,7 +13,7 @@ import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, data } from "../../shared/api";
+import { allPages, data, type Schema } from "../../shared/api";
 import { Empty } from "../../shared/collection";
 import { ErrorNotice } from "../../shared/feedback";
 import { Page } from "../../shared/page";
@@ -21,7 +21,11 @@ import { ManageProvidersLink } from "../providers/manage-link";
 import { memoryKey, type MemoryTarget } from "./api";
 import { FileMemoryBrowser } from "./documents";
 import { MemoryContents } from "./contents";
-import { memoryProviderUsable, useMemoryProviders } from "./availability";
+import {
+  eligibleMemoryProvider,
+  useMemoryProviders,
+  useWorkspaceMemoryProviderDefinitions,
+} from "./availability";
 import styles from "./memory.module.css";
 
 export function MemoriesPage() {
@@ -120,6 +124,9 @@ function MemoryPageSelection({
   const [subject, setSubject] = useState(params.get("subject") ?? "");
   const [editing, setEditing] = useState(false);
   const { providers } = useMemoryProviders();
+  const definitions = useWorkspaceMemoryProviderDefinitions();
+  const eligible = (provider: Schema["MemoryProvider"]) =>
+    eligibleMemoryProvider(provider, definitions.data?.items ?? []);
   const agents = useQuery({
     queryKey: ["agents", workspace.id, "memory-subjects"],
     enabled: scope === "agent",
@@ -189,7 +196,7 @@ function MemoryPageSelection({
                         ...(providers.data ?? []).map((item) => ({
                           value: item.id,
                           label: item.name,
-                          description: `${t(item.workspace_id ? "Workspace" : "Organization")}${memoryProviderUsable(item) ? "" : ` · ${t("Unavailable")}`}`,
+                          description: `${t(item.workspace_id ? "Workspace" : "Organization")}${eligible(item) ? "" : ` · ${t("Unavailable")}`}`,
                         })),
                         ...(provider && !selected
                           ? [

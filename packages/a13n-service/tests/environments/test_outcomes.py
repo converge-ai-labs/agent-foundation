@@ -4,9 +4,10 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from a13n_environment import EnvironmentError, EnvironmentProviderError, EnvironmentState
-from a13n_environment.errors import EnvironmentProviderErrorCategory as Category
-from a13n_environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.errors import EnvironmentProviderErrorCategory as Category
+from a13n_harness.providers.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
 from a13n_service.environments.domain import CreateManagedEnvironmentRequest, EnvironmentCommandRequest
 from a13n_service.environments.identity import target_identity
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
@@ -20,7 +21,7 @@ from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
 from sqlalchemy.exc import DBAPIError
 
-from .conftest import WORKSPACE_ID, actor
+from .conftest import WORKSPACE_ID, actor, catalog_with
 from .test_lifecycle import Target, fixture_environment
 
 pytestmark = pytest.mark.anyio
@@ -53,7 +54,7 @@ async def test_successful_effect_survives_interrupted_publication(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch, action, after_commit
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     events = []
     state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "same"})
 
@@ -102,7 +103,7 @@ async def test_undispatched_failure_preserves_only_an_earlier_unknown_operation(
 ):
     environment = await fixture_environment(environment_service)
     now = NOW
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     events = []
 
     class InvalidTarget(Target):
@@ -173,7 +174,7 @@ async def test_unpublished_success_retains_the_pending_operation(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     events, publications = [], []
 
     async def construct(operation):
@@ -212,7 +213,7 @@ async def test_insufficient_renewal_keeps_observed_expiry_after_publication_retr
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch, after_commit
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     events = []
     expiry = NOW + timedelta(seconds=20)
 
@@ -225,7 +226,7 @@ async def test_insufficient_renewal_keeps_observed_expiry_after_publication_retr
         return ShortRenewal(operation.state, events)
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    monkeypatch.setattr(provider_catalog.require("docker"), "requires_keepalive", True)
+    lifecycle.catalog = catalog_with(provider_catalog, "docker", requires_keepalive=True)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since = "running", NOW
@@ -260,10 +261,9 @@ async def test_conflicting_target_is_not_adopted_and_preserves_cancellation(
         request=CreateManagedEnvironmentRequest(template_id=template_id),
         idempotency_key="second",
     )
-    provider = provider_catalog.require("docker")
-    monkeypatch.setattr(provider, "target_identity", lambda **kwargs: "same-target")
-    identity = target_identity(provider, {}, "same-target")
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    catalog = catalog_with(provider_catalog, "docker", target_identity=lambda **kwargs: "same-target")
+    identity = target_identity(catalog.require("docker"), {}, "same-target")
+    lifecycle = EnvironmentLifecycle(environment_sessions, catalog, protector, clock=lambda: NOW)
     events = []
     state = EnvironmentState(provider_key="docker", state_version="1", state={"target": "same-target"})
 
@@ -302,7 +302,7 @@ async def test_close_failure_does_not_rewrite_a_completed_stop(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     events = []
 
     class BrokenClose(Target):
@@ -338,7 +338,7 @@ async def test_receipt_replay_cannot_overwrite_a_later_operation(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     events = []
 
     async def construct(operation):
@@ -387,7 +387,7 @@ async def test_publication_cancellation_is_not_replaced_by_the_provider_error(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
 ):
     environment = await fixture_environment(environment_service)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: NOW)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: NOW)
     events = []
 
     class MissingTarget(Target):

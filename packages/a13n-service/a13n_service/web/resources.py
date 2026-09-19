@@ -1,5 +1,7 @@
 """Short-session Web Provider eligibility and representation checks."""
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,7 +11,6 @@ from a13n_service.iam.resource_scope import visible_workspace
 
 from .domain import ScrapeSelection
 from .models import WebProviderRecord
-from .registry import WebProviderRegistry
 
 
 class WebProviderError(ApplicationError):
@@ -23,7 +24,7 @@ async def require_provider(
     workspace_id: str | None,
     provider_id: str,
     eligible: bool = False,
-    registry: WebProviderRegistry | None = None,
+    catalog: ProviderCatalog[WebProviderDefinition] | None = None,
     owning_scope: bool = False,
     lock: bool = False,
 ) -> WebProviderRecord:
@@ -38,24 +39,28 @@ async def require_provider(
     if record is None:
         raise WebProviderError("web_provider_not_found", "Web Provider not found.", category=ErrorCategory.not_found)
     if eligible:
-        if registry is None:
-            raise RuntimeError("Web Provider registry is required for eligibility")
-        require_eligible(record, registry)
+        if catalog is None:
+            raise RuntimeError("A Web Provider catalog is required for eligibility")
+        require_eligible(record, catalog)
     return record
 
 
-def require_eligible(record: WebProviderRecord, registry: WebProviderRegistry) -> None:
+def require_eligible(record: WebProviderRecord, catalog: ProviderCatalog[WebProviderDefinition]) -> None:
     if not record.enabled:
         raise WebProviderError("web_provider_disabled", "Web Provider is disabled.", category=ErrorCategory.conflict)
     try:
-        registration = registry.require(record.type)
+        definition = catalog.require(record.type)
     except ValueError:
         raise WebProviderError(
             "web_provider_unavailable",
             "Web Provider implementation is unavailable.",
             category=ErrorCategory.unavailable,
         ) from None
-    if registration.credential_required and record.ciphertext is None:
+    if (
+        definition.authentication.resolve(definition.configuration_model.model_validate(record.configuration))
+        == "required"
+        and record.ciphertext is None
+    ):
         raise WebProviderError(
             "web_provider_credential_missing",
             "Web Provider requires a credential.",
@@ -66,12 +71,12 @@ def require_eligible(record: WebProviderRecord, registry: WebProviderRegistry) -
 def require_operation(
     record: WebProviderRecord,
     operation: str,
-    registry: WebProviderRegistry,
+    catalog: ProviderCatalog[WebProviderDefinition],
     *,
     selection: ScrapeSelection | None = None,
 ) -> None:
     try:
-        definition = registry.require(record.type)
+        definition = catalog.require(record.type)
     except ValueError:
         definition = None
     supported = definition is not None and (

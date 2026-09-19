@@ -189,9 +189,11 @@ it("submits question, generic approval and explicit external null together, not 
   fireEvent.click(screen.getByRole("radio", { name: "Left Go left" }));
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: "Approval" }));
-  await user.click(screen.getByRole("option", { name: "Approve once" }));
+  await user.click(await screen.findByRole("option", { name: "Approve once" }));
   await user.click(screen.getByRole("combobox", { name: "External result" }));
-  await user.click(screen.getByRole("option", { name: "Provide a result" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Provide a result" }),
+  );
   const submit = screen.getByRole("button", { name: "Submit responses" });
   expect(submit.matches(":disabled")).toBe(true);
   const editor = screen.getByRole("textbox", { name: "Result (JSON)" });

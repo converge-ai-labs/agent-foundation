@@ -4,14 +4,19 @@ import json
 from collections.abc import Awaitable, Callable
 from hashlib import sha256
 
-from a13n_environment.files import FileCommitOperator, FileCommitRequest, FileEntriesResult, FileMutationResult
 from a13n_harness.context import AgentContext
-from a13n_harness.document_memory import MemoryDocumentError
 from a13n_harness.environment.providers import BoundEnvironment, FileScopeSelection
-from a13n_harness.filesystem_memory import FilesystemMemoryStore
-from a13n_harness.memory import MemoryScope
-from a13n_harness.memory_file_commit import EnvironmentMemoryFileCoordinator
-from a13n_harness.memory_plugins import FilesystemMemoryConfiguration
+from a13n_harness.providers.environment.files import (
+    FileCommitOperator,
+    FileCommitRequest,
+    FileEntriesResult,
+    FileMutationResult,
+)
+from a13n_harness.providers.memory.contracts import MemoryScope
+from a13n_harness.providers.memory.documents import MemoryDocumentError
+from a13n_harness.providers.memory.filesystem.commit import EnvironmentMemoryFileCoordinator
+from a13n_harness.providers.memory.filesystem.configuration import FilesystemMemoryConfiguration
+from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryStore
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
@@ -27,7 +32,7 @@ from a13n_service.temporal import utc_now
 
 from .domain import InlineMemoryBackend, MemoryEntrySelection
 from .models import MemoryStorageRecord, RunMemoryStorageRecord
-from .resources import require_provider
+from .resources import binds_host_files, require_provider
 from .scopes import memory_subject
 from .service import MemoryService
 from .sources import authorize_sources
@@ -75,7 +80,7 @@ async def filesystem_store(
         raise MemoryDocumentError("memory_scope_unavailable")
     inline = isinstance(entry.backend, InlineMemoryBackend)
     provider_identity = (
-        "a13n.filesystem" if isinstance(entry.backend, InlineMemoryBackend) else entry.backend.provider_id
+        entry.backend.type if isinstance(entry.backend, InlineMemoryBackend) else entry.backend.provider_id
     )
     subject_id = {
         MemoryScope.THREAD: run.thread_id,
@@ -148,7 +153,8 @@ async def filesystem_store(
 
     await authorize(False)
     if isinstance(entry.backend, InlineMemoryBackend):
-        configuration = FilesystemMemoryConfiguration.model_validate(entry.backend.configuration)
+        declared = entry.backend.configuration
+        provider_type = entry.backend.type
     else:
         async with short_session(service.authorizer.sessions) as session:
             provider = await require_provider(
@@ -159,9 +165,11 @@ async def filesystem_store(
                 eligible=True,
                 catalog=service.catalog,
             )
-            if provider.type != "a13n.filesystem":
-                raise MemoryDocumentError("memory_documents_unsupported")
-            configuration = FilesystemMemoryConfiguration.model_validate(provider.configuration)
+            declared = provider.configuration
+            provider_type = provider.type
+    if not binds_host_files(provider_type, service.catalog):
+        raise MemoryDocumentError("memory_documents_unsupported")
+    configuration = FilesystemMemoryConfiguration.model_validate(declared)
     return await bind_filesystem_store(
         context,
         service,

@@ -54,8 +54,8 @@ The Harness UI release-owned Model integration selected by the route declares wh
 | --------------------------------------------------------------------------------------------------- | ---------------------------- |
 | Codex model credentials, source protocol, refresh, single-flight, 401 replay, and Responses dialect | Pydantic AI                  |
 | Codex browser PKCE and callback handling                                                            | Pydantic AI                  |
-| Codex request affinity, device login, and ID-token-preserving login exchange                        | Harness `model_auth`         |
-| Grok credential/source types, OAuth, refresh, and Model construction                                | Harness `model_auth`         |
+| Codex request affinity, device login, and ID-token-preserving login exchange                        | Harness Model modules        |
+| Grok credential/source types, OAuth, refresh, and Model construction                                | Harness Model modules        |
 | Effective product-store policy/path and schema-preserving writes                                    | Harness UI provider adapter  |
 | Per-provider account binding, confirmed reset identity, and local account surfaces                  | Harness UI                   |
 | Durable managed storage and distributed coordination                                                | a13n Service or another Host |
@@ -85,7 +85,7 @@ The Host rereads a referenced key when constructing a Model for a Run. Updating 
 
 For every provider `load()`, the adapter rereads the selected product store and returns one complete credential set. It does not retain a long-lived token snapshot. A missing, malformed, incompatible, or differently scoped store fails explicitly.
 
-For every provider `save()`, the adapter:
+For each Codex save or Grok credential publication, the adapter:
 
 1. requires a matching account and provider scope;
 2. preserves unrelated supported document fields;
@@ -94,7 +94,11 @@ For every provider `save()`, the adapter:
 5. verifies the observed content digest under a Harness UI advisory lock immediately before atomic replacement; and
 6. fails without overwrite when a change is visible at that verification point.
 
-The provider reloads before refresh and adopts a changed same-account credential. Codex follows upstream lazy initial loading, cached access tokens, and install-before-save refresh semantics; a failed save surfaces but does not roll back provider memory. Account binding rejects a different stored or refreshed account when the source is consulted. A provider that encounters an account conflict must be reconstructed before reuse; file changes do not immediately invalidate cached tokens. Harness UI's source adds an optimistic local no-clobber check during `save()` without adding a storage-specific revision API to Harness. The product CLIs do not share an established lock protocol with Harness UI, so this check cannot provide strict compare-and-swap against a non-cooperating writer in the interval between verification and replacement. Strict multi-process coordination requires a Host-controlled store rather than a shared compatibility file.
+The provider reloads before refresh and adopts a changed same-account credential. Codex follows upstream lazy initial loading, cached access tokens, and install-before-save refresh semantics; a failed save surfaces but does not roll back provider memory. Account binding rejects a different stored or refreshed account when the source is consulted. A provider that encounters an account conflict must be reconstructed before reuse; file changes do not immediately invalidate cached tokens. Harness UI's source adds an optimistic local no-clobber check during `save()` without adding a storage-specific revision API to Harness. The product CLIs do not share an established lock protocol with Harness UI, so this check cannot provide strict compare-and-swap against a non-cooperating writer in the interval between verification and replacement. This limitation remains for non-cooperating product CLI writers.
+
+Grok additionally holds a canonical-path, inter-process lock across reread, grant authorization, the entire exchange, and publication. Login publication and logout acquire the same lock. Before exchange it atomically writes and fsyncs a mode-0600 sidecar containing only SHA-256 grant fingerprints grouped by scope. The compatible auth file remains the sole token copy. Lock release after interruption does not restore grant eligibility: uncertain fingerprints survive fresh source instances, Models, Runs, and process restarts. A successful rotation retains the old fingerprint to prevent stale-token rollback; a successful publication that explicitly retains the same grant clears that grant's marker. Only a proven pre-dispatch failure can clear it without publication.
+
+A blocked current grant projects `required_action=login` and cannot supply Model credentials, even if its access-token or expiry metadata changes. A new same-account grant is usable. Login/logout/account replacement preserve unrelated scopes and fields, and external edits visible at the pre-replace digest check fail publication. These guarantees cover cooperating Harness UI processes sharing the canonical store path; no distributed or atomic-CAS guarantee is made for non-cooperating CLI writers. Deleting the coordination sidecar is not a supported recovery action.
 
 ## Reuse, Login, and Logout
 

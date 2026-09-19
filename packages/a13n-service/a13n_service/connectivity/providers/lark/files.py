@@ -5,10 +5,10 @@ from collections.abc import Awaitable, Callable
 from urllib.parse import quote
 
 import httpx2
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.file_content import FileContent, media_type, read_file, safe_filename
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.ids import new_object_id
 
 from .api import read_lark_response
@@ -28,12 +28,12 @@ class LarkFiles:
         try:
             origin = await self.endpoints.validate(self.origin, resolve_dns=True)
         except ValueError as error:
-            raise ConnectivityHttpError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         return origin, {"Authorization": f"Bearer {await self.tokens.token()}"}
 
     async def download(self, *, message_id: str, key: str, kind: str, filename: object) -> FileContent:
         if kind not in {"image", "file"}:
-            raise ConnectivityHttpError("unsupported_attachment_type")
+            raise ProviderHttpError("unsupported_attachment_type")
         name = safe_filename(filename, "image.png" if kind == "image" else "attachment")
         origin, headers = await self._source()
         path = f"/open-apis/im/v1/messages/{quote(message_id, safe='')}/resources/{quote(key, safe='')}"
@@ -66,7 +66,7 @@ class LarkFiles:
         data = result.get("data")
         key = data.get("file_key") if isinstance(data, dict) else None
         if not isinstance(key, str) or not 0 < len(key) <= 256:
-            raise ConnectivityHttpError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         payload: JsonObject = {
             "msg_type": "file",
             "content": json.dumps({"file_key": key}),
@@ -89,5 +89,5 @@ class LarkFiles:
         data = result.get("data")
         sent = data.get("message_id") if isinstance(data, dict) else None
         if not isinstance(sent, str) or not sent:
-            raise ConnectivityHttpError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         return sent

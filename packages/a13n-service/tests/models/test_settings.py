@@ -1,11 +1,11 @@
 import pytest
-from a13n_service.models.model_apis import BUILT_IN_MODEL_APIS
+from a13n_harness.providers.model.apis import MODEL_APIS
 from a13n_service.models.service_common import ModelError
 from a13n_service.models.settings import effective_settings, settings_schema, validate_settings
 from jsonschema import Draft202012Validator
 
 
-@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+@pytest.mark.parametrize("api", MODEL_APIS)
 def test_every_binding_has_a_self_contained_native_settings_contract(api: str) -> None:
     schema = settings_schema(api)
     Draft202012Validator.check_schema(schema)
@@ -75,13 +75,13 @@ def test_top_level_merge_replaces_routing_and_retains_other_defaults() -> None:
     assert validate_settings("openrouter.chat_completions", {"extra_body": {"new_parameter": {"value": 1}}})
 
 
-@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+@pytest.mark.parametrize("api", MODEL_APIS)
 @pytest.mark.parametrize("thinking", [True, False, "minimal", "low", "medium", "high", "xhigh"])
 def test_unified_thinking_is_available_on_every_api(api, thinking):
     assert validate_settings(api, {"thinking": thinking}) == {"thinking": thinking}
 
 
-@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+@pytest.mark.parametrize("api", MODEL_APIS)
 @pytest.mark.parametrize(
     "alias",
     [
@@ -98,7 +98,7 @@ def test_native_thinking_aliases_are_not_public_settings(api, alias):
         validate_settings(api, {alias: "high"})
 
 
-@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+@pytest.mark.parametrize("api", MODEL_APIS)
 def test_thinking_uses_ordinary_model_agent_run_precedence(api):
     assert effective_settings(
         api,
@@ -116,7 +116,7 @@ def test_thinking_uses_ordinary_model_agent_run_precedence(api):
     ("api", "field", "path"),
     [
         (api, "extra_body", path)
-        for api in BUILT_IN_MODEL_APIS
+        for api in MODEL_APIS
         for path in (
             ["reasoning"]
             if api.endswith("responses")
@@ -139,7 +139,7 @@ def test_native_thinking_body_overrides_are_rejected(api, field, path, value):
     assert invalid.value.details["reason"] == "reserved_request_field"
 
 
-@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+@pytest.mark.parametrize("api", MODEL_APIS)
 def test_missing_source_documentation_does_not_disable_parameter_validation(monkeypatch, api):
     import inspect
 

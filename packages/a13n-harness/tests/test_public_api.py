@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-import a13n_environment as environment_provider
 import a13n_harness as harness
 import a13n_harness.capabilities as capabilities
 import a13n_harness.capability_types as capability_types
 import a13n_harness.environment as environment
 import a13n_harness.environment.advanced as advanced_environment
 import a13n_harness.filters as filters
-import a13n_harness.model_auth as model_auth
 import a13n_harness.models as models
 import a13n_harness.pricing as pricing
+import a13n_harness.providers as providers
+import a13n_harness.providers.environment as environment_provider
+import a13n_harness.providers.model.oauth as model_auth
 import a13n_harness.tools as tools
 import a13n_harness.toolsets as toolsets
 
@@ -234,13 +235,15 @@ def test_model_auth_feature_facade_is_public_without_root_reexports() -> None:
         "CodexDeviceAuthorization",
         "CodexDeviceAuthorizationFlow",
         "DeviceAuthorizationError",
-        "CodexRequestModel",
         "CodexLoginFlow",
         "CodexLoginResult",
         "CredentialPersistenceError",
         "CredentialRefreshError",
+        "RefreshNotDispatched",
+        "ProcessGrokCredentialSource",
         "GrokCredentialSource",
         "GrokCredentials",
+        "GrokRefresh",
         "GrokDeviceAuthorization",
         "GrokDeviceAuthorizationFlow",
         "GrokOAuthFlow",
@@ -314,24 +317,33 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     assert environment.EnvironmentRunExtensionContext.__annotations__["environment"] == "Environment"
     assert removed_harness_provider_symbols.isdisjoint(environment.__all__)
     assert removed_harness_provider_symbols.isdisjoint(harness.__all__)
+    # The Provider domain package exports authoring contracts only; vendor definitions,
+    # their schemas and the built-in catalog stay in their own owning modules.
+    assert set(environment_provider.__all__) == {"Environment", "EnvironmentProviderDefinition"}
+    assert set(providers.__all__) == {
+        "Authentication",
+        "AuthenticationCase",
+        "ConnectorProviderDefinition",
+        "ConnectorSetupPolicy",
+        "CredentialMode",
+        "EnvironmentProviderDefinition",
+        "MemoryProviderDefinition",
+        "ModelProviderDefinition",
+        "ProviderCatalog",
+        "ProviderDefinition",
+        "ProviderManifest",
+        "ProviderNotSelected",
+        "WebProviderDefinition",
+    }
+    assert all(hasattr(providers, name) for name in providers.__all__)
     assert {
-        "DirectLocalProviderConfiguration",
-        "DirectLocalRootConfiguration",
-        "DirectLocalShellProfile",
-        "Environment",
-        "EnvironmentProvider",
-        "EnvironmentProviderCatalog",
-        "EnvironmentProviderReference",
-        "EnvironmentProviderRegistration",
-        "EnvironmentProviderSpec",
-        "EnvironmentState",
-        "build_environment_provider_catalog",
-        "discover_environment_provider_references",
-    } <= set(environment_provider.__all__)
-    assert {
+        "BUILT_IN_ENVIRONMENT_PROVIDERS",
+        "DirectLocalEnvironmentConfiguration",
         "EnvironmentProviderFactory",
         "EnvironmentProviderFactoryCatalog",
         "EnvironmentResource",
+        "build_environment_provider_catalog",
+        "discover_environment_provider_references",
     }.isdisjoint(environment_provider.__all__)
     assert expected_tools <= set(tools.__all__)
     assert "InvocationAuthorizationCapability" not in tools.__all__
@@ -340,8 +352,9 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
 
 def test_memory_has_one_public_capability_and_independent_backend_contract():
     from a13n_harness.capabilities.memory import MemoryCapability
-    from a13n_harness.memory import MemoryBackend, MemoryScope
-    from a13n_harness.memory_plugins import MemoryBackendCatalog, MemoryBackendPlugin
+    from a13n_harness.providers.catalog import ProviderCatalog
+    from a13n_harness.providers.memory import MemoryProviderDefinition
+    from a13n_harness.providers.memory.contracts import MemoryBackend, MemoryScope
 
     assert capabilities.MemoryCapability is MemoryCapability
     assert capabilities.MemoryScope is MemoryScope
@@ -349,5 +362,5 @@ def test_memory_has_one_public_capability_and_independent_backend_contract():
     assert not hasattr(capabilities, "Mem0Capability")
     assert not hasattr(capabilities, "MemoryRunCapability")
     assert MemoryBackend.__abstractmethods__ == {"search", "list", "add", "get", "update", "delete"}
-    assert MemoryBackendPlugin is not harness.AbstractHarnessPlugin
-    assert MemoryBackendCatalog() == {}
+    assert MemoryProviderDefinition is not harness.AbstractHarnessPlugin
+    assert ProviderCatalog() == {}

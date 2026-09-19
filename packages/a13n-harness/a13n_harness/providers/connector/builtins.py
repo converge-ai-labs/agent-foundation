@@ -1,0 +1,32 @@
+"""Inert native Connector definitions."""
+
+from contextlib import asynccontextmanager
+
+from .composio.configuration import ComposioConfiguration, validate_setup
+from .configuration import ApiKeyCredentials
+from .definition import ConnectorProviderDefinition, ConnectorSetupPolicy
+from .http import ConnectorHttpClient
+
+
+@asynccontextmanager
+async def _open(configuration: ComposioConfiguration, credential: ApiKeyCredentials | None, http: ConnectorHttpClient):
+    from .composio.runtime import ComposioProvider
+
+    if credential is None:
+        raise ValueError("Composio requires an API key credential")
+    yield ComposioProvider(http, credential)
+
+
+COMPOSIO = ConnectorProviderDefinition(
+    type="composio",
+    display_name="Composio",
+    configuration_model=ComposioConfiguration,
+    credential_model=ApiKeyCredentials,
+    setup_validator=validate_setup,
+    open_provider=_open,
+    setup_url="https://platform.composio.dev/",
+    setup_label="Composio dashboard",
+    # Composio completes setup in the user's browser and issues short-lived setup URLs.
+    setup_policy=ConnectorSetupPolicy(requires_browser_binding=True, max_setup_ttl_seconds=600),
+)
+BUILT_IN_CONNECTOR_PROVIDERS = (COMPOSIO,)

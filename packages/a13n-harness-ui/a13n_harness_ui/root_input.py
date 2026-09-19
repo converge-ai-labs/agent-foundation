@@ -4,9 +4,9 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from typing import Literal
 
-from a13n_harness.environment.models import EnvironmentAction
 from a13n_harness.environment.providers import BoundEnvironment
 from a13n_harness.input import RunInputValue, normalize_input
+from a13n_harness.providers.environment.models import EnvironmentAction
 from pydantic_ai.messages import TextContent, UserContent
 
 from a13n_harness_ui.configuration.models import InputConfiguration

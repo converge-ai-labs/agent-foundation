@@ -7,18 +7,13 @@ import hashlib
 import hmac
 import logging
 import re
-from contextlib import aclosing
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
 
-from anyio import fail_after, move_on_after
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
-from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.browser_urls import is_secure_or_loopback_url
-from a13n_service.connectivity.connectors.contracts import (
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
+from a13n_harness.providers.connector.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
     ConnectionInspection,
@@ -27,7 +22,12 @@ from a13n_service.connectivity.connectors.contracts import (
     SetupContext,
     SetupStarted,
 )
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from anyio import fail_after, move_on_after
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.browser_urls import is_secure_or_loopback_url
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.domain import PrincipalRef
@@ -51,11 +51,12 @@ from .errors import ConnectorError
 from .management import (
     ProviderSnapshot,
     audit,
-    configure_provider,
     decode_credentials,
+    open_provider,
     require_active_provider,
     require_connection,
     require_connector_provider,
+    require_implementation,
 )
 from .models import ConnectorAuthorizationRecord, ConnectorConnectionRecord, ConnectorProviderRecord
 from .shared_setup import reserve_shared_setup
@@ -91,14 +92,15 @@ class AttemptSnapshot:
     credential_generation: int
     attempt: SetupSnapshot
     connector: ProviderSnapshot
-    credentials: JsonObject
+    credentials: JsonObject | None
 
 
 class ConnectorSetupCoordinator:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviderRegistry,
+        connectors: ProviderCatalog[ConnectorProviderDefinition],
+        connector_http: ConnectorHttpClient | None,
         protector: SecretProtector,
         *,
         correlation_secret: bytes | None,
@@ -110,7 +112,8 @@ class ConnectorSetupCoordinator:
         if correlation_secret is not None and len(correlation_secret) < 32:
             raise ValueError("ConnectorProvider setup correlation secret must be at least 32 bytes")
         self._sessions = sessions
-        self._adapters = adapters
+        self._connectors = connectors
+        self._connector_http = connector_http
         self._protector = protector
         self._correlation_secret = correlation_secret
         self._public_origin = public_origin.rstrip("/") if public_origin is not None else None
@@ -133,8 +136,9 @@ class ConnectorSetupCoordinator:
         direct_credentials: bool = False,
     ) -> ConnectorAuthorizationRecord:
         binding = browser_digest(browser_nonce)
+        policy = require_implementation(self._connectors, connector.type).setup_policy
         if (
-            connector.type == "composio"
+            policy.requires_browser_binding
             and not direct_credentials
             and (
                 (binding is None and handoff is None)
@@ -144,7 +148,7 @@ class ConnectorSetupCoordinator:
         ):
             raise ConnectorError(
                 "browser_setup_required",
-                "Composio setup requires browser binding and an HTTPS or exact loopback HTTP origin.",
+                "This Connector setup requires browser binding and an HTTPS or exact loopback HTTP origin.",
                 category=ErrorCategory.invalid_request,
             )
         correlation = self.correlation(connector, workspace_id=connection.workspace_id)
@@ -167,10 +171,7 @@ class ConnectorSetupCoordinator:
             completion_method=SetupCompletionMethod.polling,
             status="starting",
             available_at=now,
-            expires_at=now
-            + timedelta(
-                seconds=min(self._setup_ttl_seconds, 600) if connector.type == "composio" else self._setup_ttl_seconds
-            ),
+            expires_at=now + timedelta(seconds=policy.setup_ttl_seconds(self._setup_ttl_seconds)),
             reserved_at=None,
             consumed_at=None,
             attempt_count=0,
@@ -363,8 +364,9 @@ class ConnectorSetupCoordinator:
             interrupted = False
         try:
             snapshot = await self.attempt_snapshot(attempt_id, claim_owner=owner, claim_generation=generation)
-            runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
-            async with aclosing(runtime):
+            async with open_provider(
+                self._connectors, self._connector_http, snapshot.connector, snapshot.credentials
+            ) as runtime:
                 if interrupted and not runtime.setup_replay_safe:
                     await self.fail_attempt(
                         attempt_id, code="setup_outcome_unknown", claim_owner=owner, claim_generation=generation
@@ -578,7 +580,7 @@ class ConnectorSetupCoordinator:
                 dict(attempt.setup_json),
             )
         try:
-            raw = credential.decrypt(self._protector)
+            raw = credential.decrypt(self._protector) if credential.ciphertext is not None else None
         except SecretProtectionError as error:
             raise ConnectorError(
                 "credential_unavailable",
@@ -690,8 +692,9 @@ class ConnectorSetupCoordinator:
         if snapshot.attempt.external_ref is None:
             raise ConnectorProviderError("setup_incomplete")
         require_active_provider(snapshot.connector)
-        runtime = configure_provider(self._adapters, snapshot.connector, snapshot.credentials)
-        async with aclosing(runtime):
+        async with open_provider(
+            self._connectors, self._connector_http, snapshot.connector, snapshot.credentials
+        ) as runtime:
             if snapshot.attempt.completion_method == SetupCompletionMethod.browser_confirmation:
                 inspection = await runtime.inspect_setup(
                     setup_ref=snapshot.attempt.external_ref, context=_setup_context(snapshot.attempt, callback_url=None)
@@ -735,8 +738,6 @@ def _fail_setup(
 
 def _setup_context(attempt: SetupSnapshot, *, callback_url: str | None) -> SetupContext:
     return SetupContext(
-        attempt_id=attempt.id,
-        generation=attempt.generation,
         connector_key=attempt.connector_key,
         external_user_correlation=attempt.external_user_correlation,
         callback_url=callback_url,

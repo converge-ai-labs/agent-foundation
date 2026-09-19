@@ -52,7 +52,7 @@ def install(faults):
     async def publish(self, files, destination, content):
         ticket = await faults.take("skill.environment_stale", filename=destination.rsplit("/", 1)[-1])
         if ticket is not None:
-            from a13n_harness.environment.models import EnvironmentError
+            from a13n_harness.providers.environment.models import EnvironmentError
 
             await ticket.apply()
             raise EnvironmentError("Injected stale test Environment mount", code="environment_stale_mount")

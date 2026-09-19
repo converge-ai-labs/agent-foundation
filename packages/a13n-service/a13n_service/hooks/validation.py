@@ -5,9 +5,8 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import Protocol
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from anyio import fail_after
-
-from a13n_service.endpoint_policy import EndpointPolicyError
 
 
 class EndpointValidator(Protocol):

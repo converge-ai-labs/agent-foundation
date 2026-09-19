@@ -1,5 +1,6 @@
 import pytest
-from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory.builtins import MEM0_OSS
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import AgentConfig, AgentRunOverride, CreateAgentRequest
 from a13n_service.agents.errors import AgentError
@@ -11,7 +12,7 @@ from a13n_service.memory.domain import CreateMemoryProviderRequest, MemorySelect
 from a13n_service.memory.providers import MemoryProviderService
 from a13n_service.memory.resources import MemoryProviderError
 from a13n_service.memory.runtime import graph_uses_memory
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.storage import transaction
 
@@ -25,21 +26,21 @@ MEMORY_PROVIDER_ID = "memprov_1234567890abcdef"
 
 @pytest.fixture
 async def memory_agents(agent_sessions):
-    catalog = MemoryBackendCatalog((Mem0OSSBackendPlugin(),))
+    catalog = ProviderCatalog((MEM0_OSS,))
     providers = MemoryProviderService(agent_sessions, protector(), catalog)
     provider = await providers.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         request=CreateMemoryProviderRequest(
-            type="a13n.mem0-oss",
+            type="mem0_oss",
             name="Memory",
             configuration={"base_url": "http://unused.invalid"},
             credential={"api_key": "test-key"},
         ),
     )
-    models = AcceptedModelSelector(agent_sessions, built_in_provider_registry())
-    resolver = AgentResolver(agent_sessions, models, memory_backend_catalog=catalog)
-    invocations = AgentInvocationResolver(agent_sessions, models, memory_backend_catalog=catalog)
+    models = AcceptedModelSelector(agent_sessions, built_in_model_provider_catalog())
+    resolver = AgentResolver(agent_sessions, models, memory_provider_catalog=catalog)
+    invocations = AgentInvocationResolver(agent_sessions, models, memory_provider_catalog=catalog)
     management = AgentManagement(agent_sessions, resolver, invocations, models)
     return management, invocations, providers, provider
 

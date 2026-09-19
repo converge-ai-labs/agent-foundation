@@ -2,6 +2,7 @@
 
 from a13n_harness.capabilities.web import WebProviderError as HarnessWebProviderError
 from a13n_harness.capabilities.web import WebScrapeRequest, WebSearchRequest
+from a13n_harness.providers.web.transport import WebProviderTransport
 from anyio import fail_after
 
 from a13n_service.application_errors import ErrorCategory
@@ -10,10 +11,8 @@ from a13n_service.iam import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.storage import transaction
 
-from .adapters import WebProviderTransport
 from .domain import ScrapeSelection, SearchSelection, WebProviderTestResult
-from .execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
-from .registry import built_in_web_provider_registry
+from .execution import WebDispatcher, WebProviderSnapshot
 from .resources import WebProviderError, require_eligible, require_provider
 from .service import WebProviderService
 
@@ -47,7 +46,7 @@ async def test_account(
                     "Web Provider changed during the test.",
                     category=ErrorCategory.conflict,
                 )
-            require_eligible(record, service.registry)
+            require_eligible(record, service.catalog)
             expected_etag = current
             return WebProviderSnapshot(record.id, record.type, record.configuration, record.credential_snapshot())
 
@@ -64,27 +63,28 @@ async def test_account(
     async def reauthorize() -> None:
         await acquire()
 
-    registration = service.registry.require(initial.provider_type)
-    registry = service.registry if transport is None else built_in_web_provider_registry(transport=transport)
+    definition = service.catalog.require(initial.provider_type)
     code: str | None = None
     try:
-        if registration.supports_search:
-            search = AuthorizedSearch(
+        if definition.supports_search:
+            search = WebDispatcher(
                 selection=SearchSelection(provider_id=provider_id, max_results=1),
                 acquire=acquire_for_dispatch,
                 reauthorize=reauthorize,
                 protector=service.protector,
-                registry=registry,
+                catalog=service.catalog,
+                transport=transport or service.provider_transport,
                 max_dispatches=1,
             )
             await search.search(WebSearchRequest(query="Agent Foundation", limit=1))
         else:
-            scrape = AuthorizedScrape(
+            scrape = WebDispatcher(
                 selection=ScrapeSelection(provider_id=provider_id, max_content_bytes=1024),
                 acquire=acquire_for_dispatch,
                 reauthorize=reauthorize,
                 protector=service.protector,
-                registry=registry,
+                catalog=service.catalog,
+                transport=transport or service.provider_transport,
                 max_dispatches=1,
             )
             await scrape.scrape(

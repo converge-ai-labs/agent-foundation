@@ -8,6 +8,8 @@ from typing import Any, Literal, cast
 from urllib.parse import urljoin, urlsplit, urlunsplit
 
 import httpx2
+from a13n_harness.http import ProviderHttpError
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from authlib.integrations.base_client.errors import OAuthError
 from authlib.integrations.httpx_client import AsyncOAuth2Client
 from authlib.oauth2 import OAuth2Client
@@ -31,12 +33,7 @@ from mcp.shared.auth import (
 from pydantic import AnyHttpUrl, ValidationError
 
 from a13n_service.connectivity.bounds import MAX_REDIRECTS
-from a13n_service.connectivity.http import (
-    BoundedHttpResponse,
-    ConnectivityHttpError,
-    cookie_free_bounded_request,
-)
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_service.connectivity.http import BoundedHttpResponse, cookie_free_bounded_request
 
 from .domain import MCP_PROTOCOL_REVISION, MCPOAuthClientInput, OAuthGrantType, OAuthTokenAuthMethod
 from .oauth_http import OAuthTransport
@@ -317,7 +314,7 @@ class MCPOAuthClient:
                     code_verifier=verifier,
                     resource=preparation.resource_url,
                 )
-        except (OAuthError, ConnectivityHttpError, EndpointPolicyError, ValueError, TypeError) as error:
+        except (OAuthError, ProviderHttpError, EndpointPolicyError, ValueError, TypeError) as error:
             raise _token_error(error) from error
         return _credential_bundle(preparation, token)
 
@@ -339,7 +336,7 @@ class MCPOAuthClient:
                     refresh_token=refresh_token,
                     resource=client.resource_url,
                 )
-        except (OAuthError, ConnectivityHttpError, EndpointPolicyError, ValueError, TypeError) as error:
+        except (OAuthError, ProviderHttpError, EndpointPolicyError, ValueError, TypeError) as error:
             raise _token_error(error) from error
         _validate_token(token)
         merged = dict(bundle)
@@ -359,7 +356,7 @@ class MCPOAuthClient:
                     resource=client.resource_url,
                     scope=client.scope,
                 )
-        except (OAuthError, ConnectivityHttpError, EndpointPolicyError, ValueError, TypeError) as error:
+        except (OAuthError, ProviderHttpError, EndpointPolicyError, ValueError, TypeError) as error:
             raise _token_error(error) from error
         _validate_token(token)
         return {
@@ -573,7 +570,7 @@ class MCPOAuthClient:
                     json_body=json,
                     content=content,
                 )
-            except ConnectivityHttpError as error:
+            except ProviderHttpError as error:
                 raise MCPOAuthError(error.code) from error
             if response.status_code not in {301, 302, 303, 307, 308}:
                 return response
@@ -622,7 +619,7 @@ def authorization_url(
 
 
 def _token_error(error: Exception) -> MCPOAuthError:
-    if isinstance(error, ConnectivityHttpError):
+    if isinstance(error, ProviderHttpError):
         if error.code == "token_authorization_rejected":
             return MCPOAuthError("reauthorization_required", action_required=True)
         return MCPOAuthError(error.code)

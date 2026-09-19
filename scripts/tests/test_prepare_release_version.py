@@ -14,7 +14,6 @@ CHECKER = REPOSITORY_ROOT / "scripts" / "check-release-version.py"
 RELEASE_FILES = (
     Path("pyproject.toml"),
     Path("uv.lock"),
-    Path("packages/a13n-environment/pyproject.toml"),
     Path("packages/a13n-harness/pyproject.toml"),
     Path("packages/a13n-stream-protocol/pyproject.toml"),
     Path("packages/a13n-harness-ui/pyproject.toml"),
@@ -38,12 +37,12 @@ def select_harness_ui_range(root: Path, constraint: str = ">=3.2.1,<4.0.0") -> N
     path = root / "packages/a13n-harness-ui/pyproject.toml"
     content = path.read_text(encoding="utf-8")
     content, replacements = re.subn(
-        r'^(a13n-(?:environment|harness|stream-protocol)) = "[^"]*"$',
+        r'^(a13n-(?:harness|stream-protocol)) = "[^"]*"$',
         rf'\1 = "{constraint}"',
         content,
         flags=re.MULTILINE,
     )
-    assert replacements == 3
+    assert replacements == 2
     path.write_text(content, encoding="utf-8")
 
 
@@ -73,7 +72,6 @@ def run_script(
             "a13n-harness",
             {
                 Path("uv.lock"),
-                Path("packages/a13n-environment/pyproject.toml"),
                 Path("packages/a13n-harness/pyproject.toml"),
                 Path("packages/a13n-stream-protocol/pyproject.toml"),
             },
@@ -155,12 +153,9 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     harness_manifest = (tmp_path / "packages/a13n-harness/pyproject.toml").read_text()
     protocol_manifest = (tmp_path / "packages/a13n-stream-protocol/pyproject.toml").read_text()
     ui_manifest = (tmp_path / "packages/a13n-harness-ui/pyproject.toml").read_text()
-    assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-environment/pyproject.toml").read_text()
     assert 'version = "9.8.7rc2"' in harness_manifest
-    assert '"a13n-environment==9.8.7rc2"' in harness_manifest
     assert '"a13n-harness==9.8.7rc2"' in protocol_manifest
     assert 'version = "9.8.7rc2"' in ui_manifest
-    assert '"a13n-environment>=3.2.1rc4,<4.0.0"' in ui_manifest
     assert '"a13n-harness>=3.2.1rc4,<4.0.0"' in ui_manifest
     assert '"a13n-stream-protocol>=3.2.1rc4,<4.0.0"' in ui_manifest
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-logging/pyproject.toml").read_text()
@@ -284,26 +279,6 @@ def test_harness_ui_release_requires_valid_range_without_writing(tmp_path: Path,
     assert snapshot(tmp_path) == before
 
 
-def test_checker_rejects_provider_dependency_drift(tmp_path: Path) -> None:
-    copy_release_files(tmp_path)
-    prepare_result = run_script(PREPARER, tmp_path, "a13n-harness", "9.8.7")
-    assert prepare_result.returncode == 0, prepare_result.stderr
-
-    manifest = tmp_path / "packages/a13n-harness/pyproject.toml"
-    manifest.write_text(
-        manifest.read_text(encoding="utf-8").replace(
-            '"a13n-environment==9.8.7"',
-            '"a13n-environment>=9.8.7"',
-        ),
-        encoding="utf-8",
-    )
-
-    result = run_script(CHECKER, tmp_path, "a13n-harness", "9.8.7")
-
-    assert result.returncode != 0
-    assert "dependency a13n-environment==9.8.7" in result.stderr
-
-
 def test_checker_rejects_harness_dependency_drift(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
     prepare_result = run_script(PREPARER, tmp_path, "a13n-harness", "9.8.7")
@@ -405,7 +380,7 @@ def test_mismatched_ui_ranges_are_blocked_without_writes(tmp_path: Path) -> None
 @pytest.mark.parametrize(
     ("component", "manifest", "dependency", "constraint"),
     [
-        ("a13n-harness", "a13n-environment", "a13n-envd-client", ">=0.0.6,<0.1.0"),
+        ("a13n-harness", "a13n-harness", "a13n-envd-client", ">=0.0.6,<0.1.0"),
         ("a13n-harness", "a13n-harness", "a13n-logging", ">=0.1.0,<0.2.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-logging", ">=0.1.0,<0.2.0"),
         ("a13n-harness-ui", "a13n-harness-ui", "a13n-envd-client", ">=0.0.6,<0.1.0"),
@@ -431,7 +406,7 @@ def test_independent_dependency_ranges_are_injected_and_checked(
 )
 def test_invalid_independent_dependency_policy_is_atomic(tmp_path: Path, constraint: str) -> None:
     copy_release_files(tmp_path)
-    path = tmp_path / "packages/a13n-environment/pyproject.toml"
+    path = tmp_path / "packages/a13n-harness/pyproject.toml"
     path.write_text(path.read_text().replace(">=0.0.6,<0.1.0", constraint))
     before = snapshot(tmp_path)
     result = run_script(PREPARER, tmp_path, "a13n-harness", "9.8.7")

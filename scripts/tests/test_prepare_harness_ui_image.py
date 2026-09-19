@@ -45,7 +45,7 @@ def test_source_context_builds_only_ui_and_its_workspace_dependency_closure(tmp_
     prepare(target)
     assert tuple(built) == PACKAGES
     assert "a13n-service" not in built
-    assert len(list(target.glob("*.whl"))) == 6
+    assert len(list(target.glob("*.whl"))) == 5
 
 
 def test_missing_or_ambiguous_release_wheel_keeps_previous_context(tmp_path) -> None:

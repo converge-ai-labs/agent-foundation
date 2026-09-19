@@ -118,7 +118,6 @@ from a13n_harness.environment.dynamic import (
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
     DynamicEnvironmentCapability,
 )
-from a13n_harness.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime
 from a13n_harness.environment.sources import EnvironmentEntry, normalize_environment_inputs
 from a13n_harness.errors import (
@@ -204,6 +203,7 @@ from a13n_harness.pricing import (
     PricingCatalog,
     get_current_pricing_catalog,
 )
+from a13n_harness.providers.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
     ModelRecoveryPolicy,

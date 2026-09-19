@@ -1643,7 +1643,21 @@ List Connector Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: ConnectorProviderDefinitionCollection`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_ConnectorProviderMetadata_`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/connector-provider-types/{provider_type}`
+
+Get Connector Provider Type.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_type` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConnectorProviderMetadata`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/connector-providers/{connector_provider_id}`
@@ -1955,7 +1969,7 @@ Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_EnvironmentProviderDefinition_`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_EnvironmentProviderMetadata_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-provider-types/{provider_type}`
@@ -1968,7 +1982,7 @@ Get Provider Type.
 
 Responses:
 
-- **200** — Successful Response (`application/json: EnvironmentProviderDefinition`).
+- **200** — Successful Response (`application/json: EnvironmentProviderMetadata`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -1987,7 +2001,7 @@ Request body: required.
 
 Responses:
 
-- **200** — Successful Response (`application/json: EnvironmentProvider`).
+- **200** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2020,7 +2034,7 @@ Request body: required.
 
 Responses:
 
-- **200** — Successful Response (`application/json: EnvironmentProvider`).
+- **200** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2071,7 +2085,7 @@ Get Provider.
 
 Responses:
 
-- **200** — Successful Response (`application/json: EnvironmentProvider`).
+- **200** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2372,7 +2386,7 @@ Organization List Providers.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_EnvironmentProvider_`).
+- **200** — Successful Response (`application/json: Collection_EnvironmentProviderAccount_`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2390,7 +2404,7 @@ Request body: required.
 
 Responses:
 
-- **201** — Successful Response (`application/json: EnvironmentProvider`).
+- **201** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2477,7 +2491,7 @@ List Providers.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_EnvironmentProvider_`).
+- **200** — Successful Response (`application/json: Collection_EnvironmentProviderAccount_`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2495,7 +2509,7 @@ Request body: required.
 
 Responses:
 
-- **201** — Successful Response (`application/json: EnvironmentProvider`).
+- **201** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -4044,7 +4058,7 @@ List Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: MemoryProviderDefinitionCollection`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_MemoryProviderMetadata_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/memory-provider-types/{provider_type}`
@@ -4057,7 +4071,7 @@ Get Type.
 
 Responses:
 
-- **200** — Successful Response (`application/json: MemoryProviderDefinition`).
+- **200** — Successful Response (`application/json: MemoryProviderMetadata`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -4245,7 +4259,21 @@ List Model Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: ModelProviderDefinitionCollection`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_ModelProviderMetadata_`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/model-provider-types/{provider_type}`
+
+Get Model Provider Type.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_type` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ModelProviderMetadata`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/model-catalog`
@@ -5683,7 +5711,7 @@ List Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: WebProviderDefinitionCollection`).
+- **200** — Successful Response (`application/json: ProviderMetadataCollection_WebProviderMetadata_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/web-provider-types/{provider_type}`
@@ -5696,7 +5724,7 @@ Get Type.
 
 Responses:
 
-- **200** — Successful Response (`application/json: WebProviderDefinition`).
+- **200** — Successful Response (`application/json: WebProviderMetadata`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

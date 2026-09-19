@@ -6,7 +6,7 @@ import asyncio
 from typing import TYPE_CHECKING
 from zoneinfo import ZoneInfo
 
-from a13n_harness.memory import MemoryDocumentBackend, MemoryRecordNotFound
+from a13n_harness.providers.memory.contracts import MemoryDocumentBackend, MemoryRecordNotFound
 from pydantic import JsonValue
 from sqlalchemy import select, update
 

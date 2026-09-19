@@ -92,7 +92,7 @@ async def _run(tool, policy: InvocationPolicyCapability):
 
 
 async def test_failed_resolver_logs_suppressed_root_without_leaking_tool_content(caplog):
-    from a13n_environment.e2b.errors import sdk_errors
+    from a13n_harness.providers.environment.e2b.errors import sdk_errors
 
     async def resolve(arguments, *, context):
         with sdk_errors():
@@ -112,7 +112,7 @@ async def test_failed_resolver_logs_suppressed_root_without_leaking_tool_content
     record = next(record for record in caplog.records if record.msg == "managed_tool_resource_resolution_failed")
     assert record.run_id and record.tool_call_id == "call-1" and record.tool_name == "read"
     assert [item["type"] for item in record.exception_chain] == [
-        "a13n_environment.errors.EnvironmentProviderError",
+        "a13n_harness.providers.environment.errors.EnvironmentProviderError",
         "builtins.RuntimeError",
         "builtins.ConnectionError",
     ]

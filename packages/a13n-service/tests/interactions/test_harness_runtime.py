@@ -7,18 +7,6 @@ from datetime import timedelta
 from pathlib import Path
 
 import pytest
-from a13n_environment import (
-    FILE_READ_ACTIONS,
-    DirectLocalEnvironment,
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-    Environment,
-    EnvironmentAction,
-    EnvironmentError,
-    EnvironmentPermissionSet,
-    EnvironmentReadinessRequirement,
-)
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -39,8 +27,24 @@ from a13n_harness.model_context import (
     ModelContextProjection,
     ModelContextProjectionRequest,
 )
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import (
+    FILE_READ_ACTIONS,
+    EnvironmentAction,
+    EnvironmentError,
+    EnvironmentPermissionSet,
+    EnvironmentReadinessRequirement,
+)
 from a13n_service.interactions.attempts import AttemptMutationReceipt, AttemptPreparationAccepted
-from a13n_service.interactions.environment_observation import EnvironmentHookObservation
+from a13n_service.interactions.environment_observation import (
+    EnvironmentHookObservation,
+    observe_environment_entry,
+)
 from a13n_service.interactions.harness_control import HarnessContextBinding, HarnessHookBoundary, HarnessRunIdentity
 from a13n_service.interactions.harness_runtime import (
     HarnessCollaborators,
@@ -218,14 +222,15 @@ def _driver(
 
 def _environment(root: Path, environment_id: str) -> DirectLocalEnvironment:
     root.mkdir(parents=True)
-    provider = DirectLocalEnvironmentProvider()
-    configuration = provider.validate_configuration(
-        schema_version="1",
-        value=DirectLocalProviderConfiguration(
+    provider = DIRECT_LOCAL
+    configuration = provider.validate_environment(
+        DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         ).model_dump(mode="json"),
     )
-    environment = provider.create_environment(configuration=configuration, environment_id=environment_id, state=None)
+    environment = provider.construct(
+        configuration=configuration, environment_id=environment_id, state=None, runtime=None
+    )
     assert isinstance(environment, DirectLocalEnvironment)
     return environment
 
@@ -285,11 +290,15 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
                     session_id="session-1",
                 ),
             ),
+            # A mounted aggregate owns its runtime, so observation is declared on the
+            # entry before the aggregate is built, exactly as the Worker preparation does.
             environment=MountedHarnessEnvironments(
                 entries={
-                    "source": EnvironmentMount(
-                        environment,
-                        permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
+                    "source": observe_environment_entry(
+                        EnvironmentMount(
+                            environment, permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS)
+                        ),
+                        projector,
                     )
                 },
                 default_environment="source",

@@ -5,13 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.outbox import redrive_outbox
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import require_aware_utc, utc_now

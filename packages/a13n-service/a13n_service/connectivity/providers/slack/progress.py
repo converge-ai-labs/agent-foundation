@@ -3,10 +3,10 @@
 import json
 
 import httpx2
+from a13n_harness.http import ProviderHttpError
 from pydantic import JsonValue
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import ConnectivityHttpError
 
 from .client import SlackNativeClient
 
@@ -33,7 +33,7 @@ def task_message(
         title, description = "Completed", "The task has completed."
     # Reject excessive content before dispatch; do not silently truncate an explicit answer.
     if sum(map(len, replies)) > 32_000:
-        raise ConnectivityHttpError("invalid_arguments")
+        raise ProviderHttpError("invalid_arguments")
     blocks: list[JsonValue] = [{"type": "header", "text": {"type": "plain_text", "text": title}}]
     for reply in replies:
         if len(blocks) > 1:
@@ -74,7 +74,7 @@ def task_message(
     if actions:
         blocks.append({"type": "actions", "elements": actions})
     if len(blocks) > 48:
-        raise ConnectivityHttpError("invalid_arguments")
+        raise ProviderHttpError("invalid_arguments")
     # Full fallback content is accessible to screen readers, not just the status title.
     fallback = "\n\n".join((title, *replies, description, *((details_url,) if details_url else ())))
     return {"text": fallback, "blocks": blocks}

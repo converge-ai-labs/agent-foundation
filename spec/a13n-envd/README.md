@@ -6,7 +6,7 @@
 
 HTTP, reverse WebSocket and stdio share EIP 0.1 semantics. Device connection lifetime is independent of individual Sessions. The Host supplies security through the account or outer sandbox used to launch the entire daemon; cwd is not filesystem or shell isolation. Periodic and high-water collection reclaim abandoned Sessions and completed history under generous finite resource bounds.
 
-Harness is one consumer through the provider-neutral [Environment integration](../a13n-harness/08-environment-integration.md). The [Environment package](../a13n-environment/README.md) constructs fresh adapters/Sessions while Host runtimes can reuse Device connections. Direct Local, native Docker and E2B do not require envd. The low-level client does not discover, install or launch daemons.
+Harness is one consumer through the provider-neutral [Environment integration](../a13n-harness/08-environment-integration.md). The [Environment Providers](../a13n-harness/08a-environment-providers.md) construct fresh adapters/Sessions while Host runtimes can reuse Device connections. Direct Local, native Docker and E2B do not require envd. The low-level client does not discover, install or launch daemons.
 
 ## Document Catalog
 

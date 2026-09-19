@@ -12,8 +12,8 @@ from pydantic_ai import RunContext
 from pydantic_ai.toolsets import AbstractToolset
 
 from a13n_harness.context import AgentContext
-from a13n_harness.document_memory import DocumentChange, DocumentInput, DocumentKind, MemoryDocumentError
-from a13n_harness.filesystem_memory import FilesystemMemoryStore
+from a13n_harness.providers.memory.documents import DocumentChange, DocumentInput, DocumentKind, MemoryDocumentError
+from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryStore
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
 from a13n_harness.toolsets._instructions import InstructionFunctionToolset
 from a13n_harness.toolsets._results import tool_failure

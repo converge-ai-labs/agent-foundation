@@ -273,7 +273,6 @@ def test_normalizes_compatible_ranges_and_allows_independent_logging_range(
     write(
         path,
         requirements=[
-            f"a13n-environment{dependency_range}",
             f"a13n-harness{upper},{lower}",
             f"a13n-stream-protocol{dependency_range}",
             "a13n-logging<0.3.0,>=0.2.3",

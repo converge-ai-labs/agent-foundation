@@ -320,8 +320,6 @@ With no configured preference, tuple order is the default priority. `backend_pri
 
 One search or scrape call shares a single operation deadline across its ordered backends. A provider error, invalid response, or provider exception advances to the next backend. A timeout, cancellation, Harness `RunError`, policy failure, or post-result authorization failure ends the operation without fallback. A valid empty search result is successful and also stops fallback.
 
-The singular `search_provider=` and `scrape_provider=` run bindings remain convenience forms for one backend named `default`; do not combine them with the corresponding backend tuple.
-
 When `WebCapability()` is constructed without an explicit configuration, these environment variables select its defaults:
 
 | Variable                                   | Values                             | Default       |

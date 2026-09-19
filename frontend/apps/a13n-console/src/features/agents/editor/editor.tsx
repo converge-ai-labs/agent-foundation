@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { ApiError } from "../../../service-client";
 import { ErrorToast } from "../../../shared/feedback";
 import { DetailLayout, SaveBar, Section } from "../../../shared/page";
-import { AgentMemorySelection } from "../../memory/selection";
+import { MemoryPresets } from "../../memory/presets";
 import { ModelIcon } from "../../models/model-icon";
 import { useModelProviderDefinitions } from "../../models/provider-definitions";
 import { useAgentChoices } from "../choices";
@@ -177,7 +177,7 @@ export function AgentEditor({
               "Help the agent understand people and build on past work.",
             )}
           >
-            <AgentMemorySelection
+            <MemoryPresets
               agentId={agentId}
               savedProviderId={
                 initial.memory && "provider_id" in initial.memory

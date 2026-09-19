@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import anyio
 import docker
 import pytest
-from a13n_environment import DockerSDKEngine
+from a13n_harness.providers.environment.docker.runtime import DockerSDKEngine
 from docker.errors import NotFound
 
 from ..infrastructure.round_two_lab import open_lab

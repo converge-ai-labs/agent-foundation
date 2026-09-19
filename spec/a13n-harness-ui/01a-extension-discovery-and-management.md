@@ -86,16 +86,16 @@ Plugin order is the selection order stored by the Agent or Thread. There is no r
 
 ## Environment Provider Discovery and Profile Resources
 
-Environment extension packages use `a13n_environment.providers`, `discover_environment_provider_references()`, and `build_environment_provider_catalog()`. Harness UI consumes these public values directly and does not reimplement entry-point loading.
+Environment extension packages export a `ProviderManifest` under `a13n_harness.providers.plugins`. Harness UI selects them through `load_provider_plugins()` and does not reimplement entry-point loading.
 
 An Environment profile selects one installed Provider and one approved Host adapter configuration. It is not the Provider implementation and is distinct from the runtime `Environment.environment_id`.
 
 Harness UI owns two fixed profiles that require no YAML resource:
 
-| Stable profile ID     | Surface mode     | Provider          | Host adapter                   | Command authority                                                                               |
-| --------------------- | ---------------- | ----------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
-| `environment-native`  | **Full Control** | `direct-local`    | `a13n.native-project-root`     | Direct Host-user execution with ambient Host filesystem and network access                      |
-| `environment-sandbox` | **Sandbox**      | `a13n.local-envd` | `a13n.local-envd-project-root` | EIP execution in a Host-launched outer sandbox with denied networking; no Full Control fallback |
+| Stable profile ID     | Surface mode     | Provider       | Host adapter                   | Command authority                                                                               |
+| --------------------- | ---------------- | -------------- | ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| `environment-native`  | **Full Control** | `direct_local` | `a13n.native-project-root`     | Direct Host-user execution with ambient Host filesystem and network access                      |
+| `environment-sandbox` | **Sandbox**      | `local_envd`   | `a13n.local-envd-project-root` | EIP execution in a Host-launched outer sandbox with denied networking; no Full Control fallback |
 
 These IDs are release-owned and a configured resource cannot redefine them. `environment-native` remains the omission fallback for compatible existing configuration, while surfaces present it as **Full Control** rather than exposing “Native” as the user-facing safety label.
 
@@ -107,7 +107,6 @@ kind: environment_profile
 id: environment-docker
 name: Docker
 provider_key: docker
-provider_schema_version: "1"
 provider_configuration: {}
 adapter_key: a13n.docker-project-roots
 adapter_configuration: {}

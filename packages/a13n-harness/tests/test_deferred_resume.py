@@ -440,8 +440,8 @@ async def test_custom_resource_revision_can_bind_backing_across_run_connections(
 @pytest.mark.parametrize("change", ["connection", "path", "arguments", "deny"])
 async def test_environment_approval_ignores_connection_identity(kind, change):
     from a13n_harness.environment._resources import selection_resource
-    from a13n_harness.environment.models import EnvironmentPath
     from a13n_harness.environment.providers import FileScopeSelection
+    from a13n_harness.providers.environment.models import EnvironmentPath
 
     executed = []
     selection = FileScopeSelection(

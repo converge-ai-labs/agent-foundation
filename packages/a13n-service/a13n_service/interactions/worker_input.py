@@ -8,6 +8,7 @@ from collections.abc import AsyncIterable, AsyncIterator
 import httpx2
 from a13n_harness import AgentContext, RunInputValue
 from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -16,7 +17,6 @@ from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.assets.errors import AssetError
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.queries import require_active_asset
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_workspace_principal_action
 from a13n_service.storage import short_session

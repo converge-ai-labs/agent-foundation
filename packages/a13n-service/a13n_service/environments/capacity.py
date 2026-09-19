@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from a13n_environment import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 

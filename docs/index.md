@@ -9,7 +9,7 @@ Use an AI agent in your terminal, embed one in a Python application, or build th
 | Work on a repository with an AI agent                 | **[Harness UI](a13n-harness-ui/index.md)** — install, connect a model, and start chatting                   |
 | Find or change terminal configuration                 | **[Configuration recipes](a13n-harness-ui/configuration-recipes.md)** — exact files, settings, and examples |
 | Build an agent into a Python application              | **[Harness](a13n-harness/index.md)** — offline quickstart and feature guides                                |
-| Give software portable file and command access        | **[Environment](a13n-environment/index.md)** — independent Python operations and Providers                  |
+| Give software portable file and command access        | **[Environments](environments/index.md)** — Harness Providers usable without an Agent                       |
 | Run Environment operations through a daemon           | **[Envd](a13n-envd/index.md)** — installation, configuration, isolation, and EIP                            |
 | Convert agent observations for a UI or event consumer | **[Stream Protocol](a13n-stream-protocol/index.md)** — typed AG-UI projection                               |
 
@@ -41,16 +41,16 @@ flowchart TB
     Stream --> Consumer["Your renderer or transport"]
 ```
 
-You do not need every component. Environment works without an Agent; Harness works without an Environment; Stream Protocol is optional when you need AG-UI rather than native Harness observations.
+You do not need every component. Environment Providers work without an Agent; Harness works without an Environment; Stream Protocol is optional when you need AG-UI rather than native Harness observations.
 
-| Component       | Python distribution / import                    | Responsibility                                                                   |
-| --------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
-| Harness UI      | `a13n-harness-ui` / `a13n_harness_ui`           | Local configuration, conversations, terminal interaction, and Host lifecycle     |
-| Harness         | `a13n-harness` / `a13n_harness`                 | Agent composition, scoped Runs, continuation, and observation                    |
-| Environment     | `a13n-environment` / `a13n_environment`         | Providers, single-Environment operations, and target state                       |
-| Envd            | Native `a13n-envd` executable                   | Environment Interaction Protocol (EIP), command containment, and file operations |
-| Envd client     | `a13n-envd-client` / `a13n_envd_client`         | Generated low-level Python EIP client                                            |
-| Stream Protocol | `a13n-stream-protocol` / `a13n_stream_protocol` | Harness-to-AG-UI conversion, not transport or rendering                          |
+| Component       | Python distribution / import                          | Responsibility                                                                   |
+| --------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Harness UI      | `a13n-harness-ui` / `a13n_harness_ui`                 | Local configuration, conversations, terminal interaction, and Host lifecycle     |
+| Harness         | `a13n-harness` / `a13n_harness`                       | Agent composition, scoped Runs, continuation, and observation                    |
+| Environment     | `a13n-harness` / `a13n_harness.providers.environment` | Providers, single-Environment operations, and target state                       |
+| Envd            | Native `a13n-envd` executable                         | Environment Interaction Protocol (EIP), command containment, and file operations |
+| Envd client     | `a13n-envd-client` / `a13n_envd_client`               | Generated low-level Python EIP client                                            |
+| Stream Protocol | `a13n-stream-protocol` / `a13n_stream_protocol`       | Harness-to-AG-UI conversion, not transport or rendering                          |
 
 These are component names, not alternative names for the same runtime. In particular, Envd does not run an Agent, and a saved stream snapshot is not Agent continuation state.
 
@@ -66,4 +66,4 @@ For the complete repository package map, including Service clients, logging, pri
 
 The site tracks the repository's `main` branch. Source examples use the locked workspace; published packages should be used with their corresponding release documentation and dependency metadata. The project remains in `0.x` development, so do not assume compatibility across every release.
 
-Harness, Environment, and Stream Protocol share one exact release version. Harness UI and Envd have their own release boundaries. Accepted architecture lives in [specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec); repository setup and validation live in [Contributing](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md).
+Harness and Stream Protocol share one exact release version. Harness UI and Envd have their own release boundaries. Accepted architecture lives in [specifications](https://github.com/converge-ai-labs/agent-foundation/tree/main/spec); repository setup and validation live in [Contributing](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md).

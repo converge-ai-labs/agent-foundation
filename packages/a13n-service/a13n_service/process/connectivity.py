@@ -7,7 +7,11 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
 import httpx2
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorProviderDefinition
+from a13n_harness.providers.connector.http import ConnectorHttpClient
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.memory import MemoryProviderDefinition
 
 from a13n_service.bots.connectivity.setup_tests import SetupObservations
 from a13n_service.bots.memory.lifecycle import invalidate_conversation
@@ -20,9 +24,7 @@ from a13n_service.connectivity.connections.authorization import AuthorizationSer
 from a13n_service.connectivity.connections.checks import ConnectionChecks
 from a13n_service.connectivity.connections.service import ConnectionService
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
-from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.admission import IngressEventService
@@ -42,11 +44,9 @@ from a13n_service.connectivity.runtime import (
     ConnectivityRuntime,
 )
 from a13n_service.connectivity.transports.supervisor import EventConnectionSupervisor
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 from a13n_service.process.background import BackgroundTask
 from a13n_service.provider_plugins import ProviderCatalogs
-from a13n_service.provider_plugins.connectors import build_connector_provider_registry
 from a13n_service.secrets import SecretProtector
 from a13n_service.settings import Settings
 from a13n_service.storage import StorageResources
@@ -79,12 +79,13 @@ async def build_connectivity_runtime(
     stack: AsyncExitStack,
     *,
     ingress_adapters: AdapterRegistry[IngressAdapter] | None,
-    connector_providers: ConnectorProviderRegistry | None,
+    connector_providers: ProviderCatalog[ConnectorProviderDefinition] | None,
+    connector_http: ConnectorHttpClient | None,
     provider_catalogs: ProviderCatalogs,
     input_acceptor: InputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
-    memory_catalog: MemoryBackendCatalog | None = None,
+    memory_catalog: ProviderCatalog[MemoryProviderDefinition] | None = None,
 ) -> tuple[ConnectivityRuntime | None, tuple[BackgroundTask, ...]]:
     """Construct only the Connectivity capabilities owned by this role."""
 
@@ -98,6 +99,7 @@ async def build_connectivity_runtime(
             storage,
             ingress_adapters,
             connector_providers,
+            connector_http,
             provider_catalogs,
             secret_protector,
             stack,
@@ -124,11 +126,12 @@ async def _build_control_runtime(
     settings: Settings,
     storage: StorageResources,
     ingress_adapters: AdapterRegistry[IngressAdapter],
-    connector_providers: ConnectorProviderRegistry | None,
+    connector_providers: ProviderCatalog[ConnectorProviderDefinition] | None,
+    connector_http: ConnectorHttpClient | None,
     provider_catalogs: ProviderCatalogs,
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
-    memory_catalog: MemoryBackendCatalog | None,
+    memory_catalog: ProviderCatalog[MemoryProviderDefinition] | None,
 ) -> tuple[ConnectivityControlRuntime, tuple[BackgroundTask, ...]]:
     public_origin = settings.validated_connectivity_public_origin() if settings.connectivity.public_origin else None
     endpoint_policy = settings.connectivity_endpoint_policy()
@@ -140,19 +143,18 @@ async def _build_control_runtime(
                 timeout=connectivity_http_timeout(settings),
             )
         )
-        connector_providers = build_connector_provider_registry(
-            provider_catalogs.connector,
-            ConnectorHttpClient(
-                connector_http_client,
-                endpoint_policy,
-                response_max_bytes=settings.connectivity.response_max_bytes,
-                timeout_seconds=settings.connectivity.total_timeout_seconds,
-            ),
+        connector_providers = provider_catalogs.connector
+        connector_http = ConnectorHttpClient(
+            connector_http_client,
+            endpoint_policy,
+            response_max_bytes=settings.connectivity.response_max_bytes,
+            timeout_seconds=settings.connectivity.total_timeout_seconds,
         )
     connector = _build_connector_control(
         settings,
         storage,
         connector_providers,
+        connector_http,
         secret_protector,
         public_origin,
     )
@@ -194,7 +196,9 @@ async def _build_control_runtime(
         mcp_connections=mcp.connections,
         mcp_servers=mcp_servers,
         mcp_oauth=mcp.oauth,
-        checks=ConnectionChecks(storage.sessions, connector_providers, secret_protector, mcp.connections),
+        checks=ConnectionChecks(
+            storage.sessions, connector_providers, connector_http, secret_protector, mcp.connections
+        ),
         connections=ConnectionService(storage.sessions, endpoint_policy),
         authorizations=AuthorizationService(
             storage.sessions,
@@ -216,15 +220,17 @@ async def _build_control_runtime(
 def _build_connector_control(
     settings: Settings,
     storage: StorageResources,
-    connector_providers: ConnectorProviderRegistry,
+    connector_providers: ProviderCatalog[ConnectorProviderDefinition],
+    connector_http: ConnectorHttpClient | None,
     secret_protector: SecretProtector,
     public_origin: str | None,
 ) -> _ConnectorControl:
-    service = ConnectorProviderService(storage.sessions, connector_providers, secret_protector)
+    service = ConnectorProviderService(storage.sessions, connector_providers, connector_http, secret_protector)
     correlation_secret = settings.connectivity.setup_correlation_secret
     connections = ConnectorConnectionService(
         storage.sessions,
         connector_providers,
+        connector_http,
         secret_protector,
         correlation_secret=(correlation_secret.get_secret_value().encode() if correlation_secret is not None else None),
         public_origin=public_origin,
@@ -235,6 +241,7 @@ def _build_connector_control(
     reconciler = ConnectorReconciler(
         storage.sessions,
         connector_providers,
+        connector_http,
         connections.setup_coordinator,
         instance_id=instance_id,
         poll_interval_seconds=settings.connectivity.connector_reconcile_poll_interval_seconds,

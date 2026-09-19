@@ -8,11 +8,7 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal, Protocol
 
-from a13n_environment import EnvironmentState
-from a13n_environment.operations import EnvironmentOperations
-
-from ._mount_path import parse_mount_path, validate_working_directory
-from .commands import (
+from a13n_harness.providers.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     PortObservation,
@@ -27,8 +23,8 @@ from .commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from .files import FileOperator
-from .models import (
+from a13n_harness.providers.environment.files import FileOperator
+from a13n_harness.providers.environment.models import (
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentChange,
@@ -40,13 +36,17 @@ from .models import (
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
+    EnvironmentState,
 )
-from .retention import (
+from a13n_harness.providers.environment.operations import EnvironmentOperations
+from a13n_harness.providers.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputPolicy,
     EnvironmentOutputReadResult,
 )
+
+from ._mount_path import parse_mount_path, validate_working_directory
 
 if TYPE_CHECKING:
     from a13n_harness.identity import AgentInstanceContext

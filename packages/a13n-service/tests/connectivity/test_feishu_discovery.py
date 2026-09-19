@@ -5,11 +5,11 @@ import json
 import anyio
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.bots.connectivity.domain import DiscoverFeishuInstallationRequest
 from a13n_service.bots.connectivity.service import BotService
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.storage import transaction
 from sqlalchemy import func, select

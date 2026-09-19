@@ -145,7 +145,7 @@ def test_file_acquisition_keeps_original_name_and_validates_images(tmp_path: Pat
 async def test_composer_inputs_survive_restart_and_scratch_prune(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     image = BytesIO()
@@ -290,7 +290,7 @@ async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as
     import base64
     import json
 
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     import httpx2
     from pydantic_ai.models.openai import OpenAIResponsesModel
     from pydantic_ai.providers.openai import OpenAIProvider
@@ -356,7 +356,7 @@ async def test_native_generated_image_is_saved_in_thread_scratch_and_replayed_as
 async def test_terminal_steering_retains_uploads_and_delivers_native_images(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, image_only: bool
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
 
     path = await _seed(tmp_path, monkeypatch)
     image = BytesIO()

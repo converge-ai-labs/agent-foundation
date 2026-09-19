@@ -5,6 +5,8 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorProviderDefinition
 from a13n_service.connectivity.connections.access import ConnectionError
 from a13n_service.connectivity.connections.domain import ConnectorSource, CreateConnectionRequest
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
@@ -19,7 +21,6 @@ from a13n_service.connectivity.connectors.models import (
     ConnectorConnectionRecord,
 )
 from a13n_service.connectivity.connectors.reconciler import ConnectorReconciler
-from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.storage import transaction
 from sqlalchemy import select
@@ -27,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW, ORG_ID, WORKSPACE_ID, actor
 from .connection_helpers import management
-from .connector_helpers import FakeConnectorBackend, fake_registry
+from .connector_helpers import FakeConnectorBackend, fake_catalog
 
 
 @pytest.fixture
@@ -36,21 +37,24 @@ def connector_backend() -> FakeConnectorBackend:
 
 
 @pytest.fixture
-def connector_registry(connector_backend: FakeConnectorBackend) -> ConnectorProviderRegistry:
-    return fake_registry(connector_backend)
+def connector_catalog(connector_backend: FakeConnectorBackend) -> ProviderCatalog[ConnectorProviderDefinition]:
+    return fake_catalog(connector_backend)
 
 
 @pytest.fixture
 async def connector_services(
     connectivity_sessions: async_sessionmaker[AsyncSession],
     credential_protector,
-    connector_registry,
+    connector_catalog,
 ) -> AsyncIterator[tuple[ConnectorProviderService, ConnectorConnectionService]]:
     yield (
-        ConnectorProviderService(connectivity_sessions, connector_registry, credential_protector, clock=lambda: NOW),
+        ConnectorProviderService(
+            connectivity_sessions, connector_catalog, None, credential_protector, clock=lambda: NOW
+        ),
         ConnectorConnectionService(
             connectivity_sessions,
-            connector_registry,
+            connector_catalog,
+            None,
             credential_protector,
             correlation_secret=b"c" * 32,
             public_origin="https://foundation.example",
@@ -84,9 +88,9 @@ async def create_connection(
     connector_provider_id: str,
     idempotency_key: str,
 ):
+    from a13n_harness.providers.endpoint_policy import EndpointPolicy
     from a13n_service.connectivity.connections.domain import CreateConnectionRequest
     from a13n_service.connectivity.connections.service import ConnectionService
-    from a13n_service.endpoint_policy import EndpointPolicy
 
     return await ConnectionService(service._sessions, EndpointPolicy(), clock=service._clock).create(
         actor=actor(),
@@ -269,10 +273,11 @@ async def test_reconciler_completes_attached_setup_by_exact_external_reference(
         browser_nonce="b" * 64,
         return_url="/connections",
     )
-    registry = fake_registry(connector_backend)
+    registry = fake_catalog(connector_backend)
     reconciler = ConnectorReconciler(
         connectivity_sessions,
         registry,
+        None,
         connections.setup_coordinator,
         instance_id="reconciler-1",
         poll_interval_seconds=1,
@@ -331,7 +336,8 @@ async def test_unknown_revoke_is_never_retried(
     assert replay == receipt
     reconciler = ConnectorReconciler(
         connectivity_sessions,
-        fake_registry(connector_backend),
+        fake_catalog(connector_backend),
+        None,
         connections.setup_coordinator,
         instance_id="pod",
         poll_interval_seconds=1,
@@ -426,7 +432,12 @@ async def test_connection_http_commands_preserve_lifecycle_and_dispatch(
             connector_connections=connections,
             mcp_connections=mcp,
             checks=ConnectionChecks(
-                connections._sessions, connections._adapters, credential_protector, mcp, clock=connections._clock
+                connections._sessions,
+                connections._connectors,
+                connections._connector_http,
+                credential_protector,
+                mcp,
+                clock=connections._clock,
             ),
         )
         monkeypatch.setattr(router, "_runtime", lambda request: runtime)
@@ -571,7 +582,7 @@ async def test_disabled_provider_stops_setup_and_releases_callback_reservation(
 )
 async def test_worker_connector_uses_verified_binding_and_preserves_unknown_write(
     connector_services,
-    connector_registry,
+    connector_catalog,
     connectivity_sessions,
     credential_protector,
     monkeypatch,
@@ -580,12 +591,12 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
     rejection,
 ):
     from a13n_harness import AgentSpec, HarnessBuilder, HarnessInstrumentation, HarnessTraceContent
-    from a13n_service.connectivity.connectors.contracts import ConnectorProviderError, ConnectorToolOutcome
+    from a13n_harness.providers.connector.contracts import ConnectorProviderError, ConnectorToolOutcome
+    from a13n_harness.providers.endpoint_policy import EndpointPolicy
     from a13n_service.connectivity.execution import AttemptToolScope
     from a13n_service.connectivity.mcp.transport import RemoteTransport
     from a13n_service.connectivity.selection_domain import ConnectionRunSelection
     from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
-    from a13n_service.endpoint_policy import EndpointPolicy
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -642,7 +653,7 @@ async def test_worker_connector_uses_verified_binding_and_preserves_unknown_writ
 
     monkeypatch.setattr(FakeConnection, "execute_tool", execute)
     policy = EndpointPolicy()
-    runtime = external_runtime_factory(connector_registry, RemoteTransport(policy), policy)
+    runtime = external_runtime_factory(connector_catalog, RemoteTransport(policy), policy)
     capability = await runtime._connector(
         ConnectionRunSelection(
             kind="connector",
@@ -975,9 +986,9 @@ async def test_provider_tool_preview_needs_no_connection(connector_services, con
 
 
 async def test_expired_unattached_setup_requires_action_without_a_binding(
-    connector_services, connector_registry, connectivity_sessions, monkeypatch
+    connector_services, connector_catalog, connectivity_sessions, monkeypatch
 ):
-    from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
+    from a13n_harness.providers.connector.contracts import ConnectorProviderError
 
     from .connector_helpers import FakeConnectorProvider
 
@@ -1000,7 +1011,8 @@ async def test_expired_unattached_setup_requires_action_without_a_binding(
         )
     reconciler = ConnectorReconciler(
         connectivity_sessions,
-        connector_registry,
+        connector_catalog,
+        None,
         connections.setup_coordinator,
         instance_id="expiry",
         poll_interval_seconds=2,

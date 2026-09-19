@@ -6,7 +6,7 @@ from dataclasses import replace
 from time import monotonic
 
 import pytest
-from a13n_environment.models import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.environments.websocket.authority import (
     ConnectionIdentity,
     DispatchAuthority,

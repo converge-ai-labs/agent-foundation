@@ -11,12 +11,12 @@ async def local_provider(client: Client, base: str) -> dict:
     providers = await client.collection(base + "/environment-providers")
     for provider in providers:
         if (
-            provider["type"] == "direct-local"
+            provider["type"] == "direct_local"
             and provider["enabled"]
             and provider["configuration_source"] == "deployment"
         ):
             return provider
-    raise RuntimeError("Local seeding requires environments.local_providers.direct-local")
+    raise RuntimeError("Local seeding requires environments.local_providers.direct_local")
 
 
 async def local_workspace(client: Client, base: str, provider_id: str, root: Path, name: str) -> dict:
@@ -91,7 +91,13 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
         "POST",
         base + "/environment-providers",
         expected=201,
-        json={"type": "e2b", "name": "Disabled E2B provider", "configuration": {}},
+        json={
+            "type": "e2b",
+            "name": "Disabled E2B provider",
+            "configuration": {},
+            # E2B declares a required credential; this fictional value is never used.
+            "credential": {"api_key": "seed-fixture-key"},
+        },
     )
     path = f"/api/v1/environment-providers/{disabled['id']}"
     await client.request("PATCH", path, headers=await client.etag(path), json={"enabled": False})

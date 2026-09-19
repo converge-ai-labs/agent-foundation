@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Literal, NotRequired, TypedDict, cast
 
-from a13n_environment.models import EnvironmentError
 from pydantic import JsonValue, ValidationError
 
 from a13n_harness._tool_observation import record_tool_operation_failure
+from a13n_harness.providers.environment.models import EnvironmentError
 
 
 class ToolError(TypedDict):

@@ -20,7 +20,7 @@ from a13n_service.agents.plugin_preparation import (
 )
 from a13n_service.agents.reconstruction import AgentReconstructor
 from a13n_service.agents.resolution import AgentResolver
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.storage import transaction
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -64,7 +64,7 @@ class InstalledFactory(HarnessPluginFactory):
 
 
 def _management(sessions):
-    models = AcceptedModelSelector(sessions, built_in_provider_registry())
+    models = AcceptedModelSelector(sessions, built_in_model_provider_catalog())
     invocations = AgentInvocationResolver(sessions, models)
     management = AgentManagement(sessions, AgentResolver(sessions, models), invocations, models)
     return management, invocations

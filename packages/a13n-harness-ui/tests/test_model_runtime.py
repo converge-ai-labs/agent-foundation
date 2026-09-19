@@ -8,7 +8,7 @@ import pytest
 from a13n_harness import AgentContext
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.model_affinity import derive_model_affinity_id
-from a13n_harness.model_auth import GrokCredentials
+from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_harness_ui.composition.models import ResolvedModelRecipe
 from a13n_harness_ui.configuration import CodexSubscriptionAuthentication, GrokSubscriptionAuthentication
 from a13n_harness_ui.model_runtime import (
@@ -53,7 +53,7 @@ def _recipe(authentication: CodexSubscriptionAuthentication | GrokSubscriptionAu
 
 
 async def test_codex_subscription_resolution_uses_official_provider_and_affinity() -> None:
-    from a13n_harness.model_auth import CodexRequestModel
+    from a13n_harness.models.codex import CodexRequestModel
     from pydantic_ai.models.openai import OpenAIResponsesModel
     from pydantic_ai.providers.openai_codex import OpenAICodexProvider
 
@@ -85,7 +85,7 @@ async def test_grok_subscription_resolution_delegates_to_harness_builder(
         calls.append({"model_name": model_name, **kwargs})
         return built
 
-    monkeypatch.setattr("a13n_harness.model_auth.build_grok_model", build)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.build_grok_model", build)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
         subscription_sources={"grok_subscription": GrokSubscriptionSource(source=source)},
@@ -124,7 +124,7 @@ async def test_fresh_resolver_keeps_sources_without_touching_credentials(monkeyp
     source = _CodexSource()
     expected = object()
 
-    monkeypatch.setattr("a13n_harness.model_auth.CodexRequestModel", lambda *args, **kwargs: expected)
+    monkeypatch.setattr("a13n_harness.models.codex.CodexRequestModel", lambda *args, **kwargs: expected)
     resolver = HarnessUiModelResolver(
         {recipe.model_id: recipe},
         subscription_sources={"codex_subscription": CodexSubscriptionSource(source=source)},

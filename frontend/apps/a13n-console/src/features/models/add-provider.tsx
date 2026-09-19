@@ -9,18 +9,18 @@ import { ProviderIcon } from "../../shared/identity";
 import {
   AddProviderDialog,
   ProviderCatalog,
-  providerKeyUrls,
+  credentialHint,
+  providerKeyLink,
 } from "../providers";
 import { type ModelScope } from "./api";
 import {
   ProviderConnection,
   ordinaryConfigurationSchema,
 } from "./provider-connection";
-import { requiresProviderCredential } from "./provider-credentials";
 import { useModelProviderDefinitions } from "./provider-definitions";
 import { credentialFieldFor, useProviderDraft } from "./provider-draft";
 
-type Definition = Schema["ModelProviderDefinition"];
+type Definition = Schema["ModelProviderMetadata"];
 
 /** Familiar services first; the rest keep the catalog order. */
 const featured = [
@@ -38,19 +38,9 @@ const featured = [
   "alibaba_model_studio",
   "ollama",
 ];
-const credentialHints: Record<string, string> = {
-  api_key: "API key",
-  google_service_account_json: "Service account",
-  aws_credentials_json: "Access keys",
-};
-
 function hint(definition: Definition) {
-  if (definition.credential_schema.type === "null") return "Local endpoint";
-  return (
-    credentialHints[
-      String(definition.credential_schema["x-a13n-credential-format"])
-    ] ?? "Secret"
-  );
+  if (definition.authentication.mode === "forbidden") return "Local endpoint";
+  return credentialHint(definition.credential_schema);
 }
 
 /** What the model catalog looks like wherever it appears. */
@@ -73,12 +63,13 @@ export function connectStepTitle(
 
 export function connectStepDescription(
   definition: Definition,
-  t: (key: string) => string,
+  t: (key: string, options?: Record<string, unknown>) => string,
 ) {
   return t(
-    definition.credential_schema.type === "null"
+    definition.authentication.mode === "forbidden"
       ? "Point the console at the endpoint that serves your models."
       : credentialFieldFor(definition).description,
+    { provider: definition.display_name },
   );
 }
 
@@ -183,7 +174,7 @@ export function ProviderConnectForm({
 }) {
   const { t } = useTranslation();
   const { type, save } = draft;
-  const keyLink = providerKeyUrls[type];
+  const keyLink = providerKeyLink(definition);
   return (
     <CatalogStep backLabel={backLabel ?? t("All providers")} onBack={onBack}>
       <form
@@ -193,20 +184,15 @@ export function ProviderConnectForm({
           save.mutate();
         }}
       >
-        {requiresProviderCredential(type, draft.configuration, definition) && (
-          <FormField
-            label={t(draft.credentialField.label)}
+        {draft.section.mode !== "forbidden" && (
+          <SchemaFields
+            secret
+            autoFocus
             labelAction={keyLink && <ProviderKeyLink {...keyLink} />}
-          >
-            <Input
-              type="password"
-              autoFocus
-              autoComplete="new-password"
-              name="provider-api-key"
-              value={draft.credential}
-              onChange={(event) => draft.setCredential(event.target.value)}
-            />
-          </FormField>
+            schema={draft.section.schema}
+            value={draft.section.credential}
+            onChange={draft.section.setCredential}
+          />
         )}
         <SchemaFields
           schema={ordinaryConfigurationSchema(definition.configuration_schema)}
@@ -235,7 +221,6 @@ export function ProviderConnectForm({
           onOpenChange={draft.setAdvancedOpen}
           onBaseUrlChange={draft.changeBaseUrl}
           onSuggestedApi={draft.setSuggestedApi}
-          onAuthChange={draft.changeAuth}
         />
         <ErrorNotice error={save.error} />
         <FormActions

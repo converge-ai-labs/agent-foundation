@@ -131,8 +131,8 @@ def _bindings(*, host_search: bool) -> RunBindings:
         web=WebBinding(
             client=_WebClient(),
             policy=_WebPolicy(),
-            search_provider=_WebSearchProvider() if host_search else None,
-            scrape_provider=_WebScrapeProvider(),
+            search_backends=(WebSearchBackendBinding("default", _WebSearchProvider()),) if host_search else (),
+            scrape_backends=(WebScrapeBackendBinding("default", _WebScrapeProvider()),),
         )
     )
 

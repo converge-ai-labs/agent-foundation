@@ -10,7 +10,7 @@ import base64
 from datetime import datetime
 from typing import Annotated, Literal
 
-from a13n_environment.commands import (
+from a13n_harness.providers.environment.commands import (
     BoundProcessHandle,
     CommandEnvironment,
     CommandLimits,
@@ -27,8 +27,8 @@ from a13n_environment.commands import (
     ProcessStreamRead,
     ShellExecResult,
 )
-from a13n_environment.models import EnvironmentOperationReceipt
-from a13n_environment.retention import (
+from a13n_harness.providers.environment.models import EnvironmentOperationReceipt
+from a13n_harness.providers.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,

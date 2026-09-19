@@ -1,29 +1,11 @@
 """Validate safe Connector directory snapshots at the application boundary."""
 
+from a13n_harness.providers.connector.contracts import ConnectorProviderError, DiscoveredConnector
+from a13n_harness.providers.connector.directory import is_credential_field
+
 from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_TOOLS, TOOL_SCHEMA_MAX_BYTES
 from a13n_service.connectivity.management import canonical_json
 from a13n_service.connectivity.tool_validation import require_depth, validate_schema
-
-from .contracts import ConnectorProviderError, DiscoveredConnector
-
-_CREDENTIAL_FIELDS = frozenset(
-    {
-        "credential",
-        "credentials",
-        "password",
-        "api_key",
-        "apikey",
-        "token",
-        "access_token",
-        "refresh_token",
-        "cookie",
-        "client_secret",
-    }
-)
-
-
-def is_credential_field(name: str) -> bool:
-    return name.casefold() in _CREDENTIAL_FIELDS
 
 
 def validate_connectors(items: tuple[DiscoveredConnector, ...]) -> None:

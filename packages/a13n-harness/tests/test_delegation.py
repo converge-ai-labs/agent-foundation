@@ -297,6 +297,7 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
         WebCapability,
         WebConfiguration,
         WebScrapeConfiguration,
+        WebSearchBackendBinding,
         WebSearchConfiguration,
         WebSearchResponse,
     )
@@ -318,7 +319,9 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
     def fresh(bindings):
         assert bindings.tool_result_directory == "/scratch/tool-results"
         provider = Search()
-        attachment = WebBinding(client=provider, policy=provider, search_provider=provider)
+        attachment = WebBinding(
+            client=provider, policy=provider, search_backends=(WebSearchBackendBinding("default", provider),)
+        )
         created.append(attachment)
         return replace(bindings, web=attachment)
 
@@ -368,7 +371,7 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
     result = await HarnessBuilder().build(parent).run("delegate", bindings=parent_binding)
     assert result.output_or_raise() == "parent-done"
     assert len(created) == 3 and len({id(item) for item in created}) == 3
-    assert dispatched == [created[1].search_provider, created[2].search_provider]
+    assert dispatched == [created[1].search_backends[0].provider, created[2].search_backends[0].provider]
 
 
 async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspension(

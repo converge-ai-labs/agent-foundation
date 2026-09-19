@@ -11,9 +11,9 @@ on:
       - "crates/a13n-envd/**"
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
-      - "packages/a13n-environment/a13n_environment/eip/**"
-      - "packages/a13n-environment/a13n_environment/local_envd/**"
-      - "packages/a13n-environment/tests/test_local_envd.py"
+      - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
+      - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
+      - "packages/a13n-harness/tests/providers_environment/test_local_envd.py"
       - "proto/a13n-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
@@ -34,9 +34,9 @@ on:
       - "crates/a13n-envd/**"
       - "deploy/containers/sandbox/Dockerfile"
       - "packages/a13n-envd-client/**"
-      - "packages/a13n-environment/a13n_environment/eip/**"
-      - "packages/a13n-environment/a13n_environment/local_envd/**"
-      - "packages/a13n-environment/tests/test_local_envd.py"
+      - "packages/a13n-harness/a13n_harness/providers/environment/eip/**"
+      - "packages/a13n-harness/a13n_harness/providers/environment/local_envd/**"
+      - "packages/a13n-harness/tests/providers_environment/test_local_envd.py"
       - "proto/a13n-envd/eip/**"
       - "pyproject.toml"
       - "scripts/eip_codegen/**"
@@ -118,9 +118,9 @@ jobs:
               - 'packages/a13n-envd-client/pyproject.toml'
               - 'packages/a13n-envd-client/a13n_envd_client/eip/**'
               - 'packages/a13n-envd-client/tests/eip/**'
-              - 'packages/a13n-environment/a13n_environment/eip/**'
-              - 'packages/a13n-environment/a13n_environment/local_envd/**'
-              - 'packages/a13n-environment/tests/test_local_envd.py'
+              - 'packages/a13n-harness/a13n_harness/providers/environment/eip/**'
+              - 'packages/a13n-harness/a13n_harness/providers/environment/local_envd/**'
+              - 'packages/a13n-harness/tests/providers_environment/test_local_envd.py'
               - 'proto/a13n-envd/eip/**'
               - 'scripts/eip_codegen/**'
               - 'scripts/tests/test_eip_codegen.py'

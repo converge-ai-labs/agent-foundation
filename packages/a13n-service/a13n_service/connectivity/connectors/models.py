@@ -41,7 +41,8 @@ class ConnectorProviderRecord(ResourceCredential[str | None], Base):
             postgresql_where=text("workspace_id IS NULL"),
         ),
         CheckConstraint(
-            "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
             name="credential_material_consistent",
         ),
         ForeignKeyConstraint(
@@ -86,7 +87,7 @@ class ConnectorProviderRecord(ResourceCredential[str | None], Base):
             configuration=self.configuration_json,
             status=ConnectorProviderStatus(self.status),
             version=self.version,
-            credential_configured=True,
+            credential_configured=self.ciphertext is not None,
             credential_generation=self.credential_generation,
             created_by=_principal(self.created_by_type, self.created_by_id),
             created_at=assume_utc(self.created_at),

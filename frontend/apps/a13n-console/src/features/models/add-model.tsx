@@ -165,7 +165,7 @@ export function AddModel({
 function stepHeading(
   step: Step,
   model: ReturnType<typeof useModelDraft>,
-  connecting: Schema["ModelProviderDefinition"] | undefined,
+  connecting: Schema["ModelProviderMetadata"] | undefined,
   t: (key: string, options?: Record<string, unknown>) => string,
 ): { title: ReactNode; description?: string } {
   if (step === "provider")

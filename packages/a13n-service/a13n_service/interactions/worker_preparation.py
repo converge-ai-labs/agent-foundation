@@ -8,7 +8,6 @@ from dataclasses import replace
 from functools import partial
 from typing import Any
 
-from a13n_environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
@@ -19,8 +18,10 @@ from a13n_harness import (
     RunPreparationContext,
 )
 from a13n_harness.capabilities import SubagentCapability, UserInteractionCapability, WebBinding
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 from a13n_harness.errors import RunError
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_harness.providers.environment.management import Environment
 from anyio import to_thread
 from pydantic import TypeAdapter
 from pydantic_ai import ToolDenied
@@ -41,6 +42,7 @@ from a13n_service.environments.mount_observations import RunMountObservations
 from a13n_service.environments.mount_runtime import RunMountRuntime
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
+from a13n_service.interactions.environment_observation import EnvironmentHookProjector, observe_environment_entry
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
@@ -101,8 +103,10 @@ class WorkerAttemptPreparer:
         web: WebRuntime | None = None,
         memory: ExecutionMemoryRuntime | None = None,
         configuration_capability: Callable[[], ConfigurationCapability] | None = None,
+        environment_projector: EnvironmentHookProjector,
         client_connections: WorkerClientConnections | None = None,
     ) -> None:
+        self._environment_projector = environment_projector
         self._subagent_capability = subagent_capability
         self._secrets = secrets
         self._web = web
@@ -128,6 +132,17 @@ class WorkerAttemptPreparer:
         self._asset_publication = asset_publication
         self._async_results = async_results
         self._prepared_skills: dict[str | None, PreparedSkillRuntime] | None = None
+
+    def _observed(
+        self, environment: Environment, permission_ceiling: EnvironmentPermissionSet | None = None
+    ) -> EnvironmentMount:
+        """Live Environment observation is declared on the mount before it is bound."""
+        mount = (
+            EnvironmentMount(environment)
+            if permission_ceiling is None
+            else EnvironmentMount(environment, permission_ceiling=permission_ceiling)
+        )
+        return observe_environment_entry(mount, self._environment_projector)
 
     async def claim_state_writer(self) -> None:
         await self._control.claim_state_writer(self._run)
@@ -219,9 +234,8 @@ class WorkerAttemptPreparer:
                     invocation,
                     environment=MountedHarnessEnvironments(
                         entries={
-                            "builtin-skills": EnvironmentMount(
-                                environment,
-                                permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
+                            "builtin-skills": self._observed(
+                                environment, EnvironmentPermissionSet(operations=FILE_READ_ACTIONS)
                             )
                         },
                         default_environment="builtin-skills",
@@ -235,7 +249,7 @@ class WorkerAttemptPreparer:
             if environment is not None:
                 stack.push_async_callback(environment.close)
             mounted = MountedHarnessEnvironments(
-                entries=({"workspace": EnvironmentMount(environment)} if environment is not None else {})
+                entries=({"workspace": self._observed(environment)} if environment is not None else {})
             )
 
             async def prepare_mount(mount: AcceptedRunMount):
@@ -256,6 +270,7 @@ class WorkerAttemptPreparer:
                     observations=RunMountObservations(self._sessions, clock=self._environments.clock),
                     current_attempt=lambda: self._control.current_context,
                     prepare=prepare_mount,
+                    observe=self._observed,
                 )
             )
             yield replace(invocation, environment=mounted)

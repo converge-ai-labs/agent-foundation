@@ -7,12 +7,12 @@ from urllib.parse import quote
 
 import anyio
 import httpx2
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.connectivity.providers.lark.progress import LarkProgressClient, task_card
 from a13n_service.connectivity.providers.slack.progress import SlackProgressClient, task_message
 from a13n_service.iam import (
@@ -176,7 +176,7 @@ class CardDelivery:
             if row.provider_key == "slack" and row.message_id is None and row.delivery_started_at is not None:
                 # Slack provides no documented durable postMessage deduplication contract.
                 # Never repeat an initial write after an uncertain response or process crash.
-                raise ConnectivityHttpError("provider_outcome_unknown")
+                raise ProviderHttpError("provider_outcome_unknown")
             if row.delivery_started_at is None:
                 row.delivery_started_at = utc_now()
         # The entire create/update sequence completes before the durable lease expires.
@@ -207,7 +207,7 @@ class CardDelivery:
                             run_id=run_id,
                             card=card,
                         )
-        except ConnectivityHttpError as error:
+        except ProviderHttpError as error:
             if work.provider_key == "slack" and error.code in {
                 "provider_rejected",
                 "rate_limited",

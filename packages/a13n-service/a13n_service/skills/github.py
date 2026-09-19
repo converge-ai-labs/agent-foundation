@@ -7,6 +7,7 @@ import base64
 import binascii
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
 from typing import Annotated, Literal
@@ -14,6 +15,7 @@ from urllib.parse import quote, urlsplit
 
 import anyio
 import httpx2
+from a13n_harness.http import retry_after_seconds
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError
 
 from .domain import GitHubRevisionSource, GitHubSkillImportProvenance
@@ -477,11 +479,11 @@ def _raise_for_status(response: httpx2.Response) -> None:
         and (response.headers.get("x-ratelimit-remaining") == "0" or response.headers.get("retry-after") is not None)
     )
     if rate_limited:
-        retry_after_seconds = _retry_after_seconds(response.headers.get("retry-after"))
+        delay = retry_after_seconds(response.headers.get("retry-after"))
         raise GitHubAcquisitionError(
             "github_rate_limited",
             "GitHub rate limited the acquisition request.",
-            retry_after_seconds=retry_after_seconds,
+            retry_after_seconds=None if delay is None else math.ceil(delay),
         )
     if status in {401, 403}:
         raise GitHubAcquisitionError("github_auth_failed", "GitHub authentication failed.")
@@ -490,13 +492,6 @@ def _raise_for_status(response: httpx2.Response) -> None:
     if 300 <= status < 500:
         raise _invalid("The GitHub source could not be resolved")
     raise _unavailable("GitHub is temporarily unavailable")
-
-
-def _retry_after_seconds(value: str | None) -> int | None:
-    if value is None or not value.isdecimal():
-        return None
-    seconds = int(value)
-    return seconds if 1 <= seconds <= 86_400 else None
 
 
 def _git_blob_sha(content: bytes) -> str:

@@ -1,8 +1,8 @@
 """Load the frozen template configuration or the registered external connection configuration."""
 
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
-from a13n_environment.remote_envd.http import HTTP_PROVIDER_KEY
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.environment.remote_envd.http import HTTP_PROVIDER_KEY
 from pydantic import TypeAdapter
 from sqlalchemy.ext.asyncio import AsyncSession
 

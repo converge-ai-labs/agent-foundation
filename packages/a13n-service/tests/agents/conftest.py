@@ -16,7 +16,7 @@ from a13n_service.agents.toolsets import default_toolsets
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import transaction
@@ -244,7 +244,7 @@ async def agent_management(
 ) -> AsyncIterator[AgentManagement]:
     model_selector = AcceptedModelSelector(
         agent_sessions,
-        built_in_provider_registry(),
+        built_in_model_provider_catalog(),
     )
     resolver = AgentResolver(
         agent_sessions,
@@ -269,7 +269,7 @@ async def agent_invocation_resolver(
 ) -> AsyncIterator[AgentInvocationResolver]:
     model_selector = AcceptedModelSelector(
         agent_sessions,
-        built_in_provider_registry(),
+        built_in_model_provider_catalog(),
     )
     yield AgentInvocationResolver(
         agent_sessions,

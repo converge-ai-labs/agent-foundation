@@ -15,18 +15,9 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal
 
-from a13n_environment import (
+from a13n_harness.environment import (
     FILE_ACTIONS,
     FILE_READ_ACTIONS,
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderRuntime,
-    Environment,
-    EnvironmentProvider,
-    EnvironmentState,
-    LocalEnvdProviderRuntime,
-    resolve_a13n_envd_executable,
-)
-from a13n_harness.environment import (
     EnvironmentAction,
     EnvironmentMount,
     EnvironmentPermissionSet,
@@ -35,6 +26,14 @@ from a13n_harness.environment import (
 )
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.providers import EnvironmentRuntime
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    resolve_a13n_envd_executable,
+)
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import EnvironmentState
 from anyio import CancelScope, Lock, move_on_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
@@ -57,7 +56,7 @@ from a13n_harness_ui.storage import EnvironmentBindingKey, LocalStore, ObjectRef
 from a13n_harness_ui.storage.objects import ObjectKind
 from a13n_harness_ui.thread_files import ThreadFiles
 
-type ProviderRuntimeFactory = Callable[[EnvironmentProvider], object | Awaitable[object | None] | None]
+type ProviderRuntimeFactory = Callable[[EnvironmentProviderDefinition], object | Awaitable[object | None] | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,7 +65,7 @@ class ReconstructedEnvironmentProfile:
 
     profile: ResolvedEnvironmentProfile
     adapter: EnvironmentProjectAdapter
-    provider: EnvironmentProvider
+    provider: EnvironmentProviderDefinition
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +93,6 @@ class _PreparedMount:
     permission_ceiling: EnvironmentPermissionSet
     mount_path: str | None
     provider_root: str = "/"
-    provider_schema_version: str = "1"
 
 
 class EnvironmentSnapshotReconstructor:
@@ -130,7 +128,6 @@ class EnvironmentSnapshotReconstructor:
         provider = self._catalog.provider_catalog((profile.provider_key,)).require(profile.provider_key)
         adapter = self._catalog.environment_adapter(profile.adapter_key, profile.provider_key)
         adapter.validate_profile(
-            provider_schema_version=profile.provider_schema_version,
             provider_configuration=profile.provider_configuration,
             adapter_configuration=profile.adapter_configuration,
             provider=provider,
@@ -147,7 +144,7 @@ class EnvironmentSnapshotReconstructor:
     ) -> Environment:
         collaborator = (
             local_runtime or await self.sandbox_runtime((root,))
-            if reconstructed.provider.key == LOCAL_ENVD_PROVIDER_KEY
+            if reconstructed.provider.type == LOCAL_ENVD_PROVIDER_KEY
             else await self._runtime_collaborator(reconstructed.provider)
         )
         try:
@@ -225,15 +222,15 @@ class EnvironmentSnapshotReconstructor:
             for runtime in self._local_runtimes.values():
                 stack.push_async_callback(runtime.close)
 
-    async def _runtime_collaborator(self, provider: EnvironmentProvider) -> object | None:
-        if provider.key == NATIVE_PROVIDER_KEY:
-            return DirectLocalProviderRuntime()
-        factory = self._runtime_factories.get(provider.key)
+    async def _runtime_collaborator(self, provider: EnvironmentProviderDefinition) -> object | None:
+        if provider.type == NATIVE_PROVIDER_KEY:
+            return None
+        factory = self._runtime_factories.get(provider.type)
         if factory is None:
             raise EnvironmentLifecycleError(
                 "No trusted runtime factory is registered for the selected Environment Provider.",
                 code="provider_runtime_unsupported",
-                details={"provider_key": provider.key},
+                details={"provider_key": provider.type},
             )
         value = factory(provider)
         return await value if inspect.isawaitable(value) else value
@@ -319,7 +316,6 @@ class EnvironmentRunPlan:
                 if final_state is not None:
                     stored = StoredEnvironmentState(
                         binding=mount.key,
-                        provider_schema_version=mount.provider_schema_version,
                         state=final_state,
                         created_at=_utc_now(),
                     )
@@ -413,7 +409,6 @@ class EnvironmentRunService:
                     key=key,
                     reference=expected,
                     provider_key=profile.provider_key,
-                    provider_schema_version=profile.provider_schema_version,
                 )
                 environment = await self._reconstructor.bind(
                     reconstructed,
@@ -433,7 +428,6 @@ class EnvironmentRunService:
                         provider_root=root.as_posix()
                         if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
                         else "/",
-                        provider_schema_version=profile.provider_schema_version,
                     )
                 )
             for binding in composition.environment_bindings:
@@ -528,9 +522,10 @@ class EnvironmentRunService:
             raise EnvironmentLifecycleError(
                 "Device connections are unavailable.", code="device_connections_unavailable"
             )
-        provider_key = (
-            "a13n.http-envd" if isinstance(binding.device.transport, HttpDeviceTransport) else "a13n.websocket-envd"
-        )
+        http = isinstance(binding.device.transport, HttpDeviceTransport)
+        # The Provider type names the state; the adapter key names the catalog entry.
+        provider_key = "http_envd" if http else "websocket_envd"
+        adapter_key = "a13n.http-envd" if http else "a13n.websocket-envd"
         selection = binding.selection
         key = EnvironmentBindingKey(
             thread_id=thread_id,
@@ -543,14 +538,12 @@ class EnvironmentRunService:
                     "selection": selection.model_dump(mode="json"),
                 }
             ),
-            adapter_key=provider_key,
+            adapter_key=adapter_key,
             normalized_root=selection.working_directory,
         )
         head = await self._store.environment_states.get(key)
         expected = None if head is None else head.state
-        state = await self._load_state(
-            key=key, reference=expected, provider_key=provider_key, provider_schema_version="1"
-        )
+        state = await self._load_state(key=key, reference=expected, provider_key=provider_key)
         environment = await self._devices.bind(binding, environment_id=f"device-{key.profile_digest[:20]}", state=state)
         return _PreparedMount(
             alias=selection.alias,
@@ -576,10 +569,9 @@ class EnvironmentRunService:
             operations = frozenset(EnvironmentAction)
         else:
             # Host files are not silently interpreted as a remote provider root.
-            provider = DirectLocalEnvironmentProvider()
-            configuration = provider.validate_configuration(
-                schema_version="1",
-                value={
+            provider = DIRECT_LOCAL
+            configuration = provider.validate_environment(
+                {
                     "root": {"path": os.fspath(root)},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -587,11 +579,11 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = provider.create_environment(
+            environment = provider.construct(
                 environment_id=f"thread-files-{root.name}",
                 configuration=configuration,
                 state=None,
-                runtime=DirectLocalProviderRuntime(),
+                runtime=None,
             )
             operations = FILE_ACTIONS
         return _PreparedMount(
@@ -615,10 +607,9 @@ class EnvironmentRunService:
     ) -> _PreparedMount:
         try:
             normalized = await to_thread.run_sync(_validate_content_plugin_root, root)
-            provider = DirectLocalEnvironmentProvider()
-            configuration = provider.validate_configuration(
-                schema_version="1",
-                value={
+            provider = DIRECT_LOCAL
+            configuration = provider.validate_environment(
+                {
                     "root": {"path": os.fspath(normalized)},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -626,11 +617,11 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = provider.create_environment(
+            environment = provider.construct(
                 environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                 configuration=configuration,
                 state=None,
-                runtime=DirectLocalProviderRuntime(),
+                runtime=None,
             )
         except Exception as exc:
             raise EnvironmentLifecycleError(
@@ -652,10 +643,9 @@ class EnvironmentRunService:
         root = self._user_skills_root or Path.home() / ".agents" / "skills"
         try:
             normalized = await to_thread.run_sync(_prepare_user_skills_root, root)
-            provider = DirectLocalEnvironmentProvider()
-            configuration = provider.validate_configuration(
-                schema_version="1",
-                value={
+            provider = DIRECT_LOCAL
+            configuration = provider.validate_environment(
+                {
                     "root": {"path": os.fspath(normalized)},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -663,11 +653,11 @@ class EnvironmentRunService:
                     "allowed_environment_keys": [],
                 },
             )
-            environment = provider.create_environment(
+            environment = provider.construct(
                 environment_id=f"local-{hashlib.sha256(os.fsencode(normalized)).hexdigest()[:16]}",
                 configuration=configuration,
                 state=None,
-                runtime=DirectLocalProviderRuntime(),
+                runtime=None,
             )
         except Exception as exc:
             raise EnvironmentLifecycleError(
@@ -691,16 +681,11 @@ class EnvironmentRunService:
         key: EnvironmentBindingKey,
         reference: ObjectRef | None,
         provider_key: str,
-        provider_schema_version: str,
     ) -> EnvironmentState | None:
         if reference is None:
             return None
         value = await self._store.objects.read_model(reference, StoredEnvironmentState)
-        if (
-            value.binding != key
-            or value.provider_schema_version != provider_schema_version
-            or value.state.provider_key != provider_key
-        ):
+        if value.binding != key or value.state.provider_key != provider_key:
             raise EnvironmentLifecycleError(
                 "Stored Environment state is incompatible with its binding.",
                 code="environment_state_incompatible",

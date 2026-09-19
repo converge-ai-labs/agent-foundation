@@ -8,6 +8,7 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.bots.connectivity.models import BotTestRecord
 from a13n_service.bots.connectivity.service import BotService
 from a13n_service.bots.connectivity.setup_tests import CreateBotTest
@@ -19,7 +20,6 @@ from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.ingress.admission import IngressEventService
 from a13n_service.connectivity.ingress.provider import ProviderRequest
 from a13n_service.connectivity.providers.slack.adapter import SlackIngressAdapter
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.storage import transaction
 from sqlalchemy import select
 

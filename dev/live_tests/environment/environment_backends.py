@@ -18,15 +18,15 @@ from ..infrastructure.round_two_lab import free_origin, private_json
 from ..infrastructure.tcp_proxy import TCPProxy
 
 logger = logging.getLogger(__name__)
-BACKENDS = ("docker", "e2b", "http-envd", "websocket-envd")
-REMOTE = {"http-envd", "websocket-envd"}
+BACKENDS = ("docker", "e2b", "http_envd", "websocket_envd")
+REMOTE = {"http_envd", "websocket_envd"}
 RETENTION = {"idle": {"stop_after": None, "delete_after": None}}
 
 
 def provider_configuration(kind, root, settings=None):
     root.mkdir(mode=0o700)
     shell = [{"profile_id": "default", "executable": "/bin/sh", "fixed_arguments": ["-c"]}]
-    if kind == "direct-local":
+    if kind == "direct_local":
         return {"root": {"path": str(root)}, "shell_profiles": shell}
     if kind == "docker":
         return {
@@ -73,7 +73,7 @@ class BackendTarget:
             template = await self.template(preparation=preparation)
             body = {"template_id": template["id"]}
         resource = await journey.post(journey.base + "/environments", body)
-        if self.backend.kind == "direct-local":
+        if self.backend.kind == "direct_local":
             self.root = Path(self.template_config["configuration"]["root"]["path"]) / "environments" / resource["id"]
             self.root.mkdir(parents=True, exist_ok=True)
         return resource
@@ -97,7 +97,7 @@ class EnvironmentBackend:
         directory.mkdir(mode=0o700)
         root = directory / "workspace"
         configuration = provider_configuration(self.kind, root, self.settings)
-        provider_body = {"name": "Backend matrix " + native_id, "type": "a13n." + self.kind, "configuration": {}}
+        provider_body = {"name": "Backend matrix " + native_id, "type": self.kind, "configuration": {}}
         state, process, proxy, target = None, None, None, None
         stack = AsyncExitStack()
         try:
@@ -110,7 +110,7 @@ class EnvironmentBackend:
                     proxy = await stack.enter_async_context(
                         TCPProxy("127.0.0.1", int(origin.rsplit(":", 1)[1])).listen()
                     )
-                if self.kind == "http-envd":
+                if self.kind == "http_envd":
                     endpoint = f"http://127.0.0.1:{proxy.local_port}" if proxy else origin
                     provider_body.update(
                         configuration={"endpoint": endpoint, **({"request_timeout": 5} if proxy else {})},
@@ -124,7 +124,7 @@ class EnvironmentBackend:
                         daemon_origin = f"http://127.0.0.1:{proxy.local_port}"
                 process = await self.start_daemon(directory, root, native_id, daemon_origin, token)
                 state = {
-                    "provider_key": "a13n." + self.kind,
+                    "provider_key": self.kind,
                     "state_version": "1",
                     "state": {"device_id": native_id},
                 }
@@ -201,7 +201,7 @@ class EnvironmentBackend:
         }
         # This selects the test executable; it is not a daemon configuration field.
         environment.pop("A13N_ENVD_TEST_BINARY", None)
-        if self.kind == "http-envd":
+        if self.kind == "http_envd":
             environment.update(
                 A13N_ENVD_TRANSPORT="http",
                 A13N_ENVD_HTTP_BIND=origin.removeprefix("http://"),
@@ -230,7 +230,7 @@ class EnvironmentBackend:
                 start_new_session=True,
             )
         self.lab.processes.append(process)
-        if self.kind == "http-envd":
+        if self.kind == "http_envd":
             async with asyncio.timeout(10):
                 while True:
                     assert process.returncode is None, f"Envd exited; inspect {directory / 'daemon.log'}"

@@ -7,7 +7,7 @@ from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.storage import transaction
 from a13n_service.storage.object_store import LocalObjectStore
@@ -31,7 +31,7 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
     connectivity = ConnectivitySelectionResolver(connectivity_sessions)
     models = AcceptedModelSelector(
         connectivity_sessions,
-        built_in_provider_registry(),
+        built_in_model_provider_catalog(),
     )
     revision_resolver = AgentResolver(
         connectivity_sessions,

@@ -7,6 +7,7 @@ from urllib.parse import parse_qs
 
 import httpx2
 import pytest
+from a13n_harness.http import ProviderHttpError
 from a13n_service.assets.catalog import AssetCatalog, PreparedAssetContent
 from a13n_service.assets.domain import Asset, RunOutputAssetSource, UploadedAssetSource
 from a13n_service.assets.models import AssetRecord
@@ -17,7 +18,6 @@ from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.reception import InputBatchingPolicy
 from a13n_service.connectivity.file_content import MAX_FILE_BYTES, FileContent
 from a13n_service.connectivity.file_delivery import FileDelivery, SendFileArguments
-from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.ingress.admission_domain import BatchConfiguration, PreparedIngressBatch
 from a13n_service.connectivity.ingress.attachments import AttachmentInputs
 from a13n_service.connectivity.ingress.provider import ExternalRef, ProviderEventDecision
@@ -99,7 +99,7 @@ async def test_slack_denies_untrusted_download_hosts_without_sending_credentials
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        with pytest.raises(ConnectivityHttpError, match="endpoint_denied"):
+        with pytest.raises(ProviderHttpError, match="endpoint_denied"):
             await SlackFiles(http, _AllowEndpoint(), "private").download("F1")
     assert len(requests) == 1
 
@@ -132,7 +132,7 @@ async def test_slack_download_rejects_redirects_and_oversized_content(status, he
         return httpx2.Response(status, headers=headers)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond), follow_redirects=True) as http:
-        with pytest.raises(ConnectivityHttpError, match=reason):
+        with pytest.raises(ProviderHttpError, match=reason):
             await SlackFiles(http, _AllowEndpoint(), "private").download("F1")
     assert len(requests) == 2
 
@@ -330,7 +330,7 @@ async def test_send_file_rejects_assets_not_published_in_current_run(source):
     catalog = AsyncMock(spec=AssetCatalog)
     catalog.get.return_value = _asset(source=source)
     async with httpx2.AsyncClient() as http:
-        with pytest.raises(ConnectivityHttpError, match="file_not_from_current_run"):
+        with pytest.raises(ProviderHttpError, match="file_not_from_current_run"):
             await FileDelivery(catalog).send(
                 SendFileArguments(asset_id=_ASSET),
                 actor=actor(),

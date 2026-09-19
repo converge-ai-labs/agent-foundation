@@ -3,9 +3,9 @@ import socket
 
 import httpx2
 import pytest
-from a13n_environment import FILE_READ_ACTIONS, EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness import AgentDefinition, AgentSpec, EnvironmentMount, HarnessBuilder, RunBindings
 from a13n_harness.errors import RunError
+from a13n_harness.providers.environment.models import FILE_READ_ACTIONS, EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 from a13n_service.agents.domain import AgentConfig, EffectiveAgentConfig
 from a13n_service.agents.models import AgentRecord
@@ -25,7 +25,6 @@ from a13n_service.web.domain import (
     WebSelection,
 )
 from a13n_service.web.models import WebProviderRecord
-from a13n_service.web.registry import WebProviderRegistry, built_in_web_provider_registry
 from a13n_service.web.runtime import WebRuntime, web_capability
 from a13n_service.web.service import WebProviderService
 from a13n_service.web.web import WebTransport
@@ -33,7 +32,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from tests.hooks.support import hook_actor, seed_hook_actor_access
 from tests.lifecycle_support import test_lifecycle_writer
-from tests.web.test_adapters import transport
+from tests.web.conftest import provider_transport as transport
 
 from .conftest import NOW, USER_ID, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker
@@ -81,8 +80,8 @@ async def fixture(
     preparation = await execution.commit_preparation_success(attempt)
     await execution.enter_harness(attempt, preparation=preparation, harness_run_id="search-test")
     protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")
-    registry = WebProviderRegistry(load_provider_catalogs(()).web)
-    service = WebProviderService(interaction_sessions, protector, registry)
+    catalog = load_provider_catalogs(()).web
+    service = WebProviderService(interaction_sessions, protector, catalog)
     account = await service.create(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
@@ -96,7 +95,8 @@ async def fixture(
     runtime = WebRuntime(
         interaction_sessions,
         protector,
-        built_in_web_provider_registry(transport=transport(handler)),
+        catalog,
+        provider_transport=transport(handler),
         web_transport=web_transport,
         clock=lambda: NOW,
     )

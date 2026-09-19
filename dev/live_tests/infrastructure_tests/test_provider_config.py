@@ -256,7 +256,7 @@ async def test_cleanup_attempts_every_owned_environment_even_after_run_failure()
                 {"id": "env_second", "status": "unprepared", "provider_id": "ep_remote"},
             ]
         ),
-        request=AsyncMock(side_effect=[{"type": "e2b"}, {"type": "direct-local"}, {"type": "e2b"}]),
+        request=AsyncMock(side_effect=[{"type": "e2b"}, {"type": "direct_local"}, {"type": "e2b"}]),
     )
     journey = SimpleNamespace(
         live=live,

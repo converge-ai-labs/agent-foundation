@@ -2,16 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Mapping
+from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from a13n_environment import Environment
-
 from a13n_harness.identity import AgentInstanceContext
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
 
 from ._mount_path import parse_mount_path, validate_working_directory
-from .models import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
 from .providers import (
     BoundEnvironmentProvider,
     EnvironmentProviderBinding,
@@ -23,6 +22,14 @@ _EVERY_ACTION = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)
 
 
 @dataclass(frozen=True, slots=True)
+class EnvironmentScope:
+    thread_id: str
+    run_id: str
+    agent_instance_id: str
+    mount_id: str
+
+
+@dataclass(frozen=True, slots=True)
 class EnvironmentMount:
     """One already constructed Environment plus Run-local permission and path policy."""
 
@@ -31,6 +38,7 @@ class EnvironmentMount:
     working_directory: str | None = None
     mount_path: str | None = None
     provider_root: str = "/"
+    observer: Callable[[str, EnvironmentScope, BaseException | None], None] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.environment, Environment):
@@ -49,8 +57,9 @@ type EnvironmentEntry = Environment | EnvironmentMount
 
 
 class _EnvironmentAdapterBinding(EnvironmentProviderBinding):
-    def __init__(self, environment: Environment) -> None:
-        self._environment = environment
+    def __init__(self, mount: EnvironmentMount) -> None:
+        self._environment = mount.environment
+        self._observer = mount.observer
         self._used = False
         self._discarded = False
 
@@ -85,13 +94,11 @@ class _EnvironmentAdapterBinding(EnvironmentProviderBinding):
             raise EnvironmentError("Environment adapter is single-use.", code="environment_provider_binding_reused")
         self._used = True
         try:
-            await self._environment.enter(
-                thread_id=thread_id,
-                run_id=run_id,
-                agent_instance_id=instance.agent_instance_id,
-                mount_id=mount_id,
-                host_refs=host_refs,
-            )
+            if self._observer is not None:
+                observer = self._observer
+                scope = EnvironmentScope(thread_id, run_id, instance.agent_instance_id, mount_id)
+                self._environment.observe(lambda event, binding, error: observer(event, scope, error))
+            await self._environment.enter(mount_id=mount_id)
             yield self._environment
         finally:
             await self._environment.close()
@@ -150,7 +157,7 @@ def _normalize_runtime_mount(entry: EnvironmentEntry | EnvironmentRuntimeMount) 
         return entry
     mount = _normalize_entry(entry)
     return EnvironmentRuntimeMount(
-        binding=_EnvironmentAdapterBinding(mount.environment),
+        binding=_EnvironmentAdapterBinding(mount),
         permission_ceiling=mount.permission_ceiling,
         working_directory=mount.working_directory,
         mount_path=mount.mount_path,

@@ -27,7 +27,7 @@ export {
 } from "./credential-hint";
 export { CredentialsPill, type CredentialState } from "./credentials-pill";
 export { EditProviderDialog } from "./edit-provider-dialog";
-export { providerKeyUrls } from "./key-urls";
+export { providerKeyLink, type ProviderKeyLinkTarget } from "./key-urls";
 export { ManageProvidersLink } from "./manage-link";
 export { providersPath } from "./navigation";
 export {

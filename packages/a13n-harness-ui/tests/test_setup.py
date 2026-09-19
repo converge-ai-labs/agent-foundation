@@ -410,7 +410,7 @@ async def test_native_preflight_never_resolves_envd(tmp_path: Path) -> None:
 async def test_sandbox_preflight_uses_production_denied_network_and_does_not_downgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from a13n_environment import EnvironmentError
+    from a13n_harness.providers.environment.models import EnvironmentError
     from a13n_harness_ui import setup
 
     observed = []
@@ -467,7 +467,7 @@ async def test_codex_setup_routes_shell_review_to_luna_and_applies_default_actio
 ) -> None:
     import json
 
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -684,7 +684,7 @@ async def test_api_key_setup_publishes_only_reference_and_additional_instruction
 async def test_setup_run_delivers_base_and_additions_through_distinct_native_channels(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import a13n_harness.model_auth as runtime
+    import a13n_harness.models.codex as runtime
     from a13n_harness_ui.app import open_harness_ui_app
     from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
@@ -759,12 +759,11 @@ async def test_saved_key_connects_deferred_default_agent_and_first_native_conver
         assert "Keep my instructions." in info.instructions
         yield "Connected."
 
-    def infer(route, *, provider_factory):
-        provider = provider_factory("openai-responses")
-        seen.append(provider.client.api_key)
+    async def infer(route, credential, *, base_url=None):
+        seen.append(credential.api_key.get_secret_value())
         return FunctionModel(stream_function=stream)
 
-    monkeypatch.setattr("a13n_harness_ui.model_runtime.infer_model", infer)
+    monkeypatch.setattr("a13n_harness_ui.model_runtime.build_api_key_model", infer)
     path = tmp_path / "config" / "config.yaml"
     async with open_harness_ui_app(
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state")), configuration_path=path
@@ -843,20 +842,20 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
 async def test_sandbox_adapter_selects_only_the_session_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from dataclasses import replace
     from unittest.mock import Mock
 
-    from a13n_environment import LocalEnvdEnvironmentProvider
+    from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
     from a13n_harness_ui.composition.models import ResolvedEnvironmentProfile
     from a13n_harness_ui.extensions import environment_adapters as adapters
 
-    provider = LocalEnvdEnvironmentProvider()
     create = Mock()
-    monkeypatch.setattr(provider, "create_environment", create)
+    # Definitions are immutable: observe construction through a replaced definition.
+    provider = replace(LOCAL_ENVD, construct=create)
     profile = ResolvedEnvironmentProfile(
         profile_id="environment-sandbox",
         behavior_digest="a" * 64,
         provider_key=adapters.LOCAL_ENVD_PROVIDER_KEY,
-        provider_schema_version=next(iter(provider.configuration_versions)),
         adapter_key=adapters.LOCAL_ENVD_ADAPTER_KEY,
     )
     await adapters.LocalEnvdProjectAdapter().bind(

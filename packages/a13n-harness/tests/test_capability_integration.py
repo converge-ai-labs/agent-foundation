@@ -6,11 +6,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_environment import (
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
-)
 from a13n_harness import (
     HarnessBuilder,
     HarnessRunResultEvent,
@@ -39,8 +34,10 @@ from a13n_harness.capabilities import (
     WebConfiguration,
     WebRequest,
     WebResponse,
+    WebScrapeBackendBinding,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchBackendBinding,
     WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResponse,
@@ -59,6 +56,11 @@ from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
 )
 from a13n_harness.model_context import user_prompt_content
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
+)
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -134,7 +136,7 @@ class _WebScrapeProvider:
 
 def _environment(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
+        DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
             shell_profiles=(DirectLocalShellProfile(profile_id="default", executable=Path(sys.executable).resolve()),),
             allowed_executables=frozenset({Path(sys.executable).resolve()}),
@@ -162,8 +164,8 @@ def _bindings(root: Path) -> RunBindings:
         web=WebBinding(
             client=_WebClient(),
             policy=_WebPolicy(),
-            search_provider=_WebSearchProvider(),
-            scrape_provider=_WebScrapeProvider(),
+            search_backends=(WebSearchBackendBinding("default", _WebSearchProvider()),),
+            scrape_backends=(WebScrapeBackendBinding("default", _WebScrapeProvider()),),
         ),
     )
 

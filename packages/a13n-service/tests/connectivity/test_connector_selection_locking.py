@@ -11,7 +11,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import OperationalError
 
 from .conftest import NOW, ORG_ID, WORKSPACE_ID, actor
-from .connector_helpers import FakeConnectorBackend, fake_registry
+from .connector_helpers import FakeConnectorBackend, fake_catalog
 from .test_connector_service import create_connection, create_connector
 
 
@@ -20,11 +20,12 @@ async def test_connector_snapshot_readers_overlap_while_provider_and_account_edi
     connectivity_sessions, credential_protector
 ):
     sessions = connectivity_sessions
-    registry = fake_registry(FakeConnectorBackend())
-    providers = ConnectorProviderService(sessions, registry, credential_protector, clock=lambda: NOW)
+    catalog = fake_catalog(FakeConnectorBackend())
+    providers = ConnectorProviderService(sessions, catalog, None, credential_protector, clock=lambda: NOW)
     connections = ConnectorConnectionService(
         sessions,
-        registry,
+        catalog,
+        None,
         credential_protector,
         correlation_secret=b"c" * 32,
         public_origin="https://foundation.example",

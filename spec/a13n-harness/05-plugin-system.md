@@ -8,7 +8,7 @@ Plugins always become concrete Python objects before Agent composition. A caller
 
 Automatic configuration is disabled by default. Importing the package never reads environment variables or files, scans package metadata, imports a plugin target, or enables middleware. A builder with no explicit `HarnessBuildContext` inspects only the enable environment variable; it performs further loading only when that switch explicitly enables the feature. An explicit context bypasses ambient discovery entirely.
 
-This narrow document is not a serialized Agent definition, general object compiler, arbitrary import mechanism, process-global registry, or Environment configuration language. The separately owned [Environment Provider catalog](../a13n-environment/01-provider-specs-and-catalog.md#catalog-and-discovery) and [Environment Run inputs](08-environment-integration.md#run-inputs) remain caller-controlled because Provider selection, current state, and fresh adapter construction require Host authority. Pydantic Capabilities remain the extension point inside the Agent loop; Harness plugins exist only for the wider semantic-input-to-complete-result boundary.
+This narrow document is not a serialized Agent definition, general object compiler, arbitrary import mechanism, process-global registry, or Environment configuration language. The [Provider catalog](22-provider-subsystem.md#catalogs) and [Environment Run inputs](08-environment-integration.md#run-inputs) remain caller-controlled because Provider selection, current state, and fresh adapter construction require Host authority. Pydantic Capabilities remain the extension point inside the Agent loop; Harness plugins exist only for the wider semantic-input-to-complete-result boundary.
 
 ```mermaid
 flowchart LR

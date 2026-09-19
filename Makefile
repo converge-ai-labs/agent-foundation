@@ -71,7 +71,7 @@ examples-smoke: examples-sync ## Run every offline example path
 	@(cd examples/plugins && uv run --locked plugin-example-harness-code)
 	@(cd examples/plugins && uv run --locked python -m a13n_plugin_examples.demo_web)
 	@workspace_dir=$$(mktemp -d); trap 'rm -rf "$$workspace_dir"' EXIT; \
-		(cd examples/environment-provider && uv run --locked environment-provider-example direct-local --workspace "$$workspace_dir")
+		(cd examples/environment-provider && uv run --locked environment-provider-example direct_local --workspace "$$workspace_dir")
 	@state_dir=$$(mktemp -d); trap 'rm -rf "$$state_dir"' EXIT; \
 		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "first turn" "second turn") && \
 		(cd examples/agent-app && uv run --locked agent-app-example --state "$$state_dir/state.json" "turn after restart")
@@ -301,7 +301,6 @@ format: sync frontend-sync ## Format repository sources
 .PHONY: deps-check
 deps-check: sync ## Check Python package dependency declarations
 	@(cd packages/a13n-envd-client && uv run --locked deptry a13n_envd_client)
-	@(cd packages/a13n-environment && uv run --locked deptry a13n_environment)
 	@(cd packages/a13n-harness && uv run --locked deptry a13n_harness)
 	@(cd packages/a13n-stream-protocol && uv run --locked deptry a13n_stream_protocol)
 	@(cd packages/a13n-harness-ui && uv run --locked deptry a13n_harness_ui)
@@ -351,9 +350,9 @@ eip-verify: sync ## Verify checked EIP artifacts without modifying the repositor
 .PHONY: eip-integration-test
 eip-integration-test: sync ## Run EIP generation, runtime, cross-language, and wire-model integration tests
 	@cargo build --locked --package a13n-envd
-	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-environment/tests/test_local_envd.py packages/a13n-environment/tests/test_local_envd_e2e.py packages/a13n-environment/tests/test_remote_envd.py packages/a13n-environment/tests/test_remote_envd_e2e.py
+	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" A13N_ENVD_EXECUTABLE="$(CURDIR)/target/debug/a13n-envd" uv run --locked python -m pytest scripts/tests/test_eip_codegen.py packages/a13n-envd-client/tests/eip packages/a13n-harness/tests/providers_environment/test_local_envd.py packages/a13n-harness/tests/providers_environment/test_local_envd_e2e.py packages/a13n-harness/tests/providers_environment/test_remote_envd.py packages/a13n-harness/tests/providers_environment/test_remote_envd_e2e.py
 	@A13N_ENVD_TEST_BINARY="$(CURDIR)/target/debug/a13n-envd" uv run --project examples/environment-provider --locked python -m pytest examples/environment-provider/tests
-	@uv run --locked pyright packages/a13n-envd-client/a13n_envd_client packages/a13n-environment/a13n_environment
+	@uv run --locked pyright packages/a13n-envd-client/a13n_envd_client packages/a13n-harness/a13n_harness/providers/environment
 
 .PHONY: eip-test
 eip-test: eip-integration-test ## Run complete EIP integration and daemon tests
@@ -367,15 +366,15 @@ local-envd-test: sync ## Build a13n-envd and run Local Envd provider tests
 	set +a; \
 	A13N_ENVD_EXECUTABLE="$${A13N_ENVD_EXECUTABLE:-$(CURDIR)/target/debug/a13n-envd}"; \
 	export A13N_ENVD_EXECUTABLE; \
-	A13N_ENVD_TEST_BINARY="$$A13N_ENVD_EXECUTABLE" uv run --locked python -m pytest packages/a13n-environment/tests/test_local_envd.py packages/a13n-environment/tests/test_local_envd_e2e.py
+	A13N_ENVD_TEST_BINARY="$$A13N_ENVD_EXECUTABLE" uv run --locked python -m pytest packages/a13n-harness/tests/providers_environment/test_local_envd.py packages/a13n-harness/tests/providers_environment/test_local_envd_e2e.py
 
 .PHONY: e2b-provider-test
 e2b-provider-test: sync ## Run native E2B unit and opt-in live integration tests
-	@uv run --locked pytest -q packages/a13n-environment/tests/test_e2b*.py packages/a13n-harness/tests/test_e2b_environment_live.py
+	@uv run --locked pytest -q packages/a13n-harness/tests/providers_environment/test_e2b*.py packages/a13n-harness/tests/test_e2b_environment_live.py
 
 .PHONY: docker-provider-test
 docker-provider-test: sync ## Run Docker Provider tests
-	@uv run --locked python -m pytest packages/a13n-environment/tests/test_docker.py
+	@uv run --locked python -m pytest packages/a13n-harness/tests/providers_environment/test_docker.py
 
 .PHONY: eip-check
 eip-check: eip-verify eip-test ## Run the complete EIP protocol gate
@@ -388,7 +387,7 @@ python-build: sync a13n-harness-ui-assets ## Build all Python workspace distribu
 .PHONY: a13n-harness-python-build
 a13n-harness-python-build: ## Build the prepared Harness release-group distributions
 	@rm -rf dist
-	@for package in a13n-environment a13n-harness a13n-stream-protocol; do \
+	@for package in a13n-harness a13n-stream-protocol; do \
 		uv build --package "$$package" --out-dir dist || exit $$?; \
 	done
 

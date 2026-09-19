@@ -12,23 +12,21 @@ import traceback
 from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
-from a13n_environment import (
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderRuntime,
-    EnvironmentError,
-    EnvironmentState,
-    HttpEnvdBackendConfiguration,
-    HttpEnvdCredential,
-    HttpEnvdEnvironmentProvider,
-    HttpEnvdProviderRuntime,
-    LocalEnvdEnvironmentProvider,
-    LocalEnvdLaunchConfiguration,
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdLaunchConfiguration
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
-    WebSocketEnvdConnections,
-    WebSocketEnvdEnvironmentProvider,
-    WebSocketEnvdProviderRuntime,
 )
+from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    HttpEnvdConnectionConfiguration,
+    HttpEnvdCredential,
+)
+from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from pydantic import SecretStr
 from websockets.asyncio.server import serve
 
@@ -43,13 +41,13 @@ def snapshot(root=ROOT):
 @asynccontextmanager
 async def environment(kind):
     async with AsyncExitStack() as stack:
-        if kind == "direct-local":
-            provider = DirectLocalEnvironmentProvider()
+        if kind == "direct_local":
+            provider = DIRECT_LOCAL
             configuration = {"root": {"path": str(ROOT)}}
-            runtime = DirectLocalProviderRuntime()
+            runtime = None
             state = None
-        elif kind == "local-envd":
-            provider = LocalEnvdEnvironmentProvider()
+        elif kind == "local_envd":
+            provider = LOCAL_ENVD
             configuration = {"working_directory": str(ROOT)}
             runtime = LocalEnvdProviderRuntime(
                 executable=Path("/usr/local/bin/a13n-envd"),
@@ -61,18 +59,18 @@ async def environment(kind):
             state = None
         else:
             configuration = {"working_directory": str(ROOT)}
-            if kind == "http-envd":
-                provider = HttpEnvdEnvironmentProvider()
+            if kind == "http_envd":
+                provider = HTTP_ENVD
                 with socket.socket() as sock:
                     sock.bind(("127.0.0.1", 0))
                     port = sock.getsockname()[1]
                 endpoint = f"http://127.0.0.1:{port}"
                 runtime = HttpEnvdProviderRuntime(
-                    HttpEnvdBackendConfiguration(endpoint=endpoint, request_timeout=10),
+                    HttpEnvdConnectionConfiguration(endpoint=endpoint, request_timeout=10),
                     HttpEnvdCredential(token=SecretStr(TOKEN)),
                 )
             else:
-                provider = WebSocketEnvdEnvironmentProvider()
+                provider = WEBSOCKET_ENVD
                 hub = await stack.enter_async_context(WebSocketEnvdConnections())
 
                 async def attach(connection):
@@ -113,7 +111,7 @@ async def environment(kind):
             values = {
                 "A13N_ENVD_RUNTIME_DIR": str(directory / "runtime"),
             }
-            if kind == "http-envd":
+            if kind == "http_envd":
                 values.update(
                     A13N_ENVD_TRANSPORT="http",
                     A13N_ENVD_HTTP_BIND=endpoint.removeprefix("http://"),
@@ -146,7 +144,7 @@ async def environment(kind):
                     await daemon.wait()
 
             stack.push_async_callback(stop)
-            if kind == "http-envd":
+            if kind == "http_envd":
                 async with asyncio.timeout(10):
                     while True:
                         assert daemon.returncode is None, (directory / "daemon.log").read_text()
@@ -158,18 +156,18 @@ async def environment(kind):
                         writer.close()
                         await writer.wait_closed()
                         break
-            state = EnvironmentState(provider_key=provider.key, state_version="1", state={"device_id": "env-storage"})
+            state = EnvironmentState(provider_key=provider.type, state_version="1", state={"device_id": "env-storage"})
 
         if isinstance(runtime, (LocalEnvdProviderRuntime, HttpEnvdProviderRuntime)):
             stack.push_async_callback(runtime.close)
-        adapter = provider.create_environment(
+        adapter = provider.construct(
             environment_id="env-storage",
-            configuration=provider.validate_configuration(schema_version="1", value=configuration),
+            configuration=provider.validate_environment(configuration),
             state=state,
             runtime=runtime,
         )
         stack.push_async_callback(adapter.close)
-        await adapter.enter(thread_id="files", run_id="run", agent_instance_id="agent", mount_id="workspace")
+        await adapter.enter(mount_id="workspace")
         await adapter.prepare()
         try:
             yield adapter
@@ -198,7 +196,7 @@ async def main(kind):
 
         for mode in ("create", "replace", "append"):
             name = "new" if mode == "create" else "destination"
-            path = f"/{name}" if kind == "direct-local" else str(ROOT / name)
+            path = f"/{name}" if kind == "direct_local" else str(ROOT / name)
             try:
                 await files.write_bytes_stream(path, payload(), mode=mode)
             except EnvironmentError as error:
@@ -217,7 +215,7 @@ async def main(kind):
             (ROOT / "probe").unlink(missing_ok=True)
         assert snapshot() == before
         (ROOT / "filler").unlink()
-        path = "/destination" if kind == "direct-local" else str(ROOT / "destination")
+        path = "/destination" if kind == "direct_local" else str(ROOT / "destination")
         await files.write_text(path, "RECOVERED", mode="replace")
         assert await files.read_bytes(path) == b"RECOVERED"
         assert {path.name for path in ROOT.iterdir()} == {"destination"}

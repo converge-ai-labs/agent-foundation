@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
-import { useMemoryProviders } from "./availability";
+import { eligibleMemoryProvider, useMemoryProviders } from "./availability";
 
 const state = vi.hoisted(() => ({
   workspace: "ws_one",
@@ -111,3 +111,36 @@ it("does not equate missing catalog permission with missing subject access", () 
   expect(result.current.visible).toBe(true);
   expect(state.GET).not.toHaveBeenCalled();
 });
+
+const conditional = {
+  type: "custom_memory",
+  configuration_schema: {
+    type: "object",
+    properties: { access: { type: "string", default: "public" } },
+  },
+  authentication: {
+    mode: "required" as const,
+    cases: [{ field: "access", equals: "public", mode: "forbidden" as const }],
+  },
+};
+it.each([
+  ["forbidden without a credential", { access: "public" }, false, true],
+  ["forbidden with a stored credential", { access: "public" }, true, false],
+  ["required without a credential", { access: "private" }, false, false],
+  ["required with a credential", { access: "private" }, true, true],
+])(
+  "resolves declared authentication for %s",
+  (_, configuration, credential_configured, expected) => {
+    expect(
+      eligibleMemoryProvider(
+        {
+          ...provider,
+          type: "custom_memory",
+          configuration,
+          credential_configured,
+        } as never,
+        [conditional] as never,
+      ),
+    ).toBe(expected);
+  },
+);

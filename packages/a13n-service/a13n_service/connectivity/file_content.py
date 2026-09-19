@@ -4,9 +4,9 @@ import mimetypes
 from dataclasses import dataclass
 
 import httpx2
+from a13n_harness.http import ProviderHttpError, bounded_response_body
 
 from a13n_service.assets.domain import normalize_asset_filename
-from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body
 
 MAX_FILE_BYTES = 20 * 1024 * 1024
 MAX_ATTACHMENTS = 5
@@ -41,14 +41,14 @@ def media_type(filename: str, hint: object = None) -> str:
         "text/csv",
         "application/json",
     }:
-        raise ConnectivityHttpError("unsupported_attachment_type")
+        raise ProviderHttpError("unsupported_attachment_type")
     return candidate
 
 
 async def read_file(response: httpx2.Response) -> bytes:
     if response.status_code != 200:
-        raise ConnectivityHttpError("attachment_download_failed")
+        raise ProviderHttpError("attachment_download_failed")
     body = await bounded_response_body(response, max_bytes=MAX_FILE_BYTES)
     if not body:
-        raise ConnectivityHttpError("attachment_empty")
+        raise ProviderHttpError("attachment_empty")
     return body

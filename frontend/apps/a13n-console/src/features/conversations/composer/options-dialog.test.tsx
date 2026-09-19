@@ -59,7 +59,7 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   await user.click(screen.getByRole("button", { name: "Options" }));
   await user.click(screen.getByRole("combobox", { name: "Environment" }));
   expect(
-    screen.getByRole("option", {
+    await screen.findByRole("option", {
       name: "Reuse existing: Research (env_first)",
     }),
   ).toBeTruthy();
@@ -121,7 +121,7 @@ it("preserves a captured directory and clears it when switching targets", async 
   await user.click(screen.getByRole("button", { name: "Options" }));
   await screen.findByRole("textbox", { name: "Working directory" });
   await user.click(screen.getByRole("combobox", { name: "Environment" }));
-  await user.click(screen.getByRole("option", { name: "Inherit" }));
+  await user.click(await screen.findByRole("option", { name: "Inherit" }));
   await user.click(screen.getByRole("button", { name: "Apply" }));
   await user.click(screen.getByRole("button", { name: "Submit" }));
   expect(submit.mock.lastCall?.[0].environment).toBeUndefined();

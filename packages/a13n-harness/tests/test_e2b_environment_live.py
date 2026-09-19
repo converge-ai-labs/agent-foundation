@@ -6,9 +6,10 @@ import secrets
 from collections.abc import AsyncIterator
 
 import pytest
-from a13n_environment import E2BEnvironment, E2BProviderConfiguration, E2BProviderRuntime
 from a13n_harness import HarnessBuilder, RunBindings
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
+from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
+from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic import SecretStr
 from pydantic_ai.agent.spec import AgentSpec
@@ -61,7 +62,7 @@ async def test_harness_shell_uses_native_e2b_and_closes_without_destroying():
         model=FunctionModel(stream_function=stream),
         capabilities=(DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),),
     )
-    configuration = E2BProviderConfiguration(timeout_seconds=120)
+    configuration = E2BEnvironmentConfiguration(timeout_seconds=120)
     runtime = E2BProviderRuntime(api_key=SecretStr(os.environ["A13N_TEST_E2B_API_KEY"]))
     identity = "environment-harness-" + secrets.token_hex(8)
     environment = E2BEnvironment(configuration, environment_id=identity, state=None, runtime=runtime)
@@ -127,7 +128,7 @@ async def test_harness_recovers_native_command_in_a_fresh_run_and_attaches_outpu
     def bindings():
         return RunBindings.embedded(capabilities=(InvocationPolicyCapability(evaluator=_Allow()),))
 
-    configuration = E2BProviderConfiguration(timeout_seconds=120)
+    configuration = E2BEnvironmentConfiguration(timeout_seconds=120)
     runtime = E2BProviderRuntime(api_key=SecretStr(os.environ["A13N_TEST_E2B_API_KEY"]))
     identity = "environment-harness-" + secrets.token_hex(8)
     first = E2BEnvironment(configuration, environment_id=identity, state=None, runtime=runtime)

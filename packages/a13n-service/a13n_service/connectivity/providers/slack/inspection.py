@@ -1,9 +1,9 @@
 """Slack inspection response validation, independent of configured identity claims."""
 
+from a13n_harness.http import ProviderHttpError
 from pydantic import ValidationError
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.inspection import (
     ConversationCandidate,
     ConversationInfo,
@@ -15,9 +15,9 @@ from a13n_service.connectivity.inspection import (
 def installation(auth: JsonObject, response: JsonObject) -> InstallationInfo:
     bot = response.get("bot")
     if not isinstance(bot, dict) or bot.get("id") != auth.get("bot_id"):
-        raise ConnectivityHttpError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     if bot.get("user_id") != auth.get("user_id"):
-        raise ConnectivityHttpError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     try:
         return InstallationInfo.model_validate(
             {
@@ -31,13 +31,13 @@ def installation(auth: JsonObject, response: JsonObject) -> InstallationInfo:
             }
         )
     except ValidationError as error:
-        raise ConnectivityHttpError("invalid_provider_response") from error
+        raise ProviderHttpError("invalid_provider_response") from error
 
 
 def conversation(response: JsonObject, *, expected_id: str) -> ConversationInfo:
     channel = response.get("channel")
     if not isinstance(channel, dict) or channel.get("id") != expected_id:
-        raise ConnectivityHttpError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     audience = "unknown"
     if channel.get("is_im") is True or channel.get("is_mpim") is True:
         audience = "direct"
@@ -60,23 +60,23 @@ def conversation(response: JsonObject, *, expected_id: str) -> ConversationInfo:
             }
         )
     except ValidationError as error:
-        raise ConnectivityHttpError("invalid_provider_response") from error
+        raise ProviderHttpError("invalid_provider_response") from error
 
 
 def conversations(response: JsonObject, *, limit: int) -> ConversationPage:
     channels = response.get("channels")
     metadata = response.get("response_metadata", {})
     if not isinstance(channels, list) or len(channels) > limit or not isinstance(metadata, dict):
-        raise ConnectivityHttpError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     cursor = metadata.get("next_cursor")
     if cursor is not None and not isinstance(cursor, str):
-        raise ConnectivityHttpError("invalid_provider_response")
+        raise ProviderHttpError("invalid_provider_response")
     try:
         items = []
         for channel in channels:
             if not isinstance(channel, dict):
-                raise ConnectivityHttpError("invalid_provider_response")
+                raise ProviderHttpError("invalid_provider_response")
             items.append(ConversationCandidate.model_validate({"id": channel.get("id"), "name": channel.get("name")}))
         return ConversationPage.model_validate({"items": tuple(items), "cursor": cursor or None})
     except ValidationError as error:
-        raise ConnectivityHttpError("invalid_provider_response") from error
+        raise ProviderHttpError("invalid_provider_response") from error

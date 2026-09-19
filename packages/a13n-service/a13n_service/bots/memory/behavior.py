@@ -13,6 +13,7 @@ from a13n_service.interactions.domain import Run
 from a13n_service.interactions.errors import RunAcceptanceError
 from a13n_service.interactions.ports.memory import ActiveMemory, DisabledMemory
 from a13n_service.memory.models import MemoryProviderRecord, RunMemoryStorageRecord
+from a13n_service.memory.resources import binds_host_files
 from a13n_service.memory.service import MemoryService
 from a13n_service.storage import short_session
 
@@ -80,7 +81,7 @@ class ConversationMemory:
         async with short_session(self.service.authorizer.sessions) as session:
             binding = await require_binding(session, run.id)
             provider = await session.get(MemoryProviderRecord, binding.provider_id) if binding.provider_id else None
-            filesystem = provider is not None and provider.type == "a13n.filesystem"
+            filesystem = provider is not None and binds_host_files(provider.type, self.service.catalog)
         if (binding.use_memory or binding.save_on_request) and self.verifier is None:
             raise RunAcceptanceError("memory_binding_unavailable", "Conversation verification is unavailable")
         return PreparedConversationMemory(self.service, run, binding, self.verifier, current_context, filesystem)

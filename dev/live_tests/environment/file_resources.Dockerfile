@@ -6,15 +6,15 @@ FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS runtime
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY packages/a13n-envd-client/pyproject.toml packages/a13n-envd-client/pyproject.toml
-COPY packages/a13n-environment/pyproject.toml packages/a13n-environment/pyproject.toml
 COPY packages/a13n-harness/pyproject.toml packages/a13n-harness/pyproject.toml
 COPY packages/a13n-stream-protocol/pyproject.toml packages/a13n-stream-protocol/pyproject.toml
 COPY packages/a13n-harness-ui/pyproject.toml packages/a13n-harness-ui/pyproject.toml
 COPY packages/a13n-logging/pyproject.toml packages/a13n-logging/pyproject.toml
 COPY packages/a13n-service/pyproject.toml packages/a13n-service/pyproject.toml
 COPY packages/a13n-envd-client packages/a13n-envd-client
-COPY packages/a13n-environment packages/a13n-environment
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev --package a13n-environment
+COPY packages/a13n-harness packages/a13n-harness
+COPY packages/a13n-logging packages/a13n-logging
+RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev --package a13n-harness
 COPY --from=daemon /usr/local/bin/a13n-envd /usr/local/bin/a13n-envd
 COPY --chmod=0644 dev/live_tests/environment/file_resource_worker.py /app/file_resource_worker.py
 RUN groupadd --gid 10001 fixture \

@@ -18,8 +18,10 @@ vi.mock("../../layout/workspace", () => ({
 vi.mock("./toolsets", () => ({ AgentToolsets: () => null }));
 vi.mock("../memory/availability", () => ({
   useMemoryProviders: () => ({ visible: false }),
+  useWorkspaceMemoryProviderDefinitions: () => ({ data: { items: [] } }),
+  eligibleMemoryProvider: () => false,
 }));
-vi.mock("../memory/selection", () => ({ AgentMemorySelection: () => null }));
+vi.mock("../memory/presets", () => ({ MemoryPresets: () => null }));
 vi.mock("../models/provider-definitions", () => ({
   useModelProviderDefinitions: () => ({ data: { items: [] } }),
 }));

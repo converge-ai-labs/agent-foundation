@@ -8,7 +8,7 @@ from a13n_harness.environment import (
     FileQueryRequest,
     FileTextSearchRequest,
 )
-from a13n_harness.environment.files import FileOperator
+from a13n_harness.providers.environment.files import FileOperator
 
 
 @pytest.fixture

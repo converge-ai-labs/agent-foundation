@@ -123,12 +123,13 @@ def local_app(config: dict, role: str):
         from ..iam.run_fault_identity import fault_authenticator
 
         authenticate = fault_authenticator(config, authenticate)
-    from a13n_environment import build_environment_provider_catalog
+    from a13n_harness.providers.catalog import ProviderCatalog
+    from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 
     # This isolated Host uses custom identities and explicitly opts into local
     # backends. Production OSS deployments publish these through local_providers.
-    builtin_keys = (*settings.environments.provider_builtins, "direct-local", "docker")
-    environment_catalog = build_environment_provider_catalog(builtin_keys=builtin_keys)
+    builtin_keys = (*settings.environments.provider_builtins, "direct_local", "docker")
+    environment_catalog = ProviderCatalog(select_builtin_environment_providers(builtin_keys))
     reverse_envd = None
     if config.get("e2b_lifecycle") and role == "worker":
         from ..environment.e2b_host import environment_catalog as e2b_catalog
@@ -144,7 +145,7 @@ def local_app(config: dict, role: str):
         reverse_envd = ReverseEnvdHost(config["reverse_envd"], builtin_keys)
         environment_catalog = reverse_envd.catalog
     elif config.get("websocket_envd") and (role == "control" or os.environ.get("LIVE_TEST_NO_REVERSE_ENVD")):
-        environment_catalog = build_environment_provider_catalog(builtin_keys=(*builtin_keys, "a13n.websocket-envd"))
+        environment_catalog = ProviderCatalog(select_builtin_environment_providers((*builtin_keys, "websocket_envd")))
     if role == "worker":
         from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 
@@ -169,7 +170,8 @@ def local_app(config: dict, role: str):
             request_authenticator=authenticate,
             plugin_factory_catalog=catalog,
             environment_provider_catalog=environment_catalog,
-            connector_provider_registry=connector_host.registry if connector_host else None,
+            connector_providers=connector_host.catalog if connector_host else None,
+            connector_http=connector_host.connector_http if connector_host else None,
         ),
     )
     if config.get("bot_memory") and role in {"control", "worker"}:

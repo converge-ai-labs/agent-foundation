@@ -2,10 +2,11 @@
 
 from datetime import datetime
 
+from a13n_harness.providers.connector.contracts import DiscoveredConnector
+
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.collection_cursors import decode_collection_cursor, encode_collection_cursor
 
-from .contracts import DiscoveredConnector
 from .domain import Connector, ConnectorCollection
 from .errors import ConnectorError
 

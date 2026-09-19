@@ -117,10 +117,10 @@ def test_managed_upload_and_agent_payloads_match_current_contracts():
 
 @pytest.mark.anyio
 async def test_composio_fixture_is_usable_by_production_adapter(tmp_path):
-    from a13n_service.connectivity.connectors.contracts import ConnectionBinding, SetupContext
-    from a13n_service.connectivity.connectors.http import ConnectorHttpClient
-    from a13n_service.connectivity.connectors.providers.composio.runtime import ComposioProvider
-    from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
+    from a13n_harness.providers.connector.composio.runtime import ComposioProvider
+    from a13n_harness.providers.connector.configuration import ApiKeyCredentials
+    from a13n_harness.providers.connector.contracts import ConnectionBinding, SetupContext
+    from a13n_harness.providers.connector.http import ConnectorHttpClient
 
     from ..harness_integration.connector_host import PeerEndpoint
 
@@ -138,8 +138,6 @@ async def test_composio_fixture_is_usable_by_production_adapter(tmp_path):
         assert await provider.test() == ("account_read",)
         assert (await provider.discover_connectors())[0].key == "live"
         context = SetupContext(
-            attempt_id="attempt",
-            generation=1,
             connector_key="live",
             external_user_correlation="owner",
             callback_url=origin + "/callback",

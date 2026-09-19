@@ -36,7 +36,7 @@ class ModelJourney(ManagementJourney):
                 "type": provider_type,
                 "name": "Model E2E " + case_id,
                 "configuration": config,
-                "credential": credential,
+                "credential": {"api_key": credential} if credential is not None else None,
                 "extra_headers": headers or {},
             },
         )

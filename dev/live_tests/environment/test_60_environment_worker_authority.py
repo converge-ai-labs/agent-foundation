@@ -31,7 +31,7 @@ async def authorities(authority_lab):
     lab = authority_lab
     await reset_workers(lab)
     pair = await add_second_worker(lab)
-    backend = EnvironmentBackend(lab, "direct-local")
+    backend = EnvironmentBackend(lab, "direct_local")
     try:
         async with backend.target() as target:
             yield backend, target, pair

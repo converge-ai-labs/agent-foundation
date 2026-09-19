@@ -7,11 +7,6 @@ from itertools import pairwise
 from pathlib import Path
 
 import pytest
-from a13n_environment import (
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-)
-from a13n_environment.direct_local.files import LocalFileOperator
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -46,6 +41,11 @@ from a13n_harness.environment.advanced import (
 from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
 )
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.toolsets import (
     FILE_VIEW_RULES,
@@ -172,7 +172,7 @@ class _Materializer:
 def _runtime_mount(root: Path, *, environment_id: str = "skills-test") -> EnvironmentRuntimeMount:
     return EnvironmentRuntimeMount(
         binding=DirectLocalEnvironmentProviderBinding(
-            DirectLocalProviderConfiguration(
+            DirectLocalEnvironmentConfiguration(
                 root=DirectLocalRootConfiguration(path=root),
             ),
             environment_id=environment_id,

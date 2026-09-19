@@ -1,6 +1,7 @@
 """Lark Account send tools and chat scope."""
 
 import httpx2
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from pydantic import Field
 
 from a13n_service.connectivity.domain import JsonObject
@@ -9,7 +10,6 @@ from a13n_service.connectivity.providers.lark.actions import LarkReplyContent
 from a13n_service.connectivity.providers.lark.adapter import LarkAccountConfig
 from a13n_service.connectivity.providers.lark.client import LarkNativeClient
 from a13n_service.connectivity.providers.lark.token import LarkTenantTokenProvider
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.ids import new_object_id
 
 from ...accounts.domain import StrictModel

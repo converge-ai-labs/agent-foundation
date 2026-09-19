@@ -6,12 +6,7 @@ from collections.abc import AsyncGenerator, Mapping
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
-from ._mount import (
-    _EnteredMount,
-    _validate_process_result_identity,
-    _validate_provider_artifacts,
-)
-from .commands import (
+from a13n_harness.providers.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     PortObservation,
@@ -26,16 +21,22 @@ from .commands import (
     ProcessWriteStdinResult,
     ShellExecResult,
 )
-from .models import (
+from a13n_harness.providers.environment.models import (
     EnvironmentAction,
     EnvironmentError,
     EnvironmentOperationReceipt,
 )
-from .retention import (
+from a13n_harness.providers.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputPolicy,
     EnvironmentOutputReadResult,
+)
+
+from ._mount import (
+    _EnteredMount,
+    _validate_process_result_identity,
+    _validate_provider_artifacts,
 )
 
 if TYPE_CHECKING:

@@ -1,5 +1,6 @@
 """Shared bounded validation for provider tool previews and connection discovery."""
 
+from a13n_harness.providers.connector.contracts import ConnectorTool, ToolCatalog
 from anyio import fail_after, to_thread
 from mcp.types import Tool, ToolAnnotations
 
@@ -7,7 +8,6 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_PAGES, DISCOVERY_MAX_TOOLS
 from a13n_service.connectivity.tool_validation import validate_tools
 
-from .contracts import ConnectorTool, ToolCatalog
 from .errors import ConnectorError
 
 

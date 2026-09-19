@@ -6,11 +6,9 @@ import json
 import time
 
 import httpx2
+from a13n_harness.http import ProviderHttpError, bounded_response_body, retry_after_seconds
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body, retry_after_seconds
-
-GitHubApiError = ConnectivityHttpError
 _JSON_VALUE = TypeAdapter(JsonValue)
 
 
@@ -25,12 +23,12 @@ async def read_github_response(response: httpx2.Response, *, max_bytes: int) -> 
         except (KeyError, ValueError, OverflowError):
             pass
     if response.status_code == 429 or (response.status_code == 403 and (retry_after is not None or exhausted)):
-        raise GitHubApiError("rate_limited", retry_after_seconds=retry_after)
+        raise ProviderHttpError("rate_limited", retry_after_seconds=retry_after)
     if response.status_code >= 500:
-        raise GitHubApiError("provider_unavailable")
+        raise ProviderHttpError("provider_unavailable")
     if response.status_code < 200 or response.status_code >= 300:
-        raise GitHubApiError("provider_rejected")
+        raise ProviderHttpError("provider_rejected")
     try:
         return _JSON_VALUE.validate_python(json.loads(body))
     except (UnicodeDecodeError, json.JSONDecodeError, ValidationError, RecursionError) as error:
-        raise GitHubApiError("invalid_provider_response") from error
+        raise ProviderHttpError("invalid_provider_response") from error

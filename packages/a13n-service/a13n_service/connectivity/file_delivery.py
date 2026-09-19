@@ -5,13 +5,13 @@ from typing import Literal
 
 import anyio
 import httpx2
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from pydantic import BaseModel, ConfigDict
 
 from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.assets.domain import RunOutputAssetSource
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.file_content import MAX_FILE_BYTES, FileContent
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.connectivity.native_context import InboundRunContext
 from a13n_service.connectivity.providers.lark.files import LarkFiles
 from a13n_service.connectivity.providers.slack.files import SlackFiles
@@ -59,16 +59,16 @@ class FileDelivery:
             or not isinstance(asset.source, RunOutputAssetSource)
             or asset.source.run_id != run_id
         ):
-            raise ConnectivityHttpError("file_not_from_current_run")
+            raise ProviderHttpError("file_not_from_current_run")
         if asset.size_bytes > MAX_FILE_BYTES:
-            raise ConnectivityHttpError("file_too_large")
+            raise ProviderHttpError("file_too_large")
         prepared = await self.assets.prepare_content(actor=actor, asset_id=asset.id)
         try:
             body = bytearray()
             async for chunk in prepared.content.chunks():
                 body.extend(chunk)
                 if len(body) > MAX_FILE_BYTES:
-                    raise ConnectivityHttpError("file_too_large")
+                    raise ProviderHttpError("file_too_large")
             file = FileContent(asset.filename, asset.media_type, bytes(body))
             await guard()
             # Recheck deletion and permissions after reading the bounded file.
@@ -101,7 +101,7 @@ class FileDelivery:
                         )
             except (httpx2.HTTPError, TimeoutError):
                 return FileDeliveryOutcome(kind="outcome_unknown", asset_id=asset.id)
-            except ConnectivityHttpError as error:
+            except ProviderHttpError as error:
                 if error.code in {"provider_unavailable", "invalid_provider_response", "response_too_large"}:
                     return FileDeliveryOutcome(kind="outcome_unknown", asset_id=asset.id)
                 raise

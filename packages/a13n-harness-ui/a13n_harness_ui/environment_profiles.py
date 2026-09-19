@@ -26,7 +26,6 @@ class BuiltInEnvironmentProfile:
     description: str
     provider_key: str
     adapter_key: str
-    provider_schema_version: str = "1"
 
 
 FULL_CONTROL_PROFILE_ID: Final = "environment-native"
@@ -57,7 +56,7 @@ FULL_CONTROL_PROFILE: Final = BuiltInEnvironmentProfile(
         "Runs commands directly as the Host user; commands may access paths outside Project roots "
         "and use Host networking."
     ),
-    provider_key="direct-local",
+    provider_key="direct_local",
     adapter_key="a13n.native-project-root",
 )
 SANDBOX_PROFILE: Final = BuiltInEnvironmentProfile(
@@ -67,7 +66,7 @@ SANDBOX_PROFILE: Final = BuiltInEnvironmentProfile(
     description=(
         "Runs commands through local a13n-envd with required filesystem and process isolation and denied networking."
     ),
-    provider_key="a13n.local-envd",
+    provider_key="local_envd",
     adapter_key="a13n.local-envd-project-root",
 )
 BUILT_IN_ENVIRONMENT_PROFILES: Final = (

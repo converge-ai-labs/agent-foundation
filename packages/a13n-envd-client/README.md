@@ -2,7 +2,7 @@
 
 `a13n-envd-client` is the low-level Python client for Envd's Environment Interaction Protocol (EIP). The import package is `a13n_envd_client`. Python 3.13 or later is required.
 
-Use this package when implementing an Environment Provider or a trusted EIP integration. Most applications should start with [`a13n-environment`](../a13n-environment/README.md), which owns Provider adaptation and target lifecycle.
+Use this package when implementing an Environment Provider or a trusted EIP integration. Most applications should start with [`a13n-harness`](../a13n-harness/README.md), whose Environment Providers own Provider adaptation and target lifecycle.
 
 ## Public surface
 

@@ -16,12 +16,12 @@ from uuid import uuid4
 import httpx2
 from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_envd_client.websocket import WebSocketConnection
-from a13n_environment import EnvironmentProvider
 from a13n_harness import HarnessInstrumentation
 from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
-from a13n_harness.model_auth import GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.model.oauth import GrokCredentials
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field
@@ -270,7 +270,7 @@ class HarnessUiIntegrations:
     """Explicit trusted Host registrations fixed for one App lifetime."""
 
     capabilities: Mapping[str, type[AbstractCapability[Any]]] = field(default_factory=dict)
-    environment_providers: tuple[EnvironmentProvider, ...] = ()
+    environment_providers: tuple[EnvironmentProviderDefinition, ...] = ()
     environment_adapters: tuple[EnvironmentProjectAdapter, ...] = ()
     harness_plugin_factories: tuple[HarnessPluginFactory, ...] = ()
     environment_run_extension_factories: tuple[EnvironmentRunExtensionFactory, ...] = ()
@@ -2435,6 +2435,7 @@ async def open_harness_ui_app(
                 resources.enter_context(prices.update_in_background())
             selected_integrations = integrations or HarnessUiIntegrations()
             catalog = HarnessUiExtensionCatalog(
+                provider_plugins=settings.provider_plugins,
                 host_capabilities=dict(selected_integrations.capabilities),
                 host_providers=selected_integrations.environment_providers,
                 host_adapters=selected_integrations.environment_adapters,

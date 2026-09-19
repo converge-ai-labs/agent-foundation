@@ -9,10 +9,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_environment import (
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-)
 from a13n_harness import (
     HarnessBuilder,
     RunBindings,
@@ -33,8 +29,10 @@ from a13n_harness.capabilities import (
     WebProviderError,
     WebRequest,
     WebResponse,
+    WebScrapeBackendBinding,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchBackendBinding,
     WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResponse,
@@ -49,6 +47,10 @@ from a13n_harness.environment.advanced import (
 )
 from a13n_harness.environment.providers import (
     EnvironmentRuntimeMount,
+)
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
 )
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from a13n_harness.toolsets.documents import DocumentsToolset
@@ -156,7 +158,7 @@ class _ScrapeProvider:
 
 def _binding(root: Path):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
+        DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         ),
         environment_id="content-capabilities-test",
@@ -175,7 +177,7 @@ def _binding(root: Path):
 
 def _replacement_mount(root: Path) -> EnvironmentRuntimeMount:
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
+        DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         ),
         environment_id="content-capabilities-test",
@@ -280,13 +282,18 @@ async def test_content_toolsets_compose_directly_over_natural_provider_ports(tmp
         web = WebToolset(
             client=_WebClient(()),
             policy=_WebPolicy(),
-            search_provider=_WebProvider(),
-            scrape_provider=_ScrapeProvider(
-                WebScrapeResult(
-                    content="# Page",
-                    source_url="https://example.com/page",
-                    canonical_url="https://example.com/page",
-                )
+            search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
+            scrape_backends=(
+                WebScrapeBackendBinding(
+                    "default",
+                    _ScrapeProvider(
+                        WebScrapeResult(
+                            content="# Page",
+                            source_url="https://example.com/page",
+                            canonical_url="https://example.com/page",
+                        )
+                    ),
+                ),
             ),
             files=environment.files,
             file_scopes=environment,
@@ -752,8 +759,8 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
             web=WebBinding(
                 client=client,
                 policy=policy,
-                search_provider=search,
-                scrape_provider=scrape,
+                search_backends=(WebSearchBackendBinding("default", search),),
+                scrape_backends=(WebScrapeBackendBinding("default", scrape),),
             ),
         ),
     )
@@ -790,7 +797,7 @@ async def test_web_search_strips_credential_aliases_from_model_history(credentia
             web=WebBinding(
                 client=_WebClient(()),
                 policy=_WebPolicy(),
-                search_provider=search,
+                search_backends=(WebSearchBackendBinding("default", search),),
             ),
         ),
     )
@@ -1019,7 +1026,9 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
     if not has_backing_identity:
         # Exercise real file scopes across fresh bindings without continuity evidence,
         # as with Remote Envd. Dispatch still has independent mount/generation fences.
-        monkeypatch.setattr("a13n_environment.direct_local.provider.local_backing_identity", lambda **kwargs: None)
+        monkeypatch.setattr(
+            "a13n_harness.providers.environment.direct_local.provider.local_backing_identity", lambda **kwargs: None
+        )
 
     original, replacement = tmp_path / "original", tmp_path / "replacement"
     original.mkdir()

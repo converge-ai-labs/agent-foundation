@@ -5,6 +5,7 @@ if its result is lost, only finding the upstream configuration permits progress.
 There is intentionally no expiry that could turn an uncertain POST into a retry.
 """
 
+from a13n_harness.providers.connector.contracts import ConnectorProviderError
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -12,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.ids import new_object_id
 from a13n_service.storage import is_unique_conflict, transaction
 
-from .contracts import ConnectorProviderError
 from .domain import ConnectorProviderStatus
 from .models import ConnectorProviderRecord, ConnectorSharedSetupClaimRecord
 

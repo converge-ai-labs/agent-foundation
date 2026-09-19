@@ -18,6 +18,8 @@ import {
   type ResourceEditorControl,
 } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
+import { credentialMode } from "../../shared/provider-authentication";
+import { useCredentialSection } from "../../shared/use-credential-section";
 import {
   FormActions,
   ProviderEnabled,
@@ -43,48 +45,29 @@ import {
   credentialDescription,
   credentialHint,
   credentialLabel,
-  providerKeyUrls,
+  providerKeyLink,
   providerStyles,
 } from "../providers";
+import { useMemoryProviderDefinitions } from "./availability";
 import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
 
-type Definition = Schema["MemoryProviderDefinition"];
+type Definition = Schema["MemoryProviderMetadata"];
 
 /** The target a saved backend cannot be pointed away from. */
 const storageNote =
   "Storage configuration cannot be changed. Create a new provider for a different target; existing memories are not migrated.";
 
-export function useMemoryProviderDefinitions(
-  scope: MemoryProviderScope,
-  enabled = true,
-) {
-  const client = useClient();
-  return useQuery({
-    queryKey: ["memory-provider-types", scope.kind, scope.id],
-    enabled,
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/memory-provider-types", {
-          signal,
-          headers:
-            scope.kind === "workspace" ? workspaceHeaders(scope.id) : undefined,
-        })
-        .then(data),
-  });
-}
-
-/** Whether a backend asks for a secret at all. */
+/** Whether a backend asks for a secret at all, as its definition declares. */
 export function memoryCredentialState(
-  provider: { credential_configured?: boolean },
+  provider: {
+    configuration: Record<string, unknown>;
+    credential_configured?: boolean;
+  },
   definition?: Definition,
 ) {
-  const schema = (definition?.credential_schema ?? {}) as {
-    properties?: Record<string, unknown>;
-  };
   if (
     definition &&
-    (definition.requires_credential === false ||
-      !Object.keys(schema.properties ?? {}).length)
+    credentialMode(definition, provider.configuration) !== "required"
   )
     return "not_required" as const;
   return provider.credential_configured
@@ -283,8 +266,6 @@ export function MemoryProviderForm({
   const [configuration, setConfiguration] = useState<Record<string, unknown>>(
     resource?.value.configuration ?? {},
   );
-  const [credential, setCredential] = useState<Record<string, unknown>>({});
-  const [removeCredential, setRemoveCredential] = useState(false);
   const [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [error, setError] = useState<unknown>();
@@ -293,16 +274,18 @@ export function MemoryProviderForm({
   const api = memoryProviderApi(client, scope);
   const definition = definitions.find((item) => item.type === type) ?? chosen;
   const configSchema = definition?.configuration_schema ?? {};
-  const credentialSchema = definition?.credential_schema ?? {};
-  const replacingCredential = Object.keys(credential).length > 0;
+  const section = useCredentialSection(
+    definition,
+    configuration,
+    original?.value,
+  );
   const save = useMutation({
     gcTime: 0,
     retry: false,
     mutationFn: async () => {
       if (!name.trim()) throw new Error(t("Enter a provider name."));
-      const credentials = withSchemaValues(credentialSchema, credential);
-      if (!original || replacingCredential)
-        validateSettings(credentialSchema, credentials);
+      const credentials = section.payload();
+      if (credentials) validateSettings(section.schema, credentials);
       if (!original) {
         if (!definition) throw new Error(t("Choose a provider type."));
         const config = withSchemaValues(configSchema, configuration);
@@ -313,7 +296,9 @@ export function MemoryProviderForm({
             name,
             enabled,
             configuration: jsonObject(JSON.stringify(config)),
-            credential: jsonObject(JSON.stringify(credentials)),
+            credential: credentials
+              ? jsonObject(JSON.stringify(credentials))
+              : null,
           });
         } catch (error) {
           if (
@@ -332,15 +317,18 @@ export function MemoryProviderForm({
       return api.updateProvider(original.value.id, original.etag, {
         name,
         enabled,
-        ...(removeCredential
-          ? { credential: null }
-          : replacingCredential
-            ? { credential: jsonObject(JSON.stringify(credentials)) }
-            : {}),
+        ...(credentials === undefined
+          ? {}
+          : {
+              credential:
+                credentials === null
+                  ? null
+                  : jsonObject(JSON.stringify(credentials)),
+            }),
       });
     },
     onSuccess: (provider) => {
-      setCredential({});
+      section.setCredential({});
       void cache.invalidateQueries({ queryKey: ["memory-providers"] });
       void cache.invalidateQueries({ queryKey: ["memory-provider"] });
       onSaved(provider);
@@ -465,15 +453,17 @@ export function MemoryProviderForm({
           className={providerStyles.connectFields}
         >
           <ProviderConnectFields
-            credentialSchema={credentialSchema}
+            credentialSchema={
+              section.mode === "forbidden" ? undefined : section.schema
+            }
             configurationSchema={configSchema}
-            credential={credential}
-            onCredentialChange={setCredential}
+            credential={section.credential}
+            onCredentialChange={section.setCredential}
             configuration={configuration}
             onConfigurationChange={setConfiguration}
             name={name}
             onNameChange={setName}
-            keyLink={providerKeyUrls[type]}
+            keyLink={providerKeyLink(definition)}
             advancedOpen={advancedOpen}
             onAdvancedOpenChange={setAdvancedOpen}
           />
@@ -498,27 +488,27 @@ export function MemoryProviderForm({
             onCheckedChange={setEnabled}
             description={t("Stored records stay in place.")}
           />
-          {memoryCredentialState(original.value, definition) !==
-            "not_required" && (
+          {section.visible && (
             <CredentialRow
-              label={t(credentialLabel(credentialSchema))}
-              configured={!!original.value.credential_configured}
-              removing={removeCredential}
-              onRemovingChange={setRemoveCredential}
-              onDiscard={() => setCredential({})}
+              label={t(credentialLabel(section.schema))}
+              configured={section.removable}
+              removing={section.removing}
+              onRemovingChange={section.setRemoving}
+              onDiscard={() => section.setCredential({})}
             >
-              {definition ? (
+              {definition && section.mode !== "forbidden" ? (
                 <SchemaFields
                   secret
                   autoFocus
                   labelAction={
-                    providerKeyUrls[type] && (
-                      <ProviderKeyLink {...providerKeyUrls[type]} />
+                    providerKeyLink(definition) && (
+                      <ProviderKeyLink {...providerKeyLink(definition)!} />
                     )
                   }
-                  schema={{ ...credentialSchema, required: [] }}
-                  value={credential}
-                  onChange={setCredential}
+                  schema={section.schema}
+                  requireFields={section.requireFields}
+                  value={section.credential}
+                  onChange={section.setCredential}
                 />
               ) : (
                 <p className={styles.muted}>

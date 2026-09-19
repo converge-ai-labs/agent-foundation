@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 from a13n_harness import HarnessModelCharacteristics, ModelCapability, RunInputValue
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.agents.domain import InputAdapterConfig, JsonObject
 from a13n_service.assets.domain import Asset, UploadedAssetSource
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.interactions.input import (
     AcceptedAgentInput,

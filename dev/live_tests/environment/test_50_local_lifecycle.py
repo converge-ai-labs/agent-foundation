@@ -7,16 +7,18 @@ import signal
 
 import pytest
 from a13n_envd_client import EIPDeviceConnection
-from a13n_environment import EnvironmentError, EnvironmentProviderError, LocalEnvdProviderRuntime
-from a13n_environment.commands import CommandRequest, ShellCommand
-from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime
+from a13n_harness.providers.environment.models import EnvironmentError
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
 from .e2b_support import eventually
 from .file_backends import FileBackend
 
 pytestmark = pytest.mark.anyio
 logger = logging.getLogger(__name__)
-KINDS = ("direct-local", "local-envd")
+KINDS = ("direct_local", "local_envd")
 OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=8, max_output_bytes=4096, overflow="retain")
 
 
@@ -47,13 +49,13 @@ async def test_inert_entry_unused_close_and_concurrent_prepare_once(tmp_path, mo
     async with FileBackend(kind, tmp_path).open(prepare=False) as backend:
         before = set(tmp_path.rglob("*"))
         unused = backend.environment
-        await unused.enter(thread_id="t", run_id="unused", agent_instance_id="a", mount_id="workspace")
+        await unused.enter(mount_id="workspace")
         assert unused.operations.files is None and unused.dump_state() is None
         await unused.close()
         assert set(tmp_path.rglob("*")) == before
         environment = backend.adapter()
         backend.environment = environment
-        await environment.enter(thread_id="t", run_id="parallel", agent_instance_id="a", mount_id="workspace")
+        await environment.enter(mount_id="workspace")
         native, calls = environment._prepare, []
 
         async def prepare(**arguments):
@@ -68,12 +70,12 @@ async def test_inert_entry_unused_close_and_concurrent_prepare_once(tmp_path, mo
         logger.info("Inert entry and concurrent preparation verified backend=%s native_calls=1", kind)
 
 
-@pytest.mark.parametrize("kind", ["direct-local", "local-envd"])
+@pytest.mark.parametrize("kind", ["direct_local", "local_envd"])
 async def test_local_missing_root_is_not_created_by_prepare(tmp_path, kind):
     async with FileBackend(kind, tmp_path).open(prepare=False) as backend:
         saved = tmp_path / "saved-workspace"
         backend.root.rename(saved)
-        with pytest.raises(EnvironmentError if kind == "direct-local" else EnvironmentProviderError):
+        with pytest.raises(EnvironmentError if kind == "direct_local" else EnvironmentProviderError):
             await backend.prepare(backend.environment)
         assert not backend.root.exists()
         assert (saved / "file-tests/source").read_bytes() == b"ORIGINAL\n"
@@ -81,7 +83,7 @@ async def test_local_missing_root_is_not_created_by_prepare(tmp_path, kind):
         assert backend.environment.operations.files is None
 
 
-@pytest.mark.parametrize("kind", ["direct-local", "local-envd"])
+@pytest.mark.parametrize("kind", ["direct_local", "local_envd"])
 async def test_replacing_local_root_changes_backing_identity(tmp_path, kind):
     async with FileBackend(kind, tmp_path).open() as backend:
         original = backend.environment.descriptor
@@ -96,7 +98,7 @@ async def test_replacing_local_root_changes_backing_identity(tmp_path, kind):
         assert (tmp_path / "old-root/file-tests/source").read_bytes() == b"ORIGINAL\n"
 
 
-@pytest.mark.parametrize("kind", ["direct-local", "local-envd"])
+@pytest.mark.parametrize("kind", ["direct_local", "local_envd"])
 async def test_local_close_terminates_process_tree_and_fences_output(tmp_path, kind):
     async with FileBackend(kind, tmp_path, commands=True).open() as backend:
         environment = backend.environment
@@ -113,7 +115,7 @@ async def test_local_close_terminates_process_tree_and_fences_output(tmp_path, k
         pids = [int((backend.root / name).read_text()) for name in ("owner.pid", "child.pid")]
         assert all(alive(pid) for pid in pids)
         daemon = (
-            (await backend.runtime.acquire_device())._requester._transport.process if kind == "local-envd" else None
+            (await backend.runtime.acquire_device())._requester._transport.process if kind == "local_envd" else None
         )
         await environment.close()
         await eventually(
@@ -138,7 +140,7 @@ async def test_local_close_terminates_process_tree_and_fences_output(tmp_path, k
 
 @pytest.mark.parametrize("cancel", [False, True], ids=["error", "cancel"])
 async def test_local_envd_failure_after_launch_cleans_private_generation(tmp_path, monkeypatch, cancel):
-    async with FileBackend("local-envd", tmp_path).open(prepare=False) as backend:
+    async with FileBackend("local_envd", tmp_path).open(prepare=False) as backend:
         environment = backend.environment
         native = EIPDeviceConnection.initialize
         launched, release = asyncio.Event(), asyncio.Event()
@@ -170,7 +172,7 @@ async def test_local_envd_failure_after_launch_cleans_private_generation(tmp_pat
 
 @pytest.mark.parametrize("active", [False, True], ids=["idle", "active-process-tree"])
 async def test_local_envd_daemon_death_fences_old_scope_and_allows_fresh_generation(tmp_path, active):
-    async with FileBackend("local-envd", tmp_path, commands=active).open() as backend:
+    async with FileBackend("local_envd", tmp_path, commands=active).open() as backend:
         environment = backend.environment
         generation = environment.descriptor.generation
         files = environment.operations.files

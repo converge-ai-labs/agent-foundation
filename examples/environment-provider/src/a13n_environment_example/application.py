@@ -8,20 +8,22 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_environment import (
-    DirectLocalEnvironment,
-    DockerEnvironment,
-    DockerProviderRuntime,
-    DockerSDKEngine,
-    Environment,
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
+from a13n_harness.providers.environment.docker.provider import DockerEnvironment
+from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
+from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
+from a13n_harness.providers.environment.local_envd.runtime import (
+    LocalEnvdProviderRuntime,
+    TemporaryLocalEnvdRuntimeAllocator,
+    resolve_a13n_envd_executable,
+)
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import (
     EnvironmentOperationFamily,
     EnvironmentProviderSpec,
     EnvironmentState,
-    LocalEnvdEnvironment,
-    LocalEnvdProviderRuntime,
-    TemporaryLocalEnvdRuntimeAllocator,
-    build_environment_provider_catalog,
-    resolve_a13n_envd_executable,
 )
 
 DEFAULT_EXAMPLE_DOCKER_IMAGE = "a13n-docker-environment:local"
@@ -58,19 +60,15 @@ async def run_direct_local(workspace: Path) -> StatelessExampleResult:
 
     root = _prepare_workspace(workspace)
     spec = EnvironmentProviderSpec(
-        provider_key="direct-local",
-        schema_version="1",
+        provider_key="direct_local",
         configuration={
             "root": {"path": str(root)},
         },
     )
-    provider = build_environment_provider_catalog(builtin_keys=(spec.provider_key,)).require(spec.provider_key)
-    configuration = provider.validate_configuration(
-        schema_version=spec.schema_version,
-        value=spec.configuration,
-    )
-    environment = provider.create_environment(
-        configuration=configuration, environment_id="direct-local-example", state=None
+    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
+    configuration = provider.validate_environment(spec.configuration)
+    environment = provider.construct(
+        configuration=configuration, environment_id="direct-local-example", state=None, runtime=None
     )
     if not isinstance(environment, DirectLocalEnvironment):
         raise TypeError("Direct Local Provider returned an unexpected Environment")
@@ -100,22 +98,18 @@ async def run_local_envd(
 
     root = _prepare_workspace(workspace)
     spec = EnvironmentProviderSpec(
-        provider_key="a13n.local-envd",
-        schema_version="1",
+        provider_key="local_envd",
         configuration={
             "working_directory": _device_path(root),
         },
     )
-    provider = build_environment_provider_catalog(builtin_keys=(spec.provider_key,)).require(spec.provider_key)
-    configuration = provider.validate_configuration(
-        schema_version=spec.schema_version,
-        value=spec.configuration,
-    )
+    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
+    configuration = provider.validate_environment(spec.configuration)
     runtime = LocalEnvdProviderRuntime(
         executable=resolve_a13n_envd_executable(executable),
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
     )
-    environment = provider.create_environment(
+    environment = provider.construct(
         configuration=configuration,
         environment_id="local-envd-example",
         state=None,
@@ -151,16 +145,12 @@ async def run_docker(
 
     spec = EnvironmentProviderSpec(
         provider_key="docker",
-        schema_version="1",
         configuration={
             "image": image,
         },
     )
-    provider = build_environment_provider_catalog(builtin_keys=(spec.provider_key,)).require(spec.provider_key)
-    configuration = provider.validate_configuration(
-        schema_version=spec.schema_version,
-        value=spec.configuration,
-    )
+    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
+    configuration = provider.validate_environment(spec.configuration)
     runtime = DockerProviderRuntime(
         engine=await asyncio.to_thread(
             DockerSDKEngine.connect, os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock")
@@ -174,7 +164,7 @@ async def run_docker(
 
     async def use_target() -> None:
         nonlocal current_state, first_text, reentered_text, state_version
-        first = provider.create_environment(
+        first = provider.construct(
             configuration=configuration,
             environment_id="docker-example",
             state=None,
@@ -194,7 +184,7 @@ async def run_docker(
             raise RuntimeError("Docker Provider did not publish re-entry state")
         state_version = current_state.state_version
 
-        reentered = provider.create_environment(
+        reentered = provider.construct(
             configuration=configuration,
             environment_id="docker-example",
             state=current_state,
@@ -214,7 +204,7 @@ async def run_docker(
         nonlocal current_state
         if current_state is None:
             return
-        cleanup = provider.create_environment(
+        cleanup = provider.construct(
             configuration=configuration,
             environment_id="docker-example",
             state=current_state,
@@ -314,13 +304,7 @@ async def _read_existing(environment: Environment, *, run_id: str) -> str:
 
 
 async def _enter(environment: Environment, *, run_id: str) -> None:
-    await environment.enter(
-        thread_id="thread-provider-example",
-        run_id=run_id,
-        agent_instance_id="agent-provider-example",
-        mount_id="workspace",
-        host_refs={"example": "environment-provider"},
-    )
+    await environment.enter(mount_id="workspace")
     await environment.ensure_ready(_FILE_OPERATIONS)
 
 

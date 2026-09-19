@@ -5,10 +5,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_environment import EnvironmentError, LocalEnvdEnvironment, LocalEnvdProviderConfiguration
 from a13n_harness import RunBindings
 from a13n_harness.environment import EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
+from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness_ui.errors import EnvironmentLifecycleError
 from a13n_harness_ui.sandbox import SandboxLaunch, create_sandbox_runtime, validate_sandbox_runtime
 
@@ -65,7 +67,7 @@ async def test_shared_sandbox_sessions_preserve_host_paths_and_hide_unrelated_fi
     owner = create_sandbox_runtime(binary, roots=(project, scratch), protected_roots=(forbidden,))
     first, second = [
         LocalEnvdEnvironment(
-            LocalEnvdProviderConfiguration(working_directory=root.as_posix()), owner, environment_id=name
+            LocalEnvdEnvironmentConfiguration(working_directory=root.as_posix()), owner, environment_id=name
         )
         for root, name in ((project, "first"), (scratch, "second"))
     ]

@@ -36,9 +36,9 @@ from a13n_harness._review_context import ReviewEvidence, append_review_evidence,
 from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.capability_types import _validate_capability_id
 from a13n_harness.context import AgentContext
-from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
 from a13n_harness.events import HarnessExtensionEvent
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.tools._output import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     is_acknowledged_tool_output,

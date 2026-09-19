@@ -11,14 +11,14 @@ from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.openapi import ETAG_HEADERS
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
     CreateMemoryProviderRequest,
     MemoryProvider,
     MemoryProviderCollection,
-    MemoryProviderDefinition,
-    MemoryProviderDefinitionCollection,
+    MemoryProviderMetadata,
     MemoryProviderReferenceCollection,
     UpdateMemoryProviderRequest,
 )
@@ -45,19 +45,13 @@ def _service(request: Request) -> MemoryProviderService:
 
 
 @router.get("/memory-provider-types")
-async def list_types(request: Request, actor: Actor) -> MemoryProviderDefinitionCollection:
-    return await _service(request).type_definitions(actor=actor)
+async def list_types(request: Request, actor: Actor) -> ProviderMetadataCollection[MemoryProviderMetadata]:
+    return await _service(request).provider_types(actor=actor)
 
 
 @router.get("/memory-provider-types/{provider_type}")
-async def get_type(request: Request, actor: Actor, provider_type: str) -> MemoryProviderDefinition:
-    catalog = await _service(request).type_definitions(actor=actor)
-    for definition in catalog.items:
-        if definition.type == provider_type:
-            return definition
-    raise MemoryProviderError(
-        "memory_provider_type_not_found", "Memory Provider type not found.", category=ErrorCategory.not_found
-    )
+async def get_type(request: Request, actor: Actor, provider_type: str) -> MemoryProviderMetadata:
+    return await _service(request).provider_type(actor=actor, provider_type=provider_type)
 
 
 @router.get("/workspaces/{workspace}/memory-providers")

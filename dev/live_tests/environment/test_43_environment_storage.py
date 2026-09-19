@@ -15,7 +15,7 @@ pytestmark = pytest.mark.anyio
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("backend", ["direct-local", "local-envd", "http-envd", "websocket-envd"])
+@pytest.mark.parametrize("backend", ["direct_local", "local_envd", "http_envd", "websocket_envd"])
 async def test_full_filesystem_preserves_files_and_releases_candidates(request, backend):
     if not request.config.getoption("--live-environments"):
         pytest.skip("Opt in with --live-environments for disposable limited-storage containers")

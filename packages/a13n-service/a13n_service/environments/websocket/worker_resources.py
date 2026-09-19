@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from a13n_environment import EnvironmentError, EnvironmentState
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
-from a13n_environment.remote_envd.environment import decode_state
+from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.environment.remote_envd.environment import decode_state
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.storage import transaction

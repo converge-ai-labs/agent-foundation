@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web.builtins import built_in_web_providers
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.temporal import Clock, utc_now
-from a13n_service.web.registry import WebProviderRegistry, built_in_web_provider_registry
 
 from .builtins import BuiltinAgents
 from .commands import AgentCommands
@@ -39,7 +41,7 @@ class AgentManagement:
         resolver: AgentResolver,
         invocation_resolver: AgentInvocationResolver,
         model_selector: AcceptedModelSelector,
-        web_providers: WebProviderRegistry | None = None,
+        web_providers: ProviderCatalog[WebProviderDefinition] | None = None,
         *,
         clock: Clock = utc_now,
     ) -> None:
@@ -54,5 +56,5 @@ class AgentManagement:
         self.toolsets = ToolsetService(
             sessions,
             model_selector,
-            web_providers or built_in_web_provider_registry(),
+            web_providers or ProviderCatalog(built_in_web_providers()),
         )

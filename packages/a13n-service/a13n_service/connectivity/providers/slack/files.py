@@ -4,10 +4,10 @@ from collections.abc import Awaitable, Callable
 from urllib.parse import urlsplit
 
 import httpx2
+from a13n_harness.http import EndpointValidator, ProviderHttpError, bounded_response_body
 
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.file_content import MAX_FILE_BYTES, FileContent, media_type, read_file, safe_filename
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator, bounded_response_body
 
 from .client import SlackNativeClient
 
@@ -21,12 +21,12 @@ class SlackFiles:
 
     async def _url(self, value: object) -> str:
         if not isinstance(value, str) or len(value) > 8192:
-            raise ConnectivityHttpError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         try:
             url = urlsplit(value)
             port = url.port
         except ValueError as error:
-            raise ConnectivityHttpError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         if (
             url.scheme != "https"
             or url.hostname != "files.slack.com"
@@ -35,21 +35,21 @@ class SlackFiles:
             or url.password
             or url.fragment
         ):
-            raise ConnectivityHttpError("endpoint_denied")
+            raise ProviderHttpError("endpoint_denied")
         try:
             await self.endpoints.validate(value, resolve_dns=True)
         except ValueError as error:
-            raise ConnectivityHttpError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         return value
 
     async def download(self, identifier: str) -> FileContent:
         result = await self.api.file_request("files.info", {"file": identifier}, bot_token=self.token)
         file = result.get("file")
         if not isinstance(file, dict) or file.get("id") != identifier or file.get("is_external") is True:
-            raise ConnectivityHttpError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         size = file.get("size")
         if isinstance(size, int) and size > MAX_FILE_BYTES:
-            raise ConnectivityHttpError("response_too_large")
+            raise ProviderHttpError("response_too_large")
         filename = safe_filename(file.get("name"), "attachment")
         mime = media_type(filename, file.get("mimetype"))
         url = await self._url(file.get("url_private_download") or file.get("url_private"))
@@ -72,7 +72,7 @@ class SlackFiles:
         )
         identifier = ticket.get("file_id")
         if not isinstance(identifier, str) or not 0 < len(identifier) <= 256:
-            raise ConnectivityHttpError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         url = await self._url(ticket.get("upload_url"))
         # The upload URL is itself the capability; never send the bot token here.
         async with self.http.stream(
@@ -80,7 +80,7 @@ class SlackFiles:
         ) as response:
             await bounded_response_body(response, max_bytes=64 * 1024)
             if response.status_code != 200:
-                raise ConnectivityHttpError("provider_rejected")
+                raise ProviderHttpError("provider_rejected")
         payload: JsonObject = {"files": [{"id": identifier, "title": file.filename}], "channel_id": channel_id}
         if thread_ts is not None:
             payload["thread_ts"] = thread_ts
@@ -91,5 +91,5 @@ class SlackFiles:
         if not isinstance(entries, list) or not any(
             isinstance(entry, dict) and entry.get("id") == identifier for entry in entries
         ):
-            raise ConnectivityHttpError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         return identifier

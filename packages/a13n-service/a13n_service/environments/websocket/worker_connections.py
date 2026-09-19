@@ -8,7 +8,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from a13n_environment import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_logging import get_logger
 from anyio import move_on_after
 from redis.asyncio import Redis

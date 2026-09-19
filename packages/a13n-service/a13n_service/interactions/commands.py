@@ -1,10 +1,10 @@
 """Compose cohesive interaction use cases for protocol and process entry points."""
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.assets.catalog import AssetCatalog
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.temporal import Clock, utc_now
 
 from .acceptance import RunAcceptanceService

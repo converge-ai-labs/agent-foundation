@@ -37,7 +37,7 @@ Ownership and automatic visibility follow [Organization-owned configuration](33-
 
 ## Trusted Provider-type and calling-API registry
 
-The distribution assembles a finite registry from trusted code. It combines built-ins with Model integrations registered by deployment-selected `a13n.providers` entry points before readiness. Package installation alone grants no trust; selection names installed metadata rather than an import target. Public requests cannot register code, import a package, invent a calling API, or supply request transformations. Every selected integration still implements this native Model contract and uses the same management and per-request runtime construction path.
+The distribution assembles a finite registry from trusted code. It combines built-ins with immutable Harness Model definitions exported in deployment-selected `a13n_harness.providers.plugins` manifests before readiness. Package installation alone grants no trust; selection names installed metadata rather than an import target. Public requests cannot register code, import a package, invent a calling API, or supply request transformations. Every selected integration still implements this native Model contract and uses the same management and per-request runtime construction path.
 
 Each safe `ModelProviderDefinition` exposes:
 
@@ -47,6 +47,7 @@ class ModelProviderDefinition:
     display_name: str
     configuration_schema: JsonObject
     credential_schema: JsonObject
+    authentication: Authentication
     supported_model_apis: tuple[str, ...]
     default_model_api: str
     model_api_labels: dict[str, str]
@@ -86,6 +87,8 @@ MiniMax is a trusted named integration using the locked Pydantic AI OpenAI Provi
 
 Extra headers apply to inference and supported Provider operations. Header names are case-insensitive HTTP tokens, normalized to lowercase, and unique. There are at most 32 extra headers; names are limited to 128 characters and values to 2048 printable ASCII characters. Transport-managed headers, Service Thread correlation, and each adapter's authentication or protocol headers cannot be overridden. All header values are encrypted and belong in the separate write-only `extra_headers` map. Provider headers never become Model settings or accepted Run snapshots.
 
+Reusable construction, vendor protocols, and probes live in `a13n_harness.providers.model`; native SDKs load on use. Definitions accept typed configuration and credential objects, not Service IDs or execution snapshots. The [shared definition contract](../a13n-harness/16b-model-provider-definitions.md) owns authentication semantics. API-key credentials use `{ "api_key": string }`; AWS credentials and Google service-account fields are structured objects, never JSON encoded inside a string. Nested fields and non-string values survive encryption and reconstruction. Service owns live eligibility, encrypted persistence, PATCH intent, deployment endpoint policy, protected request settings, and catalog profile selection.
+
 ## Model Provider
 
 A Provider has one opaque `ModelProviderId` with the `mprov` kind prefix:
@@ -111,7 +114,7 @@ class ModelProvider:
 
 Provider create and update accept a provider-schema-specific write-only `credential` field. Reads return `credential_configured` for the primary credential and `header_names` for saved headers; they never return plaintext, ciphertext, credential shape, masked suffixes, or a reusable Secret identifier. Omitting `credential` on update retains the current value. Supplying null removes it only when the Provider type permits an unauthenticated connection. Supplying another value atomically replaces it.
 
-Model Providers use the same [resource-owned credential protection contract](27-secret-management.md#protection-boundary) as Connectivity resources. Each Provider stores its own ciphertext, nonce, encryption-key identifier, and credential generation. The encrypted value is one bundle containing the primary credential and extra headers. Each accepted update to either secret surface advances that generation exactly once; omitting both leaves it unchanged. Runtime captures the shared encrypted snapshot and decrypts it after closing the database session. Provider-specific credential parsing and optional-authentication rules remain in Model Management. The credential has no independent Secret identity or generic Secret selector.
+Model Providers use the same [resource-owned credential protection contract](27-secret-management.md#protection-boundary) as Connectivity resources. Each Provider stores its own ciphertext, nonce, encryption-key identifier, and credential generation. The encrypted value is one bundle containing the primary credential and extra headers. Each accepted update to either secret surface advances that generation exactly once; omitting both leaves it unchanged. Runtime captures the shared encrypted snapshot and decrypts it after closing the database session. Harness definitions own typed credential parsing and the shared declarative authentication rules; Model Management validates them against the resulting PATCH state. The credential has no independent Secret identity or generic Secret selector.
 
 Provider create and update also accept `extra_headers`: omitted names retain their values, a string sets or replaces one value, and null removes that name. An empty map changes nothing. The whole request, including configuration and header changes, is atomic. A supplied `configuration` replaces ordinary configuration. Only saved header names and the primary-credential presence flag are retained outside the encrypted bundle.
 
@@ -119,7 +122,7 @@ Provider `configuration`, credentials, name, and enabled state are mutable. Prov
 
 Management surfaces select a Provider type, read its safe definition, render ordinary configuration fields, and submit `configuration` plus the separate credential input. The server validates with the implementation-owned model even when a client rendered the schema correctly. Unknown types, unknown configuration fields, and invalid values fail before persistence. A successful save proves configuration validity, not credential or endpoint availability; the explicit test operation performs that external check. Adding a registered type does not require another general-purpose form implementation, although interactive authentication keeps its own domain-specific flow.
 
-Provider setup uses schema defaults and asks for credentials and required connection fields. Saving a Provider never starts model discovery. Model authoring can select a public catalog entry or enter a custom upstream ID.
+Definition metadata projects optional `setup_url`/`setup_label` help and `supports_connection_probe`, derived from the actual probe implementation. Console renders these without vendor lookup tables and offers Provider testing only for a supported probe; saved Model testing remains independent. Provider setup uses schema defaults and asks for credentials and required connection fields. Saving a Provider never starts model discovery. Model authoring can select a public catalog entry or enter a custom upstream ID.
 
 ## Model
 

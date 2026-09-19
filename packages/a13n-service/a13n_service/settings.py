@@ -5,11 +5,11 @@ from __future__ import annotations
 from collections.abc import Collection
 from functools import lru_cache
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from pydantic import Field, model_validator
 
 from a13n_service.connectivity.browser_urls import split_browser_url
 from a13n_service.database import MigrationConfig
-from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.iam.configuration import IdentityConfiguration
 from a13n_service.secrets import SecretProtectionError, SecretProtector
 from a13n_service.storage.config import (

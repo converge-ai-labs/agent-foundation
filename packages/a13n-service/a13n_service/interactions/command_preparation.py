@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentRunOverride, EffectiveAgentConfig
@@ -16,7 +17,6 @@ from a13n_service.agents.invocation_resolution import (
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset, UploadedAssetSource
 from a13n_service.assets.catalog import AssetCatalog
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.domain import EnvironmentSelection
 from a13n_service.environments.selection import Omitted
 from a13n_service.iam import (

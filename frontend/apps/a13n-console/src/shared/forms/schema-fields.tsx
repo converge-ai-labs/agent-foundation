@@ -50,6 +50,19 @@ function fieldSchema(
     };
   return value;
 }
+function visible(
+  field: Record<string, unknown>,
+  values: Record<string, unknown>,
+) {
+  const condition = field["x-visible-when"];
+  return (
+    !object(condition) ||
+    Object.entries(condition).every(
+      ([name, expected]) => values[name] === expected,
+    )
+  );
+}
+
 /** Apply schema defaults and fixed values to the submitted object as well as the form. */
 export function withSchemaValues(
   schema: Record<string, unknown>,
@@ -76,6 +89,10 @@ export function withSchemaValues(
       }
     }
   }
+  if (object(schema.properties))
+    for (const [key, definition] of Object.entries(schema.properties)) {
+      if (!visible(fieldSchema(definition, schema), result)) delete result[key];
+    }
   return result;
 }
 
@@ -86,6 +103,7 @@ export function SchemaFields({
   onChange,
   secret = false,
   descriptions = true,
+  requireFields = true,
   autoFocus = false,
   labelAction,
 }: {
@@ -94,6 +112,8 @@ export function SchemaFields({
   onChange: (value: Record<string, unknown>) => void;
   secret?: boolean;
   descriptions?: boolean;
+  /** A replacement draft requires its fields; a kept secret does not. */
+  requireFields?: boolean;
   /** The first field is where a catalog step lands. */
   autoFocus?: boolean;
   /** Sits beside the first field's label, such as a link to the key page. */
@@ -119,12 +139,18 @@ export function SchemaFields({
               : t(key),
           first = index === 0,
           required =
-            Array.isArray(schema.required) && schema.required.includes(key);
+            requireFields &&
+            Array.isArray(schema.required) &&
+            schema.required.includes(key);
         const description =
           descriptions && typeof field.description === "string"
             ? t(field.description)
             : undefined;
-        if (Object.hasOwn(field, "const")) return null;
+        if (
+          Object.hasOwn(field, "const") ||
+          !visible(field, withSchemaValues(schema, value))
+        )
+          return null;
         const current = Object.hasOwn(value, key) ? value[key] : field.default;
         const options = Array.isArray(field.oneOf)
           ? field.oneOf.flatMap((choice) =>
@@ -175,6 +201,9 @@ export function SchemaFields({
                 onChange={(next) => change(key, next)}
                 secret={secret}
                 descriptions={descriptions}
+                requireFields={requireFields}
+                autoFocus={first && autoFocus}
+                {...(first ? { labelAction } : {})}
               />
             </fieldset>
           );
@@ -227,7 +256,8 @@ export function SchemaFields({
                     : undefined
                 }
                 type={
-                  secret || field.format === "password"
+                  field.type === "string" &&
+                  (secret || field.format === "password")
                     ? "password"
                     : field.type === "string"
                       ? "text"
@@ -246,7 +276,7 @@ export function SchemaFields({
                   change(
                     key,
                     event.target.value === ""
-                      ? secret || field.default == null
+                      ? field.default == null
                         ? undefined
                         : ""
                       : field.type === "string"

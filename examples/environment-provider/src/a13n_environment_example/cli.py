@@ -25,11 +25,11 @@ def main() -> None:
 
 
 async def _run(arguments: argparse.Namespace) -> None:
-    if arguments.provider == "direct-local":
+    if arguments.provider == "direct_local":
         result = await run_direct_local(arguments.workspace)
         _print_stateless(result)
         return
-    if arguments.provider == "local-envd":
+    if arguments.provider == "local_envd":
         result = await run_local_envd(
             arguments.workspace,
             executable=arguments.executable,
@@ -47,17 +47,17 @@ async def _run(arguments: argparse.Namespace) -> None:
         print(f"state version: {result.state_version}")
         print(f"target destroyed: {result.destroyed}")
         return
-    if arguments.provider in {"http-envd", "websocket-envd", "remote-envd-demo"}:
+    if arguments.provider in {"http_envd", "websocket_envd", "remote_envd_demo"}:
         from pydantic import SecretStr
 
         from .remote import run_http, run_websocket
         from .remote_demo import run_demo
 
-        if arguments.provider == "remote-envd-demo":
+        if arguments.provider == "remote_envd_demo":
             remote = await run_demo(arguments.executable, arguments.transport)
         else:
             token = SecretStr((await asyncio.to_thread(arguments.credential_file.read_text)).strip())
-            if arguments.provider == "http-envd":
+            if arguments.provider == "http_envd":
                 remote = await run_http(arguments.endpoint, token, arguments.device_id)
             else:
                 remote = await run_websocket(token=token, device_id=arguments.device_id, port=arguments.port)
@@ -65,7 +65,7 @@ async def _run(arguments: argparse.Namespace) -> None:
         print(f"re-entry read: {remote.text.strip()}")
         print(f"independent Sessions: {remote.independent_sessions}")
         print("provider close preserved remote daemon and workspace")
-        if arguments.provider == "remote-envd-demo":
+        if arguments.provider == "remote_envd_demo":
             print("demo operator cleaned up its temporary daemon and workspace")
         return
     raise ValueError(f"Unsupported Provider example: {arguments.provider}")
@@ -88,7 +88,7 @@ def _parser() -> argparse.ArgumentParser:
     providers = parser.add_subparsers(dest="provider", required=True)
 
     direct_local = providers.add_parser(
-        "direct-local",
+        "direct_local",
         help="Use Direct Local against a Host-owned workspace.",
     )
     direct_local.add_argument(
@@ -98,7 +98,7 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     local_envd = providers.add_parser(
-        "local-envd",
+        "local_envd",
         help="Launch a private a13n-envd generation over a Host-owned workspace.",
     )
     local_envd.add_argument(
@@ -121,7 +121,7 @@ def _parser() -> argparse.ArgumentParser:
         default=DEFAULT_EXAMPLE_DOCKER_IMAGE,
         help="Sandbox image reference; defaults to the image built by make image-docker-environment.",
     )
-    for name in ("http-envd", "websocket-envd"):
+    for name in ("http_envd", "websocket_envd"):
         remote = providers.add_parser(name, help="Connect to an externally operated daemon; never destroy its target.")
         remote.add_argument("--device-id", required=True, help="Exact device_id configured by the operator.")
         remote.add_argument(
@@ -130,14 +130,14 @@ def _parser() -> argparse.ArgumentParser:
             required=True,
             help="Protected token file; never put credentials on the command line.",
         )
-        if name == "http-envd":
+        if name == "http_envd":
             remote.add_argument("--endpoint", required=True, help="EIP HTTP(S) origin without a path.")
         else:
             remote.add_argument(
                 "--port", type=int, default=8788, help="Loopback port for this example Host's listener."
             )
     demo = providers.add_parser(
-        "remote-envd-demo", help="Try a remote Provider with a temporary local daemon owned by demo Host code."
+        "remote_envd_demo", help="Try a remote Provider with a temporary local daemon owned by demo Host code."
     )
     demo.add_argument("--executable", type=Path, required=True)
     demo.add_argument("--transport", choices=("http", "websocket"), default="http")

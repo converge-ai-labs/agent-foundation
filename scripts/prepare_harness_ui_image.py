@@ -17,7 +17,6 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = (
     "a13n-envd-client",
     "a13n-logging",
-    "a13n-environment",
     "a13n-harness",
     "a13n-stream-protocol",
     "a13n-harness-ui",

@@ -5,11 +5,11 @@ from collections.abc import AsyncIterator
 
 import anyio
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.service import ModelService
 from a13n_service.models.service_common import ModelError
 from a13n_service.storage.config import PostgreSQLConfig
@@ -39,7 +39,7 @@ async def postgres_models(pg_url: str) -> AsyncIterator[async_sessionmaker[Async
 
 async def test_concurrent_org_and_workspace_model_creates_have_one_winner(postgres_models):
     admin = await organization_admin(postgres_models, actor())
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     providers = ModelProviderService(
         postgres_models,
         registry,
@@ -50,7 +50,7 @@ async def test_concurrent_org_and_workspace_model_creates_have_one_winner(postgr
     provider = await providers.create(
         actor=admin,
         workspace_id=None,
-        request=CreateModelProviderRequest(type="openai", name="Shared", credential="sk-test"),
+        request=CreateModelProviderRequest(type="openai", name="Shared", credential={"api_key": "sk-test"}),
     )
     models = ModelService(postgres_models, registry)
     request = CreateModelRequest(

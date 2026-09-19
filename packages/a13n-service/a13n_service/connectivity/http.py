@@ -1,23 +1,13 @@
-"""Shared bounded HTTP response mechanics for Connectivity adapters."""
+"""Cookie-free HTTP operations for Service Connectivity clients."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from http.cookiejar import Cookie, CookieJar, DefaultCookiePolicy
-from typing import Any, Protocol
+from typing import Any
 
 import httpx2
-
-
-class EndpointValidator(Protocol):
-    async def validate(self, endpoint: str, *, resolve_dns: bool = True) -> str: ...
-
-
-class ConnectivityHttpError(Exception):
-    def __init__(self, code: str, *, retry_after_seconds: int | None = None) -> None:
-        super().__init__(code)
-        self.code = code
-        self.retry_after_seconds = retry_after_seconds
+from a13n_harness.http import bounded_response_body
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,35 +53,6 @@ async def cookie_free_bounded_request(
     finally:
         client.cookies.clear()
         await response.aclose()
-
-
-async def bounded_response_body(response: httpx2.Response, *, max_bytes: int) -> bytes:
-    content_length = response.headers.get("content-length")
-    if content_length is not None:
-        try:
-            parsed = int(content_length)
-        except ValueError as error:
-            raise ConnectivityHttpError("invalid_provider_response") from error
-        if parsed < 0:
-            raise ConnectivityHttpError("invalid_provider_response")
-        if parsed > max_bytes:
-            raise ConnectivityHttpError("response_too_large")
-    body = bytearray()
-    async for chunk in response.aiter_bytes():
-        body.extend(chunk)
-        if len(body) > max_bytes:
-            raise ConnectivityHttpError("response_too_large")
-    return bytes(body)
-
-
-def retry_after_seconds(value: str | None) -> int | None:
-    if value is None:
-        return None
-    try:
-        parsed = int(value)
-    except ValueError:
-        return None
-    return parsed if 0 <= parsed <= 3600 else None
 
 
 class _RejectCookies(DefaultCookiePolicy):

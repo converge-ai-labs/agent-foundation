@@ -9,7 +9,7 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_service.connectivity.connectors.contracts import ConnectorProviderError
+from a13n_harness.providers.connector.contracts import ConnectorProviderError
 
 
 @pytest.fixture
@@ -20,7 +20,9 @@ def smoke(monkeypatch):
     )
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    monkeypatch.setattr("a13n_service.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("8.8.8.8")])
+    monkeypatch.setattr(
+        "a13n_harness.providers.endpoint_policy._resolve_addresses", lambda *_: [ipaddress.ip_address("8.8.8.8")]
+    )
     args = argparse.Namespace(
         provider="composio",
         command="walkthrough",

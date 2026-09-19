@@ -2,13 +2,13 @@ import re
 from typing import Any, cast
 
 import pytest
-from a13n_environment import EnvironmentState
 from a13n_harness import (
     HarnessRunResult,
     HarnessState,
     SafeFailure,
     StateError,
 )
+from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_harness.state import (
     AgentContextState,
     AgentContextStateSnapshot,
@@ -27,7 +27,7 @@ def test_environment_states_reject_non_finite_json(value: float) -> None:
         HarnessState.new(
             environment_states={
                 "workspace": EnvironmentState(
-                    provider_key="test.provider",
+                    provider_key="test_provider",
                     state_version="state-1",
                     state=value,
                 )

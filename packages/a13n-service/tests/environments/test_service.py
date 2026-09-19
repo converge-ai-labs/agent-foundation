@@ -10,6 +10,7 @@ from a13n_service.environments.domain import (
     EnvironmentCommandRequest,
     EnvironmentStatus,
     NewEnvironmentSelection,
+    ReplaceCredentialRequest,
     RetentionPolicy,
     UpdateProviderRequest,
     retention_action,
@@ -21,7 +22,7 @@ from a13n_service.http_errors import application_error_status
 from a13n_service.interactions.thread_creation import allocate_thread
 from a13n_service.interactions.thread_domain import CreateThreadRequest
 from a13n_service.storage import short_session
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from .conftest import WORKSPACE_ID, actor
 
@@ -30,7 +31,7 @@ pytestmark = pytest.mark.anyio
 
 async def create_template_config(service, path, *, preparation="on_run"):
     provider = await service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Local")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct_local", name="Local")
     )
     template = await service.create_template(
         actor=actor(),
@@ -137,7 +138,7 @@ async def test_provider_disable_blocks_new_allocation(environment_service, tmp_p
 
 async def test_local_provider_accepts_managed_retention(environment_service, tmp_path):
     provider = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Local")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct_local", name="Local")
     )
     await environment_service.create_template(
         actor=actor(),
@@ -237,53 +238,122 @@ async def test_manual_command_is_a_durable_idempotent_receipt(environment_servic
         )
 
 
-async def test_provider_credential_uses_owned_encrypted_bundle(
-    environment_service, environment_sessions, tmp_path, monkeypatch, protector
-):
-    from a13n_environment import DirectLocalEnvironmentProvider
-    from a13n_service.environments.domain import ReplaceCredentialRequest
+class _Authorization(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    token: SecretStr
+
+
+class _NestedCredential(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    authorization: _Authorization
+    revision: int
+
+
+def _secret_definition():
+    """A Provider whose credential nests secrets below the top level."""
+    from dataclasses import replace
+
+    from a13n_harness.providers.authentication import Authentication, CredentialMode
+    from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+
+    return replace(
+        DIRECT_LOCAL,
+        type="secret_workspace",
+        display_name="Secret Workspace",
+        credential_model=_NestedCredential,
+        authentication=Authentication(mode=CredentialMode.required),
+    )
+
+
+async def test_provider_credential_uses_owned_encrypted_bundle(environment_service, environment_sessions, protector):
+    from a13n_harness.providers.catalog import ProviderCatalog
     from a13n_service.environments.models import EnvironmentProviderRecord
-    from pydantic import BaseModel, ConfigDict, SecretStr
 
-    class Credential(BaseModel):
-        model_config = ConfigDict(extra="forbid")
-        token: SecretStr
+    definition = _secret_definition()
+    environment_service.catalog = ProviderCatalog((*environment_service.catalog.values(), definition))
 
-    monkeypatch.setattr(DirectLocalEnvironmentProvider, "credential_model", Credential)
+    def stored_credential(raw: str) -> _NestedCredential:
+        return _NestedCredential.model_validate_json(raw)
+
     provider = await environment_service.create_provider(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="direct-local", name="Owned", credential={"token": "initial-token"}),
+        request=CreateProviderRequest(
+            type="secret_workspace",
+            name="Owned",
+            credential={"authorization": {"token": "initial-token"}, "revision": 1},
+        ),
     )
     assert provider.credential_configured and "initial-token" not in provider.model_dump_json()
     async with short_session(environment_sessions) as session:
         stored = await session.get(EnvironmentProviderRecord, provider.id)
         assert b"initial-token" not in stored.ciphertext
-        assert (
-            Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token.get_secret_value()
-            == "initial-token"
-        )
+        # A nested SecretStr must survive encryption as its real value, never its mask.
+        decrypted = stored_credential(stored.credential_snapshot().decrypt(protector))
+        assert decrypted.authorization.token.get_secret_value() == "initial-token"
+        assert decrypted.revision == 1
         generation = stored.credential_generation
     changed = await environment_service.replace_credential(
         actor=actor(),
         provider_id=provider.id,
         if_match=resource_etag(provider.id, provider.updated_at),
-        request=ReplaceCredentialRequest(credential={"token": "rotated-token"}),
+        request=ReplaceCredentialRequest(credential={"authorization": {"token": "rotated-token"}, "revision": 2}),
     )
     async with short_session(environment_sessions) as session:
         stored = await session.get(EnvironmentProviderRecord, provider.id)
         assert stored.credential_generation == generation + 1
-        assert (
-            Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token.get_secret_value()
-            == "rotated-token"
-        )
+        decrypted = stored_credential(stored.credential_snapshot().decrypt(protector))
+        assert decrypted.authorization.token.get_secret_value() == "rotated-token"
+        assert decrypted.revision == 2
     assert "rotated-token" not in changed.model_dump_json()
+
+
+async def test_provider_type_no_longer_selected_is_a_safe_configuration_error(environment_service, tmp_path):
+    """Dropping a Provider from the deployment selection must not crash management."""
+    from a13n_harness.providers.catalog import ProviderCatalog
+
+    provider, template = await create_template_config(environment_service, tmp_path)
+    environment_service.catalog = ProviderCatalog(())
+    with pytest.raises(EnvironmentManagementError) as failure:
+        await environment_service.create_template(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key="unavailable",
+            request=CreateTemplateRequest(
+                name="Unavailable",
+                provider_id=provider.id,
+                configuration={"root": {"path": str(tmp_path)}},
+                retention={"idle": {"stop_after": None, "delete_after": None}},
+            ),
+        )
+    assert failure.value.code == "environment_provider_unavailable"
+    assert application_error_status(failure.value) == 503
+    detail = await environment_service.get_template(actor=actor(), resource_id=template.id)
+    assert detail.name == "Workspace"
+
+
+async def test_declared_credential_requirement_is_enforced_on_create_and_update(environment_service):
+    from a13n_harness.providers.catalog import ProviderCatalog
+
+    environment_service.catalog = ProviderCatalog((*environment_service.catalog.values(), _secret_definition()))
+    with pytest.raises(EnvironmentManagementError, match="credential"):
+        await environment_service.create_provider(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            request=CreateProviderRequest(type="secret_workspace", name="Missing"),
+        )
+    with pytest.raises(EnvironmentManagementError, match="credential"):
+        await environment_service.create_provider(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            request=CreateProviderRequest(type="direct_local", name="Refused", credential={"token": "unexpected"}),
+        )
 
 
 async def test_collection_cursors_cannot_cross_resource_scope(environment_service, tmp_path):
     await create_template_config(environment_service, tmp_path)
     await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Second")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct_local", name="Second")
     )
     first = await environment_service.list_providers(actor=actor(), workspace_id=WORKSPACE_ID, limit=1)
     assert first.next_cursor
@@ -300,10 +370,10 @@ async def test_registering_same_target_under_another_provider_is_a_conflict(envi
     from a13n_service.environments.errors import EnvironmentManagementError
 
     first = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="First")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct_local", name="First")
     )
     second = await environment_service.create_provider(
-        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct-local", name="Second")
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="direct_local", name="Second")
     )
     request = RegisterEnvironmentRequest(provider_id=first.id, configuration={"root": {"path": str(tmp_path)}})
     await environment_service.create_environment(
@@ -338,7 +408,7 @@ def test_request_identity_canonicalizes_objects_but_preserves_semantics():
     assert request_identity("key", changed) != request_identity("key", reversed_steps)
 
 
-@pytest.mark.parametrize("provider_type", ["direct-local", "docker"])
+@pytest.mark.parametrize("provider_type", ["direct_local", "docker"])
 async def test_child_sharing_and_dedicated_provider_contract(
     environment_service, environment_sessions, tmp_path, provider_type
 ):
@@ -358,7 +428,7 @@ async def test_child_sharing_and_dedicated_provider_contract(
         request=CreateTemplateRequest(
             name="Child",
             provider_id=provider.id,
-            configuration={"root": {"path": str(tmp_path)}} if provider_type == "direct-local" else {},
+            configuration={"root": {"path": str(tmp_path)}} if provider_type == "direct_local" else {},
             retention={"idle": {"stop_after": None, "delete_after": None}},
         ),
     )
@@ -370,7 +440,7 @@ async def test_child_sharing_and_dedicated_provider_contract(
         assert (
             await child_environment_choice(session, parent=parent, policy=ChildEnvironmentPolicy(mode="none")) is None
         )
-        if provider_type == "direct-local":
+        if provider_type == "direct_local":
             with pytest.raises(EnvironmentManagementError, match="dedicated"):
                 await authorize_template(
                     session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.default_revision_id

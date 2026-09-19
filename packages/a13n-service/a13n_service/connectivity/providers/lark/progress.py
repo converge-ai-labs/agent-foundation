@@ -7,12 +7,12 @@ from urllib.parse import quote
 from uuid import NAMESPACE_URL, uuid5
 
 import httpx2
+from a13n_harness.http import EndpointValidator, ProviderHttpError
 from pydantic import JsonValue
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 
-from .api import LarkApiError, read_lark_response
+from .api import read_lark_response
 from .token import LarkTenantTokenProvider
 
 _LABELS = {
@@ -117,10 +117,10 @@ def validate_card(card: JsonObject, *, reserve_bytes: int = 0) -> None:
     # Bound the double-encoded request body, not only the visible text. Never truncate an answer.
     payload = {"content": json.dumps(card, ensure_ascii=False)}
     if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) + reserve_bytes > 28_000:
-        raise ConnectivityHttpError("invalid_arguments")
+        raise ProviderHttpError("invalid_arguments")
     elements = card.get("elements")
     if isinstance(elements, list) and len(elements) > 45:
-        raise ConnectivityHttpError("invalid_arguments")
+        raise ProviderHttpError("invalid_arguments")
 
 
 class LarkProgressClient:
@@ -146,7 +146,7 @@ class LarkProgressClient:
         try:
             origin = await self.endpoints.validate(self.origin, resolve_dns=True)
         except ValueError as error:
-            raise ConnectivityHttpError("endpoint_denied") from error
+            raise ProviderHttpError("endpoint_denied") from error
         token = await self.tokens.token()
         body: JsonObject = {"content": json.dumps(card, ensure_ascii=False)}
         params = None
@@ -177,5 +177,5 @@ class LarkProgressClient:
         data = value.get("data")
         identifier = data.get("message_id") if isinstance(data, dict) else None
         if not isinstance(identifier, str) or not 0 < len(identifier) <= 256:
-            raise LarkApiError("invalid_provider_response")
+            raise ProviderHttpError("invalid_provider_response")
         return identifier

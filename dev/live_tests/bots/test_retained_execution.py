@@ -41,7 +41,7 @@ async def test_bot_memory_reaches_retried_and_delegated_execution(request, mode)
             replacement = await journey.post(
                 journey.base + "/memory-providers",
                 {
-                    "type": "a13n.mem0-oss",
+                    "type": "mem0_oss",
                     "name": "Replacement Bot Provider",
                     "configuration": {"base_url": os.environ["TEST_MEM0_OSS_URL"]},
                     "credential": {"api_key": os.environ["TEST_MEM0_OSS_API_KEY"]},

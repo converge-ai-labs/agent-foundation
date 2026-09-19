@@ -470,6 +470,7 @@ async def replying(task):
     from a13n_service.bots.progress.replies import CardReplies
     from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord
     from a13n_service.connectivity.native_context import InboundRunContext
+    from a13n_service.connectivity.providers.definition import InboundActionContext
     from a13n_service.connectivity.providers.registry import require_native_provider
     from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 
@@ -538,12 +539,14 @@ async def replying(task):
         credential_generation=generation,
     )
     native = require_native_provider(provider).inbound_actions(
-        context.provider_context,
-        context.action_policy,
-        slack_config() if slack else _config(),
-        {"bot_token": "fixture-token"} if slack else {"app_secret": "fixture-secret"},
-        task.service.delivery.http,
-        task.service.delivery.endpoints,
+        InboundActionContext(
+            provider_context=context.provider_context,
+            action_policy=context.action_policy,
+            configuration=slack_config() if slack else _config(),
+            credentials={"bot_token": "fixture-token"} if slack else {"app_secret": "fixture-secret"},
+            http=task.service.delivery.http,
+            endpoints=task.service.delivery.endpoints,
+        )
     )[f"{provider}.reply"]
 
     async def reply(text):
@@ -629,8 +632,8 @@ async def test_answer_waits_for_progress_lease_without_losing_content(replying):
 
 @pytest.mark.parametrize("failure", ["rejected", "unknown"])
 async def test_failed_card_reply_has_honest_receipt_and_never_falls_back_to_text(replying, failure):
+    from a13n_harness.http import ProviderHttpError
     from a13n_service.bots.connectivity.models import BotReplyRecord
-    from a13n_service.connectivity.http import ConnectivityHttpError
 
     task = replying
     await task.service.scan()
@@ -648,7 +651,7 @@ async def test_failed_card_reply_has_honest_receipt_and_never_falls_back_to_text
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(fail)) as http:
         task.service.delivery.http = http
         if failure == "rejected":
-            with pytest.raises(ConnectivityHttpError, match="provider_rejected"):
+            with pytest.raises(ProviderHttpError, match="provider_rejected"):
                 await task.reply("new answer")
         else:
             assert (await task.reply("new answer"))["kind"] == "outcome_unknown"
@@ -666,9 +669,9 @@ async def test_failed_card_reply_has_honest_receipt_and_never_falls_back_to_text
 
 
 async def test_oversized_reply_is_rejected_before_persistence_or_network(replying):
-    from a13n_service.connectivity.http import ConnectivityHttpError
+    from a13n_harness.http import ProviderHttpError
 
-    with pytest.raises(ConnectivityHttpError, match="invalid_arguments"):
+    with pytest.raises(ProviderHttpError, match="invalid_arguments"):
         await replying.reply("x" * 30_000)
     assert not replying.calls
     async with short_session(replying.sessions) as db:
@@ -761,11 +764,11 @@ async def test_multiple_concurrent_replies_append_instead_of_overwriting(replyin
 
 
 async def test_conflicting_placement_is_rejected_without_sending(replying):
+    from a13n_harness.http import ProviderHttpError
     from a13n_service.bots.progress.replies import CardReplies
-    from a13n_service.connectivity.http import ConnectivityHttpError
     from a13n_service.connectivity.providers.lark.actions import LarkAutoReplyArguments, LarkTextContent
 
-    with pytest.raises(ConnectivityHttpError, match="invalid_arguments"):
+    with pytest.raises(ProviderHttpError, match="invalid_arguments"):
         await CardReplies(replying.service.delivery).reply(
             attempt=replying.attempt,
             context=replying.context,

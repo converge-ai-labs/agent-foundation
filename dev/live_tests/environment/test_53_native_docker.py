@@ -6,9 +6,11 @@ from uuid import uuid4
 
 import docker
 import pytest
-from a13n_environment import DockerEnvironment, DockerProviderConfiguration, DockerProviderRuntime, DockerSDKEngine
-from a13n_environment.commands import CommandRequest, ShellCommand
-from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
+from a13n_harness.providers.environment.docker.provider import DockerEnvironment
+from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
 pytestmark = pytest.mark.anyio
 
@@ -29,7 +31,7 @@ def command(script, **kwargs):
 @pytest.fixture
 async def native_environment():
     engine = DockerSDKEngine(docker.from_env())
-    config = DockerProviderConfiguration(
+    config = DockerEnvironmentConfiguration(
         image=os.environ.get("A13N_TEST_DOCKER_IMAGE", "a13n-docker-environment:local"),
         init_script="echo initialized >> /workspace/init-count",
         disable_network=True,
@@ -120,7 +122,8 @@ async def test_confirmed_container_loss_rebuilds_without_private_files(native_en
 
 
 async def test_native_helper_deadline_and_closed_facets(native_environment):
-    from a13n_environment import EnvironmentError, EnvironmentProviderError
+    from a13n_harness.providers.environment.errors import EnvironmentProviderError
+    from a13n_harness.providers.environment.models import EnvironmentError
 
     env = native_environment
     files = env.operations.files
@@ -135,7 +138,7 @@ async def test_native_helper_deadline_and_closed_facets(native_environment):
 
 
 async def test_initialization_failure_is_not_implicitly_replayed(native_environment):
-    from a13n_environment import EnvironmentError
+    from a13n_harness.providers.environment.models import EnvironmentError
 
     parent = native_environment
     config = parent.config.model_copy(update={"init_script": "echo attempted >> /workspace/attempts; exit 1"})
@@ -159,8 +162,8 @@ async def test_initialization_failure_is_not_implicitly_replayed(native_environm
 
 
 async def test_host_mounts_survive_destroy_and_enforce_read_only(native_environment, tmp_path):
-    from a13n_environment import EnvironmentError
-    from a13n_environment.docker import DockerMountConfiguration
+    from a13n_harness.providers.environment.docker.configuration import DockerMountConfiguration
+    from a13n_harness.providers.environment.models import EnvironmentError
 
     parent = native_environment
     source = tmp_path / "source"
@@ -248,7 +251,7 @@ async def test_docker_default_working_directory_through_harness(native_environme
 
 
 async def test_full_filesystem_preserves_destination_and_removes_staging(monkeypatch):
-    from a13n_environment import EnvironmentError
+    from a13n_harness.providers.environment.models import EnvironmentError
 
     engine = DockerSDKEngine(docker.from_env())
     original_create = engine.client.containers.create
@@ -258,7 +261,7 @@ async def test_full_filesystem_preserves_destination_and_removes_staging(monkeyp
 
     monkeypatch.setattr(type(engine.client.containers), "create", limited_container)
     env = DockerEnvironment(
-        DockerProviderConfiguration(image=os.environ.get("A13N_TEST_DOCKER_IMAGE", "a13n-docker-environment:local")),
+        DockerEnvironmentConfiguration(image=os.environ.get("A13N_TEST_DOCKER_IMAGE", "a13n-docker-environment:local")),
         "env_" + uuid4().hex,
         None,
         DockerProviderRuntime(engine),

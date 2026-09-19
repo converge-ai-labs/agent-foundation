@@ -5,7 +5,7 @@ import os
 from contextlib import contextmanager
 
 import pytest
-from a13n_environment import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 
 from .file_backends import KINDS, FileBackend
 from .file_contract import (
@@ -61,7 +61,7 @@ async def test_file_symlink_escape_and_provider_link_replacement_semantics(file_
     (base / "escape").symlink_to(backend.outside, target_is_directory=True)
     (base / "link").symlink_to(backend.outside + "/sentinel")
     before = backend.snapshot()
-    if backend.kind != "direct-local":
+    if backend.kind != "direct_local":
         # Device paths, including resolved directory symlinks, are not confined
         # to a Session's cwd. The external fixture directory is Host-owned too.
         for _, operation in READS:
@@ -122,7 +122,7 @@ async def test_wrong_file_types_preserve_source_and_nonempty_destination(file_ba
     backend = file_backend
     (backend.root / "file-tests/directory/keep").write_text("MUST_KEEP")
     before = backend.snapshot()
-    code = "environment_request_invalid" if backend.kind == "direct-local" else "environment_denied"
+    code = "environment_request_invalid" if backend.kind == "direct_local" else "environment_denied"
     with failure(code):
         await operation(backend.environment.operations.files, backend.base)
     assert backend.snapshot() == before

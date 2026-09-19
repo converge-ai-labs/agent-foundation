@@ -1,6 +1,6 @@
 import pytest
-from a13n_environment import EnvironmentState
 from a13n_harness import HarnessState
+from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_service.interactions.domain import (
     PendingCallKind,
     PendingCallSummary,
@@ -46,7 +46,7 @@ def _completed_parent():
         agent_context_state=initial.harness.agent_context_state,
         environment_states={
             "workspace": EnvironmentState(
-                provider_key="test.provider",
+                provider_key="test_provider",
                 state_version="1",
                 state={"target": "durable"},
             )

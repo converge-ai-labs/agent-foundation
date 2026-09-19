@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Literal
 from urllib.parse import quote, urlencode
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -14,7 +16,7 @@ from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.models.domain import Model
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
-from a13n_service.models.providers import ProviderRegistry
+from a13n_service.models.providers import validate_model_api
 from a13n_service.models.service_common import ModelError
 from a13n_service.models.settings import effective_settings
 from a13n_service.storage import short_session
@@ -37,14 +39,17 @@ class AssistantReadiness(StrictModel):
     reason_code: Literal[
         "ready", "provider_setup_required", "model_setup_required", "model_access_denied", "compatible_model_required"
     ]
-    setup_actions: tuple[Literal["configure_provider", "configure_model", "contact_administrator"], ...]
+    setup_actions: tuple[Literal["open_provider", "configure_model", "contact_administrator"], ...]
     setup_url: str
     selected_model: SelectedAssistantModel | None = None
 
 
 class ConfigurationReadiness:
     def __init__(
-        self, sessions: async_sessionmaker[AsyncSession], registry: ProviderRegistry, definition: AssistantDefinition
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        registry: ProviderCatalog[ModelProviderDefinition],
+        definition: AssistantDefinition,
     ) -> None:
         self._sessions, self._registry, self._definition = sessions, registry, definition
 
@@ -66,7 +71,7 @@ class ConfigurationReadiness:
                 )
             except AuthorizationError:
                 can_manage = False
-            actions = ("configure_provider", "configure_model") if can_manage else ("contact_administrator",)
+            actions = ("open_provider", "configure_model") if can_manage else ("contact_administrator",)
             try:
                 await authorize_workspace(
                     session, actor=actor, workspace_id=workspace.id, action=WorkspaceAction.models_read
@@ -117,7 +122,7 @@ class ConfigurationReadiness:
                     continue
                 priority, settings, reason = selected
                 try:
-                    self._registry.validate_model_api(configured[record.provider_id].type, model.model_api)
+                    validate_model_api(self._registry.require(configured[record.provider_id].type), model.model_api)
                     effective_settings(model.model_api, model.settings, settings)
                 except (ModelError, ValueError):
                     continue
@@ -138,12 +143,11 @@ class ConfigurationReadiness:
             )
 
 
-def provider_configured(registry: ProviderRegistry, provider: ModelProviderRecord) -> bool:
+def provider_configured(registry: ProviderCatalog[ModelProviderDefinition], provider: ModelProviderRecord) -> bool:
     if not provider.enabled:
         return False
     try:
-        registry.validate_provider(
-            provider.type,
+        registry.require(provider.type).validate_configuration(
             provider.configuration,
             credential_configured=provider.credential_configured,
             header_names=provider.header_names or (),

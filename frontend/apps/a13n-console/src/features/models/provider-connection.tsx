@@ -6,7 +6,7 @@ import {
   Input,
 } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { SchemaFields } from "../../shared/forms";
+import { SchemaFields, withSchemaValues } from "../../shared/forms";
 import { ProviderHeaders, type HeaderDraft } from "./provider-headers";
 
 const advancedFields = new Set([
@@ -61,7 +61,6 @@ export function ProviderConnection({
   onOpenChange,
   onBaseUrlChange,
   onSuggestedApi,
-  onAuthChange,
 }: {
   type: string;
   schema: Record<string, unknown>;
@@ -73,7 +72,6 @@ export function ProviderConnection({
   onOpenChange: (open: boolean) => void;
   onBaseUrlChange: (url: string) => void;
   onSuggestedApi: (api: string) => void;
-  onAuthChange: (mode: string) => void;
 }) {
   const { t } = useTranslation();
   const requiredBaseUrl =
@@ -93,9 +91,7 @@ export function ProviderConnection({
     !!configuration.base_url ||
     !!configuration.mantle_base_url ||
     headers.length > 0 ||
-    (type === "openai" &&
-      configuration.auth_mode &&
-      configuration.auth_mode !== "bearer");
+    (configuration.auth_mode && configuration.auth_mode !== "bearer");
   return (
     <DisclosureSection
       title={t("Advanced settings")}
@@ -105,7 +101,12 @@ export function ProviderConnection({
     >
       {!requiredBaseUrl && (
         <FormField
-          label={t(type === "aws_bedrock" ? "Converse base URL" : "Base URL")}
+          label={t(
+            String(
+              (properties.base_url as Record<string, unknown> | undefined)
+                ?.title ?? "Base URL",
+            ),
+          )}
           description={t("Leave empty to use the provider's default endpoint.")}
         >
           <Input
@@ -154,35 +155,18 @@ export function ProviderConnection({
           onChange={onChange}
         />
       )}
-      {type === "openai" && (
-        <>
-          <ChoiceField
-            label={t("Authentication")}
-            value={String(configuration.auth_mode ?? "bearer")}
-            onValueChange={(value) => {
-              const { api_key_header_name: _header, ...rest } = configuration;
-              onChange({ ...rest, auth_mode: value });
-              onAuthChange(value);
-            }}
-            options={[
-              { value: "bearer", label: "Bearer token" },
-              { value: "none", label: t("None") },
-              { value: "api_key_header", label: t("Custom header") },
-            ]}
-          />
-          {configuration.auth_mode === "api_key_header" && (
-            <FormField label={t("Header name")}>
-              <Input
-                value={String(configuration.api_key_header_name ?? "")}
-                placeholder="api-key"
-                onChange={(event) =>
-                  change("api_key_header_name", event.target.value)
-                }
-              />
-            </FormField>
-          )}
-        </>
-      )}
+      <SchemaFields
+        schema={{
+          ...schema,
+          properties: Object.fromEntries(
+            Object.entries(properties).filter(([key]) =>
+              ["auth_mode", "api_key_header_name"].includes(key),
+            ),
+          ),
+        }}
+        value={configuration}
+        onChange={(value) => onChange(withSchemaValues(schema, value))}
+      />
       {!!properties.session_affinity_header && (
         <>
           <ChoiceField

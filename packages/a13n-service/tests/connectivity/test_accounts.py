@@ -4,6 +4,7 @@ import json
 
 import httpx2
 import pytest
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from a13n_service.connectivity.accounts.domain import (
     AccountStatus,
     CreateAccountRequest,
@@ -17,7 +18,6 @@ from a13n_service.connectivity.native import native_capability
 from a13n_service.connectivity.native_context import InboundRunContext, bind_account_tools
 from a13n_service.connectivity.providers.registry import require_native_provider
 from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.http_errors import application_error_status
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.storage import transaction

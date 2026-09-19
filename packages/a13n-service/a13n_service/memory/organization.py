@@ -5,7 +5,7 @@ import hashlib
 import json
 from datetime import timedelta
 
-from a13n_harness.memory_organization import (
+from a13n_harness.providers.memory.filesystem.organization import (
     ORGANIZATION_INSTRUCTIONS,
     OrganizationPlan,
     apply_organization,

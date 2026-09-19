@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agent_configuration.context import ConfigurationRunContext
@@ -21,7 +23,6 @@ from a13n_service.iam import (
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.storage import short_session
-from a13n_service.web.registry import WebProviderRegistry
 
 from ..connectivity_resolution import prepare_invocation_connectivity
 from ..domain import (
@@ -71,15 +72,15 @@ class AgentInvocationPreparer:
         *,
         connectivity_resolver: ConnectivitySelectionResolver,
         protocol_policy: AgentProtocolPolicy,
-        web_provider_registry: WebProviderRegistry,
-        memory_backend_catalog: MemoryBackendCatalog,
+        web_provider_catalog: ProviderCatalog[WebProviderDefinition],
+        memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition],
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver
         self._protocol_policy = protocol_policy
-        self._web_provider_registry = web_provider_registry
-        self._memory_backend_catalog = memory_backend_catalog
+        self._web_provider_catalog = web_provider_catalog
+        self._memory_provider_catalog = memory_provider_catalog
 
     async def prepare(
         self,
@@ -149,8 +150,8 @@ class AgentInvocationPreparer:
                     workspace_id=workspace_id,
                     authored=revision.config,
                     selected=merged,
-                    memory_backend_catalog=self._memory_backend_catalog,
-                    web_provider_registry=self._web_provider_registry,
+                    memory_provider_catalog=self._memory_provider_catalog,
+                    web_provider_catalog=self._web_provider_catalog,
                 )
                 await authorize_workspace(
                     session,
@@ -267,8 +268,8 @@ class AgentInvocationPreparer:
                     workspace_id=actor.workspace_id,
                     authored=config,
                     selected=merged,
-                    memory_backend_catalog=self._memory_backend_catalog,
-                    web_provider_registry=self._web_provider_registry,
+                    memory_provider_catalog=self._memory_provider_catalog,
+                    web_provider_catalog=self._web_provider_catalog,
                 )
             model = await self._model_selector.prepare(
                 organization_id=authorized.organization_id,

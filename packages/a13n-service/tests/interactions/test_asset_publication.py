@@ -9,9 +9,9 @@ from datetime import timedelta
 import pytest
 from a13n_harness import AgentIdentityRef, AgentInstanceContext, AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.environment.advanced import create_environment_runtime
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness.environment.providers import EnvironmentRuntimeMount
-from a13n_harness.environment.sources import _EnvironmentAdapterBinding
+from a13n_harness.environment.sources import EnvironmentMount, _EnvironmentAdapterBinding
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentPermissionSet
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.assets.domain import AssetRef
@@ -148,7 +148,7 @@ def _binding(root):
     return create_environment_runtime(
         mounts={
             "workspace": EnvironmentRuntimeMount(
-                binding=_EnvironmentAdapterBinding(environment),
+                binding=_EnvironmentAdapterBinding(EnvironmentMount(environment)),
                 permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                 working_directory="/",
             )
@@ -238,7 +238,7 @@ async def test_stale_or_unselected_publication_creates_no_asset(publication, tmp
 
 @pytest.mark.parametrize("path", ["/environment/workspace", "/environment/workspace/link.txt", "../outside.txt"])
 async def test_only_confined_regular_files_can_be_published(publication, tmp_path, path):
-    from a13n_harness.environment.models import EnvironmentError
+    from a13n_harness.providers.environment.models import EnvironmentError
 
     async with _files(tmp_path / "env") as environment:
         (tmp_path / "outside.txt").write_text("private host file")

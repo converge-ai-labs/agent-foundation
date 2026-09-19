@@ -6,6 +6,7 @@ import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
+from a13n_harness.providers.endpoint_policy import EndpointPolicy
 from anyio import fail_after
 from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
@@ -25,7 +26,6 @@ from a13n_service.connectivity.connections.router import router as connection_ro
 from a13n_service.connectivity.connectors.router import router as connector_router
 from a13n_service.connectivity.ingress.data_router import router as ingress_data_router
 from a13n_service.connectivity.mcp.router import router as mcp_router
-from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.environments.router import router as environment_router
 from a13n_service.gateway.a2a_router import router as a2a_router
 from a13n_service.gateway.router import router as gateway_router
@@ -40,7 +40,6 @@ from a13n_service.lifecycle.router import router as lifecycle_router
 from a13n_service.memory.document_router import router as memory_document_router
 from a13n_service.memory.provider_router import router as memory_provider_router
 from a13n_service.memory.router import router as memory_router
-from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.router import router as model_router
 from a13n_service.openapi import install_openapi
 from a13n_service.process.components import Components, snapshot_components
@@ -75,7 +74,7 @@ def _lifespan(
             components,
             process_status,
             trace_query_provider_registry=trace_query_provider_registry,
-            model_provider_registry=ProviderRegistry(provider_catalogs.model),
+            model_provider_catalog=provider_catalogs.model,
             provider_catalogs=provider_catalogs,
             model_endpoint_policy=EndpointPolicy.from_operator_allowlist(
                 private_domains=settings.models.private_endpoint_domains,
@@ -106,10 +105,10 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
                 for plugin in provider_catalogs.plugins
             ],
             "provider_types": {
-                "environment": [provider.key for provider in provider_catalogs.environment],
-                "model": [provider.type for provider in provider_catalogs.model],
-                "connector": [provider.type for provider in provider_catalogs.connector],
-                "web": [provider.type for provider in provider_catalogs.web],
+                "environment": sorted(provider_catalogs.environment),
+                "model": sorted(provider_catalogs.model),
+                "connector": sorted(provider_catalogs.connector),
+                "web": sorted(provider_catalogs.web),
             },
         },
     )

@@ -4,7 +4,8 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from a13n_environment import E2BEnvironment, EnvironmentProviderError
+from a13n_harness.providers.environment.e2b.provider import E2BEnvironment
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
 from e2b import AsyncSandbox
 
 from .e2b_support import command
@@ -106,7 +107,7 @@ async def test_e2b_lost_mutation_response_is_reconciled_without_repeating_effect
 async def test_e2b_close_serializes_with_real_preparation(e2b_sandboxes, monkeypatch, operation, cancel):
     pool = e2b_sandboxes
     env = pool.adapter()
-    await env.enter(thread_id="t", run_id="r", agent_instance_id="a", mount_id="m")
+    await env.enter(mount_id="m")
     if operation == "recover":
         await env.prepare()
     opened = E2BEnvironment._open_operations

@@ -8,8 +8,6 @@ from typing import Any, cast
 
 import a13n_harness.environment.coordinator as environment_coordinator
 import pytest
-from a13n_environment import EnvironmentOperations as EnvironmentProviderOperations
-from a13n_environment import EnvironmentState
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
@@ -32,7 +30,11 @@ from a13n_harness.environment.advanced import (
     create_empty_environment_runtime,
     create_environment_runtime,
 )
-from a13n_harness.environment.commands import (
+from a13n_harness.environment.providers import (
+    EnvironmentProviderBinding,
+    EnvironmentRuntimeMount,
+)
+from a13n_harness.providers.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
     CommandRequest,
@@ -42,12 +44,9 @@ from a13n_harness.environment.commands import (
     ProcessStartResult,
     ProcessStatus,
 )
-from a13n_harness.environment.models import EnvironmentOperationReceipt
-from a13n_harness.environment.providers import (
-    EnvironmentProviderBinding,
-    EnvironmentRuntimeMount,
-)
-from a13n_harness.environment.retention import (
+from a13n_harness.providers.environment.models import EnvironmentOperationReceipt, EnvironmentState
+from a13n_harness.providers.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_harness.providers.environment.retention import (
     EnvironmentOutputCapture,
     EnvironmentOutputPolicy,
     OpaqueProcessHandle,
@@ -105,7 +104,7 @@ class _Binding(EnvironmentProviderBinding):
         if selected_permissions is None:
             selected_permissions = frozenset({EnvironmentAction.FILE_STAT}) if "files" in families else frozenset()
         self.bound = _BoundProvider(
-            provider_key="test.provider",
+            provider_key="test_provider",
             environment_id=f"environment:{name}",
             descriptor=EnvironmentDescriptor(
                 generation=f"generation-{name}",
@@ -119,7 +118,7 @@ class _Binding(EnvironmentProviderBinding):
 
     @property
     def provider_type(self) -> str:
-        return "test.provider"
+        return "test_provider"
 
     @property
     def environment_id(self) -> str:
@@ -983,7 +982,7 @@ async def test_invalid_identity_does_not_transfer_or_consume_binding() -> None:
 async def test_dump_states_returns_provider_cached_state_by_mount_name() -> None:
     provider = _Binding("stateful")
     state = EnvironmentState(
-        provider_key="test.provider",
+        provider_key="test_provider",
         state_version="state-1",
         state={"target": "environment:stateful"},
     )
@@ -1005,7 +1004,7 @@ async def test_dump_states_returns_provider_cached_state_by_mount_name() -> None
 async def test_dump_states_rejects_incompatible_provider_state() -> None:
     provider = _Binding("incompatible-state")
     provider.bound.cached_state = EnvironmentState(
-        provider_key="other.provider",
+        provider_key="other_provider",
         state_version="state-1",
         state={},
     )
@@ -1512,7 +1511,7 @@ class _IdempotentProcessOperations:
             BoundProcessHandle(
                 mount_id=mount_id,
                 identity=ProcessIdentity(
-                    provider_type="test.provider",
+                    provider_type="test_provider",
                     environment_id="environment:processes",
                     generation="generation-processes",
                     process_id=f"provider-process-{index}",
@@ -1612,7 +1611,7 @@ def _process_request() -> CommandRequest:
 
 async def test_process_rebind_selects_environment_instance_identity_instead_of_default_mount() -> None:
     identity = ProcessIdentity(
-        provider_type="test.provider",
+        provider_type="test_provider",
         environment_id="environment:a",
         generation="generation-a",
         process_id="provider-process-a",
@@ -1674,7 +1673,7 @@ async def test_process_rebind_selects_environment_instance_identity_instead_of_d
         retarget_operations.result_handle = BoundProcessHandle(
             mount_id=provider_b.mount_id,
             identity=ProcessIdentity(
-                provider_type="test.provider",
+                provider_type="test_provider",
                 environment_id="environment:b",
                 generation="generation-b",
                 process_id="provider-process-b",
@@ -1721,7 +1720,7 @@ async def test_process_rebind_keeps_unattached_and_changed_generation_failures_d
         with pytest.raises(EnvironmentError) as unattached:
             await environment.processes.rebind(
                 ProcessIdentity(
-                    provider_type="test.provider",
+                    provider_type="test_provider",
                     environment_id="environment:missing",
                     generation="generation-missing",
                     process_id="provider-process",
@@ -1731,7 +1730,7 @@ async def test_process_rebind_keeps_unattached_and_changed_generation_failures_d
         with pytest.raises(EnvironmentError) as changed_generation:
             await environment.processes.rebind(
                 ProcessIdentity(
-                    provider_type="test.provider",
+                    provider_type="test_provider",
                     environment_id="environment:current",
                     generation="generation-old",
                     process_id="provider-process",

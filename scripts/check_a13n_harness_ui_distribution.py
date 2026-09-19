@@ -54,7 +54,6 @@ TERMINAL_PACKAGE_PATHS = (
     PurePosixPath("a13n_harness_ui/subagents/explorer.md"),
 )
 INTERNAL_PACKAGES = (
-    "a13n-environment",
     "a13n-harness",
     "a13n-stream-protocol",
 )

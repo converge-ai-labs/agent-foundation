@@ -7,7 +7,7 @@ import re
 from collections.abc import Sequence
 
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
-from a13n_environment import EnvironmentAction, EnvironmentPermissionSet
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentPermissionSet
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _HOST_ALIASES = frozenset({"workspace", "thread-files", "configuration", "builtin-skills", "user-skills"})

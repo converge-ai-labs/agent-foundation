@@ -114,7 +114,7 @@ class DocumentMemoryRunCapability(MemoryCapability):
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
         if not self.toolset:
             return None
-        from a13n_harness.filesystem_memory import FilesystemMemoryStore
+        from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryStore
 
         from .filesystem_memory import FilesystemMemoryTools
 
