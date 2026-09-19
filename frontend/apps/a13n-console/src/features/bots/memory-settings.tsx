@@ -1,7 +1,14 @@
 import { refreshMemory } from "./memory-actions";
 import type { BotAccount } from "./account";
 import type { MemoryDialogControl } from "./memory-actions";
-import { Button, ChoiceField, Label, ModalFrame, Switch } from "a13n-ui";
+import {
+  Button,
+  ChoiceField,
+  ModalFrame,
+  SettingsRow,
+  SettingsSection,
+  Switch,
+} from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 import { MemoryProviderEditor } from "../memory/editor";
@@ -158,18 +165,31 @@ function SettingsForm({
         save.mutate();
       }}
     >
-      <p>
+      <p className={styles.memoryNote}>
         {t(
           "Only workspace administrators can view and manage connected private-group memory.",
         )}
       </p>
-      <Label>
-        <Switch checked={enabled} onCheckedChange={setEnabled} />
-        {t("Enable memory")}
-      </Label>
-      <div className={styles.groupMemoryCapabilities} data-disabled={!enabled}>
-        <Label>
+      <SettingsSection>
+        <SettingsRow
+          label={t("Enable memory")}
+          description={
+            !enabled
+              ? t(
+                  "Memory is off for all groups. Existing memories are not deleted.",
+                )
+              : undefined
+          }
+        >
           <Switch
+            aria-label={t("Enable memory")}
+            checked={enabled}
+            onCheckedChange={setEnabled}
+          />
+        </SettingsRow>
+        <SettingsRow label={t("Refer to memory when answering")}>
+          <Switch
+            aria-label={t("Refer to memory when answering")}
             checked={useMemory}
             onCheckedChange={(value) => {
               setUseMemory(value);
@@ -177,10 +197,10 @@ function SettingsForm({
             }}
             disabled={!enabled}
           />
-          {t("Refer to memory when answering")}
-        </Label>
-        <Label>
+        </SettingsRow>
+        <SettingsRow label={t("Allow saving or deleting memory through chat")}>
           <Switch
+            aria-label={t("Allow saving or deleting memory through chat")}
             checked={saveMemory}
             onCheckedChange={(value) => {
               setSaveMemory(value);
@@ -188,21 +208,13 @@ function SettingsForm({
             }}
             disabled={!enabled}
           />
-          {t("Allow saving or deleting memory through chat")}
-        </Label>
-      </div>
-      <p>
+        </SettingsRow>
+      </SettingsSection>
+      <p className={styles.memoryNote}>
         {t(
           "These permissions apply to all groups. Reading and writing are independent; each group must also enable the corresponding permission.",
         )}
       </p>
-      {!enabled && (
-        <p>
-          {t(
-            "Memory is off for all groups. Existing memories are not deleted.",
-          )}
-        </p>
-      )}
       {enabled && (
         <>
           <ErrorNotice
@@ -241,14 +253,14 @@ function SettingsForm({
                 !(providers.data ?? []).some(
                   (item) => item.enabled && support.get(item.type) === true,
                 ) && (
-                  <p role="note">
+                  <p role="note" className={styles.memoryNote}>
                     {t(
                       "No compatible memory storage is available. Add storage to continue.",
                     )}
                   </p>
                 )}
               {providerId && unavailable && (
-                <p role="note">
+                <p role="note" className={styles.memoryNote}>
                   {t("Choose a Provider that supports document memory.")}
                 </p>
               )}
@@ -256,6 +268,8 @@ function SettingsForm({
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
+                  className={styles.memoryAction}
                   ref={addTrigger}
                   onClick={() => setAddingProvider(true)}
                 >
@@ -263,7 +277,7 @@ function SettingsForm({
                 </Button>
               )}
               {!can("memory_provider.manage") && (
-                <p>
+                <p className={styles.memoryNote}>
                   {t("Ask a workspace administrator to add memory storage.")}
                 </p>
               )}
@@ -274,14 +288,21 @@ function SettingsForm({
       {enabled &&
         providers.data?.find((item) => item.id === providerId)?.type ===
           "a13n.filesystem" && (
-          <Label>
-            <Switch
-              checked={organize}
-              onCheckedChange={setOrganize}
-              disabled={!useMemory || !saveMemory}
-            />
-            {t("Automatic organization")}
-          </Label>
+          <SettingsSection>
+            <SettingsRow
+              label={t("Automatic organization")}
+              description={t(
+                "Organize completed work into memory. Uses the agent model and is off by default.",
+              )}
+            >
+              <Switch
+                aria-label={t("Automatic organization")}
+                checked={organize}
+                onCheckedChange={setOrganize}
+                disabled={!useMemory || !saveMemory}
+              />
+            </SettingsRow>
+          </SettingsSection>
         )}
       <MemoryProviderEditor
         scope={{ kind: "workspace", id: workspace.id }}
@@ -295,14 +316,14 @@ function SettingsForm({
       />
       {account.memory &&
         (!enabled || providerId !== account.memory.provider_id) && (
-          <p role="note">
+          <p role="note" className={styles.memoryNote}>
             {t(
               "Existing documents stay on the previous Provider. This does not migrate or delete them.",
             )}
           </p>
         )}
       {enabled && providerId && !unavailable && (
-        <p>
+        <p className={styles.memoryNote}>
           {t(
             "Groups inherit this Provider. Configure each group separately; sharing is off by default.",
           )}
@@ -534,13 +555,17 @@ function GroupForm({
           }}
         />
       )}
-      <Label>
-        <Switch checked={enabled} onCheckedChange={setEnabled} />
-        {t("Enable group memory")}
-      </Label>
-      <div className={styles.groupMemoryCapabilities} data-disabled={!enabled}>
-        <Label>
+      <SettingsSection>
+        <SettingsRow label={t("Enable group memory")}>
           <Switch
+            aria-label={t("Enable group memory")}
+            checked={enabled}
+            onCheckedChange={setEnabled}
+          />
+        </SettingsRow>
+        <SettingsRow label={t("Refer to memory when answering")}>
+          <Switch
+            aria-label={t("Refer to memory when answering")}
             checked={read}
             onCheckedChange={(value) => {
               setRead(value);
@@ -548,10 +573,10 @@ function GroupForm({
             }}
             disabled={!enabled}
           />
-          {t("Refer to memory when answering")}
-        </Label>
-        <Label>
+        </SettingsRow>
+        <SettingsRow label={t("Allow saving or deleting memory through chat")}>
           <Switch
+            aria-label={t("Allow saving or deleting memory through chat")}
             checked={write}
             onCheckedChange={(value) => {
               setWrite(value);
@@ -559,19 +584,23 @@ function GroupForm({
             }}
             disabled={!enabled}
           />
-          {t("Allow saving or deleting memory through chat")}
-        </Label>
-      </div>
-      {account.memory?.auto_organize && (
-        <Label>
-          <Switch
-            checked={organize}
-            onCheckedChange={setOrganize}
-            disabled={!enabled || !read || !write}
-          />
-          {t("Automatic organization")}
-        </Label>
-      )}
+        </SettingsRow>
+        {account.memory?.auto_organize && (
+          <SettingsRow
+            label={t("Automatic organization")}
+            description={t(
+              "Organize completed work into memory. Uses the agent model and is off by default.",
+            )}
+          >
+            <Switch
+              aria-label={t("Automatic organization")}
+              checked={organize}
+              onCheckedChange={setOrganize}
+              disabled={!enabled || !read || !write}
+            />
+          </SettingsRow>
+        )}
+      </SettingsSection>
       <ChoiceField
         label={t("Who can read this group's memory?")}
         value={visibility}
@@ -595,13 +624,13 @@ function GroupForm({
         ]}
       />
       {visibility === "installation" && (
-        <p>
+        <p className={styles.memoryNote}>
           {t(
             "Limited to groups connected to this bot. Other groups can use this group's memory when answering.",
           )}
         </p>
       )}
-      <p>
+      <p className={styles.memoryNote}>
         {t(
           visibility === "installation"
             ? "All existing and future memory in this group can be read by other groups connected to this bot in the same Slack workspace or Feishu tenant. Their private memory stays private."
@@ -609,7 +638,7 @@ function GroupForm({
         )}
       </p>
       {visibility !== (scope?.visibility ?? "group") && (
-        <p role="status">
+        <p role="status" className={styles.memoryNote}>
           {t(
             visibility === "group"
               ? "Saving immediately stops future reads from other groups. Messages already sent to chats are not removed."
@@ -617,7 +646,7 @@ function GroupForm({
           )}
         </p>
       )}
-      <p>
+      <p className={styles.memoryNote}>
         {t(
           "Only verified group conversations can open their memory to other groups. Direct conversations stay private.",
         )}

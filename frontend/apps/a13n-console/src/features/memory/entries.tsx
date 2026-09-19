@@ -11,6 +11,7 @@ import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { useMemoryProviders } from "./availability";
+import styles from "./memory.module.css";
 
 type Entry = Schema["MemoryEntrySelection"];
 
@@ -66,7 +67,7 @@ export function MemoryEntryFields({
     });
   }
   return (
-    <div className="grid min-w-0 gap-4">
+    <div className={styles.fields}>
       {!preset && (
         <>
           <FormField
@@ -186,32 +187,26 @@ export function MemoryEntryFields({
         </>
       )}
       {!preset && (
-        <>
-          <ChoiceField
-            label={t("Memory scope")}
-            readOnly={readOnly}
-            value={
-              entry.scope ?? (entry.mode === "documents" ? "thread" : "all")
-            }
-            options={[
-              ...(entry.mode === "records"
-                ? [{ value: "all", label: t("All available scopes") }]
-                : []),
-              { value: "thread", label: t("Current thread") },
-              { value: "agent", label: t("This agent") },
-              { value: "user", label: t("Current user") },
-            ]}
-            onValueChange={(scope) =>
-              onChange({
-                ...entry,
-                scope:
-                  scope === "all"
-                    ? null
-                    : (scope as "thread" | "agent" | "user"),
-              })
-            }
-          />
-        </>
+        <ChoiceField
+          label={t("Memory scope")}
+          readOnly={readOnly}
+          value={entry.scope ?? (entry.mode === "documents" ? "thread" : "all")}
+          options={[
+            ...(entry.mode === "records"
+              ? [{ value: "all", label: t("All available scopes") }]
+              : []),
+            { value: "thread", label: t("Current thread") },
+            { value: "agent", label: t("This agent") },
+            { value: "user", label: t("Current user") },
+          ]}
+          onValueChange={(scope) =>
+            onChange({
+              ...entry,
+              scope:
+                scope === "all" ? null : (scope as "thread" | "agent" | "user"),
+            })
+          }
+        />
       )}
       {(
         [
@@ -261,7 +256,6 @@ export function MemoryEntryFields({
           />
         </SettingsRow>
       )}
-
       {entry.mode === "records" && (
         <>
           <FormField readOnly={readOnly} label={t("Recall limit")}>

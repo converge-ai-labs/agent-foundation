@@ -3181,5 +3181,17 @@
   "Engine": "Engine",
   "Token ID and secret": "Token ID and secret",
   "state.connected": "Connected",
-  "Keep the saved key": "Keep the saved key"
+  "Keep the saved key": "Keep the saved key",
+  "Language, working style, and background, remembered per person.": "Language, working style, and background, remembered per person.",
+  "Requirements, decisions, and procedures, kept as documents.": "Requirements, decisions, and procedures, kept as documents.",
+  "Turning an option off does not delete saved memories.": "Turning an option off does not delete saved memories.",
+  "Help the agent understand people and build on past work.": "Help the agent understand people and build on past work.",
+  "Memory view": "Memory view",
+  "Choose a document to read, edit, or inspect its revisions.": "Choose a document to read, edit, or inspect its revisions.",
+  "No documents yet": "No documents yet",
+  "Read and edit the documents an agent keeps in a file memory store.": "Read and edit the documents an agent keeps in a file memory store.",
+  "Write the first memory yourself, or let the agent save one.": "Write the first memory yourself, or let the agent save one.",
+  "No memory stores yet": "No memory stores yet",
+  "Each environment keeps its own documents. Nothing is combined across stores.": "Each environment keeps its own documents. Nothing is combined across stores.",
+  "Storage and recall": "Storage and recall"
 }

@@ -174,7 +174,7 @@ export function AgentEditor({
           <Section
             title={t("Memory")}
             description={t(
-              "Remember useful information across runs, with explicit control over what is stored.",
+              "Help the agent understand people and build on past work.",
             )}
           >
             <AgentMemorySelection

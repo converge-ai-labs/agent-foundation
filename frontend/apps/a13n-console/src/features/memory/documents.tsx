@@ -1,16 +1,34 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, Textarea } from "a13n-ui";
-import { FileTextIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  Button,
+  ChoiceField,
+  FormField,
+  Input,
+  Menu,
+  MenuItem,
+  MenuPopup,
+  MenuTrigger,
+  Textarea,
+} from "a13n-ui";
+import {
+  DotsThreeIcon,
+  FileTextIcon,
+  PlusIcon,
+  TrashIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
 import { Empty } from "../../shared/collection";
 import { Confirm } from "../../shared/dialogs";
-import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import { FormActions } from "../../shared/forms";
 import { MarkdownContent } from "../../shared/markdown";
+import styles from "./memory.module.css";
 
+/** A saved file memory store: its documents at the left, the open one at the right. */
 export function FileMemoryBrowser({
   conversationScopeId,
 }: {
@@ -35,58 +53,47 @@ export function FileMemoryBrowser({
         })
         .then(data),
   });
+  const items = scopes.data?.items ?? [];
   return (
-    <section className="min-w-0 space-y-5" aria-label={t("File-based memory")}>
-      <div className="space-y-2">
-        <h2 className="text-base font-semibold">{t("File-based memory")}</h2>
-        <p className="text-sm text-muted-foreground">
-          {t(
-            "Choose a saved memory store. Each environment keeps its own documents.",
-          )}
-        </p>
-        <ErrorNotice error={scopes.error} retry={() => void scopes.refetch()} />
+    <div className={styles.files} aria-label={t("File-based memory")}>
+      <div className={styles.filesToolbar}>
         {scopes.isPending ? (
-          <Loading />
-        ) : scopes.data?.items.length ? (
+          <Loading variant="status" />
+        ) : items.length ? (
           <ChoiceField
+            variant="filter"
             disabled={locked}
             label={t("Memory store")}
+            placeholder={t("Choose a memory store")}
             value={scope}
             onValueChange={setScope}
-            options={[
-              { value: "", label: t("Choose a memory store"), disabled: true },
-              ...scopes.data.items.map((item) => ({
-                value: item.id,
-                label: `${item.scope} · ${item.subject_id} · ${item.environment_id}`,
-              })),
-            ]}
+            options={items.map((item) => ({
+              value: item.id,
+              label: `${item.scope} · ${item.subject_id} · ${item.environment_id}`,
+            }))}
           />
-        ) : (
-          !scopes.error && (
-            <p className="text-sm text-muted-foreground">
-              {t(
-                "No saved file memory stores yet. Run an agent with file memory enabled first.",
-              )}
-            </p>
-          )
+        ) : null}
+        {cursor && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setCursor(undefined)}
+          >
+            {t("First page")}
+          </Button>
         )}
-        <div className="flex gap-2">
-          {cursor && (
-            <Button variant="outline" onClick={() => setCursor(undefined)}>
-              {t("First page")}
-            </Button>
-          )}
-          {scopes.data?.next_cursor && (
-            <Button
-              variant="outline"
-              onClick={() => setCursor(scopes.data!.next_cursor!)}
-            >
-              {t("Next")}
-            </Button>
-          )}
-        </div>
+        {scopes.data?.next_cursor && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setCursor(scopes.data!.next_cursor!)}
+          >
+            {t("Next")}
+          </Button>
+        )}
       </div>
-      {scope && (
+      <ErrorNotice error={scopes.error} retry={() => void scopes.refetch()} />
+      {scope ? (
         <>
           <DocumentBrowser
             key={scope}
@@ -96,8 +103,23 @@ export function FileMemoryBrowser({
           />
           <OrganizationActivity key={`activity:${scope}`} scopeId={scope} />
         </>
+      ) : (
+        !scopes.isPending &&
+        !scopes.error && (
+          <Empty
+            icon={<FileTextIcon aria-hidden="true" />}
+            title={t(
+              items.length ? "Choose a memory store" : "No memory stores yet",
+            )}
+            description={t(
+              items.length
+                ? "Each environment keeps its own documents. Nothing is combined across stores."
+                : "No saved file memory stores yet. Run an agent with file memory enabled first.",
+            )}
+          />
+        )
       )}
-    </section>
+    </div>
   );
 }
 
@@ -131,77 +153,83 @@ function DocumentBrowser({
   const refresh = async () => {
     await cache.invalidateQueries({ queryKey: ["file-documents", scopeId] });
   };
+  const documents = listing.data?.items ?? [];
+  // One offer of the primary action: the empty store offers it in the pane.
+  const emptyStore = listing.isSuccess && !documents.length;
+  function create() {
+    setCreating(true);
+    setSelected("");
+  }
+  const newDocument = (
+    <Button variant="ghost" size="sm" disabled={locked} onClick={create}>
+      <PlusIcon aria-hidden="true" />
+      {t("New document")}
+    </Button>
+  );
   return (
-    <div className="grid min-h-96 min-w-0 overflow-hidden rounded-lg border lg:grid-cols-[16rem_minmax(0,1fr)]">
-      <aside
-        className="space-y-2 border-b bg-muted/30 p-3 lg:border-r lg:border-b-0"
+    <div className={styles.browser}>
+      <nav
+        className={`${styles.tree} a13n-scrollbar`}
         aria-label={t("Documents")}
       >
-        <Button
-          variant="outline"
-          className="w-full"
-          disabled={locked}
-          onClick={() => {
-            setCreating(true);
-            setSelected("");
-          }}
-        >
-          <PlusIcon aria-hidden="true" />
-          {t("New document")}
-        </Button>
-        <ErrorNotice
-          error={listing.error}
-          retry={() => void listing.refetch()}
-        />
+        <p className={styles.treeHeading}>
+          {t("Documents")}
+          {!emptyStore && <span>{documents.length}</span>}
+        </p>
         {listing.isPending ? (
-          <Loading />
+          <Loading variant="list" rows={3} />
         ) : (
-          listing.data?.items.map((item) => (
+          documents.map((item) => (
             <button
               key={item.id}
               type="button"
+              className={styles.fileButton}
               disabled={locked}
               aria-pressed={selected === item.id}
-              className={`flex w-full items-start gap-2 rounded-md p-2 text-left text-sm hover:bg-muted ${selected === item.id ? "bg-muted" : ""}`}
+              aria-current={selected === item.id ? "true" : undefined}
+              title={item.path}
               onClick={() => {
                 setSelected(item.id);
                 setCreating(false);
               }}
             >
-              <FileTextIcon className="mt-0.5 shrink-0" aria-hidden="true" />
-              <span className="min-w-0">
-                <span className="block truncate font-medium">{item.title}</span>
-                <span className="block truncate text-xs text-muted-foreground">
+              <FileTextIcon size={14} aria-hidden="true" />
+              <span>
+                <strong>{item.title}</strong>
+                <small>
                   {item.path} · v{item.version}
-                </span>
+                </small>
               </span>
             </button>
           ))
         )}
-        {!listing.isPending &&
-          !listing.error &&
-          !listing.data?.items.length && (
-            <p className="p-2 text-sm text-muted-foreground">
-              {t("No documents yet.")}
-            </p>
-          )}
-        <div className="flex gap-2">
+        <ErrorNotice
+          error={listing.error}
+          retry={() => void listing.refetch()}
+        />
+        <div className={styles.treeActions}>
+          {newDocument}
           {cursor && (
-            <Button variant="ghost" onClick={() => setCursor(undefined)}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setCursor(undefined)}
+            >
               {t("First page")}
             </Button>
           )}
           {listing.data?.next_cursor && (
             <Button
               variant="ghost"
+              size="sm"
               onClick={() => setCursor(listing.data!.next_cursor!)}
             >
               {t("Next")}
             </Button>
           )}
         </div>
-      </aside>
-      <div className="min-w-0 p-5 lg:p-7">
+      </nav>
+      <section className={styles.document} aria-label={t("Memory document")}>
         {creating ? (
           <DocumentEditor
             setLocked={setLocked}
@@ -225,15 +253,20 @@ function DocumentBrowser({
               await refresh();
             }}
           />
-        ) : (
+        ) : emptyStore ? (
           <Empty
-            title={t("Choose a document")}
+            icon={<FileTextIcon aria-hidden="true" />}
+            title={t("No documents yet")}
             description={t(
-              "Read documents, inspect revisions, or create a new memory.",
+              "Write the first memory yourself, or let the agent save one.",
             )}
           />
+        ) : (
+          <p className={styles.notice}>
+            {t("Choose a document to read, edit, or inspect its revisions.")}
+          </p>
         )}
-      </div>
+      </section>
     </div>
   );
 }
@@ -307,49 +340,62 @@ function DocumentDetail({
         }}
       />
     );
+  if (document.isPending)
+    return (
+      <div className={styles.documentBody}>
+        <Loading variant="detail" />
+      </div>
+    );
   return (
-    <div className="space-y-5">
-      <ErrorNotice
-        error={document.error}
-        retry={() => void document.refetch()}
-      />
-      {document.isPending ? (
-        <Loading />
-      ) : (
-        value && (
-          <>
-            <header className="space-y-3">
-              <div>
-                <p className="text-xs text-muted-foreground">
-                  {value.path} · v{value.version}
-                </p>
-                <h3 className="mt-1 text-xl font-semibold">{value.title}</h3>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {value.description}
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  disabled={value.kind === "episodic" || version !== undefined}
-                  onClick={() => setEditing(true)}
-                >
-                  {t("Edit")}
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowHistory(!showHistory)}
-                >
-                  {t("Version history")}
-                </Button>
-                {version !== undefined && (
+    <>
+      {value && (
+        <header className={styles.documentHeader}>
+          <span className={styles.documentPath}>
+            <h3>{value.title}</h3>
+            <small title={value.path}>
+              {value.path} · v{value.version}
+            </small>
+          </span>
+          <div className={styles.documentActions}>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={value.kind === "episodic" || version !== undefined}
+              onClick={() => setEditing(true)}
+            >
+              {t("Edit")}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowHistory(!showHistory)}
+            >
+              {t("Version history")}
+            </Button>
+            {version !== undefined && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setVersion(undefined)}
+              >
+                {t("Current version")}
+              </Button>
+            )}
+            <Menu>
+              <MenuTrigger
+                render={
                   <Button
-                    variant="outline"
-                    onClick={() => setVersion(undefined)}
-                  >
-                    {t("Current version")}
-                  </Button>
-                )}
+                    variant="ghost"
+                    size="icon-sm"
+                    type="button"
+                    aria-label={t("Document actions")}
+                    title={t("Document actions")}
+                  />
+                }
+              >
+                <DotsThreeIcon size={16} />
+              </MenuTrigger>
+              <MenuPopup align="end">
                 <Confirm
                   title={t("Delete document")}
                   description={t(
@@ -357,7 +403,12 @@ function DocumentDetail({
                   )}
                   subject={value.title}
                   danger
-                  trigger={t("Delete")}
+                  triggerElement={
+                    <MenuItem closeOnClick={false} variant="destructive">
+                      <TrashIcon size={14} />
+                      {t("Delete")}
+                    </MenuItem>
+                  }
                   action={() =>
                     client.http
                       .DELETE(
@@ -368,47 +419,62 @@ function DocumentDetail({
                   }
                   onSuccess={() => void onDeleted()}
                 />
-              </div>
-              {value.kind === "episodic" && (
-                <p className="text-xs text-muted-foreground">
-                  {t(
-                    "Events are immutable. Create a new document to record a correction.",
-                  )}
-                </p>
-              )}
-            </header>
+              </MenuPopup>
+            </Menu>
+          </div>
+        </header>
+      )}
+      <div className={styles.documentBody}>
+        <ErrorNotice
+          error={document.error}
+          retry={() => void document.refetch()}
+        />
+        {value && (
+          <>
+            {value.description && (
+              <p className={styles.notice}>{value.description}</p>
+            )}
+            {value.kind === "episodic" && (
+              <p className={styles.notice}>
+                {t(
+                  "Events are immutable. Create a new document to record a correction.",
+                )}
+              </p>
+            )}
             {showHistory && (
-              <div className="rounded-md border p-3">
+              <div className={styles.revisions}>
                 <ErrorNotice
                   error={history.error}
                   retry={() => void history.refetch()}
                 />
                 {history.isPending ? (
-                  <Loading />
+                  <Loading variant="list" rows={2} />
                 ) : (
-                  <div className="flex flex-wrap gap-2">
+                  <>
                     {history.data?.map((item) => (
                       <Button
                         key={item.version}
                         variant="ghost"
+                        size="sm"
                         onClick={() => setVersion(item.version)}
                       >
-                        v{item.version} ·{" "}
-                        {new Date(item.saved_at).toLocaleString()}
+                        v{item.version} · <Timestamp value={item.saved_at} />
                       </Button>
                     ))}
-                  </div>
+                    {!!history.data?.length && (
+                      <span className={styles.notice}>
+                        {t("Showing up to 100 recent revisions.")}
+                      </span>
+                    )}
+                  </>
                 )}
-                <p className="text-xs text-muted-foreground">
-                  {t("Showing up to 100 recent revisions.")}
-                </p>
               </div>
             )}
             <MarkdownContent text={value.text} />
           </>
-        )
-      )}
-    </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -484,85 +550,88 @@ function DocumentEditor({
   });
   return (
     <form
-      className="space-y-4"
+      className={styles.documentForm}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
       }}
     >
-      <h3 className="text-lg font-semibold">
-        {t(initial ? "Edit document" : "New document")}
-      </h3>
-      {!initial && (
-        <>
-          <ChoiceField
-            label={t("Memory kind")}
-            value={kind}
-            onValueChange={(value) => setKind(value as typeof kind)}
-            options={[
-              { value: "semantic", label: t("Knowledge") },
-              { value: "procedural", label: t("Procedure") },
-              { value: "episodic", label: t("Event") },
-            ]}
-          />
-          <FormField label={t("Title")}>
-            <Input
-              required
-              maxLength={160}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </FormField>
-          <FormField label={t("Description")}>
-            <Input
-              maxLength={320}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
-          </FormField>
-          <FormField
-            label={t("File name")}
-            description={`${kind}/${filename || "project-decisions"}.md`}
-          >
-            <Input
-              required
-              pattern="[a-zA-Z0-9_-]+"
-              value={filename}
-              onChange={(e) => setFilename(e.target.value)}
-              placeholder="project-decisions"
-            />
-          </FormField>
-        </>
-      )}
-      <FormField label={t("Markdown content")}>
-        <Textarea
-          required
-          rows={16}
-          className="font-mono text-sm"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-        />
-      </FormField>
-      <ErrorNotice error={save.error} />
-      {save.error && (
-        <p className="text-sm text-muted-foreground">
-          {t(
-            "Your draft is preserved. If the document changed, cancel and reload before applying your edits again.",
+      <header className={styles.documentHeader}>
+        <span className={styles.documentPath}>
+          <h3>{t(initial ? "Edit document" : "New document")}</h3>
+          {initial && (
+            <small title={initial.document.path}>
+              {initial.document.path} · v{initial.document.version}
+            </small>
           )}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button type="submit" disabled={save.isPending || !text.trim()}>
-          {t(save.isPending ? "Saving…" : "Save")}
-        </Button>
-        <Button
-          type="button"
+        </span>
+      </header>
+      <div className={styles.documentFields}>
+        {!initial && (
+          <>
+            <ChoiceField
+              label={t("Memory kind")}
+              value={kind}
+              onValueChange={(value) => setKind(value as typeof kind)}
+              options={[
+                { value: "semantic", label: t("Knowledge") },
+                { value: "procedural", label: t("Procedure") },
+                { value: "episodic", label: t("Event") },
+              ]}
+            />
+            <FormField label={t("Title")}>
+              <Input
+                required
+                maxLength={160}
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </FormField>
+            <FormField label={t("Description")}>
+              <Input
+                maxLength={320}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </FormField>
+            <FormField
+              label={t("File name")}
+              description={`${kind}/${filename || "project-decisions"}.md`}
+            >
+              <Input
+                required
+                pattern="[a-zA-Z0-9_-]+"
+                value={filename}
+                onChange={(e) => setFilename(e.target.value)}
+                placeholder="project-decisions"
+              />
+            </FormField>
+          </>
+        )}
+        <FormField label={t("Markdown content")}>
+          <Textarea
+            required
+            rows={16}
+            className={styles.documentText}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+        </FormField>
+        <ErrorNotice error={save.error} />
+        {save.error && (
+          <p className={styles.notice}>
+            {t(
+              "Your draft is preserved. If the document changed, cancel and reload before applying your edits again.",
+            )}
+          </p>
+        )}
+        <FormActions
           variant="outline"
-          disabled={save.isPending}
-          onClick={onCancel}
-        >
-          {t("Cancel")}
-        </Button>
+          pending={save.isPending}
+          disabled={!text.trim()}
+          label={t("Save")}
+          onCancel={onCancel}
+        />
       </div>
     </form>
   );
@@ -588,10 +657,21 @@ function OrganizationActivity({ scopeId }: { scopeId: string }) {
         .then(data),
   });
   return (
-    <div className="space-y-3">
-      <Button variant="outline" onClick={() => setOpen(!open)}>
-        {t("Organization activity")}
-      </Button>
+    <div className={styles.activity}>
+      <div className={styles.activityActions}>
+        <Button variant="ghost" size="sm" onClick={() => setOpen(!open)}>
+          {t("Organization activity")}
+        </Button>
+        {open && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => void activity.refetch()}
+          >
+            {t("Refresh")}
+          </Button>
+        )}
+      </div>
       {open && (
         <>
           <ErrorNotice
@@ -599,15 +679,12 @@ function OrganizationActivity({ scopeId }: { scopeId: string }) {
             retry={() => void activity.refetch()}
           />
           {activity.isPending ? (
-            <Loading />
+            <Loading variant="list" rows={2} />
           ) : activity.data?.length ? (
-            <div className="divide-y rounded-md border px-4">
+            <div className={styles.activityRows}>
               {activity.data.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm"
-                >
-                  <span className="text-muted-foreground">{item.run_id}</span>
+                <div key={item.id} className={styles.activityRow}>
+                  <span>{item.run_id}</span>
                   <span>
                     {t(item.status)} ·{" "}
                     {t("{{count}} saved", { count: item.committed })}
@@ -620,19 +697,16 @@ function OrganizationActivity({ scopeId }: { scopeId: string }) {
             </div>
           ) : (
             !activity.error && (
-              <p className="text-sm text-muted-foreground">
+              <p className={styles.notice}>
                 {t("No automatic organization work yet.")}
               </p>
             )
           )}
-          <p className="text-xs text-muted-foreground">
+          <p className={styles.notice}>
             {t(
               "Showing up to 50 recent tasks. Deferred candidates are kept outside normal recall.",
             )}
           </p>
-          <Button variant="ghost" onClick={() => void activity.refetch()}>
-            {t("Refresh")}
-          </Button>
         </>
       )}
     </div>

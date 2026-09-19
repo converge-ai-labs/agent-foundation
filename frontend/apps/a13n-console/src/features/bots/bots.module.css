@@ -304,9 +304,14 @@
   background: var(--a13n-surface);
   font-size: 13px;
 }
-.groupMemoryCapabilities {
-  display: grid;
-  gap: 10px;
+.memoryNote {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.memoryAction {
+  justify-self: start;
 }
 
 @media (max-width: 900px) {
@@ -325,10 +330,15 @@
   min-width: 0;
 }
 
-/* File-backed conversation memory: settings, then the browser. */
+/* File-backed conversation memory: its settings, then the browser. */
 .fileMemory {
   display: grid;
-  gap: 20px;
+  gap: 16px;
   min-width: 0;
-  padding: 20px;
+}
+.fileMemoryActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }

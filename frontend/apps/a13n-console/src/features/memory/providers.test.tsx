@@ -354,7 +354,10 @@ it("adds independent file memory while preserving a legacy Mem0 selection", asyn
   });
   expect(screen.queryByLabelText("Memory directory")).toBeNull();
   await user.click(
-    screen.getByRole("button", { name: "Project memory settings" }),
+    within(screen.getByRole("region", { name: "Project memory" })).getByRole(
+      "button",
+      { name: "Storage and recall" },
+    ),
   );
   expect(
     (screen.getByLabelText("Memory directory") as HTMLInputElement).value,
@@ -552,9 +555,7 @@ it("keeps each preset's detailed settings local and edits only that entry", asyn
     screen.getByRole("region", { name: "Project memory" }),
   );
   await user.click(
-    personalRegion.getByRole("button", {
-      name: "Personal preference settings",
-    }),
+    personalRegion.getByRole("button", { name: "Recall settings" }),
   );
   expect(
     personalRegion.getByRole("spinbutton", { name: "Recall limit" }),
@@ -564,7 +565,7 @@ it("keeps each preset's detailed settings local and edits only that entry", asyn
   ).toHaveProperty("value", "0");
   expect(personalRegion.queryByLabelText("Memory directory")).toBeNull();
   await user.click(
-    projectRegion.getByRole("button", { name: "Project memory settings" }),
+    projectRegion.getByRole("button", { name: "Storage and recall" }),
   );
   const directory = projectRegion.getByLabelText("Memory directory");
   await user.clear(directory);

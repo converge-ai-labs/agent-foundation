@@ -98,23 +98,148 @@
 }
 
 /* Agent memory selection -------------------------------------------------- */
-.selectionForm {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+.selection {
+  display: grid;
+  gap: 12px;
   min-width: 0;
 }
-.selectionAlert {
+.group {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.entry + .entry,
+.entry + .addEntry {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.entryHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  min-width: 0;
+  padding: 10px 14px;
+}
+.entryCopy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+  text-align: left;
+}
+.entryCopy > label,
+.entryCopy > strong {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.entryCopy > label {
+  cursor: pointer;
+}
+.entryCopy > small {
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.entryCopy > small[data-tone="warning"] {
+  color: var(--warning-foreground);
+  white-space: normal;
+}
+.entryTrigger {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 auto;
+  min-width: 0;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.entryTrigger:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: 2px;
+}
+.caret,
+.caretOpen {
+  flex: none;
+  color: var(--a13n-secondary);
+  transition: transform 150ms ease;
+}
+.caretOpen {
+  transform: rotate(180deg);
+}
+/* Settings sit under the row, aligned with its text column. */
+.entryBody {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 0 14px 16px 58px;
+}
+.entryControl {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.entryChoice {
+  flex: 0 1 340px;
+  width: 340px;
+  min-width: 0;
+  max-width: 100%;
+}
+.entryHint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.entryAlert {
   margin: 0;
   color: var(--destructive-foreground);
   font-size: 12.5px;
   line-height: 1.5;
 }
-.selectionLinks {
+.recall {
+  min-width: 0;
+}
+.addEntry {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 14px;
+  border-radius: 0;
+  color: var(--a13n-secondary);
+  font-weight: 400;
+}
+.footnote {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 0 2px;
+}
+.footnote p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.footnoteActions {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
+  flex: none;
+}
+.fields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
 }
 
 /* Record panel ----------------------------------------------------------- */
@@ -160,4 +285,236 @@
   .searchInput {
     width: 100%;
   }
+}
+
+/* File-based memory: the store's documents at the left, the open one right. */
+.files {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.filesToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.browser {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+  min-width: 0;
+}
+.tree {
+  align-self: start;
+  min-width: 0;
+  max-height: min(640px, calc(100dvh - 300px));
+  overflow: auto;
+  padding: 10px 8px 8px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.treeHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 8px 8px;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.treeHeading span {
+  letter-spacing: 0;
+  text-transform: none;
+  font-variant-numeric: tabular-nums;
+}
+.treeActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.fileButton {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border-radius: 7px;
+  color: var(--a13n-text-supporting);
+  text-align: left;
+  cursor: pointer;
+}
+.fileButton > svg {
+  flex: none;
+}
+.fileButton > span {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.fileButton strong,
+.fileButton small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fileButton strong {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.fileButton small {
+  color: var(--a13n-secondary);
+  font-size: 11.5px;
+}
+.fileButton:hover {
+  background: var(--a13n-hover);
+  color: var(--a13n-text);
+}
+.fileButton[aria-current="true"] {
+  background: var(--a13n-selected);
+  color: var(--a13n-text);
+}
+.fileButton:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
+}
+.fileButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.document {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.documentHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  padding: 8px 12px 8px 20px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.documentPath {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.documentPath h3 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.documentPath small {
+  overflow: hidden;
+  color: var(--a13n-secondary);
+  font-family: var(--a13n-mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.documentActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.documentBody {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px 20px 24px;
+}
+.documentFields {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px 20px 20px;
+}
+.documentText {
+  font-family: var(--a13n-mono);
+  font-size: 12.5px;
+}
+.revisions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.notice {
+  margin: 0;
+  padding: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+.document > .notice {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
+  padding: 24px 20px;
+  text-align: center;
+}
+.activity {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.activityActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.activityRows {
+  display: grid;
+  min-width: 0;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.activityRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 12px 16px;
+  font-size: 12.5px;
+}
+.activityRow + .activityRow {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.activityRow > span:first-child {
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .browser {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tree {
+    max-height: 280px;
+  }
+}
+
+/* Memories page: the view switch leads the toolbar. */
+.views {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
 }

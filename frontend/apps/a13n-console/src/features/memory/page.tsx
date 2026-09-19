@@ -1,7 +1,14 @@
 import { BrainIcon } from "@phosphor-icons/react";
 import { useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Input, SearchPicker } from "a13n-ui";
-import { useState } from "react";
+import {
+  Button,
+  ChoiceField,
+  FormField,
+  Input,
+  SearchPicker,
+  SegmentedControl,
+} from "a13n-ui";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useSearchParams } from "react-router";
 import { useClient } from "../../auth/context";
@@ -21,39 +28,84 @@ export function MemoriesPage() {
   const [params, setParams] = useSearchParams();
   const { t } = useTranslation();
   const [mode, setMode] = useState("records");
+  const modes = (
+    <SegmentedControl
+      label={t("Memory view")}
+      value={mode}
+      onValueChange={setMode}
+      options={[
+        { value: "records", label: t("Records") },
+        { value: "files", label: t("Files") },
+      ]}
+    />
+  );
+  return mode === "files" ? (
+    <MemoryFilesPage modes={modes} />
+  ) : (
+    <MemoryPageSelection
+      key={params.toString()}
+      modes={modes}
+      params={params}
+      onSelect={setParams}
+    />
+  );
+}
+
+/** Title, description, and the view switch every memory view shares. */
+function MemoriesFrame({
+  description,
+  modes,
+  toolbar,
+  children,
+}: {
+  description: string;
+  modes: ReactNode;
+  toolbar?: ReactNode;
+  children: ReactNode;
+}) {
+  const { t } = useTranslation(),
+    { can } = useWorkspace();
   return (
-    <>
-      <div className="mb-5 flex gap-2">
-        <Button
-          variant={mode === "records" ? "default" : "outline"}
-          onClick={() => setMode("records")}
-        >
-          {t("Mem0 records")}
-        </Button>
-        <Button
-          variant={mode === "files" ? "default" : "outline"}
-          onClick={() => setMode("files")}
-        >
-          {t("File-based memory")}
-        </Button>
-      </div>
-      {mode === "files" ? (
-        <FileMemoryBrowser />
-      ) : (
-        <MemoryPageSelection
-          key={params.toString()}
-          params={params}
-          onSelect={setParams}
-        />
+    <Page
+      title={t("Memories")}
+      description={description}
+      actions={
+        can("memory_provider.read") ? (
+          <ManageProvidersLink category="memory" scope="workspace" />
+        ) : undefined
+      }
+      toolbar={
+        <div className={styles.views}>
+          {modes}
+          {toolbar}
+        </div>
+      }
+    >
+      {children}
+    </Page>
+  );
+}
+
+function MemoryFilesPage({ modes }: { modes: ReactNode }) {
+  const { t } = useTranslation();
+  return (
+    <MemoriesFrame
+      modes={modes}
+      description={t(
+        "Read and edit the documents an agent keeps in a file memory store.",
       )}
-    </>
+    >
+      <FileMemoryBrowser />
+    </MemoriesFrame>
   );
 }
 
 function MemoryPageSelection({
+  modes,
   params,
   onSelect,
 }: {
+  modes: ReactNode;
   params: URLSearchParams;
   onSelect: (params: URLSearchParams) => void;
 }) {
@@ -102,16 +154,11 @@ function MemoryPageSelection({
     thread: t("Thread"),
   };
   return (
-    <Page
-      title={t("Memories")}
+    <MemoriesFrame
+      modes={modes}
       description={t(
         "Inspect and manage explicit memories for one provider and subject. Nothing is combined across scopes.",
       )}
-      actions={
-        can("memory_provider.read") ? (
-          <ManageProvidersLink category="memory" scope="workspace" />
-        ) : undefined
-      }
       toolbar={
         <form
           className={styles.selector}
@@ -287,6 +334,6 @@ function MemoryPageSelection({
           )}
         />
       )}
-    </Page>
+    </MemoriesFrame>
   );
 }

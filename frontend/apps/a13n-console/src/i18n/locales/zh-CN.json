@@ -3181,5 +3181,17 @@
   "Engine": "引擎",
   "Token ID and secret": "令牌 ID 与密钥",
   "state.connected": "已连接",
-  "Keep the saved key": "保留已保存的密钥"
+  "Keep the saved key": "保留已保存的密钥",
+  "Language, working style, and background, remembered per person.": "记住每个人的语言、工作方式和背景。",
+  "Requirements, decisions, and procedures, kept as documents.": "以文档形式保存需求、决策和流程。",
+  "Turning an option off does not delete saved memories.": "关闭某项不会删除已保存的记忆。",
+  "Help the agent understand people and build on past work.": "帮助 Agent 理解成员，并在过往工作的基础上继续。",
+  "Memory view": "记忆视图",
+  "Choose a document to read, edit, or inspect its revisions.": "选择一篇文档以阅读、编辑或查看其修订记录。",
+  "No documents yet": "暂无文档",
+  "Read and edit the documents an agent keeps in a file memory store.": "查看并编辑 Agent 保存在文件记忆存储中的文档。",
+  "Write the first memory yourself, or let the agent save one.": "手动写下第一条记忆，或让 Agent 自行保存。",
+  "No memory stores yet": "暂无记忆存储",
+  "Each environment keeps its own documents. Nothing is combined across stores.": "每个环境保留各自的文档，不同存储之间不会合并。",
+  "Storage and recall": "存储与召回"
 }

@@ -274,11 +274,13 @@ function ScopeDocuments({
 }) {
   return props.scope?.backend_type === "a13n.filesystem" ? (
     <div className={styles.fileMemory}>
-      <GroupMemorySettings
-        account={props.account}
-        initialScope={props.scope}
-        target={target}
-      />
+      <div className={styles.fileMemoryActions}>
+        <GroupMemorySettings
+          account={props.account}
+          initialScope={props.scope}
+          target={target}
+        />
+      </div>
       <FileMemoryBrowser conversationScopeId={props.scopeId} />
     </div>
   ) : (
