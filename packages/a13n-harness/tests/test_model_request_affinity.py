@@ -80,10 +80,21 @@ def test_affinity_derivation_does_not_normalize_or_truncate_thread_ids() -> None
         (" gpt-5", False),
     ],
 )
-@pytest.mark.parametrize("selection", ["concrete", "resolved", "inferred"])
 async def test_cache_key_uses_final_model_name(
-    monkeypatch: pytest.MonkeyPatch, model_name: str, expected: bool, selection: str
+    monkeypatch: pytest.MonkeyPatch, model_name: str, expected: bool
 ) -> None:
+    await _assert_cache_key(monkeypatch, model_name, expected, "concrete")
+
+
+@pytest.mark.parametrize("selection", ["resolved", "inferred"])
+async def test_cache_key_uses_the_model_every_selection_path_resolves(
+    monkeypatch: pytest.MonkeyPatch, selection: str
+) -> None:
+    await _assert_cache_key(monkeypatch, "gpt-5", True, selection)
+
+
+async def _assert_cache_key(monkeypatch: pytest.MonkeyPatch, model_name: str, expected: bool, selection: str) -> None:
+    """The model name that decides the cache key is the one the run finally executes."""
     seen: list[ModelSettings | None] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
