@@ -57,8 +57,8 @@ export function ToolPermissions({
                 <button
                   type="button"
                   disabled={readOnly}
-                  className={`${styles.toolsetPermission} ${styles.toolsetPermissionLabel}`}
-                  aria-label={t(permission)}
+                  className={styles.toolsetPermission}
+                  aria-label={t(labels[permission])}
                   aria-pressed={
                     (value === "inherit" ? "allow" : (value ?? "allow")) ===
                     permission
@@ -67,10 +67,14 @@ export function ToolPermissions({
                 />
               }
             >
-              <Icon size={14} aria-hidden="true" />
-              <span>{t(labels[permission])}</span>
+              <Icon size={15} aria-hidden="true" />
             </TooltipTrigger>
-            <TooltipPopup>{t(description)}</TooltipPopup>
+            <TooltipPopup>
+              <span className={styles.toolsetPermissionTip}>
+                <strong>{t(labels[permission])}</strong>
+                {t(description)}
+              </span>
+            </TooltipPopup>
           </Tooltip>
         ))}
     </div>

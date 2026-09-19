@@ -554,14 +554,14 @@
   }
 }
 
-.toolsetPermissionLabel {
-  display: inline-flex;
-  align-items: center;
-  width: auto;
-  height: 26px;
-  padding: 0 9px;
-  gap: 5px;
-  font-size: 12px;
+/* Icon-only segments explain themselves on hover: the choice, then what it does. */
+.toolsetPermissionTip {
+  display: grid;
+  gap: 1px;
+  padding: 2px 0;
+}
+.toolsetPermissionTip strong {
+  font-weight: 500;
 }
 
 /* Agent detail page ------------------------------------------------------ */
