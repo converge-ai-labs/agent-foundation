@@ -1,8 +1,35 @@
 {
   "generated": true,
-  "method_count": 36,
+  "method_count": 41,
   "methods": [
     {
+      "device_scoped": true,
+      "error_family": "initialization",
+      "introduced": "0.1",
+      "jsonrpc_method": "device.describe",
+      "kind": "request_response",
+      "params_type": "DeviceDescribeParams",
+      "replay_class": "ledger_external",
+      "result_type": "DeviceDescribeResult",
+      "rpc_name": "DeviceDescribe",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": true,
+      "error_family": "resource",
+      "introduced": "0.1",
+      "jsonrpc_method": "directory.list",
+      "kind": "request_response",
+      "params_type": "DirectoryListParams",
+      "replay_class": "ledger_external",
+      "result_type": "DirectoryListResult",
+      "rpc_name": "DirectoryList",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
       "error_family": "common",
       "introduced": "0.1",
       "jsonrpc_method": "environment.describe",
@@ -15,6 +42,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "common",
       "introduced": "0.1",
       "jsonrpc_method": "environment.readiness",
@@ -27,6 +55,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.abort_writer",
@@ -39,6 +68,7 @@
       "transfer_direction": "client_to_server"
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.close_reader",
@@ -51,6 +81,7 @@
       "transfer_direction": "server_to_client"
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.commit",
@@ -63,6 +94,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.commit_writer",
@@ -75,6 +107,7 @@
       "transfer_direction": "client_to_server"
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.copy",
@@ -87,6 +120,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.find",
@@ -99,6 +133,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.list",
@@ -111,6 +146,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.mkdir",
@@ -123,6 +159,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.move",
@@ -135,6 +172,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.open_reader",
@@ -147,6 +185,7 @@
       "transfer_direction": "server_to_client"
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.open_writer",
@@ -159,6 +198,7 @@
       "transfer_direction": "client_to_server"
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.patch_text",
@@ -171,6 +211,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.read_text",
@@ -183,6 +224,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.remove",
@@ -195,6 +237,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.search",
@@ -207,6 +250,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.stat",
@@ -219,6 +263,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "file.write_text",
@@ -231,6 +276,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": true,
       "error_family": "initialization",
       "introduced": "0.1",
       "jsonrpc_method": "initialize",
@@ -243,6 +289,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "common",
       "introduced": "0.1",
       "jsonrpc_method": "operation.cancel",
@@ -255,6 +302,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "output",
       "introduced": "0.1",
       "jsonrpc_method": "output.read",
@@ -267,6 +315,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "output",
       "introduced": "0.1",
       "jsonrpc_method": "output.release",
@@ -279,6 +328,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "port.inspect",
@@ -291,6 +341,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "resource",
       "introduced": "0.1",
       "jsonrpc_method": "port.wait",
@@ -303,6 +354,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.close_stdin",
@@ -315,6 +367,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.inspect",
@@ -327,6 +380,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.kill",
@@ -339,6 +393,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.release",
@@ -351,6 +406,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.signal",
@@ -363,6 +419,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.start",
@@ -375,6 +432,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.wait",
@@ -387,6 +445,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "process",
       "introduced": "0.1",
       "jsonrpc_method": "process.write_stdin",
@@ -399,6 +458,7 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
       "error_family": "common",
       "introduced": "0.1",
       "jsonrpc_method": "receipt.get",
@@ -411,18 +471,59 @@
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
+      "error_family": "session",
+      "introduced": "0.1",
+      "jsonrpc_method": "session.attach",
+      "kind": "request_response",
+      "params_type": "SessionAttachParams",
+      "replay_class": "ledger_external",
+      "result_type": "SessionOpenResult",
+      "rpc_name": "SessionAttach",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
       "error_family": "session",
       "introduced": "0.1",
       "jsonrpc_method": "session.close",
       "kind": "request_response",
       "params_type": "SessionCloseParams",
-      "replay_class": "active_only",
+      "replay_class": "ledger_external",
       "result_type": "SessionCloseResult",
       "rpc_name": "SessionClose",
       "transfer_action": null,
       "transfer_direction": null
     },
     {
+      "device_scoped": false,
+      "error_family": "session",
+      "introduced": "0.1",
+      "jsonrpc_method": "session.keepalive",
+      "kind": "request_response",
+      "params_type": "SessionKeepaliveParams",
+      "replay_class": "ledger_external",
+      "result_type": "SessionKeepaliveResult",
+      "rpc_name": "SessionKeepalive",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": true,
+      "error_family": "session",
+      "introduced": "0.1",
+      "jsonrpc_method": "session.open",
+      "kind": "request_response",
+      "params_type": "SessionOpenParams",
+      "replay_class": "ledger_external",
+      "result_type": "SessionOpenResult",
+      "rpc_name": "SessionOpen",
+      "transfer_action": null,
+      "transfer_direction": null
+    },
+    {
+      "device_scoped": false,
       "error_family": "command",
       "introduced": "0.1",
       "jsonrpc_method": "shell.exec",

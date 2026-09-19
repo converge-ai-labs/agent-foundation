@@ -15,7 +15,9 @@ from a13n_service.environments.websocket.authority import (
 pytestmark = pytest.mark.anyio
 
 CONNECTION = ConnectionIdentity("org_test", "env_test", "ec_test", "epoch_test", "control_test")
-USE = UseIdentity(CONNECTION, "eu_test", "run_test", "attempt_test", 1, "worker_test")
+USE = UseIdentity(
+    CONNECTION, "eu_test", "run_test", "attempt_test", 1, "worker_test", "workspace", admission_deadline_ms=1
+)
 
 
 @pytest.mark.parametrize(

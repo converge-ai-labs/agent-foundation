@@ -7,6 +7,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+from a13n_envd_client import EIPSessionStateError
 from a13n_environment import (
     EnvironmentProviderError,
     EnvironmentState,
@@ -34,7 +35,7 @@ def anyio_backend():
 
 
 def state(key="a13n.http-envd", native="env-native"):
-    return EnvironmentState(provider_key=key, state_version="1", state={"daemon_environment_id": native})
+    return EnvironmentState(provider_key=key, state_version="1", state={"device_id": native})
 
 
 @pytest.mark.parametrize(
@@ -86,7 +87,7 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path):
             EnvironmentState(
                 provider_key=provider.key,
                 state_version="1",
-                state={"daemon_environment_id": "env-native", "credential": "secret"},
+                state={"device_id": "env-native", "credential": "secret"},
             ),
         ):
             with pytest.raises(EnvironmentProviderError):
@@ -127,7 +128,7 @@ async def test_host_runtime_injection_and_managed_rejection():
         environment_id="env-logical", operation_id="op", storage_root=Path("/unused"), managed=False
     )
     provider = WebSocketEnvdEnvironmentProvider()
-    with pytest.raises(EnvironmentProviderError, match="Remote Envd") as error:
+    with pytest.raises(EnvironmentProviderError, match="Envd provider") as error:
         await provider.create_runtime(
             configuration=WebSocketEnvdBackendConfiguration(), credential=None, context=context
         )
@@ -161,9 +162,9 @@ class Connection:
 
 
 class Session:
-    def __init__(self, connection):
-        self.connection = connection
-        self.descriptor = SimpleNamespace(available_methods=("file.read_text", *module.REQUIRED_METHODS))
+    def __init__(self, device):
+        self.device = device
+        self.closed = False
         self.ready_calls = 0
 
     async def readiness(self):
@@ -171,9 +172,41 @@ class Session:
         return SimpleNamespace(ready=True)
 
     async def close(self):
-        await self.connection.close()
+        self.closed = True
 
-    async def abort(self):
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        await self.close()
+
+
+class Device:
+    session_class = Session
+
+    def __init__(self, connection, identity):
+        self.connection = connection
+        self.descriptor = SimpleNamespace(device_id=identity, available_methods=("file.read_text",))
+        self.sessions = []
+
+    async def open_session(self, *, required_methods, working_directory=None):
+        if set(required_methods) - set(self.descriptor.available_methods):
+            raise EIPSessionStateError("unsupported")
+        session = self.session_class(self)
+        self.sessions.append(session)
+        try:
+            await session.readiness()
+            return session
+        except BaseException:
+            await session.close()
+            raise
+
+    async def describe(self):
+        return self.descriptor
+
+    async def close(self):
+        for session in self.sessions:
+            await session.close()
         await self.connection.close()
 
 
@@ -182,41 +215,44 @@ def initialized(monkeypatch):
     sessions = []
 
     async def initialize(transport, **kwargs):
-        session = Session(transport._connection)
+        session = Device(transport._connection, kwargs["expected_device_id"])
         sessions.append(session)
         return session
 
-    monkeypatch.setattr(module.EIPSession, "initialize", initialize)
+    monkeypatch.setattr(module.EIPDeviceConnection, "initialize", initialize)
     return sessions
 
 
-async def test_websocket_wait_attach_exclusive_close_and_reconnect(initialized):
+async def test_websocket_shared_scopes_leave_connection_alive_until_disconnect(initialized):
     async with WebSocketEnvdConnections() as hub:
-        context = hub.open_session(expected_environment_id="env-native", required_methods=frozenset(), timeout=1)
+        context = hub.open_session(expected_device_id="env-native", required_methods=frozenset(), timeout=1)
         acquire = asyncio.create_task(context.__aenter__())
         await asyncio.sleep(0)
         assert not acquire.done()
         connection = Connection()
         attachment = asyncio.create_task(hub.attach("env-native", connection))
         session = await acquire
-        assert session is initialized[0]
+        assert session is initialized[0].sessions[0]
         assert session.ready_calls == 1
-        with pytest.raises(EnvironmentProviderError) as error:
-            async with hub.open_session(expected_environment_id="env-native", required_methods=frozenset()):
-                pytest.fail("cannot concurrently lease one daemon")
-        assert error.value.code == "provider_connection_busy"
+        async with hub.open_session(expected_device_id="env-native", required_methods=frozenset()) as shared:
+            assert shared is not session
+            assert shared.device is session.device
+        assert shared.closed and not session.closed
+        assert not connection.closed.is_set()
         duplicate = Connection()
         with pytest.raises(EnvironmentProviderError):
             await hub.attach("env-native", duplicate)
         assert duplicate.closed.is_set() and not connection.closed.is_set()
         await context.__aexit__(None, None, None)
+        assert not connection.closed.is_set()
+        assert not attachment.done()
+        await connection.close()
         await attachment
-        assert connection.closed.is_set()
-        replacement = asyncio.create_task(hub.attach("env-native", Connection()))
-        async with hub.open_session(
-            expected_environment_id="env-native", required_methods=frozenset(), timeout=1
-        ) as second:
+        replacement_connection = Connection()
+        replacement = asyncio.create_task(hub.attach("env-native", replacement_connection))
+        async with hub.open_session(expected_device_id="env-native", required_methods=frozenset(), timeout=1) as second:
             assert second is not session
+        await replacement_connection.close()
         await replacement
 
 
@@ -226,7 +262,7 @@ async def test_websocket_shutdown_cancels_waiters_and_closes_idle_connections(in
     while not initialized:
         await asyncio.sleep(0)
     waiter = asyncio.create_task(
-        hub.open_session(expected_environment_id="env-other", required_methods=frozenset()).__aenter__()
+        hub.open_session(expected_device_id="env-other", required_methods=frozenset()).__aenter__()
     )
     await asyncio.sleep(0)
     await hub.close()
@@ -240,9 +276,7 @@ async def test_websocket_shutdown_cancels_waiters_and_closes_idle_connections(in
 async def test_websocket_timeout_cancellation_and_capacity(initialized):
     async with WebSocketEnvdConnections(max_connections=1) as hub:
         with pytest.raises(EnvironmentProviderError) as error:
-            async with hub.open_session(
-                expected_environment_id="env-missing", required_methods=frozenset(), timeout=0.001
-            ):
+            async with hub.open_session(expected_device_id="env-missing", required_methods=frozenset(), timeout=0.001):
                 pytest.fail("offline")
         assert error.value.code == "provider_connection_timeout"
         attach = asyncio.create_task(hub.attach("env-native", Connection()))
@@ -252,10 +286,8 @@ async def test_websocket_timeout_cancellation_and_capacity(initialized):
         with pytest.raises(EnvironmentProviderError):
             await hub.attach("env-other", excess)
         assert excess.closed.is_set()
-        with pytest.raises(EnvironmentProviderError):
-            async with hub.open_session(
-                expected_environment_id="env-native", required_methods=frozenset({"unsupported"})
-            ):
+        with pytest.raises(EIPSessionStateError):
+            async with hub.open_session(expected_device_id="env-native", required_methods=frozenset({"unsupported"})):
                 pytest.fail("unsupported")
         attach.cancel()
         await asyncio.gather(attach, return_exceptions=True)
@@ -279,7 +311,7 @@ async def test_websocket_failed_initialization_cleans_slot(monkeypatch):
     async def initialize(*args, **kwargs):
         raise RuntimeError("private endpoint or credential")
 
-    monkeypatch.setattr(module.EIPSession, "initialize", initialize)
+    monkeypatch.setattr(module.EIPDeviceConnection, "initialize", initialize)
     async with WebSocketEnvdConnections() as hub:
         connection = Connection()
         with pytest.raises(EnvironmentProviderError) as error:
@@ -288,7 +320,7 @@ async def test_websocket_failed_initialization_cleans_slot(monkeypatch):
         assert connection.closed.is_set() and not hub._attachments
 
 
-async def test_websocket_cancelled_lease_cleans_only_its_connection(initialized):
+async def test_websocket_cancelled_scope_keeps_shared_and_other_connections(initialized):
     async with WebSocketEnvdConnections() as hub:
         first = Connection()
         second = Connection()
@@ -299,7 +331,7 @@ async def test_websocket_cancelled_lease_cleans_only_its_connection(initialized)
         entered = asyncio.Event()
 
         async def use():
-            async with hub.open_session(expected_environment_id="env-a", required_methods=frozenset()):
+            async with hub.open_session(expected_device_id="env-a", required_methods=frozenset()):
                 entered.set()
                 await asyncio.Event().wait()
 
@@ -308,89 +340,68 @@ async def test_websocket_cancelled_lease_cleans_only_its_connection(initialized)
         use_task.cancel()
         with pytest.raises(asyncio.CancelledError):
             await use_task
-        assert first.closed.is_set() and not second.closed.is_set()
-        async with hub.open_session(expected_environment_id="env-b", required_methods=frozenset()):
+        assert not first.closed.is_set() and not second.closed.is_set()
+        async with hub.open_session(expected_device_id="env-a", required_methods=frozenset()):
             pass
-        await asyncio.gather(*attachments)
+        async with hub.open_session(expected_device_id="env-b", required_methods=frozenset()):
+            pass
+        await hub.close()
+        await asyncio.gather(*attachments, return_exceptions=True)
 
 
 async def test_websocket_readiness_cancellation_stays_cancelled(monkeypatch):
     readiness_started = asyncio.Event()
 
-    class TerminalReadinessSession(Session):
-        terminal = False
-
+    class PendingReadinessSession(Session):
         async def readiness(self):
             readiness_started.set()
-            try:
-                await asyncio.Event().wait()
-            finally:
-                # The real EIPSession readiness path terminates on cancellation.
-                self.terminal = True
-
-        async def close(self):
-            if self.terminal:
-                raise RuntimeError("session is terminal")
-            await super().close()
+            await asyncio.Event().wait()
 
     async def initialize(transport, **kwargs):
-        return TerminalReadinessSession(transport._connection)
+        device = Device(transport._connection, kwargs["expected_device_id"])
+        device.session_class = PendingReadinessSession
+        return device
 
-    monkeypatch.setattr(module.EIPSession, "initialize", initialize)
+    monkeypatch.setattr(module.EIPDeviceConnection, "initialize", initialize)
     async with WebSocketEnvdConnections() as hub:
         connection = Connection()
         attached = asyncio.create_task(hub.attach("env-native", connection))
         acquire = asyncio.create_task(
-            hub.open_session(expected_environment_id="env-native", required_methods=frozenset()).__aenter__()
+            hub.open_session(expected_device_id="env-native", required_methods=frozenset()).__aenter__()
         )
         await readiness_started.wait()
         acquire.cancel()
         with pytest.raises(asyncio.CancelledError):
             await acquire
-        assert acquire.cancelled() and connection.closed.is_set()
+        assert acquire.cancelled() and not connection.closed.is_set()
+        await connection.close()
         await attached
 
 
-async def test_websocket_shutdown_aborts_a_pending_lease_close(monkeypatch):
-    close_started = asyncio.Event()
-
-    class PendingCloseSession(Session):
-        async def close(self):
-            close_started.set()
-            await self.connection.closed.wait()
-
-    async def initialize(transport, **kwargs):
-        return PendingCloseSession(transport._connection)
-
-    monkeypatch.setattr(module.EIPSession, "initialize", initialize)
+async def test_websocket_scope_exit_closes_only_its_session(initialized):
     hub = WebSocketEnvdConnections()
     connection = Connection()
     attached = asyncio.create_task(hub.attach("env-native", connection))
-    context = hub.open_session(expected_environment_id="env-native", required_methods=frozenset())
-    await context.__aenter__()
-    lease_close = asyncio.create_task(context.__aexit__(None, None, None))
-    await close_started.wait()
+    context = hub.open_session(expected_device_id="env-native", required_methods=frozenset())
+    session = await context.__aenter__()
+    await asyncio.wait_for(context.__aexit__(None, None, None), timeout=1)
+    assert session.closed and not connection.closed.is_set()
     await hub.close()
     assert connection.closed.is_set()
-    await asyncio.wait_for(lease_close, timeout=1)
     await asyncio.gather(attached, return_exceptions=True)
     assert not hub._attachments
 
 
 async def test_http_failed_preparation_never_replays_connection_attempt(monkeypatch):
-    from contextlib import asynccontextmanager
-
     from a13n_environment.remote_envd import http as http_module
 
     calls = []
 
-    @asynccontextmanager
     async def unavailable(*args, **kwargs):
         calls.append("connect")
         raise OSError("private endpoint")
-        yield  # pragma: no cover
 
-    monkeypatch.setattr(http_module.HttpEIPSessionSource, "open_session", unavailable)
+    monkeypatch.setattr(http_module.EIPDeviceConnection, "initialize", unavailable)
     provider = HttpEnvdEnvironmentProvider()
     runtime = HttpEnvdProviderRuntime(
         HttpEnvdBackendConfiguration(endpoint="https://envd.example"), HttpEnvdCredential(token=SecretStr("test-token"))
@@ -410,20 +421,20 @@ async def test_websocket_concurrent_shutdown_does_not_recancel_cleanup(monkeypat
     cleanup_started = asyncio.Event()
     finish_cleanup = asyncio.Event()
 
-    class SlowAbortSession(Session):
-        async def abort(self):
+    class SlowCloseDevice(Device):
+        async def close(self):
             cleanup_started.set()
             await finish_cleanup.wait()
-            await super().abort()
+            await super().close()
 
     async def initialize(transport, **kwargs):
-        return SlowAbortSession(transport._connection)
+        return SlowCloseDevice(transport._connection, kwargs["expected_device_id"])
 
-    monkeypatch.setattr(module.EIPSession, "initialize", initialize)
+    monkeypatch.setattr(module.EIPDeviceConnection, "initialize", initialize)
     hub = WebSocketEnvdConnections()
     connection = Connection()
     attached = asyncio.create_task(hub.attach("env-native", connection))
-    while not hub._attachments or hub._attachments["env-native"].session is None:
+    while not hub._attachments or hub._attachments["env-native"].device is None:
         await asyncio.sleep(0)
     first = asyncio.create_task(hub.close())
     await cleanup_started.wait()
@@ -433,3 +444,13 @@ async def test_websocket_concurrent_shutdown_does_not_recancel_cleanup(monkeypat
     await asyncio.gather(first, second)
     await asyncio.gather(attached, return_exceptions=True)
     assert connection.closed.is_set() and not hub._attachments
+
+
+async def test_websocket_device_describe_does_not_open_session(initialized):
+    async with WebSocketEnvdConnections() as hub:
+        connection = Connection()
+        attached = asyncio.create_task(hub.attach("env-native", connection))
+        assert (await hub.describe(expected_device_id="env-native")).device_id == "env-native"
+        assert initialized[0].sessions == []
+        await connection.close()
+        await attached

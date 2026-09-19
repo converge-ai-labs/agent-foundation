@@ -58,14 +58,12 @@ async def _run(arguments: argparse.Namespace) -> None:
         else:
             token = SecretStr((await asyncio.to_thread(arguments.credential_file.read_text)).strip())
             if arguments.provider == "http-envd":
-                remote = await run_http(arguments.endpoint, token, arguments.daemon_environment_id)
+                remote = await run_http(arguments.endpoint, token, arguments.device_id)
             else:
-                remote = await run_websocket(
-                    token=token, daemon_environment_id=arguments.daemon_environment_id, port=arguments.port
-                )
+                remote = await run_websocket(token=token, device_id=arguments.device_id, port=arguments.port)
         print(f"provider: {remote.provider_key}")
         print(f"re-entry read: {remote.text.strip()}")
-        print(f"same daemon generation: {remote.same_generation}")
+        print(f"independent Sessions: {remote.independent_sessions}")
         print("provider close preserved remote daemon and workspace")
         if arguments.provider == "remote-envd-demo":
             print("demo operator cleaned up its temporary daemon and workspace")
@@ -125,9 +123,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     for name in ("http-envd", "websocket-envd"):
         remote = providers.add_parser(name, help="Connect to an externally operated daemon; never destroy its target.")
-        remote.add_argument(
-            "--daemon-environment-id", required=True, help="Exact A13N_ENVD_ENVIRONMENT_ID configured by the operator."
-        )
+        remote.add_argument("--device-id", required=True, help="Exact device_id configured by the operator.")
         remote.add_argument(
             "--credential-file",
             type=Path,

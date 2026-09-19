@@ -372,6 +372,12 @@ The compact summary replaces tool traffic only after the nested request succeeds
 
 Ordinary compact-run failures, including an empty plain-text summary, emit a bounded `compaction_failed` observation and leave the original history unchanged. Cancellation propagates. This fail-open rule does not turn the compact summary into an authoritative durable fact and does not conceal provider context-limit failures if the original request still exceeds its actual window.
 
+### Context Restoration Notification
+
+`ContextRestoredEvent` is a public native `CapabilityEvent` in namespace `a13n.context`, named `restored`, with immediate dispatch. Its `source` is `summarize` or `compact`, and `operation_id` identifies the successful context operation. Handoff and compaction emit it after constructing a valid replacement and before returning the replacement to the outer request pipeline. Failed or cancelled replacement does not emit it.
+
+The emitter awaits Capability listeners so execution policy can record restoration-dependent state before the next canonical request checkpoint. Consumers must scope their policy to the relevant native Run rather than treating nested helper events as outer execution. This notification is not a persisted checkpoint, a claim of independent verification, or an additional context-replacement mechanism. Native writeback and Host publication retain their existing authorities. Summary display events remain separate observations.
+
 ### Compaction Summary Observation
 
 After successful nested generation and replacement-history construction, compaction exposes the exact generated summary through the native Capability event channel. The summary remains separate from normal assistant output and is correlated to its compaction operation. Failure and cancellation do not publish successful-summary content. This process-local observation does not promise a persisted continuation or installed outer-history snapshot. [Events and Usage](12-events-observability-and-usage.md) owns the event shape and lifecycle distinction.

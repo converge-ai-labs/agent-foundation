@@ -300,6 +300,9 @@ class RunCommands:
             inherited_environment_id=source.environment_id
             if inherit_parent_environment
             else thread.default_environment_id,
+            inherited_environment_working_directory=source.environment_working_directory
+            if inherit_parent_environment
+            else thread.default_environment_working_directory,
             prepared_assets=prepared_assets,
         )
 
@@ -434,6 +437,7 @@ class RunCommands:
             submitted=request.input,
             environment=environment,
             inherited_environment_id=thread.default_environment_id,
+            inherited_environment_working_directory=thread.default_environment_working_directory,
             prepared_assets=prepared_assets,
         )
 
@@ -548,6 +552,7 @@ class RunCommands:
                 frozen=frozen,
                 environment=environment,
                 inherited_environment_id=source.environment_id,
+                inherited_environment_working_directory=source.environment_working_directory,
             )
             prepared_input = None
         else:
@@ -563,6 +568,7 @@ class RunCommands:
                 submitted=request.input,
                 environment=environment,
                 inherited_environment_id=source.environment_id,
+                inherited_environment_working_directory=source.environment_working_directory,
             )
 
         async def accept(selected: PreparedCommandInput | None) -> RunAcceptanceReceipt:

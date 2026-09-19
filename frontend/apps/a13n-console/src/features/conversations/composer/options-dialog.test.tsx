@@ -75,3 +75,115 @@ it("distinguishes new allocation from reuse and submits the selected identity", 
   );
   cache.clear();
 });
+
+it("preserves a captured directory and clears it when switching targets", async () => {
+  http.GET.mockResolvedValue({
+    data: {
+      items: [
+        {
+          id: "env_saved",
+          name: "Device",
+          device_id: "native-device",
+        },
+      ],
+    },
+  });
+  const submit = vi.fn();
+  function Editor() {
+    const options = useRunOptions({
+      environment: {
+        environment_id: "env_saved",
+        working_directory: "/captured",
+      },
+    });
+    return (
+      <>
+        <RunOptions options={options} />
+        <button onClick={() => submit(options.build())}>Submit</button>
+      </>
+    );
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Editor />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      environment: {
+        environment_id: "env_saved",
+        working_directory: "/captured",
+      },
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Options" }));
+  await screen.findByRole("textbox", { name: "Working directory" });
+  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(screen.getByRole("option", { name: "Inherit" }));
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit.mock.lastCall?.[0].environment).toBeUndefined();
+});
+
+it("submits a Device default as an explicit path without access presets", async () => {
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/device")
+      ? {
+          default_working_directory: "/selected/default",
+          directory_discovery: false,
+        }
+      : {
+          items: path.endsWith("/environments")
+            ? [
+                {
+                  id: "env_device",
+                  name: "Device",
+                  device_id: "native-device",
+                },
+              ]
+            : [],
+        },
+  }));
+  const submit = vi.fn();
+  function Editor() {
+    const options = useRunOptions();
+    return (
+      <>
+        <RunOptions options={options} />
+        <button onClick={() => submit(options.build())}>Submit</button>
+      </>
+    );
+  }
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <Editor />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Options" }));
+  await user.click(screen.getByRole("combobox", { name: "Environment" }));
+  await user.click(
+    await screen.findByRole("option", {
+      name: "Reuse existing: Device (env_device)",
+    }),
+  );
+  await screen.findByText(
+    "Browsing is disabled on this Device. Use its default or enter a known path.",
+  );
+  await user.click(screen.getByRole("button", { name: "Use Device default" }));
+  expect(
+    screen.queryByRole("combobox", { name: "Access permissions" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Apply" }));
+  await user.click(screen.getByRole("button", { name: "Submit" }));
+  expect(submit).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      environment: {
+        environment_id: "env_device",
+        working_directory: "/selected/default",
+      },
+    }),
+  );
+});

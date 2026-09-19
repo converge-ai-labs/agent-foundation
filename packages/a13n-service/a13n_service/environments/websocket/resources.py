@@ -35,7 +35,7 @@ class ConnectionTarget:
     environment_id: str
     provider_id: str
     provider_enabled: bool
-    daemon_environment_id: str
+    device_id: str
     required_methods: frozenset[str]
     target_identity: str | None
     generation: int
@@ -121,7 +121,7 @@ class ConnectionResources:
             environment_id=row.id,
             provider_id=provider.id,
             provider_enabled=provider.enabled,
-            daemon_environment_id=native.daemon_environment_id,
+            device_id=native.device_id,
             required_methods=REQUIRED_METHODS | frozenset(validated.required_methods),
             target_identity=row.target_identity,
             generation=row.generation,

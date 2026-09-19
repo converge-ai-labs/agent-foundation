@@ -165,3 +165,130 @@ it("edits Project folders as individual rows while preserving unrelated configur
     roots: [{ path: "/new" }, { path: "/other" }],
   });
 });
+
+it("keeps Project environment axes unspecified until explicitly edited", async () => {
+  const initial =
+    'schema_version: "1"\nkind: project\nid: project-one\nname: Local\nroots: [{path: /one}]\ndefaults: {agent: agent-main}\n';
+  renderFields(initial);
+  expect(screen.getByTestId("source").textContent).toBe(initial);
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("combobox", { name: "Default working environment" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Thread files" }));
+  let value = parse(screen.getByTestId("source").textContent ?? "");
+  expect(value.defaults).toEqual({
+    agent: "agent-main",
+    default_environment: "thread-files",
+  });
+  await user.click(
+    screen.getByRole("button", {
+      name: "Explicitly select no added environments",
+    }),
+  );
+  value = parse(screen.getByTestId("source").textContent ?? "");
+  expect(value.defaults).toEqual({
+    agent: "agent-main",
+    default_environment: "thread-files",
+    environment_bindings: [],
+  });
+  await user.click(
+    screen.getByRole("button", {
+      name: "Leave Thread environments and default unchanged",
+    }),
+  );
+  expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual(
+    parse(initial),
+  );
+});
+
+it("allows the last local Project root to be removed only with Device bindings", async () => {
+  const initial =
+    'schema_version: "1"\nkind: project\nid: project-one\nname: Remote\nroots: [{path: /one}]\ndefaults:\n  agent: agent-main\n  default_environment: build\n  environment_bindings: [{device_id: device-missing, alias: build, working_directory: /remote}]\n';
+  renderFields(initial);
+  await screen.findByText(/Not configured/);
+  fireEvent.click(screen.getByRole("button", { name: "Remove directory 1" }));
+  expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual({
+    ...parse(initial),
+    roots: [],
+  });
+  expect(
+    (screen.getByRole("button", { name: "Remove build" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Leave Thread environments and default unchanged",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+});
+
+it("removes a missing Device offline and saves its replacement default with the collection", async () => {
+  const initial =
+    'schema_version: "1"\nkind: project\nid: project-one\nname: Mixed\nroots: [{path: /one}]\ndefaults:\n  agent: agent-main\n  default_environment: build\n  environment_bindings: [{device_id: device-missing, alias: build, working_directory: /remote}]\n';
+  renderFields(initial);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Remove build" }));
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Remove selection",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
+  await user.click(
+    screen.getByRole("combobox", { name: "Replacement default" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "workspace · /one" }),
+  );
+  await user.click(screen.getByRole("button", { name: "Remove selection" }));
+  expect(
+    parse(screen.getByTestId("source").textContent ?? "").defaults,
+  ).toEqual({
+    agent: "agent-main",
+    environment_bindings: [],
+    default_environment: "workspace",
+  });
+  expect(
+    get.mock.calls.every(([path]) => !path.startsWith("/api/devices/")),
+  ).toBe(true);
+});
+
+it("authors HTTP and reverse WebSocket Devices with credential references", async () => {
+  const initial =
+    'schema_version: "1"\nkind: device\nid: device-one\nname: Build\ndevice_id: native-one\ntransport: {kind: http, configuration: {endpoint: https://device.example}}\nauthentication: {kind: api_key, env: DEVICE_TOKEN}\n';
+  renderFields(initial);
+  const user = userEvent.setup();
+  await user.clear(screen.getByRole("textbox", { name: "Device endpoint" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Device endpoint" }),
+    "https://build.example",
+  );
+  expect(
+    parse(screen.getByTestId("source").textContent ?? "").transport
+      .configuration.endpoint,
+  ).toBe("https://build.example");
+  await user.click(screen.getByRole("combobox", { name: "Transport" }));
+  await user.click(
+    await screen.findByRole("option", {
+      name: "WebSocket · envd connects to this server",
+    }),
+  );
+  expect(screen.queryByRole("textbox", { name: "Device endpoint" })).toBeNull();
+  await user.click(screen.getByRole("combobox", { name: "Credential source" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Saved API key reference" }),
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Saved credential reference" }),
+    "key-device",
+  );
+  expect(parse(screen.getByTestId("source").textContent ?? "")).toEqual({
+    ...parse(initial),
+    transport: { kind: "websocket", configuration: {} },
+    authentication: { kind: "api_key", credential_ref: "key-device" },
+  });
+});

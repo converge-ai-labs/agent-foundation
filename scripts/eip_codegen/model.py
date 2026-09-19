@@ -30,9 +30,10 @@ class DataFrameProfile:
     kind_bytes: int
     status_bytes: int
     handle_length_bytes: int
-    reserved_bytes: int
+    session_length_bytes: int
     stream_offset_bytes: int
     payload_length_bytes: int
+    transfer_window_chunks: int
     kinds: dict[str, int]
     reset_statuses: dict[str, int]
 
@@ -136,9 +137,10 @@ def data_frame_profile(index: SchemaIndex, options: OptionReader) -> DataFramePr
         kind_bytes=option.kind_bytes,
         status_bytes=option.status_bytes,
         handle_length_bytes=option.handle_length_bytes,
-        reserved_bytes=option.reserved_bytes,
+        session_length_bytes=option.session_length_bytes,
         stream_offset_bytes=option.stream_offset_bytes,
         payload_length_bytes=option.payload_length_bytes,
+        transfer_window_chunks=option.transfer_window_chunks,
         kinds=enum_values("EIPDataFrameKind", "EIP_DATA_FRAME_KIND_"),
         reset_statuses=enum_values("EIPDataResetStatus", "EIP_DATA_RESET_STATUS_"),
     )
@@ -148,7 +150,7 @@ def data_frame_profile(index: SchemaIndex, options: OptionReader) -> DataFramePr
         profile.kind_bytes,
         profile.status_bytes,
         profile.handle_length_bytes,
-        profile.reserved_bytes,
+        profile.session_length_bytes,
         profile.stream_offset_bytes,
         profile.payload_length_bytes,
     )
@@ -165,8 +167,11 @@ def data_frame_profile(index: SchemaIndex, options: OptionReader) -> DataFramePr
         "end": 4,
         "end_ack": 5,
         "reset": 6,
+        "credit": 7,
     }:
         raise ValueError("EIP data-frame kind mapping is incompatible with profile 1")
+    if profile.transfer_window_chunks != 8:
+        raise ValueError("EIP profile 1 uses an eight-chunk transfer window")
     if profile.reset_statuses != {
         "protocol": 1,
         "denied": 2,

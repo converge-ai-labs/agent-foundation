@@ -11,7 +11,8 @@ from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
 from a13n_service.labels import Labels, merge_labels
 
-from .domain import EnvironmentSelection, NewEnvironmentSelection
+from .devices import ENVD_PROVIDER_KEYS
+from .domain import EnvironmentSelection, ExistingEnvironmentSelection, NewEnvironmentSelection
 from .errors import invalid_environment
 from .identity import default_environment_name
 from .models import (
@@ -63,6 +64,11 @@ async def resolve_selection(
     provider = await session.get(EnvironmentProviderRecord, selected.provider_id)
     if provider is None or not scope.contains(provider.organization_id, provider.workspace_id) or not provider.enabled:
         raise invalid_environment("Environment Provider is unavailable")
+    if isinstance(choice, ExistingEnvironmentSelection):
+        if not isinstance(selected, EnvironmentRecord):
+            raise TypeError("Existing Environment selection must resolve to an Environment")
+        if choice.working_directory is not None and provider.type not in ENVD_PROVIDER_KEYS:
+            raise invalid_environment("Native Environment selections do not accept a working-directory override")
     return selected
 
 

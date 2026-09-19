@@ -1,122 +1,36 @@
 # a13n-envd
 
-`a13n-envd` is the environment daemon and Environment Interaction Protocol provider for Agent Foundation. It is distributed as the `a13n-envd` crate and installs the `a13n-envd` binary.
+`a13n-envd` is the native Device daemon and Environment Interaction Protocol provider for Agent Foundation. The crate installs the `a13n-envd` binary.
 
-## Current runtime profile
+## Device and Session runtime
 
-The daemon implements the canonical EIP 0.1 protocol over trusted stdio, a dedicated authenticated HTTP(S) listener, and outbound reverse WebSocket. Its current surface includes:
+The daemon implements EIP 0.1 over trusted stdio, authenticated HTTP(S), and outbound reverse WebSocket. One daemon owns a Device generation. Multiple independent Sessions share its account and filesystem while keeping separate operations, process handles, transfers, receipts, and retained output.
 
-- initialization, environment description, session close, cancellation, operation receipts, and local port observation;
-- trusted configured mounts for text reads, metadata, listing, bounded find and search, and binary streaming reads;
-- complete-candidate text and binary publication, directory creation, patch, copy, move, and remove on eligible writable mounts;
-- structured foreground commands and generation-owned background processes through one gated supervisor and backend lifecycle owner;
-- bounded stdin, stdout, stderr, live retained-output references, non-draining explicit process-output offsets, advertised semantic signals, kill, wait, and release;
-- bounded operation, process, transfer, candidate, receipt, and retained-output state;
-- correlated concurrent requests, fresh generations, strict framing and envelope validation, finite relative timeouts, cancellation, and typed errors.
+- `initialize` negotiates the Device connection without creating a Session.
+- `device.describe` and bounded `directory.list` work without a Session.
+- `session.open` captures an existing Device-absolute working directory and checks required methods.
+- Session control and data frames carry the exact Session selector. Closing a Session cleans up only its resources, not its siblings or the Device.
+- Explicit same-Session attachment can resume an existing owner within disconnect grace; opening a new Session never replays work or inherits process handles.
 
-Every descriptor reports exact JSON-RPC `available_methods`; initialization checks exact `required_methods` rather than capability families. Typed `execution_features` separately reports optional command-limit, per-command-network-deny, and individual signal-action support. Required execution uses a probed deny-default bubblewrap backend on Linux or Seatbelt backend on macOS and supports per-command network narrowing; explicit outer-host mode reports optional command/network containment features false. Unix advertises distinct interrupt/terminate actions, while non-Unix omits `process.signal` until native semantics exist. Availability is derived from configured mounts, command policy, isolation probe, and truthful platform support, so one unavailable method does not hide adjacent methods. Complete-candidate atomic publication is currently available on Linux and macOS. It does not imply exclusive filesystem control or compare-and-swap: commands and external writers can race with envd operations.
+Paths address the Device filesystem, not exported mounts. POSIX uses native absolute paths. Windows uses `/C:/...` and `/UNC/server/share/...`; directory discovery at `/` lists available volume roots. The fixed working directory is a default for commands and relative Host routing, not a filesystem access boundary.
 
-When command policy and a command-enabled mount are configured, the descriptor reports the exact available shell, process, and output methods plus its logical shell profiles. Foreground and background execution share one transactional start gate; `process.start` publishes a handle only after requested-executable spawn succeeds. The same owner drains stdout and stderr concurrently, enforces finite limits, targets the backend-managed command lifecycle for control and cleanup, and drains remaining managed commands during daemon shutdown. In explicit `disabled` mode, native cleanup covers the initial Unix process group or a non-breakaway Windows Job. Windows assigns the suspended initial process before release, retains kill-on-close ownership, and proves the Job empty even after normal root exit. Job ownership is not filesystem or network isolation: `process_containment=false` and `cleanup_guarantee=outer_host` still delegate confinement to the trusted outer Host. Required native isolation is implemented on Linux and macOS; Windows remains fail-closed until its backend is delivered. Only the HTTP profile binds inbound resources, limited to authenticated `/eip/control` and `/eip/transfer`; envd exposes no inbound WebSocket, generic HTTP, browser, health, or readiness surface.
+The runtime supports bounded text and binary file operations, complete-candidate publication, structured foreground commands, background processes, stdin, retained stdout/stderr, cancellation, receipts, and local port observation. Each descriptor advertises exact methods and platform features. Session and aggregate Device quotas bound retained resources. A timeout after dispatch does not prove a mutation failed; clients must reconcile supported operations rather than blindly replay them.
 
 ## Launch configuration
 
-The standalone daemon requires only its Environment identity for the default stdio profile:
-
-```text
-A13N_ENVD_ENVIRONMENT_ID=<provider-owned stable identity>
-```
-
-Execution isolation defaults to `required`. On Linux it uses the fixed OS-managed `/usr/bin/bwrap` helper, fresh user/mount/PID/IPC/UTS namespaces, a synthetic filesystem, private `/proc` and `/dev`, and optional network namespaces. On macOS it uses `/usr/bin/sandbox-exec`, private command home and temporary roots, and reviewed system/toolchain runtime roots. Windows continues to fail closed in required mode until its native backend is delivered. The packaged sandbox container image explicitly sets `A13N_ENVD_EXECUTION_ISOLATION=disabled`, delegating inner command containment to the outer container.
-
-Command execution additionally requires an absolute private runtime directory:
-
-```text
-A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime
-```
-
-`A13N_ENVD_TRANSPORT` defaults to `stdio` and also accepts `http` or `reverse_websocket`. HTTP requires `A13N_ENVD_HTTP_BIND`, `A13N_ENVD_HTTP_CREDENTIAL_FILE`, and either paired native TLS files or `A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback|provider_private_link`. Reverse WebSocket requires `A13N_ENVD_REVERSE_WS_URL` and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`; an optional CA file adds deployment trust for `wss`. Configured mounts are the only filesystem roots. Protected runtime roots are subtracted from all overlapping mount lookups.
-
-Explicit `disabled` mode delegates containment to the outer Host, emits one structured startup warning on stderr, and must be used only inside an appropriate provider sandbox or test boundary. `a13n-envd isolation probe --json` runs the selected backend's production preflight without admitting a carrier.
-
-### Linux host prerequisites
-
-Required Linux isolation needs the distribution's non-setuid `bubblewrap` package installed at `/usr/bin/bwrap`. The Host kernel and active Linux Security Modules must allow the daemon user to create unprivileged user namespaces. Envd verifies the helper and the complete configured isolation posture before admitting a carrier; it exits fail-closed if the helper, user namespaces, protected-path subtraction, PID cleanup, keyring isolation, or network posture does not work. Every required-isolation preflight error preserves the native cause and explains that `A13N_ENVD_EXECUTION_ISOLATION=disabled` is valid only when a trusted outer sandbox owns command containment. Envd never changes a sysctl, loads an AppArmor policy, searches `PATH`, uses a setuid helper, or falls back to `disabled`.
-
-Linux `network="host"` deliberately shares the Host network namespace, including abstract Unix-socket endpoints in that namespace. Pathname sockets remain absent unless they are inside an authorized projection. Use daemon-wide or per-command `network="deny"` when payloads must not reach Host network-namespace IPC.
-
-Ubuntu 24.04 can have `kernel.apparmor_restrict_unprivileged_userns=1`, which denies user namespaces unless an AppArmor profile explicitly grants `userns` to the relevant executable. Production Hosts should install a narrowly scoped, operator-reviewed AppArmor profile for `/usr/bin/bwrap` rather than disable the restriction globally. For a temporary diagnostic on a trusted development machine, an administrator can run:
+Supply a trusted JSON file as an absolute path:
 
 ```bash
-sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-a13n-envd isolation probe --json
-sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1
+A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime \
+  a13n-envd --config /absolute/path/to/envd.json
 ```
-
-The first command weakens that Host-wide AppArmor restriction until it is restored or the Host reboots; it is not an envd setup action. Deployments that already provide an outer container, VM, or equivalent sandbox should leave the outer boundary responsible and explicitly select `A13N_ENVD_EXECUTION_ISOLATION=disabled`.
-
-An optional paired payload identity is available only for required Linux isolation:
-
-```text
-A13N_ENVD_EXECUTION_UID=<positive-uid>
-A13N_ENVD_EXECUTION_GID=<positive-gid>
-```
-
-Both values must be supplied together. They are trusted bootstrap configuration and cannot be selected by an EIP request.
-
-In stdio mode, stdin and stdout are reserved exclusively for framed EIP traffic; startup and runtime diagnostics use stderr.
-
-An optional trusted JSON file configures mounts and is supplied as an absolute path:
-
-```bash
-a13n-envd --config /absolute/path/to/a13n-envd.json
-```
-
-A configured writable mount needs only its existing native root. Envd creates a randomly named hidden candidate in the destination directory, verifies the complete bytes, and publishes it with a same-filesystem rename:
 
 ```json
 {
-  "root_mount_id": "workspace",
-  "execution": {
-    "isolation": "required",
-    "network": "host",
-    "extra_read_only_paths": []
-  },
-  "mounts": [
-    {
-      "mount_id": "workspace",
-      "native_root": "/absolute/path/to/workspace",
-      "writable": true,
-      "allow_command_execution": false,
-      "max_file_bytes": 104857600
-    }
-  ]
-}
-```
-
-The native root must already exist. `root_mount_id` is inferred with exactly one mount, is absent with no mounts, and is required when multiple mounts are configured. Omitting `allowed_operations` enables the operations appropriate for the mount; specifying it narrows the policy.
-
-Command policy supplies fixed executable search roots and optional trusted shell profiles. A command-enabled mount must allow `command_cwd`; an `ExecutablePath` selected from that mount additionally requires `executable_source`:
-
-```json
-{
-  "mounts": [
-    {
-      "mount_id": "workspace",
-      "native_root": "/absolute/path/to/workspace",
-      "writable": false,
-      "allow_command_execution": true,
-      "max_file_bytes": 104857600,
-      "allowed_operations": [
-        "stat",
-        "read_text",
-        "open_reader",
-        "list",
-        "command_cwd",
-        "executable_source"
-      ]
-    }
-  ],
-  "trusted_executable_roots": ["/usr/local/bin", "/usr/bin", "/bin"],
+  "device_id": "device-local",
+  "default_working_directory": "/absolute/path/to/workspace",
+  "directory_discovery": true,
+  "trusted_executable_roots": ["/usr/bin", "/bin"],
   "shell_profiles": [
     {
       "profile_id": "sh",
@@ -124,7 +38,7 @@ Command policy supplies fixed executable search roots and optional trusted shell
       "native_executable": "/bin/sh",
       "fixed_arguments": ["-c"],
       "safe_base_environment": {},
-      "executable_search_roots": ["/usr/local/bin", "/usr/bin", "/bin"],
+      "executable_search_roots": ["/usr/bin", "/bin"],
       "max_script_bytes": 1048576,
       "allow_login_mode": false
     }
@@ -132,13 +46,27 @@ Command policy supplies fixed executable search roots and optional trusted shell
 }
 ```
 
-Payloads receive a finite allowlist of ordinary locale, terminal, certificate, and language-tool compatibility variables from daemon startup. Request `set` and `unset` values apply after that layer. Envd always replaces `PATH`, `HOME`, and temporary-directory variables and removes daemon control state, `A13N_ENVD_*`, ambient credentials, and dynamic-loader variables.
+The default directory must exist; when omitted, it is captured from the daemon startup directory. `A13N_ENVD_DEVICE_ID` can supply the Device identity when the JSON does not. Executable roots and shell profiles are trusted launch policy, not Session configuration. Set both to empty for a file-only Device.
 
-## Installation
+`A13N_ENVD_TRANSPORT` defaults to `stdio` and also accepts `http` or `reverse_websocket`. HTTP requires a bind address, credential file, and either native TLS or explicit loopback/private-link plaintext scope. Reverse WebSocket requires a Host URL and credential file. The daemon exposes no inbound WebSocket, browser, generic HTTP, or health endpoint. Readiness is an EIP operation. Stdio stdout is reserved for protocol frames; diagnostics go to stderr.
+
+The [configuration guide](../../docs/a13n-envd/configuration.md) owns all bootstrap fields and limits. The [Python client guide](../../docs/a13n-envd/python-client.md) shows shared Device ownership and independent Session scopes.
+
+## Security and cleanup
+
+Envd operates with the daemon account's filesystem and network authority. It does not create a per-command sandbox, remap Session mounts, or implement a network-denial policy. Put mutually untrusted workloads behind separate Host-managed accounts, containers, VMs, or equivalent boundaries. Executable selection and resource accounting are not isolation.
+
+Process cleanup owns the initial Unix process group or a non-breakaway Windows Job. Windows assigns a suspended child before execution and retains kill-on-close ownership. Platform limitations remain explicit in descriptors. Neither a process group nor a Job implies filesystem or network containment.
+
+Complete-candidate writes publish via a same-filesystem rename after verification. They do not promise exclusive filesystem access or compare-and-swap: commands and external writers may race. The [operations guide](../../docs/a13n-envd/operations.md) explains capacity, output evidence, cleanup, and uncertain outcomes.
+
+## Installation and validation
 
 ```bash
 cargo install a13n-envd
 ```
+
+The daemon and `a13n-envd-client` require the same release version. From the repository root, `make eip-check` validates generated protocol artifacts, the native runtime, and Python integration tests.
 
 ## License
 

@@ -1,4 +1,4 @@
-"""Shared Worker use ownership, cancellation and isolation on real Redis."""
+"""Independent Worker binding ownership, cancellation and isolation on real Redis."""
 
 from __future__ import annotations
 
@@ -8,25 +8,28 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_environment import FILE_READ_ACTIONS, EnvironmentAction, EnvironmentError
+from a13n_environment import EnvironmentError
+from a13n_service.environments.websocket.relay_runtime import RelayResponseRuntime
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.interactions.attempts import AttemptContext, AttemptLease
 from a13n_service.temporal import utc_now
 
 pytestmark = pytest.mark.anyio
-FULL = frozenset(EnvironmentAction)
-READ_ONLY = FILE_READ_ACTIONS
 
 
 @pytest.fixture
-async def worker(relay_redis):
-    owner = WorkerClientConnections(relay_redis, relay_redis, "worker", max_uses=2, max_mounts=4)
-    await owner.prepare()
+async def worker(relay_redis, monkeypatch):
+    responses = RelayResponseRuntime(relay_redis, relay_redis, "worker")
+    await responses.prepare()
+    owner = WorkerClientConnections(relay_redis, responses, max_uses=4)
+    # These ownership tests have no socket owner. Native tests cover scope.close.
+    monkeypatch.setattr(owner, "_close_session", AsyncMock())
     try:
         yield owner
     finally:
         await owner.close()
+        await responses.close()
 
 
 @pytest.fixture
@@ -62,41 +65,36 @@ async def connect(worker, environment_id="env"):
     return connection
 
 
-async def test_aliases_share_one_grant_and_only_last_release_retires_carrier(worker, attempt, monkeypatch):
+async def test_aliases_own_independent_grants_and_release_keeps_device_online(worker, attempt, monkeypatch):
     await connect(worker)
     acquire = AsyncMock(wraps=worker._coordination.acquire_use)
     monkeypatch.setattr(worker._coordination, "acquire_use", acquire)
     reader, writer = await asyncio.gather(
-        worker.acquire(attempt, "env", READ_ONLY, mount_name="reader"),
-        worker.acquire(attempt, "env", FULL, mount_name="writer"),
+        worker.acquire(attempt, "env", mount_name="reader"),
+        worker.acquire(attempt, "env", mount_name="writer"),
     )
-    assert reader is not writer and reader.identity == writer.identity
+    assert reader.identity != writer.identity
     assert reader._mount_id != writer._mount_id
-    assert acquire.await_count == 1
-    with pytest.raises(EnvironmentError) as denied:
-        await reader.call("file.write_text", {"path": "/no", "text": "no", "mode": "create"})
-    assert denied.value.code == "environment_forbidden"
+    assert acquire.await_count == 2
     await worker.release(reader)
     await worker.release(reader)
     assert not reader.available and writer.available
-    assert (await worker._coordination.observe("org", "env")).value.use.identity == writer.identity
+    assert (await worker._coordination.observe("org", "env")).value.use_grant(writer.identity) is not None
     await worker.release(writer)
-    assert (await worker._coordination.observe("org", "env")).value.status == "offline"
+    assert (await worker._coordination.observe("org", "env")).value.status == "online"
     assert not worker._slots
 
 
-async def test_other_attempt_and_duplicate_mount_cannot_disturb_an_owned_use(worker, attempt):
+async def test_other_attempt_is_independent_and_duplicate_binding_is_rejected(worker, attempt):
     await connect(worker)
-    client = await worker.acquire(attempt, "env", FULL)
-    for contender, name in (
-        (replace(attempt, run_attempt_id="other", run_id="other-run"), "computer"),
-        (attempt, "workspace"),
-    ):
-        with pytest.raises(EnvironmentError) as rejected:
-            await worker.acquire(contender, "env", FULL, mount_name=name)
-        assert rejected.value.code == "environment_busy"
-    assert client.available
-    assert len(worker._slots) == 1
+    client = await worker.acquire(attempt, "env")
+    other = await worker.acquire(replace(attempt, run_attempt_id="other", run_id="other-run"), "env")
+    with pytest.raises(EnvironmentError) as rejected:
+        await worker.acquire(attempt, "env")
+    assert rejected.value.code == "environment_busy"
+    assert client.available and other.available
+    assert client.identity != other.identity
+    assert len(worker._slots) == 2
 
 
 async def test_distinct_environments_acquire_in_parallel(worker, attempt, monkeypatch):
@@ -114,9 +112,7 @@ async def test_distinct_environments_acquire_in_parallel(worker, attempt, monkey
 
     monkeypatch.setattr(worker._coordination, "acquire_use", concurrent)
     async with asyncio.timeout(1):
-        first, second = await asyncio.gather(
-            worker.acquire(attempt, "first", FULL), worker.acquire(attempt, "second", FULL)
-        )
+        first, second = await asyncio.gather(worker.acquire(attempt, "first"), worker.acquire(attempt, "second"))
     assert first.identity != second.identity and first.available and second.available
 
 
@@ -133,7 +129,7 @@ async def test_abandoned_acquisition_releases_its_grant_and_slot(worker, attempt
         return observed
 
     monkeypatch.setattr(worker._coordination, "acquire_use", delayed)
-    opening = asyncio.create_task(worker.acquire(attempt, "env", FULL))
+    opening = asyncio.create_task(worker.acquire(attempt, "env"))
     await entered.wait()
     if exit_reason == "cancel":
         opening.cancel()
@@ -146,7 +142,7 @@ async def test_abandoned_acquisition_releases_its_grant_and_slot(worker, attempt
             await opening
         assert rejected.value.code == "environment_unavailable"
     assert not worker._slots
-    assert (await worker._coordination.observe("org", "env")).value.status == "offline"
+    assert (await worker._coordination.observe("org", "env")).value.status == "online"
 
 
 async def test_cancelled_waiter_does_not_cancel_another_mount_acquisition(worker, attempt, monkeypatch):
@@ -161,9 +157,9 @@ async def test_cancelled_waiter_does_not_cancel_another_mount_acquisition(worker
         return observed
 
     monkeypatch.setattr(worker._coordination, "acquire_use", delayed)
-    first = asyncio.create_task(worker.acquire(attempt, "env", FULL, mount_name="first"))
+    first = asyncio.create_task(worker.acquire(attempt, "env", mount_name="first"))
     await entered.wait()
-    second = asyncio.create_task(worker.acquire(attempt, "env", FULL, mount_name="second"))
+    second = asyncio.create_task(worker.acquire(attempt, "env", mount_name="second"))
     await asyncio.sleep(0)
     second.cancel()
     with pytest.raises(asyncio.CancelledError):
@@ -175,40 +171,40 @@ async def test_cancelled_waiter_does_not_cancel_another_mount_acquisition(worker
     assert not worker._slots
 
 
-async def test_attempt_loss_fences_every_alias_and_releases_shared_use(worker, attempt):
+async def test_attempt_loss_fences_all_its_independent_binding_uses(worker, attempt):
     await connect(worker)
-    reader = await worker.acquire(attempt, "env", READ_ONLY, mount_name="reader")
-    writer = await worker.acquire(attempt, "env", FULL, mount_name="writer")
-    use = next(iter(worker._slots.values())).use
+    reader = await worker.acquire(attempt, "env", mount_name="reader")
+    writer = await worker.acquire(attempt, "env", mount_name="writer")
+    uses = [slot.use for slot in worker._slots.values()]
     attempt.lease.invalidate()
     assert not reader.available and not writer.available
-    await worker._renew(use)
+    for use in uses:
+        await worker._renew(use)
     assert not worker._slots
-    assert (await worker._coordination.observe("org", "env")).value.status == "offline"
+    assert (await worker._coordination.observe("org", "env")).value.status == "online"
 
 
-async def test_one_renewal_advances_authority_for_every_alias(worker, attempt):
+async def test_renewal_cannot_extend_a_sibling_binding(worker, attempt):
     connection = await connect(worker)
-    reader = await worker.acquire(attempt, "env", READ_ONLY, mount_name="reader")
-    writer = await worker.acquire(replace(attempt), "env", FULL, mount_name="writer")
+    reader = await worker.acquire(attempt, "env", mount_name="reader")
+    writer = await worker.acquire(replace(attempt), "env", mount_name="writer")
     original = reader._scope.authority.deadline
+    sibling_deadline = writer._scope.authority.deadline
     await asyncio.sleep(0.02)
     await worker._coordination.renew(connection)
     await worker._renew(next(iter(worker._slots.values())).use)
     assert reader._scope.authority.deadline > original
-    assert writer._scope.authority.deadline == reader._scope.authority.deadline
+    assert writer._scope.authority.deadline == sibling_deadline
     assert reader.available and writer.available
 
 
 async def test_mount_capacity_is_reclaimed_without_retiring_shared_connection(worker, attempt):
     await connect(worker)
-    clients = await asyncio.gather(
-        *(worker.acquire(attempt, "env", FULL, mount_name=f"mount-{index}") for index in range(4))
-    )
+    clients = await asyncio.gather(*(worker.acquire(attempt, "env", mount_name=f"mount-{index}") for index in range(4)))
     with pytest.raises(EnvironmentError) as rejected:
-        await worker.acquire(attempt, "env", FULL, mount_name="overflow")
+        await worker.acquire(attempt, "env", mount_name="overflow")
     assert rejected.value.code == "environment_overloaded"
     await worker.release(clients[0])
-    replacement = await worker.acquire(attempt, "env", READ_ONLY, mount_name="replacement")
-    assert replacement.identity == clients[1].identity
+    replacement = await worker.acquire(attempt, "env", mount_name="replacement")
+    assert replacement.identity != clients[1].identity
     assert all(client.available for client in clients[1:])

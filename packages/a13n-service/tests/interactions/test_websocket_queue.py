@@ -41,7 +41,7 @@ async def test_queue_admission_waits_for_online_at_consumption_and_retains_origi
         authority_principal=_principal(),
         submission=ThreadRunSubmissionIntent(
             input=AgentInput(schema_version="1", content=(TextContent(text="queued"),)),
-            environment=ExistingEnvironmentSelection(environment_id=environment.id),
+            environment=ExistingEnvironmentSelection(environment_id=environment.id, working_directory="/queued"),
         ),
         queued_submission_id="qsub_5555555555555555",
     )
@@ -106,6 +106,8 @@ async def test_queue_admission_waits_for_online_at_consumption_and_retains_origi
     assert receipt.outcome == "run_accepted"
     assert receipt.queued_submission.state == QueuedSubmissionState.consumed
     async with short_session(interaction_sessions) as database:
-        assert (await database.get(RunRecord, run.id)).environment_id == environment.id
+        accepted = await database.get(RunRecord, run.id)
+        assert accepted.environment_id == environment.id
+        assert accepted.environment_working_directory == "/queued"
     await coordination.retire(connection)
     assert await consume() == receipt

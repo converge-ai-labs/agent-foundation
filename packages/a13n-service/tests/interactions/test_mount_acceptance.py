@@ -51,7 +51,9 @@ async def _add(service, run, environment, *, name="computer", key="mount", actor
         actor=actor or hook_actor(),
         run_id=run.id,
         idempotency_key=key,
-        request=AddEnvironmentMountRequest(name=name, environment_id=environment.id),
+        request=AddEnvironmentMountRequest(
+            name=name, environment_id=environment.id, working_directory="/projects/computer"
+        ),
     )
 
 
@@ -217,7 +219,8 @@ async def test_caller_and_original_principal_each_need_environment_use(interacti
         assert await database.scalar(select(func.count()).select_from(RunEnvironmentMountRecord)) == 0
 
 
-async def test_old_attempt_observations_are_pending_after_retry(interaction_sessions, mount_run):
+@pytest.mark.parametrize("retryable", [False, True])
+async def test_observations_survive_sealing_but_not_retry(interaction_sessions, mount_run, retryable):
     service, coordination, run, _, environment = mount_run
     await _connect(coordination, environment.id)
     await _add(service, run, environment)
@@ -235,10 +238,22 @@ async def test_old_attempt_observations_are_pending_after_retry(interaction_sess
     assert ready.application_status == "ready" and ready.applied_attempt_id == claim.attempt.id
     await AttemptExecutionService(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=2), lifecycle=test_lifecycle_writer()
-    ).fail(_authority(claim), SafeFailure(code="transient", message="Try again"), retryable=True)
-    pending = (await service.list(actor=hook_actor(), run_id=run.id)).items[0]
-    assert pending.application_status == "pending" and pending.applied_attempt_id is None
-    assert pending.observed_at is None and pending.error is None
+    ).fail(_authority(claim), SafeFailure(code="transient", message="Try again"), retryable=retryable)
+    observed = (await service.list(actor=hook_actor(), run_id=run.id)).items[0]
+    if retryable:
+        assert observed.application_status == "pending" and observed.applied_attempt_id is None
+        assert observed.observed_at is None and observed.error is None
+        successor = await AttemptScheduler(
+            interaction_sessions, clock=lambda: NOW + timedelta(seconds=3), lifecycle=test_lifecycle_writer()
+        ).claim(run.id, _worker())
+        assert isinstance(successor, ClaimedAttempt)
+        await AttemptExecutionService(
+            interaction_sessions, clock=lambda: NOW + timedelta(seconds=4), lifecycle=test_lifecycle_writer()
+        ).fail(_authority(successor), SafeFailure(code="terminal", message="Stopped"), retryable=False)
+        # Sealing a later Attempt must not revive installation evidence from its predecessor.
+        assert (await service.list(actor=hook_actor(), run_id=run.id)).items[0].application_status == "pending"
+    else:
+        assert observed == ready
 
 
 async def test_failed_signal_cannot_undo_committed_mount(interaction_sessions, mount_run):

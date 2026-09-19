@@ -1,7 +1,6 @@
 from datetime import timedelta
 
 import pytest
-from a13n_environment import EnvironmentState
 from a13n_service.environments.domain import RegisterEnvironmentRequest
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.retention import active_use_exists, has_active_use
@@ -36,9 +35,7 @@ async def test_additional_use_retains_only_its_target_after_first_use(
         request=RegisterEnvironmentRequest(
             provider_id=provider.id,
             configuration={},
-            state=EnvironmentState(
-                provider_key="a13n.websocket-envd", state_version="1", state={"daemon_environment_id": "other"}
-            ),
+            device_id="other",
         ),
     )
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
@@ -47,7 +44,7 @@ async def test_additional_use_retains_only_its_target_after_first_use(
     ).claim(run.id, _worker())
     assert isinstance(claim, ClaimedAttempt)
     async with transaction(interaction_sessions) as database:
-        mount = accepted_mount(run.id, target.id)
+        mount = accepted_mount(run.id, target.id, working_directory="/projects/computer")
         database.add(mount)
         await database.flush()
         assert not await has_active_use(database, target.id)

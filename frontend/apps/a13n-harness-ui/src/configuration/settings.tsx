@@ -18,6 +18,8 @@ import {
 } from "./sources";
 import type { ResourceKind } from "./documents";
 import { InstallSettings } from "../shell/install";
+import { DevicesSection } from "./devices";
+import { ForgetEnvironment } from "./forget-environment";
 import styles from "../shell/workbench.module.css";
 
 const sections = [
@@ -48,7 +50,8 @@ export function SettingsLayout() {
           ? "/settings/models"
           : source?.resource_kind === "agent"
             ? "/settings/agents"
-            : source?.resource_kind === "environment_profile"
+            : source?.resource_kind === "environment_profile" ||
+                source?.resource_kind === "device"
               ? "/settings/environments"
               : source?.resource_kind === "mcp_server"
                 ? "/settings/connections"
@@ -205,15 +208,17 @@ export function EnvironmentsPage() {
     <>
       <PageHeader
         title="Environments"
-        description="Choose where agents work. Configure an environment here, then select it in General or Project settings."
+        description="Manage Device connections and local execution profiles. Select working directories in Project or conversation settings."
         actions={
           <NewResourceButton
             kind="environment_profile"
-            label="Add environment"
+            label="Add local profile"
           />
         }
       />
       <ErrorNotice error={selectors.error || sources.error} />
+      <DevicesSection />
+      <h2>Local execution profiles</h2>
       <DraftLinks kinds={["environment_profile"]} />
       {selectors.isPending && <Skeleton className="h-32 w-full" />}
       <div className={styles.resourceList}>
@@ -240,13 +245,21 @@ export function EnvironmentsPage() {
             </>
           );
           return source ? (
-            <Link
-              key={item.profile_id}
-              className={styles.resourceRow}
-              to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
-            >
-              {content}
-            </Link>
+            <div key={item.profile_id} className={styles.resourceRow}>
+              <Link
+                className="min-w-0 flex-1"
+                to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
+              >
+                {content}
+              </Link>
+              {!item.release_owned && source.resource_ids.length === 1 && (
+                <ForgetEnvironment
+                  path={source.relative_path}
+                  name={item.name}
+                  resourceId={item.profile_id}
+                />
+              )}
+            </div>
           ) : (
             <div key={item.profile_id} className={styles.resourceRow}>
               {content}

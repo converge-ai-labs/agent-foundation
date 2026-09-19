@@ -60,3 +60,17 @@ def test_run_and_close_preserves_use_and_cleanup_failures(tmp_path: Path) -> Non
         asyncio.run(application_module._run_and_close(environment, fail_use))
 
     assert [type(error) for error in captured.value.exceptions] == [ValueError, RuntimeError]
+
+
+def test_local_envd_example_closes_host_runtime_and_preserves_workspace(tmp_path: Path) -> None:
+    import os
+
+    configured = os.environ.get("A13N_ENVD_TEST_BINARY")
+    if configured is None:
+        pytest.skip("A13N_ENVD_TEST_BINARY enables the real Local Device example")
+    workspace = tmp_path / "workspace"
+    result = asyncio.run(application_module.run_local_envd(workspace, executable=Path(configured)))
+    assert result.provider_key == "a13n.local-envd"
+    assert result.state is None and result.workspace_preserved
+    assert result.text == "hello from a13n.local-envd\n"
+    assert (workspace / "provider-example.txt").read_text() == result.text

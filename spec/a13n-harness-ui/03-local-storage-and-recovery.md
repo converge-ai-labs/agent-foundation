@@ -218,6 +218,14 @@ Every successful checkpoint advances the expected reference for subsequent reque
 
 Harness UI also publishes every available valid terminal `HarnessState`, including failed and cancelled results, and compare-and-selects it against the latest successfully selected reference for that operation. After an unexpected exception or external cancellation, it attempts to export the Harness-retained shutdown checkpoint and publish it under cancellation shielding before propagating the original error. Saving a checkpoint does not turn failed or cancelled execution into success and never automatically replays input or effects. Deferred requests accompany only a suspended result. If export, publication, or selection fails, the prior or concurrently selected continuation remains current and the save failure is diagnosed independently. Root receipts, input, partial output, live AG-UI events, Environment files, and child display never synthesize a continuation.
 
+### Goal Continuation State
+
+The optional root [Goal policy](05-runtime-subagents-and-surfaces.md#goal-execution) is saved in the `a13n.harness-ui.goal` Capability namespace at version `1`. It retains the original objective, additional-check counter, captured limit, status, pending restore audit and source, and observed input/output tokens. Missing state means no Goal; unsupported state versions fail explicitly. The namespace uses the existing complete checkpoint envelope and compare-and-select publication, without a new table or work queue.
+
+Request-boundary checkpoints include current Goal progress after context-restoration notification. Terminal publication includes the final Goal outcome. Deferred response and eligible graceful-restart reconstruction preserve this state; normal new prompt submission removes it, while new Goal input replaces it. A new configured limit never retroactively changes a resumed Goal's captured limit.
+
+The continuation read model includes the optional Goal projection. Current-process root-operation state takes precedence for live progress. Without a live operation, saved active progress is shown as `suspended` only when a deferred continuation is actually available, otherwise `unverified_stop`. This query projection does not rewrite the checkpoint, claim liveness, or authorize automatic execution. Existing terminal outcomes remain inspectable after restart.
+
 ## Continuation Query Data
 
 Root continuation selection commits a small, versioned read model in the same SQLite transaction as the selected head. It contains the deferred requests needed for decision display and the bounded latest retained activity. Both the continuation schema version and digest bind the projection to the selected immutable object. Failed compare-and-select leaves the old projection and head intact. Current-process activity is merged at query time, never persisted as liveness.

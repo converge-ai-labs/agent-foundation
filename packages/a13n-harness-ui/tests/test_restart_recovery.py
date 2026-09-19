@@ -94,7 +94,10 @@ def fail_environment_finalization(monkeypatch, mode):
 
 
 @pytest.mark.parametrize("finalization_failure", [None, "state", "cleanup"])
-async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_path, monkeypatch, finalization_failure):
+@pytest.mark.parametrize("mode", ["normal", "goal"])
+async def test_planned_restart_continues_without_repeating_input_or_tool(
+    tmp_path, monkeypatch, finalization_failure, mode
+):
     root = _write_configuration(tmp_path)
     settings = _settings(tmp_path / "state")
     started, release = Event(), Event()
@@ -112,7 +115,9 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_pat
                     )
                 ]
             )
-        return ModelResponse(parts=[TextPart("Finished after update")])
+        return ModelResponse(
+            parts=[TextPart("Finished after update\n[GOAL_COMPLETE]" if mode == "goal" else "Finished after update")]
+        )
 
     install_model(monkeypatch, model)
     async with (
@@ -120,7 +125,7 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_pat
         open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app,
     ):
         thread = await app.create_thread()
-        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Read and report")
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Read and report", mode=mode)
         with fail_after(10):
             await started.wait()
         assert (
@@ -142,6 +147,16 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_pat
         assert batch is not None and batch.state == "ready", batch
         assert len(batch.items) == 1
         saved = await store.objects.read_model(batch.items[0].checkpoint, StoredContinuation)
+        if mode == "goal":
+            from a13n_harness_ui.goal import saved_goal
+
+            goal = saved_goal(saved.harness_state)
+            assert goal.objective == "Read and report"
+            assert goal.iteration == 0
+            assert goal.max_iterations == 10
+            # The handoff owns the last safe request-boundary checkpoint,
+            # not the terminal cancellation used to close the old process.
+            assert goal.status == "working"
         assert any(
             isinstance(p, ToolReturnPart) and p.tool_call_id == "read-once"
             for m in saved.harness_state.message_history
@@ -152,6 +167,12 @@ async def test_planned_restart_continues_without_repeating_input_or_tool(tmp_pat
             while (await app.get_thread(thread.thread_id)).thread.completion is None:
                 await sleep(0.01)
         assert len(requests) == 2
+        if mode == "goal":
+            goal = (await app.get_thread(thread.thread_id)).thread.goal
+            assert goal.objective == "Read and report"
+            assert goal.status == "verified"
+            assert goal.iteration == 0
+            assert goal.max_iterations == 10
         final_messages = requests[-1]
         assert (
             sum(

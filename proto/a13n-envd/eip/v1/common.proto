@@ -68,7 +68,8 @@ message OperationReceipt {
     (eip_field).max_length = 128
   ];
   string method = 3;
-  string environment_id = 4 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  string device_id = 4 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  string session_id = 10 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
   uint64 generation = 5 [(eip_field).minimum = 1];
   string request_digest = 6 [(eip_field).string_format = EIP_STRING_FORMAT_SHA256];
   ReceiptStage stage = 7;

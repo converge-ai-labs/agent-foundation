@@ -42,6 +42,7 @@ from a13n_harness_ui.errors import (
     AppStateError,
     ConfigurationError,
     LivePresentationError,
+    RunCoordinationError,
     StoreConflictError,
     ThreadError,
 )
@@ -652,13 +653,13 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         executor._environments._user_skills_root = user_skills
         reconstructor = executor._environments._reconstructor
 
-        async def local_envd_runtime(_provider: object) -> LocalEnvdProviderRuntime:
+        async def local_envd_runtime(_roots, **kwargs) -> LocalEnvdProviderRuntime:
             return LocalEnvdProviderRuntime(
                 executable=(tmp_path / "a13n-envd").resolve(),
                 allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
             )
 
-        monkeypatch.setattr(reconstructor, "_runtime_collaborator", local_envd_runtime)
+        monkeypatch.setattr(reconstructor, "sandbox_runtime", local_envd_runtime)
         selection = ThreadCompositionSelection(
             thread_id=stored.thread_id,
             version=stored.configuration.version,
@@ -692,10 +693,9 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         local_envd = plan.environments["workspace"]
         assert isinstance(local_envd, LocalEnvdEnvironment)
         assert prepared == [local_envd, plan.environments["thread-files"]]
-        assert local_envd._configuration.workspace.path.as_posix() == project_root
-        assert local_envd._configuration.execution_network.value == "deny"
-        if os.name == "posix":
-            assert local_envd._configuration.shell_profiles[0].fixed_arguments == ("-c",)
+        assert local_envd._configuration.working_directory == project_root
+        assert plan._mounts[0].provider_root == project_root
+        assert local_envd._runtime is plan.environments["thread-files"]._runtime
         finalization = await plan.finalize(timeout_seconds=1)
 
     assert finalization.cleanup_errors == ()
@@ -1302,34 +1302,25 @@ async def test_root_deferred_response_requires_exact_selected_request_batch(tmp_
         assert workbench.rows[0].pending_decision is not None
         assert workbench.rows[0].pending_decision.count == 1
 
-        incomplete_receipt = await app.respond_thread(
-            thread_id=thread.thread_id,
-            response=ThreadDeferredResponse(
-                expected_continuation_id=detail.continuation_id,
-                responses=(ExternalToolResult(request_id="unexpected", result="wrong"),),
-            ),
-        )
-        incomplete = await app.wait_root_operation(incomplete_receipt.receipt_id)
-        assert incomplete.status is RootOperationStatus.failed
-        assert incomplete.failure is not None
-        assert incomplete.failure.code == "thread_deferred_response_incomplete"
-
-        stale_receipt = await app.respond_thread(
-            thread_id=thread.thread_id,
-            response=ThreadDeferredResponse(
-                expected_continuation_id="0" * 64,
-                responses=(
-                    ExternalToolResult(
-                        request_id=request.request_id,
-                        result="external result",
-                    ),
+        with pytest.raises(RunCoordinationError) as incomplete:
+            await app.respond_thread(
+                thread_id=thread.thread_id,
+                response=ThreadDeferredResponse(
+                    expected_continuation_id=detail.continuation_id,
+                    responses=(ExternalToolResult(request_id="unexpected", result="wrong"),),
                 ),
-            ),
-        )
-        stale = await app.wait_root_operation(stale_receipt.receipt_id)
-        assert stale.status is RootOperationStatus.failed
-        assert stale.failure is not None
-        assert stale.failure.code == "thread_continuation_conflict"
+            )
+        assert incomplete.value.code == "thread_deferred_response_incomplete"
+
+        with pytest.raises(RunCoordinationError) as stale:
+            await app.respond_thread(
+                thread_id=thread.thread_id,
+                response=ThreadDeferredResponse(
+                    expected_continuation_id="0" * 64,
+                    responses=(ExternalToolResult(request_id=request.request_id, result="external result"),),
+                ),
+            )
+        assert stale.value.code == "thread_continuation_conflict"
 
         response_receipt = await app.respond_decisions(
             thread_id=thread.thread_id,

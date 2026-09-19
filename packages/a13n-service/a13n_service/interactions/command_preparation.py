@@ -64,6 +64,7 @@ class CommandInput:
         submitted: AgentInput,
         environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
         inherited_environment_id: str | Omitted | None = Omitted.UNSET,
+        inherited_environment_working_directory: str | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> PreparedCommandInput:
         """Freeze a selected invocation, then accept its input outside the transaction.
@@ -87,6 +88,7 @@ class CommandInput:
             frozen=frozen,
             environment=environment,
             inherited_environment_id=inherited_environment_id,
+            inherited_environment_working_directory=inherited_environment_working_directory,
             prepared_assets=prepared_assets,
         )
         return PreparedCommandInput(prepared, frozen, accepted)
@@ -127,6 +129,7 @@ class CommandInput:
         frozen: FrozenAgentInvocation,
         environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
         inherited_environment_id: str | Omitted | None = Omitted.UNSET,
+        inherited_environment_working_directory: str | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> AcceptedAgentInput:
         async with short_session(self._sessions) as database:
@@ -137,6 +140,7 @@ class CommandInput:
                 agent_revision_id=frozen.agent_revision_id,
                 choice=environment,
                 inherited_id=inherited_environment_id,
+                inherited_working_directory=inherited_environment_working_directory,
             )
         return await self.accept_effective(
             actor=actor,

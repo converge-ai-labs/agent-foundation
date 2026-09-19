@@ -158,28 +158,7 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         runtime: object | None,
     ) -> Environment:
         _require_provider(provider, LocalEnvdEnvironmentProvider, profile.provider_schema_version)
-        shell = _host_shell()
-        value: dict[str, JsonValue] = {
-            "workspace": {"path": str(root), "read_only": False},
-            "execution_network": "deny",
-            "trusted_executable_roots": [] if shell is None else [str(shell.parent)],
-            "shell_profiles": (
-                []
-                if shell is None
-                else [
-                    {
-                        "profile_id": "default",
-                        "executable": str(shell),
-                        "fixed_arguments": (
-                            ["-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-Command"]
-                            if sys.platform == "win32"
-                            else ["-c"]
-                        ),
-                        "allow_login": sys.platform != "win32",
-                    }
-                ]
-            ),
-        }
+        value: dict[str, JsonValue] = {"working_directory": root.as_posix()}
         configuration = provider.validate_configuration(
             schema_version=profile.provider_schema_version,
             value=value,

@@ -5,7 +5,7 @@ import base64
 from dataclasses import dataclass, replace
 
 import pytest
-from a13n_environment import EnvironmentAction, EnvironmentState, build_environment_provider_catalog
+from a13n_environment import build_environment_provider_catalog
 from a13n_environment.models import EnvironmentError
 from a13n_service.environments.domain import CreateProviderRequest, RegisterEnvironmentRequest
 from a13n_service.environments.models import EnvironmentProviderRecord
@@ -58,16 +58,21 @@ async def client_environment(interaction_sessions):
         request=RegisterEnvironmentRequest(
             provider_id=provider.id,
             configuration={},
-            state=EnvironmentState(
-                provider_key="a13n.websocket-envd", state_version="1", state={"daemon_environment_id": "native"}
-            ),
+            device_id="native",
         ),
     )
     return service, provider, environment
 
 
 @pytest.fixture
-async def admitted_use(request, interaction_sessions, interaction_object_store, client_environment, relay_redis):
+def client_working_directory(tmp_path):
+    return str(tmp_path / "client" / "workspace")
+
+
+@pytest.fixture
+async def admitted_use(
+    request, interaction_sessions, interaction_object_store, client_environment, relay_redis, client_working_directory
+):
     service, provider, environment = client_environment
     coordination = ConnectionCoordination(relay_redis)
     ticket = await coordination.issue(ORGANIZATION_ID, environment.id)
@@ -84,6 +89,7 @@ async def admitted_use(request, interaction_sessions, interaction_object_store, 
         interaction_sessions,
         interaction_object_store,
         environment_id=environment.id if has_primary else None,
+        environment_working_directory=client_working_directory if has_primary else None,
         coordination=coordination,
     )
     await coordination.retire(connection)
@@ -99,16 +105,18 @@ async def admitted_use(request, interaction_sessions, interaction_object_store, 
         claim.attempt.id,
         claim.attempt.attempt_number,
         claim.attempt.worker_id,
+        "workspace",
+        admission_deadline_ms=int(utc_now().timestamp() * 1000) + 2000,
     )
     return AdmittedUse(identity, provider.id, service, run, claim)
 
 
-async def test_control_rechecks_persisted_attempt_and_allows_provider_operations(interaction_sessions, admitted_use):
+async def test_control_rechecks_persisted_attempt_and_allows_provider_operations(
+    interaction_sessions, admitted_use, client_working_directory
+):
     identity = admitted_use.identity
-    permissions = await ClientUseAuthorization(interaction_sessions)(identity)
-    assert EnvironmentAction.FILE_READ_BYTES in permissions
-    assert EnvironmentAction.FILE_WRITE_BYTES in permissions
-    assert EnvironmentAction.SHELL_EXEC in permissions
+    binding = await ClientUseAuthorization(interaction_sessions)(identity)
+    assert binding == client_working_directory
     assert interaction_sessions.kw["bind"].sync_engine.pool.checkedout() == 0
 
 
@@ -140,18 +148,20 @@ async def test_disabled_provider_cannot_gain_use_from_old_online_presence(intera
 async def test_each_alias_requires_its_own_accepted_binding(interaction_sessions, admitted_use):
     identity = admitted_use.identity
     authorize = ClientUseAuthorization(interaction_sessions)
-    primary = await authorize(identity, "workspace")
+    primary = await authorize(identity)
+    writer = replace(identity, use_id="writer-use", mount_name="writer")
     with pytest.raises(EnvironmentError):
-        await authorize(identity, "writer")
+        await authorize(writer)
     async with transaction(interaction_sessions) as session:
-        mount = accepted_mount(identity.run_id, identity.connection.environment_id, name="writer")
+        mount = accepted_mount(
+            identity.run_id, identity.connection.environment_id, name="writer", working_directory="/projects/writer"
+        )
         session.add(mount)
-    writable = await authorize(identity, "writer")
-    assert EnvironmentAction.SHELL_EXEC in writable
-    assert writable == primary
-    assert await authorize(identity, "workspace") == primary
+    writable = await authorize(writer)
+    assert writable == "/projects/writer"
+    assert await authorize(identity) == primary
     with pytest.raises(EnvironmentError):
-        await authorize(identity, "unknown")
+        await authorize(replace(identity, mount_name="unknown"))
 
 
 async def test_additional_only_run_can_acquire_use_and_cannot_invent_a_primary(
@@ -160,7 +170,7 @@ async def test_additional_only_run_can_acquire_use_and_cannot_invent_a_primary(
     _, _, environment = client_environment
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     async with transaction(interaction_sessions) as session:
-        session.add(accepted_mount(run.id, environment.id))
+        session.add(accepted_mount(run.id, environment.id, working_directory="/projects/computer"))
     claim = await AttemptScheduler(interaction_sessions, clock=utc_now, lifecycle=test_lifecycle_writer()).claim(
         run.id, _worker()
     )
@@ -172,18 +182,20 @@ async def test_additional_only_run_can_acquire_use_and_cannot_invent_a_primary(
         claim.attempt.id,
         claim.attempt.attempt_number,
         claim.attempt.worker_id,
+        "computer",
+        admission_deadline_ms=int(utc_now().timestamp() * 1000) + 2000,
     )
     authorize = ClientUseAuthorization(interaction_sessions)
-    assert await authorize(identity) == await authorize(identity, "computer")
+    assert await authorize(identity) == "/projects/computer"
     with pytest.raises(EnvironmentError):
-        await authorize(identity, "workspace")
+        await authorize(replace(identity, mount_name="workspace"))
     # A lease which was valid at original acceptance cannot authorize a later binding.
     from a13n_service.interactions.models import RunAttemptRecord
 
     async with transaction(interaction_sessions) as session:
         (await session.get(RunAttemptRecord, claim.attempt.id)).lease_expires_at = NOW
     with pytest.raises(EnvironmentError):
-        await authorize(identity, "computer")
+        await authorize(identity)
 
 
 @pytest.mark.parametrize("failure", ["principal", "dependency"])
@@ -203,6 +215,6 @@ async def test_mount_admission_errors_remain_bounded_environment_failures(
     )
     monkeypatch.setattr(use_authorization, "authorize_persisted_agent_principal_actions", AsyncMock(side_effect=error))
     with pytest.raises(EnvironmentError) as caught:
-        await ClientUseAuthorization(interaction_sessions)(admitted_use.identity, "workspace")
+        await ClientUseAuthorization(interaction_sessions)(admitted_use.identity)
     assert caught.value.code == ("environment_forbidden" if failure == "principal" else "environment_unavailable")
     assert interaction_sessions.kw["bind"].sync_engine.pool.checkedout() == 0

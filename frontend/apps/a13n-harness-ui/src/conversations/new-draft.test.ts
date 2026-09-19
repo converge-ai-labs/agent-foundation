@@ -32,6 +32,7 @@ it("persists only one slot and registers its recovered composer before saved Thr
   original.composer.doc.getText("text").insert(0, "Keep this");
   original.composer.draftId = "shared-incarnation";
   original.composer.modelId = "chosen-model";
+  original.composer.mode = "goal";
   original.created = true;
   original.attempted = true;
   original.composer.submission = { kind: "pending", action: "send" };
@@ -44,6 +45,7 @@ it("persists only one slot and registers its recovered composer before saved Thr
   expect(recovered.composer.submission.kind).toBe("unknown");
   expect(recovered.composer.draftId).toBe("shared-incarnation");
   expect(recovered.composer.modelId).toBe("chosen-model");
+  expect(recovered.composer.mode).toBe("goal");
   expect(values(recovered.composer.doc).prompt).toBe("Keep this");
   // Restoring the same Yjs identities must not duplicate text on reconnect.
   Y.applyUpdate(
@@ -65,6 +67,7 @@ it("clears an accepted slot even after leaving New and never lets the old compos
   expect(localStorage.getItem("a13n-harness-ui.new-draft")).toBeNull();
   const second = owner.get(composers);
   expect(second.threadId).not.toBe(first.threadId);
+  expect(second.composer.mode).toBe("normal");
   second.composer.doc.getText("text").insert(0, "Second");
   first.composer.doc.getText("text").insert(0, "Old edits");
   expect(values(store().get(composers).composer.doc).prompt).toBe("Second");

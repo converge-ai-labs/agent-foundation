@@ -5,19 +5,20 @@ from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StrictStr, model_validator
 
-from .models import EIPError
+from .models import EIPError, Identifier
 
 EIP_PROTOCOL_VERSION: Final = "0.1"
 EIP_PROTOCOL_MAJOR: Final = 0
 EIP_PROTOCOL_MINOR: Final = 1
 EIP_PROTO_PACKAGE: Final = "a13n.agent_envd.eip.v1"
-EIP_DESCRIPTOR_SHA256: Final = "a99248e0473033e014685a7cc07c882f14b663a3c3329f4f0e0819a872802ed0"
+EIP_DESCRIPTOR_SHA256: Final = "de84aa22cba8bdfd64a955bccf5eab54592faf69a8bf72e547e2e77d4f8b5407"
 
 type JsonRpcId = StrictStr | Annotated[StrictInt, Field(ge=-(2**63), le=2**63 - 1)]
 
 
 class JsonRpcEnvelope(BaseModel):
     model_config = ConfigDict(extra="ignore", frozen=True)
+    eip_session: Identifier | None = None
 
     @model_validator(mode="before")
     @classmethod

@@ -71,7 +71,8 @@ message EIPErrorData {
     (eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER,
     (eip_field).max_length = 128
   ];
-  optional string environment_id = 5 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  optional string device_id = 5 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  optional string session_id = 22 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
   optional uint64 generation = 6 [(eip_field).minimum = 1];
   reserved 7;
   reserved "capability";

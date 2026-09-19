@@ -6,6 +6,10 @@ from types import MappingProxyType
 from typing import Literal
 
 from .models import (
+    DeviceDescribeParams,
+    DeviceDescribeResult,
+    DirectoryListParams,
+    DirectoryListResult,
     EnvironmentDescribeParams,
     EnvironmentDescribeResult,
     EnvironmentReadinessParams,
@@ -74,8 +78,13 @@ from .models import (
     ProcessWriteStdinResult,
     ReceiptGetParams,
     ReceiptGetResult,
+    SessionAttachParams,
     SessionCloseParams,
     SessionCloseResult,
+    SessionKeepaliveParams,
+    SessionKeepaliveResult,
+    SessionOpenParams,
+    SessionOpenResult,
     ShellExecParams,
     ShellExecResult,
 )
@@ -90,9 +99,36 @@ class MethodSpec[P, R]:
     error_family: str
     params_type: type[P]
     result_type: type[R]
+    device_scoped: bool = False
     transfer_action: Literal["open", "close", "commit", "abort"] | None = None
     transfer_direction: Literal["server_to_client", "client_to_server"] | None = None
 
+
+DEVICE_DESCRIBE = MethodSpec(
+    name="device.describe",
+    kind="request_response",
+    replay_class="ledger_external",
+    introduced="0.1",
+    error_family="initialization",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=DeviceDescribeParams,
+    result_type=DeviceDescribeResult,
+    device_scoped=True,
+)
+
+DIRECTORY_LIST = MethodSpec(
+    name="directory.list",
+    kind="request_response",
+    replay_class="ledger_external",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=DirectoryListParams,
+    result_type=DirectoryListResult,
+    device_scoped=True,
+)
 
 ENVIRONMENT_DESCRIBE = MethodSpec(
     name="environment.describe",
@@ -104,6 +140,7 @@ ENVIRONMENT_DESCRIBE = MethodSpec(
     transfer_direction=None,
     params_type=EnvironmentDescribeParams,
     result_type=EnvironmentDescribeResult,
+    device_scoped=False,
 )
 
 ENVIRONMENT_READINESS = MethodSpec(
@@ -116,6 +153,7 @@ ENVIRONMENT_READINESS = MethodSpec(
     transfer_direction=None,
     params_type=EnvironmentReadinessParams,
     result_type=EnvironmentReadinessResult,
+    device_scoped=False,
 )
 
 FILE_ABORT_WRITER = MethodSpec(
@@ -128,6 +166,7 @@ FILE_ABORT_WRITER = MethodSpec(
     transfer_direction="client_to_server",
     params_type=FileWriterAbortParams,
     result_type=FileWriterAbortResult,
+    device_scoped=False,
 )
 
 FILE_CLOSE_READER = MethodSpec(
@@ -140,6 +179,7 @@ FILE_CLOSE_READER = MethodSpec(
     transfer_direction="server_to_client",
     params_type=FileReaderCloseParams,
     result_type=FileReaderCloseResult,
+    device_scoped=False,
 )
 
 FILE_COMMIT = MethodSpec(
@@ -152,6 +192,7 @@ FILE_COMMIT = MethodSpec(
     transfer_direction=None,
     params_type=FileCommitParams,
     result_type=FileCommitResult,
+    device_scoped=False,
 )
 
 FILE_COMMIT_WRITER = MethodSpec(
@@ -164,6 +205,7 @@ FILE_COMMIT_WRITER = MethodSpec(
     transfer_direction="client_to_server",
     params_type=FileWriterCommitParams,
     result_type=FileWriterCommitResult,
+    device_scoped=False,
 )
 
 FILE_COPY = MethodSpec(
@@ -176,6 +218,7 @@ FILE_COPY = MethodSpec(
     transfer_direction=None,
     params_type=FileCopyParams,
     result_type=FileCopyResult,
+    device_scoped=False,
 )
 
 FILE_FIND = MethodSpec(
@@ -188,6 +231,7 @@ FILE_FIND = MethodSpec(
     transfer_direction=None,
     params_type=FileFindParams,
     result_type=FileFindResult,
+    device_scoped=False,
 )
 
 FILE_LIST = MethodSpec(
@@ -200,6 +244,7 @@ FILE_LIST = MethodSpec(
     transfer_direction=None,
     params_type=FileListParams,
     result_type=FileListResult,
+    device_scoped=False,
 )
 
 FILE_MKDIR = MethodSpec(
@@ -212,6 +257,7 @@ FILE_MKDIR = MethodSpec(
     transfer_direction=None,
     params_type=FileMkdirParams,
     result_type=FileMkdirResult,
+    device_scoped=False,
 )
 
 FILE_MOVE = MethodSpec(
@@ -224,6 +270,7 @@ FILE_MOVE = MethodSpec(
     transfer_direction=None,
     params_type=FileMoveParams,
     result_type=FileMoveResult,
+    device_scoped=False,
 )
 
 FILE_OPEN_READER = MethodSpec(
@@ -236,6 +283,7 @@ FILE_OPEN_READER = MethodSpec(
     transfer_direction="server_to_client",
     params_type=FileReaderOpenParams,
     result_type=FileReaderOpenResult,
+    device_scoped=False,
 )
 
 FILE_OPEN_WRITER = MethodSpec(
@@ -248,6 +296,7 @@ FILE_OPEN_WRITER = MethodSpec(
     transfer_direction="client_to_server",
     params_type=FileWriterOpenParams,
     result_type=FileWriterOpenResult,
+    device_scoped=False,
 )
 
 FILE_PATCH_TEXT = MethodSpec(
@@ -260,6 +309,7 @@ FILE_PATCH_TEXT = MethodSpec(
     transfer_direction=None,
     params_type=FilePatchTextParams,
     result_type=FilePatchTextResult,
+    device_scoped=False,
 )
 
 FILE_READ_TEXT = MethodSpec(
@@ -272,6 +322,7 @@ FILE_READ_TEXT = MethodSpec(
     transfer_direction=None,
     params_type=FileReadTextParams,
     result_type=FileReadTextResult,
+    device_scoped=False,
 )
 
 FILE_REMOVE = MethodSpec(
@@ -284,6 +335,7 @@ FILE_REMOVE = MethodSpec(
     transfer_direction=None,
     params_type=FileRemoveParams,
     result_type=FileRemoveResult,
+    device_scoped=False,
 )
 
 FILE_SEARCH = MethodSpec(
@@ -296,6 +348,7 @@ FILE_SEARCH = MethodSpec(
     transfer_direction=None,
     params_type=FileSearchParams,
     result_type=FileSearchResult,
+    device_scoped=False,
 )
 
 FILE_STAT = MethodSpec(
@@ -308,6 +361,7 @@ FILE_STAT = MethodSpec(
     transfer_direction=None,
     params_type=FileStatParams,
     result_type=FileStatResult,
+    device_scoped=False,
 )
 
 FILE_WRITE_TEXT = MethodSpec(
@@ -320,6 +374,7 @@ FILE_WRITE_TEXT = MethodSpec(
     transfer_direction=None,
     params_type=FileWriteTextParams,
     result_type=FileWriteTextResult,
+    device_scoped=False,
 )
 
 INITIALIZE = MethodSpec(
@@ -332,6 +387,7 @@ INITIALIZE = MethodSpec(
     transfer_direction=None,
     params_type=InitializeParams,
     result_type=InitializeResult,
+    device_scoped=True,
 )
 
 OPERATION_CANCEL = MethodSpec(
@@ -344,6 +400,7 @@ OPERATION_CANCEL = MethodSpec(
     transfer_direction=None,
     params_type=OperationCancelParams,
     result_type=OperationCancelResult,
+    device_scoped=False,
 )
 
 OUTPUT_READ = MethodSpec(
@@ -356,6 +413,7 @@ OUTPUT_READ = MethodSpec(
     transfer_direction=None,
     params_type=OutputReadParams,
     result_type=OutputReadResult,
+    device_scoped=False,
 )
 
 OUTPUT_RELEASE = MethodSpec(
@@ -368,6 +426,7 @@ OUTPUT_RELEASE = MethodSpec(
     transfer_direction=None,
     params_type=OutputReleaseParams,
     result_type=OutputReleaseResult,
+    device_scoped=False,
 )
 
 PORT_INSPECT = MethodSpec(
@@ -380,6 +439,7 @@ PORT_INSPECT = MethodSpec(
     transfer_direction=None,
     params_type=PortInspectParams,
     result_type=PortInspectResult,
+    device_scoped=False,
 )
 
 PORT_WAIT = MethodSpec(
@@ -392,6 +452,7 @@ PORT_WAIT = MethodSpec(
     transfer_direction=None,
     params_type=PortWaitParams,
     result_type=PortWaitResult,
+    device_scoped=False,
 )
 
 PROCESS_CLOSE_STDIN = MethodSpec(
@@ -404,6 +465,7 @@ PROCESS_CLOSE_STDIN = MethodSpec(
     transfer_direction=None,
     params_type=ProcessCloseStdinParams,
     result_type=ProcessCloseStdinResult,
+    device_scoped=False,
 )
 
 PROCESS_INSPECT = MethodSpec(
@@ -416,6 +478,7 @@ PROCESS_INSPECT = MethodSpec(
     transfer_direction=None,
     params_type=ProcessInspectParams,
     result_type=ProcessInspectResult,
+    device_scoped=False,
 )
 
 PROCESS_KILL = MethodSpec(
@@ -428,6 +491,7 @@ PROCESS_KILL = MethodSpec(
     transfer_direction=None,
     params_type=ProcessKillParams,
     result_type=ProcessKillResult,
+    device_scoped=False,
 )
 
 PROCESS_RELEASE = MethodSpec(
@@ -440,6 +504,7 @@ PROCESS_RELEASE = MethodSpec(
     transfer_direction=None,
     params_type=ProcessReleaseParams,
     result_type=ProcessReleaseResult,
+    device_scoped=False,
 )
 
 PROCESS_SIGNAL = MethodSpec(
@@ -452,6 +517,7 @@ PROCESS_SIGNAL = MethodSpec(
     transfer_direction=None,
     params_type=ProcessSignalParams,
     result_type=ProcessSignalResult,
+    device_scoped=False,
 )
 
 PROCESS_START = MethodSpec(
@@ -464,6 +530,7 @@ PROCESS_START = MethodSpec(
     transfer_direction=None,
     params_type=ProcessStartParams,
     result_type=ProcessStartResult,
+    device_scoped=False,
 )
 
 PROCESS_WAIT = MethodSpec(
@@ -476,6 +543,7 @@ PROCESS_WAIT = MethodSpec(
     transfer_direction=None,
     params_type=ProcessWaitParams,
     result_type=ProcessWaitResult,
+    device_scoped=False,
 )
 
 PROCESS_WRITE_STDIN = MethodSpec(
@@ -488,6 +556,7 @@ PROCESS_WRITE_STDIN = MethodSpec(
     transfer_direction=None,
     params_type=ProcessWriteStdinParams,
     result_type=ProcessWriteStdinResult,
+    device_scoped=False,
 )
 
 RECEIPT_GET = MethodSpec(
@@ -500,18 +569,59 @@ RECEIPT_GET = MethodSpec(
     transfer_direction=None,
     params_type=ReceiptGetParams,
     result_type=ReceiptGetResult,
+    device_scoped=False,
+)
+
+SESSION_ATTACH = MethodSpec(
+    name="session.attach",
+    kind="request_response",
+    replay_class="ledger_external",
+    introduced="0.1",
+    error_family="session",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=SessionAttachParams,
+    result_type=SessionOpenResult,
+    device_scoped=False,
 )
 
 SESSION_CLOSE = MethodSpec(
     name="session.close",
     kind="request_response",
-    replay_class="active_only",
+    replay_class="ledger_external",
     introduced="0.1",
     error_family="session",
     transfer_action=None,
     transfer_direction=None,
     params_type=SessionCloseParams,
     result_type=SessionCloseResult,
+    device_scoped=False,
+)
+
+SESSION_KEEPALIVE = MethodSpec(
+    name="session.keepalive",
+    kind="request_response",
+    replay_class="ledger_external",
+    introduced="0.1",
+    error_family="session",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=SessionKeepaliveParams,
+    result_type=SessionKeepaliveResult,
+    device_scoped=False,
+)
+
+SESSION_OPEN = MethodSpec(
+    name="session.open",
+    kind="request_response",
+    replay_class="ledger_external",
+    introduced="0.1",
+    error_family="session",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=SessionOpenParams,
+    result_type=SessionOpenResult,
+    device_scoped=True,
 )
 
 SHELL_EXEC = MethodSpec(
@@ -524,10 +634,13 @@ SHELL_EXEC = MethodSpec(
     transfer_direction=None,
     params_type=ShellExecParams,
     result_type=ShellExecResult,
+    device_scoped=False,
 )
 
 METHODS = MappingProxyType(
     {
+        DEVICE_DESCRIBE.name: DEVICE_DESCRIBE,
+        DIRECTORY_LIST.name: DIRECTORY_LIST,
         ENVIRONMENT_DESCRIBE.name: ENVIRONMENT_DESCRIBE,
         ENVIRONMENT_READINESS.name: ENVIRONMENT_READINESS,
         FILE_ABORT_WRITER.name: FILE_ABORT_WRITER,
@@ -562,7 +675,10 @@ METHODS = MappingProxyType(
         PROCESS_WAIT.name: PROCESS_WAIT,
         PROCESS_WRITE_STDIN.name: PROCESS_WRITE_STDIN,
         RECEIPT_GET.name: RECEIPT_GET,
+        SESSION_ATTACH.name: SESSION_ATTACH,
         SESSION_CLOSE.name: SESSION_CLOSE,
+        SESSION_KEEPALIVE.name: SESSION_KEEPALIVE,
+        SESSION_OPEN.name: SESSION_OPEN,
         SHELL_EXEC.name: SHELL_EXEC,
     }
 )

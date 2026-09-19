@@ -5,6 +5,10 @@ import { Button, ChoiceField } from "a13n-ui";
 import { useProjects, useSelectors, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
+import {
+  BindingSummary,
+  EnvironmentBindings,
+} from "../configuration/environment-bindings";
 import styles from "./conversation.module.css";
 
 function ConfigurationSummary({
@@ -23,8 +27,17 @@ function ConfigurationSummary({
         <dd>{configuration.default_model_id ?? "Follow Agent model"}</dd>
       </div>
       <div>
-        <dt>Environment</dt>
+        <dt>Local environment profile</dt>
         <dd>{configuration.environment_profile_id}</dd>
+      </div>
+      <div>
+        <dt>Working environments</dt>
+        <dd>
+          <BindingSummary
+            bindings={configuration.environment_bindings ?? []}
+            defaultEnvironment={configuration.default_environment}
+          />
+        </dd>
       </div>
       <div>
         <dt>Harness plugins</dt>
@@ -121,8 +134,17 @@ export function ConversationConfiguration({
                     </dd>
                   </div>
                   <div>
-                    <dt>Environment</dt>
+                    <dt>Local environment profile</dt>
                     <dd>{data.captured.environment_profile_id}</dd>
+                  </div>
+                  <div>
+                    <dt>Captured working environments</dt>
+                    <dd>
+                      <BindingSummary
+                        bindings={data.captured.environment_bindings ?? []}
+                        defaultEnvironment={data.captured.default_environment}
+                      />
+                    </dd>
                   </div>
                   <div>
                     <dt>Project roots on server</dt>
@@ -321,7 +343,7 @@ export function ThreadSelections({
           ]}
         />
         <ChoiceField
-          label="Environment"
+          label="Local environment profile"
           value={
             patch.environment_profile_id ?? configuration.environment_profile_id
           }
@@ -333,6 +355,32 @@ export function ThreadSelections({
             label: environment.name,
           }))}
         />
+        {projects.data && (
+          <EnvironmentBindings
+            bindings={
+              patch.environment_bindings ??
+              configuration.environment_bindings ??
+              []
+            }
+            defaultEnvironment={
+              patch.default_environment === undefined
+                ? configuration.default_environment
+                : patch.default_environment
+            }
+            localRoots={
+              projects.data.find(
+                (project) =>
+                  project.project_id ===
+                  (patch.project_id === undefined
+                    ? configuration.project_id
+                    : patch.project_id),
+              )?.roots ?? []
+            }
+            onChange={(environment_bindings, default_environment) =>
+              setPatch({ ...patch, environment_bindings, default_environment })
+            }
+          />
+        )}
         {(
           [
             {

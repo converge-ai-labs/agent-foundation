@@ -28,6 +28,7 @@ class RunEnvironmentBinding:
     environment_id: str
     workspace_id: str
     record: RunRecord | RunEnvironmentMountRecord
+    working_directory: str | None
 
 
 async def load_run_environment_binding(
@@ -38,15 +39,17 @@ async def load_run_environment_binding(
         if run.environment_id is None:
             return None
         record, environment_id = run, run.environment_id
+        working_directory = run.environment_working_directory
     else:
         mount = await session.get(RunEnvironmentMountRecord, (run.id, name), with_for_update=for_update)
         if mount is None or mount.organization_id != run.organization_id:
             raise ValueError("The accepted Run mount is unavailable")
         record, environment_id = mount, mount.environment_id
+        working_directory = mount.working_directory
     workspace_id = await session.scalar(select(SessionRecord.workspace_id).where(SessionRecord.id == run.session_id))
     if workspace_id is None or (isinstance(record, RunEnvironmentMountRecord) and record.workspace_id != workspace_id):
         raise ValueError("The accepted Environment binding has no matching Workspace")
-    return RunEnvironmentBinding(name, environment_id, workspace_id, record)
+    return RunEnvironmentBinding(name, environment_id, workspace_id, record, working_directory)
 
 
 async def lock_run_environment_use(

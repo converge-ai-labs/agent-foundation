@@ -50,6 +50,7 @@ class RunEnvironmentMountRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     environment_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    working_directory: Mapped[str | None] = mapped_column(String(4096))
     use_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     principal_type: Mapped[str] = mapped_column(String(32), nullable=False)

@@ -26,13 +26,13 @@ Defaults are a 64 MiB file value bound, 128 concurrent processes, 24-hour maximu
 
 ## Local Envd
 
-`LocalEnvdProviderConfiguration` requires an absolute `workspace.path`. It defaults to Host network mode and empty trusted executable roots/shell profiles. Enabling file access alone does not implicitly enable commands.
+`LocalEnvdProviderConfiguration` selects an optional Device-absolute `working_directory` and `required_methods`. Each adapter opens an independent Session. An omitted directory uses the Device default; Hosts that persist Run selections resolve and freeze an explicit directory before accepting work. The directory is not a filesystem access root.
 
-A shell profile selects `profile_id`, absolute `executable`, fixed arguments, login permission, and a script-byte bound (1 MiB by default). `trusted_executable_roots` controls eligible executable locations. Choose `execution_network="deny"` when the platform supports and your workload needs that boundary; [Envd isolation](../a13n-envd/isolation.md) owns native prerequisites and fail-closed behavior.
+`LocalEnvdLaunchConfiguration` belongs to the Host runtime, not each adapter. It selects the native default directory, directory discovery, trusted executable roots, shell profiles, and resource limits. A shell profile selects `profile_id`, absolute `executable`, fixed arguments, login permission, and a script-byte bound (1 MiB by default). Executable roots and shell profiles default to empty. Network and filesystem isolation belong to the [outer Host boundary](../a13n-envd/isolation.md), not an Envd execution-network field.
 
-Provider defaults are 16 MiB file values, 64 KiB output previews, 1 GiB per output stream, and 64 GiB spool. Preview cannot exceed a stream bound, and spool must reserve both streams. Do not copy the standalone daemon's smaller default output quotas into a Provider tuning table.
+Launch defaults are 16 MiB file values, 64 KiB previews, 256 MiB per output stream, 1 GiB per Session spool, and 4 GiB aggregate Device spool. Preview cannot exceed a stream bound; each Session spool must reserve both streams and fit within the Device quota.
 
-Runtime selection owns daemon binary/bootstrap and process construction. Desired data contains no live child process or token. Local Envd remains a library/Harness UI Provider and is not offered by Service.
+The Host owns one shared `LocalEnvdProviderRuntime`, its binary/bootstrap and shutdown. Adapter `close()` closes only that adapter's Session. Close the runtime separately or use its async context manager. Local Envd remains a library/Harness UI Provider and is not offered by Service.
 
 ## Docker
 
@@ -84,7 +84,7 @@ Daytona, Sprites, and Runloop select `python3` on the guest PATH. Modal uses `/u
 
 ## Remote HTTP / WebSocket Envd
 
-Both remote Providers use `RemoteEnvdProviderConfiguration(required_methods=())`; this requests a bounded method subset, not daemon mounts or target provisioning. Required method names are normalized and deduplicated. `RemoteEnvdStateData` selects the externally owned daemon Environment identity.
+Both remote Providers use `RemoteEnvdProviderConfiguration(working_directory=None, required_methods=())`; this selects a fixed Session cwd and required method subset, not daemon mounts or target provisioning. Required method names are normalized and deduplicated. `RemoteEnvdStateData.device_id` selects the externally owned Device. State version remains `1`.
 
 HTTP backend configuration supplies `endpoint`, initialization timeout (10 seconds), request timeout (30 seconds), maximum in-flight requests (32), and explicit plaintext-private-link opt-in (false by default). The token is a separate `HttpEnvdCredential`. The remote Provider's request timeout differs from the low-level Python EIP client's default request timeout; select the boundary you are configuring.
 

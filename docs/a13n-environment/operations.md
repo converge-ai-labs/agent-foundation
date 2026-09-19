@@ -16,9 +16,9 @@ Use [Getting started](getting-started.md) for a complete file example. Entering 
 
 ## Paths belong to the boundary you are calling
 
-The single-Environment API uses logical paths within its configured root, such as `/hello.txt`. Harness adds aggregate paths across mounts, such as `/workspace` and `/environment/<name>`, and can preserve Host paths in supported layouts. Do not send a Harness aggregate path directly to a low-level Provider file operator unless that is its actual configured mapping.
+The single-Environment API follows each Provider's path contract. Direct Local and root-mapped native Providers use paths within their configured root, such as `/hello.txt`. Envd Providers use Device-absolute filesystem paths: `/home/user/hello.txt`, `/C:/Users/example/hello.txt`, or `/UNC/server/share/hello.txt`. Their fixed working directory does not restrict file access.
 
-Native filesystem roots are trusted configuration. Mapping one root does not isolate a permitted Direct Local shell from the Host account.
+Harness adds mount selection and relative-path resolution. Do not send an aggregate Harness path directly to a low-level Provider file operator unless it is also a valid path for that Provider. Root mapping is not OS isolation for an allowed command; Envd isolation belongs to the outer Host.
 
 ## Environment operations and tools
 
@@ -28,7 +28,7 @@ Agent Harness applies mount names, access ceilings, routing, operation timeouts,
 
 ## File operation reference
 
-After `ensure_ready({"files"})`, use the optional `environment.operations.files` facet. Paths in this table are logical Provider paths, not native shell paths.
+After `ensure_ready({"files"})`, use the optional `environment.operations.files` facet. Paths in this table follow the selected Provider's contract; Envd paths are Device-absolute.
 
 | Method                                                                 | Inputs and result                                                               |
 | ---------------------------------------------------------------------- | ------------------------------------------------------------------------------- |

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Literal
 
+from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from a13n_harness import SafeFailure
 from pydantic import StringConstraints, field_validator
 
@@ -26,6 +27,7 @@ type MountApplicationStatus = Literal["pending", "preparing", "ready", "failed"]
 class AddEnvironmentMountRequest(DomainModel):
     name: MountName
     environment_id: ObjectId
+    working_directory: AbsoluteEIPPath | None = None
 
     @field_validator("name")
     @classmethod
@@ -39,6 +41,7 @@ class RunEnvironmentMount(DomainModel):
     run_id: ObjectId
     name: MountName
     environment_id: ObjectId
+    working_directory: AbsoluteEIPPath | None = None
     created_at: datetime
     accepting_principal: PrincipalRef
     use_started_at: datetime | None = None
@@ -57,7 +60,8 @@ class AcceptedRunMount:
     name: str
     environment_id: str
     created_at: datetime
+    working_directory: str | None = None
 
     @classmethod
     def from_record(cls, row: RunEnvironmentMountRecord) -> AcceptedRunMount:
-        return cls(row.run_id, row.name, row.environment_id, assume_utc(row.created_at))
+        return cls(row.run_id, row.name, row.environment_id, assume_utc(row.created_at), row.working_directory)

@@ -11,14 +11,14 @@ mod tests {
     use serde::{Serialize, de::DeserializeOwned};
 
     use super::{
-        CommandNetwork, DataFrame, DataFrameKind, DataResetStatus, EIP_DESCRIPTOR_SHA256,
-        EIP_PROTO_PACKAGE, EIP_PROTOCOL_VERSION, EIPCallContext, EIPError, EIPLimits,
-        EIPServerInfo, EipValidate, EncodedBytes, EnvironmentReadinessParams,
-        EnvironmentReadinessResult, ErrorType, FileFindParams, FileSearchMatch, FileSearchParams,
-        FileSearchResult, FileStatParams, FileStatResult, InitializeParams, JsonRpcErrorResponse,
-        JsonRpcRequest, JsonRpcSuccessResponse, METHODS, OutputInfo, OutputReadParams,
-        OutputReference, ProcessWriteStdinParams, ReceiptGetParams, ShellExecParams, decode,
-        decode_data_frame, encode, encode_data_frame,
+        DataFrame, DataFrameKind, DataResetStatus, EIP_DESCRIPTOR_SHA256, EIP_PROTO_PACKAGE,
+        EIP_PROTOCOL_VERSION, EIPCallContext, EIPError, EIPLimits, EIPServerInfo, EipValidate,
+        EncodedBytes, EnvironmentReadinessParams, EnvironmentReadinessResult, ErrorType,
+        FileFindParams, FileSearchMatch, FileSearchParams, FileSearchResult, FileStatParams,
+        FileStatResult, InitializeParams, JsonRpcErrorResponse, JsonRpcRequest,
+        JsonRpcSuccessResponse, METHODS, OutputInfo, OutputReadParams, OutputReference,
+        ProcessWriteStdinParams, ReceiptGetParams, ShellExecParams, decode, decode_data_frame,
+        encode, encode_data_frame,
     };
 
     fn assert_golden<T>(value: serde_json::Value)
@@ -42,7 +42,7 @@ mod tests {
     fn generated_registry_has_complete_v1_surface() {
         assert_eq!(EIP_PROTOCOL_VERSION, "0.1");
         assert_eq!(EIP_PROTO_PACKAGE, "a13n.agent_envd.eip.v1");
-        assert_eq!(METHODS.len(), 36);
+        assert_eq!(METHODS.len(), 41);
         assert!(
             METHODS
                 .iter()
@@ -54,7 +54,7 @@ mod tests {
                 .iter()
                 .filter(|method| method.replay_class == "active_only")
                 .count(),
-            19
+            18
         );
         assert_eq!(
             METHODS
@@ -69,7 +69,15 @@ mod tests {
                 .filter(|method| method.replay_class == "ledger_external")
                 .map(|method| method.name)
                 .collect::<Vec<_>>(),
-            vec!["initialize"]
+            vec![
+                "device.describe",
+                "directory.list",
+                "initialize",
+                "session.attach",
+                "session.close",
+                "session.keepalive",
+                "session.open"
+            ]
         );
         let transfer_methods = METHODS
             .iter()
@@ -139,9 +147,8 @@ mod tests {
                     "executable_spec": {"kind": "name", "name": "true"},
                     "arguments": []
                 },
-                "cwd": {"mount_id": "workspace", "path": "/repo"},
+                "cwd": {"path": "/repo"},
                 "environment": {"set": {}, "unset": []},
-                "network": "configured",
                 "limits": {},
                 "keep_stdin_open": false
             }
@@ -150,7 +157,6 @@ mod tests {
 
         let decoded: ShellExecParams = decode(&payload).expect("fixture follows EIP profile");
 
-        assert_eq!(decoded.request.network, CommandNetwork::Configured);
         assert!(decoded.request.environment.set.is_empty());
         assert!(decoded.request.environment.unset.is_empty());
         assert!(decoded.request.limits.wall_time_ms.is_none());
@@ -163,7 +169,7 @@ mod tests {
                         "kind": "argv",
                         "executable_spec": {"kind": "name", "name": "true"}
                     },
-                    "cwd": {"mount_id": "workspace", "path": "/repo"}
+                    "cwd": {"path": "/repo"}
                 }
             })
         );
@@ -178,9 +184,10 @@ mod tests {
             "max_operation_duration_ms": 1,
             "max_output_preview_bytes": 1,
             "max_output_bytes_per_stream": 1,
-            "max_transfer_frame_bytes": 25,
+            "max_transfer_frame_bytes": 26,
             "max_concurrent_file_transfers": 1,
-            "max_file_transfer_bytes": 1
+            "max_file_transfer_bytes": 1,
+            "max_file_bytes": 1
         })
     }
 
@@ -192,7 +199,7 @@ mod tests {
         for (field, value) in [
             ("max_request_bytes", 0),
             ("max_output_preview_bytes", 2),
-            ("max_transfer_frame_bytes", 24),
+            ("max_transfer_frame_bytes", 25),
             ("max_file_transfer_bytes", 0),
         ] {
             let mut invalid = limits.clone();
@@ -285,10 +292,11 @@ mod tests {
         let zero_generation = r#"{"code":-32603,"message":"invalid generation","data":{"error_type":"internal_error","retry_hint":"never","dispatch_stage":"pre_dispatch","generation":0}}"#;
         assert!(decode::<EIPError>(zero_generation).is_err());
 
-        let unknown = r#"{"context":{"operation_id":"op","principal":"caller"},"path":{"mount_id":"workspace","path":"/repo"}}"#;
+        let unknown =
+            r#"{"context":{"operation_id":"op","principal":"caller"},"path":{"path":"/repo"}}"#;
         assert!(decode::<FileStatParams>(unknown).is_err());
 
-        let invalid_path = r#"{"context":{"operation_id":"op"},"path":{"mount_id":"workspace","path":"/repo/../secret"}}"#;
+        let invalid_path = r#"{"context":{"operation_id":"op"},"path":{"path":"/repo/../secret"}}"#;
         assert!(decode::<FileStatParams>(invalid_path).is_err());
 
         let missing_reference = r#"{"producer_complete":true,"content_complete":true,"produced_bytes":1,"retained_bytes":1,"preview":{"encoding":"base64","data":"YQ"}}"#;
@@ -308,7 +316,7 @@ mod tests {
         let duplicate_receipt_selector = r#"{"context":{"operation_id":"op-query"},"receipt_ref":"receipt-1","operation_id":"op-target"}"#;
         assert!(decode::<ReceiptGetParams>(duplicate_receipt_selector).is_err());
 
-        let duplicate_map_key = r#"{"context":{"operation_id":"op"},"request":{"command":{"kind":"argv","executable_spec":{"kind":"name","name":"true"}},"cwd":{"mount_id":"workspace","path":"/repo"},"environment":{"set":{"PATH":"one","PATH":"two"}}}}"#;
+        let duplicate_map_key = r#"{"context":{"operation_id":"op"},"request":{"command":{"kind":"argv","executable_spec":{"kind":"name","name":"true"}},"cwd":{"path":"/repo"},"environment":{"set":{"PATH":"one","PATH":"two"}}}}"#;
         assert!(decode::<ShellExecParams>(duplicate_map_key).is_err());
     }
 
@@ -341,6 +349,7 @@ mod tests {
                 "end" => DataFrameKind::End,
                 "end_ack" => DataFrameKind::EndAck,
                 "reset" => DataFrameKind::Reset,
+                "credit" => DataFrameKind::Credit,
                 other => panic!("unknown fixture kind: {other}"),
             };
             let reset_status = case["reset_status"].as_str().map(|value| match value {
@@ -348,6 +357,7 @@ mod tests {
                 other => panic!("unknown fixture reset status: {other}"),
             });
             let frame = DataFrame {
+                session_id: case["session_id"].as_str().unwrap().to_owned(),
                 kind,
                 handle: case["handle"]
                     .as_str()
@@ -373,6 +383,7 @@ mod tests {
     fn rust_data_frame_codec_rejects_structural_violations() {
         let valid = encode_data_frame(
             &DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Attach,
                 handle: "reader-1".to_owned(),
                 offset: 0,
@@ -396,6 +407,7 @@ mod tests {
 
         for frame in [
             DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::End,
                 handle: "reader-1".to_owned(),
                 offset: 1,
@@ -403,6 +415,7 @@ mod tests {
                 reset_status: None,
             },
             DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Reset,
                 handle: "reader-1".to_owned(),
                 offset: 1,
@@ -410,6 +423,7 @@ mod tests {
                 reset_status: None,
             },
             DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Attach,
                 handle: String::new(),
                 offset: 0,
@@ -417,6 +431,7 @@ mod tests {
                 reset_status: None,
             },
             DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Chunk,
                 handle: "reader-1".to_owned(),
                 offset: u64::MAX,

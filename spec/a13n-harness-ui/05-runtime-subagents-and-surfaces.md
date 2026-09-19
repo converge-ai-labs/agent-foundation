@@ -120,6 +120,34 @@ This summary uses `a13n.ui.configuration` and the root observation's `configurat
 
 Trusted Agent reconstruction enables the existing [Harness model-attempt recovery](../a13n-harness/06-execution-context-and-lifecycle.md#model-attempt-recovery) for every root and child definition. The budget is five consecutive failed attempts, including the first, with the default cancellation-aware equal-jitter backoff. An accepted, complete primary model response resets the budget and backoff; partial output and successful auxiliary requests do not. Permanent and unclassified failures do not trigger automatic recovery. A recovery continues from normalized in-memory history inside the same logical Run; it does not resubmit the user operation, restart the Thread, or directly replay tools. Normal cancellation, tool failures, usage limits, deferred boundaries, and other Harness recovery exclusions remain unchanged. Exhaustion ends the operation with `model_recovery_exhausted`; Harness UI does not add another automatic retry loop.
 
+### Goal Execution
+
+Root submission accepts `mode: "normal" | "goal"`, defaulting to `normal`. Goal is a per-submission continuation policy, not a sticky Thread setting, separate Agent, child verifier, or second execution loop. A Goal requires nonempty authored text. Its objective is captured from visible authored text before surface hints, attachment conversion, or other model-context transformations; attachment descriptions and hidden guidance are not the objective.
+
+The initial root response is iteration zero. At each complete outer text-output boundary, the same Agent checks its work against the original objective. Without a completion marker, the policy enqueues a hidden native follow-up and increments the iteration once. Additional checks share the root receipt, native input queue, tools, cancellation, usage limits, and execution context. Nested helpers and children do not trigger Goal checks. Steering remains native input and does not itself consume a Goal iteration.
+
+Completion requires a case-sensitive `[GOAL_COMPLETE]` line after stripping that line's surrounding whitespace. A fenced standalone line matches; an inline mention does not. The original output, including the marker, remains unchanged. A marker is only a completion candidate until the native loop finishes: any subsequent model request, including queued steering, invalidates it and must pass the check again. `verified` means this Agent satisfied the completion protocol, not independent certification of correctness or successful publication of the continuation.
+
+Successful summarize handoff or compaction sets a pending restore audit using the [Harness context-restoration notification](../a13n-harness/09-context-and-memory.md#context-restoration-notification). The first marker while this flag is set requests a stricter audit against the original objective rather than completing. Enqueuing that audit clears the pending flag and consumes one ordinary Goal iteration. Another context replacement sets it again. Restore audits have no separate budget and cannot bypass exhaustion.
+
+The captured `max_goal_iterations` permits at most that many additional checks beyond iteration zero. Zero or a negative value permits no automatic follow-up, but a valid initial marker can still complete. Exhaustion stops without success. Native deferred decisions suspend the Goal; answering them and eligible graceful-restart continuation retain the objective, counter, limit, audit flag, and observed token totals. Ordinary new input clears the prior Goal policy; another Goal submission starts a new policy and budget. Neither saved Goal state nor reopening a Thread authorizes crash replay.
+
+Detached root-operation and Thread-detail projections expose an optional `goal` with `objective`, `iteration`, `max_iterations`, `status`, `needs_restore_audit`, `restore_source`, `input_tokens`, and `output_tokens`. Token totals are observed native usage across the Goal's execution segments, not a separate billing ledger. States are:
+
+| Status            | Meaning                                                                                   |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| `working`         | Executing initial work or continuing after suspension/steering                            |
+| `checking`        | Checking the objective or awaiting final acceptance of a marker                           |
+| `auditing`        | Performing the stricter post-restoration audit                                            |
+| `suspended`       | Waiting at a native deferred boundary                                                     |
+| `verified`        | Native execution ended with an accepted completion marker                                 |
+| `max_iterations`  | No further Goal check is allowed; completion is unverified                                |
+| `cancelled`       | Execution was cancelled before verified completion                                        |
+| `error`           | Execution failed before verified completion                                               |
+| `unverified_stop` | Execution stopped without verified completion or saved active state has no live authority |
+
+Goal outcome, native execution status, and continuation publication remain independent. A successful native Run can end at `max_iterations`; surfaces must not present it as a completed Goal. Live state is process-local. Saved state and recovery projection follow [Goal continuation state](03-local-storage-and-recovery.md#goal-continuation-state).
+
 ### Long-text Input Files
 
 The App applies the captured `input.long_text_threshold_chars` policy to authored root text from all submission surfaces and human root steering. Each eligible plain string or visible native `TextContent` block becomes one retained UTF-8 `text/plain` attachment, preserving exactly the text accepted by the App. Other text and media keep their ordering. Hidden context, existing attachment descriptions, tool results, child notifications, and previously selected history are not automatically converted.

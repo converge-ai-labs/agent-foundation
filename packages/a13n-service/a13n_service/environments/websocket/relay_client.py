@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from time import monotonic
 from typing import Literal
 
-from a13n_environment import EnvironmentAction, EnvironmentError
 from anyio import move_on_after
 from pydantic import JsonValue
 
@@ -22,8 +21,6 @@ from .relay_protocol import (
     RelayInput,
     RelayLimits,
     RelayRequest,
-    canonical_message,
-    operation_permissions,
 )
 from .relay_scope import RelayUseScope
 from .relay_storage import RelayStoreError
@@ -31,17 +28,15 @@ from .relay_waiters import PendingRelayRequest, RelayOperationError
 
 
 class RelayUseClient:
-    """One mount's permissions and pending operations within a shared use scope."""
+    """One binding's pending operations within its confirmed use scope."""
 
     def __init__(
         self,
         scope: RelayUseScope,
         *,
-        permissions: frozenset[EnvironmentAction] = frozenset(EnvironmentAction),
         mount_name: str = "workspace",
     ) -> None:
         self._scope = scope
-        self._permissions = permissions
         self._mount_name = mount_name
         self._mount_id = new_object_id("emt")
         self._closed = False
@@ -103,12 +98,10 @@ class RelayUseClient:
             raise RelayOperationError(
                 RelayFailure(code="environment_unavailable", certainty="not_dispatched")
             ) from error
-        if not operation_permissions(operation) <= self._permissions:
-            raise EnvironmentError("Operation exceeds accepted Environment access", code="environment_forbidden")
         deadline = LeaseDeadline(monotonic() + timeout_seconds)
         message = RelayRequest(
             request_id=new_object_id("erq"),
-            use=self.identity,
+            scope=self.identity,
             operation=operation,
             mount_id=self._mount_id,
             mount_name=self._mount_name,
@@ -119,7 +112,7 @@ class RelayUseClient:
             self._pending.add(pending)
             try:
                 async with asyncio.timeout_at(deadline.monotonic_at):
-                    await self._publish(message, pending)
+                    await self._publish(pending)
                     yield pending
             except asyncio.CancelledError:
                 pending.fail("environment_cancelled")
@@ -132,44 +125,19 @@ class RelayUseClient:
                 if pending.needs_cancellation:
                     await self._cancel(message)
 
-    async def _publish(self, message: RelayRequest, pending: PendingRelayRequest) -> None:
-        canonical_message(
-            message,
-            max_bytes=self._scope.store.limits.control_bytes
-            if message.operation in CONTROL_OPERATIONS
-            else self._scope.store.limits.request_bytes,
-        )
-        pending.begin_publication()
-        for attempt in range(2):
-            try:
-                async with self._scope.authority.write(self.identity):
-                    self._check()
-                    evidence = await self._scope.store.append(message)
-                result = evidence.terminal()
-                if evidence.phase == "completed":
-                    if result is None or result.request_id != message.request_id or result.use != self.identity:
-                        raise RelayStoreError("outcome_unknown")
-                    self._scope.responses.accept(result)
-                return
-            except RelayStoreError as error:
-                if error.code == "relay_unavailable" and attempt == 0:
-                    continue
-                if error.code in {"scope_lost", "response_scope_lost", "outcome_unknown", "request_conflict"}:
-                    await self._scope.invalidate()
-                known = attempt == 0 and error.code in {"relay_overloaded", "request_expired", "request_invalid"}
-                code = {
-                    "relay_overloaded": "environment_overloaded",
-                    "request_expired": "environment_timeout",
-                    "request_invalid": "environment_request_invalid",
-                }.get(error.code, "environment_unknown_outcome")
-                failure = RelayFailure.model_validate(
-                    {"code": code, "certainty": "not_dispatched" if known else "unknown"}
-                )
-                pending.fail(failure.code, certainty=failure.certainty)
-                raise RelayOperationError(failure) from error
-            except DispatchDenied as error:
-                pending.fail("environment_unavailable")
-                raise RelayOperationError(RelayFailure(code="environment_unavailable", certainty="unknown")) from error
+    async def _publish(self, pending: PendingRelayRequest) -> None:
+        try:
+            await pending.publish(self._scope.store, check_authority=self._check)
+        except RelayOperationError as error:
+            cause = error.__cause__
+            if isinstance(cause, RelayStoreError) and cause.code in {
+                "scope_lost",
+                "response_scope_lost",
+                "outcome_unknown",
+                "request_conflict",
+            }:
+                await self._scope.invalidate()
+            raise
 
     async def send_input(self, pending: PendingRelayRequest, frame: RelayInput) -> None:
         if pending not in self._pending:
@@ -196,7 +164,7 @@ class RelayUseClient:
             return
         with move_on_after(0.25, shield=True):
             try:
-                control = RelayUseClient(self._scope, permissions=frozenset())
+                control = RelayUseClient(self._scope, mount_name=self._mount_name)
                 await control.call("operation.cancel", {"request_id": message.request_id}, timeout_seconds=0.2)
             except Exception:
                 # Cancellation ends local waiting; no failure here can establish

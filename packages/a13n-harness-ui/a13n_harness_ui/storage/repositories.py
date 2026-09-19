@@ -10,6 +10,7 @@ from typing import Literal, cast
 from sqlalchemy import and_, case, func, or_, select, true, update
 
 from a13n_harness_ui.conversation import ConversationExcerpt
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
 
 from .contracts import (
@@ -901,6 +902,8 @@ def _configuration_record(thread_id: str, value: ThreadConfiguration) -> ThreadC
         agent_source_id=value.agent_source.id,
         default_model_id=value.default_model_id,
         environment_profile_id=value.environment_profile_id,
+        environment_bindings_json=json.dumps([item.model_dump(mode="json") for item in value.environment_bindings]),
+        default_environment=value.default_environment,
         harness_plugin_ids_json=_json_list(value.harness_plugin_ids),
         environment_run_extension_ids_json=_json_list(value.environment_run_extension_ids),
         mcp_server_ids_json=_json_list(value.mcp_server_ids),
@@ -914,6 +917,8 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
     record.agent_source_id = value.agent_source.id
     record.default_model_id = value.default_model_id
     record.environment_profile_id = value.environment_profile_id
+    record.environment_bindings_json = json.dumps([item.model_dump(mode="json") for item in value.environment_bindings])
+    record.default_environment = value.default_environment
     record.harness_plugin_ids_json = _json_list(value.harness_plugin_ids)
     record.environment_run_extension_ids_json = _json_list(value.environment_run_extension_ids)
     record.mcp_server_ids_json = _json_list(value.mcp_server_ids)
@@ -931,6 +936,10 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
         agent_source=source,
         default_model_id=record.default_model_id,
         environment_profile_id=record.environment_profile_id,
+        environment_bindings=tuple(
+            EnvironmentBindingSelection.model_validate(item) for item in json.loads(record.environment_bindings_json)
+        ),
+        default_environment=record.default_environment,
         harness_plugin_ids=_parse_list(record.harness_plugin_ids_json),
         environment_run_extension_ids=_parse_list(record.environment_run_extension_ids_json),
         mcp_server_ids=_parse_list(record.mcp_server_ids_json),
@@ -1060,6 +1069,8 @@ def _binding_pk(key: EnvironmentBindingKey) -> dict[str, str]:
         "profile_digest": key.profile_digest,
         "adapter_key": key.adapter_key,
         "normalized_root": key.normalized_root,
+        "device_id": key.device_id,
+        "alias": key.alias,
     }
 
 
@@ -1070,6 +1081,8 @@ def _binding_value(record: EnvironmentBindingRecord) -> EnvironmentBindingHead:
         profile_digest=record.profile_digest,
         adapter_key=record.adapter_key,
         normalized_root=record.normalized_root,
+        device_id=record.device_id,
+        alias=record.alias,
     )
     return EnvironmentBindingHead(key=key, state=_state_ref(record), updated_at=record.updated_at)
 

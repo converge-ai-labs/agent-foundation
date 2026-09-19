@@ -14,10 +14,12 @@ if TYPE_CHECKING:
     from a13n_service.bots.connectivity.service import BotService
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.runtime import ConnectivityRuntime
+    from a13n_service.environments.devices import DeviceDiscovery
     from a13n_service.environments.lifecycle import EnvironmentLifecycle
     from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
     from a13n_service.environments.mounts import RunEnvironmentMountService
     from a13n_service.environments.service import EnvironmentService
+    from a13n_service.environments.websocket.relay_runtime import RelayResponseRuntime
     from a13n_service.environments.websocket.runtime import ClientConnectionRuntime
     from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
     from a13n_service.gateway import GatewayRuntime
@@ -58,6 +60,8 @@ class SharedRuntime:
     secret_protector: SecretProtector
     memories: MemoryService | None = None
     memory_behaviors: MemoryBehaviors | None = None
+    relay_responses: RelayResponseRuntime | None = None
+    devices: DeviceDiscovery | None = None
 
 
 @dataclass(frozen=True, slots=True)

@@ -31,6 +31,22 @@
 
 Each Project remembers its own choice in the local data root, even if you select before sending the first prompt. Other open terminals keep their current model; the last explicit selection determines what a later terminal loads. If the remembered Model has been removed, startup explains the fallback to the Agent's configured model. Connection or authentication failures do not switch models. An explicit launch `--agent` skips remembered selection, and headless `run` and API callers do not inherit terminal preferences.
 
+### Work toward a Goal
+
+Use `/goal <objective>` while idle when you want the Agent to keep checking whether its work meets a stated objective:
+
+```text
+/goal Implement the requested change, run its tests, and report any remaining blockers.
+```
+
+The initial response is check `0`. By default the same Agent can perform up to 10 additional checks, using its normal tools and execution permissions. A persistent Goal bar shows progress and the final outcome, including while you answer a question. Ctrl+C and `/cancel` still cancel execution. Goal mode does not broaden permissions or automatically approve tools.
+
+The Agent completes the protocol by returning `[GOAL_COMPLETE]` on its own line. After summarization or compaction, it must first perform another audit against your original objective. **Verified is the Agent's own completion claim, not an independent review.** Exhaustion, cancellation, errors, and an unverified stop are not success.
+
+Set `max_goal_iterations: 10` at the root of `a13n-harness-ui.yaml` to change the budget for new Goals. Zero or a negative value disables automatic follow-up checks. A suspended Goal keeps its captured budget when you answer its pending decision. Reopening a conversation alone never restarts unfinished work. Send ordinary input to return to normal behavior, or use `/goal` again to begin a new Goal and budget.
+
+The WebUI offers the same policy through the composer's **Goal** toggle; on narrow screens, expand the composer options first. The selection applies to one Send, resets after confirmed acceptance, and stays selected if submission is rejected or uncertain. Open the Goal status for the original objective, audit state, and token totals. **Prepare new Goal** fills a draft for review; it does not send it.
+
 ### Find a saved conversation
 
 `/resume` opens a session browser without changing your current conversation or draft. Rows use a manual name, or the first saved input when unnamed, and are ordered by saved conversation activity. The selected row immediately previews its latest saved input and reply. These are bounded excerpts, not AI-generated summaries; unfinished replies are labeled as progress.

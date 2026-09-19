@@ -66,11 +66,7 @@ A deployment with `a13n.websocket-envd` enabled can use a user-operated envd tha
    {
      "provider_id": "epv_0123456789abcdef",
      "configuration": {},
-     "state": {
-       "provider_key": "a13n.websocket-envd",
-       "state_version": "1",
-       "state": {"daemon_environment_id": "my-computer"}
-     }
+     "device_id": "my-computer"
    }
    ```
 
@@ -78,10 +74,10 @@ A deployment with `a13n.websocket-envd` enabled can use a user-operated envd tha
 
 3. POST to `/api/v1/environments/{environment_id}/connection-tickets` with a Service credential authorized to manage the Environment. The response contains `ticket`, `expires_at`, `websocket_url`, and `connection_id`. Write only the ticket value into a protected credential file; do not place it in the URL or shell arguments.
 
-4. Launch envd with its [standalone mount configuration](../a13n-envd/configuration.md), private runtime directory, and these bootstrap values:
+4. Launch envd with its [standalone Device configuration](../a13n-envd/configuration.md), private runtime directory, and these bootstrap values:
 
    ```bash
-   export A13N_ENVD_ENVIRONMENT_ID=my-computer
+   export A13N_ENVD_DEVICE_ID=my-computer
    export A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime
    export A13N_ENVD_TRANSPORT=reverse_websocket
    export A13N_ENVD_REVERSE_WS_URL="$WEBSOCKET_URL"
@@ -89,11 +85,11 @@ A deployment with `a13n.websocket-envd` enabled can use a user-operated envd tha
    env -u A13N_ENVD_EXECUTABLE a13n-envd --config /absolute/path/to/envd.json
    ```
 
-   `WEBSOCKET_URL` is the credential-free URL from the ticket response. Keep the broader Service credential in the controller; envd needs only the one-use ticket. Configure command [isolation](../a13n-envd/isolation.md) for the client host.
+   `WEBSOCKET_URL` is the credential-free URL from the ticket response. Keep the broader Service credential in the controller; envd needs only the one-use ticket. Use the client host's [OS or container boundary](../a13n-envd/isolation.md) when execution needs isolation; envd does not treat a working directory as an access boundary.
 
 5. Read `GET /api/v1/environments/{environment_id}/connection` until it reports `status: "online"` with the same `connection_id` as the ticket response. A successful WebSocket upgrade or another connection's online status is insufficient. `connecting` includes initialization and safe takeover of an older connection.
 
-6. Select the Environment in a [Run start request](agents-and-runs.md), using `"environment": {"environment_id": "<returned Environment ID>"}`, or add it to the current Run as described below.
+6. Select the Environment in a [Run start request](agents-and-runs.md), using `"environment": {"environment_id": "<returned Environment ID>", "working_directory": "/absolute/device/path"}`, or add it to the current Run as described below. An omitted directory captures the Device's current default at acceptance; each execution opens a fresh Session with that captured directory.
 
 Every reconnect requires a fresh ticket from the authenticated controller. Disconnect leaves the Environment record intact and does not stop or delete the caller's computer. The connection endpoint is the live availability check; a stored Environment status of `running` can lag a lost connection. New Run and mount acceptance rejects an offline or connecting client Environment.
 
@@ -104,7 +100,8 @@ POST to `/api/v1/runs/{run_id}/environment-mounts`, with a fresh `Idempotency-Ke
 ```json
 {
   "name": "computer",
-  "environment_id": "env_0123456789abcdef"
+  "environment_id": "env_0123456789abcdef",
+  "working_directory": "/absolute/device/path"
 }
 ```
 

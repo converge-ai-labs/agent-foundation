@@ -18,11 +18,11 @@ async def backend(request, tmp_path):
         yield target
 
 
-async def assert_closed_files(files):
+async def assert_closed_files(files, path):
     for call in (
-        lambda: files.stat("/file-tests/source"),
-        lambda: files.read_bytes("/file-tests/source"),
-        lambda: files.write_text("/file-tests/source", "CLOSED_WRITE", mode="replace"),
+        lambda: files.stat(path),
+        lambda: files.read_bytes(path),
+        lambda: files.write_text(path, "CLOSED_WRITE", mode="replace"),
     ):
         with pytest.raises(EnvironmentError) as error:
             await call()
@@ -38,20 +38,20 @@ async def test_close_fences_file_facets_and_fresh_scope_preserves_workspace(back
     before = backend.snapshot()
     await environment.close()
     await environment.close()
-    await assert_closed_files(old_files)
+    await assert_closed_files(old_files, backend.path("/file-tests/source"))
     assert backend.snapshot() == before
     if backend.process is not None:
         assert backend.process.returncode is None, "Closing a remote adapter stopped its external daemon"
     fresh = backend.adapter(state=state)
     await backend.prepare(fresh)
-    assert await fresh.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
+    assert await fresh.operations.files.read_bytes(backend.path("/file-tests/source")) == b"ORIGINAL\n"
     if backend.kind in {"direct-local", "local-envd"}:
         assert fresh.dump_state() is None
         assert fresh.descriptor.generation != original_generation
         assert fresh.descriptor.backing_identity == original_backing
     else:
         assert fresh.dump_state() == state
-        assert fresh.descriptor.generation == original_generation
+        assert fresh.descriptor.generation != original_generation
 
 
 @pytest.mark.parametrize("cancel", [False, True], ids=["complete", "cancel"])
@@ -86,7 +86,7 @@ async def test_close_serializes_with_real_preparation(backend, monkeypatch, canc
             release.set()
             await prepare
         await asyncio.wait_for(close, 20)
-        await assert_closed_files(files)
+        await assert_closed_files(files, backend.path("/file-tests/source"))
         assert (backend.root / "file-tests/source").read_text() == "ORIGINAL\n"
     finally:
         release.set()

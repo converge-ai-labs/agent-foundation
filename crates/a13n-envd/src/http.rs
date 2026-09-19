@@ -3,15 +3,11 @@ use std::{
     convert::Infallible,
     io::{self, BufReader},
     pin::Pin,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
+    sync::Arc,
     task::{Context, Poll},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
-use base64::Engine as _;
 use bytes::Bytes;
 use futures_util::stream;
 use http_body_util::{BodyExt, Full, StreamBody, combinators::BoxBody};
@@ -26,17 +22,15 @@ use hyper_util::rt::TokioIo;
 use tokio::{
     io::{AsyncRead, AsyncWrite},
     net::TcpListener,
-    sync::{Mutex, OwnedSemaphorePermit, RwLock, Semaphore, mpsc},
-    task::JoinHandle,
+    sync::{Mutex, OwnedSemaphorePermit, Semaphore, mpsc},
     time::{MissedTickBehavior, timeout},
 };
 use tokio_rustls::{TlsAcceptor, rustls};
 
 use crate::{
     config::{Config, HttpConfig},
-    daemon::Daemon,
+    daemon::{Carrier, Daemon, ResponseHandoff},
     eip::{DataFrame, DataFrameKind, DataResetStatus},
-    operation::ActiveResponseHandoff,
 };
 
 const CONTROL_PATH: &str = "/eip/control";
@@ -54,7 +48,7 @@ type HttpResponse = Response<HttpBody>;
 
 struct ControlResponseBody {
     payload: Option<Bytes>,
-    handoff: Option<ActiveResponseHandoff>,
+    handoff: Option<ResponseHandoff>,
 }
 
 impl Body for ControlResponseBody {
@@ -83,18 +77,24 @@ impl Body for ControlResponseBody {
     }
 }
 
-struct HttpSession {
+type TransferRoutes = Arc<Mutex<HashMap<(String, String), mpsc::Sender<DataFrame>>>>;
+
+struct HttpTransfer {
     selector: String,
-    routes: Arc<Mutex<HashMap<String, mpsc::Sender<DataFrame>>>>,
-    dispatcher: JoinHandle<()>,
-    admission: RwLock<()>,
-    last_activity: Mutex<Instant>,
-    closed: AtomicBool,
+    routes: TransferRoutes,
+}
+
+impl HttpTransfer {
+    fn key(&self, handle: &str) -> (String, String) {
+        (self.selector.clone(), handle.to_owned())
+    }
 }
 
 struct ReaderBodyState {
     receiver: mpsc::Receiver<DataFrame>,
-    routes: Arc<Mutex<HashMap<String, mpsc::Sender<DataFrame>>>>,
+    routes: TransferRoutes,
+    session_id: String,
+    carrier: Arc<Carrier>,
     daemon: Arc<Daemon>,
     handle: String,
     offset: u64,
@@ -111,10 +111,12 @@ impl Drop for ReaderBodyState {
         let routes = Arc::clone(&self.routes);
         let daemon = Arc::clone(&self.daemon);
         let handle = self.handle.clone();
+        let session_id = self.session_id.clone();
+        let carrier = self.carrier.clone();
         let offset = self.offset;
         tokio::spawn(async move {
-            reset_http_transfer(&daemon, &handle, offset).await;
-            routes.lock().await.remove(&handle);
+            reset_http_transfer(&daemon, &carrier, &session_id, &handle, offset).await;
+            routes.lock().await.remove(&(session_id, handle));
         });
     }
 }
@@ -126,11 +128,11 @@ struct HttpState {
     max_response_bytes: usize,
     max_transfer_bytes: u64,
     max_transfer_chunk_bytes: usize,
-    session_idle_timeout: Duration,
     transfer_timeout: Duration,
     control_admission: Arc<Semaphore>,
     transfer_admission: Arc<Semaphore>,
-    session: Mutex<Option<Arc<HttpSession>>>,
+    carrier: Arc<Carrier>,
+    routes: TransferRoutes,
 }
 
 pub(crate) async fn serve(
@@ -139,6 +141,31 @@ pub(crate) async fn serve(
     http: &HttpConfig,
 ) -> io::Result<()> {
     let credential = read_credential(&http.credential_file).await?;
+    let routes: TransferRoutes = Arc::new(Mutex::new(HashMap::new()));
+    let (data_tx, mut data_rx) = mpsc::channel::<DataFrame>(128);
+    let carrier = daemon.http_carrier(data_tx);
+    let dispatcher_routes = routes.clone();
+    let dispatcher_daemon = daemon.clone();
+    let dispatcher_carrier = carrier.clone();
+    let dispatcher = tokio::spawn(async move {
+        while let Some(frame) = data_rx.recv().await {
+            let key = (frame.session_id.clone(), frame.handle.clone());
+            let route = dispatcher_routes.lock().await.get(&key).cloned();
+            if let Some(route) = route
+                && route.try_send(frame.clone()).is_err()
+            {
+                dispatcher_routes.lock().await.remove(&key);
+                reset_http_transfer(
+                    &dispatcher_daemon,
+                    &dispatcher_carrier,
+                    &frame.session_id,
+                    &frame.handle,
+                    frame.offset,
+                )
+                .await;
+            }
+        }
+    });
     let state = Arc::new(HttpState {
         daemon: Arc::clone(&daemon),
         credential,
@@ -151,19 +178,19 @@ pub(crate) async fn serve(
             .map_err(|_| invalid_data("max_transfer_frame_bytes does not fit this platform"))?
             .saturating_sub(1024)
             .max(1),
-        session_idle_timeout: config.session_idle_timeout,
         transfer_timeout: Duration::from_millis(config.limits.max_file_transfer_duration_ms),
         control_admission: Arc::new(Semaphore::new(
-            usize::try_from(config.limits.max_concurrent_operations).map_err(|_| {
-                invalid_data("max_concurrent_operations does not fit this platform")
+            usize::try_from(config.limits.max_device_concurrent_operations).map_err(|_| {
+                invalid_data("max_device_concurrent_operations does not fit this platform")
             })?,
         )),
         transfer_admission: Arc::new(Semaphore::new(
-            usize::try_from(config.limits.max_concurrent_file_transfers).map_err(|_| {
-                invalid_data("max_concurrent_file_transfers does not fit this platform")
+            usize::try_from(config.limits.max_device_file_transfers).map_err(|_| {
+                invalid_data("max_device_file_transfers does not fit this platform")
             })?,
         )),
-        session: Mutex::new(None),
+        carrier,
+        routes,
     });
     let listener = TcpListener::bind(http.bind).await?;
     let tls = build_tls_acceptor(http)?;
@@ -196,7 +223,6 @@ pub(crate) async fn serve(
             }
             _ = maintenance.tick() => {
                 state.daemon.maintenance().await;
-                expire_idle_session(&state).await;
             },
             signal = &mut shutdown => {
                 signal?;
@@ -204,10 +230,9 @@ pub(crate) async fn serve(
             }
         }
     }
-    close_current_session(&state).await;
-    let processes_drained = daemon.drain_processes(SESSION_DRAIN_TIMEOUT).await;
-    let operations_drained = daemon.drain_owned_operations(SESSION_DRAIN_TIMEOUT).await;
-    if !processes_drained || !operations_drained {
+    state.carrier.close();
+    dispatcher.abort();
+    if !daemon.drain(SESSION_DRAIN_TIMEOUT).await {
         return Err(io::Error::new(
             io::ErrorKind::TimedOut,
             "HTTP generation drain exceeded its deadline",
@@ -233,7 +258,9 @@ where
 }
 
 async fn route(request: Request<Incoming>, state: Arc<HttpState>) -> HttpResponse {
-    if request.method() != Method::POST {
+    if request.method() != Method::POST
+        && !(request.method() == Method::DELETE && request.uri().path() == TRANSFER_PATH)
+    {
         return empty_response(StatusCode::METHOD_NOT_ALLOWED);
     }
     if request.uri().query().is_some() {
@@ -255,7 +282,7 @@ async fn route(request: Request<Incoming>, state: Arc<HttpState>) -> HttpRespons
 }
 
 async fn control(request: Request<Incoming>, state: Arc<HttpState>) -> HttpResponse {
-    let Ok(_permit) = Arc::clone(&state.control_admission).try_acquire_owned() else {
+    let Ok(body_permit) = Arc::clone(&state.control_admission).try_acquire_owned() else {
         return empty_response(StatusCode::TOO_MANY_REQUESTS);
     };
     if !content_type_is(request.headers(), JSON_CONTENT_TYPE)
@@ -264,9 +291,7 @@ async fn control(request: Request<Incoming>, state: Arc<HttpState>) -> HttpRespo
     {
         return empty_response(StatusCode::UNSUPPORTED_MEDIA_TYPE);
     }
-    let has_session_header = request.headers().contains_key(&SESSION_HEADER);
-    let supplied_selector = header_text(request.headers(), &SESSION_HEADER).map(str::to_owned);
-    if has_session_header && supplied_selector.is_none() {
+    if request.headers().contains_key(&SESSION_HEADER) {
         return empty_response(StatusCode::BAD_REQUEST);
     }
     let body = match read_body_bounded(request.into_body(), state.max_request_bytes).await {
@@ -278,48 +303,30 @@ async fn control(request: Request<Incoming>, state: Arc<HttpState>) -> HttpRespo
         Err(_) => return empty_response(StatusCode::BAD_REQUEST),
     };
 
-    let session = if let Some(selector) = supplied_selector.as_deref() {
-        match current_session(&state, selector).await {
-            Some(session) => session,
-            None => return empty_response(StatusCode::CONFLICT),
-        }
-    } else {
-        match begin_http_session(&state).await {
-            Ok(session) => session,
-            Err(status) => return empty_response(status),
-        }
+    drop(body_permit);
+    let Some(_permit) = state.daemon.admit_payload(&payload) else {
+        return empty_response(StatusCode::TOO_MANY_REQUESTS);
     };
-    let admission = session.admission.read().await;
-    if session.closed.load(Ordering::Acquire) {
-        return empty_response(StatusCode::CONFLICT);
-    }
-
-    let response = state.daemon.handle_payload_for_carrier(&payload).await;
-    let (payload, handoff, closes_session) = response.into_parts();
+    let response = state
+        .daemon
+        .handle_payload_for_carrier(&state.carrier, &payload)
+        .await;
+    let (payload, handoff) = response.into_parts();
     if payload.len() > state.max_response_bytes {
-        close_session(&state, &session).await;
         return empty_response(StatusCode::INTERNAL_SERVER_ERROR);
     }
-    let initialized = state.daemon.session_initialized();
-    if supplied_selector.is_none() && !initialized {
-        close_session(&state, &session).await;
-    }
-    let mut response = control_response(payload, handoff);
-    if supplied_selector.is_none()
-        && initialized
-        && let Ok(value) = HeaderValue::from_str(&session.selector)
-    {
-        response.headers_mut().insert(SESSION_HEADER, value);
-    }
-    drop(admission);
-    if closes_session {
-        close_session(&state, &session).await;
-    }
-    response
+    control_response(payload, handoff)
 }
 
 async fn transfer(request: Request<Incoming>, state: Arc<HttpState>) -> HttpResponse {
-    let Ok(permit) = Arc::clone(&state.transfer_admission).try_acquire_owned() else {
+    let resetting = request.method() == Method::DELETE;
+    // Cleanup must remain admissible when all streaming slots are occupied.
+    let admission = if resetting {
+        &state.control_admission
+    } else {
+        &state.transfer_admission
+    };
+    let Ok(permit) = Arc::clone(admission).try_acquire_owned() else {
         return empty_response(StatusCode::TOO_MANY_REQUESTS);
     };
     if !content_type_is(request.headers(), BINARY_CONTENT_TYPE) {
@@ -338,23 +345,46 @@ async fn transfer(request: Request<Incoming>, state: Arc<HttpState>) -> HttpResp
     if !matches!(direction, "read" | "write") {
         return empty_response(StatusCode::BAD_REQUEST);
     }
-    let Some(session) = current_session(&state, selector).await else {
-        return empty_response(StatusCode::CONFLICT);
-    };
-    let _admission = session.admission.read().await;
-    if session.closed.load(Ordering::Acquire) {
-        return empty_response(StatusCode::CONFLICT);
-    }
+    let session = Arc::new(HttpTransfer {
+        selector: selector.to_owned(),
+        routes: state.routes.clone(),
+    });
     if handle.is_empty() || handle.len() > 512 {
         return empty_response(StatusCode::BAD_REQUEST);
     }
 
+    if resetting {
+        if read_body_bounded(request.into_body(), 0).await.is_err() {
+            return empty_response(StatusCode::BAD_REQUEST);
+        }
+        let reset = state
+            .daemon
+            .handle_data_frame(
+                &state.carrier,
+                DataFrame {
+                    session_id: session.selector.clone(),
+                    kind: DataFrameKind::Reset,
+                    handle,
+                    offset: 0,
+                    payload: Vec::new(),
+                    reset_status: Some(DataResetStatus::Cancelled),
+                },
+            )
+            .await;
+        return empty_response(if reset.is_ok() {
+            StatusCode::NO_CONTENT
+        } else {
+            StatusCode::CONFLICT
+        });
+    }
     let (tx, rx) = mpsc::channel(16);
     {
         let mut routes = session.routes.lock().await;
-        if routes.insert(handle.clone(), tx).is_some() {
+        let key = session.key(&handle);
+        if routes.contains_key(&key) {
             return empty_response(StatusCode::CONFLICT);
         }
+        routes.insert(key, tx);
     }
     match direction {
         "read" => {
@@ -386,33 +416,37 @@ async fn transfer(request: Request<Incoming>, state: Arc<HttpState>) -> HttpResp
 async fn reader_transfer(
     mut body: Incoming,
     state: Arc<HttpState>,
-    session: Arc<HttpSession>,
+    session: Arc<HttpTransfer>,
     handle: String,
     mut rx: mpsc::Receiver<DataFrame>,
     permit: OwnedSemaphorePermit,
 ) -> HttpResponse {
     if body.frame().await.is_some() {
-        session.routes.lock().await.remove(&handle);
+        session.routes.lock().await.remove(&session.key(&handle));
         return empty_response(StatusCode::BAD_REQUEST);
     }
     let attached = state
         .daemon
-        .handle_data_frame(DataFrame {
-            kind: DataFrameKind::Attach,
-            handle: handle.clone(),
-            offset: 0,
-            payload: Vec::new(),
-            reset_status: None,
-        })
+        .handle_data_frame(
+            &state.carrier,
+            DataFrame {
+                session_id: session.selector.clone(),
+                kind: DataFrameKind::Attach,
+                handle: handle.clone(),
+                offset: 0,
+                payload: Vec::new(),
+                reset_status: None,
+            },
+        )
         .await;
     if attached.is_err() {
-        session.routes.lock().await.remove(&handle);
+        session.routes.lock().await.remove(&session.key(&handle));
         return empty_response(StatusCode::CONFLICT);
     }
     match timeout(TRANSFER_WAIT_TIMEOUT, rx.recv()).await {
         Ok(Some(frame)) if frame.kind == DataFrameKind::Attached => {}
         _ => {
-            session.routes.lock().await.remove(&handle);
+            session.routes.lock().await.remove(&session.key(&handle));
             return empty_response(StatusCode::CONFLICT);
         }
     }
@@ -420,6 +454,8 @@ async fn reader_transfer(
         ReaderBodyState {
             receiver: rx,
             routes: Arc::clone(&session.routes),
+            session_id: session.selector.clone(),
+            carrier: state.carrier.clone(),
             daemon: Arc::clone(&state.daemon),
             handle,
             offset: 0,
@@ -428,6 +464,25 @@ async fn reader_transfer(
             _permit: permit,
         },
         |mut transfer| async move {
+            if transfer.offset > 0
+                && transfer
+                    .daemon
+                    .handle_data_frame(
+                        &transfer.carrier,
+                        DataFrame {
+                            session_id: transfer.session_id.clone(),
+                            kind: DataFrameKind::Credit,
+                            handle: transfer.handle.clone(),
+                            offset: transfer.offset,
+                            payload: Vec::new(),
+                            reset_status: None,
+                        },
+                    )
+                    .await
+                    .is_err()
+            {
+                return Some((Err(io::Error::other("EIP reader credit failed")), transfer));
+            }
             match timeout(transfer.timeout, transfer.receiver.recv()).await {
                 Ok(Some(frame)) if frame.kind == DataFrameKind::Chunk => {
                     transfer.offset = frame.offset.saturating_add(frame.payload.len() as u64);
@@ -438,12 +493,20 @@ async fn reader_transfer(
                 }
                 Ok(Some(frame)) if frame.kind == DataFrameKind::End => {
                     transfer.complete = true;
-                    transfer.routes.lock().await.remove(&transfer.handle);
+                    transfer
+                        .routes
+                        .lock()
+                        .await
+                        .remove(&(transfer.session_id.clone(), transfer.handle.clone()));
                     None
                 }
                 Ok(Some(_)) | Ok(None) | Err(_) => {
                     transfer.complete = true;
-                    transfer.routes.lock().await.remove(&transfer.handle);
+                    transfer
+                        .routes
+                        .lock()
+                        .await
+                        .remove(&(transfer.session_id.clone(), transfer.handle.clone()));
                     Some((
                         Err(io::Error::new(
                             io::ErrorKind::InvalidData,
@@ -462,30 +525,34 @@ async fn reader_transfer(
 async fn writer_transfer(
     mut body: Incoming,
     state: Arc<HttpState>,
-    session: Arc<HttpSession>,
+    session: Arc<HttpTransfer>,
     handle: String,
     mut rx: mpsc::Receiver<DataFrame>,
     _permit: OwnedSemaphorePermit,
 ) -> HttpResponse {
     if state
         .daemon
-        .handle_data_frame(DataFrame {
-            kind: DataFrameKind::Attach,
-            handle: handle.clone(),
-            offset: 0,
-            payload: Vec::new(),
-            reset_status: None,
-        })
+        .handle_data_frame(
+            &state.carrier,
+            DataFrame {
+                session_id: session.selector.clone(),
+                kind: DataFrameKind::Attach,
+                handle: handle.clone(),
+                offset: 0,
+                payload: Vec::new(),
+                reset_status: None,
+            },
+        )
         .await
         .is_err()
     {
-        session.routes.lock().await.remove(&handle);
+        session.routes.lock().await.remove(&session.key(&handle));
         return empty_response(StatusCode::CONFLICT);
     }
     match timeout(TRANSFER_WAIT_TIMEOUT, rx.recv()).await {
         Ok(Some(frame)) if frame.kind == DataFrameKind::Attached => {}
         _ => {
-            session.routes.lock().await.remove(&handle);
+            session.routes.lock().await.remove(&session.key(&handle));
             return empty_response(StatusCode::CONFLICT);
         }
     }
@@ -494,8 +561,15 @@ async fn writer_transfer(
         let next_frame = match timeout(state.transfer_timeout, body.frame()).await {
             Ok(next_frame) => next_frame,
             Err(_) => {
-                reset_http_transfer(&state.daemon, &handle, offset).await;
-                session.routes.lock().await.remove(&handle);
+                reset_http_transfer(
+                    &state.daemon,
+                    &state.carrier,
+                    &session.selector,
+                    &handle,
+                    offset,
+                )
+                .await;
+                session.routes.lock().await.remove(&session.key(&handle));
                 return empty_response(StatusCode::REQUEST_TIMEOUT);
             }
         };
@@ -505,8 +579,15 @@ async fn writer_transfer(
         let frame = match frame {
             Ok(frame) => frame,
             Err(_) => {
-                reset_http_transfer(&state.daemon, &handle, offset).await;
-                session.routes.lock().await.remove(&handle);
+                reset_http_transfer(
+                    &state.daemon,
+                    &state.carrier,
+                    &session.selector,
+                    &handle,
+                    offset,
+                )
+                .await;
+                session.routes.lock().await.remove(&session.key(&handle));
                 return empty_response(StatusCode::BAD_REQUEST);
             }
         };
@@ -515,23 +596,34 @@ async fn writer_transfer(
         };
         let next = offset.saturating_add(data.len() as u64);
         if next > state.max_transfer_bytes {
-            reset_http_transfer(&state.daemon, &handle, offset).await;
-            session.routes.lock().await.remove(&handle);
+            reset_http_transfer(
+                &state.daemon,
+                &state.carrier,
+                &session.selector,
+                &handle,
+                offset,
+            )
+            .await;
+            session.routes.lock().await.remove(&session.key(&handle));
             return empty_response(StatusCode::PAYLOAD_TOO_LARGE);
         }
         for chunk in data.chunks(state.max_transfer_chunk_bytes) {
             if let Err(error) = state
                 .daemon
-                .handle_data_frame(DataFrame {
-                    kind: DataFrameKind::Chunk,
-                    handle: handle.clone(),
-                    offset,
-                    payload: chunk.to_vec(),
-                    reset_status: None,
-                })
+                .handle_data_frame(
+                    &state.carrier,
+                    DataFrame {
+                        session_id: session.selector.clone(),
+                        kind: DataFrameKind::Chunk,
+                        handle: handle.clone(),
+                        offset,
+                        payload: chunk.to_vec(),
+                        reset_status: None,
+                    },
+                )
                 .await
             {
-                session.routes.lock().await.remove(&handle);
+                session.routes.lock().await.remove(&session.key(&handle));
                 return empty_response(match error {
                     crate::transfer::TransferError::Source => {
                         // Finish bounded HTTP framing before replying. Dropping an
@@ -552,21 +644,41 @@ async fn writer_transfer(
                 });
             }
             offset += chunk.len() as u64;
+            match timeout(state.transfer_timeout, rx.recv()).await {
+                Ok(Some(frame))
+                    if frame.kind == DataFrameKind::Credit && frame.offset == offset => {}
+                _ => {
+                    reset_http_transfer(
+                        &state.daemon,
+                        &state.carrier,
+                        &session.selector,
+                        &handle,
+                        offset,
+                    )
+                    .await;
+                    session.routes.lock().await.remove(&session.key(&handle));
+                    return empty_response(StatusCode::CONFLICT);
+                }
+            }
         }
     }
     if state
         .daemon
-        .handle_data_frame(DataFrame {
-            kind: DataFrameKind::End,
-            handle: handle.clone(),
-            offset,
-            payload: Vec::new(),
-            reset_status: None,
-        })
+        .handle_data_frame(
+            &state.carrier,
+            DataFrame {
+                session_id: session.selector.clone(),
+                kind: DataFrameKind::End,
+                handle: handle.clone(),
+                offset,
+                payload: Vec::new(),
+                reset_status: None,
+            },
+        )
         .await
         .is_err()
     {
-        session.routes.lock().await.remove(&handle);
+        session.routes.lock().await.remove(&session.key(&handle));
         return empty_response(StatusCode::CONFLICT);
     }
     let status = match timeout(TRANSFER_WAIT_TIMEOUT, rx.recv()).await {
@@ -575,113 +687,30 @@ async fn writer_transfer(
         }
         _ => StatusCode::CONFLICT,
     };
-    session.routes.lock().await.remove(&handle);
+    session.routes.lock().await.remove(&session.key(&handle));
     empty_response(status)
 }
 
-async fn reset_http_transfer(daemon: &Daemon, handle: &str, offset: u64) {
+async fn reset_http_transfer(
+    daemon: &Daemon,
+    carrier: &Carrier,
+    session_id: &str,
+    handle: &str,
+    offset: u64,
+) {
     let _ = daemon
-        .handle_data_frame(DataFrame {
-            kind: DataFrameKind::Reset,
-            handle: handle.to_owned(),
-            offset,
-            payload: Vec::new(),
-            reset_status: Some(DataResetStatus::Cancelled),
-        })
+        .handle_data_frame(
+            carrier,
+            DataFrame {
+                session_id: session_id.to_owned(),
+                kind: DataFrameKind::Reset,
+                handle: handle.to_owned(),
+                offset,
+                payload: Vec::new(),
+                reset_status: Some(DataResetStatus::Cancelled),
+            },
+        )
         .await;
-}
-
-async fn begin_http_session(state: &Arc<HttpState>) -> Result<Arc<HttpSession>, StatusCode> {
-    let mut current = state.session.lock().await;
-    if current
-        .as_ref()
-        .is_some_and(|session| !session.closed.load(Ordering::Acquire))
-    {
-        return Err(StatusCode::CONFLICT);
-    }
-    let selector = fresh_selector().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let routes = Arc::new(Mutex::new(HashMap::<String, mpsc::Sender<DataFrame>>::new()));
-    let (data_tx, mut data_rx) = mpsc::channel(128);
-    state
-        .daemon
-        .begin_session(data_tx)
-        .map_err(|_| StatusCode::CONFLICT)?;
-    let dispatcher_routes = Arc::clone(&routes);
-    let dispatcher_daemon = Arc::clone(&state.daemon);
-    let dispatcher = tokio::spawn(async move {
-        while let Some(frame) = data_rx.recv().await {
-            let route = dispatcher_routes.lock().await.get(&frame.handle).cloned();
-            let Some(route) = route else {
-                continue;
-            };
-            if route.try_send(frame.clone()).is_err() {
-                dispatcher_routes.lock().await.remove(&frame.handle);
-                reset_http_transfer(&dispatcher_daemon, &frame.handle, frame.offset).await;
-            }
-        }
-    });
-    let session = Arc::new(HttpSession {
-        selector,
-        routes,
-        dispatcher,
-        admission: RwLock::new(()),
-        last_activity: Mutex::new(Instant::now()),
-        closed: AtomicBool::new(false),
-    });
-    *current = Some(Arc::clone(&session));
-    Ok(session)
-}
-
-async fn current_session(state: &Arc<HttpState>, selector: &str) -> Option<Arc<HttpSession>> {
-    let session = {
-        let current = state.session.lock().await;
-        current
-            .as_ref()
-            .filter(|session| {
-                !session.closed.load(Ordering::Acquire)
-                    && secure_equal(session.selector.as_bytes(), selector.as_bytes())
-            })
-            .cloned()
-    }?;
-    *session.last_activity.lock().await = Instant::now();
-    Some(session)
-}
-
-async fn expire_idle_session(state: &Arc<HttpState>) {
-    if state.daemon.has_active_file_transfers() {
-        return;
-    }
-    let session = state.session.lock().await.clone();
-    let Some(session) = session else {
-        return;
-    };
-    if session.last_activity.lock().await.elapsed() >= state.session_idle_timeout {
-        close_session(state, &session).await;
-    }
-}
-
-async fn close_current_session(state: &Arc<HttpState>) {
-    let session = state.session.lock().await.clone();
-    if let Some(session) = session {
-        close_session(state, &session).await;
-    }
-}
-
-async fn close_session(state: &Arc<HttpState>, session: &Arc<HttpSession>) {
-    if session.closed.swap(true, Ordering::AcqRel) {
-        return;
-    }
-    let _admission = session.admission.write().await;
-    session.routes.lock().await.clear();
-    session.dispatcher.abort();
-    let _ = state.daemon.transport_closed(SESSION_DRAIN_TIMEOUT).await;
-    let mut current = state.session.lock().await;
-    if current
-        .as_ref()
-        .is_some_and(|candidate| Arc::ptr_eq(candidate, session))
-    {
-        *current = None;
-    }
 }
 
 async fn discard_body_bounded(mut body: Incoming, mut remaining: u64) -> Result<(), StatusCode> {
@@ -753,7 +782,7 @@ fn empty_response(status: StatusCode) -> HttpResponse {
     )
 }
 
-fn control_response(payload: Vec<u8>, handoff: Option<ActiveResponseHandoff>) -> HttpResponse {
+fn control_response(payload: Vec<u8>, handoff: Option<ResponseHandoff>) -> HttpResponse {
     response_with_body(
         StatusCode::OK,
         JSON_CONTENT_TYPE,
@@ -782,30 +811,6 @@ fn infallible_to_io(error: Infallible) -> io::Error {
     match error {}
 }
 
-fn fresh_selector() -> Result<String, getrandom::Error> {
-    let mut bytes = [0_u8; 24];
-    getrandom::fill(&mut bytes)?;
-    Ok(base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes))
-}
-
-async fn read_credential(path: &std::path::Path) -> io::Result<Vec<u8>> {
-    let mut bytes = tokio::fs::read(path).await?;
-    if bytes.ends_with(b"\r\n") {
-        bytes.truncate(bytes.len() - 2);
-    } else if bytes.ends_with(b"\n") {
-        bytes.truncate(bytes.len() - 1);
-    }
-    if bytes.is_empty()
-        || bytes.len() > 8 * 1024
-        || bytes
-            .iter()
-            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
-    {
-        return Err(invalid_data("invalid HTTP attachment credential"));
-    }
-    Ok(bytes)
-}
-
 fn build_tls_acceptor(http: &HttpConfig) -> io::Result<Option<TlsAcceptor>> {
     let (Some(certificate), Some(private_key)) =
         (&http.tls_certificate_file, &http.tls_private_key_file)
@@ -829,6 +834,24 @@ fn build_tls_acceptor(http: &HttpConfig) -> io::Result<Option<TlsAcceptor>> {
 
 fn invalid_data(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message)
+}
+
+async fn read_credential(path: &std::path::Path) -> io::Result<Vec<u8>> {
+    let mut bytes = tokio::fs::read(path).await?;
+    if bytes.ends_with(b"\r\n") {
+        bytes.truncate(bytes.len() - 2);
+    } else if bytes.ends_with(b"\n") {
+        bytes.truncate(bytes.len() - 1);
+    }
+    if bytes.is_empty()
+        || bytes.len() > 8 * 1024
+        || bytes
+            .iter()
+            .any(|byte| byte.is_ascii_whitespace() || byte.is_ascii_control())
+    {
+        return Err(invalid_data("invalid HTTP attachment credential"));
+    }
+    Ok(bytes)
 }
 
 async fn shutdown_signal() -> io::Result<()> {

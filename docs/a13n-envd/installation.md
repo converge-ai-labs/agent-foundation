@@ -65,8 +65,8 @@ PATH opt-in updates only the current user's configuration: Bash `.bashrc` (`.bas
 
 The installers support x86_64 and ARM64 on Linux, macOS, and Windows. They verify the selected archive against the release's `SHA256SUMS` **before extraction**, stage the executable on the destination filesystem, and atomically install or replace it. Download, checksum, archive, or replacement failures leave an existing executable unchanged. SHA256 verifies the archive against the manifest delivered by GitHub; it is not a separate signature or trust source.
 
-Re-run the script with another exact version to replace the binary. This is an explicit install operation, not a self-updater. No release automation or Harness UI acquisition code invokes these scripts. Installing the binary does not install platform isolation prerequisites described below.
+Re-run the script with another exact version to replace the binary. This is an explicit install operation, not a self-updater. No release automation or Harness UI acquisition code invokes these scripts. Installing the binary does not create an outer account, container, or sandbox boundary.
 
 ## Next step
 
-Use the [Local Envd Provider](index.md#recommended-harness-path), or [configure a standalone daemon](configuration.md) when you own the transport and lifecycle. Installation alone does not prove [isolation readiness](isolation.md).
+Use the [Local Envd Provider](index.md#recommended-harness-path), or [configure a standalone daemon](configuration.md) when you own the transport and lifecycle. Select the [Host security boundary](isolation.md) before running untrusted work.

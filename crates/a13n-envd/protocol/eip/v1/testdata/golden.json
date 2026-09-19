@@ -4,8 +4,7 @@
       "type": "InitializeParams",
       "value": {
         "client": {"name": "fixture-client", "version": "1.2.3"},
-        "expected_environment_id": "env-fixture",
-        "required_methods": ["file.search"],
+        "expected_device_id": "device-fixture",
         "supported_protocol_versions": ["0.1"]
       }
     },
@@ -18,7 +17,8 @@
     {
       "type": "EnvironmentReadinessResult",
       "value": {
-        "environment_id": "env-fixture",
+        "device_id": "device-fixture",
+        "session_id": "session-fixture",
         "generation": 7,
         "ready": true
       }
@@ -27,7 +27,7 @@
       "type": "FileStatParams",
       "value": {
         "context": {"operation_id": "op-stat"},
-        "path": {"mount_id": "workspace", "path": "/src/main.py"}
+        "path": {"path": "/src/main.py"}
       }
     },
     {
@@ -36,7 +36,7 @@
         "info": {
           "kind": "file",
           "modified_at": "2026-08-20T14:00:00.123456789Z",
-          "path": {"mount_id": "workspace", "path": "/src/main.py"},
+          "path": {"path": "/src/main.py"},
           "size_bytes": 128
         }
       }
@@ -47,7 +47,7 @@
         "context": {"operation_id": "op-find"},
         "kinds": ["file"],
         "pattern": "**/*.py",
-        "root": {"mount_id": "workspace", "path": "/src"}
+        "root": {"path": "/src"}
       }
     },
     {
@@ -67,7 +67,7 @@
         "offset": 2,
         "query": "needle",
         "respect_git_ignore": true,
-        "root": {"mount_id": "workspace", "path": "/src"}
+        "root": {"path": "/src"}
       }
     },
     {
@@ -76,7 +76,7 @@
         "context": "before\nneedle\nafter\n",
         "context_start_line": 6,
         "line_number": 7,
-        "path": {"mount_id": "workspace", "path": "/src/app.py"},
+        "path": {"path": "/src/app.py"},
         "preview": "needle",
         "preview_truncated": false
       }
@@ -90,7 +90,7 @@
             "context": "before\nneedle\nafter\n",
             "context_start_line": 6,
             "line_number": 7,
-            "path": {"mount_id": "workspace", "path": "/src/app.py"},
+            "path": {"path": "/src/app.py"},
             "preview": "needle",
             "preview_truncated": false
           }
@@ -109,7 +109,7 @@
             "executable_spec": {"kind": "name", "name": "git"},
             "kind": "argv"
           },
-          "cwd": {"mount_id": "workspace", "path": "/repo"}
+          "cwd": {"path": "/repo"}
         }
       }
     },

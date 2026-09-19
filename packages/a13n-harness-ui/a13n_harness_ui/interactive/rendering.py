@@ -26,6 +26,7 @@ from .transcript import Transcript
 if TYPE_CHECKING:
     from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
 
+    from a13n_harness_ui.goal import GoalView
     from a13n_harness_ui.storage.usage import UsageTotals
     from a13n_harness_ui.surfaces import NotePage, StructuredQuestionRequestView
 
@@ -52,6 +53,7 @@ class Status:
     theme: Literal["auto", "dark", "light"] = "auto"
     theme_explicit: bool = False
     state: str = "starting"
+    goal: GoalView | None = None
     agent: str = "not configured"
     model: str = "not configured"
     thinking: str = "default"
@@ -162,7 +164,15 @@ class Status:
         state = self.state.capitalize()
         if compact and self.fast == "on":
             state += " Fast"
+        goal = self.goal
+        goal_label = None
+        if goal is not None:
+            phase = (
+                "restore audit pending" if goal.needs_restore_audit and goal.active else goal.status.replace("_", " ")
+            )
+            goal_label = f"Goal {phase} {goal.iteration}/{goal.max_iterations}"
         fields = [
+            *((goal_label,) if goal_label is not None else ()),
             state,
             *(("Fast",) if not compact and self.fast == "on" else ()),
             f"{'tok' if compact else 'tokens'} {token_count}",
@@ -175,7 +185,11 @@ class Status:
         ]
         while width is not None and get_cwidth(" · ".join(fields)) + 2 > width and len(fields) > 1:
             fields.pop()
-        return terminal_text(" " + " · ".join(fields) + " ")
+        text = terminal_text(" " + " · ".join(fields) + " ")
+        if width is not None:
+            while get_cwidth(text) > width and text:
+                text = text[:-1]
+        return text
 
 
 @dataclass(slots=True)

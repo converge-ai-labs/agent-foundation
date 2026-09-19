@@ -58,6 +58,7 @@ class ThreadResource(_Resource):
     head_run_id: str | None
     current_run_id: str | None
     default_environment_id: str | None
+    default_environment_working_directory: str | None
     labels: Labels
     created_at: datetime
     updated_at: datetime
@@ -78,6 +79,7 @@ class RunResource(_Resource):
     agent_revision_id: str | None
     effective_agent_config_digest: str
     environment_id: str | None
+    environment_working_directory: str | None
     status: RunStatus
     wait_reason: str | None
     input_kind: str
@@ -712,6 +714,7 @@ def _thread(record: ThreadRecord, *, conversation: SessionRecord) -> ThreadResou
         head_run_id=record.head_run_id,
         current_run_id=record.current_run_id,
         default_environment_id=record.default_environment_id,
+        default_environment_working_directory=record.default_environment_working_directory,
         labels=record.labels,
         created_at=assume_utc(record.created_at),
         updated_at=assume_utc(record.updated_at),
@@ -735,6 +738,7 @@ def _run(record: RunRecord) -> RunResource:
         agent_revision_id=resource.agent_revision_id,
         effective_agent_config_digest=resource.effective_agent_config_digest,
         environment_id=resource.environment_id,
+        environment_working_directory=resource.environment_working_directory,
         status=resource.status,
         wait_reason=None if resource.wait_reason is None else resource.wait_reason.value,
         input_kind=resource.input_kind.value,

@@ -148,7 +148,7 @@ async def build_control_runtime(
             max_redirects=settings.connectivity.max_redirects,
         )
     gateway_commands = build_input_commands(
-        settings, shared, agents.invocations, assets.catalog, hooks.inline_validator
+        settings, shared, agents.invocations, assets.catalog, hooks.inline_validator, devices=environments.devices
     )
     if settings.gateway.a2a_enabled:
         assert a2a_import_http_client is not None
@@ -217,7 +217,9 @@ async def build_control_runtime(
         environments=environments,
         environment_mounts=RunEnvironmentMountService(
             shared.storage.sessions,
-            OnlineAdmission(shared.storage.sessions, ConnectionCoordination(shared.storage.redis)),
+            OnlineAdmission(
+                shared.storage.sessions, ConnectionCoordination(shared.storage.redis), devices=environments.devices
+            ),
             signals=RedisThreadControlSignals(shared.storage.redis),
         ),
         skill_uploads=skills.uploads,

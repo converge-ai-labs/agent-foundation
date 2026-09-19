@@ -48,6 +48,7 @@ function restore(): Omit<NewDraft, "save"> | undefined {
     composer.doc.destroy();
     throw error;
   }
+  if (saved.mode === "goal") composer.mode = "goal";
   if (typeof saved.modelId === "string") composer.modelId = saved.modelId;
   if (typeof saved.environmentProfileId === "string")
     composer.environmentProfileId = saved.environmentProfileId;
@@ -120,6 +121,7 @@ export class NewDraftStore {
     if (!old || old.threadId !== threadId) return;
     const composer = new ThreadDraft();
     Y.applyUpdate(composer.doc, Y.encodeStateAsUpdate(old.composer.doc));
+    composer.mode = old.composer.mode;
     composer.modelId = old.composer.modelId;
     composer.environmentProfileId = old.composer.environmentProfileId;
     // A new Thread cannot use the archived Thread's uploaded handles. Keep
@@ -172,6 +174,7 @@ export class NewDraftStore {
             attempted: draft.attempted,
             update: encode(Y.encodeStateAsUpdate(draft.composer.doc)),
             draftId: draft.composer.draftId,
+            mode: draft.composer.mode,
             modelId: draft.composer.modelId,
             environmentProfileId: draft.composer.environmentProfileId,
             submission: draft.composer.submission.kind,

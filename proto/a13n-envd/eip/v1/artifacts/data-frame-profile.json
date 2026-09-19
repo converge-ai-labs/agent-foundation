@@ -22,12 +22,12 @@
       "width": 2
     },
     {
-      "name": "handle_byte_length",
+      "name": "session_byte_length",
       "offset": 8,
       "width": 2
     },
     {
-      "name": "reserved",
+      "name": "handle_byte_length",
       "offset": 10,
       "width": 2
     },
@@ -48,6 +48,7 @@
     "attach": 1,
     "attached": 2,
     "chunk": 3,
+    "credit": 7,
     "end": 4,
     "end_ack": 5,
     "reset": 6
@@ -68,5 +69,6 @@
     "limit": 5,
     "protocol": 1,
     "source": 4
-  }
+  },
+  "transfer_window_chunks": 8
 }

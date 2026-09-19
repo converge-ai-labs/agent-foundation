@@ -16,6 +16,7 @@ import { useWorkspace } from "../../../layout/workspace";
 import { allPages, data, type Schema } from "../../../shared/api";
 import { ErrorNotice } from "../../../shared/feedback";
 import { jsonObject, runOverride, TextAreaField } from "../../../shared/forms";
+import { DeviceDirectory } from "../../environments/device-directory";
 import styles from "./composer.module.css";
 
 export type OptionField = "agent" | "model" | "environment" | "instructions";
@@ -50,6 +51,13 @@ export function useRunOptions(initial: Options = {}) {
           ? `instance:${initial.environment.environment_id}`
           : "inherit",
   );
+  const initialBinding =
+    initial.environment && "environment_id" in initial.environment
+      ? initial.environment
+      : undefined;
+  const [workingDirectory, setWorkingDirectory] = useState(
+    initialBinding?.working_directory ?? "",
+  );
   /** Chips name what was chosen, so the picked labels travel with the values. */
   const [labels, setLabels] = useState<{
     model?: string;
@@ -81,7 +89,12 @@ export function useRunOptions(initial: Options = {}) {
     instructions,
     setInstructions,
     environment,
-    setEnvironment,
+    setEnvironment: (value: string) => {
+      setEnvironment(value);
+      setWorkingDirectory("");
+    },
+    workingDirectory,
+    setWorkingDirectory,
     advanced,
     setAdvanced,
     labels,
@@ -129,7 +142,12 @@ export function useRunOptions(initial: Options = {}) {
                   ? null
                   : environment.startsWith("template:")
                     ? { template_id: environment.slice(9) }
-                    : { environment_id: environment.slice(9) },
+                    : {
+                        environment_id: environment.slice(9),
+                        ...(workingDirectory
+                          ? { working_directory: workingDirectory }
+                          : {}),
+                      },
             }),
       };
     },
@@ -196,6 +214,9 @@ export function RunOptionsDialog({
       return { agents, models, templates, environments };
     },
   });
+  const selectedEnvironment = choices.data?.environments.find(
+    (item) => options.environment === `instance:${item.id}`,
+  );
   useEffect(() => {
     if (!open || !focus) return;
     const timer = setTimeout(
@@ -297,6 +318,14 @@ export function RunOptionsDialog({
           )}
           options={environmentOptions}
         />
+        {selectedEnvironment?.device_id && open && (
+          <DeviceDirectory
+            key={selectedEnvironment.id}
+            environmentId={selectedEnvironment.id}
+            value={options.workingDirectory}
+            onChange={options.setWorkingDirectory}
+          />
+        )}
         <Label className={styles.optionSwitch}>
           <Switch
             id="run-option-instructions"

@@ -15,7 +15,8 @@ import {
   ArrowUp,
   Stop,
   X,
-  DotsThree,
+  SlidersHorizontal,
+  Target,
   CircleNotch,
 } from "@phosphor-icons/react";
 import type { EditorView } from "@codemirror/view";
@@ -152,6 +153,7 @@ export async function submitDraft(
     draft.submission.kind === "unknown"
   )
     return;
+  const mode = draft.mode;
   const thinking = draft.thinking;
   const fast = draft.fast;
   const environmentProfileId = draft.environmentProfileId;
@@ -195,6 +197,7 @@ export async function submitDraft(
           params: { path: { thread_id: threadId } },
           body: {
             parts,
+            mode,
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
@@ -237,6 +240,7 @@ export async function submitDraft(
       acceptedReceipt = receipt;
     }
     input.state = "accepted";
+    if (action === "send") draft.mode = "normal";
     if (captured) draft.clear(captured);
     draft.submission = {
       kind: "accepted",
@@ -353,7 +357,7 @@ export function Composer({
     )
       editor.current?.focus();
   }, [preparing]);
-  const [mobileOptions, setMobileOptions] = useState(false);
+  const [optionsExpanded, setOptionsExpanded] = useState(false);
   useEffect(() => {
     if (!referenceAdded) return;
     const frame = requestAnimationFrame(() => {
@@ -774,10 +778,52 @@ export function Composer({
         </div>
       )}
       <div className={styles.composerBody}>
+        <div className={styles.composerHeader}>
+          <Button
+            variant={draft.mode === "goal" ? "secondary" : "ghost"}
+            size="sm"
+            className={styles.goalButton}
+            aria-pressed={draft.mode === "goal"}
+            title="Keep working and checking the full objective until the Agent verifies completion or reaches the continuation limit. Applies to your next submission, not steering."
+            disabled={!canRun || busy || preparing || pending || unknown}
+            onClick={() => {
+              draft.mode = draft.mode === "goal" ? "normal" : "goal";
+              draft.notify();
+            }}
+          >
+            <Target
+              aria-hidden
+              weight={draft.mode === "goal" ? "fill" : "regular"}
+            />
+            Goal
+          </Button>
+          <div className={styles.composerEnvironment}>{leadingControls}</div>
+          <span className={styles.composerSync}>
+            {showSyncStatus && draft.status === "Connected" && (
+              <span
+                role="status"
+                aria-label="Syncing edits…"
+                title="Syncing edits…"
+              >
+                <CircleNotch
+                  className={styles.threadRunning}
+                  aria-hidden="true"
+                />
+              </span>
+            )}
+          </span>
+        </div>
         <div inert={preparing} className={styles.composerEditor}>
           <ComposerEditor
             autoFocus={autoFocus}
             local={local}
+            placeholderText={
+              busy
+                ? "Guide the current operation…"
+                : draft.mode === "goal"
+                  ? "Describe the goal and how to verify completion…"
+                  : "Describe a task…"
+            }
             skillContext={skillContext}
             loadSkills={async () => {
               try {
@@ -939,91 +985,70 @@ export function Composer({
           </div>
         )}
         <div className={styles.composerActions}>
-          <div>
-            <input
-              ref={upload}
-              type="file"
-              multiple
-              hidden
-              onChange={(event) =>
-                void uploadFiles(Array.from(event.target.files ?? []))
-              }
-            />
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={styles.attachButton}
-              aria-label="Attach files"
-              title="Attach files · you can also paste or drop files"
-              loading={uploading}
-              disabled={preparing}
-              onClick={() => upload.current?.click()}
-            >
-              <Plus />
-            </Button>
-            <div className={styles.composerOptions} data-open={mobileOptions}>
-              {leadingControls}
-            </div>
-            <span className={styles.composerSync}>
-              {showSyncStatus && draft.status === "Connected" && (
-                <span
-                  role="status"
-                  aria-label="Syncing edits…"
-                  title="Syncing edits…"
-                >
-                  <CircleNotch
-                    className={styles.threadRunning}
-                    aria-hidden="true"
-                  />
-                </span>
-              )}
-            </span>
-          </div>
-          <div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className={styles.mobileOptionsButton}
-              aria-label="Composer options"
-              aria-expanded={mobileOptions}
-              onClick={() => setMobileOptions(!mobileOptions)}
-            >
-              <DotsThree />
-            </Button>
-            {controls?.(mobileOptions)}
-            <Button
-              ref={sendButton}
-              size="icon"
-              className={styles.sendButton}
-              aria-label={
-                stopAction
-                  ? stopLabel
-                  : pending
-                    ? "Submitting"
-                    : preparing
-                      ? "Preparing"
-                      : busy
-                        ? "Steer"
-                        : "Send"
-              }
-              title={
-                (stopAction ? cancellation.request?.message : undefined) ??
-                blockedReason ??
-                (stopAction
-                  ? "Stop this operation"
-                  : busy
-                    ? "Steer current operation · Enter"
-                    : "Send message · Enter")
-              }
-              disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
-              loading={stopAction ? stopping : pending || preparing}
-              onClick={() =>
-                stopAction ? void stop() : void submit(busy ? "steer" : "send")
-              }
-            >
-              {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
-            </Button>
-          </div>
+          <input
+            ref={upload}
+            type="file"
+            multiple
+            hidden
+            onChange={(event) =>
+              void uploadFiles(Array.from(event.target.files ?? []))
+            }
+          />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={styles.attachButton}
+            aria-label="Attach files"
+            title="Attach files · you can also paste or drop files"
+            loading={uploading}
+            disabled={preparing}
+            onClick={() => upload.current?.click()}
+          >
+            <Plus />
+          </Button>
+          {controls?.(optionsExpanded)}
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className={styles.optionsButton}
+            aria-label="Composer options"
+            aria-expanded={optionsExpanded}
+            onClick={() => setOptionsExpanded(!optionsExpanded)}
+          >
+            <SlidersHorizontal />
+          </Button>
+          <Button
+            ref={sendButton}
+            size="icon"
+            className={styles.sendButton}
+            aria-label={
+              stopAction
+                ? stopLabel
+                : pending
+                  ? "Submitting"
+                  : preparing
+                    ? "Preparing"
+                    : busy
+                      ? "Steer"
+                      : "Send"
+            }
+            title={
+              (stopAction ? cancellation.request?.message : undefined) ??
+              blockedReason ??
+              (stopAction
+                ? "Stop this operation"
+                : busy
+                  ? "Steer current operation · Enter"
+                  : "Send message · Enter")
+            }
+            disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
+            loading={stopAction ? stopping : pending || preparing}
+            onClick={() =>
+              stopAction ? void stop() : void submit(busy ? "steer" : "send")
+            }
+          >
+            {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
+          </Button>
         </div>
       </div>
       {preview?.image && preview.url && (

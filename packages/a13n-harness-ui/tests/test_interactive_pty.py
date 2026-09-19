@@ -222,7 +222,7 @@ class Backend:
     async def initialize(self):
         self.status.model = "fixture-model"
         return True
-    async def execute(self, renderer, *, prompt=None, flush=None, admitted=None, skill_references=()):
+    async def execute(self, renderer, *, prompt=None, flush=None, admitted=None, skill_references=(), mode="normal"):
         Path("submitted.json").write_text(json.dumps(prompt.text))
         if admitted is not None:
             admitted()

@@ -1,10 +1,10 @@
+from ._daemon import LocalEnvdLaunchFactory, LocalEnvdProcessLaunch, validate_local_envd_runtime
 from .configuration import (
-    LocalEnvdNetworkMode,
+    LocalEnvdLaunchConfiguration,
     LocalEnvdProviderConfiguration,
     LocalEnvdShellProfile,
-    LocalEnvdWorkspaceConfiguration,
 )
-from .provider import LocalEnvdEnvironment, LocalEnvdEnvironmentProvider, validate_local_envd_runtime
+from .provider import LocalEnvdEnvironment, LocalEnvdEnvironmentProvider
 from .runtime import (
     A13N_ENVD_EXECUTABLE,
     LocalEnvdProviderRuntime,
@@ -17,12 +17,13 @@ __all__ = [
     "A13N_ENVD_EXECUTABLE",
     "LocalEnvdEnvironment",
     "LocalEnvdEnvironmentProvider",
-    "LocalEnvdNetworkMode",
+    "LocalEnvdLaunchConfiguration",
+    "LocalEnvdLaunchFactory",
+    "LocalEnvdProcessLaunch",
     "LocalEnvdProviderConfiguration",
     "LocalEnvdProviderRuntime",
     "LocalEnvdRuntimeAllocator",
     "LocalEnvdShellProfile",
-    "LocalEnvdWorkspaceConfiguration",
     "TemporaryLocalEnvdRuntimeAllocator",
     "resolve_a13n_envd_executable",
     "validate_local_envd_runtime",

@@ -51,15 +51,14 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))["$defs"]
     assert schema["EIPPath"]["properties"]["path"]["format"] == "eip-absolute-path"
     assert schema["EncodedBytes"]["properties"]["data"]["format"] == "eip-base64-unpadded"
-    generation = schema["EnvironmentDescriptor"]["properties"]["generation"]
+    generation = schema["SessionDescriptor"]["properties"]["generation"]
     assert generation["minimum"] == 1
     assert generation["maximum"] == 2**64 - 1
-    assert "execution_features" in schema["EnvironmentDescriptor"]["required"]
+    assert "execution_features" in schema["SessionDescriptor"]["required"]
     assert set(schema["ExecutionFeatures"]["required"]) == {
         "process_count_limit",
         "memory_bytes_limit",
         "cpu_time_limit",
-        "per_command_network_deny",
         "signal_interrupt",
         "signal_terminate",
     }
@@ -84,15 +83,25 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     assert readiness["x-eip-params-schema"] == {"$ref": "schema.json#/$defs/EnvironmentReadinessParams"}
     assert readiness["result"]["schema"] == {"$ref": "schema.json#/$defs/EnvironmentReadinessResult"}
     readiness_result = schema["EnvironmentReadinessResult"]
-    assert set(readiness_result["required"]) == {"ready", "environment_id", "generation"}
+    assert set(readiness_result["required"]) == {"ready", "device_id", "generation", "session_id"}
     assert readiness_result["properties"]["generation"]["minimum"] == 1
-    assert readiness_result["properties"]["environment_id"]["minLength"] == 1
+    assert readiness_result["properties"]["device_id"]["minLength"] == 1
 
     methods = json.loads(METHODS_PATH.read_text(encoding="utf-8"))
-    assert methods["method_count"] == 36
-    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 19
+    assert methods["method_count"] == 41
+    assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 18
     assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 16
-    assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 1
+    assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 7
+    assert {method["jsonrpc_method"] for method in methods["methods"] if method["device_scoped"]} == {
+        "initialize",
+        "device.describe",
+        "directory.list",
+        "session.open",
+    }
+    assert "mount_id" not in schema["EIPPath"]["properties"]
+    assert {"device_id", "path_style", "default_working_directory", "directory_discovery"}.issubset(
+        schema["DeviceDescriptor"]["required"]
+    )
     descriptor = (REPOSITORY_ROOT / DESCRIPTOR_PATH).read_bytes()
     manifest = json.loads((REPOSITORY_ROOT / MANIFEST_PATH).read_text(encoding="utf-8"))
     descriptor_sha256 = hashlib.sha256(descriptor).hexdigest()
@@ -111,6 +120,7 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     assert profile["magic_ascii"] == "EIPD"
     assert profile["profile_version"] == 1
     assert profile["header_bytes"] == 24
+    assert profile["transfer_window_chunks"] == 8
     assert profile["kinds"] == {
         "attach": 1,
         "attached": 2,
@@ -118,6 +128,7 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
         "end": 4,
         "end_ack": 5,
         "reset": 6,
+        "credit": 7,
     }
     assert sum(field["width"] for field in profile["fields"]) == 24
 

@@ -37,6 +37,7 @@ class _MountRequest:
     default_working_directory: str | None
     mount_path: str | None
     candidate: EnvironmentProviderBinding
+    provider_root: str = "/"
 
 
 @dataclass(frozen=True, slots=True)

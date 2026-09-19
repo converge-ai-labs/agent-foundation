@@ -11,8 +11,11 @@ import asyncio
 import math
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from time import monotonic
+from typing import Literal
+
+from a13n_service.iam.domain import PrincipalRef
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +35,26 @@ class UseIdentity:
     attempt_id: str
     attempt_fence: int
     worker_instance_id: str
+    mount_name: str
+    admission_deadline_ms: int = field(kw_only=True)
+    kind: Literal["session"] = "session"
+
+    @property
+    def origin_instance_id(self) -> str:
+        return self.worker_instance_id
+
+
+@dataclass(frozen=True, slots=True)
+class DeviceReadIdentity:
+    connection: ConnectionIdentity
+    principal: PrincipalRef
+    origin_instance_id: str
+    method: Literal["device.describe", "directory.list"]
+    authorization_deadline_ms: int
+    kind: Literal["device"] = "device"
+
+
+type RequestIdentity = UseIdentity | DeviceReadIdentity
 
 
 class DispatchDenied(Exception):
@@ -66,7 +89,7 @@ class LeaseDeadline:
 
 
 class DispatchAuthority:
-    """Irreversible local lease for one exact connection or exclusive use scope.
+    """Irreversible local lease for one exact connection or Attempt/binding use scope.
 
     Connections use this during EIP initialization; use scopes additionally bind
     Run/Attempt/Worker identity. The caller publishes already-intersected access
@@ -75,7 +98,7 @@ class DispatchAuthority:
 
     def __init__(
         self,
-        identity: ConnectionIdentity | UseIdentity,
+        identity: ConnectionIdentity | RequestIdentity,
         deadline: LeaseDeadline,
         *,
         clock: Callable[[], float] = monotonic,
@@ -87,20 +110,20 @@ class DispatchAuthority:
         self._write_lock = asyncio.Lock()
 
     @property
-    def identity(self) -> ConnectionIdentity | UseIdentity:
+    def identity(self) -> ConnectionIdentity | RequestIdentity:
         return self._identity
 
     @property
     def deadline(self) -> float:
         return self._deadline
 
-    def check(self, identity: ConnectionIdentity | UseIdentity) -> None:
+    def check(self, identity: ConnectionIdentity | RequestIdentity) -> None:
         if self._clock() >= self._deadline:
             self._fenced = True
         if self._fenced or identity != self.identity:
             raise DispatchDenied("Client Environment dispatch authority is unavailable")
 
-    def renew(self, identity: ConnectionIdentity | UseIdentity, deadline: LeaseDeadline) -> None:
+    def renew(self, identity: ConnectionIdentity | RequestIdentity, deadline: LeaseDeadline) -> None:
         """Accept only a still-live scope's confirmed grant; stale replies cannot revive it."""
         self.check(identity)
         if deadline.monotonic_at <= self._clock():
@@ -108,7 +131,7 @@ class DispatchAuthority:
         self._deadline = max(self._deadline, deadline.monotonic_at)
 
     @asynccontextmanager
-    async def write(self, identity: ConnectionIdentity | UseIdentity) -> AsyncIterator[None]:
+    async def write(self, identity: ConnectionIdentity | RequestIdentity) -> AsyncIterator[None]:
         """Serialize a bounded frame write with fencing, without holding its result wait."""
         self.check(identity)
         async with asyncio.timeout(max(0, self._deadline - self._clock())):

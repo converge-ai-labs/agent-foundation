@@ -38,7 +38,7 @@ A Provider implementation should:
 
 1. expose one stable namespaced `key` and `configuration_models`, mapping each supported version to its Pydantic recipe model; the base class derives `configuration_versions` and validation;
 2. validate configuration into a frozen package-owned Pydantic model;
-3. accept credentials, SDK clients, transport factories, and bootstrap stores only through a fresh process-local runtime collaborator;
+3. accept credentials, SDK clients, transport factories, and bootstrap stores only through a Host-owned process-local runtime collaborator;
 4. return one fresh inert `Environment` from `create_environment()` and describe its configured capabilities without target I/O;
 5. validate supplied state before mutation and update cached state at every target-identity transition;
 6. expose provider-neutral `EnvironmentOperations` after entry;
@@ -63,14 +63,14 @@ There are two operation routes: **Native** uses the host OS or vendor APIs direc
 | Native | `vercel`              | Cloud sandbox                            | Named persistent sandbox with native sessions               |
 | Native | `sprites`             | Cloud sandbox                            | Persistent disk and automatic sleep/wake                    |
 | Native | `runloop`             | Cloud sandbox                            | Devbox suspend/resume and idle keepalive                    |
-| Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Envd   | `a13n.local-envd`     | CLI and local Agents                     | Shared Host Device; adapter close ends its Session          |
 | Native | `docker`              | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
 | Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 Direct Local shares the Host account. Docker uses native Engine operations; all six cloud providers use native vendor transports. None requires Envd. Local and remote Envd Providers use EIP for Agent operations.
 
-Multi-tenant authorization and container allocation remain Host responsibilities. One daemon admits one active Session; Sessions are not tenant partitions. To work with multiple remote environments, register separate daemon identities and coordinate their use.
+Multi-tenant authorization and container allocation remain Host responsibilities. One Device supports concurrent independent Sessions; Sessions are not tenant partitions. Hosts share the Device connection and select a fixed cwd for each adapter, closing the shared runtime only at Host shutdown.
 
 Start with the [built-in examples](examples.md) or [run both remote transports locally](remote-envd.md). HTTP/WebSocket Providers require external state, declare `supports_managed=False`, and do not provision or destroy infrastructure. The WebSocket SDK receives authenticated connections from your Host; it never opens a listener.
 
@@ -91,7 +91,7 @@ runtime = LocalEnvdProviderRuntime(
 )
 ```
 
-`resolve_a13n_envd_executable()` checks an explicit argument, then `A13N_ENVD_EXECUTABLE`, then `a13n-envd` or `a13n-envd.exe` on `PATH`. The library does not load `.env`, install a native binary, or silently fall back to Direct Local. Entry validates exact daemon/client compatibility and the required native-isolation probe.
+`resolve_a13n_envd_executable()` checks an explicit argument, then `A13N_ENVD_EXECUTABLE`, then `a13n-envd` or `a13n-envd.exe` on `PATH`. The library does not load `.env`, install a native binary, or silently fall back to Direct Local. First Device acquisition validates exact daemon/client compatibility. The runtime launches one shared Device lazily; every adapter opens its own Session. Close adapters after use and call `await runtime.close()` at Host shutdown. There is no native-isolation probe: containment belongs to the Host's account, container, or sandbox.
 
 Run the real provider path with `make local-envd-test`, or follow the [Local Envd example](examples.md#local-envd).
 

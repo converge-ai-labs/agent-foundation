@@ -116,7 +116,7 @@ An externally managed registration supplies a validated existing-target referenc
 
 An envd Environment registers one Device under the existing Workspace Environment resource. Registration accepts typed Device identity and connection configuration; Provider state is constructed and validated by Service. Its ownership is `external`, without a TemplateRevision or managed target retention. Registration, connection status, selection and Session cleanup are first-party Service operations. Infrastructure lifecycle actions require the Provider's declared capabilities.
 
-The Environment record owns Device identity and connection configuration. Thread defaults and accepted Run/mount bindings own working-directory selections. Concurrent bindings may select different folders on the same Device. Preparing a binding never rewrites shared Environment configuration.
+The Environment record owns Device identity and connection configuration. Environment list/detail representations expose its registered `device_id` (null for non-envd targets) without querying the Device or revealing Provider state. Thread defaults and accepted Run/mount bindings own working-directory selections. Concurrent bindings may select different folders on the same Device. Preparing a binding never rewrites shared Environment configuration.
 
 ### Device Info and Directory Discovery
 

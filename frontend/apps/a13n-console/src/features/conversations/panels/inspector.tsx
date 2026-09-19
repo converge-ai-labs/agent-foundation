@@ -22,6 +22,7 @@ import { EnvironmentReference } from "../../environments/reference";
 import { conversationQueries, isActiveRun, runPath } from "../api";
 import { useRun } from "../queries";
 import { RunEvents } from "./events";
+import { RunEnvironmentMounts } from "../environment-mounts";
 import styles from "./panels.module.css";
 
 /** Run details beside the transcript, in the shared side-panel anatomy. */
@@ -83,6 +84,7 @@ export function RunDetails({ runId }: { runId: string }) {
       <PanelSection title={t("Overview")}>
         <RunFacts run={run} />
       </PanelSection>
+      <RunEnvironmentMounts key={run.id} run={run} />
       <PanelSection title={t("Attempts")}>
         <ErrorNotice error={attempts.error ?? lineage.error} />
         {attempts.isPending ? (
@@ -219,6 +221,12 @@ function RunFacts({ run }: { run: Schema["RunResource"] }) {
           t("None")
         )}
       </dd>
+      {run.environment_working_directory && (
+        <>
+          <dt>{t("Working directory")}</dt>
+          <dd className="break-all">{run.environment_working_directory}</dd>
+        </>
+      )}
       <dt>{t("Started")}</dt>
       <dd>{run.started_at ? <Timestamp value={run.started_at} /> : "—"}</dd>
       <dt>{t("Completed")}</dt>

@@ -11,7 +11,7 @@ from a13n_service.ids import new_object_id
 
 from .authority import ConnectionIdentity, UseIdentity
 from .relay_protocol import RelayRequest, RelayTerminal
-from .relay_storage import ConnectionRelayStore, RelayStoreError, WorkerResponseMailbox
+from .relay_storage import ConnectionRelayStore, RelayStoreError, ResponseMailbox
 
 
 async def validate_relay_backend(redis: Redis) -> None:
@@ -20,10 +20,17 @@ async def validate_relay_backend(redis: Redis) -> None:
         new_object_id("org"), new_object_id("env"), new_object_id("ec"), new_object_id("ece"), new_object_id("ctrl")
     )
     use = UseIdentity(
-        connection, new_object_id("eu"), new_object_id("run"), new_object_id("rat"), 1, new_object_id("wkr")
+        connection,
+        new_object_id("eu"),
+        new_object_id("run"),
+        new_object_id("rat"),
+        1,
+        new_object_id("wkr"),
+        "workspace",
+        admission_deadline_ms=1,
     )
     owner = ConnectionRelayStore(redis, connection)
-    mailbox = WorkerResponseMailbox(redis, use.worker_instance_id)
+    mailbox = ResponseMailbox(redis, use.worker_instance_id)
     try:
         async with asyncio.timeout(5):
             await mailbox.prepare()
@@ -31,7 +38,7 @@ async def validate_relay_backend(redis: Redis) -> None:
             seconds, micros = await redis.time()
             request = RelayRequest(
                 request_id=new_object_id("erq"),
-                use=use,
+                scope=use,
                 operation="scope.probe",
                 deadline_ms=seconds * 1000 + micros // 1000 + 10_000,
             )
@@ -42,7 +49,7 @@ async def validate_relay_backend(redis: Redis) -> None:
             entry_id = entries[0][0]
             if (await owner.start(request, entry_id)).phase != "started":
                 raise RelayStoreError("request_not_started")
-            terminal = RelayTerminal(request_id=request.request_id, use=use)
+            terminal = RelayTerminal(request_id=request.request_id, scope=use)
             await owner.complete(request, entry_id, terminal)
             frames = await mailbox.read()
             if len(frames) != 1 or frames[0][1] != terminal:
