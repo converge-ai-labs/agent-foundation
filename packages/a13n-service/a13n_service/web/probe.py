@@ -13,7 +13,6 @@ from a13n_service.storage import transaction
 
 from .domain import ScrapeSelection, SearchSelection, WebProviderTestResult
 from .execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
-from .registry import built_in_web_provider_registry
 from .resources import WebProviderError, require_eligible, require_provider
 from .service import WebProviderService
 
@@ -47,7 +46,7 @@ async def test_account(
                     "Web Provider changed during the test.",
                     category=ErrorCategory.conflict,
                 )
-            require_eligible(record, service.registry)
+            require_eligible(record, service.catalog)
             expected_etag = current
             return WebProviderSnapshot(record.id, record.type, record.configuration, record.credential_snapshot())
 
@@ -64,8 +63,7 @@ async def test_account(
     async def reauthorize() -> None:
         await acquire()
 
-    definition = service.registry.require(initial.provider_type)
-    registry = service.registry if transport is None else built_in_web_provider_registry(transport=transport)
+    definition = service.catalog.require(initial.provider_type)
     code: str | None = None
     try:
         if definition.supports_search:
@@ -74,7 +72,8 @@ async def test_account(
                 acquire=acquire_for_dispatch,
                 reauthorize=reauthorize,
                 protector=service.protector,
-                registry=registry,
+                catalog=service.catalog,
+                transport=transport or service.provider_transport,
                 max_dispatches=1,
             )
             await search.search(WebSearchRequest(query="Agent Foundation", limit=1))
@@ -84,7 +83,8 @@ async def test_account(
                 acquire=acquire_for_dispatch,
                 reauthorize=reauthorize,
                 protector=service.protector,
-                registry=registry,
+                catalog=service.catalog,
+                transport=transport or service.provider_transport,
                 max_dispatches=1,
             )
             await scrape.scrape(

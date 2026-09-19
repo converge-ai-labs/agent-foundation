@@ -4,8 +4,8 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
@@ -35,7 +35,7 @@ pytestmark = pytest.mark.anyio
 @pytest.fixture
 async def retained_environment(interaction_sessions, tmp_path, monkeypatch):
     service, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_run")
-    service.catalog = lifecycle.catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("docker",)))
+    service.catalog = lifecycle.catalog = ProviderCatalog(select_builtin_environment_providers(("docker",)))
     provider = await service.create_provider(
         actor=hook_actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="docker", name="Docker")
     )

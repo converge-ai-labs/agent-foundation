@@ -7,6 +7,7 @@ import httpx
 import httpx2
 import pytest
 from a13n_harness.providers.memory.builtins import MEM0_OSS, MEM0_PLATFORM
+from a13n_harness.providers.memory.configuration import Mem0Credential, Mem0OSSConfiguration, Mem0PlatformConfiguration
 from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend, open_mem0_oss
 from a13n_harness.providers.memory.mem0_platform import open_mem0_platform
 from mem0 import AsyncMemoryClient
@@ -52,9 +53,11 @@ def native_lifetime(request, monkeypatch):
         definition = MEM0_OSS if kind == "oss" else MEM0_PLATFORM
         lifetime = definition.open({"base_url": "http://memory"}, {"api_key": "test-key"})
     elif kind == "oss":
-        lifetime = open_mem0_oss(base_url="http://memory", api_key="test-key")
+        lifetime = open_mem0_oss(Mem0OSSConfiguration(base_url="http://memory"), Mem0Credential(api_key="test-key"))
     else:
-        lifetime = open_mem0_platform(base_url="http://memory", api_key="test-key")
+        lifetime = open_mem0_platform(
+            Mem0PlatformConfiguration(base_url="http://memory"), Mem0Credential(api_key="test-key")
+        )
     return lifetime, client, observation
 
 

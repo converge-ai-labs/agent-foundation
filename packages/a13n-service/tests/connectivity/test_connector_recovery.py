@@ -30,7 +30,7 @@ from .test_composio_setup import complete, launch
 from .test_composio_setup import composio_sessions as composio_sessions
 from .test_composio_setup import composio_setup as composio_setup
 from .test_connector_service import connector_backend as connector_backend
-from .test_connector_service import connector_registry as connector_registry
+from .test_connector_service import connector_catalog as connector_catalog
 from .test_connector_service import connector_services as connector_services
 from .test_connector_service import create_connection, create_connector
 
@@ -172,7 +172,7 @@ async def test_expired_start_owner_cannot_publish_a_late_response(composio_setup
 
 
 async def test_idempotent_provider_recovers_interrupted_start(
-    connector_services, connector_registry, connector_backend, connectivity_sessions, monkeypatch
+    connector_services, connector_catalog, connector_backend, connectivity_sessions, monkeypatch
 ):
     providers, connections = connector_services
     provider = await create_connector(providers)
@@ -206,7 +206,8 @@ async def test_idempotent_provider_recovers_interrupted_start(
             await task
     reconciler = ConnectorReconciler(
         connectivity_sessions,
-        connector_registry,
+        connector_catalog,
+        None,
         connections.setup_coordinator,
         instance_id="control",
         poll_interval_seconds=2,
@@ -225,7 +226,7 @@ async def test_authority_change_after_discovery_blocks_action(
     composio_setup, connectivity_sessions, external_runtime_factory, change, execution_authorization
 ):
     connections, connection, _, _, requests, state, _ = composio_setup
-    registry = state["registry"]
+    catalog, connector_http = state["catalog"], state["connector_http"]
     result = await launch(connections, connection)
     await complete(connections, result.attempt_id)
     authorized = True
@@ -235,7 +236,7 @@ async def test_authority_change_after_discovery_blocks_action(
             raise ValueError("attempt_no_longer_authorized")
 
     policy = EndpointPolicy()
-    runtime = external_runtime_factory(registry, RemoteTransport(policy), policy)
+    runtime = external_runtime_factory(catalog, RemoteTransport(policy), policy, connector_http=connector_http)
     capability = await runtime._connector(
         ConnectionRunSelection(
             kind="connector",

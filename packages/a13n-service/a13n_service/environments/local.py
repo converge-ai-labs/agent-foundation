@@ -2,7 +2,8 @@
 
 from collections.abc import Mapping
 
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -17,7 +18,7 @@ from .models import EnvironmentProviderRecord
 
 async def synchronize_local_providers(
     sessions: async_sessionmaker[AsyncSession],
-    catalog: EnvironmentProviderCatalog,
+    catalog: ProviderCatalog[EnvironmentProviderDefinition],
     configurations: Mapping[LocalProviderType, JsonObject],
 ) -> None:
     """Reuse exact configurations; never retarget a Provider referenced by a template.

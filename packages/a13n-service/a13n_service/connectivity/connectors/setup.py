@@ -11,6 +11,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
 from a13n_harness.providers.connector.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
@@ -26,7 +28,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.browser_urls import is_secure_or_loopback_url
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.iam import AuthenticatedActor, PrincipalType
 from a13n_service.iam.domain import PrincipalRef
@@ -97,7 +98,8 @@ class ConnectorSetupCoordinator:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviders,
+        connectors: ProviderCatalog[ConnectorProviderDefinition],
+        connector_http: ConnectorHttpClient | None,
         protector: SecretProtector,
         *,
         correlation_secret: bytes | None,
@@ -109,7 +111,8 @@ class ConnectorSetupCoordinator:
         if correlation_secret is not None and len(correlation_secret) < 32:
             raise ValueError("ConnectorProvider setup correlation secret must be at least 32 bytes")
         self._sessions = sessions
-        self._adapters = adapters
+        self._connectors = connectors
+        self._connector_http = connector_http
         self._protector = protector
         self._correlation_secret = correlation_secret
         self._public_origin = public_origin.rstrip("/") if public_origin is not None else None
@@ -362,7 +365,9 @@ class ConnectorSetupCoordinator:
             interrupted = False
         try:
             snapshot = await self.attempt_snapshot(attempt_id, claim_owner=owner, claim_generation=generation)
-            async with open_provider(self._adapters, snapshot.connector, snapshot.credentials) as runtime:
+            async with open_provider(
+                self._connectors, self._connector_http, snapshot.connector, snapshot.credentials
+            ) as runtime:
                 if interrupted and not runtime.setup_replay_safe:
                     await self.fail_attempt(
                         attempt_id, code="setup_outcome_unknown", claim_owner=owner, claim_generation=generation
@@ -688,7 +693,9 @@ class ConnectorSetupCoordinator:
         if snapshot.attempt.external_ref is None:
             raise ConnectorProviderError("setup_incomplete")
         require_active_provider(snapshot.connector)
-        async with open_provider(self._adapters, snapshot.connector, snapshot.credentials) as runtime:
+        async with open_provider(
+            self._connectors, self._connector_http, snapshot.connector, snapshot.credentials
+        ) as runtime:
             if snapshot.attempt.completion_method == SetupCompletionMethod.browser_confirmation:
                 inspection = await runtime.inspect_setup(
                     setup_ref=snapshot.attempt.external_ref, context=_setup_context(snapshot.attempt, callback_url=None)

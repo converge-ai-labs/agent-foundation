@@ -19,17 +19,17 @@ from .contracts import (
 )
 from .definition import MemoryProviderDefinition
 from .mem0_common import (
-    _filter,
-    _list_limit,
-    _Mem0Backend,
-    _records,
-    _search_options,
+    Mem0Backend,
     document_filters,
     document_records,
+    parse_records,
+    subject_filter,
+    validate_list_limit,
+    validate_search_options,
 )
 
 
-class Mem0PlatformBackend(_Mem0Backend):
+class Mem0PlatformBackend(Mem0Backend):
     """Borrow the native Platform SDK client; never emulate it with an OSS client."""
 
     def __init__(self, client: AsyncMemoryClient) -> None:
@@ -38,17 +38,19 @@ class Mem0PlatformBackend(_Mem0Backend):
     async def search(
         self, query: str, *, subjects: tuple[MemorySubject, ...], limit: int, threshold: float | None = None
     ) -> tuple[MemoryRecord, ...]:
-        _search_options(subjects, limit, threshold)
-        filters = _filter(subjects[0]) if len(subjects) == 1 else {"OR": [_filter(item) for item in subjects]}
+        validate_search_options(subjects, limit, threshold)
+        filters = (
+            subject_filter(subjects[0]) if len(subjects) == 1 else {"OR": [subject_filter(item) for item in subjects]}
+        )
         options: dict[str, Any] = {"filters": filters, "top_k": limit}
         if threshold is not None:
             options["threshold"] = threshold
-        return _records(await self.client.search(query, **options), subjects, limit)
+        return parse_records(await self.client.search(query, **options), subjects, limit)
 
     async def search_documents(
         self, query: str, *, subject: MemorySubject, record_keys: tuple[str, ...], limit: int
     ) -> tuple[MemoryRecord, ...]:
-        _search_options((subject,), limit, None)
+        validate_search_options((subject,), limit, None)
         if not record_keys:
             return ()
         filters = document_filters(subject, record_keys)
@@ -57,21 +59,21 @@ class Mem0PlatformBackend(_Mem0Backend):
         )
 
     async def list(self, subject: MemorySubject, *, limit: int, cursor: str | None = None) -> MemoryPage:
-        _list_limit(limit)
+        validate_list_limit(limit)
         page = 1
         if cursor is not None:
             if not cursor.isascii() or not cursor.isdecimal() or not 1 <= int(cursor) <= 1_000_000:
                 raise ValueError("Invalid Platform memory cursor")
             page = int(cursor)
-        response = await self.client.get_all(filters=_filter(subject), page=page, page_size=min(limit, 200))
-        records = _records(response, (subject,), min(limit, 200))
+        response = await self.client.get_all(filters=subject_filter(subject), page=page, page_size=min(limit, 200))
+        records = parse_records(response, (subject,), min(limit, 200))
         if not isinstance(response, Mapping):
             raise ValueError("Invalid Platform memory page")
         # Never follow remote URLs (which may contain secrets or target another host).
         return MemoryPage(records, MemoryPagination(str(page + 1) if response.get("next") else None))
 
     async def _add(self, text: str, subject: MemorySubject, metadata: Mapping[str, JsonValue] | None = None) -> object:
-        options: dict[str, Any] = {"filters": _filter(subject), "infer": False}
+        options: dict[str, Any] = {"filters": subject_filter(subject), "infer": False}
         if metadata is not None:
             options["metadata"] = dict(metadata)
         return await self.client.add(text, **options)
@@ -92,8 +94,12 @@ class Mem0PlatformBackend(_Mem0Backend):
 
 
 @asynccontextmanager
-async def open_mem0_platform(*, api_key: str, base_url: str | None = None) -> AsyncIterator[Mem0PlatformBackend]:
+async def open_mem0_platform(
+    configuration: Mem0PlatformConfiguration, credential: Mem0Credential | None
+) -> AsyncIterator[Mem0PlatformBackend]:
     """Open the native SDK with local-only construction and one host lifetime."""
+    if credential is None:
+        raise ValueError("Mem0 Platform requires an API key credential")
     try:
         from mem0 import AsyncMemoryClient
     except ImportError as error:
@@ -112,7 +118,7 @@ async def open_mem0_platform(*, api_key: str, base_url: str | None = None) -> As
             self.org_id = "deferred"
             self.project_id = "deferred"
 
-    client = _DeferredValidationClient(api_key=api_key, host=base_url)
+    client = _DeferredValidationClient(api_key=credential.api_key.get_secret_value(), host=configuration.base_url)
     try:
         yield Mem0PlatformBackend(client)
     finally:
@@ -124,17 +130,12 @@ if TYPE_CHECKING:
     from mem0 import AsyncMemoryClient
 
 
-def _open(configuration: Mem0PlatformConfiguration, credential: Mem0Credential | None):
-    assert credential is not None
-    return open_mem0_platform(base_url=configuration.base_url, api_key=credential.api_key.get_secret_value())
-
-
 DEFINITION = MemoryProviderDefinition(
     type="mem0_platform",
     display_name="Mem0 Platform",
     configuration_model=Mem0PlatformConfiguration,
     credential_model=Mem0Credential,
-    open_backend=_open,
+    open_backend=open_mem0_platform,
     supports_documents=True,
     setup_url="https://app.mem0.ai/dashboard/api-keys",
 )

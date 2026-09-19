@@ -1,9 +1,11 @@
 """Memory subjects, Agent selection, and bounded public representations."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Annotated, Literal
 
-from a13n_harness.providers.authentication import Authentication
+from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
 from a13n_harness.providers.memory.filesystem.configuration import FilesystemMemoryConfiguration
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_serializer, model_validator
@@ -12,6 +14,7 @@ from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId
 from a13n_service.interactions.domain import ThreadId
 from a13n_service.names import DisplayName
+from a13n_service.provider_metadata import ProviderMetadata, provider_metadata_core
 
 MemoryText = Annotated[str, StringConstraints(min_length=1, max_length=8000, pattern=r"\S")]
 
@@ -41,7 +44,7 @@ class InlineMemoryBackend(BaseModel):
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
     @model_validator(mode="after")
-    def validate_configuration(self) -> "InlineMemoryBackend":
+    def validate_configuration(self) -> InlineMemoryBackend:
         FilesystemMemoryConfiguration.model_validate(self.configuration)
         return self
 
@@ -72,7 +75,7 @@ class MemoryEntrySelection(BaseModel):
         return {key: value for key, value in result.items() if key not in excluded}
 
     @model_validator(mode="after")
-    def mode_options(self) -> "MemoryEntrySelection":
+    def mode_options(self) -> MemoryEntrySelection:
         if self.mode == "records":
             if isinstance(self.backend, InlineMemoryBackend):
                 raise ValueError("Filesystem memory requires documents mode")
@@ -88,7 +91,7 @@ class MemoryEntries(BaseModel):
     entries: tuple[MemoryEntrySelection, ...] = Field(min_length=1, max_length=16)
 
     @model_validator(mode="after")
-    def unique_names(self) -> "MemoryEntries":
+    def unique_names(self) -> MemoryEntries:
         if len({entry.name for entry in self.entries}) != len(self.entries):
             raise ValueError("Memory entry names must be unique")
         return self
@@ -113,7 +116,7 @@ class MemoryScope(BaseModel):
     subject_id: ThreadId | None = None
 
     @model_validator(mode="after")
-    def validate_subject(self) -> "MemoryScope":
+    def validate_subject(self) -> MemoryScope:
         if (self.scope is ScopeKind.USER) != (self.subject_id is None):
             raise ValueError("thread and agent scopes require subject_id; user scope uses the authenticated User")
         return self
@@ -179,7 +182,7 @@ class UpdateMemoryProviderRequest(BaseModel):
     enabled: bool | None = None
 
     @model_validator(mode="after")
-    def validate_changes(self) -> "UpdateMemoryProviderRequest":
+    def validate_changes(self) -> UpdateMemoryProviderRequest:
         if not self.model_fields_set:
             raise ValueError("at least one field must be supplied")
         values = {"name": self.name, "credential": self.credential, "enabled": self.enabled}
@@ -210,24 +213,21 @@ class MemoryProviderCollection(BaseModel):
     next_cursor: str | None = None
 
 
-class MemoryProviderDefinition(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    type: str
-    display_name: str
-    configuration_schema: dict[str, object]
-    credential_schema: dict[str, object]
-    authentication: Authentication
-    setup_url: str | None = None
-    setup_label: str | None = None
+class MemoryProviderMetadata(ProviderMetadata):
     supports_documents: bool = False
     supports_records: bool = True
     supports_revisions: bool = False
     supports_changes: bool = False
 
-
-class MemoryProviderDefinitionCollection(BaseModel):
-    items: tuple[MemoryProviderDefinition, ...]
+    @classmethod
+    def describe(cls, definition: MemoryProviderDefinition) -> MemoryProviderMetadata:
+        return cls(
+            **provider_metadata_core(definition),
+            supports_documents=definition.supports_documents,
+            supports_records=definition.supports_records,
+            supports_revisions=definition.supports_revisions,
+            supports_changes=definition.supports_changes,
+        )
 
 
 class MemoryProviderReference(BaseModel):

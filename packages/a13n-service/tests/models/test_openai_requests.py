@@ -8,7 +8,7 @@ import pytest
 from a13n_service.models.domain import ModelExecutionSnapshot
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.requests import LiveProviderModel
 from pydantic_ai import Agent
 
@@ -125,14 +125,14 @@ async def test_custom_responses_endpoint_inference(mode: str, stream: bool) -> N
             return httpx2.Response(200, json=response)
         return _stream_response()
 
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     configuration: dict[str, object] = {"base_url": "https://custom.example/v1", "auth_mode": mode}
     if mode == "api_key_header":
         configuration["api_key_header_name"] = "x-model-key"
-    validated = registry.validate_provider("openai", configuration, credential_configured=mode != "none")
+    validated = registry.require("openai").validate_configuration(configuration, credential_configured=mode != "none")
     provider = (
-        built_in_provider_registry()
-        .integration("openai")
+        built_in_model_provider_catalog()
+        .require("openai")
         .bind(
             {**validated.configuration, "base_url": validated.endpoint},
             None if mode == "none" else {"api_key": "test-secret"},
@@ -189,15 +189,14 @@ async def test_base_model_profile_preserves_relay_identity_endpoint_and_thinking
             return httpx2.Response(429, headers={"retry-after": "0"}, json={"error": {"message": "busy"}})
         return _stream_response() if streaming else httpx2.Response(200, json=_response([_message()]))
 
-    registry = built_in_provider_registry()
-    validated = registry.validate_provider(
-        "openai",
+    registry = built_in_model_provider_catalog()
+    validated = registry.require("openai").validate_configuration(
         {"base_url": "https://relay.example/v1"},
         credential_configured=True,
     )
     provider = (
-        built_in_provider_registry()
-        .integration("openai")
+        built_in_model_provider_catalog()
+        .require("openai")
         .bind({**validated.configuration, "base_url": validated.endpoint}, {"api_key": "relay-secret"})
     )
     resolver = Mock(spec=LiveProviderResolver)
@@ -254,15 +253,14 @@ async def test_openai_base_profile_routes_thinking_through_explicit_chat_overrid
             },
         )
 
-    registry = built_in_provider_registry()
-    validated = registry.validate_provider(
-        "openai",
+    registry = built_in_model_provider_catalog()
+    validated = registry.require("openai").validate_configuration(
         {"base_url": "https://relay.example/v1"},
         credential_configured=True,
     )
     provider = (
-        built_in_provider_registry()
-        .integration("openai")
+        built_in_model_provider_catalog()
+        .require("openai")
         .bind({**validated.configuration, "base_url": validated.endpoint}, {"api_key": "relay-secret"})
     )
     snapshot = ModelExecutionSnapshot(
@@ -296,15 +294,14 @@ async def test_deepseek_base_profile_survives_openai_relay_agent_lifecycle(strea
         requests.append(request)
         return _chat_response(streaming=streaming)
 
-    registry = built_in_provider_registry()
-    validated = registry.validate_provider(
-        "openai",
+    registry = built_in_model_provider_catalog()
+    validated = registry.require("openai").validate_configuration(
         {"base_url": "https://relay.example/v1"},
         credential_configured=True,
     )
     provider = (
-        built_in_provider_registry()
-        .integration("openai")
+        built_in_model_provider_catalog()
+        .require("openai")
         .bind({**validated.configuration, "base_url": validated.endpoint}, {"api_key": "relay-secret"})
     )
     snapshot = ModelExecutionSnapshot(

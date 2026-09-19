@@ -8,6 +8,8 @@ from typing import Any
 
 from a13n_harness import AgentContext
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from pydantic_ai.models import Model as PydanticModel
 from pydantic_ai.models import ModelResolutionContext
 from sqlalchemy import select
@@ -22,7 +24,7 @@ from .domain import ModelExecutionSnapshot
 from .model_factory import NativeModelFactory
 from .models import ModelProviderRecord, ModelRecord
 from .provider_runtime import LiveProviderResolver
-from .providers import ProviderRegistry
+from .providers import validate_model_api
 from .requests import LiveProviderModel
 from .service_common import ModelError
 from .settings import JsonObject, effective_settings
@@ -39,7 +41,9 @@ class PreparedModelExecution:
 class AcceptedModelSelector:
     """Resolve the latest Model for Agent validation or Run acceptance."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession], registry: ProviderRegistry) -> None:
+    def __init__(
+        self, sessions: async_sessionmaker[AsyncSession], registry: ProviderCatalog[ModelProviderDefinition]
+    ) -> None:
         self._sessions = sessions
         self._registry = registry
 
@@ -76,7 +80,7 @@ class AcceptedModelSelector:
             model_record, provider_record = row
             model = model_record.to_resource()
             _require_enabled(model_record, provider_record)
-            self._registry.validate_model_api(provider_record.type, model.model_api)
+            validate_model_api(self._registry.require(provider_record.type), model.model_api)
             settings_layers = (settings,) if settings_override is None else (settings, settings_override)
             effective_settings(model.model_api, model.settings, *settings_layers)
             return PreparedModelExecution(

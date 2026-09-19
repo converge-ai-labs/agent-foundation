@@ -857,7 +857,6 @@ async def test_windows_sandbox_shell_recipe_stays_in_eip_configuration(
         profile_id="environment-sandbox",
         behavior_digest="a" * 64,
         provider_key=adapters.LOCAL_ENVD_PROVIDER_KEY,
-        provider_schema_version=next(iter(provider.environment_versions)),
         adapter_key=adapters.LOCAL_ENVD_ADAPTER_KEY,
     )
     await adapters.LocalEnvdProjectAdapter().bind(

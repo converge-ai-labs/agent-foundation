@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from a13n_harness.providers.authentication import Authentication, CredentialMode
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.management import Environment
 from a13n_harness.providers.environment.models import EnvironmentDescriptor, EnvironmentState
@@ -38,13 +38,13 @@ class AliasedModelConfiguration(ProviderConfiguration):
     required_nullable: str | None
 
 
-def _describe(configuration: BaseModel) -> EnvironmentDescriptor:
+def _describe(configuration: Configuration) -> EnvironmentDescriptor:
     del configuration
     raise NotImplementedError
 
 
 def _construct(
-    *, configuration: BaseModel, environment_id: str, state: EnvironmentState | None, runtime: None
+    *, configuration: Configuration, environment_id: str, state: EnvironmentState | None, runtime: object | None
 ) -> Environment:
     del configuration, environment_id, state, runtime
     raise NotImplementedError
@@ -54,22 +54,20 @@ EXTERNAL_ENVIRONMENT = EnvironmentProviderDefinition(
     type="external_environment",
     display_name="External Environment",
     configuration_model=Configuration,
-    credential_model=None,
-    environment_models={"1": Configuration},
+    environment_model=Configuration,
     construct=_construct,
     describe_environment=_describe,
-    authentication=Authentication(mode=CredentialMode.forbidden),
     supports_managed=False,
 )
 
 
 def test_installed_environment_definition_enters_the_service_catalog() -> None:
     catalogs = ProviderCatalogs(
-        environment=(EXTERNAL_ENVIRONMENT,),
-        model=(),
-        connector=(),
-        web=(),
-        plugins=(),
+        environment=ProviderCatalog((EXTERNAL_ENVIRONMENT,)),
+        model=ProviderCatalog(),
+        connector=ProviderCatalog(),
+        web=ProviderCatalog(),
+        memory=ProviderCatalog(),
     )
 
     selected = build_environment_catalog(

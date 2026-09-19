@@ -4,14 +4,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
 )
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
-from a13n_harness.providers.environment.management import EmptyProviderConfiguration, Environment
+from a13n_harness.providers.environment.management import Environment, EnvironmentProviderConfiguration
 from a13n_harness.providers.environment.models import EnvironmentDescriptor, EnvironmentState
 from a13n_harness.providers.plugins import ProviderManifest
 from pydantic import BaseModel, ConfigDict, field_validator
@@ -50,31 +49,31 @@ def _direct_configuration(configuration: WorkspaceEnvironmentConfiguration) -> D
     )
 
 
-def _describe(configuration: BaseModel) -> EnvironmentDescriptor:
-    if not isinstance(configuration, WorkspaceEnvironmentConfiguration):
-        raise TypeError("example_workspace requires WorkspaceEnvironmentConfiguration")
+def _describe(configuration: WorkspaceEnvironmentConfiguration) -> EnvironmentDescriptor:
     return DIRECT_LOCAL.describe_environment(_direct_configuration(configuration))
 
 
 def _construct(
-    *, configuration: BaseModel, environment_id: str, state: EnvironmentState | None, runtime: None
+    *,
+    configuration: WorkspaceEnvironmentConfiguration,
+    environment_id: str,
+    state: EnvironmentState | None,
+    runtime: object | None,
 ) -> Environment:
     """This deterministic Provider needs no credential or SDK collaborator."""
     del runtime
-    if not isinstance(configuration, WorkspaceEnvironmentConfiguration) or state is not None:
-        raise TypeError("example_workspace requires WorkspaceEnvironmentConfiguration and no stored state")
+    if state is not None:
+        raise TypeError("example_workspace accepts no stored state")
     return WorkspaceEnvironment(_direct_configuration(configuration), environment_id=environment_id)
 
 
-WORKSPACE_ENVIRONMENT = EnvironmentProviderDefinition[EmptyProviderConfiguration, EmptyProviderConfiguration, None](
+WORKSPACE_ENVIRONMENT = EnvironmentProviderDefinition(
     type=PROVIDER_TYPE,
     display_name="Example workspace",
-    configuration_model=EmptyProviderConfiguration,
-    credential_model=None,
-    environment_models={"1": WorkspaceEnvironmentConfiguration},
+    configuration_model=EnvironmentProviderConfiguration,
+    environment_model=WorkspaceEnvironmentConfiguration,
     construct=_construct,
     describe_environment=_describe,
-    authentication=Authentication(mode=CredentialMode.forbidden),
     supports_stop=True,
     supports_destroy=True,
 )

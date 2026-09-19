@@ -224,8 +224,7 @@ def _environment(root: Path, environment_id: str) -> DirectLocalEnvironment:
     root.mkdir(parents=True)
     provider = DIRECT_LOCAL
     configuration = provider.validate_environment(
-        schema_version="1",
-        value=DirectLocalEnvironmentConfiguration(
+        DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
         ).model_dump(mode="json"),
     )

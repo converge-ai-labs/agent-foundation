@@ -6,7 +6,8 @@ from uuid import uuid4
 import httpx
 import httpx2
 import pytest
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory.configuration import Mem0Credential, Mem0PlatformConfiguration
 from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
 from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_harness.providers.memory.mem0_platform import open_mem0_platform
@@ -100,7 +101,9 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
         backend = Mem0OSSBackend(remote)
     else:
         backend = await stack.enter_async_context(
-            open_mem0_platform(api_key="test-platform-key", base_url="http://mem0")
+            open_mem0_platform(
+                Mem0PlatformConfiguration(base_url="http://mem0"), Mem0Credential(api_key="test-platform-key")
+            )
         )
         sdk = backend.client
         await sdk.async_client.aclose()
@@ -116,7 +119,7 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
         settings(tmp_path, service_database),
         components=Components(
             request_authenticator=authenticate,
-            memory_provider_catalog=MemoryProviderCatalog((BorrowedMemory(backend).definition,)),
+            memory_provider_catalog=ProviderCatalog((BorrowedMemory(backend).definition,)),
         ),
     )
     async with stack, remote, app.router.lifespan_context(app):
@@ -196,7 +199,7 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
 async def test_service_account_never_becomes_user(memory_sessions):
     principal = PrincipalRef(principal_type="service_account", principal_id="sa_1234567890abcdef")
     with pytest.raises(AuthorizationError):
-        await MemoryAuthorizer(memory_sessions, MemoryProviderCatalog()).authorize(
+        await MemoryAuthorizer(memory_sessions, ProviderCatalog()).authorize(
             actor=replace(actor(), principal=principal),
             workspace_id=WORKSPACE_ID,
             provider_id="memprov_1234567890abcdef",
@@ -236,7 +239,7 @@ async def test_oss_default_loads_1000_for_client_paging_without_completeness_cla
             settings(tmp_path, service_database),
             components=Components(
                 request_authenticator=authenticate,
-                memory_provider_catalog=MemoryProviderCatalog((BorrowedMemory(Mem0OSSBackend(remote)).definition,)),
+                memory_provider_catalog=ProviderCatalog((BorrowedMemory(Mem0OSSBackend(remote)).definition,)),
             ),
         )
         async with app.router.lifespan_context(app):

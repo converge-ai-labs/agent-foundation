@@ -343,13 +343,13 @@ async def _runtime(
     )
 
 
-def _describe(configuration: BaseModel) -> EnvironmentDescriptor:
+def _describe(configuration: E2BEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, E2BEnvironmentConfiguration):
         raise TypeError("E2B requires E2BEnvironmentConfiguration")
     return descriptor(configuration)
 
 
-def _identity(*, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+def _identity(*, configuration: E2BEnvironmentConfiguration, state: EnvironmentState | None) -> str | None:
     if not isinstance(configuration, E2BEnvironmentConfiguration):
         raise TypeError("E2B requires E2BEnvironmentConfiguration")
     data = decode_target_state(PROVIDER_KEY, state, E2BProviderStateData, fingerprint=configuration.fingerprint)
@@ -358,7 +358,7 @@ def _identity(*, configuration: BaseModel, state: EnvironmentState | None) -> st
 
 def _construct(
     *,
-    configuration: BaseModel,
+    configuration: E2BEnvironmentConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
     runtime: E2BProviderRuntime | None,
@@ -373,7 +373,7 @@ E2B = EnvironmentProviderDefinition(
     display_name="E2B",
     configuration_model=E2BConnectionConfiguration,
     credential_model=E2BCredential,
-    environment_models={"1": E2BEnvironmentConfiguration},
+    environment_model=E2BEnvironmentConfiguration,
     construct=_construct,
     describe_environment=_describe,
     target_identity=_identity,

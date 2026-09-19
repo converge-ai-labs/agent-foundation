@@ -8,6 +8,7 @@ from a13n_harness.capabilities.web import (
     WebScrapeResult,
     WebSearchResponse,
 )
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.web import WebProviderDefinition
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthorizationError
@@ -18,7 +19,6 @@ from a13n_service.web.cleanup import WebProviderOwnerCleanup
 from a13n_service.web.domain import CreateWebProviderRequest, UpdateWebProviderRequest
 from a13n_service.web.models import WebProviderRecord
 from a13n_service.web.probe import test_account as probe_account
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.resources import WebProviderError
 from a13n_service.web.service import WebProviderService
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
@@ -94,7 +94,7 @@ def _custom_service(
         search=runtime.search if search else None,
         scrape=runtime.scrape if scrape else None,
     )
-    return WebProviderService(web_sessions, secret_protector, WebProviderRegistry((registration,)))
+    return WebProviderService(web_sessions, secret_protector, ProviderCatalog((registration,)))
 
 
 async def create(service, name="Search", **kwargs):

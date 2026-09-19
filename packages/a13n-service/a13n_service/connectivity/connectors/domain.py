@@ -6,13 +6,14 @@ from datetime import datetime
 from enum import StrEnum
 from typing import Literal
 
-from a13n_harness.providers.authentication import Authentication
+from a13n_harness.providers.connector import ConnectorProviderDefinition
 from a13n_harness.providers.connector.contracts import ConnectorKey, ProviderAccess, SetupCompletionMethod
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.connectivity.domain import AdapterKey, DisplayName, JsonObject
 from a13n_service.iam.domain import PrincipalRef
+from a13n_service.provider_metadata import ProviderMetadata, provider_metadata_core
 
 
 class StrictModel(BaseModel):
@@ -124,16 +125,7 @@ class ConnectorCollection(StrictModel):
     refreshed_at: datetime | None = None
 
 
-class ConnectorProviderMetadata(StrictModel):
-    type: str
-    display_name: str
-    configuration_schema: JsonObject
-    credential_schema: JsonObject
-    authentication: Authentication
-    setup_url: str | None = None
-    setup_label: str | None = None
-
-
-class ConnectorProviderMetadataCollection(StrictModel):
-    items: tuple[ConnectorProviderMetadata, ...]
-    next_cursor: None = None
+class ConnectorProviderMetadata(ProviderMetadata):
+    @classmethod
+    def describe(cls, definition: ConnectorProviderDefinition) -> ConnectorProviderMetadata:
+        return cls(**provider_metadata_core(definition))

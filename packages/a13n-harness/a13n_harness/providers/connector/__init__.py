@@ -1,4 +1,7 @@
-from .catalog import ConnectorProviderCatalog
-from .definition import ConnectorProviderDefinition
+"""Reusable Connector definitions and the domain's authoring contracts."""
 
-__all__ = ["ConnectorProviderCatalog", "ConnectorProviderDefinition"]
+from .contracts import ConnectorProviderRuntime
+from .definition import ConnectorProviderDefinition
+from .http import ConnectorHttpClient
+
+__all__ = ["ConnectorHttpClient", "ConnectorProviderDefinition", "ConnectorProviderRuntime"]

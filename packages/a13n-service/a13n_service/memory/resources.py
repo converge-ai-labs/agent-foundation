@@ -1,6 +1,7 @@
 """Short-session Memory Provider eligibility and representation checks."""
 
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -22,7 +23,7 @@ async def require_provider(
     organization_id: str,
     workspace_id: str | None,
     provider_id: str,
-    catalog: MemoryProviderCatalog | None = None,
+    catalog: ProviderCatalog[MemoryProviderDefinition] | None = None,
     eligible: bool = False,
     owning_scope: bool = False,
     lock: bool = False,
@@ -46,7 +47,7 @@ async def require_provider(
     return record
 
 
-def require_eligible(record: MemoryProviderRecord, catalog: MemoryProviderCatalog) -> None:
+def require_eligible(record: MemoryProviderRecord, catalog: ProviderCatalog[MemoryProviderDefinition]) -> None:
     if not record.enabled:
         raise MemoryProviderError(
             "memory_provider_disabled", "Memory Provider is disabled.", category=ErrorCategory.conflict
@@ -71,7 +72,7 @@ def require_eligible(record: MemoryProviderRecord, catalog: MemoryProviderCatalo
         ) from error
 
 
-def require_document_support(provider_type: str, catalog: MemoryProviderCatalog | None) -> None:
+def require_document_support(provider_type: str, catalog: ProviderCatalog[MemoryProviderDefinition] | None) -> None:
     definition = catalog.get(provider_type) if catalog is not None else None
     if definition is None:
         raise MemoryProviderError(
@@ -104,7 +105,7 @@ async def require_memory_configuration(
     selection: MemoryConfiguration,
     organization_id: str,
     workspace_id: str,
-    catalog: MemoryProviderCatalog,
+    catalog: ProviderCatalog[MemoryProviderDefinition],
 ) -> None:
     providers = {}
     for provider_id in memory_provider_ids(selection):

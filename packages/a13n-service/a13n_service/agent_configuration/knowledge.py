@@ -43,7 +43,7 @@ class KnowledgeFiles:
         root = self.validate()
         provider = DIRECT_LOCAL
         configuration = provider.validate_environment(
-            schema_version="1", value={"root": {"path": str(root), "read_only": True}, "max_value_bytes": 512 * 1024}
+            {"root": {"path": str(root), "read_only": True}, "max_value_bytes": 512 * 1024}
         )
         return provider.construct(
             environment_id="configuration-knowledge",

@@ -2,51 +2,55 @@ from __future__ import annotations
 
 import httpx2
 import pytest
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import ModelProviderMetadata, built_in_model_provider_catalog, validate_model_api
 from a13n_service.models.service_common import ModelError
 
 
 def test_registry_separates_provider_type_from_calling_api() -> None:
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
 
-    assert registry.definition("openai").supported_model_apis == (
+    assert ModelProviderMetadata.describe(registry.require("openai")).supported_model_apis == (
         "openai.responses",
         "openai.chat_completions",
     )
-    assert registry.definition("openrouter").supported_model_apis == ("openrouter.chat_completions",)
-    assert registry.definition("ollama").supported_model_apis == ("ollama.chat_completions",)
-    assert registry.definition("openai").model_api_labels == {
+    assert ModelProviderMetadata.describe(registry.require("openrouter")).supported_model_apis == (
+        "openrouter.chat_completions",
+    )
+    assert ModelProviderMetadata.describe(registry.require("ollama")).supported_model_apis == (
+        "ollama.chat_completions",
+    )
+    assert ModelProviderMetadata.describe(registry.require("openai")).model_api_labels == {
         "openai.responses": "OpenAI Responses",
         "openai.chat_completions": "OpenAI Chat Completions",
     }
 
 
 def test_registry_rejects_unbound_provider_api_combinations() -> None:
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
 
     with pytest.raises(ModelError, match="not supported"):
-        registry.validate_model_api("openrouter", "anthropic.messages")
+        validate_model_api(registry.require("openrouter"), "anthropic.messages")
 
 
 def test_provider_config_does_not_select_a_calling_api() -> None:
-    schema = built_in_provider_registry().definition("azure_openai").configuration_schema
+    schema = ModelProviderMetadata.describe(
+        built_in_model_provider_catalog().require("azure_openai")
+    ).configuration_schema
 
     assert "api_protocol" not in schema["properties"]
 
 
 def test_openai_auth_mode_controls_credential_requirement() -> None:
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
 
-    validated = registry.validate_provider(
-        "openai",
+    validated = registry.require("openai").validate_configuration(
         {"base_url": "https://models.example/v1", "auth_mode": "none"},
         credential_configured=False,
     )
     assert validated.configuration["auth_mode"] == "none"
 
     with pytest.raises(ValueError, match="credential is required"):
-        registry.validate_provider(
-            "openai",
+        registry.require("openai").validate_configuration(
             {"base_url": "https://models.example/v1", "auth_mode": "bearer"},
             credential_configured=False,
         )
@@ -76,9 +80,9 @@ async def test_openai_runtime_sends_only_selected_auth(
     if mode == "api_key_header":
         configuration["api_key_header_name"] = "x-api-key"
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
-        integration = built_in_provider_registry().integration("openai")
+        integration = built_in_model_provider_catalog().require("openai")
         provider = integration.build_provider(
-            built_in_provider_registry().integration("openai").bind(configuration, credential),
+            built_in_model_provider_catalog().require("openai").bind(configuration, credential),
             http,
             integration.supported_model_apis[0],
         )
@@ -90,19 +94,25 @@ async def test_openai_runtime_sends_only_selected_auth(
 
 
 def test_registry_has_one_openai_provider_for_both_apis() -> None:
-    registry = built_in_provider_registry()
-    assert [item.type for item in registry.definitions()].count("openai") == 1
-    assert registry.definition("openai").default_model_api == "openai.responses"
-    assert registry.definition("openai").supported_model_apis == ("openai.responses", "openai.chat_completions")
+    registry = built_in_model_provider_catalog()
+    assert [item.type for item in registry.values()].count("openai") == 1
+    assert ModelProviderMetadata.describe(registry.require("openai")).default_model_api == "openai.responses"
+    assert ModelProviderMetadata.describe(registry.require("openai")).supported_model_apis == (
+        "openai.responses",
+        "openai.chat_completions",
+    )
 
 
 def test_help_and_probe_metadata_come_from_definitions():
-    registry = built_in_provider_registry()
-    assert registry.definition("anthropic").supports_connection_probe
-    assert registry.definition("anthropic").setup_url == "https://platform.claude.com/settings/keys"
+    registry = built_in_model_provider_catalog()
+    assert ModelProviderMetadata.describe(registry.require("anthropic")).supports_connection_probe
+    assert (
+        ModelProviderMetadata.describe(registry.require("anthropic")).setup_url
+        == "https://platform.claude.com/settings/keys"
+    )
     for name in ("google_vertex", "aws_bedrock"):
-        assert not registry.definition(name).supports_connection_probe
-        assert registry.definition(name).setup_url is not None
-        assert registry.definition(name).setup_label is not None
-    assert registry.definition("ollama").setup_url is None
-    assert registry.definition("ollama").setup_label is None
+        assert not ModelProviderMetadata.describe(registry.require(name)).supports_connection_probe
+        assert ModelProviderMetadata.describe(registry.require(name)).setup_url is not None
+        assert ModelProviderMetadata.describe(registry.require(name)).setup_label is not None
+    assert ModelProviderMetadata.describe(registry.require("ollama")).setup_url is None
+    assert ModelProviderMetadata.describe(registry.require("ollama")).setup_label is None

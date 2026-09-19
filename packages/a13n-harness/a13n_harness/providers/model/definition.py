@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, ClassVar
 
 import httpx2
 from anyio import fail_after, move_on_after, to_thread
 from pydantic import BaseModel, TypeAdapter
 
-from ..authentication import Authentication
+from ..definition import ProviderDefinition
 from ..endpoint_policy import EndpointPolicy
 from ..http import EndpointValidator
-from ..validation import validate_definition
 from .apis import MODEL_APIS
 from .credentials import ApiKeyCredential
 from .headers import ExtraHeaders, validate_header_names
@@ -48,40 +47,21 @@ type NativeProviderBuilder[C: ProviderConfiguration, K: BaseModel] = Callable[
 type EndpointResolver = Callable[[Mapping[str, object]], str | None]
 
 
-@dataclass(frozen=True, slots=True)
-class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel]:
-    type: str
-    display_name: str
-    configuration_model: type[C]
-    credential_model: type[K]
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDefinition[C, K]):
+    DOMAIN: ClassVar[str] = "Model"
+
     supported_model_apis: tuple[str, ...]
     build_provider: NativeProviderBuilder[C, K]
-    setup_url: str | None = None
-    setup_label: str | None = None
-    authentication: Authentication = field(default_factory=Authentication)
     endpoint: str | EndpointResolver | None = None
     endpoint_configuration_field: str | None = None
     connection_probe: Callable[[ModelConnection[C, K]], ConnectionProbeRequest] | None = None
     reserved_headers: tuple[str, ...] = ("authorization",)
     additional_endpoint_fields: tuple[str, ...] = ()
 
-    def __post_init__(self) -> None:
-        validate_definition(
-            self.type,
-            self.display_name,
-            self.setup_url,
-            self.configuration_model,
-            self.credential_model,
-            domain="Model",
-            setup_label=self.setup_label,
-        )
-        self.authentication.validate_configuration_model(self.configuration_model)
+    def validate_domain(self) -> None:
         if not self.supported_model_apis or set(self.supported_model_apis) - MODEL_APIS.keys():
             raise ValueError("Model Provider must declare supported native calling APIs")
-        if self.connection_probe is not None and not callable(self.connection_probe):
-            raise TypeError("Model Provider connection probe must be callable")
-        if not callable(self.build_provider):
-            raise TypeError("Model Provider must supply native construction")
 
     @property
     def supports_connection_probe(self) -> bool:
@@ -123,12 +103,9 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel]:
         validated = self.validate_configuration(
             configuration, credential_configured=credential is not None, header_names=tuple(headers)
         )
+        parsed = self.configuration_model.model_validate(validated.configuration)
         return ModelConnection(
-            self.type,
-            self.configuration_model.model_validate(validated.configuration),
-            validated.endpoint,
-            self.credential_model.model_validate(credential) if credential is not None else None,
-            headers,
+            self.type, parsed, validated.endpoint, self.parse_credential(parsed, credential), headers
         )
 
     async def probe(

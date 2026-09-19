@@ -3,7 +3,8 @@
 import json
 from datetime import timedelta
 
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
 from sqlalchemy import and_, cast, or_, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
@@ -17,12 +18,13 @@ from a13n_service.collection_cursors import (
     decode_collection_cursor,
     encode_collection_cursor,
 )
-from a13n_service.credentials import credential_payload
+from a13n_service.credentials import provider_credential_payload
 from a13n_service.iam import AuthenticatedActor, authorize_agent
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction
 from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.ids import new_object_id
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
@@ -31,8 +33,7 @@ from .domain import (
     CreateMemoryProviderRequest,
     MemoryProvider,
     MemoryProviderCollection,
-    MemoryProviderDefinition,
-    MemoryProviderDefinitionCollection,
+    MemoryProviderMetadata,
     MemoryProviderReference,
     MemoryProviderReferenceCollection,
     UpdateMemoryProviderRequest,
@@ -46,7 +47,7 @@ class MemoryProviderService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         protector: SecretProtector,
-        catalog: MemoryProviderCatalog,
+        catalog: ProviderCatalog[MemoryProviderDefinition],
         *,
         clock: Clock = utc_now,
     ) -> None:
@@ -55,7 +56,22 @@ class MemoryProviderService:
         self.clock = clock
         self.catalog = catalog
 
-    async def type_definitions(self, *, actor: AuthenticatedActor) -> MemoryProviderDefinitionCollection:
+    async def provider_types(self, *, actor: AuthenticatedActor) -> ProviderMetadataCollection[MemoryProviderMetadata]:
+        await self._authorize_read(actor)
+        return ProviderMetadataCollection(
+            items=tuple(MemoryProviderMetadata.describe(self.catalog[key]) for key in sorted(self.catalog))
+        )
+
+    async def provider_type(self, *, actor: AuthenticatedActor, provider_type: str) -> MemoryProviderMetadata:
+        await self._authorize_read(actor)
+        try:
+            return MemoryProviderMetadata.describe(self.catalog.require(provider_type))
+        except ValueError as error:
+            raise MemoryProviderError(
+                "memory_provider_type_not_found", "Memory Provider type not found.", category=ErrorCategory.not_found
+            ) from error
+
+    async def _authorize_read(self, actor: AuthenticatedActor) -> None:
         async with transaction(self.sessions) as session:
             await authorize_scope(
                 session,
@@ -63,24 +79,6 @@ class MemoryProviderService:
                 workspace_id=actor.boundary_workspace_id,
                 action=WorkspaceAction.memory_provider_read,
             )
-        return MemoryProviderDefinitionCollection(
-            items=tuple(
-                MemoryProviderDefinition(
-                    type=key,
-                    display_name=definition.display_name,
-                    supports_records=definition.supports_records,
-                    supports_documents=definition.supports_documents,
-                    supports_revisions=definition.supports_revisions,
-                    supports_changes=definition.supports_changes,
-                    authentication=definition.authentication,
-                    setup_url=definition.setup_url,
-                    setup_label=definition.setup_label,
-                    configuration_schema=definition.configuration_model.model_json_schema(),
-                    credential_schema={**definition.credential_model.model_json_schema(), "writeOnly": True},
-                )
-                for key, definition in sorted(self.catalog.items())
-            )
-        )
 
     async def create(
         self, *, actor: AuthenticatedActor, workspace_id: str | None, request: CreateMemoryProviderRequest
@@ -205,8 +203,7 @@ class MemoryProviderService:
         try:
             definition = self.catalog[provider_type]
             parsed = definition.configuration_model.model_validate(configuration)
-            definition.authentication.validate_presence(parsed, value is not None)
-            return credential_payload(definition.credential_model.model_validate(value)) if value is not None else None
+            return provider_credential_payload(definition, parsed, value)
         except (KeyError, ValueError) as error:
             raise MemoryProviderError(
                 "memory_provider_credential_invalid",

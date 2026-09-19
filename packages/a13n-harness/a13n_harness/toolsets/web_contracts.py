@@ -11,8 +11,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from a13n_harness.errors import DefinitionError
 from a13n_harness.providers.web.contracts import (
-    _MAX_RESPONSE_HEADER_BYTES,
-    _MAX_RESPONSE_HEADERS,
+    MAX_RESPONSE_HEADER_BYTES,
+    MAX_RESPONSE_HEADERS,
     WebClient,
     WebDomainPolicy,
     WebMethod,
@@ -141,8 +141,8 @@ class WebConfiguration(BaseModel):
     max_search_results: int = Field(default=10, gt=0, le=100)
     max_scrape_bytes: int = Field(default=512 * 1024, gt=0, le=4 * 1024 * 1024)
     stream_chunk_size: int = Field(default=64 * 1024, gt=0, le=1024 * 1024)
-    max_response_headers: int = Field(default=128, gt=0, le=_MAX_RESPONSE_HEADERS)
-    max_response_header_bytes: int = Field(default=64 * 1024, gt=0, le=_MAX_RESPONSE_HEADER_BYTES)
+    max_response_headers: int = Field(default=128, gt=0, le=MAX_RESPONSE_HEADERS)
+    max_response_header_bytes: int = Field(default=64 * 1024, gt=0, le=MAX_RESPONSE_HEADER_BYTES)
 
     @classmethod
     def from_environment(cls, environ: Mapping[str, str] | None = None) -> WebConfiguration:

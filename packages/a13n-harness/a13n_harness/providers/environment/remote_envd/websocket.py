@@ -4,7 +4,6 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
-from ...authentication import Authentication, CredentialMode
 from ..definition import EnvironmentProviderDefinition
 from ..errors import EnvironmentProviderErrorCategory as Category
 from ..errors import provider_error
@@ -53,7 +52,7 @@ async def _runtime(
 
 def _construct(
     *,
-    configuration: BaseModel,
+    configuration: RemoteEnvdEnvironmentConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
     runtime: WebSocketEnvdProviderRuntime | None,
@@ -78,13 +77,11 @@ WEBSOCKET_ENVD = EnvironmentProviderDefinition(
     type=WEBSOCKET_PROVIDER_KEY,
     display_name="WebSocket Envd",
     configuration_model=WebSocketEnvdConnectionConfiguration,
-    credential_model=None,
-    environment_models={"1": RemoteEnvdEnvironmentConfiguration},
+    environment_model=RemoteEnvdEnvironmentConfiguration,
     construct=_construct,
     describe_environment=describe_environment,
     target_identity=lambda **kwargs: target_identity(WEBSOCKET_PROVIDER_KEY, **kwargs),
     backend_identity=_backend_identity,
     runtime_factory=_runtime,
     supports_managed=False,
-    authentication=Authentication(mode=CredentialMode.forbidden),
 )

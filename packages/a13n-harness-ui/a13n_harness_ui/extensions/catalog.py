@@ -41,9 +41,9 @@ from a13n_harness.plugin_factories import (
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.plugins import load_provider_plugins
 from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator
@@ -153,7 +153,7 @@ class HarnessUiExtensionCatalog:
         self._host_providers = host_providers
         self._provider_plugins = load_provider_plugins(provider_plugins)
         self._providers = dict(
-            EnvironmentProviderCatalog(
+            ProviderCatalog(
                 (
                     *BUILT_IN_ENVIRONMENT_PROVIDERS,
                     *(definition for plugin in self._provider_plugins for definition in plugin.manifest.environment),
@@ -312,10 +312,10 @@ class HarnessUiExtensionCatalog:
         explicit = tuple(host[key] for key in dict.fromkeys(keys) if key in host)
         return build_harness_plugin_factory_catalog(plugin_keys=selected, explicit_factories=explicit)
 
-    def provider_catalog(self, keys: tuple[str, ...]) -> EnvironmentProviderCatalog:
+    def provider_catalog(self, keys: tuple[str, ...]) -> ProviderCatalog[EnvironmentProviderDefinition]:
         for key in keys:
             self._require_unambiguous("environment_provider", key)
-        return EnvironmentProviderCatalog(self._providers[key] for key in dict.fromkeys(keys))
+        return ProviderCatalog(self._providers[key] for key in dict.fromkeys(keys))
 
     def provider_reference(self, key: str) -> CatalogReference:
         return next(item for item in self.references if item.kind == "environment_provider" and item.key == key)

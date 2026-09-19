@@ -11,7 +11,7 @@ from a13n_service.models.domain import (
     UpdateModelRequest,
 )
 from a13n_service.models.models import ModelProviderRecord
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service_common import ModelError
 from a13n_service.secrets.crypto import SecretProtectionError
@@ -50,7 +50,7 @@ async def test_shared_models_resolve_by_bare_key_and_use_owned_credentials(
     assert model.workspace_id is None
     assert (await model_service.list(actor=actor(), workspace_id=WORKSPACE_ID)).items == (model,)
     assert (await provider_service.list(actor=actor(), workspace_id=WORKSPACE_ID)).items == (org_provider,)
-    prepared = await AcceptedModelSelector(model_sessions, built_in_provider_registry()).prepare(
+    prepared = await AcceptedModelSelector(model_sessions, built_in_model_provider_catalog()).prepare(
         organization_id=ORG_ID, workspace_id=WORKSPACE_ID, model_key="coding", settings={}
     )
     assert prepared.resource.id == model.id

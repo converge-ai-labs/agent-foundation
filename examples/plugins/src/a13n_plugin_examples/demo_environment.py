@@ -16,8 +16,8 @@ from a13n_harness import (
     HarnessBuilder,
     RunPreparationContext,
 )
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
-from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.plugins import load_provider_plugins
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -40,8 +40,7 @@ class EnvironmentDemoResult:
 
 def _configuration(provider: EnvironmentProviderDefinition, root: Path):
     return provider.validate_environment(
-        schema_version="1",
-        value={
+        {
             "root": str(root),
             "read_only": True,
         },
@@ -51,7 +50,7 @@ def _configuration(provider: EnvironmentProviderDefinition, root: Path):
 async def _run_environment_demo(
     *,
     selection_mode: EnvironmentSelectionMode,
-    catalog: EnvironmentProviderCatalog,
+    catalog: ProviderCatalog[EnvironmentProviderDefinition],
     source_root: Path,
     docs_root: Path,
 ) -> EnvironmentDemoResult:
@@ -115,11 +114,11 @@ async def _run_environment_demo(
     )
 
 
-def installed_environment_catalog() -> EnvironmentProviderCatalog:
+def installed_environment_catalog() -> ProviderCatalog[EnvironmentProviderDefinition]:
     """Load only the Environment definitions of the explicitly enabled installed plugin."""
 
     plugins = load_provider_plugins((PLUGIN_NAME,))
-    return EnvironmentProviderCatalog(definition for plugin in plugins for definition in plugin.manifest.environment)
+    return ProviderCatalog(definition for plugin in plugins for definition in plugin.manifest.environment)
 
 
 async def run_environment_entrypoint_demo(
@@ -147,7 +146,7 @@ async def run_environment_code_demo(
 
     from a13n_plugin_examples.environment import WORKSPACE_ENVIRONMENT
 
-    catalog = EnvironmentProviderCatalog((WORKSPACE_ENVIRONMENT,))
+    catalog = ProviderCatalog((WORKSPACE_ENVIRONMENT,))
     return await _run_environment_demo(
         selection_mode="code",
         catalog=catalog,

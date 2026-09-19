@@ -1085,6 +1085,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/connector-provider-types/{provider_type}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Connector Provider Type */
+    get: operations["get_connector_provider_types_provider_type"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connector-providers/{connector_provider_id}": {
     parameters: {
       query?: never;
@@ -1730,6 +1747,23 @@ export interface paths {
     };
     /** List Model Provider Types */
     get: operations["get_model_provider_types"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/model-provider-types/{provider_type}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Model Provider Type */
+    get: operations["get_model_provider_types_provider_type"];
     put?: never;
     post?: never;
     delete?: never;
@@ -5608,13 +5642,6 @@ export interface components {
       /** Next Cursor */
       next_cursor?: string | null;
     };
-    /** Collection_EnvironmentProviderMetadata_ */
-    Collection_EnvironmentProviderMetadata_: {
-      /** Items */
-      items: components["schemas"]["EnvironmentProviderMetadata"][];
-      /** Next Cursor */
-      next_cursor?: string | null;
-    };
     /** Collection_EnvironmentTemplateRevision_ */
     Collection_EnvironmentTemplateRevision_: {
       /** Items */
@@ -6225,12 +6252,12 @@ export interface components {
       authentication: components["schemas"]["Authentication"];
       /** Configuration Schema */
       configuration_schema: {
-        [key: string]: components["schemas"]["JsonValue"];
+        [key: string]: unknown;
       };
       /** Credential Schema */
       credential_schema: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
+        [key: string]: unknown;
+      } | null;
       /** Display Name */
       display_name: string;
       /** Setup Label */
@@ -6239,13 +6266,6 @@ export interface components {
       setup_url?: string | null;
       /** Type */
       type: string;
-    };
-    /** ConnectorProviderMetadataCollection */
-    ConnectorProviderMetadataCollection: {
-      /** Items */
-      items: components["schemas"]["ConnectorProviderMetadata"][];
-      /** Next Cursor */
-      next_cursor?: null;
     };
     /**
      * ConnectorProviderStatus
@@ -6696,11 +6716,6 @@ export interface components {
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
       };
-      /**
-       * Configuration Schema Version
-       * @default 1
-       */
-      configuration_schema_version?: string;
       /** Description */
       description?: string | null;
       /** Labels */
@@ -6725,11 +6740,6 @@ export interface components {
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
       };
-      /**
-       * Configuration Schema Version
-       * @default 1
-       */
-      configuration_schema_version?: string;
       /** Expected Version */
       expected_version: number;
       /**
@@ -7270,11 +7280,11 @@ export interface components {
       authentication: components["schemas"]["Authentication"];
       /** Configuration Schema */
       configuration_schema: {
-        [key: string]: components["schemas"]["JsonValue"];
+        [key: string]: unknown;
       };
       /** Credential Schema */
       credential_schema: {
-        [key: string]: components["schemas"]["JsonValue"];
+        [key: string]: unknown;
       } | null;
       /**
        * Deployment Managed
@@ -7295,14 +7305,10 @@ export interface components {
       supports_managed: boolean;
       /** Supports Stop */
       supports_stop: boolean;
-      /** Template Configuration Schemas */
-      template_configuration_schemas: {
-        [key: string]: {
-          [key: string]: components["schemas"]["JsonValue"];
-        };
+      /** Template Configuration Schema */
+      template_configuration_schema: {
+        [key: string]: components["schemas"]["JsonValue"];
       };
-      /** Template Configuration Versions */
-      template_configuration_versions: string[];
       /** Type */
       type: string;
     };
@@ -7366,11 +7372,6 @@ export interface components {
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
       };
-      /**
-       * Configuration Schema Version
-       * @default 1
-       */
-      configuration_schema_version?: string;
       /**
        * Created At
        * Format: date-time
@@ -8464,8 +8465,8 @@ export interface components {
       /** Next Cursor */
       next_cursor?: string | null;
     };
-    /** MemoryProviderDefinition */
-    MemoryProviderDefinition: {
+    /** MemoryProviderMetadata */
+    MemoryProviderMetadata: {
       authentication: components["schemas"]["Authentication"];
       /** Configuration Schema */
       configuration_schema: {
@@ -8474,7 +8475,7 @@ export interface components {
       /** Credential Schema */
       credential_schema: {
         [key: string]: unknown;
-      };
+      } | null;
       /** Display Name */
       display_name: string;
       /** Setup Label */
@@ -8503,11 +8504,6 @@ export interface components {
       supports_revisions?: boolean;
       /** Type */
       type: string;
-    };
-    /** MemoryProviderDefinitionCollection */
-    MemoryProviderDefinitionCollection: {
-      /** Items */
-      items: components["schemas"]["MemoryProviderDefinition"][];
     };
     /** MemoryProviderReference */
     MemoryProviderReference: {
@@ -8806,8 +8802,8 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
-    /** ModelProviderDefinition */
-    ModelProviderDefinition: {
+    /** ModelProviderMetadata */
+    ModelProviderMetadata: {
       authentication: components["schemas"]["Authentication"];
       /**
        * Catalog Providers
@@ -8821,7 +8817,7 @@ export interface components {
       /** Credential Schema */
       credential_schema: {
         [key: string]: unknown;
-      };
+      } | null;
       /** Default Model Api */
       default_model_api: string;
       /** Display Name */
@@ -8846,13 +8842,6 @@ export interface components {
       supports_connection_probe: boolean;
       /** Type */
       type: string;
-    };
-    /** ModelProviderDefinitionCollection */
-    ModelProviderDefinitionCollection: {
-      /** Items */
-      items: components["schemas"]["ModelProviderDefinition"][];
-      /** Next Cursor */
-      next_cursor?: null;
     };
     /**
      * ModelTestRequest
@@ -9272,6 +9261,31 @@ export interface components {
        */
       status: "connected" | "unavailable" | "unknown";
     };
+    /** ProviderMetadataCollection_ConnectorProviderMetadata_ */
+    ProviderMetadataCollection_ConnectorProviderMetadata_: {
+      /** Items */
+      items: components["schemas"]["ConnectorProviderMetadata"][];
+    };
+    /** ProviderMetadataCollection_EnvironmentProviderMetadata_ */
+    ProviderMetadataCollection_EnvironmentProviderMetadata_: {
+      /** Items */
+      items: components["schemas"]["EnvironmentProviderMetadata"][];
+    };
+    /** ProviderMetadataCollection_MemoryProviderMetadata_ */
+    ProviderMetadataCollection_MemoryProviderMetadata_: {
+      /** Items */
+      items: components["schemas"]["MemoryProviderMetadata"][];
+    };
+    /** ProviderMetadataCollection_ModelProviderMetadata_ */
+    ProviderMetadataCollection_ModelProviderMetadata_: {
+      /** Items */
+      items: components["schemas"]["ModelProviderMetadata"][];
+    };
+    /** ProviderMetadataCollection_WebProviderMetadata_ */
+    ProviderMetadataCollection_WebProviderMetadata_: {
+      /** Items */
+      items: components["schemas"]["WebProviderMetadata"][];
+    };
     /** QueuedSubmission */
     QueuedSubmission: {
       authority_principal: components["schemas"]["PrincipalRef"];
@@ -9385,11 +9399,6 @@ export interface components {
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
       };
-      /**
-       * Configuration Schema Version
-       * @default 1
-       */
-      configuration_schema_version?: string;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -11753,8 +11762,8 @@ export interface components {
       /** Next Cursor */
       next_cursor?: string | null;
     };
-    /** WebProviderDefinition */
-    WebProviderDefinition: {
+    /** WebProviderMetadata */
+    WebProviderMetadata: {
       authentication: components["schemas"]["Authentication"];
       /** Configuration Schema */
       configuration_schema: {
@@ -11763,7 +11772,7 @@ export interface components {
       /** Credential Schema */
       credential_schema: {
         [key: string]: unknown;
-      };
+      } | null;
       /** Display Name */
       display_name: string;
       /** Operations */
@@ -11779,11 +11788,6 @@ export interface components {
       supports_restricted_scrape?: boolean;
       /** Type */
       type: string;
-    };
-    /** WebProviderDefinitionCollection */
-    WebProviderDefinitionCollection: {
-      /** Items */
-      items: components["schemas"]["WebProviderDefinition"][];
     };
     /** WebProviderReference */
     WebProviderReference: {
@@ -15478,7 +15482,51 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ConnectorProviderMetadataCollection"];
+          "application/json": components["schemas"]["ProviderMetadataCollection_ConnectorProviderMetadata_"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_connector_provider_types_provider_type: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_type: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConnectorProviderMetadata"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       /** @description Service error. */
@@ -15936,7 +15984,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Collection_EnvironmentProviderMetadata_"];
+          "application/json": components["schemas"]["ProviderMetadataCollection_EnvironmentProviderMetadata_"];
         };
       };
       /** @description Service error. */
@@ -17455,7 +17503,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["MemoryProviderDefinitionCollection"];
+          "application/json": components["schemas"]["ProviderMetadataCollection_MemoryProviderMetadata_"];
         };
       };
       /** @description Service error. */
@@ -17489,7 +17537,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["MemoryProviderDefinition"];
+          "application/json": components["schemas"]["MemoryProviderMetadata"];
         };
       };
       /** @description Invalid request. */
@@ -17531,7 +17579,51 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["ModelProviderDefinitionCollection"];
+          "application/json": components["schemas"]["ProviderMetadataCollection_ModelProviderMetadata_"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_model_provider_types_provider_type: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_type: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelProviderMetadata"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       /** @description Service error. */
@@ -22625,7 +22717,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["WebProviderDefinitionCollection"];
+          "application/json": components["schemas"]["ProviderMetadataCollection_WebProviderMetadata_"];
         };
       };
       /** @description Service error. */
@@ -22659,7 +22751,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["WebProviderDefinition"];
+          "application/json": components["schemas"]["WebProviderMetadata"];
         };
       };
       /** @description Invalid request. */

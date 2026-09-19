@@ -3,8 +3,8 @@
 import json
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.e2b.configuration import E2BCredential
 from a13n_service.environments.domain import CreateProviderRequest, ReplaceCredentialRequest, UpdateProviderRequest
 from a13n_service.environments.errors import EnvironmentManagementError
@@ -19,7 +19,7 @@ pytestmark = pytest.mark.anyio
 
 @pytest.fixture
 def provider_catalog():
-    return EnvironmentProviderCatalog(select_builtin_environment_providers(("e2b",)))
+    return ProviderCatalog(select_builtin_environment_providers(("e2b",)))
 
 
 async def test_e2b_secret_survives_creation_and_rotation(environment_service, environment_sessions, protector):

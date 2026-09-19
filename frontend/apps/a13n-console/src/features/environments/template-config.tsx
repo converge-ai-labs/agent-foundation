@@ -51,15 +51,15 @@ export function TemplateConfig({
   const [name, setName] = useState(""),
     [description, setDescription] = useState(""),
     [providerId, setProviderId] = useState(revision?.provider_id ?? ""),
-    [version, setVersion] = useState(
-      revision?.configuration_schema_version ?? "1",
-    ),
     [preparation, setPreparation] = useState<"on_run" | "on_use">(
       revision?.preparation ?? "on_run",
     );
   const [configurations, setConfigurations] = useState<Record<string, string>>({
-    [`${revision?.provider_id ?? ""}:${revision?.configuration_schema_version ?? "1"}`]:
-      JSON.stringify(revision?.configuration ?? {}, null, 2),
+    [revision?.provider_id ?? ""]: JSON.stringify(
+      revision?.configuration ?? {},
+      null,
+      2,
+    ),
   });
   const [configurationError, setConfigurationError] = useState<string>();
   const activeImageTest = useRef<{
@@ -67,10 +67,9 @@ export function TemplateConfig({
     requestId: string;
     providerId: string;
   } | null>(null);
-  const configurationKey = `${providerId}:${version}`;
-  const configuration = configurations[configurationKey] ?? "{}";
+  const configuration = configurations[providerId] ?? "{}";
   function setConfiguration(value: string) {
-    setConfigurations((current) => ({ ...current, [configurationKey]: value }));
+    setConfigurations((current) => ({ ...current, [providerId]: value }));
     setConfigurationError(undefined);
     cancelImageTest();
   }
@@ -85,8 +84,7 @@ export function TemplateConfig({
       item.type ===
       providers.data?.find((provider) => provider.id === providerId)?.type,
   );
-  const configurationSchema =
-    definition?.template_configuration_schemas[version];
+  const configurationSchema = definition?.template_configuration_schema;
   const imageTest = useMutation({
     mutationFn: async () => {
       const parsed = jsonObject(configuration);
@@ -154,8 +152,6 @@ export function TemplateConfig({
       const templateConfig = {
         provider_id: providerId,
         configuration: parsedConfiguration,
-        configuration_schema_version: version,
-
         preparation,
         retention: {
           idle: {
@@ -235,13 +231,6 @@ export function TemplateConfig({
               required
               onValueChange={(value) => {
                 setProviderId(value);
-                const type = providers.data?.find(
-                  (provider) => provider.id === value,
-                )?.type;
-                const versions = types.data?.items.find(
-                  (entry) => entry.type === type,
-                )?.template_configuration_versions;
-                setVersion(versions?.at(-1) ?? "1");
                 setConfigurationError(undefined);
                 cancelImageTest();
               }}
@@ -274,7 +263,7 @@ export function TemplateConfig({
           )}
           {providerId && (
             <ProviderConfiguration
-              key={configurationKey}
+              key={providerId}
               readOnly={readOnly}
               schema={configurationSchema}
               text={configuration}
@@ -316,23 +305,6 @@ export function TemplateConfig({
                   { value: "on_use", label: t("On first use") },
                 ]}
               />
-              {(definition?.template_configuration_versions.length ?? 0) >
-                1 && (
-                <ChoiceField
-                  readOnly={readOnly}
-                  label={t("Configuration schema version")}
-                  value={version}
-                  onValueChange={setVersion}
-                  options={
-                    definition?.template_configuration_versions.map(
-                      (value) => ({
-                        value,
-                        label: value,
-                      }),
-                    ) ?? []
-                  }
-                />
-              )}
             </div>
             <div className={styles.twoColumns}>
               <FormField

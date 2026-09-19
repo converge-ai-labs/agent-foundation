@@ -201,31 +201,28 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
     environment_type: Callable[[E, str, EnvironmentState | None, NativeRuntime], Environment],
     supports_stop: bool,
     requires_keepalive: bool,
-) -> EnvironmentProviderDefinition[C, K, NativeRuntime]:
+) -> EnvironmentProviderDefinition[C, K, E, NativeRuntime]:
     async def runtime(
         *, configuration: C, credential: K | None, operation_id: str, allow_create: bool
     ) -> NativeRuntime:
-        assert credential is not None
+        if credential is None:
+            raise ValueError(f"the {type!r} Environment Provider requires a credential")
         return NativeRuntime(configuration, credential, allow_create, operation_id)
 
-    def describe(configuration: BaseModel) -> EnvironmentDescriptor:
-        if not isinstance(configuration, environment_model):
-            raise TypeError("Incorrect native Environment configuration")
+    def describe(configuration: E) -> EnvironmentDescriptor:
         return descriptor(configuration)
 
-    def identity(*, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
-        if not isinstance(configuration, environment_model):
-            raise TypeError("Incorrect native Environment configuration")
+    def identity(*, configuration: E, state: EnvironmentState | None) -> str | None:
         value = decode_target_state(type, state, state_model, fingerprint=configuration.fingerprint)
         if isinstance(value, NamedTargetState):
             return value.backing_id
         return value.target_id if value else None
 
     def construct(
-        *, configuration: BaseModel, environment_id: str, state: EnvironmentState | None, runtime: NativeRuntime | None
+        *, configuration: E, environment_id: str, state: EnvironmentState | None, runtime: NativeRuntime | None
     ) -> Environment:
-        if not isinstance(configuration, environment_model) or runtime is None:
-            raise TypeError("Incorrect native Environment configuration or runtime")
+        if runtime is None:
+            raise TypeError("Native Environment construction requires a runtime")
         return environment_type(configuration, environment_id, state, runtime)
 
     return EnvironmentProviderDefinition(
@@ -233,7 +230,7 @@ def native_definition[C: BaseModel, K: BaseModel, E: CommandConfiguration](
         display_name=display_name,
         configuration_model=configuration_model,
         credential_model=credential_model,
-        environment_models={"1": environment_model},
+        environment_model=environment_model,
         construct=construct,
         describe_environment=describe,
         runtime_factory=runtime,

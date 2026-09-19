@@ -12,6 +12,7 @@ from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.labels import LabelFilterValues, LabelsBody, parse_label_filters
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
@@ -58,19 +59,13 @@ def _service(request: Request) -> EnvironmentService:
 
 
 @router.get("/environment-provider-types")
-async def provider_types(request: Request, actor: Actor) -> Collection[EnvironmentProviderMetadata]:
+async def provider_types(request: Request, actor: Actor) -> ProviderMetadataCollection[EnvironmentProviderMetadata]:
     return await _service(request).provider_types(actor)
 
 
 @router.get("/environment-provider-types/{provider_type}")
 async def get_provider_type(request: Request, actor: Actor, provider_type: str) -> EnvironmentProviderMetadata:
-    catalog = await _service(request).provider_types(actor)
-    for item in catalog.items:
-        if item.type == provider_type:
-            return item
-    raise EnvironmentManagementError(
-        "environment_provider_type_not_found", "Provider type was not found", category=ErrorCategory.not_found
-    )
+    return await _service(request).provider_type(actor, provider_type)
 
 
 @router.post("/workspaces/{workspace}/environment-providers", status_code=201)

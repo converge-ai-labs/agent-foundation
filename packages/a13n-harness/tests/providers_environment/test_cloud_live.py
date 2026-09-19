@@ -5,8 +5,8 @@ import os
 import secrets
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
@@ -29,15 +29,13 @@ async def test_cloud_files_execution_and_resume(key, tmp_path):
     credential_json = os.environ.get(prefix + "CREDENTIAL_JSON")
     if not backend_json or not credential_json:
         pytest.skip("Provider-specific test backend/credential JSON is not configured")
-    provider = EnvironmentProviderCatalog(select_builtin_environment_providers([key])).require(key)
+    provider = ProviderCatalog(select_builtin_environment_providers([key])).require(key)
     try:
         backend = provider.configuration_model.model_validate_json(backend_json)
         credential = provider.credential_model.model_validate_json(credential_json)
     except ValueError:
         pytest.fail("Test backend or credential JSON does not match the provider schema", pytrace=False)
-    configuration = provider.validate_environment(
-        schema_version="1", value=json.loads(os.environ.get(prefix + "RECIPE_JSON", "{}"))
-    )
+    configuration = provider.validate_environment(json.loads(os.environ.get(prefix + "RECIPE_JSON", "{}")))
     environment_id = "env-live-" + secrets.token_hex(12)
     runtime = await provider.runtime_factory(
         configuration=backend,

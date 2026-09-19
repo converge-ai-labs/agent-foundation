@@ -4,9 +4,9 @@ from contextlib import asynccontextmanager
 from unittest.mock import Mock
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.provider import _DirectLocalFilePolicy
-from a13n_harness.providers.memory import MemoryProviderCatalog
 from a13n_harness.providers.memory.builtins import FILESYSTEM
 from a13n_harness.providers.memory.contracts import MemoryScope
 from a13n_harness.providers.memory.documents import DocumentInput, Replace
@@ -27,7 +27,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_manage_retained_scope_and_reject_another_user(memory_sessions, tmp_path, monkeypatch):
-    catalog = MemoryProviderCatalog((FILESYSTEM,))
+    catalog = ProviderCatalog((FILESYSTEM,))
     service = MemoryService(catalog, protector(), MemoryAuthorizer(memory_sessions, catalog))
     files = LocalFileOperator(
         root=tmp_path,

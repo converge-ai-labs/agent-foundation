@@ -5,12 +5,10 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_harness.providers.connector import ConnectorProviderCatalog
 from a13n_harness.providers.connector.contracts import ConnectionBinding
 from a13n_harness.providers.connector.http import ConnectorHttpClient
 from a13n_service.api import install_api_conventions
 from a13n_service.connectivity.connectors import router
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.connectors.management import ProviderSnapshot, decode_credentials, open_provider
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.connectors.service import ConnectorProviderService
@@ -80,11 +78,9 @@ async def test_installed_connector_account_credentials(
         return httpx2.Response(200, json={"ok": True})
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(remote)) as vendor:
-        providers = ConnectorProviders(
-            ConnectorProviderCatalog(selected.connector),
-            ConnectorHttpClient(vendor, AllowEndpoint(), response_max_bytes=4096),
-        )
-        service = ConnectorProviderService(connectivity_sessions, providers, credential_protector)
+        catalog = selected.connector
+        connector_http = ConnectorHttpClient(vendor, AllowEndpoint(), response_max_bytes=4096)
+        service = ConnectorProviderService(connectivity_sessions, catalog, connector_http, credential_protector)
         app = FastAPI()
         install_api_conventions(app)
         app.include_router(router.router)
@@ -131,7 +127,7 @@ async def test_installed_connector_account_credentials(
                 provider = ProviderSnapshot.from_record(record)
             assert json.loads(snapshot.decrypt(credential_protector)) == credentials
             async with open_provider(
-                providers, provider, decode_credentials(snapshot.decrypt(credential_protector))
+                catalog, connector_http, provider, decode_credentials(snapshot.decrypt(credential_protector))
             ) as native:
                 connected = native.connect(
                     ConnectionBinding(
@@ -173,7 +169,8 @@ async def test_installed_connector_account_credentials(
             )
             setup = ConnectorConnectionService(
                 connectivity_sessions,
-                providers,
+                catalog,
+                connector_http,
                 credential_protector,
                 correlation_secret=b"c" * 32,
                 public_origin="https://foundation.example",
@@ -195,7 +192,8 @@ async def test_installed_connector_account_credentials(
 
             reconciler = ConnectorReconciler(
                 connectivity_sessions,
-                providers,
+                catalog,
+                connector_http,
                 setup.setup_coordinator,
                 instance_id="fixture",
                 poll_interval_seconds=1,
@@ -206,7 +204,7 @@ async def test_installed_connector_account_credentials(
             account = await accounts.get(actor=actor(), connection_id=account.id)
             assert account.status == "ready"
             policy = EndpointPolicy()
-            runtime = external_runtime_factory(providers, RemoteTransport(policy), policy)
+            runtime = external_runtime_factory(catalog, RemoteTransport(policy), policy, connector_http=connector_http)
 
             async def guard(session=None):
                 return None
@@ -237,7 +235,9 @@ async def test_installed_connector_account_credentials(
             assert calls[-1] == ("/execute", "first-secret", "7", "sandbox")
             from a13n_service.connectivity.connections.checks import ConnectionChecks
 
-            checks = ConnectionChecks(connectivity_sessions, providers, credential_protector, None, clock=lambda: NOW)
+            checks = ConnectionChecks(
+                connectivity_sessions, catalog, connector_http, credential_protector, None, clock=lambda: NOW
+            )
             checked = await checks.check(actor=actor(), connection_id=account.id, expected_version=account.version)
             assert checked.last_check.status == "passed"
 

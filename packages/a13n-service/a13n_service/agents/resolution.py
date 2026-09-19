@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
+from a13n_harness.providers.web.builtins import built_in_web_providers
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -17,7 +20,6 @@ from a13n_service.memory.resources import MemoryProviderError, require_memory_co
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
 from a13n_service.storage import short_session
 from a13n_service.web.domain import ScrapeSelection, provider_selections
-from a13n_service.web.registry import WebProviderRegistry, built_in_web_provider_registry
 from a13n_service.web.resources import WebProviderError, require_operation
 from a13n_service.web.resources import require_provider as require_web_provider
 
@@ -79,16 +81,16 @@ class AgentResolver:
         *,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
-        web_provider_registry: WebProviderRegistry | None = None,
-        memory_provider_catalog: MemoryProviderCatalog | None = None,
+        web_provider_catalog: ProviderCatalog[WebProviderDefinition] | None = None,
+        memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition] | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver or ConnectivitySelectionResolver(sessions)
         self._protocol_policy = protocol_policy or AgentProtocolPolicy()
-        self._web_provider_registry = web_provider_registry or built_in_web_provider_registry()
+        self._web_provider_catalog = web_provider_catalog or ProviderCatalog(built_in_web_providers())
         self._memory_provider_catalog = (
-            memory_provider_catalog if memory_provider_catalog is not None else MemoryProviderCatalog()
+            memory_provider_catalog if memory_provider_catalog is not None else ProviderCatalog()
         )
 
     async def prepare(
@@ -212,12 +214,12 @@ class AgentResolver:
                 workspace_id=prepared.workspace_id,
                 provider_id=selection.provider_id,
                 eligible=True,
-                registry=self._web_provider_registry,
+                catalog=self._web_provider_catalog,
             )
             require_operation(
                 provider,
                 operation,
-                self._web_provider_registry,
+                self._web_provider_catalog,
                 selection=selection if isinstance(selection, ScrapeSelection) else None,
             )
         model = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)

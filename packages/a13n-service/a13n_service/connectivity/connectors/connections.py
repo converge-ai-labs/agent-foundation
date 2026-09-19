@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import asdict
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.cleanup import ConnectionCleanupReceipt
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.management import record_command
 from a13n_service.digests import digest_request
@@ -47,7 +48,8 @@ class ConnectorConnectionService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviders,
+        connectors: ProviderCatalog[ConnectorProviderDefinition],
+        connector_http: ConnectorHttpClient | None,
         protector: SecretProtector,
         *,
         correlation_secret: bytes | None,
@@ -57,12 +59,14 @@ class ConnectorConnectionService:
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
-        self._adapters = adapters
+        self._connectors = connectors
+        self._connector_http = connector_http
         self._protector = protector
         self._clock = clock
         self._setup = ConnectorSetupCoordinator(
             sessions,
-            adapters,
+            connectors,
+            connector_http,
             protector,
             correlation_secret=correlation_secret,
             public_origin=public_origin,
@@ -70,7 +74,7 @@ class ConnectorConnectionService:
             setup_lease_seconds=setup_lease_seconds,
             clock=clock,
         )
-        self._revocation = ConnectorRevocationService(sessions, adapters, protector, clock=clock)
+        self._revocation = ConnectorRevocationService(sessions, connectors, connector_http, protector, clock=clock)
 
     @property
     def setup_coordinator(self) -> ConnectorSetupCoordinator:
@@ -138,7 +142,7 @@ class ConnectorConnectionService:
                 connection.status_reason = None
                 connection.version += 1
                 connection.updated_at = now
-                adapter = require_implementation(self._adapters, connector.type)
+                adapter = require_implementation(self._connectors, connector.type)
                 try:
                     validated_setup = adapter.validate_setup(
                         setup,

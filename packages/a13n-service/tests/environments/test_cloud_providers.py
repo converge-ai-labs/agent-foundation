@@ -1,8 +1,8 @@
 """Cloud provider authoring, encrypted persistence, and normal Worker construction."""
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.environments.configuration import load_configuration
 from a13n_service.environments.domain import (
     CreateManagedEnvironmentRequest,
@@ -28,7 +28,7 @@ BACKENDS = {
 
 @pytest.fixture
 def provider_catalog():
-    return EnvironmentProviderCatalog(select_builtin_environment_providers(Settings().environments.provider_builtins))
+    return ProviderCatalog(select_builtin_environment_providers(Settings().environments.provider_builtins))
 
 
 @pytest.mark.parametrize("key", BACKENDS)
@@ -41,7 +41,7 @@ async def test_cloud_provider_service_roundtrip(
     metadata = types[key]
     assert metadata.supports_managed and metadata.supports_destroy
     assert metadata.supports_stop == (key != "sprites")
-    assert metadata.template_configuration_schemas["1"]["type"] == "object"
+    assert metadata.template_configuration_schema["type"] == "object"
     assert metadata.credential_schema["properties"]
     credentials = (
         {"token_id": "fixture-id", "token_secret": "private-fixture"}

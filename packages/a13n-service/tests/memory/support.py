@@ -2,7 +2,8 @@
 
 from contextlib import asynccontextmanager
 
-from a13n_harness.providers.memory import MemoryProviderCatalog, MemoryProviderDefinition
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.memory.configuration import Mem0Credential
 from a13n_harness.providers.memory.contracts import MemoryBackend, MemoryDocumentBackend
 from a13n_service.memory.domain import CreateMemoryProviderRequest
@@ -44,7 +45,7 @@ class BorrowedMemory:
 
 async def memory_service(sessions, backend, *, timeout=30, principal=None, workspace_id=WORKSPACE_ID):
     plugin = BorrowedMemory(backend)
-    catalog = MemoryProviderCatalog((plugin.definition,))
+    catalog = ProviderCatalog((plugin.definition,))
     protection = protector()
     providers = MemoryProviderService(sessions, protection, catalog)
     provider = await providers.create(

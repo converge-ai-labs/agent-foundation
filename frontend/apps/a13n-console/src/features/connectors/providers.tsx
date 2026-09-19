@@ -36,7 +36,10 @@ import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
-import { credentialMode } from "../../shared/provider-authentication";
+import {
+  credentialMode,
+  providerSchema,
+} from "../../shared/provider-authentication";
 import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
@@ -274,7 +277,10 @@ function ProviderForm({
       if (basis) {
         if (replacing && !removeCredential) {
           if (!definition) throw new Error(t("Provider unavailable."));
-          validateSettings(definition.credential_schema, secret);
+          validateSettings(
+            providerSchema(definition.credential_schema),
+            secret,
+          );
         }
         return client.http
           .PATCH("/api/v1/connector-providers/{connector_provider_id}", {
@@ -298,7 +304,8 @@ function ProviderForm({
         configuration,
       );
       validateSettings(definition.configuration_schema, config);
-      if (replacing) validateSettings(definition.credential_schema, secret);
+      if (replacing)
+        validateSettings(providerSchema(definition.credential_schema), secret);
       const body = {
         name,
         type,
@@ -429,7 +436,7 @@ function ProviderForm({
                     secret
                     requireFields={replacing}
                     key={`${type}-credentials`}
-                    schema={definition.credential_schema}
+                    schema={providerSchema(definition.credential_schema)}
                     value={credentials}
                     onChange={setCredentials}
                   />
@@ -440,8 +447,9 @@ function ProviderForm({
         )}
         {basis &&
           definition &&
-          Object.keys(definition.credential_schema.properties ?? {}).length >
-            0 && (
+          Object.keys(
+            providerSchema(definition.credential_schema).properties ?? {},
+          ).length > 0 && (
             <CredentialEditor
               configured={basis.credential_configured}
               removing={removeCredential}
@@ -453,7 +461,7 @@ function ProviderForm({
               {mode !== "forbidden" && (
                 <SchemaFields
                   secret
-                  schema={definition.credential_schema}
+                  schema={providerSchema(definition.credential_schema)}
                   requireFields={replacing && !removeCredential}
                   value={credentials}
                   onChange={setCredentials}

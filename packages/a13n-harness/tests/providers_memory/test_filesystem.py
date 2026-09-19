@@ -503,17 +503,17 @@ async def test_named_document_reference_cannot_cross_entries(store):
 
 
 async def test_filesystem_definition_is_inert_and_requires_explicit_host_binding(store):
-    from a13n_harness.providers.memory import MemoryProviderCatalog
+    from a13n_harness.providers.catalog import ProviderCatalog
     from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS
     from a13n_harness.providers.memory.filesystem.store import FilesystemMemoryBinding, open_filesystem_store
 
     memory, coordinator = store
-    definition = MemoryProviderCatalog(BUILT_IN_MEMORY_PROVIDERS)["filesystem"]
+    definition = ProviderCatalog(BUILT_IN_MEMORY_PROVIDERS)["filesystem"]
     assert definition.supports_documents and definition.supports_revisions
     assert not definition.supports_records and not definition.supports_changes
     config = definition.configuration_model.model_validate({})
     assert config.storage.root == "/memory"
-    assert definition.credential_model.model_validate({}).model_dump() == {}
+    assert definition.credential_model is None
     with pytest.raises(TypeError, match="no record backend"):
         async with definition.open(config):
             pass

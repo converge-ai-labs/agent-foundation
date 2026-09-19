@@ -29,8 +29,7 @@ pytestmark = pytest.mark.anyio
 def _environment(root: Path, *, read_only: bool = False) -> DirectLocalEnvironment:
     provider = DIRECT_LOCAL
     configuration = provider.validate_environment(
-        schema_version="1",
-        value={
+        {
             "root": {"path": str(root), "read_only": read_only},
         },
     )
@@ -227,8 +226,7 @@ async def test_direct_local_destroy_is_non_destructive(tmp_path: Path) -> None:
 def test_direct_local_provider_is_inert_and_rejects_state(tmp_path: Path) -> None:
     provider = DIRECT_LOCAL
     configuration = provider.validate_environment(
-        schema_version="1",
-        value={"root": {"path": str(tmp_path)}},
+        {"root": {"path": str(tmp_path)}},
     )
     assert isinstance(configuration, DirectLocalEnvironmentConfiguration)
     assert configuration.root == DirectLocalRootConfiguration(path=tmp_path)

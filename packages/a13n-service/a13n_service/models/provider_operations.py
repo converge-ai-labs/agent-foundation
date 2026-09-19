@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import Protocol
 
 import httpx2
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.http import EndpointValidator
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.model.types import ModelConnection
-
-from .providers import ProviderRegistry
 
 
 class ProviderStateResolver(Protocol):
@@ -22,7 +22,7 @@ class NativeProviderOperations:
         self,
         *,
         provider_resolver: ProviderStateResolver,
-        registry: ProviderRegistry,
+        registry: ProviderCatalog[ModelProviderDefinition],
         http_client: httpx2.AsyncClient,
         endpoint_policy: EndpointValidator,
     ) -> None:
@@ -35,6 +35,6 @@ class NativeProviderOperations:
         provider = await self._provider_resolver.resolve_provider(
             provider_id=provider_id, organization_id=organization_id, workspace_id=workspace_id
         )
-        await self._registry.integration(provider.type).probe(
+        await self._registry.require(provider.type).probe(
             provider, http_client=self._http_client, endpoint_policy=self._endpoint_policy
         )

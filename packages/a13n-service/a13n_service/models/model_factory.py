@@ -6,14 +6,16 @@ from typing import Any
 
 import httpx2
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.providers.http import EndpointValidator
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.model.types import ModelConnection
 from pydantic_ai.models import Model as PydanticModel
 
 from .domain import ModelExecutionSnapshot
 from .profiles import catalog_profile
-from .providers import ProviderRegistry
+from .providers import validate_model_api
 from .service_common import ModelError
 
 
@@ -23,7 +25,7 @@ class NativeModelFactory:
     def __init__(
         self,
         http_client: httpx2.AsyncClient,
-        registry: ProviderRegistry,
+        registry: ProviderCatalog[ModelProviderDefinition],
         endpoint_policy: EndpointValidator,
     ) -> None:
         self._http_client = http_client
@@ -32,14 +34,14 @@ class NativeModelFactory:
 
     async def build(self, snapshot: ModelExecutionSnapshot, provider: ModelConnection) -> PydanticModel[Any]:
         try:
-            integration = self._registry.integration(provider.type)
+            integration = self._registry.require(provider.type)
         except ValueError as error:
             raise ModelResolutionError(
                 "The Model Provider is unavailable.",
                 code="model_provider_unavailable",
             ) from error
         try:
-            self._registry.validate_model_api(provider.type, snapshot.model_api)
+            validate_model_api(self._registry.require(provider.type), snapshot.model_api)
             return await integration.build(
                 snapshot.upstream_model,
                 configuration=provider.configuration.model_dump(mode="json", by_alias=True),

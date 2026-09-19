@@ -4,7 +4,7 @@ import httpx2
 import pytest
 from a13n_service.models.provider_operations import NativeProviderOperations
 from a13n_service.models.provider_runtime import ModelConnection
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 
 from .test_runtime import _runtime_providers
 
@@ -32,7 +32,7 @@ async def test_missing_provider_probe_is_unsupported_not_a_connection_failure(pr
     ) as client:
         ops = NativeProviderOperations(
             provider_resolver=_ProviderResolver(_runtime_providers()[provider_type]),
-            registry=built_in_provider_registry(),
+            registry=built_in_model_provider_catalog(),
             http_client=client,
             endpoint_policy=_AllowEndpoints(),
         )

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from a13n_harness.providers.authentication import Authentication
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from a13n_harness.providers.web.domains import DomainRestrictions
 from a13n_harness.providers.web.options import MAX_SCRAPE_CONTENT_BYTES as MAX_SCRAPE_CONTENT_BYTES
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId
 from a13n_service.names import DisplayName
+from a13n_service.provider_metadata import ProviderMetadata, provider_metadata_core
 
 
 class SearchSelection(DomainRestrictions):
@@ -105,22 +106,21 @@ class WebProviderCollection(BaseModel):
     next_cursor: str | None = None
 
 
-class WebProviderDefinition(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    type: str
-    display_name: str
-    configuration_schema: dict[str, object]
-    credential_schema: dict[str, object]
-    authentication: Authentication
-    setup_url: str | None = None
-    setup_label: str | None = None
+class WebProviderMetadata(ProviderMetadata):
     operations: tuple[Literal["search", "scrape"], ...]
     supports_restricted_scrape: bool = False
 
-
-class WebProviderDefinitionCollection(BaseModel):
-    items: tuple[WebProviderDefinition, ...]
+    @classmethod
+    def describe(cls, definition: WebProviderDefinition) -> WebProviderMetadata:
+        operations: tuple[Literal["search", "scrape"], ...] = (
+            *(("search",) if definition.supports_search else ()),
+            *(("scrape",) if definition.supports_scrape else ()),
+        )
+        return cls(
+            **provider_metadata_core(definition),
+            operations=operations,
+            supports_restricted_scrape=definition.supports_restricted_scrape,
+        )
 
 
 class WebProviderTestResult(BaseModel):

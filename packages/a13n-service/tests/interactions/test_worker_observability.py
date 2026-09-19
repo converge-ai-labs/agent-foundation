@@ -5,8 +5,8 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.interactions.objects import RunPayloadStore
 from a13n_service.interactions.outcomes import RunOutcomeService
@@ -58,7 +58,7 @@ async def test_worker_trace_matches_real_phase_boundaries_and_durable_outcomes(
     environment_catalog = None
     if scenario in {"on_run", "on_use_unused"}:
         await template_config(interaction_sessions, tmp_path, "on_run" if scenario == "on_run" else "on_use")
-        environment_catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("direct_local",)))
+        environment_catalog = ProviderCatalog(select_builtin_environment_providers(("direct_local",)))
     else:
         await seed_hook_actor_access(interaction_sessions)
     _, run, _ = await _accept_root(

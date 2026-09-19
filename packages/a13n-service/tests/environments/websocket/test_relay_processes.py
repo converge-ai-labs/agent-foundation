@@ -30,8 +30,7 @@ EXECUTABLE = str(Path(sys.executable).resolve())
 async def operations(tmp_path):
     provider = DIRECT_LOCAL
     configuration = provider.validate_environment(
-        schema_version="1",
-        value={
+        {
             "root": {"path": str(tmp_path)},
             "allowed_executables": [EXECUTABLE],
             "inherit_environment": False,

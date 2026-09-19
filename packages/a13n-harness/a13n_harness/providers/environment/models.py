@@ -304,7 +304,6 @@ class EnvironmentProviderSpec(BaseModel):
         str,
         Field(pattern=PROVIDER_TYPE_PATTERN),
     ]
-    schema_version: Annotated[str, Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")]
     configuration: JsonValue
 
     @field_validator("configuration", mode="before")

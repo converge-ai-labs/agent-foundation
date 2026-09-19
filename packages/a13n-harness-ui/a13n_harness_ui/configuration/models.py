@@ -298,7 +298,6 @@ class EnvironmentProfileResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     provider_key: CatalogKey
-    provider_schema_version: str = Field(min_length=1, max_length=64)
     provider_configuration: dict[str, JsonValue] = Field(default_factory=dict)
     adapter_key: CatalogKey
     adapter_configuration: dict[str, JsonValue] = Field(default_factory=dict)

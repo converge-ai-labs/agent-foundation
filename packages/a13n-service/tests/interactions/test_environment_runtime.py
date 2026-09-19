@@ -2,8 +2,8 @@ import base64
 from datetime import timedelta
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.persistence import copy_revision
 from a13n_service.environments.domain import (
@@ -43,7 +43,7 @@ pytestmark = pytest.mark.anyio
 async def template_config(sessions, path, preparation, *, shell=False):
     await seed_hook_actor_access(sessions)
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
-    catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("direct_local",)))
+    catalog = ProviderCatalog(select_builtin_environment_providers(("direct_local",)))
     service = EnvironmentService(sessions, catalog, protector)
     provider = await service.create_provider(
         actor=hook_actor(),

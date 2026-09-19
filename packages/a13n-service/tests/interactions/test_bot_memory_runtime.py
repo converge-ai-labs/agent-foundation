@@ -692,12 +692,12 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
     from pathlib import Path
 
     from a13n_harness import AgentSpec, HarnessBuilder
+    from a13n_harness.providers.catalog import ProviderCatalog
     from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
     from a13n_harness.providers.environment.local_envd.runtime import (
         LocalEnvdProviderRuntime,
         TemporaryLocalEnvdRuntimeAllocator,
     )
-    from a13n_harness.providers.memory import MemoryProviderCatalog
     from a13n_harness.providers.memory.builtins import FILESYSTEM
     from a13n_harness.providers.memory.documents import DocumentInput
     from a13n_service.memory.models import MemoryProviderRecord, MemoryStorageRecord
@@ -707,7 +707,7 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
     if not executable:
         pytest.skip("Native file memory requires envd")
     memory, _service, run, context, _document, _calls, binding, verifier = runtime_memory
-    catalog = MemoryProviderCatalog((FILESYSTEM,))
+    catalog = ProviderCatalog((FILESYSTEM,))
     memory.catalog = memory.authorizer.catalog = catalog
     async with transaction(interaction_sessions) as session:
         provider = await session.get(MemoryProviderRecord, binding.provider_id)
@@ -752,7 +752,7 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     provider = LOCAL_ENVD
-    config = provider.validate_environment(schema_version="1", value={"workspace": {"path": str(workspace)}})
+    config = provider.validate_environment({"workspace": {"path": str(workspace)}})
     for _ in range(2):
         environment = provider.construct(
             environment_id=run.environment_id,

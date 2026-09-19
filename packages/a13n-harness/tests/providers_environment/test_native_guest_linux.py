@@ -5,9 +5,9 @@ import os
 import subprocess
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment._guest_files import GuestFiles
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.commands import CommandLimits, CommandRequest, ShellCommand
 from a13n_harness.providers.environment.native.commands import NativeCommands
 from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
@@ -50,8 +50,8 @@ def guest_container():
 @pytest.mark.parametrize("key", ["daytona", "runloop", "sprites"])
 def test_default_guest_workspace_is_writable_without_root(key, guest_container):
     async def scenario():
-        provider = EnvironmentProviderCatalog(select_builtin_environment_providers([key])).require(key)
-        configuration = provider.validate_environment(schema_version="1", value={})
+        provider = ProviderCatalog(select_builtin_environment_providers([key])).require(key)
+        configuration = provider.validate_environment({})
 
         async def execute(argv, timeout):
             process = await asyncio.create_subprocess_exec(

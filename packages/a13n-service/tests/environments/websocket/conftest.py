@@ -7,8 +7,8 @@ from pathlib import Path
 from time import monotonic
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_service.environments.domain import CreateProviderRequest, RegisterEnvironmentRequest
 from a13n_service.environments.websocket.authority import ConnectionIdentity, DispatchAuthority, UseIdentity
@@ -37,7 +37,7 @@ def envd_binary():
 
 @pytest.fixture
 def provider_catalog():
-    return EnvironmentProviderCatalog(select_builtin_environment_providers(("websocket_envd",)))
+    return ProviderCatalog(select_builtin_environment_providers(("websocket_envd",)))
 
 
 @pytest.fixture

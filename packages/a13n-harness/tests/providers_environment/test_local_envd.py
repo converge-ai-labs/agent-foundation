@@ -52,8 +52,7 @@ class _BoundEIP:
 def _environment(tmp_path: Path) -> LocalEnvdEnvironment:
     provider = LOCAL_ENVD
     configuration = provider.validate_environment(
-        schema_version="1",
-        value={
+        {
             "workspace": {"path": str(tmp_path)},
         },
     )
@@ -176,8 +175,7 @@ async def test_local_envd_destroy_does_not_delete_host_workspace(tmp_path: Path)
 def test_local_envd_provider_rejects_persisted_pid_or_target_state(tmp_path: Path) -> None:
     provider = LOCAL_ENVD
     configuration = provider.validate_environment(
-        schema_version="1",
-        value={"workspace": {"path": str(tmp_path)}},
+        {"workspace": {"path": str(tmp_path)}},
     )
 
     with pytest.raises(EnvironmentProviderError) as captured:

@@ -10,8 +10,9 @@ from functools import partial
 
 import httpx2
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from anyio import create_task_group, to_thread
 from pydantic_ai import prices
 
@@ -39,7 +40,6 @@ from a13n_service.memory.behaviors import MemoryBehaviors
 from a13n_service.memory.composition import build_memory_service
 from a13n_service.memory.ordinary import OrdinaryMemory
 from a13n_service.memory.organization import admit_organization
-from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
 from a13n_service.process.agents import build_agent_resolver, build_agent_resources
@@ -59,7 +59,6 @@ from a13n_service.provider_plugins import ProviderCatalogs
 from a13n_service.settings import Settings
 from a13n_service.storage import open_storage
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
-from a13n_service.web.registry import WebProviderRegistry
 
 logger = logging.getLogger("a13n_service.process.lifecycle")
 
@@ -71,7 +70,7 @@ async def open_process_runtime(
     status: ProcessStatus,
     *,
     trace_query_provider_registry: TraceQueryProviderRegistry,
-    model_provider_registry: ProviderRegistry,
+    model_provider_catalog: ProviderCatalog[ModelProviderDefinition],
     model_endpoint_policy: EndpointPolicy,
     provider_catalogs: ProviderCatalogs,
 ) -> AsyncIterator[ProcessRuntime]:
@@ -102,7 +101,7 @@ async def open_process_runtime(
             memory_catalog = (
                 components.memory_provider_catalog
                 if components.memory_provider_catalog is not None
-                else MemoryProviderCatalog(provider_catalogs.memory)
+                else provider_catalogs.memory
             )
             bot_verifier = None
             memory_http = None
@@ -170,14 +169,14 @@ async def open_process_runtime(
             agent_resources = build_agent_resources(
                 components,
                 shared,
-                model_provider_registry,
-                WebProviderRegistry(provider_catalogs.web),
+                model_provider_catalog,
+                provider_catalogs.web,
                 memory_catalog,
             )
             execution = (
                 await build_execution_resources(
                     shared,
-                    model_provider_registry,
+                    model_provider_catalog,
                     model_endpoint_policy,
                     stack,
                 )
@@ -202,6 +201,7 @@ async def open_process_runtime(
                     environment_catalog,
                     stack,
                     components.connector_providers,
+                    components.connector_http,
                     provider_catalogs=provider_catalogs,
                     plugin_catalog=plugin_catalog,
                     invocations=agent_resources.invocations,
@@ -273,6 +273,7 @@ async def open_process_runtime(
                 stack,
                 ingress_adapters=components.ingress_adapter_registry,
                 connector_providers=components.connector_providers,
+                connector_http=components.connector_http,
                 provider_catalogs=provider_catalogs,
                 input_acceptor=input_acceptor,
                 control_plane=owns_control(settings.service.role),

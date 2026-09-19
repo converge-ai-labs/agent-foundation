@@ -1,6 +1,6 @@
 """Fictional connections for exercising every supported Provider editor."""
 
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
@@ -26,7 +26,7 @@ MODEL_EXAMPLES = {
 async def seed_model_providers(client: Client, base: str) -> dict[str, str]:
     existing = {item["name"]: item["id"] for item in await client.collection(base + "/model-providers")}
     result = {}
-    for definition in built_in_provider_registry().definitions():
+    for definition in built_in_model_provider_catalog().values():
         name = f"{definition.display_name} · demo credentials"
         if name in existing:
             result[definition.type] = existing[name]
@@ -72,7 +72,7 @@ async def seed_model_providers(client: Client, base: str) -> dict[str, str]:
 
 async def seed_provider_models(client: Client, base: str, providers: dict[str, str]) -> dict[str, str]:
     """One disabled, fictional-credential Model for each built-in Provider."""
-    definitions = built_in_provider_registry().definitions()
+    definitions = built_in_model_provider_catalog().values()
     existing = {item["key"]: item["id"] for item in await client.collection(base + "/models")}
     keys = {definition.type: f"demo-{definition.type.replace('_', '-')}" for definition in definitions}
     if all(key in existing for key in keys.values()):
@@ -98,7 +98,7 @@ async def seed_provider_models(client: Client, base: str, providers: dict[str, s
                 "provider_id": providers[definition.type],
                 "upstream_model": upstream_model,
                 "catalog_ref": reference,
-                "model_api": definition.default_model_api,
+                "model_api": definition.supported_model_apis[0],
                 "declarations": catalog_entry["declarations"] if catalog_entry else {},
                 "enabled": False,
             },

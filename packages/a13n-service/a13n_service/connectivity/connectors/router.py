@@ -13,6 +13,7 @@ from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import OrganizationId, WorkspaceId
 from a13n_service.iam.resource_routes import require_organization_boundary
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.request_runtime import get_connectivity_control_runtime
 
 from .domain import (
@@ -21,7 +22,7 @@ from .domain import (
     ConnectorProvider,
     ConnectorProviderCollection,
     ConnectorProviderCommandRequest,
-    ConnectorProviderMetadataCollection,
+    ConnectorProviderMetadata,
     ConnectorProviderStatus,
     ConnectorProviderTestResult,
     CreateConnectorProviderRequest,
@@ -31,7 +32,7 @@ from .domain import (
 from .errors import ConnectorError
 from .service import ConnectorProviderService
 
-router = APIRouter(tags=["connectivity-management"])
+router = APIRouter(prefix="/api/v1", tags=["connectivity-management"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 
 
@@ -50,12 +51,19 @@ def _etag(response: Response, resource: ConnectorProvider) -> None:
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
 
 
-@router.get("/api/v1/connector-provider-types", response_model=ConnectorProviderMetadataCollection)
-async def list_connector_provider_types(request: Request, actor: Actor) -> ConnectorProviderMetadataCollection:
-    return await _connector_providers(request).type_definitions(actor=actor)
+@router.get("/connector-provider-types")
+async def list_connector_provider_types(
+    request: Request, actor: Actor
+) -> ProviderMetadataCollection[ConnectorProviderMetadata]:
+    return await _connector_providers(request).provider_types(actor=actor)
 
 
-@router.get("/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}", response_model=Connector)
+@router.get("/connector-provider-types/{provider_type}")
+async def get_connector_provider_type(request: Request, actor: Actor, provider_type: str) -> ConnectorProviderMetadata:
+    return await _connector_providers(request).provider_type(actor=actor, provider_type=provider_type)
+
+
+@router.get("/connector-providers/{connector_provider_id}/connectors/{connector_key}", response_model=Connector)
 async def get_connector(request: Request, actor: Actor, connector_provider_id: str, connector_key: str) -> Connector:
     return await _connector_providers(request).discover_connector(
         actor=actor, connector_provider_id=connector_provider_id, connector_key=connector_key
@@ -63,7 +71,7 @@ async def get_connector(request: Request, actor: Actor, connector_provider_id: s
 
 
 @router.get(
-    "/api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools",
+    "/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools",
     response_model=ConnectorToolPage,
 )
 async def preview_connector_tools(
@@ -74,9 +82,7 @@ async def preview_connector_tools(
     )
 
 
-@router.post(
-    "/api/v1/connector-providers/{connector_provider_id}/discover-connectors", response_model=ConnectorCollection
-)
+@router.post("/connector-providers/{connector_provider_id}/discover-connectors", response_model=ConnectorCollection)
 async def discover_connectors(
     request: Request,
     actor: Actor,
@@ -97,7 +103,7 @@ async def discover_connectors(
 
 
 @router.post(
-    "/api/v1/workspaces/{workspace}/connector-providers",
+    "/workspaces/{workspace}/connector-providers",
     response_model=ConnectorProvider,
     status_code=status.HTTP_201_CREATED,
 )
@@ -119,7 +125,7 @@ async def create_connector_provider(
     return resource
 
 
-@router.get("/api/v1/workspaces/{workspace}/connector-providers", response_model=ConnectorProviderCollection)
+@router.get("/workspaces/{workspace}/connector-providers", response_model=ConnectorProviderCollection)
 async def list_connector_providers(
     request: Request,
     actor: Actor,
@@ -135,7 +141,7 @@ async def list_connector_providers(
     )
 
 
-@router.get("/api/v1/connector-providers/{connector_provider_id}", response_model=ConnectorProvider)
+@router.get("/connector-providers/{connector_provider_id}", response_model=ConnectorProvider)
 async def get_connector_provider(
     request: Request,
     response: Response,
@@ -147,7 +153,7 @@ async def get_connector_provider(
     return resource
 
 
-@router.patch("/api/v1/connector-providers/{connector_provider_id}", response_model=ConnectorProvider)
+@router.patch("/connector-providers/{connector_provider_id}", response_model=ConnectorProvider)
 async def update_connector_provider(
     request: Request,
     response: Response,
@@ -162,7 +168,7 @@ async def update_connector_provider(
     return resource
 
 
-@router.post("/api/v1/connector-providers/{connector_provider_id}/credentials", response_model=ConnectorProvider)
+@router.post("/connector-providers/{connector_provider_id}/credentials", response_model=ConnectorProvider)
 async def replace_connector_provider_credentials(
     request: Request,
     response: Response,
@@ -181,7 +187,7 @@ async def replace_connector_provider_credentials(
     return resource
 
 
-@router.post("/api/v1/connector-providers/{connector_provider_id}/test", response_model=ConnectorProviderTestResult)
+@router.post("/connector-providers/{connector_provider_id}/test", response_model=ConnectorProviderTestResult)
 async def test_connector_provider(
     request: Request,
     actor: Actor,
@@ -197,7 +203,7 @@ async def test_connector_provider(
     )
 
 
-@router.post("/api/v1/connector-providers/{connector_provider_id}/{action}", response_model=ConnectorProvider)
+@router.post("/connector-providers/{connector_provider_id}/{action}", response_model=ConnectorProvider)
 async def change_connector_provider_lifecycle(
     request: Request,
     response: Response,
@@ -222,7 +228,7 @@ async def change_connector_provider_lifecycle(
 
 
 @router.post(
-    "/api/v1/organizations/{organization}/connector-providers",
+    "/organizations/{organization}/connector-providers",
     response_model=ConnectorProvider,
     status_code=status.HTTP_201_CREATED,
 )
@@ -245,7 +251,7 @@ async def organization_create_connector_provider(
     return resource
 
 
-@router.get("/api/v1/organizations/{organization}/connector-providers", response_model=ConnectorProviderCollection)
+@router.get("/organizations/{organization}/connector-providers", response_model=ConnectorProviderCollection)
 async def organization_list_connector_providers(
     request: Request,
     actor: Actor,

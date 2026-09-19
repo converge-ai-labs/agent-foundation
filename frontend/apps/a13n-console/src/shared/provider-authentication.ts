@@ -24,3 +24,10 @@ export function credentialMode(
     throw new Error("Conflicting provider authentication conditions.");
   return [...matches][0] ?? definition.authentication.mode ?? "required";
 }
+
+/** A Provider that takes no credential reports a null credential schema. */
+export function providerSchema(
+  value: { [key: string]: unknown } | null | undefined,
+): Record<string, unknown> {
+  return value ?? {};
+}

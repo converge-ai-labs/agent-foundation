@@ -7,8 +7,8 @@ from pathlib import Path
 
 import httpx2
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam import authorization as iam_authorization
@@ -126,7 +126,7 @@ async def environment_api_client(
         config,
         components=Components(
             request_authenticator=authenticate,
-            environment_provider_catalog=EnvironmentProviderCatalog(
+            environment_provider_catalog=ProviderCatalog(
                 select_builtin_environment_providers((PROVIDER_KEY, "docker", "sprites"))
             ),
         ),
@@ -228,8 +228,7 @@ async def test_instance_name_creation_rename_and_stale_write(environment_api_cli
 async def test_template_schemas_are_versioned_and_provider_specific(environment_api_client):
     response = await environment_api_client.get("/api/v1/environment-provider-types")
     definition = response.json()["items"][0]
-    assert set(definition["template_configuration_schemas"]) == set(definition["template_configuration_versions"])
-    template_config = definition["template_configuration_schemas"]["1"]
+    template_config = definition["template_configuration_schema"]
     assert "root" in template_config["required"]
     assert "host_id" not in definition["configuration_schema"]["properties"]
     assert "host_id" not in template_config["properties"]

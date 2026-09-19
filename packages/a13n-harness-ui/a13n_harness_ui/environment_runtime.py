@@ -117,7 +117,6 @@ class EnvironmentSnapshotReconstructor:
         provider = self._catalog.provider_catalog((profile.provider_key,)).require(profile.provider_key)
         adapter = self._catalog.environment_adapter(profile.adapter_key, profile.provider_key)
         adapter.validate_profile(
-            provider_schema_version=profile.provider_schema_version,
             provider_configuration=profile.provider_configuration,
             adapter_configuration=profile.adapter_configuration,
             provider=provider,
@@ -281,7 +280,6 @@ class EnvironmentRunPlan:
                 if final_state is not None:
                     stored = StoredEnvironmentState(
                         binding=mount.key,
-                        provider_schema_version=self.profile.provider_schema_version,
                         state=final_state,
                         created_at=_utc_now(),
                     )
@@ -470,8 +468,7 @@ class EnvironmentRunService:
             # Host files are not silently interpreted as a remote provider root.
             provider = DIRECT_LOCAL
             configuration = provider.validate_environment(
-                schema_version="1",
-                value={
+                {
                     "root": {"path": os.fspath(root), "read_only": False},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -510,8 +507,7 @@ class EnvironmentRunService:
             normalized = await to_thread.run_sync(_validate_content_plugin_root, root)
             provider = DIRECT_LOCAL
             configuration = provider.validate_environment(
-                schema_version="1",
-                value={
+                {
                     "root": {"path": os.fspath(normalized), "read_only": read_only},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -562,8 +558,7 @@ class EnvironmentRunService:
             normalized = await to_thread.run_sync(_prepare_user_skills_root, root)
             provider = DIRECT_LOCAL
             configuration = provider.validate_environment(
-                schema_version="1",
-                value={
+                {
                     "root": {"path": os.fspath(normalized), "read_only": False},
                     "shell_profiles": [],
                     "allowed_executables": [],
@@ -607,11 +602,7 @@ class EnvironmentRunService:
             value = await self._store.objects.read_model(reference, StoredEnvironmentState)
         except StoreError:
             raise
-        if (
-            value.binding != key
-            or value.provider_schema_version != profile.provider_schema_version
-            or value.state.provider_key != profile.provider_key
-        ):
+        if value.binding != key or value.state.provider_key != profile.provider_key:
             raise EnvironmentLifecycleError(
                 "Stored Environment state is incompatible with its binding.",
                 code="environment_state_incompatible",

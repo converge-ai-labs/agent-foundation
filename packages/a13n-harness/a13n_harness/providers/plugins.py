@@ -24,7 +24,7 @@ class ProviderManifest:
     model: tuple[ModelProviderDefinition[Any, Any], ...] = ()
     web: tuple[WebProviderDefinition[Any, Any], ...] = ()
     memory: tuple[MemoryProviderDefinition[Any, Any], ...] = ()
-    environment: tuple[EnvironmentProviderDefinition[Any, Any, Any], ...] = ()
+    environment: tuple[EnvironmentProviderDefinition[Any, Any, Any, Any], ...] = ()
     connector: tuple[ConnectorProviderDefinition[Any, Any], ...] = ()
 
     def __post_init__(self) -> None:
@@ -39,8 +39,6 @@ class ProviderManifest:
         ):
             if not isinstance(definitions, tuple) or not all(isinstance(item, kind) for item in definitions):
                 raise TypeError(f"{label} definitions must be an immutable tuple")
-            if len({item.type for item in definitions}) != len(definitions):
-                raise ValueError(f"duplicate {label} Provider type")
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,24 +73,12 @@ def selected_entry_points(enabled: Iterable[str]) -> tuple[importlib.metadata.En
 
 
 def load_provider_plugins(enabled: Iterable[str]) -> tuple[LoadedProviderPlugin, ...]:
+    """Import only the selected plugins; one ProviderCatalog per domain owns unique types."""
     plugins = []
-    seen: set[tuple[str, str]] = set()
     for entry in selected_entry_points(enabled):
         manifest = entry.load()
         if not isinstance(manifest, ProviderManifest):
             raise TypeError(f"Provider plugin {entry.name!r} must export a ProviderManifest")
-        for label, definitions in (
-            ("Web", manifest.web),
-            ("Model", manifest.model),
-            ("Memory", manifest.memory),
-            ("Connector", manifest.connector),
-            ("Environment", manifest.environment),
-        ):
-            for definition in definitions:
-                key = (label, definition.type)
-                if key in seen:
-                    raise ValueError(f"duplicate {label} Provider type {definition.type!r}")
-                seen.add(key)
         plugins.append(
             LoadedProviderPlugin(
                 entry.name,

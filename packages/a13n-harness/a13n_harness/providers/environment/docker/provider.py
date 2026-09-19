@@ -14,7 +14,6 @@ from typing import Literal
 from anyio import move_on_after
 from pydantic import BaseModel, Field
 
-from ...authentication import Authentication, CredentialMode
 from .._guest_files import GuestFiles
 from .._guest_ports import GuestPorts
 from .._local_retention import LocalRetentionStore
@@ -26,7 +25,7 @@ from ..errors import (
     EnvironmentProviderRecoveryHint,
     provider_error,
 )
-from ..management import EmptyProviderConfiguration, Environment
+from ..management import Environment, EnvironmentProviderConfiguration
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
@@ -325,7 +324,7 @@ def _missing() -> EnvironmentProviderError:
     )
 
 
-class DockerConnectionConfiguration(EmptyProviderConfiguration):
+class DockerConnectionConfiguration(EnvironmentProviderConfiguration):
     docker_host: str = Field(
         default_factory=lambda: os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock"), min_length=1
     )
@@ -354,20 +353,20 @@ async def _runtime(
     return DockerProviderRuntime(engine, managed=allow_create, owns_engine=True)
 
 
-def _describe(configuration: BaseModel) -> EnvironmentDescriptor:
+def _describe(configuration: DockerEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, DockerEnvironmentConfiguration):
         raise TypeError("Docker requires DockerEnvironmentConfiguration")
     return descriptor("unprepared", configuration)
 
 
-def _identity(*, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+def _identity(*, configuration: DockerEnvironmentConfiguration, state: EnvironmentState | None) -> str | None:
     _describe(configuration)
     return None if state is None else DockerProviderStateData.model_validate(state.state).container_id
 
 
 def _construct(
     *,
-    configuration: BaseModel,
+    configuration: DockerEnvironmentConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
     runtime: DockerProviderRuntime | None,
@@ -381,12 +380,10 @@ DOCKER = EnvironmentProviderDefinition(
     type="docker",
     display_name="Docker",
     configuration_model=DockerConnectionConfiguration,
-    credential_model=None,
-    environment_models={"1": DockerEnvironmentConfiguration},
+    environment_model=DockerEnvironmentConfiguration,
     construct=_construct,
     describe_environment=_describe,
     target_identity=_identity,
-    authentication=Authentication(mode=CredentialMode.forbidden),
     supports_stop=True,
     supports_destroy=True,
     runtime_factory=_runtime,

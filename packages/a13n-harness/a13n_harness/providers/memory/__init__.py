@@ -1,6 +1,6 @@
-"""Reusable Memory definitions and explicit host-selected catalogs."""
+"""Reusable Memory definitions and the domain's authoring contracts."""
 
-from .catalog import MemoryProviderCatalog
+from .contracts import MemoryBackend, MemoryDocumentBackend
 from .definition import MemoryProviderDefinition
 
-__all__ = ["MemoryProviderCatalog", "MemoryProviderDefinition"]
+__all__ = ["MemoryBackend", "MemoryDocumentBackend", "MemoryProviderDefinition"]

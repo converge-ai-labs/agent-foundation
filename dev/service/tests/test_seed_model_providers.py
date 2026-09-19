@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock
 import pytest
 from a13n_service.ids import new_object_id
 from a13n_service.models.domain import CreateModelRequest
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 
 from dev.service.seed_model_providers import MODEL_EXAMPLES, seed_model_providers, seed_provider_models
 
@@ -15,12 +15,12 @@ def anyio_backend():
 
 @pytest.mark.anyio
 async def test_every_builtin_provider_has_a_valid_fictional_seed_connection():
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     created = []
 
     async def create(method, path, *, expected, json):
         assert method == "POST" and expected == 201
-        integration = registry.integration(json["type"])
+        integration = registry.require(json["type"])
         integration.validate_configuration(json["configuration"], credential_configured=json["credential"] is not None)
         integration.bind(json["configuration"], json["credential"])
         item = {**json, "id": f"mp_{json['type']}"}
@@ -31,7 +31,7 @@ async def test_every_builtin_provider_has_a_valid_fictional_seed_connection():
     client.collection.return_value = []
     client.request.side_effect = create
     result = await seed_model_providers(client, "/api/v1/workspaces/ws_test")
-    assert set(result) == {definition.type for definition in registry.definitions()}
+    assert set(result) == {definition.type for definition in registry.values()}
     assert "xai" not in result
     client.collection.return_value = created
     client.request.reset_mock()
@@ -41,8 +41,8 @@ async def test_every_builtin_provider_has_a_valid_fictional_seed_connection():
 
 @pytest.mark.anyio
 async def test_every_builtin_provider_has_a_disabled_example_model():
-    registry = built_in_provider_registry()
-    providers = {definition.type: new_object_id("mp") for definition in registry.definitions()}
+    registry = built_in_model_provider_catalog()
+    providers = {definition.type: new_object_id("mp") for definition in registry.values()}
     assert set(MODEL_EXAMPLES) == set(providers)
     created = []
     pricing = {"tiers": [{"above": None, "rates": {"input": "5", "output": "30"}}]}
@@ -60,10 +60,10 @@ async def test_every_builtin_provider_has_a_disabled_example_model():
             }
         assert method == "POST" and path.endswith("/models") and expected == 201
         model = CreateModelRequest.model_validate(json)
-        definition = registry.definition(
+        definition = registry.require(
             next(kind for kind, provider_id in providers.items() if provider_id == model.provider_id)
         )
-        assert model.model_api == definition.default_model_api
+        assert model.model_api == definition.supported_model_apis[0]
         assert not model.enabled
         item = {**json, "id": f"mdl_{json['key']}"}
         created.append(item)

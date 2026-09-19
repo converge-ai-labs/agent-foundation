@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from .conftest import NOW, actor
 from .connector_helpers import FakeConnectorProvider
 from .test_connector_service import connector_backend as connector_backend
-from .test_connector_service import connector_registry as connector_registry
+from .test_connector_service import connector_catalog as connector_catalog
 from .test_connector_service import connector_services as connector_services
 from .test_connector_service import create_connector
 
@@ -80,10 +80,10 @@ async def test_shared_setup_claim_is_single_use_and_survives_uncertain_outcome(
 
 
 async def test_postgresql_shared_setup_claim_is_single_use(
-    connectivity_sessions, connector_registry, credential_protector
+    connectivity_sessions, connector_catalog, credential_protector
 ):
     providers = ConnectorProviderService(
-        connectivity_sessions, connector_registry, credential_protector, clock=lambda: NOW
+        connectivity_sessions, connector_catalog, None, credential_protector, clock=lambda: NOW
     )
     provider = await create_connector(providers)
     await _assert_shared_setup_claim_is_single_use(connectivity_sessions, provider)

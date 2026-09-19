@@ -114,7 +114,6 @@ class AgentCompositionResolver:
                 provider = providers.require(item.provider_key)
                 adapter = self.catalog.environment_adapter(item.adapter_key, item.provider_key)
                 adapter.validate_profile(
-                    provider_schema_version=item.provider_schema_version,
                     provider_configuration=item.provider_configuration,
                     adapter_configuration=item.adapter_configuration,
                     provider=provider,
@@ -642,7 +641,6 @@ class AgentCompositionResolver:
         if built_in is not None:
             behavior = {
                 "provider_key": built_in.provider_key,
-                "provider_schema_version": built_in.provider_schema_version,
                 "provider_configuration": {},
                 "adapter_key": built_in.adapter_key,
                 "adapter_configuration": {},
@@ -651,7 +649,6 @@ class AgentCompositionResolver:
                 profile_id=profile_id,
                 behavior_digest=canonical_digest(behavior),
                 provider_key=built_in.provider_key,
-                provider_schema_version=built_in.provider_schema_version,
                 provider_configuration={},
                 adapter_key=built_in.adapter_key,
                 adapter_configuration={},
@@ -660,14 +657,12 @@ class AgentCompositionResolver:
         provider = self.catalog.provider_catalog((item.provider_key,)).require(item.provider_key)
         adapter = self.catalog.environment_adapter(item.adapter_key, item.provider_key)
         provider_configuration, adapter_configuration = adapter.validate_profile(
-            provider_schema_version=item.provider_schema_version,
             provider_configuration=item.provider_configuration,
             adapter_configuration=item.adapter_configuration,
             provider=provider,
         )
         behavior: dict[str, JsonValue] = {
             "provider_key": item.provider_key,
-            "provider_schema_version": item.provider_schema_version,
             "provider_configuration": provider_configuration,
             "adapter_key": item.adapter_key,
             "adapter_configuration": adapter_configuration,
@@ -676,7 +671,6 @@ class AgentCompositionResolver:
             profile_id=item.id,
             behavior_digest=canonical_digest(behavior),
             provider_key=item.provider_key,
-            provider_schema_version=item.provider_schema_version,
             provider_configuration=provider_configuration,
             adapter_key=item.adapter_key,
             adapter_configuration=adapter_configuration,

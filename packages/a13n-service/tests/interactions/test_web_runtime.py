@@ -24,7 +24,6 @@ from a13n_service.web.domain import (
     WebSelection,
 )
 from a13n_service.web.models import WebProviderRecord
-from a13n_service.web.registry import WebProviderRegistry, built_in_web_provider_registry
 from a13n_service.web.runtime import WebRuntime, web_capability
 from a13n_service.web.service import WebProviderService
 from a13n_service.web.web import WebTransport
@@ -80,8 +79,8 @@ async def fixture(
     preparation = await execution.commit_preparation_success(attempt)
     await execution.enter_harness(attempt, preparation=preparation, harness_run_id="search-test")
     protector = SecretProtector(key=b"k" * 32, encryption_key_id="test")
-    registry = WebProviderRegistry(load_provider_catalogs(()).web)
-    service = WebProviderService(interaction_sessions, protector, registry)
+    catalog = load_provider_catalogs(()).web
+    service = WebProviderService(interaction_sessions, protector, catalog)
     account = await service.create(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
@@ -95,7 +94,8 @@ async def fixture(
     runtime = WebRuntime(
         interaction_sessions,
         protector,
-        built_in_web_provider_registry(transport=transport(handler)),
+        catalog,
+        provider_transport=transport(handler),
         web_transport=web_transport,
         clock=lambda: NOW,
     )

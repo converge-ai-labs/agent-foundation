@@ -15,6 +15,9 @@ from a13n_harness.capabilities.web import (
 )
 from a13n_harness.errors import RunError
 from a13n_harness.observation import set_tool_span_attributes
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web.definition import WebProviderDefinition
+from a13n_harness.providers.web.transport import WebProviderTransport
 from a13n_harness.tools.invocation import current_invocation_scope
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -31,7 +34,6 @@ from a13n_service.temporal import Clock, utc_now
 
 from .domain import ScrapeSelection, SearchSelection, WebSelection, provider_selections
 from .execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
-from .registry import WebProviderRegistry
 from .resources import WebProviderError, require_operation, require_provider
 from .web import WebTransport, WebTransportPolicy
 
@@ -84,15 +86,17 @@ class WebRuntime:
         self,
         sessions: async_sessionmaker[AsyncSession],
         protector: SecretProtector,
-        registry: WebProviderRegistry,
+        catalog: ProviderCatalog[WebProviderDefinition],
         *,
+        provider_transport: WebProviderTransport | None = None,
         web_transport: WebTransport | None = None,
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._clock = clock
         self._protector = protector
-        self._registry = registry
+        self._catalog = catalog
+        self._provider_transport = provider_transport
         self._web_transport = web_transport or WebTransport()
 
     async def validate(
@@ -148,7 +152,8 @@ class WebRuntime:
                         acquire=acquire_search,
                         reauthorize=reauthorize_search,
                         protector=self._protector,
-                        registry=self._registry,
+                        catalog=self._catalog,
+                        transport=self._provider_transport,
                     ),
                 ),
             )
@@ -169,7 +174,8 @@ class WebRuntime:
                         acquire=acquire_scrape,
                         reauthorize=reauthorize_scrape,
                         protector=self._protector,
-                        registry=self._registry,
+                        catalog=self._catalog,
+                        transport=self._provider_transport,
                     ),
                 ),
             )
@@ -258,12 +264,12 @@ class WebRuntime:
                     workspace_id=workspace_id,
                     provider_id=selection.provider_id,
                     eligible=True,
-                    registry=self._registry,
+                    catalog=self._catalog,
                 )
                 require_operation(
                     provider,
                     operation,
-                    self._registry,
+                    self._catalog,
                     selection=selection if isinstance(selection, ScrapeSelection) else None,
                 )
                 return WebProviderSnapshot(

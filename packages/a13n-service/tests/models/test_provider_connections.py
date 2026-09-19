@@ -12,7 +12,7 @@ from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.models import ModelProviderRecord
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.storage import short_session
 from google.oauth2.credentials import Credentials
 from pydantic import ValidationError
@@ -43,7 +43,7 @@ async def test_extra_headers_rotate_independently_and_are_not_returned(
     assert provider.header_names == ("x-gateway-key", "x-team")
     assert "gateway-secret" not in provider.model_dump_json()
     assert "primary-key" not in provider.model_dump_json()
-    resolver = LiveProviderResolver(model_sessions, built_in_provider_registry(), _AllowEndpoints(), protector())
+    resolver = LiveProviderResolver(model_sessions, built_in_model_provider_catalog(), _AllowEndpoints(), protector())
 
     async def resolved():
         return await resolver.resolve_provider(
@@ -115,8 +115,7 @@ def test_secret_header_input_is_bounded(headers: dict[str, str]) -> None:
 def test_extra_headers_cannot_replace_native_authentication(provider_type: str, header: str) -> None:
     provider = _runtime_providers()[provider_type]
     with pytest.raises(ValueError):
-        built_in_provider_registry().validate_provider(
-            provider_type,
+        built_in_model_provider_catalog().require(provider_type).validate_configuration(
             provider.configuration.model_dump(),
             credential_configured=True,
             header_names=(header,),
@@ -172,8 +171,8 @@ async def test_native_inference_uses_custom_endpoint_and_headers_without_client_
             }
         return httpx2.Response(200, json=body)
 
-    registry = built_in_provider_registry()
-    integration = registry.integration(provider_type)
+    registry = built_in_model_provider_catalog()
+    integration = registry.require(provider_type)
     original = _runtime_providers()[provider_type]
     api = next(
         (api for api in integration.supported_model_apis if api.endswith("chat_completions")),
@@ -238,7 +237,7 @@ async def test_mantle_keeps_gateway_prefix_and_signed_headers(api: str) -> None:
         extra_headers={"x-gateway-key": "private"},
     )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
-        native = await NativeModelFactory(client, built_in_provider_registry(), _AllowEndpoints()).build(
+        native = await NativeModelFactory(client, built_in_model_provider_catalog(), _AllowEndpoints()).build(
             _snapshot(api), provider
         )
         async with native:
@@ -284,7 +283,7 @@ async def test_converse_adds_headers_before_signing_at_custom_endpoint() -> None
         extra_headers={"x-gateway-key": "private"},
     )
     async with httpx2.AsyncClient() as client:
-        native = await NativeModelFactory(client, built_in_provider_registry(), _AllowEndpoints()).build(
+        native = await NativeModelFactory(client, built_in_model_provider_catalog(), _AllowEndpoints()).build(
             _snapshot("bedrock.converse"), provider
         )
         async with native:
@@ -342,7 +341,7 @@ async def test_configuration_updates_do_not_decrypt_secrets_and_stale_updates_pr
             )
     assert renamed.header_names == ("x-gateway",)
     runtime = await LiveProviderResolver(
-        model_sessions, built_in_provider_registry(), _AllowEndpoints(), protector()
+        model_sessions, built_in_model_provider_catalog(), _AllowEndpoints(), protector()
     ).resolve_provider(organization_id=ORG_ID, workspace_id=WORKSPACE_ID, provider_id=provider.id)
     assert runtime.extra_headers == {"x-gateway": "secret"}
     assert runtime.credential.api_key.get_secret_value() == "primary"
@@ -356,16 +355,20 @@ async def test_configuration_updates_do_not_decrypt_secrets_and_stale_updates_pr
     ],
 )
 def test_azure_official_endpoint_defaults_preserve_native_v1_paths(endpoint: str, expected: str) -> None:
-    registry = built_in_provider_registry()
-    validated = registry.validate_provider("azure_openai", {"resource_endpoint": endpoint}, credential_configured=True)
+    registry = built_in_model_provider_catalog()
+    validated = registry.require("azure_openai").validate_configuration(
+        {"resource_endpoint": endpoint}, credential_configured=True
+    )
     assert validated.endpoint == expected
     assert (
-        registry.validate_provider("azure_openai", validated.configuration, credential_configured=True).endpoint
+        registry.require("azure_openai")
+        .validate_configuration(validated.configuration, credential_configured=True)
+        .endpoint
         == expected
     )
     with pytest.raises(ValueError, match="api_version"):
-        registry.validate_provider(
-            "azure_openai", {"resource_endpoint": endpoint, "api_version": "2024-10-21"}, credential_configured=True
+        registry.require("azure_openai").validate_configuration(
+            {"resource_endpoint": endpoint, "api_version": "2024-10-21"}, credential_configured=True
         )
 
 
@@ -397,12 +400,14 @@ async def test_header_patch_can_replace_a_full_set_atomically(provider_service: 
 def test_provider_affinity_is_optional_normalized_and_schema_has_presets(header):
     from a13n_harness.providers.model.types import ProviderConfiguration
 
-    registry = built_in_provider_registry()
-    parsed = registry.validate_provider("openai", {"session_affinity_header": header}, credential_configured=True)
+    registry = built_in_model_provider_catalog()
+    parsed = registry.require("openai").validate_configuration(
+        {"session_affinity_header": header}, credential_configured=True
+    )
     assert parsed.configuration["session_affinity_header"] == header.lower()
     assert (
         "session_affinity_header"
-        not in registry.validate_provider("openai", {}, credential_configured=True).configuration
+        not in registry.require("openai").validate_configuration({}, credential_configured=True).configuration
     )
     schema = ProviderConfiguration.model_json_schema()
     assert "x-litellm-session-id" in json.dumps(schema)
@@ -420,8 +425,7 @@ def test_provider_affinity_is_optional_normalized_and_schema_has_presets(header)
 )
 def test_affinity_cannot_collide_with_static_auth_or_protocol_headers(configuration, headers):
     with pytest.raises(ValueError):
-        built_in_provider_registry().validate_provider(
-            "openai",
+        built_in_model_provider_catalog().require("openai").validate_configuration(
             configuration,
             credential_configured=True,
             header_names=headers,

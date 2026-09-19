@@ -6,8 +6,8 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import (
     CreateAgentRequest,
@@ -323,7 +323,7 @@ async def test_unavailable_historical_environment_blocks_default_switch_atomical
 ) -> None:
     environments = EnvironmentService(
         agent_sessions,
-        EnvironmentProviderCatalog(select_builtin_environment_providers(("direct_local",))),
+        ProviderCatalog(select_builtin_environment_providers(("direct_local",))),
         SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test"),
     )
     provider = await environments.create_provider(

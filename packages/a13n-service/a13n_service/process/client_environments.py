@@ -2,7 +2,8 @@
 
 from contextlib import AsyncExitStack
 
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 
 from a13n_service.environments.websocket.relay_capability import validate_relay_backend
@@ -17,7 +18,7 @@ from .runtime import SharedRuntime
 async def build_worker_client_connections(
     settings: Settings,
     shared: SharedRuntime,
-    catalog: EnvironmentProviderCatalog,
+    catalog: ProviderCatalog[EnvironmentProviderDefinition],
     stack: AsyncExitStack,
     instance_id: str,
 ) -> WorkerClientConnections | None:

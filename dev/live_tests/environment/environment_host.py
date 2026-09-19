@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from urllib.parse import urlsplit
 
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
 from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from websockets.asyncio.server import serve
@@ -22,7 +22,7 @@ class ReverseEnvdHost:
             del arguments
             return runtime
 
-        self.catalog = EnvironmentProviderCatalog(
+        self.catalog = ProviderCatalog(
             (
                 *select_builtin_environment_providers(tuple(key for key in builtin_keys if key != "websocket_envd")),
                 replace(WEBSOCKET_ENVD, runtime_factory=provide_runtime),

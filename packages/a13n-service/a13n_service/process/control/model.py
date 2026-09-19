@@ -40,7 +40,7 @@ async def build_model_bundle(
     )
     provider_operations = NativeProviderOperations(
         provider_resolver=live_provider_resolver,
-        registry=execution.model_provider_registry,
+        registry=execution.model_provider_catalog,
         http_client=execution.model_http_client,
         endpoint_policy=execution.model_endpoint_policy,
     )
@@ -53,14 +53,14 @@ async def build_model_bundle(
     return _ModelBundle(
         models=ModelService(
             shared.storage.sessions,
-            execution.model_provider_registry,
+            execution.model_provider_catalog,
             connection_tester=connection_tester,
             connection_test_timeout_seconds=settings.models.connection_test_timeout_seconds,
             catalog=catalog,
         ),
         providers=ModelProviderService(
             shared.storage.sessions,
-            execution.model_provider_registry,
+            execution.model_provider_catalog,
             execution.model_endpoint_policy,
             shared.secret_protector,
             resolve_dns_on_save=settings.models.resolve_dns_on_save,

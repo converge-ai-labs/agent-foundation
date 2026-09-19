@@ -9,6 +9,8 @@ from typing import cast
 from a13n_harness import HarnessBuilder
 from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from a13n_logging import get_logger
 from anyio import fail_after
 
@@ -49,7 +51,6 @@ from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
 from a13n_service.subagents.runtime import ServiceSubagents
 from a13n_service.temporal import utc_now
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.runtime import WebRuntime
 
 logger = get_logger(__name__)
@@ -78,7 +79,7 @@ class WorkerAttempts:
         asset_publication: AssetRuntime,
         observability: ObservabilityRuntime | None = None,
         queue_drain: QueueDrain | None = None,
-        web_registry: WebProviderRegistry,
+        web_catalog: ProviderCatalog[WebProviderDefinition],
         configuration_drafts: ConfigurationDrafts | None = None,
         client_connections: WorkerClientConnections | None = None,
     ) -> None:
@@ -96,7 +97,7 @@ class WorkerAttempts:
         self._assets = assets
         self._asset_publication = asset_publication
         self._secrets = AgentSecretRuntime(shared.storage.sessions, shared.secret_protector)
-        self._web = WebRuntime(shared.storage.sessions, shared.secret_protector, web_registry)
+        self._web = WebRuntime(shared.storage.sessions, shared.secret_protector, web_catalog)
         self._observability = observability
         self._queue_drain = queue_drain
         self._execution = AttemptExecutionService(shared.storage.sessions, lifecycle=shared.lifecycle)

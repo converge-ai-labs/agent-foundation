@@ -22,17 +22,17 @@ from .contracts import (
 )
 from .definition import MemoryProviderDefinition
 from .mem0_common import (
-    _filter,
-    _list_limit,
-    _Mem0Backend,
-    _records,
-    _search_options,
+    Mem0Backend,
     document_filters,
     document_records,
+    parse_records,
+    subject_filter,
+    validate_list_limit,
+    validate_search_options,
 )
 
 
-class Mem0OSSBackend(_Mem0Backend):
+class Mem0OSSBackend(Mem0Backend):
     """Borrow an HTTP client for the unmodified public OSS server API."""
 
     def __init__(self, client: httpx2.AsyncClient) -> None:
@@ -41,15 +41,15 @@ class Mem0OSSBackend(_Mem0Backend):
     async def search(
         self, query: str, *, subjects: tuple[MemorySubject, ...], limit: int, threshold: float | None = None
     ) -> tuple[MemoryRecord, ...]:
-        _search_options(subjects, limit, threshold)
+        validate_search_options(subjects, limit, threshold)
 
         async def search_one(subject: MemorySubject) -> tuple[MemoryRecord, ...]:
-            body: dict[str, Any] = {"query": query, "filters": _filter(subject), "top_k": limit}
+            body: dict[str, Any] = {"query": query, "filters": subject_filter(subject), "top_k": limit}
             if threshold is not None:
                 body["threshold"] = threshold
             response = await self.client.post("search", json=body)
             response.raise_for_status()
-            return _records(response.json(), (subject,), limit)
+            return parse_records(response.json(), (subject,), limit)
 
         # One caller deadline covers all scopes; failure cancels siblings, never partial recall.
         async with asyncio.TaskGroup() as group:
@@ -69,7 +69,7 @@ class Mem0OSSBackend(_Mem0Backend):
     async def search_documents(
         self, query: str, *, subject: MemorySubject, record_keys: tuple[str, ...], limit: int
     ) -> tuple[MemoryRecord, ...]:
-        _search_options((subject,), limit, None)
+        validate_search_options((subject,), limit, None)
         if not record_keys:
             return ()
         filters = document_filters(subject, record_keys)
@@ -78,19 +78,19 @@ class Mem0OSSBackend(_Mem0Backend):
         return document_records(response.json(), subject, record_keys, limit)
 
     async def list(self, subject: MemorySubject, *, limit: int, cursor: str | None = None) -> MemoryPage:
-        _list_limit(limit)
+        validate_list_limit(limit)
         if cursor is not None:
             raise MemoryPaginationUnsupported("The OSS memory API does not support pagination")
-        response = await self.client.get("memories", params={**_filter(subject), "top_k": limit})
+        response = await self.client.get("memories", params={**subject_filter(subject), "top_k": limit})
         response.raise_for_status()
-        return MemoryPage(_records(response.json(), (subject,), limit))
+        return MemoryPage(parse_records(response.json(), (subject,), limit))
 
     async def _add(self, text: str, subject: MemorySubject, metadata: Mapping[str, JsonValue] | None = None) -> object:
         response = await self.client.post(
             "memories",
             json={
                 "messages": [{"role": "user", "content": text}],
-                **_filter(subject),
+                **subject_filter(subject),
                 "infer": False,
                 **({"metadata": dict(metadata)} if metadata is not None else {}),
             },
@@ -118,11 +118,15 @@ class Mem0OSSBackend(_Mem0Backend):
 
 
 @asynccontextmanager
-async def open_mem0_oss(*, base_url: str, api_key: str, timeout: float = 30) -> AsyncIterator[Mem0OSSBackend]:
+async def open_mem0_oss(
+    configuration: Mem0OSSConfiguration, credential: Mem0Credential | None, *, timeout: float = 30
+) -> AsyncIterator[Mem0OSSBackend]:
     """Open a host-owned transport; secrets never enter Capability serialization."""
+    if credential is None:
+        raise ValueError("Mem0 OSS requires an API key credential")
     client = httpx2.AsyncClient(
-        base_url=base_url.rstrip("/") + "/",
-        headers={"X-API-Key": api_key},
+        base_url=configuration.base_url.rstrip("/") + "/",
+        headers={"X-API-Key": credential.api_key.get_secret_value()},
         timeout=timeout,
         follow_redirects=False,
         trust_env=False,
@@ -134,17 +138,12 @@ async def open_mem0_oss(*, base_url: str, api_key: str, timeout: float = 30) -> 
             await client.aclose()
 
 
-def _open(configuration: Mem0OSSConfiguration, credential: Mem0Credential | None):
-    assert credential is not None
-    return open_mem0_oss(base_url=configuration.base_url, api_key=credential.api_key.get_secret_value())
-
-
 DEFINITION = MemoryProviderDefinition(
     type="mem0_oss",
     display_name="Mem0 OSS",
     configuration_model=Mem0OSSConfiguration,
     credential_model=Mem0Credential,
-    open_backend=_open,
+    open_backend=open_mem0_oss,
     supports_documents=True,
     setup_url="https://docs.mem0.ai/open-source/overview",
 )

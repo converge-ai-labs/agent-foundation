@@ -5,8 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicyError
 from a13n_harness.providers.http import EndpointValidator
+from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_harness.providers.model.types import ModelConnection
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -19,7 +21,7 @@ from a13n_service.storage import short_session
 from .credentials import ProviderSecrets
 from .domain import ModelExecutionSnapshot
 from .models import ModelProviderRecord, ModelRecord
-from .providers import ProviderRegistry
+from .providers import validate_model_api
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,7 +41,7 @@ class LiveProviderResolver:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        registry: ProviderRegistry,
+        registry: ProviderCatalog[ModelProviderDefinition],
         endpoint_policy: EndpointValidator,
         protector: SecretProtector,
     ) -> None:
@@ -100,16 +102,15 @@ class LiveProviderResolver:
             if not provider.enabled:
                 raise ValueError("the Model Provider is disabled")
             if model_api is not None:
-                self._registry.validate_model_api(provider.type, model_api)
-            validated = self._registry.validate_provider(
-                provider.type,
+                validate_model_api(self._registry.require(provider.type), model_api)
+            validated = self._registry.require(provider.type).validate_configuration(
                 provider.configuration,
                 credential_configured=provider.credential_configured,
                 header_names=provider.header_names,
             )
             if validated.endpoint is not None:
                 await self._endpoint_policy.validate(validated.endpoint, resolve_dns=True)
-            for field in self._registry.integration(provider.type).additional_endpoint_fields:
+            for field in self._registry.require(provider.type).additional_endpoint_fields:
                 endpoint = validated.configuration.get(field)
                 if isinstance(endpoint, str):
                     await self._endpoint_policy.validate(endpoint, resolve_dns=True)
@@ -125,7 +126,7 @@ class LiveProviderResolver:
                 details={"provider_id": provider.id},
             ) from error
         try:
-            return self._registry.integration(provider.type).bind(
+            return self._registry.require(provider.type).bind(
                 validated.configuration, secrets.credential, extra_headers=secrets.extra_headers
             )
         except ValueError as error:

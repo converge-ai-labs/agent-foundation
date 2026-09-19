@@ -167,7 +167,7 @@ async def environment(kind):
 
         adapter = provider.construct(
             environment_id="env-storage",
-            configuration=provider.validate_environment(schema_version="1", value=configuration),
+            configuration=provider.validate_environment(configuration),
             state=state,
             runtime=runtime,
         )

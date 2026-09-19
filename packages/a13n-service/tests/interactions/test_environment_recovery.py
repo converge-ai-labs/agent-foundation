@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock
 
 import e2b
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment._guest_files import GuestFiles
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.environments.domain import CreateProviderRequest, CreateTemplateRequest
@@ -67,7 +67,7 @@ async def test_host_publishes_recovery_before_exposing_the_new_backing(
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, missing
 ):
     service, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
-    service.catalog = lifecycle.catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("e2b",)))
+    service.catalog = lifecycle.catalog = ProviderCatalog(select_builtin_environment_providers(("e2b",)))
     provider = await service.create_provider(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,

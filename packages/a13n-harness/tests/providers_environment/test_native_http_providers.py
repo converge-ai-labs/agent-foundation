@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timedelta
 
 import httpx2
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.models import EnvironmentState
@@ -139,10 +139,8 @@ def test_native_http_lifecycle_and_operations(key, tmp_path, monkeypatch):
             )
 
         monkeypatch.setattr(NativeHTTP, "__init__", transport_init)
-        provider = EnvironmentProviderCatalog(select_builtin_environment_providers([key])).require(key)
-        config = provider.validate_environment(
-            schema_version="1", value={"root": str(tmp_path), "python": sys.executable}
-        )
+        provider = ProviderCatalog(select_builtin_environment_providers([key])).require(key)
+        config = provider.validate_environment({"root": str(tmp_path), "python": sys.executable})
         backend = provider.configuration_model.model_validate(BACKENDS[key])
         credential = provider.credential_model(api_key="fixture-private-token")
 
@@ -268,10 +266,9 @@ def test_native_delete_keeps_state_until_terminal_evidence(key, poll_failure, tm
             self.client = httpx2.AsyncClient(base_url=url, transport=httpx2.MockTransport(cloud.request))
 
         monkeypatch.setattr(NativeHTTP, "__init__", transport_init)
-        provider = EnvironmentProviderCatalog(select_builtin_environment_providers([key])).require(key)
+        provider = ProviderCatalog(select_builtin_environment_providers([key])).require(key)
         config = provider.validate_environment(
-            schema_version="1",
-            value={
+            {
                 "root": str(tmp_path),
                 "python": sys.executable,
                 "request_timeout_seconds": 0.2,

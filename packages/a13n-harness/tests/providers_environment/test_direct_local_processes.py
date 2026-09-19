@@ -51,8 +51,7 @@ async def _processes(
             }
         ]
     configuration = provider.validate_environment(
-        schema_version="1",
-        value={
+        {
             "root": {"path": str(root)},
             "allowed_executables": [str(Path(sys.executable).resolve())],
             "inherit_environment": inherit_environment,

@@ -123,9 +123,8 @@ async def test_provider_runtime_value_errors_are_not_configuration_errors(failur
     from contextlib import asynccontextmanager
     from dataclasses import replace
 
-    from a13n_harness.providers.connector import ConnectorProviderCatalog
+    from a13n_harness.providers.catalog import ProviderCatalog
     from a13n_harness.providers.connector.builtins import COMPOSIO
-    from a13n_service.connectivity.connectors.composition import ConnectorProviders
     from a13n_service.connectivity.connectors.management import ProviderSnapshot, open_provider
 
     @asynccontextmanager
@@ -134,7 +133,7 @@ async def test_provider_runtime_value_errors_are_not_configuration_errors(failur
             raise ValueError("native failure")
         yield object()
 
-    providers = ConnectorProviders(ConnectorProviderCatalog((replace(COMPOSIO, open_provider=native),)))
+    providers = ProviderCatalog((replace(COMPOSIO, open_provider=native),))
     with pytest.raises(ValueError, match="native failure"):
-        async with open_provider(providers, ProviderSnapshot("composio", {}, "active"), {"api_key": "secret"}):
+        async with open_provider(providers, None, ProviderSnapshot("composio", {}, "active"), {"api_key": "secret"}):
             raise ValueError("native failure")

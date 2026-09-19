@@ -11,37 +11,36 @@ _PROVIDER_TYPE = re.compile(PROVIDER_TYPE_PATTERN)
 
 
 def validate_definition(
+    domain: str,
     provider_type: str,
     display_name: str,
-    setup_url: str | None,
-    configuration_model: type[BaseModel],
-    credential_model: type[BaseModel],
     *,
-    domain: str = "Web",
-    setup_label: str | None = None,
+    setup_url: str | None,
+    setup_label: str | None,
+    configuration_model: type[BaseModel],
+    credential_model: type[BaseModel] | None,
 ) -> None:
-    validate_type(domain, provider_type)
-    validate_display_name(domain, provider_type, display_name)
-    if setup_url is not None:
-        validate_setup_url(provider_type, setup_url)
-    if setup_label is not None:
-        if setup_url is None or not setup_label.strip() or len(setup_label) > 128:
-            raise ValueError(f"{domain} Provider {provider_type!r} has an invalid setup label")
-    validate_schema(f"{domain} configuration", provider_type, configuration_model)
-    validate_schema(f"{domain} credential", provider_type, credential_model)
-
-
-def validate_type(label: str, provider_type: str) -> None:
+    """Validate the metadata every domain shares; a missing credential model declares no schema."""
     if _PROVIDER_TYPE.fullmatch(provider_type) is None:
-        raise ValueError(f"{label} Provider type {provider_type!r} is invalid")
+        raise ValueError(f"{domain} Provider type {provider_type!r} is invalid")
+    if not display_name.strip() or len(display_name) > 128:
+        raise ValueError(f"{domain} Provider {provider_type!r} has an invalid display name")
+    if setup_url is not None:
+        _validate_setup_url(provider_type, setup_url)
+    if setup_label is not None and (setup_url is None or not setup_label.strip() or len(setup_label) > 128):
+        raise ValueError(f"{domain} Provider {provider_type!r} has an invalid setup label")
+    _validate_schema(f"{domain} configuration", provider_type, configuration_model)
+    if credential_model is not None:
+        _validate_schema(f"{domain} credential", provider_type, credential_model)
 
 
-def validate_schema(label: str, provider_type: str, model: object) -> None:
+def _validate_schema(label: str, provider_type: str, model: type[BaseModel]) -> None:
+    """Installed plugin definitions are untyped input, so the model itself is checked."""
     try:
         if not isinstance(model, type) or not issubclass(model, BaseModel):
             raise TypeError("not a Pydantic model")
         schema = model.model_json_schema()
-        if not isinstance(schema, dict) or schema.get("type") != "object":
+        if schema.get("type") != "object":
             raise TypeError("schema must describe an object")
         encoded = json.dumps(schema, ensure_ascii=False, separators=(",", ":"))
         if len(encoded.encode("utf-8")) > 256 * 1024:
@@ -64,12 +63,7 @@ def validate_schema(label: str, provider_type: str, model: object) -> None:
         raise ValueError(f"{label} Provider {provider_type!r} has an invalid schema") from error
 
 
-def validate_display_name(label: str, provider_type: str, display_name: str) -> None:
-    if not isinstance(display_name, str) or not display_name.strip() or len(display_name) > 128:
-        raise ValueError(f"{label} Provider {provider_type!r} has an invalid display name")
-
-
-def validate_setup_url(provider_type: str, setup_url: str) -> None:
+def _validate_setup_url(provider_type: str, setup_url: str) -> None:
     parsed = urlsplit(setup_url)
     if (
         parsed.scheme != "https"

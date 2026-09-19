@@ -21,7 +21,7 @@ from a13n_service.models.domain import (
 )
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.requests import LiveProviderModel
 from a13n_service.models.service_common import ModelError
 from a13n_service.models.settings import effective_settings
@@ -101,11 +101,11 @@ async def _live_model(
 ):
     resolver = Mock(spec=LiveProviderResolver)
     resolver.resolve = AsyncMock(
-        return_value=built_in_provider_registry()
-        .integration(provider_type)
+        return_value=built_in_model_provider_catalog()
+        .require(provider_type)
         .bind({**(configuration or {}), "base_url": "https://api.openai.com/v1"}, {"api_key": "test-key"})
     )
-    factory = NativeModelFactory(client, built_in_provider_registry(), _AllowEndpoints())
+    factory = NativeModelFactory(client, built_in_model_provider_catalog(), _AllowEndpoints())
     return await LiveProviderModel.create(
         snapshot=_snapshot().model_copy(
             update={
@@ -174,7 +174,7 @@ async def test_each_retry_observes_current_database_state(
         return _reply(streaming)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        registry = built_in_provider_registry()
+        registry = built_in_model_provider_catalog()
         model = await LiveProviderModel.create(
             snapshot=ModelExecutionSnapshot.freeze(saved),
             organization_id=ORG_ID,
@@ -363,15 +363,15 @@ async def test_native_endpoint_validation_closes_bedrock_client_on_rejection():
     policy.validate = AsyncMock(side_effect=EndpointPolicyError("blocked"))
     snapshot = _snapshot().model_copy(update={"model_api": "bedrock.converse"})
     provider = (
-        built_in_provider_registry()
-        .integration("aws_bedrock")
+        built_in_model_provider_catalog()
+        .require("aws_bedrock")
         .bind({"region": "us-east-1"}, {"aws_access_key_id": "test", "aws_secret_access_key": "test"})
     )
     session = Mock()
     session.create_client.side_effect = build
     with patch("botocore.session.get_session", return_value=session):
         async with httpx2.AsyncClient() as http_client:
-            factory = NativeModelFactory(http_client, built_in_provider_registry(), policy)
+            factory = NativeModelFactory(http_client, built_in_model_provider_catalog(), policy)
             with pytest.raises(ModelResolutionError):
                 await factory.build(snapshot, provider)
     assert threads and threads[0] != main_thread
@@ -682,7 +682,7 @@ async def test_retry_refreshes_affinity_header_with_endpoint(
         return _reply(streaming)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        registry = built_in_provider_registry()
+        registry = built_in_model_provider_catalog()
         model = await LiveProviderModel.create(
             snapshot=ModelExecutionSnapshot.freeze(saved),
             organization_id=ORG_ID,

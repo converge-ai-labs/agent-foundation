@@ -5,7 +5,10 @@ import { ResourceReference } from "../../shared/resource-reference";
 import { ProviderTypeField } from "../../shared/provider-type-field";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
-import { credentialMode } from "../../shared/provider-authentication";
+import {
+  credentialMode,
+  providerSchema,
+} from "../../shared/provider-authentication";
 import {
   ProviderConnection,
   ordinaryConfigurationSchema,
@@ -35,7 +38,7 @@ export function ProviderForm({
   reload: () => Promise<void>;
   scope: ModelScope;
   resource?: { value: Schema["ModelProvider"]; etag?: string };
-  definitions: Schema["ModelProviderDefinition"][];
+  definitions: Schema["ModelProviderMetadata"][];
   close: () => void;
   onCreated?: (provider: Schema["ModelProvider"], modelApi?: string) => void;
 }) {
@@ -77,7 +80,7 @@ export function ProviderForm({
       );
       validateSettings(definition.configuration_schema, config);
       const replacement = withSchemaValues(
-        definition.credential_schema,
+        providerSchema(definition.credential_schema),
         credential,
       );
       const replacing =
@@ -88,7 +91,10 @@ export function ProviderForm({
         (replacing ||
           (mode === "required" && !original?.value.credential_configured))
       )
-        validateSettings(definition.credential_schema, replacement);
+        validateSettings(
+          providerSchema(definition.credential_schema),
+          replacement,
+        );
       const body = {
         name,
         configuration: config,
@@ -188,7 +194,7 @@ export function ProviderForm({
             }}
           >
             <SchemaFields
-              schema={definition.credential_schema}
+              schema={providerSchema(definition.credential_schema)}
               value={credential}
               onChange={(value) => {
                 setCredential(value);

@@ -503,9 +503,9 @@ async def test_unsupported_provider_is_rejected_before_any_document_operation(bo
     plugin = next(iter(lab.service.memory.catalog.values()))
     from dataclasses import replace
 
-    from a13n_harness.providers.memory import MemoryProviderCatalog
+    from a13n_harness.providers.catalog import ProviderCatalog
 
-    lab.service.memory.catalog = MemoryProviderCatalog((replace(plugin, supports_documents=False),))
+    lab.service.memory.catalog = ProviderCatalog((replace(plugin, supports_documents=False),))
     opened = len(lab.calls)
     with pytest.raises(ApplicationError) as denied:
         if operation == "create":

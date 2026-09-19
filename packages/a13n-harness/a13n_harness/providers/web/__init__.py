@@ -9,7 +9,7 @@ from .contracts import (
     WebSearchResponse,
     WebSearchResult,
 )
-from .definition import WebProvider, WebProviderDefinition
+from .definition import WebProviderDefinition
 from .errors import WebProviderResponseError
 from .options import ScrapeOptions, SearchOptions
 from .transport import WebProviderTransport
@@ -18,7 +18,6 @@ __all__ = [
     "ScrapeOptions",
     "SearchOptions",
     "WebPolicy",
-    "WebProvider",
     "WebProviderDefinition",
     "WebProviderError",
     "WebProviderResponseError",

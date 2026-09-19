@@ -43,7 +43,6 @@ class EnvironmentProviderErrorContext(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     provider_key: str | None = Field(default=None, max_length=128)
-    schema_version: str | None = Field(default=None, max_length=64)
     state_version: str | None = Field(default=None, max_length=64)
     action: str | None = Field(default=None, max_length=64)
     operation_id: str | None = Field(default=None, max_length=128)
@@ -53,7 +52,6 @@ class EnvironmentProviderErrorContext(BaseModel):
 
     @field_validator(
         "provider_key",
-        "schema_version",
         "state_version",
         "action",
         "operation_id",
@@ -142,7 +140,6 @@ def provider_error(
     *,
     certainty: EnvironmentProviderOutcomeCertainty = EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
     recovery_hint: EnvironmentProviderRecoveryHint | None = None,
-    schema_version: str | None = None,
     description: str | None = None,
 ) -> EnvironmentProviderError:
     """Build a typed Provider failure; the default hint follows category and certainty."""
@@ -160,7 +157,7 @@ def provider_error(
         category=category,
         certainty=certainty,
         recovery_hint=recovery_hint,
-        context=EnvironmentProviderErrorContext(provider_key=provider_key, schema_version=schema_version),
+        context=EnvironmentProviderErrorContext(provider_key=provider_key),
     )
 
 

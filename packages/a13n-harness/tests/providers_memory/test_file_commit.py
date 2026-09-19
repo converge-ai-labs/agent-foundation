@@ -30,7 +30,7 @@ async def stores(tmp_path, request):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     provider = LOCAL_ENVD
-    configuration = provider.validate_environment(schema_version="1", value={"workspace": {"path": str(workspace)}})
+    configuration = provider.validate_environment({"workspace": {"path": str(workspace)}})
     async with AsyncExitStack() as stack:
         stores = []
         for i in range(2):

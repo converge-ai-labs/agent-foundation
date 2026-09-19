@@ -15,7 +15,6 @@ from a13n_envd_client import __version__ as envd_client_version
 from anyio import CancelScope
 from pydantic import BaseModel
 
-from ...authentication import Authentication, CredentialMode
 from .._local_identity import local_backing_identity
 from ..attachments import StdioEIPCarrier
 from ..definition import EnvironmentProviderDefinition
@@ -43,7 +42,6 @@ if TYPE_CHECKING:
     from .._windows_job import WindowsJob
 
 _PROVIDER_KEY = "local_envd"
-_CONFIGURATION_VERSION = "1"
 _STARTUP_TIMEOUT_SECONDS = 10.0
 _PROCESS_POLL_SECONDS = 0.01
 _SUBPROCESS_TIMEOUT_SECONDS = 30.0
@@ -69,13 +67,13 @@ async def _runtime(
     )
 
 
-def _describe(configuration: BaseModel) -> EnvironmentDescriptor:
+def _describe(configuration: LocalEnvdEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, LocalEnvdEnvironmentConfiguration):
         raise TypeError("Unexpected Provider recipe")
     return configured_descriptor()
 
 
-def _identity(*, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+def _identity(*, configuration: LocalEnvdEnvironmentConfiguration, state: EnvironmentState | None) -> str | None:
     if not isinstance(configuration, LocalEnvdEnvironmentConfiguration) or state is not None:
         raise ValueError("Local Providers require a valid stateless workspace configuration")
     return str(configuration.workspace.path)
@@ -83,7 +81,7 @@ def _identity(*, configuration: BaseModel, state: EnvironmentState | None) -> st
 
 def _construct(
     *,
-    configuration: BaseModel,
+    configuration: LocalEnvdEnvironmentConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
     runtime: LocalEnvdProviderRuntime | None,
@@ -105,12 +103,10 @@ LOCAL_ENVD = EnvironmentProviderDefinition(
     type="local_envd",
     display_name="Local Envd",
     configuration_model=HostLocalProviderConfiguration,
-    credential_model=None,
-    environment_models={"1": LocalEnvdEnvironmentConfiguration},
+    environment_model=LocalEnvdEnvironmentConfiguration,
     construct=_construct,
     describe_environment=_describe,
     target_identity=_identity,
-    authentication=Authentication(mode=CredentialMode.forbidden),
     supports_stop=False,
     supports_destroy=False,
     runtime_factory=_runtime,
@@ -814,7 +810,6 @@ def _provider_error(
     *,
     code: str,
     category: EnvironmentProviderErrorCategory,
-    schema_version: str | None = None,
 ) -> EnvironmentProviderError:
     return EnvironmentProviderError(
         description,
@@ -822,7 +817,7 @@ def _provider_error(
         category=category,
         certainty=EnvironmentProviderOutcomeCertainty.NOT_DISPATCHED,
         recovery_hint=EnvironmentProviderRecoveryHint.FIX_INPUT,
-        context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY, schema_version=schema_version),
+        context=EnvironmentProviderErrorContext(provider_key=_PROVIDER_KEY),
     )
 
 
@@ -831,7 +826,6 @@ def _spec_error(description: str) -> EnvironmentProviderError:
         description,
         code="provider_spec_invalid",
         category=EnvironmentProviderErrorCategory.INVALID,
-        schema_version=_CONFIGURATION_VERSION,
     )
 
 

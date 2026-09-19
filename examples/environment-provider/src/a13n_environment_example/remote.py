@@ -31,7 +31,10 @@ class RemoteExampleResult:
 
 
 async def use_remote[R](
-    provider: EnvironmentProviderDefinition[Any, Any, R], runtime: R, *, daemon_environment_id: str
+    provider: EnvironmentProviderDefinition[Any, Any, RemoteEnvdEnvironmentConfiguration, R],
+    runtime: R,
+    *,
+    daemon_environment_id: str,
 ) -> RemoteExampleResult:
     """Two independent Runs share files, not their process-local Environment adapter."""
     state = EnvironmentState(

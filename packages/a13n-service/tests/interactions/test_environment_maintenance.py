@@ -4,8 +4,8 @@ import asyncio
 from datetime import timedelta
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.environments import lifecycle as lifecycle_module
 from a13n_service.environments.domain import (
     CreateManagedEnvironmentRequest,
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.anyio
 async def due_environment(interaction_sessions, tmp_path):
     sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
-    catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("docker",)))
+    catalog = ProviderCatalog(select_builtin_environment_providers(("docker",)))
     protector = SecretProtector(key=b"e" * 32, encryption_key_id="test")
     service = EnvironmentService(sessions, catalog, protector)
     provider = await service.create_provider(

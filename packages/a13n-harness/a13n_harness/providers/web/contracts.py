@@ -13,8 +13,8 @@ from a13n_harness._urls import require_http_url as _require_http_url
 from a13n_harness.providers.usage import ProviderUsage
 from a13n_harness.providers.web.domains import DomainRestrictions
 
-_MAX_RESPONSE_HEADERS = 256
-_MAX_RESPONSE_HEADER_BYTES = 256 * 1024
+MAX_RESPONSE_HEADERS = 256
+MAX_RESPONSE_HEADER_BYTES = 256 * 1024
 _MAX_RESPONSE_URL_BYTES = 16 * 1024
 
 
@@ -45,8 +45,8 @@ class WebRequest(BaseModel):
     deadline_seconds: float = Field(gt=0, allow_inf_nan=False)
     max_redirects: int = Field(ge=0, le=64)
     max_response_bytes: int = Field(gt=0)
-    max_header_count: int = Field(gt=0, le=_MAX_RESPONSE_HEADERS)
-    max_header_bytes: int = Field(gt=0, le=_MAX_RESPONSE_HEADER_BYTES)
+    max_header_count: int = Field(gt=0, le=MAX_RESPONSE_HEADERS)
+    max_header_bytes: int = Field(gt=0, le=MAX_RESPONSE_HEADER_BYTES)
     max_stream_chunk_bytes: int = Field(gt=0, le=1024 * 1024)
 
     @field_validator("url")
@@ -81,7 +81,7 @@ class WebResponse:
             raise ValueError("web response redirect count is invalid")
         if not isinstance(self.headers, Mapping) or not isinstance(self.body, AsyncIterable):
             raise TypeError("web response headers or body are invalid")
-        _validate_headers(self.headers, max_count=_MAX_RESPONSE_HEADERS, max_bytes=_MAX_RESPONSE_HEADER_BYTES)
+        _validate_headers(self.headers, max_count=MAX_RESPONSE_HEADERS, max_bytes=MAX_RESPONSE_HEADER_BYTES)
         if self.reason is not None and ("\x00" in self.reason or len(self.reason) > 256):
             raise ValueError("web response reason is invalid")
         if len(self.usage) > 64 or not all(isinstance(item, ProviderUsage) for item in self.usage):

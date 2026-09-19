@@ -19,7 +19,7 @@ import {
   eligibleWebProvider,
   type WebOperation,
   type WebProvider,
-  type WebProviderDefinition,
+  type WebProviderMetadata,
 } from "./toolset-state";
 import styles from "./agents.module.css";
 
@@ -37,7 +37,7 @@ export function WebToolSettings({
 }: {
   operation: WebOperation;
   providers: WebProvider[];
-  types: WebProviderDefinition[];
+  types: WebProviderMetadata[];
   providerError: Error | null;
   config: Config;
   onChange: (config: Config) => void;

@@ -330,12 +330,8 @@ export function ResourceFields({
                 )
               }
             />
-            {kind === "environment_profile" && (
-              <>
-                {field("Provider schema version", ["provider_schema_version"])}
-                {field("Adapter key", ["adapter_key"])}
-              </>
-            )}
+            {kind === "environment_profile" &&
+              field("Adapter key", ["adapter_key"])}
             <p>
               Configure plugin-specific options in the configuration file below.
               Provider and adapter settings vary by plugin.

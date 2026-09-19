@@ -8,7 +8,8 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderOutcomeCertainty
 from a13n_harness.providers.environment.management import Environment as OperationEnvironment
 from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
@@ -107,7 +108,7 @@ class EnvironmentLifecycle:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        catalog: EnvironmentProviderCatalog,
+        catalog: ProviderCatalog[EnvironmentProviderDefinition],
         protector: SecretProtector,
         *,
         timeout_seconds: float = 60,
@@ -225,7 +226,6 @@ class EnvironmentLifecycle:
         raw = operation.credential.decrypt(self.protector) if operation.credential.ciphertext is not None else None
         return await provider.create(
             instance_configuration(operation.provider_type, operation.environment_id, operation.configuration),
-            schema_version=operation.configuration.configuration_schema_version,
             configuration=operation.provider_configuration,
             credential=json.loads(raw) if raw is not None else None,
             environment_id=operation.environment_id,
@@ -399,10 +399,7 @@ class EnvironmentLifecycle:
             and operation.action in {"prepare", "reconcile"}
         ):
             configuration = provider.validate_environment(
-                schema_version=operation.configuration.configuration_schema_version,
-                value=instance_configuration(
-                    operation.provider_type, operation.environment_id, operation.configuration
-                ),
+                instance_configuration(operation.provider_type, operation.environment_id, operation.configuration),
             )
             identity = scoped_target_identity(
                 provider,

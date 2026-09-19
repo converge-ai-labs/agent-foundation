@@ -18,7 +18,6 @@ def test_provider_spec_detaches_finite_configuration_and_is_frozen() -> None:
     configuration = {"nested": {"values": [1, 2]}}
     spec = EnvironmentProviderSpec(
         provider_key="acme_sandbox",
-        schema_version="1",
         configuration=configuration,
     )
     configuration["nested"]["values"].append(3)
@@ -33,7 +32,6 @@ def test_provider_spec_rejects_non_json_configuration(value: object) -> None:
     with pytest.raises(ValidationError):
         EnvironmentProviderSpec(
             provider_key="acme_sandbox",
-            schema_version="1",
             configuration={"value": value},
         )
 

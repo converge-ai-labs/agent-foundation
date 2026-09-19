@@ -5,7 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import cast
 
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
 from pydantic import ValidationError
@@ -23,6 +24,7 @@ from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
 from a13n_service.labels import Labels, LabelsBody, label_predicates, labels_etag
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import next_updated_at, utc_now
@@ -86,7 +88,7 @@ class EnvironmentService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        catalog: EnvironmentProviderCatalog,
+        catalog: ProviderCatalog[EnvironmentProviderDefinition],
         protector: SecretProtector,
         *,
         deployment_provider_types: frozenset[str] = frozenset(),
@@ -98,7 +100,30 @@ class EnvironmentService:
         self.deployment_provider_types = deployment_provider_types
         self.redis = redis
 
-    async def provider_types(self, actor: AuthenticatedActor) -> Collection[EnvironmentProviderMetadata]:
+    async def provider_types(
+        self, actor: AuthenticatedActor
+    ) -> ProviderMetadataCollection[EnvironmentProviderMetadata]:
+        await self._authorize_read(actor)
+        return ProviderMetadataCollection(items=tuple(self._describe(key) for key in sorted(self.catalog)))
+
+    async def provider_type(self, actor: AuthenticatedActor, provider_type: str) -> EnvironmentProviderMetadata:
+        await self._authorize_read(actor)
+        try:
+            self.catalog.require(provider_type)
+        except ValueError as error:
+            raise EnvironmentManagementError(
+                "environment_provider_type_not_found",
+                "Provider type was not found",
+                category=ErrorCategory.not_found,
+            ) from error
+        return self._describe(provider_type)
+
+    def _describe(self, provider_type: str) -> EnvironmentProviderMetadata:
+        return EnvironmentProviderMetadata.describe(
+            self.catalog[provider_type], deployment_managed=provider_type in self.deployment_provider_types
+        )
+
+    async def _authorize_read(self, actor: AuthenticatedActor) -> None:
         async with short_session(self.sessions) as session:
             await authorize_environment_workspace(
                 session,
@@ -106,14 +131,6 @@ class EnvironmentService:
                 workspace_id=actor.boundary_workspace_id,
                 action=WorkspaceAction.environment_provider_read,
             )
-        return Collection(
-            items=tuple(
-                EnvironmentProviderMetadata.describe(
-                    provider, deployment_managed=provider.type in self.deployment_provider_types
-                )
-                for provider in self.catalog.values()
-            )
-        )
 
     async def provider_connectivity(self, *, actor: AuthenticatedActor, provider_id: str) -> ProviderConnectivity:
         async with short_session(self.sessions) as session:
@@ -146,9 +163,7 @@ class EnvironmentService:
             require_enabled=True,
         )
         try:
-            checked = provider_implementation(self.catalog, "docker").validate_environment(
-                schema_version="1", value=configuration
-            )
+            checked = provider_implementation(self.catalog, "docker").validate_environment(configuration)
         except (ValidationError, EnvironmentProviderError) as error:
             raise invalid_environment("Docker image configuration is invalid") from error
         try:
@@ -379,9 +394,7 @@ class EnvironmentService:
         if not provider.supports_managed:
             raise invalid_environment("the selected Provider supports external registration only")
         try:
-            provider.validate_environment(
-                schema_version=template_config.configuration_schema_version, value=template_config.configuration
-            )
+            provider.validate_environment(template_config.configuration)
         except (ValidationError, EnvironmentProviderError) as error:
             raise invalid_environment("Environment template configuration is invalid") from error
         window = template_config.retention.idle
@@ -552,9 +565,7 @@ class EnvironmentService:
             raise environment_not_found()
         implementation = provider_implementation(self.catalog, provider.type)
         try:
-            configuration = implementation.validate_environment(
-                schema_version=request.configuration_schema_version, value=request.configuration
-            )
+            configuration = implementation.validate_environment(request.configuration)
         except (ValidationError, EnvironmentProviderError) as error:
             raise invalid_environment("Environment registration configuration is invalid") from error
         if request.state is not None and request.state.provider_key != provider.type:
@@ -573,10 +584,7 @@ class EnvironmentService:
             workspace_id=workspace_id,
             provider_id=provider.id,
             ownership="external",
-            external_configuration={
-                "configuration_schema_version": request.configuration_schema_version,
-                "configuration": request.configuration,
-            },
+            external_configuration={"configuration": request.configuration},
             state=request.state.model_dump(mode="json") if request.state else None,
             target_identity=target_identity,
             generation=1,

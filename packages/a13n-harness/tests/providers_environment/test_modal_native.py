@@ -6,8 +6,8 @@ import shutil
 import sys
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.models import EnvironmentState
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message_factory import GetMessageClass
@@ -166,9 +166,9 @@ def test_modal_real_sdk_snapshot_resume(tmp_path, monkeypatch):
         cloud.url = f"http://127.0.0.1:{port}"
         monkeypatch.setenv("MODAL_SERVER_URL", cloud.url)
         monkeypatch.setenv("MODAL_SANDBOX_V2", "false")
-        provider = EnvironmentProviderCatalog(select_builtin_environment_providers(["modal"])).require("modal")
+        provider = ProviderCatalog(select_builtin_environment_providers(["modal"])).require("modal")
         config = provider.validate_environment(
-            schema_version="1", value={"root": str(root), "python": sys.executable, "request_timeout_seconds": 15}
+            {"root": str(root), "python": sys.executable, "request_timeout_seconds": 15}
         )
         runtime = await provider.runtime_factory(
             configuration=provider.configuration_model(workspace="fixture", app_name="fixture"),

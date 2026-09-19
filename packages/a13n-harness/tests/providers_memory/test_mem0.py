@@ -4,6 +4,7 @@ import json
 import httpx
 import httpx2
 import pytest
+from a13n_harness.providers.memory.configuration import Mem0Credential, Mem0PlatformConfiguration
 from a13n_harness.providers.memory.contracts import (
     MemoryDocumentScope,
     MemoryPage,
@@ -169,7 +170,9 @@ async def test_platform_native_sdk_contract_without_constructor_network_io(monke
             return httpx.Response(200, json={"id": "memory-1", "memory": "memory", "run_id": "thread-1"})
         return httpx.Response(200, json={"results": [], "next": "https://never-follow.invalid/page"})
 
-    async with open_mem0_platform(api_key="test-key", base_url="http://platform") as backend:
+    async with open_mem0_platform(
+        Mem0PlatformConfiguration(base_url="http://platform"), Mem0Credential(api_key="test-key")
+    ) as backend:
         sdk = backend.client
         assert sdk.org_id is None and sdk.project_id is None
         await sdk.async_client.aclose()
@@ -243,7 +246,9 @@ async def test_native_crud_confirms_exact_text_and_checks_subject_before_mutatio
             async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handle)) as client:
                 yield Mem0OSSBackend(client)
         else:
-            async with open_mem0_platform(api_key="test-key", base_url="http://platform") as backend:
+            async with open_mem0_platform(
+                Mem0PlatformConfiguration(base_url="http://platform"), Mem0Credential(api_key="test-key")
+            ) as backend:
                 await backend.client.async_client.aclose()
                 backend.client.async_client = httpx.AsyncClient(
                     base_url="http://platform", transport=httpx.MockTransport(handle)

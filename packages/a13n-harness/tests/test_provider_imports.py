@@ -63,9 +63,8 @@ def test_five_domain_metadata_needs_no_optional_sdk() -> None:
 
 def test_selecting_one_builtin_needs_no_other_provider_runtime() -> None:
     _run(
+        "from a13n_harness.providers.catalog import ProviderCatalog\n"
         "from a13n_harness.providers.environment.builtins import select_builtin_environment_providers\n"
-        "from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog\n"
-        "catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(('direct_local',)))\n"
-        "assert catalog.require('direct_local').validate_environment("
-        "schema_version='1', value={'root': {'path': '/tmp'}})\n"
+        "catalog = ProviderCatalog(select_builtin_environment_providers(('direct_local',)))\n"
+        "assert catalog.require('direct_local').validate_environment({'root': {'path': '/tmp'}})\n"
     )

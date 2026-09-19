@@ -7,12 +7,12 @@ import pytest
 from a13n_harness import AgentSpec, HarnessBuilder
 from a13n_harness.capabilities.memory import MemoryCapability
 from a13n_harness.errors import RunError
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
 )
-from a13n_harness.providers.memory import MemoryProviderCatalog
 from a13n_harness.providers.memory.builtins import FILESYSTEM
 from a13n_harness.providers.memory.documents import DocumentInput
 from a13n_service.memory.domain import MemoryEntrySelection
@@ -44,12 +44,12 @@ async def test_file_binding_reconnect_and_marker_loss(
     # receives a Host-prepared adapter and the accepted logical selection.
     run = run.model_copy(update={"environment_id": "env_1234567890abcdef"})
     monkeypatch.setattr("a13n_service.memory.file_runtime.utc_now", lambda: NOW)
-    catalog = MemoryProviderCatalog((FILESYSTEM,))
+    catalog = ProviderCatalog((FILESYSTEM,))
     service = MemoryService(catalog, protector(), MemoryAuthorizer(interaction_sessions, catalog))
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     provider = LOCAL_ENVD
-    configuration = provider.validate_environment(schema_version="1", value={"workspace": {"path": str(workspace)}})
+    configuration = provider.validate_environment({"workspace": {"path": str(workspace)}})
     entry = MemoryEntrySelection(
         name="project", mode="documents", description="Project decisions", backend={"type": "filesystem"}
     )

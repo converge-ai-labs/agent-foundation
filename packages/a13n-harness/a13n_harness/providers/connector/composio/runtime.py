@@ -46,14 +46,15 @@ class ComposioProvider:
 
     def __init__(self, http: ConnectorHttpClient, credentials: ApiKeyCredentials) -> None:
         self._http = http
-        self._credentials = credentials
-        self._catalog = ComposioCatalog(http, credentials.api_key)
+        # The Provider boundary is the one place the API key is revealed for outbound requests.
+        self._api_key = credentials.api_key.get_secret_value()
+        self._catalog = ComposioCatalog(http, self._api_key)
 
     def connect(self, binding: ConnectionBinding) -> ComposioConnection:
-        return ComposioConnection(self._http, self._credentials, binding)
+        return ComposioConnection(self._http, self._api_key, binding)
 
     def tool_catalog(self, connector_key: str) -> ComposioToolCatalog:
-        return ComposioToolCatalog(self._http, self._credentials, connector_key)
+        return ComposioToolCatalog(self._http, self._api_key, connector_key)
 
     async def inspect_setup(self, *, setup_ref: str, context: SetupContext) -> ConnectionInspection:
         return await self.connect(
@@ -69,7 +70,7 @@ class ComposioProvider:
             "GET",
             endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts?limit=1",
-            api_key=self._credentials.api_key,
+            api_key=self._api_key,
         )
         return ("account_read",)
 
@@ -101,7 +102,7 @@ class ComposioProvider:
             "POST",
             endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts/link",
-            api_key=self._credentials.api_key,
+            api_key=self._api_key,
             json_body={
                 "auth_config_id": auth_config.id,
                 **({"connection_data": setup["connection_data"]} if setup.get("connection_data") else {}),
@@ -142,7 +143,7 @@ class ComposioProvider:
             "POST",
             endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts",
-            api_key=self._credentials.api_key,
+            api_key=self._api_key,
             json_body={
                 "auth_config": {"id": auth_config.id},
                 "connection": {
@@ -171,7 +172,7 @@ class ComposioProvider:
             "POST",
             endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts/complete_auth",
-            api_key=self._credentials.api_key,
+            api_key=self._api_key,
             json_body={
                 "session_uri": session_uri,
                 "user_id": context.external_user_correlation,
@@ -210,11 +211,11 @@ class ComposioToolCatalog:
     def __init__(
         self,
         http: ConnectorHttpClient,
-        credentials: ApiKeyCredentials,
+        api_key: str,
         connector_key: str,
     ) -> None:
         self._http = http
-        self._credentials = credentials
+        self._api_key = api_key
         self._connector_key = connector_key
         self._catalog_version: str | None = None
 
@@ -225,7 +226,7 @@ class ComposioToolCatalog:
                     "GET",
                     endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/toolkits/{path_segment(self._connector_key)}",
-                    api_key=self._credentials.api_key,
+                    api_key=self._api_key,
                 )
             )
             if required_string(toolkit, "slug", max_length=128) != self._connector_key:
@@ -247,7 +248,7 @@ class ComposioToolCatalog:
                 "GET",
                 endpoint=COMPOSIO_ENDPOINT,
                 path="/api/v3.1/tools",
-                api_key=self._credentials.api_key,
+                api_key=self._api_key,
                 params=params,
             )
         )
@@ -276,7 +277,7 @@ class ComposioToolCatalog:
                     "GET",
                     endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/tools/{path_segment(key)}",
-                    api_key=self._credentials.api_key,
+                    api_key=self._api_key,
                     params={"version": version},
                 )
             )
@@ -309,13 +310,13 @@ class ComposioConnection:
     def __init__(
         self,
         http: ConnectorHttpClient,
-        credentials: ApiKeyCredentials,
+        api_key: str,
         binding: ConnectionBinding,
     ) -> None:
         self._http = http
-        self._credentials = credentials
+        self._api_key = api_key
         self._binding = binding
-        self._catalog = ComposioToolCatalog(http, credentials, binding.connector_key)
+        self._catalog = ComposioToolCatalog(http, api_key, binding.connector_key)
 
     async def inspect(self) -> ConnectionInspection:
         with provider_response_errors():
@@ -324,7 +325,7 @@ class ComposioConnection:
                     "GET",
                     endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/connected_accounts/{path_segment(self._binding.external_ref)}",
-                    api_key=self._credentials.api_key,
+                    api_key=self._api_key,
                 )
             )
             return _inspection(
@@ -343,7 +344,7 @@ class ComposioConnection:
             "POST",
             endpoint=COMPOSIO_ENDPOINT,
             path=f"/api/v3.1/connected_accounts/{path_segment(self._binding.external_ref)}/revoke",
-            api_key=self._credentials.api_key,
+            api_key=self._api_key,
             json_body={},
             write=True,
             extra_headers={"idempotency-key": operation_id},
@@ -370,7 +371,7 @@ class ComposioConnection:
                 "POST",
                 endpoint=COMPOSIO_ENDPOINT,
                 path=f"/api/v3.1/tools/execute/{path_segment(tool_key)}",
-                api_key=self._credentials.api_key,
+                api_key=self._api_key,
                 json_body={
                     "arguments": arguments,
                     "connected_account_id": self._binding.external_ref,

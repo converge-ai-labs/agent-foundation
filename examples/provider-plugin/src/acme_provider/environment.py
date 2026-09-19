@@ -4,11 +4,9 @@ import asyncio
 from dataclasses import dataclass
 from pathlib import Path
 
-from a13n_harness.providers.authentication import Authentication, CredentialMode
 from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.direct_local.configuration import DirectLocalEnvironmentConfiguration
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
-from a13n_harness.providers.environment.management import EmptyProviderConfiguration
 from a13n_harness.providers.environment.models import EnvironmentDescriptor, EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -61,7 +59,7 @@ class Workspace(DirectLocalEnvironment):
 async def runtime(
     *,
     configuration: WorkspaceConnection,
-    credential: EmptyProviderConfiguration | None,
+    credential: object | None,
     operation_id: str,
     allow_create: bool,
 ) -> WorkspaceRuntime:
@@ -71,19 +69,17 @@ async def runtime(
 
 def construct(
     *,
-    configuration: BaseModel,
+    configuration: WorkspaceConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
     runtime: WorkspaceRuntime | None,
 ) -> Workspace:
-    if not isinstance(configuration, WorkspaceConfiguration) or runtime is None or state is not None:
-        raise ValueError("Workspace requires its typed settings and stateless local runtime")
+    if runtime is None or state is not None:
+        raise ValueError("Workspace requires a stateless local runtime")
     return Workspace(configuration, environment_id, runtime)
 
 
-def describe(configuration: BaseModel) -> EnvironmentDescriptor:
-    if not isinstance(configuration, WorkspaceConfiguration):
-        raise ValueError("Workspace requires its typed settings")
+def describe(configuration: WorkspaceConfiguration) -> EnvironmentDescriptor:
     return DIRECT_LOCAL.describe_environment(
         DirectLocalEnvironmentConfiguration.model_validate(
             {"root": {"path": "/", "read_only": configuration.read_only}}
@@ -95,12 +91,10 @@ acme_environment = EnvironmentProviderDefinition(
     type="acme_workspace",
     display_name="Acme project workspace",
     configuration_model=WorkspaceConnection,
-    credential_model=None,
-    environment_models={"1": WorkspaceConfiguration},
+    environment_model=WorkspaceConfiguration,
     construct=construct,
     describe_environment=describe,
     runtime_factory=runtime,
-    authentication=Authentication(mode=CredentialMode.forbidden),
     supports_stop=True,
     supports_destroy=True,
 )

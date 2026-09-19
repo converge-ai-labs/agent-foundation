@@ -7,8 +7,8 @@ from urllib.parse import parse_qs, urlsplit
 
 import httpx2
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_harness.providers.environment.native.http import NativeHTTP
@@ -65,10 +65,8 @@ def test_sprites_native_roundtrip_and_reconstruction(tmp_path, monkeypatch):
                 return connect(f"ws://127.0.0.1:{port}{parsed.path}?{parsed.query}", **kwargs)
 
             monkeypatch.setattr(sprites, "connect", local_connect)
-            provider = EnvironmentProviderCatalog(select_builtin_environment_providers(["sprites"])).require("sprites")
-            config = provider.validate_environment(
-                schema_version="1", value={"root": str(tmp_path), "python": sys.executable}
-            )
+            provider = ProviderCatalog(select_builtin_environment_providers(["sprites"])).require("sprites")
+            config = provider.validate_environment({"root": str(tmp_path), "python": sys.executable})
             runtime = await provider.runtime_factory(
                 configuration=provider.configuration_model(organization="fixture"),
                 credential=provider.credential_model(api_key="fixture"),

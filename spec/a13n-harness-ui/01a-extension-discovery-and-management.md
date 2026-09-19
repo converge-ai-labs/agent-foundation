@@ -107,7 +107,6 @@ kind: environment_profile
 id: environment-docker
 name: Docker
 provider_key: docker
-provider_schema_version: "1"
 provider_configuration: {}
 adapter_key: a13n.docker-project-roots
 adapter_configuration: {}

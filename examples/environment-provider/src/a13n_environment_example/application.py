@@ -8,8 +8,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
 from a13n_harness.providers.environment.docker.provider import DockerEnvironment
 from a13n_harness.providers.environment.docker.runtime import DockerProviderRuntime, DockerSDKEngine
@@ -61,18 +61,12 @@ async def run_direct_local(workspace: Path) -> StatelessExampleResult:
     root = _prepare_workspace(workspace)
     spec = EnvironmentProviderSpec(
         provider_key="direct_local",
-        schema_version="1",
         configuration={
             "root": {"path": str(root)},
         },
     )
-    provider = EnvironmentProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(
-        spec.provider_key
-    )
-    configuration = provider.validate_environment(
-        schema_version=spec.schema_version,
-        value=spec.configuration,
-    )
+    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
+    configuration = provider.validate_environment(spec.configuration)
     environment = provider.construct(
         configuration=configuration, environment_id="direct-local-example", state=None, runtime=None
     )
@@ -105,19 +99,13 @@ async def run_local_envd(
     root = _prepare_workspace(workspace)
     spec = EnvironmentProviderSpec(
         provider_key="local_envd",
-        schema_version="1",
         configuration={
             "workspace": {"path": str(root)},
             "execution_network": "deny",
         },
     )
-    provider = EnvironmentProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(
-        spec.provider_key
-    )
-    configuration = provider.validate_environment(
-        schema_version=spec.schema_version,
-        value=spec.configuration,
-    )
+    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
+    configuration = provider.validate_environment(spec.configuration)
     runtime = LocalEnvdProviderRuntime(
         executable=resolve_a13n_envd_executable(executable),
         allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
@@ -155,18 +143,12 @@ async def run_docker(
 
     spec = EnvironmentProviderSpec(
         provider_key="docker",
-        schema_version="1",
         configuration={
             "image": image,
         },
     )
-    provider = EnvironmentProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(
-        spec.provider_key
-    )
-    configuration = provider.validate_environment(
-        schema_version=spec.schema_version,
-        value=spec.configuration,
-    )
+    provider = ProviderCatalog(select_builtin_environment_providers((spec.provider_key,))).require(spec.provider_key)
+    configuration = provider.validate_environment(spec.configuration)
     runtime = DockerProviderRuntime(
         engine=await asyncio.to_thread(
             DockerSDKEngine.connect, os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock")

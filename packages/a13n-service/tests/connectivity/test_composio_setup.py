@@ -6,10 +6,9 @@ from datetime import timedelta
 
 import httpx2
 import pytest
-from a13n_harness.providers.connector import ConnectorProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
 from a13n_harness.providers.connector.http import ConnectorHttpClient
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
 from a13n_service.connectivity.connectors.domain import CreateConnectorProviderRequest
 from a13n_service.connectivity.connectors.errors import ConnectorError
@@ -139,15 +138,17 @@ async def composio_setup(composio_sessions, credential_protector):
         return await hook(request, result) if hook is not None else result
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(response)) as http:
-        registry = ConnectorProviders(
-            ConnectorProviderCatalog(BUILT_IN_CONNECTOR_PROVIDERS),
-            ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=1024 * 1024),
+        catalog = ProviderCatalog(BUILT_IN_CONNECTOR_PROVIDERS)
+        connector_http = ConnectorHttpClient(http, AllowEndpoint(), response_max_bytes=1024 * 1024)
+        state["catalog"] = catalog
+        state["connector_http"] = connector_http
+        providers = ConnectorProviderService(
+            sessions, catalog, connector_http, credential_protector, clock=lambda: now[0]
         )
-        state["registry"] = registry
-        providers = ConnectorProviderService(sessions, registry, credential_protector, clock=lambda: now[0])
         service = ConnectorConnectionService(
             sessions,
-            registry,
+            catalog,
+            connector_http,
             credential_protector,
             correlation_secret=b"c" * 32,
             public_origin="https://foundation.example",
@@ -168,7 +169,8 @@ async def composio_setup(composio_sessions, credential_protector):
         connection = await create_connection(service, connector_provider_id=provider.id, idempotency_key="connection")
         reconciler = ConnectorReconciler(
             sessions,
-            registry,
+            catalog,
+            connector_http,
             service.setup_coordinator,
             instance_id="control",
             poll_interval_seconds=2,

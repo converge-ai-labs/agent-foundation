@@ -31,7 +31,7 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from pydantic_ai.usage import UsageLimits
 from sqlalchemy import select
 
-from ..connectivity.connector_helpers import FakeConnection, FakeConnectorBackend, fake_registry
+from ..connectivity.connector_helpers import FakeConnection, FakeConnectorBackend, fake_catalog
 from ..connectivity.selection_helpers import (
     CONNECTOR_CONNECTION_ID,
     CONNECTOR_ID,
@@ -228,7 +228,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         monkeypatch,
         settings=settings,
         model_factory=factory,
-        connectors=fake_registry(FakeConnectorBackend()),
+        connectors=fake_catalog(FakeConnectorBackend()),
     ) as (runtime, shared):
         loop = runtime.execution_loop
         assert loop is not None

@@ -107,10 +107,10 @@ Custom post-commit jobs and management services can call an authorized `MemoryBa
 Reusable storage definitions live under `a13n_harness.providers.memory`. Each `MemoryProviderDefinition` supplies typed configuration and credential models, the shared declarative authentication and help metadata, and an asynchronous `open_backend` callback. The callback owns its backend lifetime. Metadata loading opens no backend and performs no vendor I/O.
 
 ```python
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers import ProviderCatalog
 from a13n_harness.providers.memory.builtins import MEM0_OSS
 
-catalog = MemoryProviderCatalog((MEM0_OSS,))
+catalog = ProviderCatalog((MEM0_OSS,))
 definition = catalog["mem0_oss"]
 async with definition.open({"base_url": mem0_url}, {"api_key": mem0_api_key}) as backend:
     capability = MemoryCapability(backend=backend, auto_recall=False, toolset=False)

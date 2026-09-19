@@ -1,4 +1,7 @@
-import { credentialMode } from "../../shared/provider-authentication";
+import {
+  credentialMode,
+  providerSchema,
+} from "../../shared/provider-authentication";
 import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
 import { CredentialEditor } from "../../shared/credential-editor";
 import { useSuggestedName } from "../../shared/suggested-name";
@@ -156,7 +159,7 @@ export function WebProviderForm({
   scope: WebProviderScope;
   onCancel?: () => void;
   resource?: { value: Schema["WebProvider"]; etag?: string };
-  definitions: Schema["WebProviderDefinition"][];
+  definitions: Schema["WebProviderMetadata"][];
   onSaved: (provider: Schema["WebProvider"]) => void;
 }) {
   const { t } = useTranslation(),
@@ -212,7 +215,7 @@ export function WebProviderForm({
       );
       const replacingCredential = Object.keys(credential).length > 0;
       const credentialValue = withSchemaValues(
-        definition.credential_schema,
+        providerSchema(definition.credential_schema),
         credential,
       );
       if (!original) {
@@ -338,7 +341,7 @@ export function WebProviderForm({
           >
             <SchemaFields
               key={`${type}-credential`}
-              schema={definition.credential_schema}
+              schema={providerSchema(definition.credential_schema)}
               requireFields={
                 (mode === "required" &&
                   !original?.value.credential_configured) ||

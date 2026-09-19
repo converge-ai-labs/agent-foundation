@@ -8,8 +8,8 @@ from datetime import UTC, datetime, timedelta
 
 import e2b
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.e2b.configuration import (
     E2BConnectionConfiguration,
     E2BCredential,
@@ -133,8 +133,8 @@ def environment(state=None, *, managed=True, configuration=None, identity="env-t
 
 
 async def test_inert_catalog_configuration_scope_and_close(api):
-    provider = EnvironmentProviderCatalog(select_builtin_environment_providers(("e2b",))).require("e2b")
-    config = provider.validate_environment(schema_version="1", value={})
+    provider = ProviderCatalog(select_builtin_environment_providers(("e2b",))).require("e2b")
+    config = provider.validate_environment({})
     env = environment(configuration=config)
     await env.enter(mount_id="m")
     assert env.dump_state() is None
@@ -244,9 +244,7 @@ async def test_configuration_and_state_validation_are_inert(api):
         {"max_output_bytes": 1},
     ):
         with pytest.raises(EnvironmentProviderError):
-            provider.validate_environment(schema_version="1", value=value)
-    with pytest.raises(EnvironmentProviderError):
-        provider.validate_environment(schema_version="2", value={})
+            provider.validate_environment(value)
     with pytest.raises(EnvironmentProviderError):
         environment(EnvironmentState(provider_key="test_wrong", state_version="1", state={}))
     assert api.calls == []

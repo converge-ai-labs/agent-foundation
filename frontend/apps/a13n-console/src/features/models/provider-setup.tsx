@@ -22,7 +22,7 @@ export function ProviderSetup({
 }: {
   scope: ModelScope;
   providers?: Schema["ModelProvider"][];
-  definitions?: Schema["ModelProviderDefinition"][];
+  definitions?: Schema["ModelProviderMetadata"][];
   value: string;
   error?: unknown;
   onSelect: (id: string) => void;

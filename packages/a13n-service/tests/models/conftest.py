@@ -11,7 +11,7 @@ from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserR
 from a13n_service.models.catalog import DEFAULT_RELEASED_SINCE
 from a13n_service.models.domain import ModelCatalogCollection
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.service import ModelService
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
@@ -67,7 +67,7 @@ async def model_sessions(service_database: PostgreSQLConfig) -> AsyncIterator[as
 def provider_service(model_sessions: async_sessionmaker[AsyncSession]) -> ModelProviderService:
     return ModelProviderService(
         model_sessions,
-        built_in_provider_registry(),
+        built_in_model_provider_catalog(),
         EndpointPolicy.from_operator_allowlist(private_domains=(), private_cidrs=()),
         protector(),
         clock=lambda: NOW,
@@ -77,7 +77,7 @@ def provider_service(model_sessions: async_sessionmaker[AsyncSession]) -> ModelP
 
 @pytest.fixture
 def model_service(model_sessions: async_sessionmaker[AsyncSession], model_catalog: StubModelCatalog) -> ModelService:
-    return ModelService(model_sessions, built_in_provider_registry(), clock=lambda: NOW, catalog=model_catalog)
+    return ModelService(model_sessions, built_in_model_provider_catalog(), clock=lambda: NOW, catalog=model_catalog)
 
 
 async def seed_models(sessions: async_sessionmaker[AsyncSession]) -> None:

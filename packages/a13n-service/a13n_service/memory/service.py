@@ -4,7 +4,8 @@ import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.memory.contracts import (
     MemoryPaginationUnsupported,
     MemoryRecord,
@@ -78,7 +79,7 @@ def project_memory(record: MemoryRecord) -> Memory:
 class MemoryService:
     def __init__(
         self,
-        catalog: MemoryProviderCatalog,
+        catalog: ProviderCatalog[MemoryProviderDefinition],
         protector: SecretProtector,
         authorizer: MemoryAuthorizer,
         *,

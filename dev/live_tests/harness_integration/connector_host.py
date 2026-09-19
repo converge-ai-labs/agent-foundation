@@ -3,12 +3,11 @@
 from contextlib import asynccontextmanager
 
 import httpx2
-from a13n_harness.providers.connector import ConnectorProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
 from a13n_harness.providers.connector.composio.configuration import COMPOSIO_ENDPOINT
 from a13n_harness.providers.connector.http import ConnectorHttpClient
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 
 from ..infrastructure.fixture_peer import certificate_context
 
@@ -27,14 +26,12 @@ class PeerEndpoint:
 class ConnectorHost:
     def __init__(self, config, settings):
         self.http = httpx2.AsyncClient(verify=certificate_context(config), trust_env=False)
-        self.registry = ConnectorProviders(
-            ConnectorProviderCatalog(BUILT_IN_CONNECTOR_PROVIDERS),
-            ConnectorHttpClient(
-                self.http,
-                PeerEndpoint(config["peer_url"]),
-                response_max_bytes=settings.connectivity.response_max_bytes,
-                timeout_seconds=settings.connectivity.total_timeout_seconds,
-            ),
+        self.catalog = ProviderCatalog(BUILT_IN_CONNECTOR_PROVIDERS)
+        self.connector_http = ConnectorHttpClient(
+            self.http,
+            PeerEndpoint(config["peer_url"]),
+            response_max_bytes=settings.connectivity.response_max_bytes,
+            timeout_seconds=settings.connectivity.total_timeout_seconds,
         )
 
     def install(self, app):

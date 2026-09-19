@@ -108,9 +108,7 @@ class ConnectionResources:
             raise invalid_environment("Environment is not an eligible client WebSocket target")
         implementation = self._environments.catalog.require(provider.type)
         configuration = EnvironmentConfiguration.model_validate(row.external_configuration)
-        validated = implementation.validate_environment(
-            schema_version=configuration.configuration_schema_version, value=configuration.configuration
-        )
+        validated = implementation.validate_environment(configuration.configuration)
         if not isinstance(validated, RemoteEnvdEnvironmentConfiguration):
             raise TypeError("Client WebSocket Provider returned an invalid configuration")
         state = EnvironmentState.model_validate(row.state)

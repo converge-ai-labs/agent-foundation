@@ -6,14 +6,15 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
+from a13n_harness.providers.memory import MemoryProviderDefinition
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.connectivity.adapters import IngressAdapter
 from a13n_service.connectivity.composition import AdapterRegistry
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.ingress.admission_domain import InputAcceptor
 from a13n_service.connectivity.providers import built_in_ingress_adapter_registry
 from a13n_service.iam import RequestAuthenticator
@@ -38,14 +39,15 @@ class Components:
     agent_invocation_resolver: AgentInvocationResolver | None = None
     model_connection_tester: ModelConnectionTester | None = None
     model_catalog: ModelCatalog | None = None
-    environment_provider_catalog: EnvironmentProviderCatalog | None = None
-    memory_provider_catalog: MemoryProviderCatalog | None = None
+    environment_provider_catalog: ProviderCatalog[EnvironmentProviderDefinition] | None = None
+    memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition] | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None
     trace_query_provider_registry: TraceQueryProviderRegistry | None = None
     ingress_adapter_registry: AdapterRegistry[IngressAdapter] | None = None
-    connector_providers: ConnectorProviders | None = None
+    connector_providers: ProviderCatalog[ConnectorProviderDefinition] | None = None
+    connector_http: ConnectorHttpClient | None = None
     input_acceptor: InputAcceptor | None = None
     plugin_factory_catalog: HarnessPluginFactoryCatalog | None = None
 

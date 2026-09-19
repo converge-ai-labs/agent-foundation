@@ -26,7 +26,6 @@ class BuiltInEnvironmentProfile:
     description: str
     provider_key: str
     adapter_key: str
-    provider_schema_version: str = "1"
 
 
 FULL_CONTROL_PROFILE_ID: Final = "environment-native"

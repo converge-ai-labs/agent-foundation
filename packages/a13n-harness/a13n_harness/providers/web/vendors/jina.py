@@ -13,7 +13,7 @@ from a13n_harness.providers.web.contracts import (
 )
 from a13n_harness.providers.web.options import ScrapeOptions, SearchOptions
 
-from ..configuration import ApiKeyCredential, EmptyConfiguration
+from ..configuration import ApiKeyCredential, EmptyConfiguration, require_api_key
 from ..contracts import WebPolicy
 from .common import SEARCH_RESPONSE_BYTES, scrape_response_bytes, scrape_result, search_response
 
@@ -31,8 +31,7 @@ async def search(
     options: SearchOptions,
     transport: WebProviderTransport,
 ) -> WebSearchResponse:
-    assert credential is not None
-    key = credential.api_key.get_secret_value()
+    key = require_api_key(credential)
     payload = await transport.exchange_json(
         lambda client: client.build_request(
             "GET",
@@ -59,8 +58,7 @@ async def scrape(
     transport: WebProviderTransport,
     policy: WebPolicy,
 ) -> WebScrapeResult:
-    assert credential is not None
-    key = credential.api_key.get_secret_value()
+    key = require_api_key(credential)
     limit = min(request.max_content_bytes, options.max_content_bytes)
     payload = await transport.exchange_json(
         lambda client: client.build_request(

@@ -4,7 +4,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from a13n_harness.providers.environment import EnvironmentProviderCatalog
 from a13n_service.environments.configuration import load_configuration
 from a13n_service.environments.domain import (
     CreateManagedEnvironmentRequest,
@@ -40,7 +39,7 @@ async def test_installed_environment_management_native_operations_and_frozen_reu
         ]
     )
     monkeypatch.syspath_prepend(str(installed))
-    catalog = EnvironmentProviderCatalog(load_provider_catalogs(("acme",)).environment)
+    catalog = load_provider_catalogs(("acme",)).environment
     service = EnvironmentService(environment_sessions, catalog, protector)
     backend = await service.create_provider(
         actor=actor(),

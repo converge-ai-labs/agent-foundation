@@ -20,7 +20,7 @@ from .contracts import (
 _FIELDS = {MemoryScope.THREAD: "run_id", MemoryScope.AGENT: "agent_id", MemoryScope.USER: "user_id"}
 
 
-def _filter(subject: MemorySubject) -> dict[str, str]:
+def subject_filter(subject: MemorySubject) -> dict[str, str]:
     return {"run_id" if subject.scope is MemoryDocumentScope.CONVERSATION else _FIELDS[subject.scope]: subject.value}
 
 
@@ -51,7 +51,7 @@ def _record(raw: object) -> MemoryRecord:
     )
 
 
-def _records(raw: object, subjects: tuple[MemorySubject, ...], limit: int) -> tuple[MemoryRecord, ...]:
+def parse_records(raw: object, subjects: tuple[MemorySubject, ...], limit: int) -> tuple[MemoryRecord, ...]:
     if not isinstance(raw, Mapping) or not isinstance(raw.get("results"), list) or len(raw["results"]) > limit:
         raise ValueError("Invalid Mem0 results")
     records = tuple(_record(item) for item in raw["results"])
@@ -75,7 +75,7 @@ def _added_id(response: object) -> str:
     return memory_id
 
 
-def _search_options(subjects: tuple[MemorySubject, ...], limit: int, threshold: float | None) -> None:
+def validate_search_options(subjects: tuple[MemorySubject, ...], limit: int, threshold: float | None) -> None:
     if not 1 <= len(subjects) <= 3 or len(set(subjects)) != len(subjects):
         raise ValueError("Memory search requires one to three distinct trusted subjects")
     if isinstance(limit, bool) or not 1 <= limit <= 100:
@@ -84,12 +84,12 @@ def _search_options(subjects: tuple[MemorySubject, ...], limit: int, threshold: 
         raise ValueError("Search threshold must be between 0 and 1")
 
 
-def _list_limit(limit: int) -> None:
+def validate_list_limit(limit: int) -> None:
     if isinstance(limit, bool) or not 1 <= limit <= 1000:
         raise ValueError("List limit must be between 1 and 1000")
 
 
-class _Mem0Backend(MemoryDocumentBackend):
+class Mem0Backend(MemoryDocumentBackend):
     """Shared confirmation rules, with native transport details private to adapters."""
 
     @abstractmethod
@@ -169,13 +169,13 @@ class _Mem0Backend(MemoryDocumentBackend):
 def document_filters(subject: MemorySubject, record_keys: tuple[str, ...]) -> dict[str, object]:
     if len(record_keys) > 1000 or any(not key or len(key) > 128 for key in record_keys):
         raise ValueError("Document search key budget exceeded")
-    return {**_filter(subject), "record_key": {"in": list(record_keys)}}
+    return {**subject_filter(subject), "record_key": {"in": list(record_keys)}}
 
 
 def document_records(
     raw: object, subject: MemorySubject, record_keys: tuple[str, ...], limit: int
 ) -> tuple[MemoryRecord, ...]:
-    records = _records(raw, (subject,), limit)
+    records = parse_records(raw, (subject,), limit)
     if any(record.metadata.get("record_key") not in record_keys for record in records):
         raise ValueError("Provider returned a document outside the authorized key set")
     return records

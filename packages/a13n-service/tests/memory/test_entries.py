@@ -1,5 +1,5 @@
 import pytest
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.memory.builtins import FILESYSTEM, MEM0_OSS
 from a13n_service.memory.domain import CreateMemoryProviderRequest, MemoryEntries, MemoryEntrySelection
 from a13n_service.memory.providers import MemoryProviderService
@@ -47,7 +47,7 @@ def test_entries_roundtrip_and_mode_validation():
 
 @pytest.mark.anyio
 async def test_filesystem_provider_needs_no_credential_and_rejects_records(memory_sessions):
-    catalog = MemoryProviderCatalog((FILESYSTEM, MEM0_OSS))
+    catalog = ProviderCatalog((FILESYSTEM, MEM0_OSS))
     providers = MemoryProviderService(memory_sessions, protector(), catalog)
     provider = await providers.create(
         actor=actor(),
@@ -55,7 +55,7 @@ async def test_filesystem_provider_needs_no_credential_and_rejects_records(memor
         request=CreateMemoryProviderRequest(type="filesystem", name="Project files"),
     )
     assert provider.credential_configured is False
-    definitions = await providers.type_definitions(actor=actor())
+    definitions = await providers.provider_types(actor=actor())
     definition = next(item for item in definitions.items if item.type == "filesystem")
     assert definition.supports_documents and definition.supports_revisions
     assert definition.authentication.mode == "forbidden" and not definition.supports_records

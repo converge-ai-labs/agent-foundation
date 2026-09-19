@@ -98,7 +98,7 @@ async def _runtime(
 
 def _construct(
     *,
-    configuration: BaseModel,
+    configuration: RemoteEnvdEnvironmentConfiguration,
     environment_id: str,
     state: EnvironmentState | None,
     runtime: HttpEnvdProviderRuntime | None,
@@ -123,7 +123,7 @@ HTTP_ENVD = EnvironmentProviderDefinition(
     display_name="HTTP Envd",
     configuration_model=HttpEnvdConnectionConfiguration,
     credential_model=HttpEnvdCredential,
-    environment_models={"1": RemoteEnvdEnvironmentConfiguration},
+    environment_model=RemoteEnvdEnvironmentConfiguration,
     construct=_construct,
     describe_environment=describe_environment,
     target_identity=lambda **kwargs: target_identity(HTTP_PROVIDER_KEY, **kwargs),

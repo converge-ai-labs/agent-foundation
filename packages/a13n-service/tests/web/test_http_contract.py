@@ -92,7 +92,7 @@ async def test_installed_web_manifest_schema_save_rotation_and_probe(
         app.router.lifespan_context(app),
         httpx2.AsyncClient(transport=httpx2.MockTransport(vendor)) as vendor_client,
     ):
-        app.state.runtime.control.web_providers.registry.transport = WebProviderTransport(
+        app.state.runtime.control.web_providers.provider_transport = WebProviderTransport(
             client=vendor_client, endpoint_policy=Policy()
         )
         async with httpx2.AsyncClient(base_url="http://testserver", transport=httpx2.ASGITransport(app=app)) as client:

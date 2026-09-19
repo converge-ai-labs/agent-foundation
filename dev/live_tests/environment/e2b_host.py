@@ -3,8 +3,8 @@
 from dataclasses import replace
 from pathlib import Path
 
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.e2b.provider import E2B, E2BEnvironment
 
 from .lifecycle_host import native_effect_barrier
@@ -47,7 +47,7 @@ def _barrier_definition(root):
 
 def environment_catalog(config, builtin_keys):
     root = Path(config["workspace_root"]).parent / "e2b-fault"
-    return EnvironmentProviderCatalog(
+    return ProviderCatalog(
         (
             *select_builtin_environment_providers(tuple(key for key in builtin_keys if key != "e2b")),
             _barrier_definition(root),

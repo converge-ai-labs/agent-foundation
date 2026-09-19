@@ -20,3 +20,10 @@ class ApiKeyCredential(BaseModel):
         if not value.get_secret_value().strip() or len(value.get_secret_value().encode("utf-8")) > 4096:
             raise ValueError("api_key must be nonblank and at most 4096 UTF-8 bytes")
         return value
+
+
+def require_api_key(credential: ApiKeyCredential | None) -> str:
+    """State the declared `required` credential contract where Python cannot type it."""
+    if credential is None:
+        raise ValueError("this Web Provider requires an API key credential")
+    return credential.api_key.get_secret_value()

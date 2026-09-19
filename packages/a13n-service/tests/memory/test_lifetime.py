@@ -6,7 +6,7 @@ from dataclasses import replace
 import anyio
 import httpx2
 import pytest
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.memory.builtins import MEM0_OSS
 from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_service.memory.execution import MemoryProviderAccess, open_memory_backend
@@ -61,7 +61,7 @@ async def test_structured_plugin_lifetime(managed, outcome):
             definition = replace(definition, authentication=Authentication(mode=CredentialMode.optional))
             context = open_memory_backend(
                 MemoryProviderAccess(definition.type, config, "memory_fixture", None),
-                MemoryProviderCatalog((definition,)),
+                ProviderCatalog((definition,)),
                 protector(),
             )
         else:

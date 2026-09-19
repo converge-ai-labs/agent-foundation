@@ -432,7 +432,6 @@ def captured_configuration():
                 "profile_id": "environment-test",
                 "behavior_digest": "b" * 64,
                 "provider_key": "Native",
-                "provider_schema_version": "1",
                 "adapter_key": "DirectLocal",
                 "provider_configuration": {"root": "/PRIVATE_ROOT"},
                 "adapter_configuration": {"token": "PRIVATE_ADAPTER"},

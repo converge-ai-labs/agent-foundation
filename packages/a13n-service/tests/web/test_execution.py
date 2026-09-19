@@ -11,12 +11,12 @@ from a13n_harness.capabilities.web import (
     WebSearchResponse,
 )
 from a13n_harness.providers.authentication import Authentication, CredentialMode
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.web import WebProviderDefinition, WebProviderResponseError
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.web.domain import ScrapeSelection, SearchSelection
 from a13n_service.web.execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
-from a13n_service.web.registry import WebProviderRegistry
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 pytestmark = pytest.mark.anyio
@@ -89,7 +89,7 @@ def _boundary(operation: str, failures: list[BaseException | None], *, scrape_ca
         ),
     )
     runtime = _Runtime(failures)
-    registry = WebProviderRegistry(
+    catalog = ProviderCatalog(
         (
             WebProviderDefinition(
                 type="external_web",
@@ -120,7 +120,7 @@ def _boundary(operation: str, failures: list[BaseException | None], *, scrape_ca
             acquire=acquire,
             reauthorize=reauthorize,
             protector=protector,
-            registry=registry,
+            catalog=catalog,
         )
 
         async def dispatch():
@@ -132,7 +132,7 @@ def _boundary(operation: str, failures: list[BaseException | None], *, scrape_ca
             acquire=acquire,
             reauthorize=reauthorize,
             protector=protector,
-            registry=registry,
+            catalog=catalog,
         )
 
         async def dispatch():
@@ -168,7 +168,7 @@ async def test_credential_free_provider_dispatches_without_ciphertext() -> None:
         ),
     )
     runtime = _Runtime([None])
-    registry = WebProviderRegistry(
+    catalog = ProviderCatalog(
         (
             WebProviderDefinition(
                 type="keyless_web",
@@ -193,7 +193,7 @@ async def test_credential_free_provider_dispatches_without_ciphertext() -> None:
         acquire=acquire,
         reauthorize=reauthorize,
         protector=protector,
-        registry=registry,
+        catalog=catalog,
     )
     result = await authorized.search(WebSearchRequest(query="query", limit=1))
     assert result.results == ()

@@ -1,44 +1,12 @@
 from contextlib import asynccontextmanager
 from dataclasses import replace
-from types import SimpleNamespace
 
 import anyio
 import httpx2
 import pytest
-from a13n_harness.providers.connector import ConnectorProviderCatalog
 from a13n_harness.providers.connector.builtins import COMPOSIO
-from a13n_harness.providers.plugins import ProviderManifest, load_provider_plugins
 
 pytestmark = pytest.mark.anyio
-
-
-def test_manifest_metadata_is_explicit_immutable_and_inert(monkeypatch):
-    calls = []
-    manifest = ProviderManifest(api_version=1, connector=(COMPOSIO,))
-    monkeypatch.setattr(httpx2, "AsyncClient", lambda **kwargs: pytest.fail("metadata opened client"))
-
-    def entries(*, group):
-        assert group == "a13n_harness.providers.plugins"
-        return [
-            SimpleNamespace(
-                name="chosen", value="fixture:manifest", dist=None, load=lambda: calls.append("load") or manifest
-            ),
-            SimpleNamespace(
-                name="other", value="fixture:other", dist=None, load=lambda: pytest.fail("unselected import")
-            ),
-        ]
-
-    monkeypatch.setattr("a13n_harness.providers.plugins.importlib.metadata.entry_points", entries)
-    assert load_provider_plugins(()) == ()
-    assert calls == []
-    catalog = ConnectorProviderCatalog(load_provider_plugins(("chosen",))[0].manifest.connector)
-    assert catalog["composio"] is COMPOSIO
-    with pytest.raises(TypeError):
-        catalog["other"] = COMPOSIO
-    with pytest.raises(ValueError, match="duplicate"):
-        ProviderManifest(api_version=1, connector=(COMPOSIO, COMPOSIO))
-    with pytest.raises(ValueError, match="duplicate"):
-        ConnectorProviderCatalog((COMPOSIO, COMPOSIO))
 
 
 @pytest.mark.parametrize("cancel", [False, True])

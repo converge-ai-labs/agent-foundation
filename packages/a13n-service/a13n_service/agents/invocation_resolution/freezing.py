@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.selection_resolution import (
@@ -21,7 +23,6 @@ from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.models.settings import effective_settings
 from a13n_service.web.domain import ScrapeSelection, provider_selections
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.resources import require_operation
 from a13n_service.web.resources import require_provider as require_web_provider
 
@@ -57,12 +58,12 @@ class AgentInvocationFreezer:
         model_selector: AcceptedModelSelector,
         *,
         connectivity_resolver: ConnectivitySelectionResolver,
-        web_provider_registry: WebProviderRegistry,
-        memory_provider_catalog: MemoryProviderCatalog,
+        web_provider_catalog: ProviderCatalog[WebProviderDefinition],
+        memory_provider_catalog: ProviderCatalog[MemoryProviderDefinition],
     ) -> None:
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver
-        self._web_provider_registry = web_provider_registry
+        self._web_provider_catalog = web_provider_catalog
         self._memory_provider_catalog = memory_provider_catalog
 
     async def freeze_in_transaction(
@@ -164,12 +165,12 @@ class AgentInvocationFreezer:
                     workspace_id=prepared.workspace_id,
                     provider_id=selection.provider_id,
                     eligible=True,
-                    registry=self._web_provider_registry,
+                    catalog=self._web_provider_catalog,
                 )
                 require_operation(
                     provider,
                     operation,
-                    self._web_provider_registry,
+                    self._web_provider_catalog,
                     selection=selection if isinstance(selection, ScrapeSelection) else None,
                 )
                 original_operation = original_by_operation.get(operation)

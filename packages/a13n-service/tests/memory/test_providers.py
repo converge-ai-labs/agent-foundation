@@ -3,7 +3,7 @@ from dataclasses import replace
 
 import httpx2
 import pytest
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.memory.builtins import MEM0_OSS
 from a13n_harness.providers.memory.mem0_oss import Mem0OSSBackend
 from a13n_service.etags import resource_etag
@@ -33,12 +33,12 @@ def request(name="Memory"):
 
 
 def providers(sessions):
-    return MemoryProviderService(sessions, protector(), MemoryProviderCatalog((MEM0_OSS,)))
+    return MemoryProviderService(sessions, protector(), ProviderCatalog((MEM0_OSS,)))
 
 
 async def test_provider_schema_encryption_etags_and_immutable_target(memory_sessions):
     service = providers(memory_sessions)
-    definitions = await service.type_definitions(actor=actor())
+    definitions = await service.provider_types(actor=actor())
     assert [item.type for item in definitions.items] == ["mem0_oss"]
     assert definitions.items[0].credential_schema["writeOnly"] is True
     assert definitions.items[0].supports_documents is True

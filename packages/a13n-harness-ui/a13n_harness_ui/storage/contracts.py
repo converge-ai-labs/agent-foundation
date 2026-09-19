@@ -284,7 +284,6 @@ class EnvironmentBindingKey(StoredContract):
 class StoredEnvironmentState(StoredContract):
     schema_version: Literal["1"] = "1"
     binding: EnvironmentBindingKey
-    provider_schema_version: str = Field(min_length=1, max_length=64)
     state: EnvironmentState
     created_at: datetime
 

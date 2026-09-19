@@ -8,9 +8,6 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel
-
-from ...authentication import Authentication, CredentialMode
 from .._local_identity import local_backing_identity
 from .._local_retention import LocalRetentionStore
 from ..definition import EnvironmentProviderDefinition
@@ -21,7 +18,7 @@ from ..errors import (
     EnvironmentProviderOutcomeCertainty,
     EnvironmentProviderRecoveryHint,
 )
-from ..management import EmptyProviderConfiguration, Environment
+from ..management import Environment, EnvironmentProviderConfiguration
 from ..models import (
     EnvironmentAction,
     EnvironmentAvailability,
@@ -65,25 +62,27 @@ class _DirectLocalPortPolicy:
     allowed_ports: frozenset[int]
 
 
-def _describe(configuration: BaseModel) -> EnvironmentDescriptor:
+def _describe(configuration: DirectLocalEnvironmentConfiguration) -> EnvironmentDescriptor:
     if not isinstance(configuration, DirectLocalEnvironmentConfiguration):
         raise TypeError("Unexpected Provider recipe")
     return _descriptor(configuration, "unprepared")
 
 
-def _identity(*, configuration: BaseModel, state: EnvironmentState | None) -> str | None:
+def _identity(*, configuration: DirectLocalEnvironmentConfiguration, state: EnvironmentState | None) -> str | None:
     if not isinstance(configuration, DirectLocalEnvironmentConfiguration) or state is not None:
         raise ValueError("Local Providers require a valid stateless workspace configuration")
     return str(configuration.root.path)
 
 
 def _construct(
-    *, configuration: BaseModel, environment_id: str, state: EnvironmentState | None, runtime: None
+    *,
+    configuration: DirectLocalEnvironmentConfiguration,
+    environment_id: str,
+    state: EnvironmentState | None,
+    runtime: object | None,
 ) -> Environment:
     """Direct Local needs no collaborator: the host filesystem is the target."""
     del runtime
-    if not isinstance(configuration, DirectLocalEnvironmentConfiguration):
-        raise TypeError("Direct Local requires DirectLocalEnvironmentConfiguration")
     if state is not None:
         raise _provider_error(
             "Direct Local is stateless and does not accept Environment state.",
@@ -93,16 +92,14 @@ def _construct(
     return DirectLocalEnvironment(configuration, environment_id=environment_id)
 
 
-DIRECT_LOCAL = EnvironmentProviderDefinition[EmptyProviderConfiguration, EmptyProviderConfiguration, None](
+DIRECT_LOCAL = EnvironmentProviderDefinition(
     type="direct_local",
     display_name="Direct Local",
-    configuration_model=EmptyProviderConfiguration,
-    credential_model=None,
-    environment_models={"1": DirectLocalEnvironmentConfiguration},
+    configuration_model=EnvironmentProviderConfiguration,
+    environment_model=DirectLocalEnvironmentConfiguration,
     construct=_construct,
     describe_environment=_describe,
     target_identity=_identity,
-    authentication=Authentication(mode=CredentialMode.forbidden),
     supports_stop=True,
     supports_destroy=True,
 )

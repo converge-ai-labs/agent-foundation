@@ -12,16 +12,17 @@ from a13n_harness.capabilities.web import (
     WebSearchRequest,
     WebSearchResponse,
 )
-from a13n_harness.providers.web.definition import WebProvider
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web.definition import WebProvider, WebProviderDefinition
 from a13n_harness.providers.web.errors import WebProviderResponseError
 from a13n_harness.providers.web.options import ScrapeOptions, SearchOptions
+from a13n_harness.providers.web.transport import WebProviderTransport
 from anyio import current_time, fail_after, sleep
 
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 
 from .domain import ScrapeSelection, SearchSelection
-from .registry import WebProviderRegistry
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +39,8 @@ async def _dispatch[ResultT](
     acquire: Callable[[], Awaitable[WebProviderSnapshot]],
     reauthorize: Callable[[], Awaitable[None]],
     protector: SecretProtector,
-    registry: WebProviderRegistry,
+    catalog: ProviderCatalog[WebProviderDefinition],
+    transport: WebProviderTransport | None,
     operation: Callable[[WebProvider], Awaitable[ResultT]],
     search_options: SearchOptions | None = None,
     scrape_options: ScrapeOptions | None = None,
@@ -53,18 +55,14 @@ async def _dispatch[ResultT](
             if snapshot.provider_id != provider_id:
                 raise RuntimeError("Web Provider binding changed")
             try:
-                definition = registry.require(snapshot.provider_type)
+                definition = catalog.require(snapshot.provider_type)
                 credential_value = (
                     json.loads(snapshot.credential.decrypt(protector))
                     if snapshot.credential.ciphertext is not None
                     else None
                 )
-                credentials = (
-                    registry.validate_credentials(snapshot.provider_type, credential_value)
-                    if credential_value is not None
-                    else None
-                )
                 configuration = definition.configuration_model.model_validate(snapshot.configuration)
+                credentials = definition.parse_credential(configuration, credential_value)
             except (SecretProtectionError, ValueError, TypeError, json.JSONDecodeError) as error:
                 raise WebProviderError("web_provider_unavailable") from error
             failure: WebProviderError | None = None
@@ -75,7 +73,7 @@ async def _dispatch[ResultT](
                     credentials,
                     search_options=search_options,
                     scrape_options=scrape_options,
-                    transport=registry.transport,
+                    transport=transport,
                 ) as runtime:
                     result = await operation(runtime)
             except WebProviderError as error:
@@ -110,14 +108,16 @@ class AuthorizedSearch:
         acquire: Callable[[], Awaitable[WebProviderSnapshot]],
         reauthorize: Callable[[], Awaitable[None]],
         protector: SecretProtector,
-        registry: WebProviderRegistry,
+        catalog: ProviderCatalog[WebProviderDefinition],
+        transport: WebProviderTransport | None = None,
         max_dispatches: int = 2,
     ) -> None:
         self._selection = selection
         self._acquire = acquire
         self._reauthorize = reauthorize
         self._protector = protector
-        self._registry = registry
+        self._catalog = catalog
+        self._transport = transport
         self._max_dispatches = max_dispatches
 
     async def search(self, request: WebSearchRequest) -> WebSearchResponse:
@@ -126,7 +126,8 @@ class AuthorizedSearch:
             acquire=self._acquire,
             reauthorize=self._reauthorize,
             protector=self._protector,
-            registry=self._registry,
+            catalog=self._catalog,
+            transport=self._transport,
             operation=lambda runtime: runtime.search(request),
             search_options=SearchOptions(
                 max_results=self._selection.max_results,
@@ -150,14 +151,16 @@ class AuthorizedScrape:
         acquire: Callable[[], Awaitable[WebProviderSnapshot]],
         reauthorize: Callable[[], Awaitable[None]],
         protector: SecretProtector,
-        registry: WebProviderRegistry,
+        catalog: ProviderCatalog[WebProviderDefinition],
+        transport: WebProviderTransport | None = None,
         max_dispatches: int = 2,
     ) -> None:
         self._selection = selection
         self._acquire = acquire
         self._reauthorize = reauthorize
         self._protector = protector
-        self._registry = registry
+        self._catalog = catalog
+        self._transport = transport
         self._max_dispatches = max_dispatches
 
     async def scrape(self, request: WebScrapeRequest, *, policy: WebPolicy) -> WebScrapeResult:
@@ -166,7 +169,8 @@ class AuthorizedScrape:
             acquire=self._acquire,
             reauthorize=self._reauthorize,
             protector=self._protector,
-            registry=self._registry,
+            catalog=self._catalog,
+            transport=self._transport,
             operation=lambda runtime: runtime.scrape(request, policy=policy),
             scrape_options=ScrapeOptions(
                 max_content_bytes=self._selection.max_content_bytes,

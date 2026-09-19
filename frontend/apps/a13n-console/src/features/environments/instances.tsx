@@ -167,7 +167,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
     [name, setName] = useState(""),
     [templateId, setTemplateId] = useState(""),
     [providerId, setProviderId] = useState(""),
-    [schemaVersion, setSchemaVersion] = useState("1"),
     [configuration, setConfiguration] = useState("{}"),
     [state, setState] = useState(""),
     [stateVersion, setStateVersion] = useState("1");
@@ -188,8 +187,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
               provider_id: providerId,
               ...(name.trim() && { name: name.trim() }),
               configuration: jsonObject(configuration),
-              configuration_schema_version: schemaVersion,
-
               ...(state.trim() &&
                 provider && {
                   state: {
@@ -275,16 +272,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
                 .map((item) => ({ value: item.id, label: item.name })) ?? []
             }
           />
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Configuration schema version")}
-          >
-            <Input
-              required={true}
-              value={schemaVersion}
-              onChange={(event) => setSchemaVersion(event.target.value)}
-            />
-          </FormField>
           <TextAreaField
             label={t("Connection configuration (JSON)")}
             value={configuration}

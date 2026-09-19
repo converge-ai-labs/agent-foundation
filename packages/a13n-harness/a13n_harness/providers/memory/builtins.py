@@ -1,8 +1,7 @@
 """Built-in Memory definitions use the same authoring contract as installed providers."""
 
-from ..authentication import Authentication, CredentialMode
 from .definition import MemoryProviderDefinition
-from .filesystem.configuration import FilesystemMemoryConfiguration, FilesystemMemoryCredential
+from .filesystem.configuration import FilesystemMemoryConfiguration
 from .mem0_oss import DEFINITION as MEM0_OSS
 from .mem0_platform import DEFINITION as MEM0_PLATFORM
 
@@ -12,10 +11,7 @@ FILESYSTEM = MemoryProviderDefinition(
     type="filesystem",
     display_name="File-based",
     configuration_model=FilesystemMemoryConfiguration,
-    credential_model=FilesystemMemoryCredential,
-    authentication=Authentication(mode=CredentialMode.forbidden),
     supports_documents=True,
-    supports_records=False,
     supports_revisions=True,
 )
 

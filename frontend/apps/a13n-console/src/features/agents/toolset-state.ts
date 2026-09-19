@@ -6,11 +6,11 @@ type Tool = Definition["tools"][number];
 type Selection = Schema["ToolSelection"] | undefined;
 export type WebOperation = "search" | "scrape";
 export type WebProvider = Schema["WebProvider"];
-export type WebProviderDefinition = Schema["WebProviderDefinition"];
+export type WebProviderMetadata = Schema["WebProviderMetadata"];
 
 export function eligibleWebProvider(
   provider: WebProvider,
-  definitions: WebProviderDefinition[],
+  definitions: WebProviderMetadata[],
   operation: WebOperation,
 ) {
   return (
@@ -30,7 +30,7 @@ export function toolState(
   tool: Tool,
   selection: Selection,
   providers: WebProvider[],
-  definitions: WebProviderDefinition[],
+  definitions: WebProviderMetadata[],
 ) {
   const currentId = selection?.config?.provider_id;
   const selector = tool.resource_selector;

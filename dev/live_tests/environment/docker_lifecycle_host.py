@@ -3,8 +3,8 @@
 from dataclasses import replace
 from pathlib import Path
 
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.docker.provider import DOCKER
 
 from .lifecycle_host import native_effect_barrier
@@ -44,7 +44,7 @@ def _barrier_definition(root):
 
 def environment_catalog(config, builtin_keys):
     root = Path(config["workspace_root"]).parent / "docker-fault"
-    return EnvironmentProviderCatalog(
+    return ProviderCatalog(
         (
             *select_builtin_environment_providers(tuple(key for key in builtin_keys if key != "docker")),
             _barrier_definition(root),

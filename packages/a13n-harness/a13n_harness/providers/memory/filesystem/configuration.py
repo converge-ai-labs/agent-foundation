@@ -23,7 +23,3 @@ class FilesystemMemoryStorage(BaseModel):
 class FilesystemMemoryConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     storage: FilesystemMemoryStorage = Field(default_factory=FilesystemMemoryStorage)
-
-
-class FilesystemMemoryCredential(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)

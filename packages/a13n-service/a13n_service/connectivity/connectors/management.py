@@ -8,13 +8,13 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import overload
 
-from a13n_harness.providers.connector import ConnectorProviderDefinition
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.iam.audit import security_audit_record
@@ -33,9 +33,11 @@ from .models import ConnectorConnectionRecord, ConnectorProviderRecord
 _JSON_OBJECT = TypeAdapter(JsonObject)
 
 
-def require_implementation(registry: ConnectorProviders, provider_type: str) -> ConnectorProviderDefinition:
+def require_implementation(
+    catalog: ProviderCatalog[ConnectorProviderDefinition], provider_type: str
+) -> ConnectorProviderDefinition:
     try:
-        return registry.require(provider_type)
+        return catalog.require(provider_type)
     except ValueError as error:
         raise ConnectorError(
             "unsupported_connector_provider_type",
@@ -57,11 +59,14 @@ class ProviderSnapshot:
 
 @asynccontextmanager
 async def open_provider(
-    registry: ConnectorProviders, record: ConnectorProviderRecord | ProviderSnapshot, credentials: JsonObject | None
+    catalog: ProviderCatalog[ConnectorProviderDefinition],
+    http: ConnectorHttpClient | None,
+    record: ConnectorProviderRecord | ProviderSnapshot,
+    credentials: JsonObject | None,
 ):
-    implementation = require_implementation(registry, record.type)
+    implementation = require_implementation(catalog, record.type)
     try:
-        context = implementation.open(record.configuration_json, credentials, http=registry.http)
+        context = implementation.open(record.configuration_json, credentials, http=http)
     except ValueError as error:
         raise ConnectorError(
             "invalid_connector_provider_configuration",

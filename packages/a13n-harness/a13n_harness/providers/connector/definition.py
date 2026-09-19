@@ -4,45 +4,26 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass
+from typing import ClassVar
 
 import httpx2
 from a13n_logging import get_logger
 from anyio import move_on_after
 from pydantic import BaseModel
 
-from ..authentication import Authentication
+from ..definition import ProviderDefinition
 from ..endpoint_policy import EndpointPolicy
-from ..validation import validate_definition
 from .contracts import ConnectorProviderRuntime, JsonObject
 from .http import ConnectorHttpClient
 
 
-@dataclass(frozen=True, slots=True)
-class ConnectorProviderDefinition[C: BaseModel, K: BaseModel]:
-    type: str
-    display_name: str
-    configuration_model: type[C]
-    credential_model: type[K]
+@dataclass(frozen=True, slots=True, kw_only=True)
+class ConnectorProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C, K]):
+    DOMAIN: ClassVar[str] = "Connector"
+
     setup_validator: Callable[[C, str, object], JsonObject]
     open_provider: Callable[[C, K | None, ConnectorHttpClient], AbstractAsyncContextManager[ConnectorProviderRuntime]]
-    authentication: Authentication = field(default_factory=Authentication)
-    setup_url: str | None = None
-    setup_label: str | None = None
-
-    def __post_init__(self) -> None:
-        validate_definition(
-            self.type,
-            self.display_name,
-            self.setup_url,
-            self.configuration_model,
-            self.credential_model,
-            domain="Connector",
-            setup_label=self.setup_label,
-        )
-        self.authentication.validate_configuration_model(self.configuration_model)
-        if not callable(self.setup_validator) or not callable(self.open_provider):
-            raise TypeError("Connector Provider must supply setup validation and construction")
 
     def validate_setup(self, value: object, *, connector_key: str, configuration: JsonObject) -> JsonObject:
         return self.setup_validator(self.configuration_model.model_validate(configuration), connector_key, value)
@@ -53,9 +34,7 @@ class ConnectorProviderDefinition[C: BaseModel, K: BaseModel]:
         """Validate inputs now; acquire native resources only when entering the context."""
 
         parsed = self.configuration_model.model_validate(configuration)
-        self.authentication.validate_presence(parsed, credential is not None)
-        secret = self.credential_model.model_validate(credential) if credential is not None else None
-        return self._open(parsed, secret, http)
+        return self._open(parsed, self.parse_credential(parsed, credential), http)
 
     @asynccontextmanager
     async def _open(

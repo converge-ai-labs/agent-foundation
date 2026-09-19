@@ -5,8 +5,8 @@ import base64
 from dataclasses import dataclass, replace
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentState
 from a13n_service.environments.domain import CreateProviderRequest, RegisterEnvironmentRequest
 from a13n_service.environments.models import EnvironmentProviderRecord
@@ -46,7 +46,7 @@ async def client_environment(interaction_sessions):
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
     service = EnvironmentService(
         interaction_sessions,
-        EnvironmentProviderCatalog(select_builtin_environment_providers(("websocket_envd",))),
+        ProviderCatalog(select_builtin_environment_providers(("websocket_envd",))),
         protector,
     )
     provider = await service.create_provider(

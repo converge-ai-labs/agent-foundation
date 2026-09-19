@@ -1,66 +1,65 @@
 """SDK-first OAuth authentication for native Models."""
+# ruff: noqa: F401  # `_EXPORTS` owns the surface; these imports serve type checkers.
 
-from importlib import import_module
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
-from .models import (
-    CodexLoginResult,
-    CredentialPersistenceError,
-    CredentialRefreshError,
-    DeviceAuthorizationError,
-    GrokCredentials,
-    GrokCredentialSource,
-    GrokRefresh,
-    ModelAuthenticationError,
-    RefreshNotDispatched,
-)
-from .oauth import (
-    GrokDeviceAuthorization,
-    GrokDeviceAuthorizationFlow,
-    GrokOAuthFlow,
-    OAuthFlow,
-    refresh_grok_credentials,
-)
-from .source import ProcessGrokCredentialSource
+from a13n_harness._exports import exported_names, load_export
 
 if TYPE_CHECKING:
     from .codex_login import CodexDeviceAuthorization, CodexDeviceAuthorizationFlow, CodexLoginFlow
+    from .models import (
+        CodexLoginResult,
+        CredentialPersistenceError,
+        CredentialRefreshError,
+        DeviceAuthorizationError,
+        GrokCredentials,
+        GrokCredentialSource,
+        GrokRefresh,
+        ModelAuthenticationError,
+        RefreshNotDispatched,
+    )
+    from .oauth import (
+        GrokDeviceAuthorization,
+        GrokDeviceAuthorizationFlow,
+        GrokOAuthFlow,
+        OAuthFlow,
+        refresh_grok_credentials,
+    )
     from .runtime import build_grok_model
+    from .source import ProcessGrokCredentialSource
+
+# Credential discovery does not need native provider Models or their SDKs.
+_EXPORTS = {
+    "a13n_harness.providers.model.oauth.codex_login": (
+        "CodexDeviceAuthorization",
+        "CodexDeviceAuthorizationFlow",
+        "CodexLoginFlow",
+    ),
+    "a13n_harness.providers.model.oauth.models": (
+        "CodexLoginResult",
+        "CredentialPersistenceError",
+        "CredentialRefreshError",
+        "DeviceAuthorizationError",
+        "GrokCredentialSource",
+        "GrokCredentials",
+        "GrokRefresh",
+        "ModelAuthenticationError",
+        "RefreshNotDispatched",
+    ),
+    "a13n_harness.providers.model.oauth.oauth": (
+        "GrokDeviceAuthorization",
+        "GrokDeviceAuthorizationFlow",
+        "GrokOAuthFlow",
+        "OAuthFlow",
+        "refresh_grok_credentials",
+    ),
+    "a13n_harness.providers.model.oauth.runtime": ("build_grok_model",),
+    "a13n_harness.providers.model.oauth.source": ("ProcessGrokCredentialSource",),
+}
 
 
-def __getattr__(name: str) -> object:
-    # Credential discovery does not need native provider Models or their SDKs.
-    modules = {
-        "CodexLoginFlow": ".codex_login",
-        "CodexDeviceAuthorization": ".codex_login",
-        "CodexDeviceAuthorizationFlow": ".codex_login",
-        "build_grok_model": ".runtime",
-    }
-    if (module := modules.get(name)) is not None:
-        value = vars(import_module(module, __name__))[name]
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+def __getattr__(name: str) -> Any:
+    return load_export(__name__, globals(), _EXPORTS, name)
 
 
-__all__ = [
-    "CodexDeviceAuthorization",
-    "CodexDeviceAuthorizationFlow",
-    "CodexLoginFlow",
-    "CodexLoginResult",
-    "CredentialPersistenceError",
-    "CredentialRefreshError",
-    "DeviceAuthorizationError",
-    "GrokCredentialSource",
-    "GrokCredentials",
-    "GrokDeviceAuthorization",
-    "GrokDeviceAuthorizationFlow",
-    "GrokOAuthFlow",
-    "GrokRefresh",
-    "ModelAuthenticationError",
-    "OAuthFlow",
-    "ProcessGrokCredentialSource",
-    "RefreshNotDispatched",
-    "build_grok_model",
-    "refresh_grok_credentials",
-]
+__all__ = exported_names(_EXPORTS)  # pyright: ignore[reportUnsupportedDunderAll]

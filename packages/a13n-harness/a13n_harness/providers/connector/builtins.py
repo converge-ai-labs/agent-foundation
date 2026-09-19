@@ -12,7 +12,8 @@ from .http import ConnectorHttpClient
 async def _open(configuration: ComposioConfiguration, credential: ApiKeyCredentials | None, http: ConnectorHttpClient):
     from .composio.runtime import ComposioProvider
 
-    assert credential is not None
+    if credential is None:
+        raise ValueError("Composio requires an API key credential")
     yield ComposioProvider(http, credential)
 
 

@@ -4,7 +4,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from unittest.mock import AsyncMock, Mock
 
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.process.agents import build_agent_resources
 from a13n_service.process.components import Components
@@ -89,7 +89,7 @@ async def worker_runtime(
     resources.live_model_providers = Mock(spec=LiveProviderResolver)
     resources.live_model_providers.resolve = AsyncMock(return_value=Mock())
     resources.skill_package_store = Mock()
-    resources.model_provider_registry = Mock()
+    resources.model_provider_catalog = Mock()
     resources.model_endpoint_policy = Mock()
     resources.model_http_client = Mock()
     async with AsyncExitStack() as stack:
@@ -105,12 +105,12 @@ async def worker_runtime(
             settings,
             shared,
             resources,
-            environment_catalog if environment_catalog is not None else EnvironmentProviderCatalog(),
+            environment_catalog if environment_catalog is not None else ProviderCatalog(),
             stack,
             connectors,
             invocations=invocations
             if invocations is not None
-            else build_agent_resources(Components(), shared, resources.model_provider_registry).invocations,
+            else build_agent_resources(Components(), shared, resources.model_provider_catalog).invocations,
             plugin_catalog=plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(()),
             observability=observability,
             configuration_resolver=configuration_resolver,

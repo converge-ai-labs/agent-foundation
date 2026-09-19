@@ -52,7 +52,6 @@ class EnvironmentProjectAdapter(ABC):
     def validate_profile(
         self,
         *,
-        provider_schema_version: str,
         provider_configuration: Mapping[str, JsonValue],
         adapter_configuration: Mapping[str, JsonValue],
         provider: EnvironmentProviderDefinition,
@@ -80,12 +79,11 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
     def validate_profile(
         self,
         *,
-        provider_schema_version: str,
         provider_configuration: Mapping[str, JsonValue],
         adapter_configuration: Mapping[str, JsonValue],
         provider: EnvironmentProviderDefinition,
     ) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
-        _require_provider(provider, DIRECT_LOCAL, provider_schema_version)
+        _require_provider(provider, DIRECT_LOCAL)
         _require_empty(provider_configuration, adapter_configuration)
         return {}, {}
 
@@ -98,7 +96,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
     ) -> Environment:
-        _require_provider(provider, DIRECT_LOCAL, profile.provider_schema_version)
+        _require_provider(provider, DIRECT_LOCAL)
         shell = _host_shell()
         value: dict[str, JsonValue] = {
             "root": {"path": str(root), "read_only": False},
@@ -120,10 +118,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
             "inherit_environment": True,
             "allowed_environment_keys": None,
         }
-        configuration = provider.validate_environment(
-            schema_version=profile.provider_schema_version,
-            value=value,
-        )
+        configuration = provider.validate_environment(value)
         return provider.construct(
             configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime
         )
@@ -137,12 +132,11 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
     def validate_profile(
         self,
         *,
-        provider_schema_version: str,
         provider_configuration: Mapping[str, JsonValue],
         adapter_configuration: Mapping[str, JsonValue],
         provider: EnvironmentProviderDefinition,
     ) -> tuple[dict[str, JsonValue], dict[str, JsonValue]]:
-        _require_provider(provider, LOCAL_ENVD, provider_schema_version)
+        _require_provider(provider, LOCAL_ENVD)
         _require_empty(provider_configuration, adapter_configuration)
         return {}, {}
 
@@ -155,7 +149,7 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         provider: EnvironmentProviderDefinition,
         runtime: object | None,
     ) -> Environment:
-        _require_provider(provider, LOCAL_ENVD, profile.provider_schema_version)
+        _require_provider(provider, LOCAL_ENVD)
         shell = _host_shell()
         value: dict[str, JsonValue] = {
             "workspace": {"path": str(root), "read_only": False},
@@ -178,21 +172,14 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
                 ]
             ),
         }
-        configuration = provider.validate_environment(
-            schema_version=profile.provider_schema_version,
-            value=value,
-        )
+        configuration = provider.validate_environment(value)
         return provider.construct(
             configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime
         )
 
 
-def _require_provider(
-    provider: EnvironmentProviderDefinition,
-    expected_type: EnvironmentProviderDefinition,
-    schema_version: str,
-) -> None:
-    if provider.type != expected_type.type or schema_version not in provider.environment_versions:
+def _require_provider(provider: EnvironmentProviderDefinition, expected_type: EnvironmentProviderDefinition) -> None:
+    if provider.type != expected_type.type:
         raise CompositionError(
             "The Environment profile is incompatible with its Host adapter.",
             code="environment_adapter_incompatible",

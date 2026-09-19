@@ -6,7 +6,6 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal, get_args
 
-from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import (
@@ -20,6 +19,7 @@ from pydantic import (
 
 from a13n_service.ids import ObjectId
 from a13n_service.labels import Labels
+from a13n_service.provider_metadata import ProviderMetadata, provider_metadata_core
 
 EnvironmentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
 type LocalProviderType = Literal["direct_local", "docker"]
@@ -61,17 +61,9 @@ class EnvironmentProviderAccount(DomainModel):
     updated_at: datetime
 
 
-class EnvironmentProviderMetadata(DomainModel):
-    type: str
-    display_name: str
-    template_configuration_versions: tuple[str, ...]
-    configuration_schema: JsonObject
-    template_configuration_schemas: dict[str, JsonObject]
+class EnvironmentProviderMetadata(ProviderMetadata):
+    template_configuration_schema: JsonObject
     deployment_managed: bool = False
-    credential_schema: JsonObject | None
-    authentication: Authentication
-    setup_url: str | None = None
-    setup_label: str | None = None
     supports_managed: bool
     supports_stop: bool
     supports_destroy: bool
@@ -81,22 +73,10 @@ class EnvironmentProviderMetadata(DomainModel):
     def describe(
         cls, definition: EnvironmentProviderDefinition, *, deployment_managed: bool
     ) -> EnvironmentProviderMetadata:
-        """Project the installed definition; credential schemas are always write-only."""
         return cls(
-            type=definition.type,
-            display_name=definition.display_name,
-            template_configuration_versions=tuple(sorted(definition.environment_versions)),
-            configuration_schema=definition.configuration_model.model_json_schema(),
-            template_configuration_schemas={
-                version: model.model_json_schema() for version, model in definition.environment_models.items()
-            },
+            **provider_metadata_core(definition),
+            template_configuration_schema=definition.environment_model.model_json_schema(),
             deployment_managed=deployment_managed,
-            credential_schema={**definition.credential_model.model_json_schema(), "writeOnly": True}
-            if definition.credential_model
-            else None,
-            authentication=definition.authentication,
-            setup_url=definition.setup_url,
-            setup_label=definition.setup_label,
             supports_managed=definition.supports_managed,
             supports_stop=definition.supports_stop,
             supports_destroy=definition.supports_destroy,
@@ -105,7 +85,6 @@ class EnvironmentProviderMetadata(DomainModel):
 
 
 class EnvironmentConfiguration(DomainModel):
-    configuration_schema_version: str = "1"
     configuration: JsonObject
 
 

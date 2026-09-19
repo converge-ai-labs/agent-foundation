@@ -7,7 +7,6 @@ from a13n_service.etags import resource_etag
 from a13n_service.provider_plugins import load_provider_catalogs
 from a13n_service.storage import transaction
 from a13n_service.web.domain import CreateWebProviderRequest, UpdateWebProviderRequest
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.runtime import graph_uses_web
 from a13n_service.web.service import WebProviderService
 
@@ -60,7 +59,7 @@ def test_default_toolsets_are_explicit_in_effective_configuration_digest():
 async def test_selection_authoring_freezing_and_live_changes(
     agent_sessions, agent_management, agent_invocation_resolver
 ):
-    providers = WebProviderService(agent_sessions, protector(), WebProviderRegistry(load_provider_catalogs(()).web))
+    providers = WebProviderService(agent_sessions, protector(), load_provider_catalogs(()).web)
     account = await providers.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -105,7 +104,7 @@ async def test_selection_authoring_freezing_and_live_changes(
 
 @pytest.mark.anyio
 async def test_search_and_scrape_select_accounts_independently(agent_sessions, agent_management):
-    providers = WebProviderService(agent_sessions, protector(), WebProviderRegistry(load_provider_catalogs(()).web))
+    providers = WebProviderService(agent_sessions, protector(), load_provider_catalogs(()).web)
     brave = await providers.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
@@ -144,7 +143,7 @@ async def test_search_and_scrape_select_accounts_independently(agent_sessions, a
 
 @pytest.mark.anyio
 async def test_scrape_rejects_search_only_provider(agent_sessions, agent_management):
-    providers = WebProviderService(agent_sessions, protector(), WebProviderRegistry(load_provider_catalogs(()).web))
+    providers = WebProviderService(agent_sessions, protector(), load_provider_catalogs(()).web)
     brave = await providers.create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,

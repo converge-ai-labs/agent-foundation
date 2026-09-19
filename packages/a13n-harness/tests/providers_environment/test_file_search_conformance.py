@@ -45,7 +45,7 @@ def test_content_pattern_conformance(case):
 @pytest.fixture(params=["local", "guest"])
 async def search_files(request, tmp_path):
     provider = DIRECT_LOCAL
-    configuration = provider.validate_environment(schema_version="1", value={"root": {"path": str(tmp_path)}})
+    configuration = provider.validate_environment({"root": {"path": str(tmp_path)}})
     environment = provider.construct(
         environment_id="conformance", configuration=configuration, state=None, runtime=None
     )

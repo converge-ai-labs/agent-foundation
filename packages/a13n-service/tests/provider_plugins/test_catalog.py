@@ -81,7 +81,7 @@ def test_only_selected_entry_point_is_imported(monkeypatch: pytest.MonkeyPatch) 
     assert chosen.loads == 1
     assert unselected.loads == 0
     assert catalogs.plugins[0].distribution_name == "provider-package"
-    assert any(item.type == "custom_web" for item in catalogs.web)
+    assert catalogs.web["custom_web"].type == "custom_web"
 
 
 def test_empty_selection_does_not_enumerate_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -165,11 +165,9 @@ def test_registration_shape_is_checked_before_type_attribute() -> None:
         ProviderManifest(api_version=1, web=(cast(WebProviderDefinition, FakeRegistration()),))
 
 
-def test_manifest_rejects_version_and_duplicate_definitions():
+def test_manifest_rejects_an_unsupported_api_version():
     with pytest.raises(ValueError, match="API version"):
         ProviderManifest(api_version=2)
-    with pytest.raises(ValueError, match="duplicate"):
-        ProviderManifest(api_version=1, web=(registration(), registration()))
 
 
 def test_environment_manifest_joins_builtins_and_rejects_builtin_collision(monkeypatch):
@@ -181,7 +179,7 @@ def test_environment_manifest_joins_builtins_and_rejects_builtin_collision(monke
     chosen = EntryPoint("workspace", ProviderManifest(api_version=1, environment=(definition,)))
     install(monkeypatch, chosen)
     catalogs = load_provider_catalogs(("workspace",))
-    assert definition in catalogs.environment
+    assert catalogs.environment[definition.type] is definition
     assert len(catalogs.environment) == 12
     install(monkeypatch, EntryPoint("collision", ProviderManifest(api_version=1, environment=(DIRECT_LOCAL,))))
     with pytest.raises(ProviderPluginError, match="ValueError"):
@@ -191,13 +189,12 @@ def test_environment_manifest_joins_builtins_and_rejects_builtin_collision(monke
 def test_memory_manifest_reuses_shared_definition_and_rejects_builtin_collision(monkeypatch):
     from dataclasses import replace
 
-    from a13n_harness.providers.memory import MemoryProviderCatalog
     from a13n_harness.providers.memory.builtins import MEM0_OSS
 
     definition = replace(MEM0_OSS, type="custom_memory", display_name="Custom Memory")
     chosen = EntryPoint("memory", ProviderManifest(api_version=1, memory=(definition,)))
     install(monkeypatch, chosen)
-    catalog = MemoryProviderCatalog(load_provider_catalogs(("memory",)).memory)
+    catalog = load_provider_catalogs(("memory",)).memory
     assert catalog[definition.type] is definition
     assert chosen.loads == 1
     install(monkeypatch, EntryPoint("collision", ProviderManifest(api_version=1, memory=(MEM0_OSS,))))

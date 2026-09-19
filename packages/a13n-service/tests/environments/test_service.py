@@ -266,11 +266,11 @@ def _secret_definition():
 
 
 async def test_provider_credential_uses_owned_encrypted_bundle(environment_service, environment_sessions, protector):
-    from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+    from a13n_harness.providers.catalog import ProviderCatalog
     from a13n_service.environments.models import EnvironmentProviderRecord
 
     definition = _secret_definition()
-    environment_service.catalog = EnvironmentProviderCatalog((*environment_service.catalog.values(), definition))
+    environment_service.catalog = ProviderCatalog((*environment_service.catalog.values(), definition))
 
     def stored_credential(raw: str) -> _NestedCredential:
         return _NestedCredential.model_validate_json(raw)
@@ -310,10 +310,10 @@ async def test_provider_credential_uses_owned_encrypted_bundle(environment_servi
 
 async def test_provider_type_no_longer_selected_is_a_safe_configuration_error(environment_service, tmp_path):
     """Dropping a Provider from the deployment selection must not crash management."""
-    from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+    from a13n_harness.providers.catalog import ProviderCatalog
 
     provider, template = await create_template_config(environment_service, tmp_path)
-    environment_service.catalog = EnvironmentProviderCatalog(())
+    environment_service.catalog = ProviderCatalog(())
     with pytest.raises(EnvironmentManagementError) as failure:
         await environment_service.create_template(
             actor=actor(),
@@ -333,11 +333,9 @@ async def test_provider_type_no_longer_selected_is_a_safe_configuration_error(en
 
 
 async def test_declared_credential_requirement_is_enforced_on_create_and_update(environment_service):
-    from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+    from a13n_harness.providers.catalog import ProviderCatalog
 
-    environment_service.catalog = EnvironmentProviderCatalog(
-        (*environment_service.catalog.values(), _secret_definition())
-    )
+    environment_service.catalog = ProviderCatalog((*environment_service.catalog.values(), _secret_definition()))
     with pytest.raises(EnvironmentManagementError, match="credential"):
         await environment_service.create_provider(
             actor=actor(),

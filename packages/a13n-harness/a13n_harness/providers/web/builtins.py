@@ -1,6 +1,5 @@
 """Built-ins use the same definitions as installed Web extensions."""
 
-from ..authentication import Authentication, CredentialMode
 from .configuration import ApiKeyCredential, EmptyConfiguration
 from .definition import WebProviderDefinition
 from .vendors import brave, duckduckgo, exa, firecrawl, jina, parallel, perplexity, serpapi, tavily
@@ -13,8 +12,6 @@ def built_in_web_providers() -> tuple[WebProviderDefinition, ...]:
             display_name="DuckDuckGo",
             setup_url="https://duckduckgo.com/",
             configuration_model=EmptyConfiguration,
-            credential_model=EmptyConfiguration,
-            authentication=Authentication(mode=CredentialMode.forbidden),
             search=duckduckgo.search,
         )
     ]

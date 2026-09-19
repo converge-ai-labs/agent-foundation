@@ -2,7 +2,8 @@
 
 from contextlib import AsyncExitStack
 
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 
 from a13n_service.environments.domain import LOCAL_PROVIDER_TYPES
@@ -23,7 +24,11 @@ from a13n_service.storage.redis import open_redis
 
 
 async def build_environment_service(
-    shared: SharedRuntime, catalog: EnvironmentProviderCatalog, settings: Settings, *, oss_identity: bool
+    shared: SharedRuntime,
+    catalog: ProviderCatalog[EnvironmentProviderDefinition],
+    settings: Settings,
+    *,
+    oss_identity: bool,
 ) -> EnvironmentService:
     if oss_identity:
         await synchronize_local_providers(shared.storage.sessions, catalog, settings.environments.local_providers)
@@ -38,7 +43,7 @@ async def build_environment_service(
 
 async def build_client_connections(
     shared: SharedRuntime,
-    catalog: EnvironmentProviderCatalog,
+    catalog: ProviderCatalog[EnvironmentProviderDefinition],
     settings: Settings,
     environments: EnvironmentService,
     stack: AsyncExitStack,

@@ -61,7 +61,6 @@ async def test_native_configuration_payloads_preserve_keys_values_and_whitespace
             "id": "environment-custom",
             "name": "Native",
             "provider_key": "example.provider",
-            "provider_schema_version": "1",
             "provider_configuration": payload,
             "adapter_key": "example.adapter",
             "adapter_configuration": payload,
@@ -379,7 +378,6 @@ kind: environment_profile
 id: environment-sandbox
 name: Shadow Sandbox
 provider_key: local_envd
-provider_schema_version: "1"
 provider_configuration: {}
 adapter_key: a13n.local-envd-project-root
 adapter_configuration: {}

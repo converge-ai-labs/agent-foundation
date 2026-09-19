@@ -10,7 +10,7 @@ from pathlib import Path
 
 import httpx2
 from a13n_service.app import create_app
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import ModelProviderMetadata, built_in_model_provider_catalog
 from a13n_service.settings import Settings
 
 from .dev_resources import (
@@ -71,7 +71,7 @@ async def _sync_models(
     }
     models = {item["key"].casefold(): item for item in await client.collection(base + "/models")}
     provider_count = model_count = 0
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     for configured in resources.model_providers:
         credential = _model_credential(configured)
         if credential is None and _model_requires_credential(configured):
@@ -104,7 +104,10 @@ async def _sync_models(
         applied.record("model_provider", configured.name, desired_provider)
         provider_count += 1
         for configured_model in configured.models:
-            api = configured_model.model_api or registry.definition(configured.type).default_model_api
+            api = (
+                configured_model.model_api
+                or ModelProviderMetadata.describe(registry.require(configured.type)).default_model_api
+            )
             desired = {
                 "name": configured_model.name,
                 "upstream_model": configured_model.upstream_model,

@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog, ProviderNotSelected
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
 
 from a13n_plugin_examples.demo_environment import (
@@ -36,9 +36,8 @@ def test_environment_entrypoint_loading_is_explicit_and_construction_is_inert(tm
     assert PLUGIN_MODULE in sys.modules
     assert tuple(catalog) == (PROVIDER_TYPE,)
     provider = catalog.require(PROVIDER_TYPE)
-    assert provider.environment_versions == frozenset({"1"})
     root = tmp_path / "not-created-by-the-provider"
-    configuration = provider.validate_environment(schema_version="1", value={"root": str(root)})
+    configuration = provider.validate_environment({"root": str(root)})
     environment = provider.construct(
         environment_id="workspace-inert", configuration=configuration, state=None, runtime=None
     )
@@ -55,10 +54,10 @@ def test_environment_explicit_definition_needs_no_metadata_scan(
         "a13n_harness.providers.plugins.importlib.metadata.entry_points",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
-    catalog = EnvironmentProviderCatalog((WORKSPACE_ENVIRONMENT,))
+    catalog = ProviderCatalog((WORKSPACE_ENVIRONMENT,))
     provider = catalog.require(PROVIDER_TYPE)
     root = tmp_path / "still-inert"
-    configuration = provider.validate_environment(schema_version="1", value={"root": str(root)})
+    configuration = provider.validate_environment({"root": str(root)})
     provider.construct(configuration=configuration, environment_id="workspace-code", state=None, runtime=None)
 
     assert tuple(catalog) == (PROVIDER_TYPE,)
@@ -69,17 +68,14 @@ def test_environment_provider_rejects_invalid_json_configuration() -> None:
     provider = installed_environment_catalog().require(PROVIDER_TYPE)
 
     with pytest.raises(EnvironmentProviderError) as exc_info:
-        provider.validate_environment(schema_version="1", value={"environment_id": "missing-root"})
+        provider.validate_environment({"environment_id": "missing-root"})
 
     assert exc_info.value.code == "provider_spec_invalid"
 
 
 def test_missing_provider_selection_is_a_safe_configuration_error() -> None:
-    with pytest.raises(EnvironmentProviderError) as exc_info:
-        EnvironmentProviderCatalog(()).require(PROVIDER_TYPE)
-
-    assert exc_info.value.code == "provider_not_selected"
-    assert exc_info.value.safe_projection().category.value == "missing"
+    with pytest.raises(ProviderNotSelected, match=PROVIDER_TYPE):
+        ProviderCatalog(()).require(PROVIDER_TYPE)
 
 
 def test_environment_entrypoint_demo_routes_two_fresh_environments(tmp_path: Path) -> None:

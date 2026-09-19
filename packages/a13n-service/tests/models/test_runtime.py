@@ -20,7 +20,7 @@ from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.models import ModelProviderRecord
 from a13n_service.models.provider_runtime import LiveProviderResolver, ModelConnection
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.requests import LiveProviderModel
 from a13n_service.models.service import ModelService
 from a13n_service.models.service_common import ModelError
@@ -103,7 +103,7 @@ async def test_connection_test_sends_saved_settings_and_single_model_identity(
             },
         )
 
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         tester = NativeModelConnectionTester(
             provider_resolver=LiveProviderResolver(model_sessions, registry, _AllowEndpoints(), protector()),
@@ -154,7 +154,7 @@ async def test_provider_credential_rotation_is_visible_to_same_model_snapshot(
     snapshot = ModelExecutionSnapshot.freeze(model)
     resolver = LiveProviderResolver(
         model_sessions,
-        built_in_provider_registry(),
+        built_in_model_provider_catalog(),
         _AllowEndpoints(),
         protector(),
     )
@@ -207,7 +207,7 @@ async def test_model_snapshot_keeps_accepted_api_after_model_edit(
     )
     resolver = LiveProviderResolver(
         model_sessions,
-        built_in_provider_registry(),
+        built_in_model_provider_catalog(),
         _AllowEndpoints(),
         protector(),
     )
@@ -227,14 +227,14 @@ async def test_factory_routes_openai_base_profile_through_explicit_openai_protoc
         model_api="openai.chat_completions",
     )
     provider = (
-        built_in_provider_registry()
-        .integration("openai")
+        built_in_model_provider_catalog()
+        .require("openai")
         .bind({**{}, "base_url": "https://api.openai.com/v1"}, {"api_key": "secret"})
     )
     async with httpx2.AsyncClient() as client:
         native = await NativeModelFactory(
             client,
-            built_in_provider_registry(),
+            built_in_model_provider_catalog(),
             _AllowEndpoints(),
         ).build(snapshot, provider)
         async with native:
@@ -253,14 +253,14 @@ async def test_factory_does_not_copy_anthropic_profile_to_openai_protocol() -> N
         model_api="openai.chat_completions",
     )
     provider = (
-        built_in_provider_registry()
-        .integration("openai")
+        built_in_model_provider_catalog()
+        .require("openai")
         .bind({**{}, "base_url": "https://api.openai.com/v1"}, {"api_key": "secret"})
     )
     async with httpx2.AsyncClient() as client:
         native = await NativeModelFactory(
             client,
-            built_in_provider_registry(),
+            built_in_model_provider_catalog(),
             _AllowEndpoints(),
         ).build(snapshot, provider)
         async with native:
@@ -294,23 +294,23 @@ def _runtime_providers() -> dict[str, ModelConnection]:
     )
     aws_credential = {"aws_access_key_id": "access", "aws_secret_access_key": "secret"}
     return {
-        "openai": built_in_provider_registry()
-        .integration("openai")
+        "openai": built_in_model_provider_catalog()
+        .require("openai")
         .bind({**{}, "base_url": "https://api.openai.com/v1"}, {"api_key": "secret"}),
-        "anthropic": built_in_provider_registry()
-        .integration("anthropic")
+        "anthropic": built_in_model_provider_catalog()
+        .require("anthropic")
         .bind({**{}, "base_url": "https://api.anthropic.com"}, {"api_key": "secret"}),
-        "google_gemini": built_in_provider_registry()
-        .integration("google_gemini")
+        "google_gemini": built_in_model_provider_catalog()
+        .require("google_gemini")
         .bind({**{}, "base_url": "https://generativelanguage.googleapis.com"}, {"api_key": "secret"}),
-        "google_vertex": built_in_provider_registry()
-        .integration("google_vertex")
+        "google_vertex": built_in_model_provider_catalog()
+        .require("google_vertex")
         .bind(
             {"project_id": "project", "location": "us-central1"},
             {"project_id": "project", "client_email": "fixture@example.com", "private_key": private_key},
         ),
-        "azure_openai": built_in_provider_registry()
-        .integration("azure_openai")
+        "azure_openai": built_in_model_provider_catalog()
+        .require("azure_openai")
         .bind(
             {
                 **{"resource_endpoint": "https://test.openai.azure.com/openai/v1"},
@@ -318,17 +318,17 @@ def _runtime_providers() -> dict[str, ModelConnection]:
             },
             {"api_key": "secret"},
         ),
-        "aws_bedrock": built_in_provider_registry()
-        .integration("aws_bedrock")
+        "aws_bedrock": built_in_model_provider_catalog()
+        .require("aws_bedrock")
         .bind({"region": "us-east-1"}, aws_credential),
-        "openrouter": built_in_provider_registry()
-        .integration("openrouter")
+        "openrouter": built_in_model_provider_catalog()
+        .require("openrouter")
         .bind({**{}, "base_url": "https://openrouter.ai/api/v1"}, {"api_key": "secret"}),
-        "ollama": built_in_provider_registry()
-        .integration("ollama")
+        "ollama": built_in_model_provider_catalog()
+        .require("ollama")
         .bind({**{"base_url": "http://ollama.example/v1"}, "base_url": "http://ollama.example/v1"}, None),
-        "alibaba_model_studio": built_in_provider_registry()
-        .integration("alibaba_model_studio")
+        "alibaba_model_studio": built_in_model_provider_catalog()
+        .require("alibaba_model_studio")
         .bind(
             {
                 **{"region": "ap-southeast-1", "domain_type": "international"},
@@ -336,17 +336,17 @@ def _runtime_providers() -> dict[str, ModelConnection]:
             },
             {"api_key": "secret"},
         ),
-        "deepseek": built_in_provider_registry()
-        .integration("deepseek")
+        "deepseek": built_in_model_provider_catalog()
+        .require("deepseek")
         .bind({**{}, "base_url": "https://api.deepseek.com"}, {"api_key": "secret"}),
-        "moonshot": built_in_provider_registry()
-        .integration("moonshot")
+        "moonshot": built_in_model_provider_catalog()
+        .require("moonshot")
         .bind({**{}, "base_url": "https://api.moonshot.cn/v1"}, {"api_key": "secret"}),
-        "minimax": built_in_provider_registry()
-        .integration("minimax")
+        "minimax": built_in_model_provider_catalog()
+        .require("minimax")
         .bind({**{}, "base_url": "https://api.minimax.io/v1"}, {"api_key": "secret"}),
-        "zhipu": built_in_provider_registry()
-        .integration("zhipu")
+        "zhipu": built_in_model_provider_catalog()
+        .require("zhipu")
         .bind({**{}, "base_url": "https://open.bigmodel.cn/api/paas/v4"}, {"api_key": "secret"}),
     }
 
@@ -366,7 +366,7 @@ async def test_switch_to_unauthenticated_provider_clears_material_and_advances_g
             credential={"api_key": "private-token"},
         ),
     )
-    resolver = LiveProviderResolver(model_sessions, built_in_provider_registry(), _AllowEndpoints(), protector())
+    resolver = LiveProviderResolver(model_sessions, built_in_model_provider_catalog(), _AllowEndpoints(), protector())
     resolved = await resolver.resolve_provider(
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,

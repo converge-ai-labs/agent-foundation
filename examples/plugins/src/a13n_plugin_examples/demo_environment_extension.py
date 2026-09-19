@@ -62,8 +62,7 @@ async def _run_extension_demo(
     from a13n_plugin_examples.environment import WORKSPACE_ENVIRONMENT as provider
 
     configuration = provider.validate_environment(
-        schema_version="1",
-        value={
+        {
             "root": str(workspace_root),
             "read_only": False,
         },

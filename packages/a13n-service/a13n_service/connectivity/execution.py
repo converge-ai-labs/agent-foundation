@@ -11,6 +11,8 @@ from typing import Protocol
 import httpx2
 from a13n_harness import AgentContext
 from a13n_harness.observation import record_tool_outcome_unknown
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
 from a13n_harness.providers.connector.contracts import ConnectorProviderError, ConnectorToolOutcome
 from a13n_harness.providers.connector.tool_errors import rejected_tool_outcome
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
@@ -34,7 +36,6 @@ from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
-from .connectors.composition import ConnectorProviders
 from .connectors.connection_access import connection_binding
 from .connectors.management import (
     ProviderSnapshot,
@@ -80,7 +81,8 @@ class ExternalToolRuntime:
         self,
         sessions: async_sessionmaker[AsyncSession],
         protector: SecretProtector,
-        providers: ConnectorProviders,
+        connectors: ProviderCatalog[ConnectorProviderDefinition],
+        connector_http: ConnectorHttpClient | None,
         remote: RemoteTransport,
         endpoints: EndpointPolicy,
         http_client: httpx2.AsyncClient,
@@ -90,7 +92,8 @@ class ExternalToolRuntime:
     ) -> None:
         self._sessions = sessions
         self._protector = protector
-        self._providers = providers
+        self._connectors = connectors
+        self._connector_http = connector_http
         self._remote = remote
         self._endpoints = endpoints
         self._http = http_client
@@ -302,7 +305,7 @@ class ExternalToolRuntime:
             accepted = await current_binding()
             _, binding, provider, credential = accepted
             raw = credential.decrypt(self._protector) if credential.ciphertext is not None else None
-            runtime = open_provider(self._providers, provider, decode_credentials(raw))
+            runtime = open_provider(self._connectors, self._connector_http, provider, decode_credentials(raw))
 
             async def before_dispatch() -> None:
                 if await current_binding() != accepted:

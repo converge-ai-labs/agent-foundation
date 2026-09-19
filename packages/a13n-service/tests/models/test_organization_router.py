@@ -2,13 +2,13 @@
 
 import httpx2
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor
 from fastapi import Request
 
-from ..connectivity.connector_helpers import FakeConnectorBackend, fake_registry
+from ..connectivity.connector_helpers import FakeConnectorBackend, fake_catalog
 from ..resource_scope_helpers import organization_admin
 from .conftest import ORG_ID, WORKSPACE_ID, actor
 from .test_router import settings
@@ -28,10 +28,8 @@ async def test_five_configuration_resources_support_org_collections(
         settings(tmp_path, service_database),
         components=Components(
             request_authenticator=authenticate,
-            connector_providers=fake_registry(FakeConnectorBackend()),
-            environment_provider_catalog=EnvironmentProviderCatalog(
-                select_builtin_environment_providers(("direct_local",))
-            ),
+            connector_providers=fake_catalog(FakeConnectorBackend()),
+            environment_provider_catalog=ProviderCatalog(select_builtin_environment_providers(("direct_local",))),
             model_catalog=model_catalog,
         ),
     )

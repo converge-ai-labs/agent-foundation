@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorHttpClient, ConnectorProviderDefinition
 from a13n_harness.providers.connector.contracts import (
     AdapterConnectionStatus,
     ConnectorProviderError,
@@ -16,7 +18,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.connectivity.connections.domain import ConnectionStatus, ConnectionStatusReason
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -30,7 +31,8 @@ class ConnectorReconciler:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        adapters: ConnectorProviders,
+        connectors: ProviderCatalog[ConnectorProviderDefinition],
+        connector_http: ConnectorHttpClient | None,
         setup: ConnectorSetupCoordinator,
         *,
         instance_id: str,
@@ -39,7 +41,8 @@ class ConnectorReconciler:
         clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
-        self._adapters = adapters
+        self._connectors = connectors
+        self._connector_http = connector_http
         self._setup = setup
         self._instance_id = instance_id
         self._poll_interval_seconds = poll_interval_seconds
@@ -177,7 +180,9 @@ class ConnectorReconciler:
                 raise ConnectorError(
                     "setup_unavailable", "Setup reference is unavailable.", category=ErrorCategory.conflict
                 )
-            async with open_provider(self._adapters, snapshot.connector, snapshot.credentials) as runtime:
+            async with open_provider(
+                self._connectors, self._connector_http, snapshot.connector, snapshot.credentials
+            ) as runtime:
                 inspection = await runtime.inspect_setup(
                     setup_ref=snapshot.attempt.setup_ref,
                     context=_setup_context(snapshot.attempt, callback_url=self._setup.callback_url()),

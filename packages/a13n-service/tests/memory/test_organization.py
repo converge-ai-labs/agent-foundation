@@ -5,9 +5,9 @@ from hashlib import sha256
 from unittest.mock import AsyncMock, Mock
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.environment.direct_local.provider import _DirectLocalFilePolicy
-from a13n_harness.providers.memory import MemoryProviderCatalog
 from a13n_harness.providers.memory.builtins import FILESYSTEM
 from a13n_harness.providers.memory.contracts import MemoryScope
 from a13n_harness.providers.memory.documents import DocumentInput
@@ -62,7 +62,7 @@ async def test_completed_work_is_admitted_once_and_rechecks_organization_policy(
         }
     )
     states, run, state = await _accept_root(sessions, interaction_object_store, config=config)
-    catalog = MemoryProviderCatalog((FILESYSTEM,))
+    catalog = ProviderCatalog((FILESYSTEM,))
     memory = MemoryService(catalog, protector(), MemoryAuthorizer(sessions, catalog))
     store_id = "mstore_1234567890abcdef"
     subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, "filesystem", MemoryScope.THREAD, run.thread_id).value

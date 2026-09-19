@@ -17,7 +17,7 @@ from a13n_service.application_errors import ApplicationError
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
 from a13n_service.iam.models import SecurityAuditRecord
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import delete, func, select
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.anyio
 
 
 def services(sessions):
-    resolver = AgentResolver(sessions, AcceptedModelSelector(sessions, built_in_provider_registry()))
+    resolver = AgentResolver(sessions, AcceptedModelSelector(sessions, built_in_model_provider_catalog()))
     return (
         ConfigurationConversations(sessions, clock=lambda: NOW),
         ConfigurationDrafts(sessions, resolver, clock=lambda: NOW),

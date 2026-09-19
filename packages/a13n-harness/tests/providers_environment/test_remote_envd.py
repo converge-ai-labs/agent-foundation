@@ -6,8 +6,8 @@ import asyncio
 from types import SimpleNamespace
 
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_harness.providers.environment.remote_envd import connections as module
@@ -51,7 +51,7 @@ def test_http_rejects_unsafe_or_invalid_backend(endpoint):
 
 
 async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path):
-    catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("http_envd", "websocket_envd")))
+    catalog = ProviderCatalog(select_builtin_environment_providers(("http_envd", "websocket_envd")))
     hub = WebSocketEnvdConnections()
     runtimes = (
         HttpEnvdProviderRuntime(
@@ -61,7 +61,7 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path):
         WebSocketEnvdProviderRuntime(hub),
     )
     for provider, runtime in zip(catalog.values(), runtimes, strict=True):
-        recipe = provider.validate_environment(schema_version="1", value={})
+        recipe = provider.validate_environment({})
         assert not provider.supports_managed
         assert not provider.supports_stop and not provider.supports_destroy and not provider.requires_keepalive
         assert provider.target_identity(configuration=recipe, state=state(provider.type)) == "env-native"
@@ -89,9 +89,7 @@ async def test_remote_catalog_codecs_are_inert_and_external_only(tmp_path):
             with pytest.raises(EnvironmentProviderError):
                 provider.target_identity(configuration=recipe, state=invalid)
         with pytest.raises(EnvironmentProviderError):
-            provider.validate_environment(schema_version="2", value={})
-        with pytest.raises(EnvironmentProviderError):
-            provider.validate_environment(schema_version="1", value={"endpoint": "not-a-recipe"})
+            provider.validate_environment({"endpoint": "not-a-recipe"})
     await hub.close()
 
 

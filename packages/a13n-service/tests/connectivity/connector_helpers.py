@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from typing import Literal, cast
+from typing import Literal
 
-from a13n_harness.providers.connector import ConnectorProviderCatalog, ConnectorProviderDefinition
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.connector import ConnectorProviderDefinition
 from a13n_harness.providers.connector.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
@@ -20,8 +21,6 @@ from a13n_harness.providers.connector.contracts import (
     SetupStarted,
     StrictModel,
 )
-from a13n_harness.providers.connector.http import ConnectorHttpClient
-from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.domain import JsonObject
 
 
@@ -179,25 +178,22 @@ class FakeConnection:
         raise NotImplementedError
 
 
-def fake_registry(backend: FakeConnectorBackend) -> ConnectorProviders:
+def fake_catalog(backend: FakeConnectorBackend) -> ProviderCatalog[ConnectorProviderDefinition]:
     @asynccontextmanager
     async def open_provider(configuration, credentials, http):
         yield FakeConnectorProvider(backend)
 
-    return ConnectorProviders(
-        ConnectorProviderCatalog(
-            (
-                ConnectorProviderDefinition(
-                    type="fake_connector",
-                    display_name="Fake",
-                    configuration_model=FakeConfiguration,
-                    credential_model=FakeCredentials,
-                    setup_validator=validate_fake_setup,
-                    open_provider=open_provider,
-                ),
-            )
-        ),
-        cast(ConnectorHttpClient, object()),
+    return ProviderCatalog(
+        (
+            ConnectorProviderDefinition(
+                type="fake_connector",
+                display_name="Fake",
+                configuration_model=FakeConfiguration,
+                credential_model=FakeCredentials,
+                setup_validator=validate_fake_setup,
+                open_provider=open_provider,
+            ),
+        )
     )
 
 

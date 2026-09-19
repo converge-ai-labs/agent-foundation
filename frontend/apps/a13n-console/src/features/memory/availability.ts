@@ -12,7 +12,7 @@ import { memoryProviderApi } from "./providers-api";
 
 export function eligibleMemoryProvider(
   provider: Schema["MemoryProvider"],
-  definitions: Schema["MemoryProviderDefinition"][],
+  definitions: Schema["MemoryProviderMetadata"][],
 ) {
   const definition = definitions.find((item) => item.type === provider.type);
   if (!provider.enabled || !definition) return false;

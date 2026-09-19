@@ -13,7 +13,7 @@ from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord
 from a13n_service.models.domain import CreateModelProviderRequest, CreateModelRequest
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.provider_service import ModelProviderService
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.models.service import ModelService
 from a13n_service.storage import transaction
 
@@ -51,7 +51,7 @@ async def selected_model(request, connectivity_sessions, credential_protector):
                 )
             )
         admin = replace(admin, boundary_organization_id=organization_id)
-    registry = built_in_provider_registry()
+    registry = built_in_model_provider_catalog()
     providers = ModelProviderService(
         connectivity_sessions,
         registry,

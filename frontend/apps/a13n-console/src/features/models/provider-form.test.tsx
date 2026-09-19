@@ -193,7 +193,7 @@ it("clears a preset without changing the endpoint or static headers", async () =
   );
 });
 
-const customDefinition: Schema["ModelProviderDefinition"] = {
+const customDefinition: Schema["ModelProviderMetadata"] = {
   type: "acme",
   display_name: "Acme",
   supports_connection_probe: false,

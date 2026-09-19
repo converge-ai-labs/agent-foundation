@@ -42,7 +42,8 @@ async def search(
     transport: WebProviderTransport,
 ) -> WebSearchResponse:
     """Call the fictional Acme vendor; tests supply a mocked HTTP transport."""
-    assert credential is not None
+    if credential is None:
+        raise ValueError("Acme Web requires a credential")
     payload = await transport.exchange_json(
         lambda client: client.build_request(
             "POST",
@@ -86,7 +87,8 @@ def build_model_provider(
     from openai import AsyncOpenAI
     from pydantic_ai.providers.openai import OpenAIProvider
 
-    assert connection.credential is not None
+    if connection.credential is None:
+        raise ValueError("Acme Model requires a credential")
     return OpenAIProvider(
         openai_client=AsyncOpenAI(
             api_key=connection.credential.authorization.token.get_secret_value(),

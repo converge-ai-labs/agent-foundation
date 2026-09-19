@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from a13n_harness.providers.web.contracts import WebProviderError, WebSearchRequest, WebSearchResponse
 from a13n_harness.providers.web.options import SearchOptions
 
-from ..configuration import ApiKeyCredential, EmptyConfiguration
+from ..configuration import ApiKeyCredential, EmptyConfiguration, require_api_key
 from .common import SEARCH_RESPONSE_BYTES, search_response
 
 if TYPE_CHECKING:
@@ -23,8 +23,7 @@ async def search(
     options: SearchOptions,
     transport: WebProviderTransport,
 ) -> WebSearchResponse:
-    assert credential is not None
-    key = credential.api_key.get_secret_value()
+    key = require_api_key(credential)
     limit = min(request.limit, options.max_results)
     payload = await transport.exchange_json(
         lambda client: client.build_request(

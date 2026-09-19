@@ -257,9 +257,11 @@ class Environment(ABC):
         raise self._unsupported()
 
 
-class EmptyProviderConfiguration(BaseModel):
+class EnvironmentProviderConfiguration(BaseModel):
+    """The strict base every Environment Provider configuration extends; empty is a valid configuration."""
+
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class HostLocalProviderConfiguration(EmptyProviderConfiguration):
+class HostLocalProviderConfiguration(EnvironmentProviderConfiguration):
     host_id: str = Field(default_factory=socket.gethostname, min_length=1, max_length=256)

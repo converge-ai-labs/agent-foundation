@@ -147,7 +147,7 @@ class FileBackend:
                 ]
                 if self.kind != "direct_local":
                     configuration["trusted_executable_roots"] = ["/bin", "/usr/bin"]
-            self.configuration = self.provider.validate_environment(schema_version="1", value=configuration)
+            self.configuration = self.provider.validate_environment(configuration)
             try:
                 self.environment = self.adapter()
                 if prepare:

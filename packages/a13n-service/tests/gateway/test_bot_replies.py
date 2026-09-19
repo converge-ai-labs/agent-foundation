@@ -256,10 +256,10 @@ async def test_worker_native_capability_wires_attempt_to_durable_observer(reply_
     from unittest.mock import Mock
 
     from a13n_harness import AgentSpec, HarnessBuilder
+    from a13n_harness.providers.catalog import ProviderCatalog
     from a13n_service.bots.connectivity import replies
     from a13n_service.bots.connectivity.replies import ReplyObservations
     from a13n_service.connectivity import execution
-    from a13n_service.connectivity.connectors.composition import ConnectorProviders
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
     from a13n_service.connectivity.mcp.transport import RemoteTransport
@@ -304,7 +304,8 @@ async def test_worker_native_capability_wires_attempt_to_durable_observer(reply_
         runtime = ExternalToolRuntime(
             sessions,
             protector,
-            ConnectorProviders(),
+            ProviderCatalog(),
+            None,
             RemoteTransport(policy),
             policy,
             http,

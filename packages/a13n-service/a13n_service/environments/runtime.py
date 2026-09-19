@@ -242,8 +242,7 @@ async def validate_run_environment(
         configuration = await load_configuration(session, row)
         implementation = lifecycle.catalog.require(provider.type)
         validated = implementation.validate_environment(
-            schema_version=configuration.configuration_schema_version,
-            value=instance_configuration(provider.type, row.id, configuration),
+            instance_configuration(provider.type, row.id, configuration),
         )
         descriptor = implementation.describe_environment(validated)
         return _RunEnvironmentSelection(

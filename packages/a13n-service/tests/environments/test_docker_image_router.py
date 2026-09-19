@@ -6,8 +6,8 @@ import socket
 
 import httpx2
 import pytest
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_service.app import Components, create_app
 from a13n_service.environments import image_jobs
@@ -340,7 +340,7 @@ async def test_network_disconnect_cleans_real_worker_container(tmp_path, service
         config,
         components=Components(
             request_authenticator=authenticate,
-            environment_provider_catalog=EnvironmentProviderCatalog(
+            environment_provider_catalog=ProviderCatalog(
                 select_builtin_environment_providers((PROVIDER_KEY, "docker"))
             ),
         ),

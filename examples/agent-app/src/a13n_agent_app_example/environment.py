@@ -15,8 +15,7 @@ def create_demo_environment(workspace: Path) -> DirectLocalEnvironment:
     workspace.mkdir(parents=True, exist_ok=True)
     provider = DIRECT_LOCAL
     configuration = provider.validate_environment(
-        schema_version="1",
-        value=DirectLocalEnvironmentConfiguration(
+        DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=workspace),
         ).model_dump(mode="json"),
     )

@@ -11,7 +11,7 @@ from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.iam import AuthorizationError, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
-from a13n_service.models.providers import built_in_provider_registry
+from a13n_service.models.providers import built_in_model_provider_catalog
 from a13n_service.run_stream import RunDisplayStore
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import func, select
@@ -26,7 +26,7 @@ async def test_readiness_never_initializes_resources_and_exact_system_definition
     agent_sessions, agent_management
 ):
     definition = load_definition()
-    readiness = ConfigurationReadiness(agent_sessions, built_in_provider_registry(), definition)
+    readiness = ConfigurationReadiness(agent_sessions, built_in_model_provider_catalog(), definition)
     assert (await readiness.read(actor=actor())).reason_code == "provider_setup_required"
     async with transaction(agent_sessions) as session:
         provider = await session.get(ModelProviderRecord, PROVIDER_ID)
@@ -72,7 +72,7 @@ async def test_readiness_never_initializes_resources_and_exact_system_definition
 
 
 async def test_readiness_routes_missing_models_to_models_after_provider_setup(agent_sessions):
-    readiness = ConfigurationReadiness(agent_sessions, built_in_provider_registry(), load_definition())
+    readiness = ConfigurationReadiness(agent_sessions, built_in_model_provider_catalog(), load_definition())
     missing_provider = await readiness.read(actor=actor())
     assert "/settings?" in missing_provider.setup_url
     async with transaction(agent_sessions) as session:

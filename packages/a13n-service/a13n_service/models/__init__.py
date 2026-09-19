@@ -14,7 +14,7 @@ from .domain import (
     new_model_id,
     new_model_provider_id,
 )
-from .providers import ModelProviderDefinition, ProviderRegistry, built_in_provider_registry
+from .providers import ModelProviderMetadata, built_in_model_provider_catalog
 
 __all__ = [
     "CreateModelProviderRequest",
@@ -25,11 +25,10 @@ __all__ = [
     "ModelExecutionSnapshot",
     "ModelProvider",
     "ModelProviderCollection",
-    "ModelProviderDefinition",
-    "ProviderRegistry",
+    "ModelProviderMetadata",
     "UpdateModelProviderRequest",
     "UpdateModelRequest",
-    "built_in_provider_registry",
+    "built_in_model_provider_catalog",
     "new_model_id",
     "new_model_provider_id",
 ]

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Literal
 
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.web.definition import WebProviderDefinition
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -16,7 +18,6 @@ from a13n_service.models.service_common import ModelError
 from a13n_service.storage import short_session
 from a13n_service.web.domain import ScrapeSelection
 from a13n_service.web.models import WebProviderRecord
-from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.resources import WebProviderError, require_eligible, require_operation
 
 from .domain import AgentReviewer
@@ -57,7 +58,7 @@ class ToolsetService:
         self,
         sessions: async_sessionmaker[AsyncSession],
         models: AcceptedModelSelector,
-        web_providers: WebProviderRegistry,
+        web_providers: ProviderCatalog[WebProviderDefinition],
     ) -> None:
         self._sessions = sessions
         self._models = models
@@ -72,7 +73,12 @@ class ToolsetService:
                 action=WorkspaceAction.agent_read,
             )
         operations = {
-            operation for definition in self._web_providers.definitions() for operation in definition.operations
+            operation
+            for definition in self._web_providers.values()
+            for operation in (
+                *(("search",) if definition.supports_search else ()),
+                *(("scrape",) if definition.supports_scrape else ()),
+            )
         }
         return catalog(supported_web_operations=frozenset(operations))
 
@@ -162,7 +168,7 @@ async def _provider_errors(
     organization_id: str,
     workspace_id: str | None,
     selections: tuple[tuple[Literal["search", "scrape"], str, str | None, ScrapeSelection | None], ...],
-    registry: WebProviderRegistry,
+    registry: ProviderCatalog[WebProviderDefinition],
 ) -> tuple[ToolsetCandidateError, ...]:
     provider_ids = frozenset(provider_id for _, _, provider_id, _ in selections if provider_id is not None)
     records = await _selected_providers(

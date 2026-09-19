@@ -5,7 +5,8 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
-from a13n_harness.providers.memory import MemoryProviderCatalog
+from a13n_harness.providers.catalog import ProviderCatalog
+from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.memory.contracts import MemoryBackend
 
 from a13n_service.credentials import CredentialSnapshot
@@ -33,7 +34,7 @@ class MemoryProviderAccess:
 
 @asynccontextmanager
 async def open_memory_backend(
-    access: MemoryProviderAccess, catalog: MemoryProviderCatalog, protector: SecretProtector
+    access: MemoryProviderAccess, catalog: ProviderCatalog[MemoryProviderDefinition], protector: SecretProtector
 ) -> AsyncIterator[MemoryBackend]:
     definition = catalog[access.provider_type]
     credential = json.loads(access.credential.decrypt(protector)) if access.credential is not None else None

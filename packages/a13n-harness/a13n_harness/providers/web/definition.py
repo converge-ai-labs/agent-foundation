@@ -5,11 +5,12 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
+from typing import ClassVar
 
 from anyio import current_time, fail_after
 from pydantic import BaseModel
 
-from a13n_harness.providers.authentication import Authentication
+from a13n_harness.providers.definition import ProviderDefinition
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 from .contracts import (
@@ -33,37 +34,19 @@ type ScrapeOperation[C: BaseModel, K: BaseModel] = Callable[
 ]
 
 
-@dataclass(frozen=True, slots=True)
-class WebProviderDefinition[C: BaseModel, K: BaseModel]:
-    type: str
-    display_name: str
-    configuration_model: type[C]
-    credential_model: type[K]
-    setup_url: str | None = None
-    setup_label: str | None = None
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WebProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C, K]):
+    DOMAIN: ClassVar[str] = "Web"
+
     search: SearchOperation[C, K] | None = None
     scrape: ScrapeOperation[C, K] | None = None
     supports_restricted_scrape: bool = False
-    authentication: Authentication = field(default_factory=Authentication)
 
-    def __post_init__(self) -> None:
-        from a13n_harness.providers.validation import validate_definition
-
-        validate_definition(
-            self.type,
-            self.display_name,
-            self.setup_url,
-            self.configuration_model,
-            self.credential_model,
-            setup_label=self.setup_label,
-        )
-        self.authentication.validate_configuration_model(self.configuration_model)
+    def validate_domain(self) -> None:
         if self.search is None and self.scrape is None:
             raise ValueError("Web Provider must implement search or scrape")
         if self.supports_restricted_scrape and self.scrape is None:
             raise ValueError("restricted scrape requires a scrape operation")
-        if any(operation is not None and not callable(operation) for operation in (self.search, self.scrape)):
-            raise TypeError("Web operations must be callable")
 
     @property
     def supports_search(self) -> bool:
@@ -85,11 +68,10 @@ class WebProviderDefinition[C: BaseModel, K: BaseModel]:
     ) -> AsyncIterator[WebProvider[C, K]]:
         """Validate host inputs before constructing an operation handle; no I/O at open."""
         parsed = self.configuration_model.model_validate(configuration)
-        self.authentication.validate_presence(parsed, credential is not None)
         yield WebProvider(
             self,
             parsed,
-            self.credential_model.model_validate(credential) if credential is not None else None,
+            self.parse_credential(parsed, credential),
             search_options or SearchOptions(),
             scrape_options or ScrapeOptions(),
             transport or WebProviderTransport(),

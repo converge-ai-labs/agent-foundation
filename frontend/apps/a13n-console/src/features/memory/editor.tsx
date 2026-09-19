@@ -134,7 +134,7 @@ export function MemoryProviderForm({
 }: {
   scope: MemoryProviderScope;
   resource?: { value: Schema["MemoryProvider"]; etag?: string };
-  definitions: Schema["MemoryProviderDefinition"][];
+  definitions: Schema["MemoryProviderMetadata"][];
   readOnly?: boolean;
   extra?: ReactNode;
   onCancel: () => void;

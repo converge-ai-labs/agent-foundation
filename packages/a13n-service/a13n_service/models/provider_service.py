@@ -6,7 +6,10 @@ import json
 from collections.abc import Awaitable
 from typing import Protocol
 
+from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_harness.providers.model.definition import ModelProviderDefinition
+from a13n_harness.providers.model.types import ValidatedProviderConfiguration
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -15,6 +18,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.credentials import CredentialSnapshot, credential_payload
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.iam.resource_scope import visible_workspace
+from a13n_service.provider_metadata import ProviderMetadataCollection
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, utc_now
@@ -32,7 +36,7 @@ from .domain import (
 )
 from .headers import apply_header_updates
 from .models import ModelProviderRecord
-from .providers import ModelProviderDefinitionCollection, ProviderRegistry, ValidatedProviderConfiguration
+from .providers import ModelProviderMetadata
 from .service_common import ModelError, audit_record, authorize_models, escape_like, require_etag
 
 
@@ -44,7 +48,7 @@ class ModelProviderService:
     def __init__(
         self,
         sessions: async_sessionmaker[AsyncSession],
-        registry: ProviderRegistry,
+        registry: ProviderCatalog[ModelProviderDefinition],
         endpoint_policy: EndpointPolicy,
         protector: SecretProtector,
         *,
@@ -62,7 +66,24 @@ class ModelProviderService:
         self._operations = operations
         self._command_timeout_seconds = command_timeout_seconds
 
-    async def type_definitions(self, *, actor: AuthenticatedActor) -> ModelProviderDefinitionCollection:
+    async def provider_types(self, *, actor: AuthenticatedActor) -> ProviderMetadataCollection[ModelProviderMetadata]:
+        await self._authorize_read(actor)
+        return ProviderMetadataCollection(
+            items=tuple(ModelProviderMetadata.describe(self._registry[key]) for key in sorted(self._registry))
+        )
+
+    async def provider_type(self, *, actor: AuthenticatedActor, provider_type: str) -> ModelProviderMetadata:
+        await self._authorize_read(actor)
+        try:
+            return ModelProviderMetadata.describe(self._registry.require(provider_type))
+        except ValueError as error:
+            raise ModelError(
+                "model_provider_type_not_found",
+                "Model Provider type not found.",
+                category=ErrorCategory.not_found,
+            ) from error
+
+    async def _authorize_read(self, actor: AuthenticatedActor) -> None:
         async with transaction(self._sessions) as session:
             await authorize_models(
                 session,
@@ -70,7 +91,6 @@ class ModelProviderService:
                 workspace_id=actor.boundary_workspace_id,
                 action=WorkspaceAction.models_read,
             )
-        return ModelProviderDefinitionCollection(items=self._registry.definitions())
 
     async def create(
         self,
@@ -192,7 +212,7 @@ class ModelProviderService:
             raise ModelError("invalid_request", "name search is invalid.", category=ErrorCategory.invalid_request)
         if provider_type is not None:
             try:
-                self._registry.definition(provider_type)
+                self._registry.require(provider_type)
             except ValueError as error:
                 raise ModelError(
                     "invalid_request", "provider_type is not trusted.", category=ErrorCategory.invalid_request
@@ -415,13 +435,12 @@ class ModelProviderService:
         header_names: tuple[str, ...] = (),
     ) -> ValidatedProviderConfiguration:
         try:
-            validated = self._registry.validate_provider(
-                provider_type,
+            validated = self._registry.require(provider_type).validate_configuration(
                 configuration,
                 credential_configured=credential_configured,
                 header_names=header_names,
             )
-            for field in self._registry.integration(provider_type).additional_endpoint_fields:
+            for field in self._registry.require(provider_type).additional_endpoint_fields:
                 override = validated.configuration.get(field)
                 if isinstance(override, str):
                     validated.configuration[field] = await self._endpoint_policy.validate(
@@ -437,14 +456,17 @@ class ModelProviderService:
             raise ModelError(
                 "invalid_model_provider", "The Model Provider is invalid.", category=ErrorCategory.invalid_request
             ) from error
-        return self._registry.with_validated_endpoint(provider_type, validated, endpoint)
+        return self._registry.require(provider_type).with_validated_endpoint(validated, endpoint)
 
     def _credential(self, provider_type: str, credential: dict[str, object] | None) -> dict[str, object] | None:
+        """Presence against the configuration is enforced by `_validate`; this only parses."""
         if credential is None:
             return None
         try:
-            parsed = self._registry.integration(provider_type).credential_model.model_validate(credential)
-            return credential_payload(parsed)
+            credential_model = self._registry.require(provider_type).credential_model
+            if credential_model is None:
+                raise ValueError("this Model Provider accepts no credential")
+            return credential_payload(credential_model.model_validate(credential))
         except ValueError as error:
             raise ModelError(
                 "invalid_provider_credential",
