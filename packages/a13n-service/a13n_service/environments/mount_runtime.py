@@ -47,7 +47,7 @@ class RunMountRuntime:
         observations: RunMountObservations,
         current_attempt: Callable[[], AttemptContext],
         prepare: Callable[[AcceptedRunMount], Awaitable[Environment]],
-        observe: Callable[[Environment, str], EnvironmentMount],
+        observe: Callable[[Environment], EnvironmentMount],
         clock: Callable[[], float] = monotonic,
     ) -> None:
         self._observe = observe
@@ -114,7 +114,7 @@ class RunMountRuntime:
             await self._observations.validate(self._current_attempt(), mount)
             await self._runtime.mount(
                 mount.name,
-                replace(self._observe(environment, mount.access), mount_path=f"/environment/{mount.name}"),
+                replace(self._observe(environment), mount_path=f"/environment/{mount.name}"),
                 make_default=make_default,
             )
         except BaseException as error:

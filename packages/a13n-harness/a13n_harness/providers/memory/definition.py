@@ -19,11 +19,15 @@ class MemoryProviderDefinition[C: BaseModel, K: BaseModel]:
     display_name: str
     configuration_model: type[C]
     credential_model: type[K]
-    open_backend: Callable[[C, K | None], AbstractAsyncContextManager[MemoryBackend]]
+    # Document-only storage opens through its own Host binding, never a record backend.
+    open_backend: Callable[[C, K | None], AbstractAsyncContextManager[MemoryBackend]] | None = None
     authentication: Authentication = field(default_factory=Authentication)
     setup_url: str | None = None
     setup_label: str | None = None
+    supports_records: bool = True
     supports_documents: bool = False
+    supports_revisions: bool = False
+    supports_changes: bool = False
 
     def __post_init__(self) -> None:
         validate_definition(
@@ -36,13 +40,25 @@ class MemoryProviderDefinition[C: BaseModel, K: BaseModel]:
             setup_label=self.setup_label,
         )
         self.authentication.validate_configuration_model(self.configuration_model)
-        if not callable(self.open_backend):
-            raise TypeError("Memory Provider must supply backend construction")
-        if type(self.supports_documents) is not bool:
-            raise TypeError("Memory document support must be a boolean")
+        if any(
+            type(value) is not bool
+            for value in (
+                self.supports_records,
+                self.supports_documents,
+                self.supports_revisions,
+                self.supports_changes,
+            )
+        ):
+            raise TypeError("Memory capabilities must be booleans")
+        if self.supports_records != callable(self.open_backend):
+            raise TypeError("Memory record support and backend construction must agree")
+        if not self.supports_records and not self.supports_documents:
+            raise ValueError("Memory Provider must support records or documents")
 
     @asynccontextmanager
     async def open(self, configuration: object, credential: object = None) -> AsyncIterator[MemoryBackend]:
+        if self.open_backend is None:
+            raise TypeError(f"Memory Provider {self.type!r} has no record backend")
         parsed = self.configuration_model.model_validate(configuration)
         self.authentication.validate_presence(parsed, credential is not None)
         secret = self.credential_model.model_validate(credential) if credential is not None else None

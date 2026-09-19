@@ -13,7 +13,6 @@ def accepted_mount(run_id, environment_id, **changes):
             "organization_id": ORGANIZATION_ID,
             "workspace_id": WORKSPACE_ID,
             "environment_id": environment_id,
-            "access": "read_only",
             "created_at": NOW,
             "principal_type": "user",
             "principal_id": USER_ID,

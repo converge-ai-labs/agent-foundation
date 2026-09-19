@@ -29,12 +29,13 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .admission_domain import BatchConfiguration
 from .admission_models import AgentThreadBindingRecord, IngressAdmissionRecord, IngressBatchRecord
-from .contributions import IngressObservations
+from .contributions import IngressObservations, ProviderActionHandler
 from .provider import (
     AdmissionReceipt,
     DurableAdmissionReceipt,
     InboundEvent,
     IrrelevantAdmissionReceipt,
+    ProviderActionDecision,
     ProviderHttpResponse,
     ProviderRequest,
     ProviderRequestDecision,
@@ -70,6 +71,7 @@ class IngressEventService:
         dedup_horizon_seconds: int,
         clock: Clock = utc_now,
         observations: IngressObservations | None = None,
+        actions: ProviderActionHandler | None = None,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
@@ -83,6 +85,7 @@ class IngressEventService:
         self._dedup_horizon_seconds = dedup_horizon_seconds
         self._clock = clock
         self._observations = observations
+        self._actions = actions
 
     async def receive(self, *, account_id: str, request: ProviderRequest) -> ProviderHttpResponse:
         snapshot, adapter, credentials = await self.load_runtime(account_id)
@@ -100,6 +103,8 @@ class IngressEventService:
             return error.response
         if decision.kind == "complete":
             return decision.response
+        if decision.kind == "action":
+            return await self._action(snapshot, decision)
         try:
             receipt = await self.admit_authenticated(
                 snapshot=snapshot,
@@ -113,7 +118,7 @@ class IngressEventService:
 
     async def receive_socket(
         self, *, snapshot: AccountSnapshot, decision: ProviderRequestDecision, claim: ConnectionClaim
-    ) -> None:
+    ) -> JsonObject | None:
         """Admit authenticated app-socket events; success permits a provider ACK."""
         if (
             snapshot.provider_config.get("event_transport") != "websocket"
@@ -125,6 +130,9 @@ class IngressEventService:
                 category=ErrorCategory.forbidden,
             )
         adapter = require_adapter(self._adapters, snapshot.provider_key, snapshot.provider_config_version)
+        if decision.kind == "action":
+            response = await self._action(snapshot, decision, claim=claim)
+            return json.loads(response.body)
         if decision.kind == "event":
             await self.admit_authenticated(
                 snapshot=snapshot,
@@ -138,6 +146,25 @@ class IngressEventService:
         else:
             async with transaction(self._sessions) as session:
                 await require_claim(session, claim)
+
+    async def _action(
+        self, snapshot: AccountSnapshot, decision: ProviderActionDecision, *, claim: ConnectionClaim | None = None
+    ) -> ProviderHttpResponse:
+        async with transaction(self._sessions) as session:
+            if claim is not None:
+                await require_claim(session, claim)
+            account = await require_account(session, snapshot.id)
+            if account.status != "active" or (account.version, account.credential_generation) != (
+                snapshot.version,
+                snapshot.credential_generation,
+            ):
+                raise NativeError(
+                    "account_unavailable", "Account configuration changed.", category=ErrorCategory.conflict
+                )
+            result = await self._actions.handle(session, account, decision) if self._actions is not None else {}
+        return ProviderHttpResponse(
+            status_code=200, headers={"content-type": "application/json"}, body=canonical_json(result).encode()
+        )
 
     async def load_socket_account(self, account_id: str) -> tuple[AccountSnapshot, JsonObject]:
         snapshot, _, credentials = await self.load_runtime(account_id)

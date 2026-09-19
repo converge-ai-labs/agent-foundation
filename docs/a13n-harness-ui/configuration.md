@@ -65,6 +65,7 @@ process:
   terminal_update_check: true
   log_level: INFO
   log_format: pretty
+  max_object_bytes: 268435456
 input:
   long_text_threshold_chars: 8000
 defaults:
@@ -126,6 +127,8 @@ These settings take effect when the application starts; restart after changing t
 | `process.terminal_update_check` | `true`   | Check for a package update at terminal startup; installation still requires confirmation |
 | `process.log_level`             | `INFO`   | `CRITICAL`, `ERROR`, `WARNING`, `INFO`, or `DEBUG`; normalized uppercase                 |
 | `process.log_format`            | `pretty` | Noninteractive logging: `pretty` or `json`; interactive diagnostics use files            |
+
+`process.max_object_bytes` defaults to `268435456` (256 MiB), with an allowed range of 1 KiB through 1 GiB. It limits each complete **uncompressed** immutable storage object, including continuation checkpoints; it is not a Thread disk quota or a model context limit. Long coding Threads retain display history and file-edit evidence even after model-context compaction. If a checkpoint exceeds this limit, raise it (for example to `536870912` for 512 MiB) and restart the application before continuing. Larger limits increase peak memory use during serialization and validation. No history is truncated to fit, and a failed save leaves the previous selected checkpoint unchanged. Lowering the limit can prevent reading previously saved larger objects.
 
 Use `--no-update-check` for a one-invocation override. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
 

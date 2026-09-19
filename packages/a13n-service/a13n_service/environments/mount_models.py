@@ -28,7 +28,6 @@ class RunEnvironmentMountRecord(Base):
             ("run_attempts.organization_id", "run_attempts.run_id", "run_attempts.id"),
             ondelete="RESTRICT",
         ),
-        CheckConstraint("access IN ('read_only', 'read_write', 'full')", name="access_valid"),
         CheckConstraint("name <> 'workspace' AND name ~ '^[a-z][a-z0-9-]{0,62}$'", name="name_valid"),
         CheckConstraint("principal_type IN ('user', 'service_account')", name="principal_type_valid"),
         CheckConstraint(
@@ -51,7 +50,6 @@ class RunEnvironmentMountRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     environment_id: Mapped[str] = mapped_column(String(72), nullable=False)
-    access: Mapped[str] = mapped_column(String(16), nullable=False)
     use_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     principal_type: Mapped[str] = mapped_column(String(32), nullable=False)

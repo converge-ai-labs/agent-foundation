@@ -43,10 +43,8 @@ async def preparations(interaction_sessions, interaction_object_store, tmp_path)
     async with transaction(sessions) as session:
         session.add_all(
             [
-                accepted_mount(run.id, extra.id, name="first", access="full"),
-                accepted_mount(
-                    run.id, extra.id, name="second", access="full", created_at=NOW + timedelta(microseconds=1)
-                ),
+                accepted_mount(run.id, extra.id, name="first"),
+                accepted_mount(run.id, extra.id, name="second", created_at=NOW + timedelta(microseconds=1)),
             ]
         )
     claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
@@ -92,9 +90,7 @@ async def test_additions_prepare_lazy_templates_and_do_not_mark_primary_used(int
         assert (await session.get(RunRecord, attempt.run_id)).environment_use_started_at is None
 
 
-@pytest.mark.parametrize(
-    "changed", [{"access": "read_only"}, {"created_at": NOW + timedelta(seconds=1)}, {"run_id": "other"}]
-)
+@pytest.mark.parametrize("changed", [{"created_at": NOW + timedelta(seconds=1)}, {"run_id": "other"}])
 async def test_changed_acceptance_snapshot_cannot_start_preparation(interaction_sessions, preparations, changed):
     lifecycle, attempt, mounts, extra_id = preparations
     with pytest.raises(ValueError):

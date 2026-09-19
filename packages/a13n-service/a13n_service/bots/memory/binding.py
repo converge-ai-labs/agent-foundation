@@ -15,6 +15,7 @@ class BotMemoryBinding(BaseModel):
     scope_version: int | None = Field(default=None, ge=1)
     use_memory: bool = False
     save_on_request: bool = False
+    auto_organize: bool = False
 
     @model_validator(mode="after")
     def require_scope(self) -> "BotMemoryBinding":

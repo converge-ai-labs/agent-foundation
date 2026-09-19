@@ -5,17 +5,18 @@ from typing import Literal
 
 from sqlalchemy import SQLColumnExpression, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.sql.selectable import Exists
+from sqlalchemy.sql.elements import ColumnElement
 
 from a13n_service.interactions.models import RunRecord
+from a13n_service.temporal import utc_now
 
-from .models import EnvironmentRecord
+from .models import EnvironmentFileUseRecord, EnvironmentRecord
 from .mount_models import RunEnvironmentMountRecord
 
 type RetentionCondition = Literal["active", "idle"]
 
 
-def active_use_exists(environment_id: str | SQLColumnExpression[str]) -> Exists:
+def active_use_exists(environment_id: str | SQLColumnExpression[str]) -> ColumnElement[bool]:
     additional_use = (
         select(RunEnvironmentMountRecord.run_id)
         .where(
@@ -26,16 +27,24 @@ def active_use_exists(environment_id: str | SQLColumnExpression[str]) -> Exists:
         .correlate_except(RunEnvironmentMountRecord)
         .exists()
     )
-    return (
-        select(RunRecord.id)
+    return or_(
+        select(EnvironmentFileUseRecord.id)
         .where(
-            RunRecord.status == "running",
-            or_(
-                (RunRecord.environment_id == environment_id) & RunRecord.environment_use_started_at.is_not(None),
-                additional_use,
-            ),
+            EnvironmentFileUseRecord.environment_id == environment_id,
+            EnvironmentFileUseRecord.expires_at > utc_now(),
         )
-        .exists()
+        .exists(),
+        (
+            select(RunRecord.id)
+            .where(
+                RunRecord.status == "running",
+                or_(
+                    (RunRecord.environment_id == environment_id) & RunRecord.environment_use_started_at.is_not(None),
+                    additional_use,
+                ),
+            )
+            .exists()
+        ),
     )
 
 

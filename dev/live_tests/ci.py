@@ -59,7 +59,7 @@ SUITES = {
             "environment/test_20_environment_templates.py",
             "environment/test_21_environment_lifecycle.py::test_successor_inherits_environment_by_operation",
             "environment/test_21_environment_lifecycle.py::test_continuation_updates_default_but_historical_fork_keeps_source",
-            "environment/test_22_environment_access.py",
+            "environment/test_22_environment_tools.py",
             "harness_integration/test_24_skill_execution.py",
             "harness_integration/test_24_skill_management.py",
             "skills/test_lifecycle.py",

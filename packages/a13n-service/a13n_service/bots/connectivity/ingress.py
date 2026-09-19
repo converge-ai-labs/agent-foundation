@@ -10,6 +10,7 @@ from a13n_service.bots.memory.binding import BotMemoryBinding
 from a13n_service.bots.memory.bindings import bind
 from a13n_service.bots.memory.selection import select_binding
 from a13n_service.bots.memory.settings import settings_version
+from a13n_service.bots.progress.acceptance import accept_progress
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.ingress.admission_domain import PreparedIngressBatch
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, SteerReceipt
@@ -43,6 +44,7 @@ class PreparedBotIngress:
             raise RunAcceptanceError("memory_binding_conflict", "Conversation configuration changed during acceptance")
         if self.binding is not None and isinstance(receipt, RunAcceptanceReceipt):
             await bind(session, receipt.run_id, self.binding)
+        await accept_progress(session, batch, receipt, now)
         await record_test_acceptance(
             session,
             batch_id=batch.batch_id,

@@ -3700,6 +3700,111 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/memory-scopes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Scopes */
+    get: operations["get_workspaces_workspace_memory_scopes"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Listing */
+    get: operations["get_workspaces_workspace_memory_scopes_scope_id_documents"];
+    put?: never;
+    /** Create */
+    post: operations["post_workspaces_workspace_memory_scopes_scope_id_documents"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read */
+    get: operations["get_workspaces_workspace_memory_scopes_scope_id_documents_document_id"];
+    /** Revise */
+    put: operations["put_workspaces_workspace_memory_scopes_scope_id_documents_document_id"];
+    post?: never;
+    /** Remove */
+    delete: operations["delete_workspaces_workspace_memory_scopes_scope_id_documents_document_id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}/revisions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** History */
+    get: operations["get_workspaces_workspace_memory_scopes_scope_id_documents_document_id_revisions"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}/toc": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Toc */
+    get: operations["get_workspaces_workspace_memory_scopes_scope_id_documents_document_id_toc"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/organization": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Organization Status */
+    get: operations["get_workspaces_workspace_memory_scopes_scope_id_organization"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/model-catalog": {
     parameters: {
       query?: never;
@@ -4409,7 +4514,6 @@ export interface components {
       | components["schemas"]["SystemActorRef"];
     /** AddEnvironmentMountRequest */
     AddEnvironmentMountRequest: {
-      access: components["schemas"]["EnvironmentAccess"];
       /** Environment Id */
       environment_id: string;
       /** Name */
@@ -4488,7 +4592,7 @@ export interface components {
        * @default
        */
       instructions?: string;
-      memory?: components["schemas"]["MemorySelection"] | null;
+      memory?: components["schemas"]["MemoryConfiguration"] | null;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
@@ -4544,7 +4648,7 @@ export interface components {
        * @default
        */
       instructions?: string;
-      memory?: components["schemas"]["MemorySelection"] | null;
+      memory?: components["schemas"]["MemoryConfiguration"] | null;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /**
@@ -4731,7 +4835,7 @@ export interface components {
         components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
-      memory?: components["schemas"]["MemorySelection"] | null;
+      memory?: components["schemas"]["MemoryConfiguration"] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /** Plugins */
@@ -4758,7 +4862,7 @@ export interface components {
         components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
-      memory?: components["schemas"]["MemorySelection"] | null;
+      memory?: components["schemas"]["MemoryConfiguration"] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
       /** Plugins */
@@ -4823,6 +4927,16 @@ export interface components {
        * Format: date-time
        */
       updated_at: string;
+    };
+    /** Append */
+    Append: {
+      /** Text */
+      text: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "append";
     };
     /** ApplyDraftRequest */
     ApplyDraftRequest: {
@@ -5874,6 +5988,11 @@ export interface components {
     /** ConfigureScope */
     ConfigureScope: {
       /**
+       * Auto Organize
+       * @default false
+       */
+      auto_organize?: boolean;
+      /**
        * Enabled
        * @default true
        */
@@ -6573,8 +6692,6 @@ export interface components {
     };
     /** CreateTemplateRequest */
     CreateTemplateRequest: {
-      /** @default full */
-      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -6604,8 +6721,6 @@ export interface components {
     };
     /** CreateTemplateRevisionRequest */
     CreateTemplateRevisionRequest: {
-      /** @default full */
-      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -6878,6 +6993,48 @@ export interface components {
        */
       version?: number;
     };
+    /** DocumentHeading */
+    DocumentHeading: {
+      /** End */
+      end: number;
+      /** Level */
+      level: number;
+      /** Locator */
+      locator: string;
+      /** Start */
+      start: number;
+      /** Title */
+      title: string;
+    };
+    /** DocumentInput */
+    DocumentInput: {
+      /** Applicability */
+      applicability?: string | null;
+      /** Correction Of */
+      correction_of?: string | null;
+      /** Description */
+      description: string;
+      /** Effective Time */
+      effective_time?: string | null;
+      /** Event Time */
+      event_time?: string | null;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "semantic" | "procedural" | "episodic";
+      /** Path */
+      path: string;
+      /**
+       * Sources
+       * @default []
+       */
+      sources?: string[];
+      /** Text */
+      text: string;
+      /** Title */
+      title: string;
+    };
     /**
      * DocumentInputContent
      * @description A document input content fragment.
@@ -6897,6 +7054,21 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** DocumentNavigation */
+    DocumentNavigation: {
+      /** Description */
+      description: string;
+      /** Digest */
+      digest: string;
+      /** Id */
+      id: string;
+      /** Path */
+      path: string;
+      /** Title */
+      title: string;
+      /** Version */
+      version: number;
+    };
     /** DuplicateAgentRequest */
     DuplicateAgentRequest: {
       /** Description */
@@ -6909,6 +7081,16 @@ export interface components {
       };
       /** Name */
       name: string;
+    };
+    /** Edit */
+    Edit: {
+      /** Edits */
+      edits: components["schemas"]["Replacement"][];
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "edit";
     };
     /** EmailChangeRequest */
     EmailChangeRequest: {
@@ -6925,7 +7107,6 @@ export interface components {
     };
     /** Environment */
     Environment: {
-      access: components["schemas"]["EnvironmentAccess"];
       /**
        * Condition Since
        * Format: date-time
@@ -6971,11 +7152,6 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
-    /**
-     * EnvironmentAccess
-     * @enum {string}
-     */
-    EnvironmentAccess: "read_only" | "read_write" | "full";
     /** EnvironmentCommand */
     EnvironmentCommand: {
       /**
@@ -7002,7 +7178,6 @@ export interface components {
     };
     /** EnvironmentDetail */
     EnvironmentDetail: {
-      access: components["schemas"]["EnvironmentAccess"];
       /**
        * Condition Since
        * Format: date-time
@@ -7187,8 +7362,6 @@ export interface components {
     };
     /** EnvironmentTemplateRevision */
     EnvironmentTemplateRevision: {
-      /** @default full */
-      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -7282,6 +7455,13 @@ export interface components {
        * @default false
        */
       enabled?: boolean;
+    };
+    /** FileDocumentCollection */
+    FileDocumentCollection: {
+      /** Items */
+      items: components["schemas"]["DocumentNavigation"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
     };
     /** ForkRunRequest */
     ForkRunRequest: {
@@ -7529,6 +7709,18 @@ export interface components {
       /** Hook Names */
       hook_names: string[];
       webhook: components["schemas"]["WebhookDestinationConfig"];
+    };
+    /** InlineMemoryBackend */
+    InlineMemoryBackend: {
+      /** Configuration */
+      configuration?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /**
+       * Type
+       * @constant
+       */
+      type: "filesystem";
     };
     /** InputAdapterConfig */
     InputAdapterConfig: {
@@ -8073,6 +8265,60 @@ export interface components {
       /** Items */
       items: components["schemas"]["MCPTool"][];
     };
+    /** ManagedDocumentMutation */
+    ManagedDocumentMutation: {
+      /** Change Id */
+      change_id: string | null;
+      document: components["schemas"]["ManagedMemoryDocument"];
+    };
+    /** ManagedMemoryBackend */
+    ManagedMemoryBackend: {
+      /** Provider Id */
+      provider_id: string;
+    };
+    /** ManagedMemoryDocument */
+    ManagedMemoryDocument: {
+      /** Applicability */
+      applicability?: string | null;
+      /** Correction Of */
+      correction_of?: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Description */
+      description: string;
+      /** Effective Time */
+      effective_time?: string | null;
+      /** Event Time */
+      event_time?: string | null;
+      /** Id */
+      id: string;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "semantic" | "procedural" | "episodic";
+      /** Path */
+      path: string;
+      /**
+       * Saved At
+       * Format: date-time
+       */
+      saved_at: string;
+      /**
+       * Sources
+       * @default []
+       */
+      sources?: string[];
+      /** Text */
+      text: string;
+      /** Title */
+      title: string;
+      /** Version */
+      version: number;
+    };
     /** Memory */
     Memory: {
       /** Id */
@@ -8096,6 +8342,64 @@ export interface components {
       items: components["schemas"]["Memory"][];
       /** @description Native pagination when available. Null means a bounded result, not a complete collection. */
       pagination?: components["schemas"]["MemoryPagination"] | null;
+    };
+    /** MemoryConfiguration */
+    MemoryConfiguration:
+      | components["schemas"]["MemorySelection"]
+      | components["schemas"]["MemoryEntries"];
+    /** MemoryEntries */
+    MemoryEntries: {
+      /** Entries */
+      entries: components["schemas"]["MemoryEntrySelection"][];
+    };
+    /** MemoryEntrySelection */
+    MemoryEntrySelection: {
+      /**
+       * Auto Organize
+       * @default false
+       */
+      auto_organize?: boolean;
+      /**
+       * Auto Recall
+       * @default true
+       */
+      auto_recall?: boolean;
+      /** Backend */
+      backend:
+        | components["schemas"]["ManagedMemoryBackend"]
+        | components["schemas"]["InlineMemoryBackend"];
+      /** Description */
+      description: string;
+      /**
+       * Mode
+       * @enum {string}
+       */
+      mode: "records" | "documents";
+      /** Name */
+      name: string;
+      /**
+       * Recall Limit
+       * @default 5
+       */
+      recall_limit?: number;
+      /**
+       * Recall Required
+       * @default false
+       */
+      recall_required?: boolean;
+      /** Recall Threshold */
+      recall_threshold?: number | null;
+      /**
+       * Recall Timeout
+       * @default 2
+       */
+      recall_timeout?: number;
+      scope?: components["schemas"]["MemoryScope"] | null;
+      /**
+       * Toolset
+       * @default true
+       */
+      toolset?: boolean;
     };
     /** MemoryIndex */
     MemoryIndex: {
@@ -8178,10 +8482,25 @@ export interface components {
       /** Setup Url */
       setup_url?: string | null;
       /**
+       * Supports Changes
+       * @default false
+       */
+      supports_changes?: boolean;
+      /**
        * Supports Documents
        * @default false
        */
       supports_documents?: boolean;
+      /**
+       * Supports Records
+       * @default true
+       */
+      supports_records?: boolean;
+      /**
+       * Supports Revisions
+       * @default false
+       */
+      supports_revisions?: boolean;
       /** Type */
       type: string;
     };
@@ -8263,6 +8582,11 @@ export interface components {
     };
     /** MemorySettings */
     MemorySettings: {
+      /**
+       * Auto Organize
+       * @default false
+       */
+      auto_organize?: boolean;
       /** Provider Id */
       provider_id: string;
       /**
@@ -8674,6 +8998,27 @@ export interface components {
       /** Organization Admin */
       organization_admin: boolean;
     };
+    /** OrganizationStatus */
+    OrganizationStatus: {
+      /**
+       * Committed
+       * @default 0
+       */
+      committed?: number;
+      /**
+       * Deferred
+       * @default 0
+       */
+      deferred?: number;
+      /** Error Code */
+      error_code?: string | null;
+      /** Id */
+      id: string;
+      /** Run Id */
+      run_id: string;
+      /** Status */
+      status: string;
+    };
     /** OutputSpec */
     OutputSpec: {
       /** Description */
@@ -8780,6 +9125,16 @@ export interface components {
        * Format: email
        */
       email: string;
+    };
+    /** Patch */
+    Patch: {
+      /** Patch */
+      patch: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "patch";
     };
     /** PathBinarySource */
     PathBinarySource: {
@@ -9026,8 +9381,6 @@ export interface components {
     ReceptionScope: "all_accessible" | "configured_targets";
     /** RegisterEnvironmentRequest */
     RegisterEnvironmentRequest: {
-      /** @default full */
-      access?: components["schemas"]["EnvironmentAccess"];
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -9075,6 +9428,16 @@ export interface components {
       expected_queue_version: number;
       /** Queued Submission Ids */
       queued_submission_ids: string[];
+    };
+    /** Replace */
+    Replace: {
+      /** Text */
+      text: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: "replace";
     };
     /** ReplaceAccountCredentialsRequest */
     ReplaceAccountCredentialsRequest: {
@@ -9145,6 +9508,18 @@ export interface components {
       op: "replace_text";
       /** Path */
       path: string[];
+    };
+    /** Replacement */
+    Replacement: {
+      /** New String */
+      new_string: string;
+      /** Old String */
+      old_string: string;
+      /**
+       * Replace All
+       * @default false
+       */
+      replace_all?: boolean;
     };
     /** ResolvedAgentModel */
     ResolvedAgentModel: {
@@ -9268,6 +9643,17 @@ export interface components {
       labels?: {
         [key: string]: string;
       };
+    };
+    /** ReviseDocument */
+    ReviseDocument: {
+      /** Change */
+      change:
+        | components["schemas"]["Replace"]
+        | components["schemas"]["Append"]
+        | components["schemas"]["Edit"]
+        | components["schemas"]["Patch"];
+      /** Expected Version */
+      expected_version: number;
     };
     /** RoleBinding */
     RoleBinding: {
@@ -9414,7 +9800,6 @@ export interface components {
     /** RunEnvironmentMount */
     RunEnvironmentMount: {
       accepting_principal: components["schemas"]["PrincipalRef"];
-      access: components["schemas"]["EnvironmentAccess"];
       /** @default pending */
       application_status?: components["schemas"]["MountApplicationStatus"];
       /** Applied Attempt Fence */
@@ -9497,8 +9882,6 @@ export interface components {
       created_at: string;
       /** Effective Agent Config Digest */
       effective_agent_config_digest: string;
-      /** Environment Access */
-      environment_access: string | null;
       /** Environment Id */
       environment_id: string | null;
       failure: components["schemas"]["JsonValue"] | null;
@@ -9631,6 +10014,13 @@ export interface components {
        * @enum {string}
        */
       audience: "public" | "private" | "direct" | "unknown";
+      /**
+       * Auto Organize
+       * @default false
+       */
+      auto_organize?: boolean;
+      /** Backend Type */
+      backend_type?: string | null;
       /**
        * Enabled
        * @default true
@@ -9802,6 +10192,11 @@ export interface components {
       /** Trigger Type */
       trigger_type: string;
     };
+    /**
+     * SessionPurpose
+     * @enum {string}
+     */
+    SessionPurpose: "execution" | "debug";
     /** SessionResource */
     SessionResource: {
       /**
@@ -9816,6 +10211,7 @@ export interface components {
         [key: string]: string;
       };
       preview: components["schemas"]["SessionPreview"] | null;
+      purpose: components["schemas"]["SessionPurpose"];
       /** Run Count */
       run_count: number | null;
       /**
@@ -10093,6 +10489,8 @@ export interface components {
       session_labels?: {
         [key: string]: string;
       };
+      /** @default execution */
+      session_purpose?: components["schemas"]["SessionPurpose"];
       /** Thread Labels */
       thread_labels?: {
         [key: string]: string;
@@ -10162,6 +10560,42 @@ export interface components {
       target_run_id: string | null;
       /** Thread Id */
       thread_id: string;
+    };
+    /** StoredMemoryScope */
+    StoredMemoryScope: {
+      /**
+       * Availability
+       * @default unresolved
+       * @constant
+       */
+      availability?: "unresolved";
+      /** Environment Id */
+      environment_id: string;
+      /** Id */
+      id: string;
+      /** Provider Identity */
+      provider_identity: string;
+      /** Scope */
+      scope: string;
+      /** Subject Id */
+      subject_id: string;
+      /**
+       * Supports Changes
+       * @default false
+       */
+      supports_changes?: boolean;
+      /**
+       * Supports Revisions
+       * @default true
+       */
+      supports_revisions?: boolean;
+    };
+    /** StoredScopeCollection */
+    StoredScopeCollection: {
+      /** Items */
+      items: components["schemas"]["StoredMemoryScope"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
     };
     /** SubagentOverride-Input */
     "SubagentOverride-Input": {
@@ -10403,6 +10837,7 @@ export interface components {
       role: string;
       /** Session Id */
       session_id: string;
+      session_purpose: components["schemas"]["SessionPurpose"];
       /**
        * Updated At
        * Format: date-time
@@ -25152,6 +25587,442 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["MemoryProviderReferenceCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_scopes: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        environment_id?: string | null;
+        subject_id?: string | null;
+        conversation_scope_id?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["StoredScopeCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_scopes_scope_id_documents: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        scope_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["FileDocumentCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_memory_scopes_scope_id_documents: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        scope_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DocumentInput"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ManagedDocumentMutation"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_scopes_scope_id_documents_document_id: {
+    parameters: {
+      query?: {
+        version?: number | null;
+      };
+      header?: never;
+      path: {
+        scope_id: string;
+        document_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ManagedMemoryDocument"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_workspaces_workspace_memory_scopes_scope_id_documents_document_id: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        "If-Match": string;
+      };
+      path: {
+        scope_id: string;
+        document_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReviseDocument"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ManagedDocumentMutation"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  delete_workspaces_workspace_memory_scopes_scope_id_documents_document_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scope_id: string;
+        document_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_scopes_scope_id_documents_document_id_revisions: {
+    parameters: {
+      query?: {
+        before_version?: number | null;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        scope_id: string;
+        document_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ManagedMemoryDocument"][];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_scopes_scope_id_documents_document_id_toc: {
+    parameters: {
+      query?: {
+        version?: number | null;
+      };
+      header?: never;
+      path: {
+        scope_id: string;
+        document_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentHeading"][];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_scopes_scope_id_organization: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        scope_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["OrganizationStatus"][];
         };
       };
       /** @description Invalid request. */

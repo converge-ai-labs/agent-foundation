@@ -47,6 +47,7 @@ process:
   terminal_update_check: true
   log_level: INFO
   log_format: pretty
+  max_object_bytes: 268435456  # Restart-bound; see Local Storage and Recovery.
 
 input:
   long_text_threshold_chars: 8000

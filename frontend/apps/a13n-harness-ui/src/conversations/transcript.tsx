@@ -13,10 +13,12 @@ import {
   restoreReadingAnchor,
   type ReadingAnchor,
 } from "./reading-anchor";
-import { ArrowClockwise, CaretDown, CaretRight } from "@phosphor-icons/react";
+import { ArrowClockwise } from "@phosphor-icons/react";
+import { ExecutionDetails } from "./execution-details";
 import { ToolActivity } from "./tool-call";
 import {
   activityKind,
+  describeTool,
   MAX_ACTIVITY_TOOLS,
   savedToolGroups,
   type ToolView,
@@ -561,7 +563,6 @@ function Turn({
   onSavedEntries?: (entries: Schema<"TranscriptEntry">[]) => void;
   continuation?: string | null;
 }) {
-  const [expanded, setExpanded] = useState<boolean>();
   const complete =
     turn?.final_position != null &&
     rows.every((row) => row.position !== undefined);
@@ -591,60 +592,65 @@ function Turn({
     (row) =>
       !input.includes(row) && !final.includes(row) && !following.includes(row),
   );
-  const open = expanded ?? !complete;
+  const latest = process.at(-1);
+  const latestTool = latest?.kind === "tools" ? latest.tools.at(-1) : undefined;
+  const toolInfo = latestTool ? describeTool(latestTool) : undefined;
+  const preview = complete
+    ? "View the steps behind this response"
+    : toolInfo
+      ? `${toolInfo.label} ${toolInfo.summary} · ${toolInfo.phase}`
+      : latest?.kind === "assistant"
+        ? latest.text.replace(/\s+/g, " ").trim().slice(0, 180)
+        : latest?.kind === "thinking"
+          ? "Reasoning…"
+          : "View the available execution steps";
   return (
     <section data-turn-id={id} className={styles.turn} tabIndex={-1}>
       <Rows rows={input} threadId={threadId} />
       {(process.length > 0 || missing) && (
-        <div className={styles.execution}>
-          <button
-            type="button"
-            aria-expanded={open}
-            className={styles.executionToggle}
-            onClick={() => setExpanded(!open)}
-          >
-            <span className={styles.executionTitle}>
-              {open ? (
-                <CaretDown aria-hidden="true" />
-              ) : (
-                <CaretRight aria-hidden="true" />
+        <ExecutionDetails
+          complete={complete}
+          preview={preview}
+          summary={
+            <>
+              {!!turn?.tool_count && (
+                <span>
+                  {" "}
+                  · {turn.tool_count}{" "}
+                  {turn.tool_count === 1 ? "tool call" : "tool calls"}
+                </span>
               )}
-              Execution details
-            </span>
-            {!!turn?.tool_count && (
-              <span>
-                {" "}
-                · {turn.tool_count}{" "}
-                {turn.tool_count === 1 ? "tool call" : "tool calls"}
-              </span>
-            )}
-            {!!turn?.steering_count && (
-              <span>
-                {" "}
-                · {turn.steering_count}{" "}
-                {turn.steering_count === 1
-                  ? "additional input"
-                  : "additional inputs"}
-              </span>
-            )}
-          </button>
-          {loadDetails && turn ? (
-            <ExecutionHistory
-              threadId={threadId}
-              continuation={continuation}
-              turn={turn}
-              entries={entries}
-              process={process}
-              open={open}
-              missing={missing}
-              onSavedEntries={onSavedEntries}
-            />
-          ) : (
-            <ExecutionReader open={open}>
-              <Rows rows={process} threadId={threadId} continuation />
-            </ExecutionReader>
-          )}
-        </div>
+              {!!turn?.steering_count && (
+                <span>
+                  {" "}
+                  · {turn.steering_count}{" "}
+                  {turn.steering_count === 1
+                    ? "additional input"
+                    : "additional inputs"}
+                </span>
+              )}
+            </>
+          }
+        >
+          {(open) =>
+            loadDetails && turn ? (
+              <ExecutionHistory
+                threadId={threadId}
+                continuation={continuation}
+                turn={turn}
+                entries={entries}
+                process={process}
+                open={open}
+                missing={missing}
+                onSavedEntries={onSavedEntries}
+              />
+            ) : (
+              <ExecutionReader open={open}>
+                <Rows rows={process} threadId={threadId} continuation />
+              </ExecutionReader>
+            )
+          }
+        </ExecutionDetails>
       )}
       <Rows rows={final} threadId={threadId} continuation copyOutput />
       <Rows rows={following} threadId={threadId} continuation />
@@ -789,6 +795,7 @@ function ExecutionReader({
         follow.current = false;
       }}
       onKeyDown={(event) => {
+        if (event.key === "Escape") return;
         event.stopPropagation();
         if (["ArrowUp", "PageUp", "Home"].includes(event.key))
           follow.current = false;

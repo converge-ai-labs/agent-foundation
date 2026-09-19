@@ -23,6 +23,7 @@ from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.assets.staging import AssetStaging
 from a13n_service.connectivity.connectors.composition import ConnectorProviders
 from a13n_service.connectivity.execution import ExternalToolRuntime
+from a13n_service.connectivity.file_delivery import FileDelivery
 from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.native_actions import NativeObservationFactory
 from a13n_service.environments.capacity import CapacityLimits
@@ -36,6 +37,7 @@ from a13n_service.ids import new_object_id
 from a13n_service.interactions.queue_drain import QueueDrain
 from a13n_service.interactions.scheduling import AttemptScheduler
 from a13n_service.interactions.worker import WorkerExecutionLoop
+from a13n_service.memory.organization import MemoryOrganizer
 from a13n_service.observability import ObservabilityRuntime
 from a13n_service.process.attempts import WorkerAttempts
 from a13n_service.process.background import BackgroundTask
@@ -161,6 +163,8 @@ async def build_worker_runtime(
         response_max_bytes=settings.connectivity.response_max_bytes,
         timeout_seconds=settings.connectivity.total_timeout_seconds,
     )
+    staging = await AssetStaging.create(shared.storage.files_root, limiter=shared.storage.file_limiter)
+    assets = AssetObjectStore(shared.storage.objects, staging)
     external_tools = ExternalToolRuntime(
         shared.storage.sessions,
         shared.secret_protector,
@@ -171,11 +175,10 @@ async def build_worker_runtime(
         http,
         clients.credentials,
         observations=observations,
+        files=FileDelivery(AssetCatalog(shared.storage.sessions, assets)),
     )
 
     skills = SkillRuntimePreparer(shared.storage.sessions, execution.skill_package_store)
-    staging = await AssetStaging.create(shared.storage.files_root, limiter=shared.storage.file_limiter)
-    assets = AssetObjectStore(shared.storage.objects, staging)
     asset_publication = AssetRuntime(
         shared.storage.sessions, AssetPublisher(assets, staging, max_size_bytes=settings.assets.max_size_bytes), assets
     )
@@ -259,7 +262,21 @@ async def build_worker_runtime(
                 shutdown=image_test_worker.shutdown,
             ),
         )
+    organization_tasks: tuple[BackgroundTask, ...] = ()
+    if shared.memories is not None:
+        organizer = MemoryOrganizer(
+            shared.memories, shared.storage.objects, execution.native_model_factory, execution.live_model_providers
+        )
+        organization_tasks = (
+            BackgroundTask(
+                "memory_organization",
+                organizer.run,
+                organizer.is_draining,
+                partial(organizer.shutdown, timeout_seconds=125),
+            ),
+        )
     background_tasks = [
+        *organization_tasks,
         execution_task,
         *image_test_tasks,
         BackgroundTask(

@@ -23,7 +23,7 @@ from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.inheritance import inherited_run_fields
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.memory.models import MemoryProviderRecord
-from a13n_service.storage import transaction
+from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
 
 from tests.hooks.support import hook_actor
@@ -680,3 +680,163 @@ async def test_cutover_downgrade_preserves_revocation_fences(runtime_memory, int
         scope = await session.get(ScopeRecord, binding.scope_id)
         assert scope.binding_floor > binding.scope_version
         assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "eb41d745e5d0"
+
+
+async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
+    runtime_memory,
+    interaction_sessions,
+    tmp_path,
+    monkeypatch,
+):
+    import os
+    from pathlib import Path
+
+    from a13n_harness import AgentSpec, HarnessBuilder
+    from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
+    from a13n_harness.providers.environment.local_envd.runtime import (
+        LocalEnvdProviderRuntime,
+        TemporaryLocalEnvdRuntimeAllocator,
+    )
+    from a13n_harness.providers.memory import MemoryProviderCatalog
+    from a13n_harness.providers.memory.builtins import FILESYSTEM
+    from a13n_harness.providers.memory.documents import DocumentInput
+    from a13n_service.memory.models import MemoryProviderRecord, MemoryStorageRecord
+    from pydantic_ai.models.function import FunctionModel
+
+    executable = os.environ.get("A13N_ENVD_TEST_BINARY")
+    if not executable:
+        pytest.skip("Native file memory requires envd")
+    memory, _service, run, context, _document, _calls, binding, verifier = runtime_memory
+    catalog = MemoryProviderCatalog((FILESYSTEM,))
+    memory.catalog = memory.authorizer.catalog = catalog
+    async with transaction(interaction_sessions) as session:
+        provider = await session.get(MemoryProviderRecord, binding.provider_id)
+        provider.type, provider.configuration = "filesystem", {}
+    run = run.model_copy(update={"environment_id": "env_1234567890abcdef"})
+    monkeypatch.setattr("a13n_service.memory.file_runtime.utc_now", lambda: NOW)
+    capability = bot_memory_capability(
+        memory,
+        run=run,
+        binding=binding,
+        verifier=verifier,
+        agent_id=run.agent_id,
+        current_context=lambda: context,
+        filesystem=True,
+    )
+    assert capability and capability.document_factory
+    original = capability.document_factory
+    captured = []
+
+    async def factory(agent_context):
+        store = await original(agent_context)
+        captured.append(store)
+        await store.create_document(
+            DocumentInput(
+                kind="semantic",
+                title="Bot decision",
+                description="Group decision",
+                text="Use Python",
+                path="semantic/decision.md",
+            ),
+            request_key="bot-file-test",
+        )
+        return store
+
+    capability.document_factory = factory
+
+    async def model(messages, info):
+        assert "Bot decision" in repr(messages)
+        assert "memory_revise" in {tool.name for tool in info.function_tools}
+        yield "done"
+
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    provider = LOCAL_ENVD
+    config = provider.validate_environment(schema_version="1", value={"workspace": {"path": str(workspace)}})
+    for _ in range(2):
+        environment = provider.construct(
+            environment_id=run.environment_id,
+            configuration=config,
+            state=None,
+            runtime=LocalEnvdProviderRuntime(
+                executable=Path(executable),
+                allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+            ),
+        )
+        harness = HarnessBuilder().build(
+            AgentSpec(), model=FunctionModel(stream_function=model), output_type=str, capabilities=(capability,)
+        )
+        assert (await harness.run("Recall", environment=environment)).output_or_raise() == "done"
+    assert captured[0].store_id == captured[1].store_id
+    async with short_session(interaction_sessions) as session:
+        stored = await session.get(MemoryStorageRecord, captured[0].store_id)
+        assert stored.scope_kind == "conversation" and stored.subject_id == binding.scope_id
+
+
+async def test_bot_organization_rechecks_live_membership_and_current_opt_in_after_completion(
+    runtime_memory,
+    interaction_sessions,
+    interaction_object_store,
+    platform_state,
+):
+    from a13n_service.bots.memory.access import subject
+    from a13n_service.bots.memory.bindings import RunMemoryBindingRecord
+    from a13n_service.interactions.attempts import AttemptExecutionService
+    from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
+    from a13n_service.interactions.outcomes import RunOutcomeService
+    from a13n_service.interactions.state import CompletedOutcomeCandidate
+    from a13n_service.memory.models import MemoryStorageRecord
+
+    from tests.lifecycle_support import test_lifecycle_writer
+
+    from .test_attempt_execution import _completed_state
+
+    _, _, run, context, _, _, binding, verifier = runtime_memory
+    store_id = "mstore_botauto1234567"
+    async with transaction(interaction_sessions) as session:
+        account = await session.get(AccountSettingsRecord, ACCOUNT)
+        account.auto_organize = True
+        accepted = await session.get(RunMemoryBindingRecord, run.id)
+        accepted.auto_organize = True
+        scope = await session.get(ScopeRecord, binding.scope_id)
+        scope.settings_json = {**scope.settings_json, "auto_organize": True}
+        session.add(
+            MemoryStorageRecord(
+                id=store_id,
+                target_digest="a" * 64,
+                organization_id=ORGANIZATION_ID,
+                workspace_id=WORKSPACE_ID,
+                provider_identity=binding.provider_id,
+                subject=subject(scope).value,
+                scope_kind="conversation",
+                subject_id=scope.id,
+                environment_id="env_botauto12345678",
+                root="/memory",
+                backing_identity="test:1",
+                initialized=True,
+            )
+        )
+    states = RunStateStore(interaction_object_store)
+    current = await states.read(ORGANIZATION_ID, run.id)
+    lifecycle = test_lifecycle_writer()
+    candidate = _completed_state(
+        current.envelope,
+        context.run_attempt_id,
+        context.attempt_number,
+        outcome=CompletedOutcomeCandidate(output="Done", output_text="Done"),
+    )
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: NOW, lifecycle=lifecycle)
+    stored = await execution.publish_checkpoint(context, states, current, candidate)
+    await RunOutcomeService(
+        interaction_sessions, RunPayloadStore(interaction_object_store), clock=lambda: NOW, lifecycle=lifecycle
+    ).commit_state_outcome(context, stored)
+    await verifier.verify_organization(run.id, store_id)
+    platform_state["members"][binding.external_conversation_id] = False
+    with pytest.raises(ApplicationError, match="Conversation access cannot be confirmed"):
+        await verifier.verify_organization(run.id, store_id)
+    platform_state["members"][binding.external_conversation_id] = True
+    async with transaction(interaction_sessions) as session:
+        scope = await session.get(ScopeRecord, binding.scope_id)
+        scope.settings_json = {**scope.settings_json, "auto_organize": False}
+    with pytest.raises(ApplicationError, match="organization is disabled"):
+        await verifier.verify_organization(run.id, store_id)

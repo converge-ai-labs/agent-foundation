@@ -39,6 +39,7 @@ from .identity import target_identity as scoped_target_identity
 from .local_directory import instance_configuration, managed_local_directory
 from .models import (
     EnvironmentCommandRecord,
+    EnvironmentFileUseRecord,
     EnvironmentProviderRecord,
     EnvironmentRecord,
 )
@@ -132,6 +133,15 @@ class EnvironmentLifecycle:
             binding, row, provider = await lock_run_environment_use(
                 session, environment_id, attempt, self.capacity, now, mount_name=mount_name
             )
+            if await session.scalar(
+                select(EnvironmentFileUseRecord.id)
+                .where(
+                    EnvironmentFileUseRecord.environment_id == environment_id,
+                    EnvironmentFileUseRecord.expires_at > utc_now(),
+                )
+                .limit(1)
+            ):
+                raise EnvironmentOperationBusy("An existing-target file operation is in progress")
             if row.operation_id is not None:
                 if row.operation_expires_at is not None and assume_utc(row.operation_expires_at) > now:
                     raise EnvironmentOperationBusy("Environment lifecycle operation is in progress")

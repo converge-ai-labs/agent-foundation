@@ -1,6 +1,6 @@
 # Long-term memory
 
-Service provides tenant-scoped memory through reusable **Memory Providers**, without storing memory content in its database. **Mem0 OSS is the primary built-in backend**; Mem0 Platform uses an independent native SDK adapter. Each Agent revision explicitly selects a Provider. Credentials are encrypted, write-only Provider fields, never Agent JSON, model prompts, or Run state.
+Service provides tenant-scoped memory through reusable **Memory Providers**, without storing memory content in its database. **Mem0 OSS is the primary built-in backend**; Mem0 Platform uses an independent native SDK adapter. Each Agent revision explicitly selects memory entries. Mem0 supplies records; File-based supplies versioned Markdown documents inside an authorized Environment. Credentials are encrypted, write-only Provider fields, never Agent JSON, model prompts, or Run state.
 
 Memory is optional: starting Service does not require a Mem0 server, credentials, or an Agent memory selection. Local `make dev` and `make setup` leave it disabled unless you manually enable `dev/mem0/local.toml`; `MEM0_CONFIG` selects an alternative local configuration. Native integration tests also require separate explicit opt-in. See the [local OSS walkthrough](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/mem0) for startup and configuration.
 
@@ -10,7 +10,7 @@ Console provides schema-driven Memory Provider setup, an Agent Memory section, a
 
 For OSS, connect an existing native Mem0 server providing `GET /memories` with `top_k`, `POST /search`, and memory CRUD. No upstream patch, custom route, replacement image, or database access is required. The server separately owns its embedding/LLM configuration and storage. Service does not proxy model configuration or migrate embeddings.
 
-1. Read available definitions from `GET /api/v1/memory-provider-types`. Built-ins are `mem0_oss` and `mem0_platform`; installed external packages appear only after deployment selection.
+1. Read available definitions from `GET /api/v1/memory-provider-types`. Built-ins are `mem0_oss`, `mem0_platform`, and credentialless `filesystem`; installed external packages appear only after deployment selection.
 2. Create a Workspace Provider with `POST /api/v1/workspaces/{workspace}/memory-providers`:
 
 ```json
@@ -36,9 +36,50 @@ timeout_seconds = 30
 
 Control and Worker use the same pinned Provider packages and `provider_plugins.enabled` selection. They acquire resource credentials at dispatch rather than keeping a deployment-wide memory client. See [configuration reference](configuration-reference.md#memory) for the timeout and [deployment extensions](configuration.md) for package selection.
 
-## Enable an Agent
+## File-based memory and multiple entries
 
-Include this field in the Agent revision's `config`:
+In Console, open an Agent's **Memory** section and choose **Use file memory**, or **Add file memory** beside an existing Mem0 selection. Each entry has a unique tool prefix and an explicit purpose. Add another entry to combine document memory and native Mem0 records; writes are never mirrored automatically.
+
+```yaml
+memory:
+  entries:
+    - name: project
+      mode: documents
+      description: Project requirements, decisions, and procedures.
+      backend:
+        type: filesystem
+        configuration:
+          storage:
+            root: /memory
+      scope: thread
+      recall_required: true
+    - name: preferences
+      mode: records
+      description: Personal preferences used for personalization.
+      backend:
+        provider_id: memprov_0123456789abcdef0123
+      scope: user
+```
+
+An inline File-based entry needs no Memory Provider credential or Provider administration. A managed `filesystem` Provider can share immutable target configuration instead. The default root is `/memory` inside the current Run Environment, not a path on the Worker. An explicit `storage.environment_id` must be the primary Environment or an already accepted additional Run mount. Current memory grants and Environment file permissions both apply.
+
+The first use durably retains the exact target and store identity. Reconnection checks that identity and the store marker. Replacing an Environment, losing a marker, or detaching an explicitly selected mount makes the entry unavailable; none creates a replacement empty corpus. A pending initialization with no marker also requires explicit recovery. A directory name alone does not make sandbox storage persistent: configure the backing mount and retention policy through the Environment provider.
+
+The current write implementation supports POSIX Direct Local and EIP Environments advertising `file.commit`. Other native cloud adapters are unsupported until they supply the same conditional publication boundary. Use a supported Environment for file memory. Optional unavailable entries contribute an explicit unavailable notice; `recall_required: true` stops before model work.
+
+Document tools expose index, search, bounded reads, headings, immutable revisions, conditional edits, and deletion. Each entry contributes navigation to model context; document bodies load on demand. References and tools retain their entry prefix. Renaming an entry does not move its corpus. Deleting a document erases its stored revisions; removing an entry from Agent configuration does not delete its files.
+
+Bot accounts can select a managed `filesystem` Provider. Each conversation keeps a separate corpus on its accepted Run Environment. File memory currently supports group-only visibility; installation-wide sharing remains available for Mem0. Account and group read/save controls and live membership verification still apply. Keep the same retained Environment to reuse its documents across Runs.
+
+In Console, open **Memory → File-based memory**, choose a saved store, then create, read, edit, inspect revisions, or delete documents. The Bot memory page opens the same browser for its selected conversation. Editing requires the displayed version and ETag; a stale edit fails without overwriting the newer document. Episodic documents are immutable. Deletion removes the document and its retained revisions. Management access requires a currently running, retained Environment with the same backing generation and current Environment-use permission. It never starts or recreates a target. A bounded file-use lease protects each operation against retention and replacement.
+
+**Automatic organization** is opt-in on a document entry, or on both a Bot account and group. It adds model work after successful durable Run completion, using that Run's accepted model. The Worker extracts at most four candidates with bounded input and token usage, ignores exact duplicates, and defers low-confidence or conflicting changes. It rechecks current permissions and the organization switch before publication; disabling organization cancels eligible pending work. Source references identify completed Runs admitted to the same corpus. Extraction plans remain in Environment files, while SQL retains work identities, leases, and content-free outcomes. Retries reuse confirmed plans and stable mutation keys; unknown publication outcomes require inspection. Deleting a document invalidates older organization plans in that corpus, preventing those jobs from restoring forgotten content. **Organization activity** shows recent task outcomes; deferred candidates do not participate in ordinary recall.
+
+Automatic organization does not perform corpus-wide rewriting or promote procedures to Skills. Source-linked file imports, public change-query APIs, and a deferred-candidate review editor remain unavailable. See [the Harness implementation and limits](../a13n-harness/context-and-memory.md#embedded-filesystem-documents).
+
+## Existing single-Provider selection
+
+Existing single-Provider configurations remain accepted. New compositions use `entries` above; the legacy form is:
 
 ```json
 {

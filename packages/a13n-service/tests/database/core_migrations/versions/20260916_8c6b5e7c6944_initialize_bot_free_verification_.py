@@ -1613,7 +1613,6 @@ def upgrade() -> None:
         sa.Column("provider_id", sa.String(length=72), nullable=False),
         sa.Column("template_revision_id", sa.String(length=72), nullable=True),
         sa.Column("ownership", sa.String(length=16), nullable=False),
-        sa.Column("access", sa.String(length=16), nullable=False),
         sa.Column("external_configuration", sa.JSON(), nullable=True),
         sa.Column("state", sa.JSON(), nullable=True),
         sa.Column("target_identity", sa.String(length=256), nullable=True),
@@ -2068,7 +2067,6 @@ def upgrade() -> None:
         sa.Column("configuration_context", sa.JSON(none_as_null=True), nullable=True),
         sa.Column("configuration_draft_id", sa.String(length=72), nullable=True),
         sa.Column("environment_id", sa.String(length=72), nullable=True),
-        sa.Column("environment_access", sa.String(length=16), nullable=True),
         sa.Column("environment_use_started_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
@@ -2141,7 +2139,7 @@ def upgrade() -> None:
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("sealed_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint(
-            "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
+            "environment_id IS NOT NULL OR environment_use_started_at IS NULL",
             name=op.f("ck_runs_environment_selection_valid"),
         ),
         sa.CheckConstraint(

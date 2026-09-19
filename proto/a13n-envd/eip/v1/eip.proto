@@ -58,6 +58,9 @@ service EnvironmentInteractionProtocol {
   rpc FileWriteText(FileWriteTextParams) returns (FileWriteTextResult) {
     option (eip_method) = { jsonrpc_method: "file.write_text" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE };
   }
+  rpc FileCommit(FileCommitParams) returns (FileCommitResult) {
+    option (eip_method) = { jsonrpc_method: "file.commit" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_TERMINAL_EVIDENCE introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE };
+  }
   rpc FileOpenWriter(FileWriterOpenParams) returns (FileWriterOpenResult) {
     option (eip_method) = { jsonrpc_method: "file.open_writer" kind: METHOD_KIND_REQUEST_RESPONSE replay_class: REPLAY_CLASS_ACTIVE_ONLY introduced_major: 0 introduced_minor: 1 error_family: ERROR_FAMILY_RESOURCE transfer_action: TRANSFER_ACTION_OPEN transfer_direction: TRANSFER_DIRECTION_CLIENT_TO_SERVER };
   }

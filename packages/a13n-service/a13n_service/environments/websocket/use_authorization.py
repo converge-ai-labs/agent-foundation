@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from a13n_harness import EnvironmentAccess
 from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from sqlalchemy import literal, or_, select, union_all
@@ -31,17 +30,15 @@ class ClientUseAuthorization:
                 RunRecord.id.label("run_id"),
                 literal("workspace").label("name"),
                 RunRecord.environment_id.label("environment_id"),
-                RunRecord.environment_access.label("access"),
-            ).where(RunRecord.environment_id.is_not(None), RunRecord.environment_access.is_not(None)),
+            ).where(RunRecord.environment_id.is_not(None)),
             select(
                 RunEnvironmentMountRecord.run_id,
                 RunEnvironmentMountRecord.name,
                 RunEnvironmentMountRecord.environment_id,
-                RunEnvironmentMountRecord.access,
             ),
         ).subquery()
         query = (
-            select(RunRecord, EnvironmentRecord, RunAttemptRecord.lease_expires_at, bindings.c.access)
+            select(RunRecord, EnvironmentRecord, RunAttemptRecord.lease_expires_at)
             .join(RunAttemptRecord, RunRecord.current_run_attempt_id == RunAttemptRecord.id)
             .join(ThreadRecord, RunRecord.thread_id == ThreadRecord.id)
             .join(SessionRecord, RunRecord.session_id == SessionRecord.id)
@@ -74,7 +71,7 @@ class ClientUseAuthorization:
         if mount_name is not None:
             query = query.where(bindings.c.name == mount_name)
         # Before binding the carrier, any accepted association proves eligibility.
-        # Each mount subsequently obtains its own exact access policy.
+        # Each mount is independently authorized before use.
         query = query.limit(1)
         try:
             async with short_session(self._sessions) as session:
@@ -83,7 +80,7 @@ class ClientUseAuthorization:
                     raise EnvironmentError(
                         "The Attempt has no current accepted Environment use", code="environment_forbidden"
                     )
-                run, environment, expires_at, access = selected
+                run, environment, expires_at = selected
                 await authorize_persisted_agent_principal_actions(
                     session,
                     principal=run.to_resource().authority_principal,
@@ -96,10 +93,7 @@ class ClientUseAuthorization:
                     raise EnvironmentError(
                         "The Attempt lease expired during use admission", code="environment_forbidden"
                     )
-                return (
-                    EnvironmentAccess(access).permission_set().operations
-                    & EnvironmentAccess(environment.access).permission_set().operations
-                )
+                return frozenset(EnvironmentAction)
         except AuthorizationError as error:
             raise EnvironmentError("The Run Principal cannot use this mount", code="environment_forbidden") from error
         except Exception as error:

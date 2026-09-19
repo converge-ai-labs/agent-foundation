@@ -25,7 +25,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, ValidationError, model_validator
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
-from starlette.websockets import WebSocketDisconnect
+from starlette.websockets import WebSocketDisconnect, WebSocketState
 
 from a13n_harness_ui import __version__
 from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
@@ -547,6 +547,11 @@ def create_webui(
     @server.delete("/api/push/subscriptions/{subscription_id}", status_code=204)
     async def unsubscribe_push(subscription_id: str) -> Response:
         await app().unsubscribe_push(subscription_id)
+        return Response(status_code=204)
+
+    @server.post("/api/push/subscriptions/{subscription_id}/activity", status_code=204)
+    async def record_push_activity(subscription_id: str) -> Response:
+        await app().record_push_activity(subscription_id)
         return Response(status_code=204)
 
     @server.post("/api/push/subscriptions/{subscription_id}/test", response_model=PushTestResult)
@@ -1507,7 +1512,7 @@ def create_webui(
             # A stalled connection cannot retain channel tasks indefinitely.
             with fail_after(10):
                 async with sending:
-                    if closing:
+                    if closing or socket.application_state is WebSocketState.DISCONNECTED:
                         raise WebSocketDisconnect(code=1001)
                     await socket.send_text(frame.model_dump_json())
 
@@ -1520,7 +1525,10 @@ def create_webui(
                     # The transport marks itself disconnected before its close
                     # send completes; observers must share this lock and state.
                     closing = True
-                    await socket.close(code=code, reason=reason)
+                    # A failed transport send also disconnects Starlette, before
+                    # its observer's exception cancels the heartbeat task.
+                    if socket.application_state is not WebSocketState.DISCONNECTED:
+                        await socket.close(code=code, reason=reason)
 
         try:
             async with create_task_group() as group:

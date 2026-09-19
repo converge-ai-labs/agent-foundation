@@ -15,7 +15,8 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_workspace,
 )
-from a13n_service.memory.resources import require_provider as require_memory_provider
+from a13n_service.memory.domain import memory_provider_ids
+from a13n_service.memory.resources import require_memory_configuration
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.models.settings import effective_settings
@@ -138,19 +139,20 @@ class AgentInvocationFreezer:
                 raise map_model_error(error) from error
             memory = prepared.merged.memory
             if memory is not None:
-                if authored.memory is None or authored.memory.provider_id != memory.provider_id:
+                if set(memory_provider_ids(memory)) - (
+                    set(memory_provider_ids(authored.memory)) if authored.memory else set()
+                ):
                     await authorize_workspace(
                         session,
                         actor=prepared.actor,
                         workspace_id=prepared.workspace_id,
                         action=WorkspaceAction.memory_provider_read,
                     )
-                await require_memory_provider(
+                await require_memory_configuration(
                     session,
+                    selection=memory,
                     organization_id=prepared.organization_id,
                     workspace_id=prepared.workspace_id,
-                    provider_id=memory.provider_id,
-                    eligible=True,
                     catalog=self._memory_provider_catalog,
                 )
             original_web = web_selection(authored.toolsets)

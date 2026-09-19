@@ -63,7 +63,6 @@ class ServiceSandboxes(ServiceEnvironments):
             {
                 "name": "E2B lifecycle " + provider["id"],
                 "provider_id": provider["id"],
-                "access": "full",
                 "preparation": preparation,
                 "configuration": {"template": self.pool.settings.template, "timeout_seconds": timeout},
                 "retention": {"idle": {"stop_after": stop_after, "delete_after": delete_after}},

@@ -15,6 +15,7 @@ import tempfile
 from collections.abc import AsyncGenerator, AsyncIterable, AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path, PurePosixPath
+from threading import Event
 from typing import TYPE_CHECKING, Any
 
 from pathspec.gitignore import GitIgnoreSpec
@@ -22,6 +23,7 @@ from pathspec.gitignore import GitIgnoreSpec
 from .._file_patterns import PathPattern, PatternError, content_pattern
 from .._file_search import search_text_file
 from ..files import (
+    FileCommitRequest,
     FileCopyResult,
     FileEntriesResult,
     FileKind,
@@ -206,6 +208,29 @@ class LocalFileOperator:
         self._generation = generation
         self._operations = itertools.count(1)
         self._closed = False
+
+    async def commit(self, request: FileCommitRequest) -> FileMutationResult:
+        from .commit import publish
+
+        self._require_open()
+        if self._read_only:
+            raise EnvironmentError("Direct Local root is read-only", code="environment_denied")
+        cancelled = Event()
+        task = asyncio.create_task(
+            asyncio.to_thread(
+                publish, self._root, request, max_file_bytes=self._policy.max_value_bytes, cancelled=cancelled
+            )
+        )
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled.set()
+            try:
+                await asyncio.shield(task)
+            except Exception:
+                pass
+            raise
+        return FileMutationResult(path=request.root, receipt=self._receipt())
 
     def close(self) -> None:
         self._closed = True

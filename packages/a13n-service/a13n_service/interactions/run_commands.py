@@ -16,7 +16,6 @@ from a13n_service.agents.invocation_resolution import (
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
 from a13n_service.connectivity.selection_domain import ConnectionRunSelection
-from a13n_service.environments.selection import Omitted
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
@@ -103,6 +102,12 @@ class RunCommands:
         origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
         environment = request.environment
+        if request.session_id is not None and "session_purpose" in request.model_fields_set:
+            raise InteractionCommandError(
+                "session_purpose_immutable",
+                "Session purpose can only be supplied when creating a Session.",
+                category=ErrorCategory.invalid_request,
+            )
         if workspace_id != actor.workspace_id:
             raise command_not_found()
         require_idempotency_key(idempotency_key)
@@ -140,6 +145,7 @@ class RunCommands:
             if request.session_id is None:
                 now = self._clock()
                 session = Session(
+                    purpose=request.session_purpose,
                     id=session_id,
                     organization_id=prepared_input.invocation.organization_id,
                     workspace_id=workspace_id,
@@ -294,9 +300,6 @@ class RunCommands:
             inherited_environment_id=source.environment_id
             if inherit_parent_environment
             else thread.default_environment_id,
-            environment_access_ceiling=source.environment_access
-            if inherit_parent_environment and environment is Omitted.UNSET
-            else None,
             prepared_assets=prepared_assets,
         )
 
@@ -545,7 +548,6 @@ class RunCommands:
                 frozen=frozen,
                 environment=environment,
                 inherited_environment_id=source.environment_id,
-                environment_access_ceiling=source.environment_access if environment is Omitted.UNSET else None,
             )
             prepared_input = None
         else:
@@ -561,7 +563,6 @@ class RunCommands:
                 submitted=request.input,
                 environment=environment,
                 inherited_environment_id=source.environment_id,
-                environment_access_ceiling=source.environment_access if environment is Omitted.UNSET else None,
             )
 
         async def accept(selected: PreparedCommandInput | None) -> RunAcceptanceReceipt:

@@ -19,8 +19,9 @@ from a13n_service.storage import short_session
 
 from .connectors.management import decode_credentials
 from .domain import JsonObject
+from .file_delivery import FileDelivery, SendFileArguments
 from .naming import source_key
-from .native_actions import NativeAction, NativeObservationFactory
+from .native_actions import NativeAction, NativeObservationFactory, action
 from .native_context import AccountRunContext, InboundRunContext, NativeToolContext, authorized_account
 from .providers.registry import require_native_provider
 from .toolsets import local_capability
@@ -40,6 +41,7 @@ async def native_capability(
     *,
     attempt: AttemptContext | None = None,
     observations: NativeObservationFactory | None = None,
+    files: FileDelivery | None = None,
 ) -> MCP[AgentContext] | None:
     if not context.allowed_actions:
         return None
@@ -69,6 +71,36 @@ async def native_capability(
 
     configuration, credentials, generation, _ = await source()
     actions = _actions(context, configuration, credentials, http, endpoints)
+    file_action = None
+    if (
+        files is not None
+        and attempt is not None
+        and isinstance(context, InboundRunContext)
+        and context.provider_key in {"lark", "slack"}
+    ):
+
+        async def send_file(arguments: SendFileArguments):
+            current_configuration, current_credentials, current_generation, current_version = await source()
+
+            async def file_guard() -> None:
+                _, _, latest_generation, latest_version = await source()
+                if latest_generation != current_generation or latest_version != current_version:
+                    raise ValueError("native_source_changed")
+
+            return await files.send(
+                arguments,
+                actor=scope.actor,
+                run_id=attempt.run_id,
+                context=context,
+                configuration=current_configuration,
+                credentials=current_credentials,
+                http=http,
+                endpoints=endpoints,
+                guard=file_guard,
+            )
+
+        file_action = action(f"{context.provider_key}.send_file", SendFileArguments, send_file)
+        actions[file_action.definition.name] = file_action
     definitions = tuple(item.definition for item in actions.values())
 
     async def call(name: str, arguments: JsonObject) -> JsonValue:
@@ -80,6 +112,8 @@ async def native_capability(
             configuration = current_configuration
             actions = _actions(context, configuration, credentials, http, endpoints)
             generation = current_generation
+            if file_action is not None:
+                actions[file_action.definition.name] = file_action
         selected = actions.get(name)
         if selected is None:
             raise ValueError("native_action_unavailable")

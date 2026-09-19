@@ -1,4 +1,4 @@
-"""Environment template configurations, access modes, and unused instances."""
+"""Environment template configurations, provider capabilities, and unused instances."""
 
 from pathlib import Path
 
@@ -28,7 +28,6 @@ async def local_workspace(client: Client, base: str, provider_id: str, root: Pat
         json={
             "name": name,
             "provider_id": provider_id,
-            "access": "full",
             "preparation": "on_run",
             "retention": {"idle": {"stop_after": None, "delete_after": None}},
             "configuration": {
@@ -48,20 +47,19 @@ async def local_workspace(client: Client, base: str, provider_id: str, root: Pat
 async def environments(client: Client, base: str, catalog: dict, settings: Settings) -> dict:
     provider = await local_provider(client, base)
     scenarios = {}
-    for name, access in (
-        ("Read-only reference files", "read_only"),
-        ("Writable draft files", "read_write"),
-        ("Archived template_config", "full"),
+    for name, read_only in (
+        ("Read-only reference files", True),
+        ("Writable draft files", False),
+        ("Archived template_config", False),
     ):
         root = settings.filesystem.root / name.lower().replace(" ", "-")
         template_config = {
             "provider_id": provider["id"],
-            "access": access,
             "preparation": "on_run",
             "retention": {"idle": {"stop_after": None, "delete_after": None}},
             "configuration": {
-                "root": {"path": str(root)},
-                "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}],
+                "root": {"path": str(root), "read_only": read_only},
+                "shell_profiles": [] if read_only else [{"profile_id": "default", "executable": "/bin/sh"}],
             },
         }
         template = await client.request(
@@ -81,7 +79,7 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
         directory = root / "environments" / instance["id"]
         directory.mkdir(parents=True, mode=0o700, exist_ok=True)
         (directory / "README.md").write_text("# Fictional local workspace\nNo customer content.\n")
-        scenarios["environment_" + access] = instance["id"]
+        scenarios["environment_" + ("reference" if read_only else "draft")] = instance["id"]
         if name == "Read-only reference files":
             await client.request(
                 "POST",

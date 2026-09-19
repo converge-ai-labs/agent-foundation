@@ -12,6 +12,7 @@ from a13n_service.connectivity.connections.models import ConnectionRecord
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.digests import digest_request
 from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentTemplateRevisionRecord
+from a13n_service.memory.domain import memory_provider_ids
 from a13n_service.memory.models import MemoryProviderRecord
 from a13n_service.models.models import ModelProviderRecord
 from a13n_service.skills.models import SkillRecord, SkillRevisionRecord
@@ -80,7 +81,8 @@ async def dependency_digest(
     for _, selection in provider_selections(web_selection(prepared.config.toolsets)):
         await observe(WebProviderRecord, selection.provider_id)
     if prepared.config.memory is not None:
-        await observe(MemoryProviderRecord, prepared.config.memory.provider_id)
+        for provider_id in memory_provider_ids(prepared.config.memory):
+            await observe(MemoryProviderRecord, provider_id)
     for selection in prepared.config.subagents.values():
         if selection.environment.template_revision_id is not None:
             provider_id = await session.scalar(

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterable, AsyncIterator
-from typing import Literal, Protocol
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -12,6 +12,36 @@ from .models import EnvironmentOperationReceipt
 type FileWriteMode = Literal["create", "replace", "upsert", "append"]
 type FileKind = Literal["file", "directory", "symlink", "other"]
 type FileIgnoreMode = Literal["none", "git"]
+
+
+class FileCommitCondition(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    path: str
+    digest: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+
+
+class FileCommitWrite(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    path: str
+    text: str
+
+
+class FileCommitRequest(BaseModel):
+    """Conditional ordered publication, with recoverable partial completion."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+    root: str
+    conditions: tuple[FileCommitCondition, ...] = Field(default=(), max_length=256)
+    directories: tuple[str, ...] = Field(default=(), max_length=256)
+    writes: tuple[FileCommitWrite, ...] = Field(default=(), max_length=256)
+    removals: tuple[str, ...] = Field(default=(), max_length=256)
+
+
+@runtime_checkable
+class FileCommitOperator(Protocol):
+    """Optional native capability; ordinary file writes are not a fallback."""
+
+    async def commit(self, request: FileCommitRequest) -> FileMutationResult: ...
 
 
 class FileTextResult(BaseModel):

@@ -52,7 +52,7 @@ _DAEMON_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 _DAEMON_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 _DAEMON_MAX_TRANSFER_FRAME_BYTES = 4 * 1024 * 1024
 _READ_OPERATIONS = ("stat", "read_text", "open_reader", "list", "find", "search")
-_WRITE_OPERATIONS = ("write_text", "open_writer", "mkdir", "patch_text", "copy", "remove", "move")
+_WRITE_OPERATIONS = ("commit", "write_text", "open_writer", "mkdir", "patch_text", "copy", "remove", "move")
 _PYTHON_RELEASE_VERSION = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?:rc(?P<rc>[1-9][0-9]*))?$")
 
 

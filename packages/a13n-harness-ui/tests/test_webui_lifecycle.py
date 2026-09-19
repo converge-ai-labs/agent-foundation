@@ -23,7 +23,7 @@ from a13n_harness_ui.webui import create_webui, run
 from a13n_harness_ui.webui_lifecycle import RequestLog, WebUIServer
 from anyio import Event, fail_after, sleep, sleep_forever
 from starlette.routing import Route
-from starlette.websockets import WebSocket
+from starlette.websockets import WebSocket, WebSocketDisconnect, WebSocketState
 from websockets.sync.client import connect
 
 from .test_app import _settings, _write_configuration
@@ -73,6 +73,51 @@ async def test_realtime_shutdown_serializes_close_with_pending_channel_send(tmp_
             await endpoint(WebSocket({"type": "websocket"}, receive, send))
     assert [message["type"] for message in messages] == ["websocket.accept", "websocket.close"]
     assert messages[-1]["code"] == 1001
+
+
+@pytest.mark.anyio
+async def test_realtime_shutdown_does_not_close_after_a_failed_channel_send(tmp_path) -> None:
+    stopping, ping_sent, failed = Event(), Event(), Event()
+    messages = []
+    received = 0
+
+    @asynccontextmanager
+    async def opened_app():
+        async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
+            yield app
+
+    async def receive():
+        nonlocal received
+        received += 1
+        if received == 1:
+            return {"type": "websocket.connect"}
+        if received == 2:
+            return {"type": "websocket.receive", "text": "{}"}
+        await ping_sent.wait()
+        # Reproduce the state left by a failed observer send before the task
+        # group propagates its disconnect and cancels the shutdown heartbeat.
+        with pytest.raises(WebSocketDisconnect):
+            await socket.send_text('{"channel":"summary"}')
+        assert socket.application_state is WebSocketState.DISCONNECTED
+        failed.set()
+        stopping.set()
+        await sleep_forever()
+
+    async def send(message):
+        messages.append(message)
+        if message["type"] == "websocket.send":
+            if "channel" in json.loads(message["text"]):
+                raise OSError("The server transport closed during shutdown")
+            ping_sent.set()
+
+    socket = WebSocket({"type": "websocket"}, receive, send)
+    server = create_webui(opened_app, api_key=None, stopping=stopping)
+    endpoint = next(route.endpoint for route in server.routes if route.path == "/api/realtime/connect")
+    async with server.router.lifespan_context(server):
+        with fail_after(2):
+            await endpoint(socket)
+    assert failed.is_set()
+    assert not any(message["type"] == "websocket.close" for message in messages)
 
 
 @pytest.mark.anyio

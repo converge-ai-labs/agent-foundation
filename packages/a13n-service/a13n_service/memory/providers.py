@@ -4,7 +4,8 @@ import json
 from datetime import timedelta
 
 from a13n_harness.providers.memory import MemoryProviderCatalog
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, cast, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -67,7 +68,10 @@ class MemoryProviderService:
                 MemoryProviderDefinition(
                     type=key,
                     display_name=definition.display_name,
+                    supports_records=definition.supports_records,
                     supports_documents=definition.supports_documents,
+                    supports_revisions=definition.supports_revisions,
+                    supports_changes=definition.supports_changes,
                     authentication=definition.authentication,
                     setup_url=definition.setup_url,
                     setup_label=definition.setup_label,
@@ -279,7 +283,12 @@ class MemoryProviderService:
                 .join(AgentRecord, AgentRecord.id == AgentRevisionRecord.agent_id)
                 .where(
                     AgentRecord.organization_id == scope.organization_id,
-                    AgentRevisionRecord.config["memory"]["provider_id"].as_string() == provider_id,
+                    or_(
+                        AgentRevisionRecord.config["memory"]["provider_id"].as_string() == provider_id,
+                        cast(AgentRevisionRecord.config, JSONB)["memory"]["entries"].contains(
+                            [{"backend": {"provider_id": provider_id}}]
+                        ),
+                    ),
                 )
             )
             if workspace_id is not None:

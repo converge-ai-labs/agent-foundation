@@ -61,7 +61,6 @@ class Thread:
     current_run_id: str | None
     default_environment_id: EnvironmentId | None
     default_environment_working_directory: str | None
-    default_environment_access: EnvironmentAccess | None
 
     created_at: datetime
     updated_at: datetime
@@ -117,14 +116,14 @@ Thread mutations apply these resource-local effects. The linked operation contra
 
 The conceptual model materializes as one row in `threads`. Supported relational backends preserve the same validation and query semantics.
 
-| Column group       | Columns                                                                                         | Relational contract                                                                                                      |
-| ------------------ | ----------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Identity and scope | `id`, `version`, `queue_version`, `organization_id`, `session_id`                               | `id` is the primary key; advancement version is positive; queue version is non-negative; Session membership is immutable |
-| Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_run_id`                                      | Immutable validated provenance; origin references can cross Session only for an authorized Session fork                  |
-| Advancement        | `head_run_id`, `current_run_id`                                                                 | Same-Thread Run references updated only by accepted advancement or outcome commit                                        |
-| Environment        | `default_environment_id`, `default_environment_working_directory`, `default_environment_access` | Mutable complete binding; Run acceptance freezes its own selection and updates these fields atomically                   |
-| Inbox accounting   | `next_delivery_sequence`, `pending_count`, `pending_bytes`                                      | Internal FIFO allocation and pending-capacity state, serialized by the owning Thread row lock                            |
-| Time               | `created_at`, `updated_at`                                                                      | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                                    |
+| Column group       | Columns                                                           | Relational contract                                                                                                      |
+| ------------------ | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Identity and scope | `id`, `version`, `queue_version`, `organization_id`, `session_id` | `id` is the primary key; advancement version is positive; queue version is non-negative; Session membership is immutable |
+| Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_run_id`        | Immutable validated provenance; origin references can cross Session only for an authorized Session fork                  |
+| Advancement        | `head_run_id`, `current_run_id`                                   | Same-Thread Run references updated only by accepted advancement or outcome commit                                        |
+| Environment        | `default_environment_id`, `default_environment_working_directory` | Mutable complete binding; Run acceptance freezes its own selection and updates these fields atomically                   |
+| Inbox accounting   | `next_delivery_sequence`, `pending_count`, `pending_bytes`        | Internal FIFO allocation and pending-capacity state, serialized by the owning Thread row lock                            |
+| Time               | `created_at`, `updated_at`                                        | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                                    |
 
 The Thread row stores `next_delivery_sequence`, `pending_count`, and `pending_bytes` as non-null internal columns. Every new Thread initializes them to `1`, `0`, and `0`, respectively, including root, fork, and child creation. `next_delivery_sequence` remains positive and pending counters remain non-negative. These columns are omitted from public Thread representations and have no independent identity or lifecycle. [Active Execution](19-agent-control-active-execution.md#thread-inbox) owns sequence allocation, capacity reservation, and release semantics.
 

@@ -378,7 +378,7 @@ schema_version: "1"
 kind: environment_profile
 id: environment-sandbox
 name: Shadow Sandbox
-provider_key: a13n.local-envd
+provider_key: local_envd
 provider_schema_version: "1"
 provider_configuration: {}
 adapter_key: a13n.local-envd-project-root

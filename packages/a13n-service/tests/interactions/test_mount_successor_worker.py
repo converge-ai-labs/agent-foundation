@@ -52,7 +52,7 @@ async def test_retry_worker_installs_inherited_mount_before_first_model_request(
         revision.config = {**revision.config, "default_environment_template_id": None}
     states, source, initial = await _accept_root(sessions, objects)
     async with transaction(sessions) as database:
-        database.add(accepted_mount(source.id, target.id, name="computer", access="read_write"))
+        database.add(accepted_mount(source.id, target.id, name="computer"))
     await cancel(sessions, objects, source, utc_now())
     seed = RunStateSeed(
         run_id="run_7777777777777777",

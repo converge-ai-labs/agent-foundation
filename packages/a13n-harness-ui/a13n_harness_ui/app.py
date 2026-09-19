@@ -177,6 +177,8 @@ from a13n_harness_ui.page_presence import (
     WorkbenchPage,
 )
 from a13n_harness_ui.push_models import PushConfiguration, PushSubscriptionInput, PushSubscriptionView, PushTestResult
+from a13n_harness_ui.restart import GracefulRestart
+from a13n_harness_ui.restart_recovery import recover_restart
 from a13n_harness_ui.root_execution import RootRunExecutor
 from a13n_harness_ui.root_input import append_surface_hint, detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -341,8 +343,10 @@ class HarnessUiApp:
         candidate_error: HarnessUiError | None = None,
         share_computer: bool = False,
         web_push: WebPush | None = None,
+        restart_coordinator: GracefulRestart,
     ) -> None:
         self._settings = settings
+        self._restart = restart_coordinator
         self._web_push = web_push
         self._store = store
         self._api_keys = ApiKeyStore(store.layout.root / "auth.json")
@@ -397,13 +401,12 @@ class HarnessUiApp:
 
     async def subscribe_push(self, subscription: PushSubscriptionInput) -> PushSubscriptionView:
         async with self._operation():
-            followed = []
-            for thread_id in subscription.thread_ids:
-                thread = await self._store.threads.get(thread_id)
-                if thread is not None and thread.parent_thread_id is None:
-                    followed.append(thread_id)
-            subscription = subscription.model_copy(update={"thread_ids": tuple(followed)})
             return PushSubscriptionView(subscription_id=await self._push().repository.save(subscription))
+
+    async def record_push_activity(self, subscription_id: str) -> None:
+        async with self._operation():
+            if not await self._push().repository.mark_active(subscription_id):
+                raise HarnessUiError("Push subscription not found.", code="not_found")
 
     async def unsubscribe_push(self, subscription_id: str) -> None:
         async with self._operation():
@@ -2242,7 +2245,7 @@ class HarnessUiApp:
                 code="app_stopping",
             )
 
-    async def _stop(self) -> None:
+    async def _stop(self, *, graceful: bool = False) -> None:
         get_logger(__name__).debug("Stopping App: finishing admitted operations…")
         async with self._operation_lock:
             if self._state is not AppState.ready:
@@ -2250,6 +2253,8 @@ class HarnessUiApp:
             self._state = AppState.stopping
             idle = self._operations_idle
         await self._root_runs.stop_admission()
+        if graceful:
+            await self._restart.drain(self._settings.shutdown_timeout_seconds)
         await self._subagent_operator.stop_admission()
 
         with move_on_after(self._settings.shutdown_timeout_seconds) as drain_scope:
@@ -2437,7 +2442,9 @@ async def open_harness_ui_app(
                     refresh=grok_refresh,
                 )
 
+            restart_coordinator = GracefulRestart(store.restarts, enabled=host_mode == "webui")
             operator = HarnessUiSubagentOperator(
+                restart_coordinator=restart_coordinator,
                 observation=observation,
                 store=store,
                 configurations=configurations,
@@ -2455,6 +2462,7 @@ async def open_harness_ui_app(
             )
             work = ThreadWorkService(store, summary_hub, operator.active_execution_ids)
             root_executor = RootRunExecutor(
+                restart_coordinator=restart_coordinator,
                 work=work,
                 store=store,
                 threads=threads,
@@ -2477,6 +2485,7 @@ async def open_harness_ui_app(
                 web_push = WebPush(store, push_client)
             root_runs = RootRunCoordinator(
                 root_executor,
+                restart_coordinator=restart_coordinator,
                 notify=web_push.enqueue if web_push is not None else None,
                 summary_hub=summary_hub,
                 observation=observation,
@@ -2547,6 +2556,7 @@ async def open_harness_ui_app(
                 candidate_error=candidate_error,
                 share_computer=share_computer,
                 web_push=web_push,
+                restart_coordinator=restart_coordinator,
             )
             if host_mode == "webui":
                 thread_tools = ThreadToolController(
@@ -2571,18 +2581,23 @@ async def open_harness_ui_app(
                     app._logins = LoginSessions(background, app._account)
                     background.start_soon(app._prune_thread_files_periodically)
                     background.start_soon(app._maintain_read_models)
+                    await recover_restart(restart_coordinator, root_runs, operator)
                     if web_push is not None:
                         background.start_soon(web_push.run)
                     if configuration_path is not None:
                         background.start_soon(app._observe_configuration)
+                    graceful = False
                     try:
                         yield app
+                        graceful = True
                     finally:
                         with CancelScope(shield=True):
-                            await app._stop()
+                            await app._stop(graceful=graceful)
                         background.cancel_scope.cancel()
             finally:
                 await app._close_collaborators()
+                with CancelScope(shield=True):
+                    await restart_coordinator.commit()
                 app._state = AppState.closed
     finally:
         if app is not None:

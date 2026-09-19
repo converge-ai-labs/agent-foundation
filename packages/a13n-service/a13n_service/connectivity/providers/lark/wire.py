@@ -18,6 +18,7 @@ from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.ingress.provider import (
     ExternalRef,
     InboundEvent,
+    ProviderActionDecision,
     ProviderCompleteDecision,
     ProviderEventDecision,
     ProviderHttpResponse,
@@ -76,6 +77,8 @@ def normalize_payload(payload: JsonObject, *, identity: LarkIdentity, received_a
     event_type = header.get("event_type")
     if event_type == "url_verification":
         return _challenge_response(payload)
+    if event_type == "card.action.trigger":
+        return _normalize_action(payload)
     if event_type != _MESSAGE_EVENT:
         return ProviderCompleteDecision(response=lark_acknowledgement())
     event_id = header.get("event_id")
@@ -240,7 +243,20 @@ def _message_content(
             raise ValueError("invalid text content")
         return _remove_mentions(text, bot_mention_keys), {}
     if message_type == "post":
-        return _post_text(content, bot_mention_keys, bot_open_id=bot_open_id), {}
+        text = _post_text(content, bot_mention_keys, bot_open_id=bot_open_id)
+        localized = [value for key, value in sorted(content.items()) if isinstance(value, dict)]
+        body = localized[0] if localized else content
+        paragraphs = body.get("content")
+        attachments: list[JsonValue] = []
+        if isinstance(paragraphs, list):
+            for paragraph in paragraphs:
+                if not isinstance(paragraph, list):
+                    continue
+                for node in paragraph:
+                    key = node.get("image_key") if isinstance(node, dict) and node.get("tag") == "img" else None
+                    if isinstance(key, str) and 0 < len(key) <= 2048:
+                        attachments.append({"type": "image", "image_key": key})
+        return text, {"attachments": attachments} if attachments else {}
     if message_type in _ATTACHMENT_TYPES:
         metadata = {
             key: value
@@ -359,3 +375,28 @@ def _json_response(body: JsonObject) -> ProviderHttpResponse:
 
 def _request_error(status_code: int, reason_code: str) -> ProviderRequestError:
     return ProviderRequestError(ProviderHttpResponse(status_code=status_code), reason_code=reason_code)
+
+
+def _normalize_action(payload: JsonObject) -> ProviderRequestDecision:
+    event = _object(payload.get("event")) or {}
+    operator = _object(event.get("operator")) or {}
+    context = _object(event.get("context")) or {}
+    action = _object(event.get("action")) or {}
+    value = _object(action.get("value")) or {}
+    if value.get("kind") != "a13n.task_control.v1":
+        return ProviderCompleteDecision(response=lark_acknowledgement())
+    try:
+        if event.get("host") != "im_message":
+            raise ValueError("unsupported card host")
+        return ProviderActionDecision.model_validate(
+            {
+                "action": value.get("action"),
+                "reference": value.get("run_id"),
+                "token": value.get("token"),
+                "actor_id": operator.get("open_id"),
+                "conversation_id": context.get("open_chat_id"),
+                "message_id": context.get("open_message_id"),
+            }
+        )
+    except (ValidationError, ValueError) as error:
+        raise _request_error(400, "invalid_card_action") from error

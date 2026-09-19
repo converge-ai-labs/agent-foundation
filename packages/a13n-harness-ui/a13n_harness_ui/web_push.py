@@ -73,7 +73,7 @@ class WebPush:
                         "path": f"/threads/{quote(thread_id, safe='')}",
                     }
                     async with create_task_group() as deliveries:
-                        for subscription in await self.repository.recipients(thread_id):
+                        for subscription in await self.repository.recipients():
                             deliveries.start_soon(self._deliver, subscription, payload)
                 except Exception:
                     # Provider failures are diagnostics, not execution failures.

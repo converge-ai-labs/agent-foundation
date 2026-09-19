@@ -144,3 +144,58 @@ class BotMemoryVerifier:
                 raise failure("memory_scope_not_found", "Memory scope not found.", ErrorCategory.not_found)
             await authorize(session, verified, scope, action)
         return verified
+
+    async def verify_organization(self, run_id: str, storage_id: str) -> None:
+        from a13n_service.memory.models import MemoryStorageRecord
+
+        from .organization import authorize_organization
+
+        async with short_session(self.sessions) as session:
+            storage = await session.get(MemoryStorageRecord, storage_id)
+            if storage is None:
+                raise failure("memory_scope_unavailable", "Memory storage is unavailable.")
+            await authorize_organization(session, run_id, storage, {})
+            scope = await session.get(ScopeRecord, storage.subject_id)
+            assert scope is not None
+            account = await session.get(AccountRecord, scope.account_id)
+            assert account is not None
+            scope_id, scope_version, account_id = scope.id, scope.version, account.id
+            audience, external_id = scope.audience, scope.external_conversation_id
+            credentials = account.credential_snapshot()
+            provider_key, config_version, config = (
+                account.provider_key,
+                account.provider_config_version,
+                dict(account.provider_config_json),
+            )
+        with anyio.fail_after(self.timeout_seconds):
+            probe = InstallationProbe(
+                self.http_client,
+                self.endpoint_validator,
+                provider_key=provider_key,
+                config_version=config_version,
+                config=config,
+                credentials=credentials,
+                protector=self.protector,
+            )
+            installation = await probe.installation()
+            observed = await probe.conversation(external_id)
+            if (
+                not installation.enabled
+                or observed.is_member is not True
+                or observed.is_active is not True
+                or observed.audience != audience
+            ):
+                raise failure("memory_scope_unverified", "Conversation access cannot be confirmed.")
+        async with short_session(self.sessions) as session:
+            storage = await session.get(MemoryStorageRecord, storage_id)
+            assert storage is not None
+            await authorize_organization(session, run_id, storage, {})
+            scope = await session.get(ScopeRecord, scope_id)
+            account = await session.get(AccountRecord, account_id)
+            if (
+                scope is None
+                or scope.version != scope_version
+                or account is None
+                or account.credential_generation != credentials.generation
+            ):
+                raise failure("memory_scope_unverified", "Conversation access changed.")

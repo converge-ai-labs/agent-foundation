@@ -45,7 +45,8 @@ def apply_unified_diff(
         match = _HUNK.match(line)
         if match is None:
             raise EnvironmentError("Unified diff contains an invalid hunk header.", code="environment_request_invalid")
-        old_start = int(match.group(1)) - 1
+        old_count = int(match.group(2) or "1")
+        old_start = int(match.group(1)) - (1 if old_count else 0)
         if old_start < source_index or old_start > len(source):
             raise EnvironmentError("Unified diff hunk is out of range.", code="environment_conflict")
         output.extend(source[source_index:old_start])

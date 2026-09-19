@@ -257,7 +257,12 @@ async def test_child_host_status_preserves_cancellation_and_reports_persistence_
         assert execution_id not in operator._active
         assert active.done.is_set()
 
+    async def finish_restart(*args):
+        return False
+
     operator = SimpleNamespace(
+        _restart=None,
+        _finish_restart=finish_restart,
         _consume_run=consume,
         _finish_result=finish,
         _publish_summary=publish,

@@ -79,13 +79,12 @@ async def test_additional_use_retains_only_its_target_after_first_use(
     [
         {"name": "workspace"},
         {"name": "../computer"},
-        {"access": "admin"},
         {"application_status": "ready"},
         {"applied_attempt_fence": 1},
         {"error": {"code": "unsafe-state"}},
     ],
 )
-async def test_mount_schema_rejects_invalid_identity_access_and_observation(
+async def test_mount_schema_rejects_invalid_identity_and_observation(
     interaction_sessions, interaction_object_store, client_environment, changes
 ):
     _, _, target = client_environment

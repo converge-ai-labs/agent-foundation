@@ -281,9 +281,15 @@ class ImmutableObjectStore:
         uncompressed = _canonical_json(envelope.model_dump(mode="json"))
         if len(uncompressed) > self._settings.max_object_bytes:
             raise StoreIntegrityError(
-                "Immutable object exceeds the configured uncompressed size limit.",
+                f"Immutable object requires {len(uncompressed)} uncompressed bytes; "
+                f"the configured limit is {self._settings.max_object_bytes} bytes. "
+                "Increase process.max_object_bytes and restart the application before retrying.",
                 code="object_too_large",
-                details={"object_kind": object_kind.value},
+                details={
+                    "object_kind": object_kind.value,
+                    "actual_bytes": len(uncompressed),
+                    "max_object_bytes": self._settings.max_object_bytes,
+                },
             )
         compressed = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(uncompressed)
         stage = self._layout.staging / f"{uuid4().hex}.json.zst.tmp"
@@ -358,8 +364,14 @@ class ImmutableObjectStore:
                 and frame.content_size > self._settings.max_object_bytes
             ):
                 raise ObjectIntegrityError(
-                    "Immutable object exceeds the configured uncompressed size limit.",
+                    f"Immutable object requires {frame.content_size} uncompressed bytes; "
+                    f"the configured limit is {self._settings.max_object_bytes} bytes. "
+                    "Increase process.max_object_bytes and restart the application before retrying.",
                     code="object_too_large",
+                    details={
+                        "actual_bytes": frame.content_size,
+                        "max_object_bytes": self._settings.max_object_bytes,
+                    },
                 )
             uncompressed = zstandard.ZstdDecompressor().decompress(
                 compressed,
@@ -375,8 +387,14 @@ class ImmutableObjectStore:
             ) from exc
         if len(uncompressed) > self._settings.max_object_bytes:
             raise ObjectIntegrityError(
-                "Immutable object exceeds the configured uncompressed size limit.",
+                f"Immutable object requires {len(uncompressed)} uncompressed bytes; "
+                f"the configured limit is {self._settings.max_object_bytes} bytes. "
+                "Increase process.max_object_bytes and restart the application before retrying.",
                 code="object_too_large",
+                details={
+                    "actual_bytes": len(uncompressed),
+                    "max_object_bytes": self._settings.max_object_bytes,
+                },
             )
         try:
             envelope = ObjectEnvelope.model_validate_json(uncompressed, strict=True)

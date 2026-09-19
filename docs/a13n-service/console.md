@@ -54,13 +54,13 @@ Manual **Stop target** and **Delete target** appear only when the Provider suppo
 
 ## Set up and manage memory
 
-1. Open Workspace settings → Providers → Memory. Organization administrators can instead create a shared Provider in Organization settings.
-2. Choose an installed backend type and fill its configuration and write-only credential fields. Saving does not test connectivity. Storage configuration cannot change after creation; create another Provider for another storage target.
-3. Open an Agent's Memory section, select the Provider, and choose the recall scope and behavior. Recall settings contain the result limit, optional similarity threshold, timeout, and required-recall option. Save the Agent revision to enable it. Off leaves stored records intact.
-4. Use **View agent memories**, **Thread memories** in a Session, or **Memories** in the Workspace sidebar. Contextual links open a new tab so unsaved Agent configuration and the conversation stay open.
-5. Select the Provider and scope, then choose **View memories**. **My memories** means your signed-in identity in this Workspace. An Agent uses its stable Agent ID; a Thread uses its stable Thread ID, even while you inspect an older Run. The loaded target remains identified while you adjust selectors.
+1. Open an Agent's **Memory** section. Enable **Personal preferences** to remember each user's language, working style, and background, or **Project memory** to keep requirements, decisions, and procedures in editable files. You can use either independently or both together.
+2. Personal preferences needs an enabled Mem0 Provider with credentials. **Manage memory providers** opens setup in a new tab without losing the Agent draft. Choose Mem0 OSS or Mem0 Platform under Workspace settings → Providers → Memory; organization administrators can also provide a shared backend. Saving a Provider does not test connectivity.
+3. Project memory works without a Provider resource. Files live in the run Environment and follow its storage lifetime. To reuse documents across conversations, select **This agent** and reuse the same Environment. Selecting a scope alone does not preserve or copy files.
+4. Personal preferences enables automatic recall by default. The Agent uses each entry's purpose to choose its memory tools; these presets do not add a hard-coded content classifier or automatically save every message. Open **Personal preference settings** or **Project memory settings** inside the enabled option to adjust its recall limits, file storage, memory tools, or optional organization. **Add custom memory** creates a separate entry when you need another purpose or storage configuration.
+5. Save the Agent revision to apply changes. Turning an option off leaves saved memory intact. Use **View agent memories**, the Session memory shortcut, or **Memories** in the Workspace sidebar to inspect authorized content. Contextual links open separately to preserve unsaved work.
 
-The **Memories** sidebar entry, Session shortcut, and an unconfigured Agent's Memory section stay hidden until a Memory Provider is configured. Inherited Organization Providers count too. Disabled Providers remain discoverable for diagnosis and recovery, but cannot be selected for new Agent bindings. Configure the first backend under **Settings → Providers → Memory**; that setup category remains available. Existing Agent selections remain visible if their Provider becomes unavailable, and direct content links remain usable for recovery. Catalog errors do not mean that no backend exists.
+Existing custom configurations appear separately, each with its own expandable editor. Missing, disabled, or inaccessible Providers do not clear an Agent's saved selection. Provider catalog errors do not mean no backend exists. File memory remains configurable without a Mem0 connection.
 
 The list shows loaded records, 20 per local page. A bounded backend response is not a total count or proof that an empty collection is exhaustive. **Load more records** appears only when the backend provides a continuation cursor. Semantic search runs independently against the backend and displays ranked matches; it is not a filter of the loaded page.
 
@@ -68,7 +68,7 @@ Open a record to inspect or edit it. Add and edit preserve text exactly, up to 8
 
 If a write cannot be confirmed, do not submit it again blindly. The dialog keeps the draft and offers **Inspect current state**. For adds, it shows semantic matches; a missing match does not prove that the add failed. Explicit acknowledgement permits another attempt, which may still create a duplicate. Provider creation has a similar saved-collection reconciliation flow, without exposing or comparing credentials.
 
-Changing a Provider selection does not migrate old records. Select the old Provider on the Memories page to inspect them while it remains enabled and eligible. There is no automatic conversation extraction, bulk deletion, history, or memory export. See [long-term memory](memory.md) for backend setup and API semantics.
+Changing a Provider selection does not migrate old records. Select the old Provider on the Memories page to inspect them while it remains enabled and eligible. Records are saved through explicit memory tools. File documents support version history and optional automatic organization; enabling it can make additional model calls. See [long-term memory](memory.md) for backend setup and API semantics.
 
 ## Work with conversations
 

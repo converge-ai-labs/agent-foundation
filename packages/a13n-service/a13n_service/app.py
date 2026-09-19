@@ -37,6 +37,7 @@ from a13n_service.iam.http.profile_router import router as profile_router
 from a13n_service.iam.http.recovery_router import router as recovery_router
 from a13n_service.interactions.threads import router as thread_router
 from a13n_service.lifecycle.router import router as lifecycle_router
+from a13n_service.memory.document_router import router as memory_document_router
 from a13n_service.memory.provider_router import router as memory_provider_router
 from a13n_service.memory.router import router as memory_router
 from a13n_service.models.providers import ProviderRegistry
@@ -203,6 +204,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(model_router)
         app.include_router(web_router)
         app.include_router(memory_router)
+        app.include_router(memory_document_router)
         app.include_router(bot_memory_router)
         app.include_router(memory_provider_router)
         app.include_router(skill_router)

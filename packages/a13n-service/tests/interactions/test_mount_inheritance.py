@@ -57,16 +57,13 @@ async def test_successor_acceptance_copies_mounts_atomically_with_fresh_observat
                     source.id,
                     environment.id,
                     name="first",
-                    access="read_only",
                     use_started_at=NOW,
                     application_status="ready",
                     applied_attempt_id=claim.attempt.id,
                     applied_attempt_fence=claim.attempt.attempt_number,
                     observed_at=NOW,
                 ),
-                accepted_mount(
-                    source.id, environment.id, name="second", access="full", created_at=NOW + timedelta(microseconds=1)
-                ),
+                accepted_mount(source.id, environment.id, name="second", created_at=NOW + timedelta(microseconds=1)),
             ]
         )
     seed = RunStateSeed(
@@ -169,7 +166,7 @@ async def test_successor_acceptance_copies_mounts_atomically_with_fresh_observat
                 .order_by(RunEnvironmentMountRecord.created_at)
             )
         ).all()
-        assert [(row.name, row.access) for row in rows] == [("first", "read_only"), ("second", "full")]
+        assert [row.name for row in rows] == ["first", "second"]
         for index, row in enumerate(rows):
             original = await database.get(RunEnvironmentMountRecord, (source.id, row.name))
             assert row.environment_id == environment.id

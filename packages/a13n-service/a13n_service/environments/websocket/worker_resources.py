@@ -5,8 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from a13n_harness import EnvironmentAccess
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentState
+from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
 from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from a13n_harness.providers.environment.remote_envd.environment import decode_state
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -25,8 +24,6 @@ if TYPE_CHECKING:
 class ClientUseTarget:
     state: EnvironmentState
     generation: int
-    access: str
-    permissions: frozenset[EnvironmentAction]
 
 
 class ClientUseResources:
@@ -58,9 +55,4 @@ class ClientUseResources:
             return ClientUseTarget(
                 state=state,
                 generation=row.generation,
-                access=binding.access,
-                permissions=(
-                    EnvironmentAccess(binding.access).permission_set().operations
-                    & EnvironmentAccess(row.access).permission_set().operations
-                ),
             )

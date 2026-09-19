@@ -184,6 +184,7 @@ fn build_descriptor(
         ("find", &["file.find"][..]),
         ("search", &["file.search"][..]),
         ("write_text", &["file.write_text"][..]),
+        ("commit", &["file.commit"][..]),
         (
             "open_writer",
             &[
@@ -1189,6 +1190,56 @@ impl EipHandler for Daemon {
                 let result = eip::FileWriteTextResult {
                     info,
                     bytes_written,
+                    receipt: receipt.clone(),
+                };
+                operation
+                    .finish(&result, Some(receipt))
+                    .map_err(map_ledger_error)?;
+                Ok(result)
+            });
+        drop(work);
+        self.await_owned_operation(&operation_id, owned).await
+    }
+
+    async fn file_commit(
+        &self,
+        params: eip::FileCommitParams,
+    ) -> Result<eip::FileCommitResult, EIPError> {
+        self.ensure_ready()?;
+        let (work, operation) = self.admit_owned_record("file.commit", &params.context, &params)?;
+        let operation = match operation {
+            BeginOutcome::Replay(value) => return self.decode_replay(value),
+            BeginOutcome::ReplayFailure(error) => return Err(*error),
+            BeginOutcome::New(operation) => operation,
+        };
+        let (operation, receipt) = mutation_receipt(operation, "file.commit")?;
+        let operation_id = params.context.operation_id.clone();
+        let resources = self.resources.clone();
+        let mounts = self.effective_surface()?.mounts.clone();
+        let owned = self
+            .operations
+            .spawn_owned(operation_id.clone(), async move {
+                let write =
+                    tokio::task::spawn_blocking(move || resources.commit(&mounts, &params)).await;
+                let files_written = match write {
+                    Ok(Ok(result)) => result,
+                    Ok(Err(error)) => {
+                        return Err(mutation_failure(
+                            operation,
+                            "file.commit",
+                            map_resource_error(error),
+                        ));
+                    }
+                    Err(_) => {
+                        return Err(mutation_failure(
+                            operation,
+                            "file.commit",
+                            protocol_error(ErrorType::InternalError, "resource worker failed"),
+                        ));
+                    }
+                };
+                let result = eip::FileCommitResult {
+                    files_written,
                     receipt: receipt.clone(),
                 };
                 operation

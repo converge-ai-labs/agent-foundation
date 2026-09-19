@@ -66,7 +66,9 @@ The nullable `thread_configuration.default_model_id` column belongs to the mutab
 
 The data root stores one lazily generated VAPID private key and browser subscription rows in additive `web_push_key` and `web_push_subscription` tables. The private key survives App restart; its public counterpart is returned by the authenticated configuration API. Treat data-root backups as sensitive: rows contain push endpoints and encryption auth secrets. They are not configuration resources, model-visible state, or access credentials for the WebUI API.
 
-An endpoint hash identifies one device subscription. A short transaction replaces its keys/origin, refreshes its activity time, and merges at most 256 recently opened root Thread identities so same-origin tabs do not overwrite each other's interest. Reads detach subscription values before network I/O. App subscription input drops missing and child Thread IDs. Inactive subscriptions older than 90 days are pruned during recipient selection; explicit removal is idempotent. Provider 404/410 removes the matching subscription unless its auth secret has since changed. A removed or changed subscription snapshot is rechecked before delivery.
+An endpoint hash identifies one device subscription. A short registration transaction replaces its keys/origin and refreshes `updated_at`, without recording activity. A separate existing-row activity update sets nullable `last_active_at` and refreshes `updated_at` using server time; a removed row is never recreated by activity. Recipient selection includes only `last_active_at > now - 6 hours`, with one captured `now`; null activity is ineligible. Reads detach subscription values before network I/O. Rows whose `updated_at` is older than 90 days are pruned during selection independently of the activity cutoff. Explicit removal is idempotent. Provider 404/410 removes the matching subscription unless its auth secret has since changed. A removed or changed subscription snapshot is rechecked before delivery.
+
+The activity migration removes `thread_ids_json` and adds nullable `last_active_at`, preserving endpoints, encryption keys, origin, retention timestamps, and VAPID identity. Existing rows start with unknown activity and become eligible only after a visible updated client reports activity. Downgrade restores non-null empty Thread interest lists without reconstructing discarded interests; older clients must repopulate them. It preserves subscriptions and the signing identity.
 
 Server restart retains subscriptions and identity, not queued reminders. Delivery is a bounded, best-effort current-App worker, without an outbox, acknowledgment history, durable retry schedule, or replay from saved completions. Only the WebUI App runs this worker; terminal-only Apps do not send push. Removing these additive tables during downgrade loses opt-ins and signing identity, not conversations or continuations. Browsers must explicitly reconnect if the signing identity changes. [Task notifications](webui/04-workbench-interaction.md#task-notifications) owns user opt-in, cleanup, and browser delivery behavior.
 
@@ -177,7 +179,7 @@ An admitted Run records the Thread configuration version and accepted generation
 
 ## Immutable Publication
 
-Immutable values are canonical, bounded, typed, and content-addressed. Publication follows:
+Immutable values are canonical, bounded, typed, and content-addressed. The restart-bound `process.max_object_bytes` setting limits each complete uncompressed object on publication and read. It defaults to 256 MiB and accepts 1 KiB through 1 GiB. This is not a Thread disk quota or a model-context budget; retained display history remains part of the checkpoint after context compaction. An oversized publication reports its actual byte count and configured limit without truncating the payload or advancing the selected reference. Lowering the limit can make previously saved larger objects unreadable until the limit is raised again. Publication follows:
 
 1. serialize and validate the complete payload;
 2. write a uniquely named file under the same storage root;
@@ -317,9 +319,9 @@ The profile digest reuses the accepted generation's canonical normalized content
 
 ## Recovery
 
-Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. Committed comments remain available through ordinary queries, without restoring page presence or shared drafts. It does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display.
+Startup validates retained values lazily and reloads the file configuration together with current Content Plugin directories. Committed comments remain available through ordinary queries, without restoring page presence or shared drafts. Ordinary startup does not restore root receipts, replay root input, restart a child segment, reconnect shell processes, infer process liveness, or manufacture a checkpoint from display. The completely finalized, single-use [graceful restart handoff](#graceful-restart-handoff) is the only automatic task-continuation path.
 
-A Thread resumes from its selected continuation using its current sticky configuration unless the next admission applies a patch. A Thread with no selected continuation starts its first Run from the immutable empty `HarnessState` created with `HarnessState.new()` when the Thread was inserted. The generated Harness `thread_id` is the Harness UI Thread ID. If selected resources are missing from the current accepted generation or cannot reconstruct against installed dependencies, the Run fails before dispatch; recovery does not fall back to the composition that produced the prior continuation.
+An ordinary Thread admission resumes from its selected continuation using its current sticky configuration unless the next admission applies a patch. A Thread with no selected continuation starts its first Run from the immutable empty `HarnessState` created with `HarnessState.new()` when the Thread was inserted. The generated Harness `thread_id` is the Harness UI Thread ID. If selected resources are missing from the current accepted generation or cannot reconstruct against installed dependencies, the Run fails before dispatch; recovery does not fall back to the composition that produced the prior continuation.
 
 | Last stored fact                      | Recovery behavior                                                               |
 | ------------------------------------- | ------------------------------------------------------------------------------- |
@@ -331,6 +333,30 @@ A Thread resumes from its selected continuation using its current sticky configu
 | Current Thread resource missing       | Preserve Thread and checkpoint; reject the next Run until configuration changes |
 
 External model, tool, and Environment effects can be unknown and may repeat after explicit retry or linked resume.
+
+## Graceful Restart Handoff
+
+A normal WebUI shutdown saves eligible work for a sequential restart. The [App lifecycle](05-runtime-subagents-and-surfaces.md#graceful-webui-restart) owns cooperative draining and finalization; the server owns signals and connections. No preparation API or UI action is required. An external operator or process supervisor owns stopping, installing, and starting the application. Only one execution-owning App participates at a time; overlapping or mixed-version execution owners are not supported for this workflow.
+
+One local handoff record references existing immutable compositions and checkpoints. It contains a generated batch identity, lifecycle state, task references, safe diagnostics, and restoration results. Each task reference identifies the original Thread and Run, root lineage, exact checkpoint and composition; a child also retains its execution, parent scope/composition, execution identities, and usage limits needed for reconstruction. It does not duplicate conversation history, store credentials, or become a root-input queue.
+
+```mermaid
+stateDiagram-v2
+    [*] --> ready: Normal shutdown fully finalizes paused work
+    ready --> consumed: Atomic startup consumption before reconstruction
+    consumed --> consumed: Save restoration results before model release
+    consumed --> ready: A later graceful shutdown saves new work
+```
+
+Pausing is an in-memory observation, not a durable `ready` fact. Normal shutdown saves each paused root continuation and each paused child checkpoint, completes Environment cleanup and state publication, then publishes `ready` only after all participating work has finalized. Drain timeout, cleanup failure, failed Environment state publication, or a missing checkpoint prevents publication of the entire batch; logs and ordinary saved history remain available. Abnormal context exit and forced termination do not authorize automatic recovery. Tasks which completed, suspended for a human decision, or were explicitly cancelled are excluded. The additive table migration preserves existing Threads and objects.
+
+The next WebUI startup atomically changes `ready` to `consumed` before reconstructing work. A second opener cannot consume the same batch. An interrupted attempt never automatically retries, even if no model request was sent. Consumption and its results are diagnostic history, never a global admission lock: no administrative reset is required, and a later graceful shutdown may replace the record.
+
+Recovery reconstructs fresh native collaborators from the captured compositions and exact saved checkpoints, with current credentials and compatible installed implementations. It does not substitute the latest Thread selection or synthesize a user “continue” prompt. Root tasks receive new process-local receipts and Run IDs on their original Threads. Child tasks receive new linked execution segments on their original child Threads; their old cancelled segment records a graceful-restart reason and identifies its successor. This internal exception requires the matching consumed handoff, exact checkpoint/composition, and no existing successor; it cannot enable ordinary resume of cancelled or lost children.
+
+The task forest is staged at its first model boundary before any restored model request is released and before App startup completes. A finite budget covers both reconstruction and reaching those boundaries. Descendants can reconstruct a historical parent scope without rerunning a completed parent. Parents receive only their own child-successor mapping and can inspect/control those successor IDs. Failure to reconstruct or reach the startup boundary cancels that root family's staged work while leaving other successfully staged families eligible. Restoration results, including safe failure reasons and successor correlations, are persisted before model release. They remain saved after another restart; `consumed` does not mean the continued tasks completed successfully.
+
+A pending human request remains at its saved deferred continuation without an invented answer or restarted timeout. Saved steering remains part of the Harness checkpoint; a new message or answer rejected during shutdown has no durable acceptance. Browser drafts, live streams, native terminals, and Run-local shell references are outside the handoff. Model, tool, and Environment effects retain their native uncertainty; this workflow provides neither exactly-once external effects nor crash recovery.
 
 ## Private Failure Diagnostics
 
@@ -360,7 +386,7 @@ The terminal failure presentation identifies the report path and the repository'
 06. Root receipts, input, and active Runs are not durable work records.
 07. Deferred response authority is the exact selected suspended continuation.
 08. Compact display never becomes Harness continuation state.
-09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery.
+09. Process loss never triggers implicit replay, takeover, PID inspection, heartbeat, lease, or lock-file recovery. Only a completely finalized graceful restart handoff authorizes single-use automatic continuation.
 10. Transactions remain short and outside file or external execution I/O.
 11. Published comments retain their original saved targets independently of the selected continuation; they never become continuation or execution authority.
 12. Comment schema upgrades preserve existing conversation data, and no successful publication falls back to transient storage.

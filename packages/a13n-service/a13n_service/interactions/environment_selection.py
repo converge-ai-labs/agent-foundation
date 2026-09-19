@@ -12,7 +12,7 @@ from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.environments.domain import EnvironmentSelection, ExistingEnvironmentSelection, NewEnvironmentSelection
 from a13n_service.environments.errors import invalid_environment
 from a13n_service.environments.models import EnvironmentProviderRecord, EnvironmentTemplateRevisionRecord
-from a13n_service.environments.selection import Omitted, allocate_selection, intersect_access, resolve_selection
+from a13n_service.environments.selection import Omitted, allocate_selection, resolve_selection
 from a13n_service.iam.authorization import WorkspaceAction, authorize_persisted_agent_principal_actions
 
 from .domain import Run
@@ -104,11 +104,10 @@ async def select_run_environment(
         choice = ExistingEnvironmentSelection(environment_id=source.environment_id) if source.environment_id else None
         if intent.requested is not Omitted.UNSET and intent.requested != choice:
             raise invalid_environment("Continuation must retain its source Run Environment")
-        run = run.model_copy(update={"environment_access": source.environment_access})
     else:
         raise TypeError("Run acceptance requires an explicit Environment intent")
     if choice is None:
-        return run.model_copy(update={"environment_id": None, "environment_access": None})
+        return run.model_copy(update={"environment_id": None})
     await authorize_persisted_agent_principal_actions(
         session,
         principal=run.authority_principal,
@@ -131,9 +130,8 @@ async def select_run_environment(
         now=run.created_at,
         labels=choice.labels if isinstance(choice, NewEnvironmentSelection) else None,
     )
-    access = intersect_access(environment.access, run.environment_access)
     await session.flush()
-    return run.model_copy(update={"environment_id": environment.id, "environment_access": access})
+    return run.model_copy(update={"environment_id": environment.id})
 
 
 async def queued_environment_choice(session: AsyncSession, submission_id: str) -> EnvironmentSelection | Omitted | None:

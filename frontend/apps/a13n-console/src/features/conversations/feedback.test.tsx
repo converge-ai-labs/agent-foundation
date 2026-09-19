@@ -3,7 +3,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
-import { ConfigurationFeedback } from "./feedback";
+import { RunFeedback } from "./feedback";
 
 const { post, accepted } = vi.hoisted(() => ({
   post: vi.fn(),
@@ -35,7 +35,7 @@ it("requires an explicit decision for every approval before sending the complete
   });
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ConfigurationFeedback
+      <RunFeedback
         accepted={accepted}
         run={
           {
@@ -99,7 +99,7 @@ it("submits a bounded denial reason with the existing feedback request", async (
   });
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ConfigurationFeedback
+      <RunFeedback
         run={
           {
             id: "run",
@@ -140,7 +140,7 @@ it("submits a bounded denial reason with the existing feedback request", async (
 it("falls back to JSON for malformed approval presentation", () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ConfigurationFeedback
+      <RunFeedback
         run={
           {
             id: "run",
@@ -177,7 +177,7 @@ function renderQuestions(
   });
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ConfigurationFeedback
+      <RunFeedback
         accepted={accepted}
         run={
           {
@@ -280,7 +280,7 @@ it("submits questions and approval decisions together without dropping either", 
   });
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <ConfigurationFeedback
+      <RunFeedback
         accepted={accepted}
         run={
           {

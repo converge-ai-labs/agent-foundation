@@ -131,9 +131,7 @@ async def test_switching_defaults_does_not_retarget_retry_or_reuse_template_allo
         first = (await session.get(RunRecord, first.id)).to_resource()
         thread = await session.get(ThreadRecord, first.thread_id)
         thread.default_environment_id = other.id
-        later = first.model_copy(
-            update={"id": "run_second1234567890", "environment_id": None, "environment_access": None}
-        )
+        later = first.model_copy(update={"id": "run_second1234567890", "environment_id": None})
         selected = await select_run_environment(
             session, run=later, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.thread
         )
@@ -200,7 +198,7 @@ async def test_historical_agent_choice_uses_current_template_revision_after_defa
         first_row = await session.get(RunRecord, first.id)
         first_environment_id = first_row.environment_id
         historical_run = first_row.to_resource().model_copy(
-            update={"id": "run_history12345678", "environment_id": None, "environment_access": None}
+            update={"id": "run_history12345678", "environment_id": None}
         )
         selected = await select_run_environment(
             session, run=historical_run, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.agent
@@ -533,7 +531,6 @@ async def test_postgresql_shared_approval_wait_is_idle_only_after_last_active_us
             update={
                 "session_id": shared_session.id,
                 "environment_id": original.environment_id,
-                "environment_access": original.environment_access,
             }
         )
         shared = run_record(shared_run)

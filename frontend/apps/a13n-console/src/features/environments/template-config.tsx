@@ -54,9 +54,6 @@ export function TemplateConfig({
     [version, setVersion] = useState(
       revision?.configuration_schema_version ?? "1",
     ),
-    [access, setAccess] = useState<Schema["EnvironmentAccess"]>(
-      revision?.access ?? "full",
-    ),
     [preparation, setPreparation] = useState<"on_run" | "on_use">(
       revision?.preparation ?? "on_run",
     );
@@ -158,7 +155,7 @@ export function TemplateConfig({
         provider_id: providerId,
         configuration: parsedConfiguration,
         configuration_schema_version: version,
-        access,
+
         preparation,
         retention: {
           idle: {
@@ -226,7 +223,7 @@ export function TemplateConfig({
       )}
       <FormSection
         title={t("Runtime")}
-        description={t("Provider, permissions, and environment configuration.")}
+        description={t("Provider and environment configuration.")}
       >
         <div className={styles.stack}>
           <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_150px]">
@@ -266,26 +263,6 @@ export function TemplateConfig({
                     label: provider.name,
                   })) ?? []
               }
-            />
-            <ChoiceField
-              readOnly={readOnly}
-              placeholder={t("Select access")}
-              value={access}
-              className="min-w-0"
-              onValueChange={(value) => {
-                if (
-                  value === "full" ||
-                  value === "read_only" ||
-                  value === "read_write"
-                )
-                  setAccess(value);
-              }}
-              label={t("Access permissions")}
-              options={[
-                { value: "full", label: t("Full access") },
-                { value: "read_write", label: t("Read and write") },
-                { value: "read_only", label: t("Read only") },
-              ]}
             />
           </div>
           {definition?.type === "direct_local" && (

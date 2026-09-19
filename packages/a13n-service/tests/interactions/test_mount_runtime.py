@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from datetime import timedelta
 
 import pytest
-from a13n_harness import AgentIdentityRef, AgentInstanceContext, EnvironmentAccess, EnvironmentMount
+from a13n_harness import AgentIdentityRef, AgentInstanceContext, EnvironmentMount
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.environments.mount_models import RunEnvironmentMountRecord
@@ -47,7 +47,7 @@ async def mounted_runtime(
         observations=store,
         current_attempt=lambda: attempt,
         prepare=prepare or candidate,
-        observe=lambda environment, access: EnvironmentMount(environment, access=EnvironmentAccess(access)),
+        observe=EnvironmentMount,
         clock=clock,
     )
     async with runtime.bind(
@@ -200,7 +200,6 @@ async def test_acceptance_during_preparation_waits_for_next_boundary(interaction
                         attempt.run_id,
                         environment_id,
                         name="later",
-                        access="full",
                         created_at=NOW + timedelta(microseconds=2),
                     )
                 )

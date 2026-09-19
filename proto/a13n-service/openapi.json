@@ -596,9 +596,6 @@
       "AddEnvironmentMountRequest": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess"
-          },
           "environment_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -614,8 +611,7 @@
         },
         "required": [
           "name",
-          "environment_id",
-          "access"
+          "environment_id"
         ],
         "title": "AddEnvironmentMountRequest",
         "type": "object"
@@ -872,7 +868,7 @@
           "memory": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/MemorySelection"
+                "$ref": "#/components/schemas/MemoryConfiguration"
               },
               {
                 "type": "null"
@@ -1031,7 +1027,7 @@
           "memory": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/MemorySelection"
+                "$ref": "#/components/schemas/MemoryConfiguration"
               },
               {
                 "type": "null"
@@ -1580,7 +1576,7 @@
           "memory": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/MemorySelection"
+                "$ref": "#/components/schemas/MemoryConfiguration"
               },
               {
                 "type": "null"
@@ -1755,7 +1751,7 @@
           "memory": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/MemorySelection"
+                "$ref": "#/components/schemas/MemoryConfiguration"
               },
               {
                 "type": "null"
@@ -2006,6 +2002,27 @@
           "updated_at"
         ],
         "title": "ApiKey",
+        "type": "object"
+      },
+      "Append": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "maxLength": 262144,
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "append",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "Append",
         "type": "object"
       },
       "ApplyDraftRequest": {
@@ -5225,6 +5242,11 @@
       "ConfigureScope": {
         "additionalProperties": false,
         "properties": {
+          "auto_organize": {
+            "default": false,
+            "title": "Auto Organize",
+            "type": "boolean"
+          },
           "enabled": {
             "default": true,
             "title": "Enabled",
@@ -7443,10 +7465,6 @@
       "CreateTemplateRequest": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess",
-            "default": "full"
-          },
           "configuration": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -7523,10 +7541,6 @@
       "CreateTemplateRevisionRequest": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess",
-            "default": "full"
-          },
           "configuration": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -8251,6 +8265,143 @@
         "title": "DocumentEntry",
         "type": "object"
       },
+      "DocumentHeading": {
+        "additionalProperties": false,
+        "properties": {
+          "end": {
+            "title": "End",
+            "type": "integer"
+          },
+          "level": {
+            "title": "Level",
+            "type": "integer"
+          },
+          "locator": {
+            "title": "Locator",
+            "type": "string"
+          },
+          "start": {
+            "title": "Start",
+            "type": "integer"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "level",
+          "locator",
+          "start",
+          "end"
+        ],
+        "title": "DocumentHeading",
+        "type": "object"
+      },
+      "DocumentInput": {
+        "additionalProperties": false,
+        "properties": {
+          "applicability": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicability"
+          },
+          "correction_of": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correction Of"
+          },
+          "description": {
+            "maxLength": 320,
+            "title": "Description",
+            "type": "string"
+          },
+          "effective_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Time"
+          },
+          "event_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Time"
+          },
+          "kind": {
+            "enum": [
+              "semantic",
+              "procedural",
+              "episodic"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Sources",
+            "type": "array"
+          },
+          "text": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "description",
+          "text",
+          "path"
+        ],
+        "title": "DocumentInput",
+        "type": "object"
+      },
       "DocumentInputContent": {
         "additionalProperties": true,
         "description": "A document input content fragment.",
@@ -8293,6 +8444,45 @@
           "source"
         ],
         "title": "DocumentInputContent",
+        "type": "object"
+      },
+      "DocumentNavigation": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "digest": {
+            "title": "Digest",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "digest",
+          "path",
+          "title",
+          "description"
+        ],
+        "title": "DocumentNavigation",
         "type": "object"
       },
       "DuplicateAgentRequest": {
@@ -8350,6 +8540,31 @@
         "title": "DuplicateAgentRequest",
         "type": "object"
       },
+      "Edit": {
+        "additionalProperties": false,
+        "properties": {
+          "edits": {
+            "items": {
+              "$ref": "#/components/schemas/Replacement"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Edits",
+            "type": "array"
+          },
+          "type": {
+            "const": "edit",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "edits"
+        ],
+        "title": "Edit",
+        "type": "object"
+      },
       "EmailChangeRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8377,9 +8592,6 @@
       "Environment": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess"
-          },
           "condition_since": {
             "format": "date-time",
             "title": "Condition Since",
@@ -8485,7 +8697,6 @@
           "provider_id",
           "template_revision_id",
           "ownership",
-          "access",
           "generation",
           "status",
           "retention_condition",
@@ -8495,15 +8706,6 @@
         ],
         "title": "Environment",
         "type": "object"
-      },
-      "EnvironmentAccess": {
-        "enum": [
-          "read_only",
-          "read_write",
-          "full"
-        ],
-        "title": "EnvironmentAccess",
-        "type": "string"
       },
       "EnvironmentCommand": {
         "additionalProperties": false,
@@ -8569,9 +8771,6 @@
       "EnvironmentDetail": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess"
-          },
           "condition_since": {
             "format": "date-time",
             "title": "Condition Since",
@@ -8695,7 +8894,6 @@
           "provider_id",
           "template_revision_id",
           "ownership",
-          "access",
           "generation",
           "status",
           "retention_condition",
@@ -9070,10 +9268,6 @@
       "EnvironmentTemplateRevision": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess",
-            "default": "full"
-          },
           "configuration": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -9307,6 +9501,33 @@
           }
         },
         "title": "ExtendedAgentCardPolicy",
+        "type": "object"
+      },
+      "FileDocumentCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DocumentNavigation"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "FileDocumentCollection",
         "type": "object"
       },
       "ForkRunRequest": {
@@ -10062,6 +10283,28 @@
           "webhook"
         ],
         "title": "InlineHookSubscriptionInput",
+        "type": "object"
+      },
+      "InlineMemoryBackend": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Configuration",
+            "type": "object"
+          },
+          "type": {
+            "const": "filesystem",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "title": "InlineMemoryBackend",
         "type": "object"
       },
       "InputAdapterConfig": {
@@ -11630,6 +11873,171 @@
         "title": "MCPToolCollection",
         "type": "object"
       },
+      "ManagedDocumentMutation": {
+        "properties": {
+          "change_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Change Id"
+          },
+          "document": {
+            "$ref": "#/components/schemas/ManagedMemoryDocument"
+          }
+        },
+        "required": [
+          "document",
+          "change_id"
+        ],
+        "title": "ManagedDocumentMutation",
+        "type": "object"
+      },
+      "ManagedMemoryBackend": {
+        "additionalProperties": false,
+        "properties": {
+          "provider_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Provider Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_id"
+        ],
+        "title": "ManagedMemoryBackend",
+        "type": "object"
+      },
+      "ManagedMemoryDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "applicability": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applicability"
+          },
+          "correction_of": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correction Of"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "description": {
+            "maxLength": 320,
+            "title": "Description",
+            "type": "string"
+          },
+          "effective_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Time"
+          },
+          "event_time": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Time"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "semantic",
+              "procedural",
+              "episodic"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "saved_at": {
+            "format": "date-time",
+            "title": "Saved At",
+            "type": "string"
+          },
+          "sources": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 64,
+            "title": "Sources",
+            "type": "array"
+          },
+          "text": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Text",
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 160,
+            "minLength": 1,
+            "title": "Title",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "kind",
+          "title",
+          "description",
+          "text",
+          "path",
+          "id",
+          "version",
+          "created_at",
+          "saved_at"
+        ],
+        "title": "ManagedMemoryDocument",
+        "type": "object"
+      },
       "Memory": {
         "additionalProperties": false,
         "properties": {
@@ -11705,6 +12113,137 @@
           "items"
         ],
         "title": "MemoryCollection",
+        "type": "object"
+      },
+      "MemoryConfiguration": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/MemorySelection"
+          },
+          {
+            "$ref": "#/components/schemas/MemoryEntries"
+          }
+        ],
+        "title": "MemoryConfiguration"
+      },
+      "MemoryEntries": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryEntrySelection"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Entries",
+            "type": "array"
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "title": "MemoryEntries",
+        "type": "object"
+      },
+      "MemoryEntrySelection": {
+        "additionalProperties": false,
+        "properties": {
+          "auto_organize": {
+            "default": false,
+            "title": "Auto Organize",
+            "type": "boolean"
+          },
+          "auto_recall": {
+            "default": true,
+            "title": "Auto Recall",
+            "type": "boolean"
+          },
+          "backend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ManagedMemoryBackend"
+              },
+              {
+                "$ref": "#/components/schemas/InlineMemoryBackend"
+              }
+            ],
+            "title": "Backend"
+          },
+          "description": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Description",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "records",
+              "documents"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "name": {
+            "pattern": "^[a-z][a-z0-9_]{0,23}$",
+            "title": "Name",
+            "type": "string"
+          },
+          "recall_limit": {
+            "default": 5,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Recall Limit",
+            "type": "integer"
+          },
+          "recall_required": {
+            "default": false,
+            "title": "Recall Required",
+            "type": "boolean"
+          },
+          "recall_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Threshold"
+          },
+          "recall_timeout": {
+            "default": 2,
+            "exclusiveMinimum": 0.0,
+            "maximum": 300.0,
+            "title": "Recall Timeout",
+            "type": "number"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryScope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolset": {
+            "default": true,
+            "title": "Toolset",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name",
+          "mode",
+          "description",
+          "backend"
+        ],
+        "title": "MemoryEntrySelection",
         "type": "object"
       },
       "MemoryIndex": {
@@ -11920,9 +12459,24 @@
             ],
             "title": "Setup Url"
           },
+          "supports_changes": {
+            "default": false,
+            "title": "Supports Changes",
+            "type": "boolean"
+          },
           "supports_documents": {
             "default": false,
             "title": "Supports Documents",
+            "type": "boolean"
+          },
+          "supports_records": {
+            "default": true,
+            "title": "Supports Records",
+            "type": "boolean"
+          },
+          "supports_revisions": {
+            "default": false,
+            "title": "Supports Revisions",
             "type": "boolean"
           },
           "type": {
@@ -12132,6 +12686,11 @@
       "MemorySettings": {
         "additionalProperties": false,
         "properties": {
+          "auto_organize": {
+            "default": false,
+            "title": "Auto Organize",
+            "type": "boolean"
+          },
           "provider_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -13365,6 +13924,50 @@
         "title": "OrganizationPermissions",
         "type": "object"
       },
+      "OrganizationStatus": {
+        "properties": {
+          "committed": {
+            "default": 0,
+            "title": "Committed",
+            "type": "integer"
+          },
+          "deferred": {
+            "default": 0,
+            "title": "Deferred",
+            "type": "integer"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "run_id": {
+            "title": "Run Id",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run_id",
+          "status"
+        ],
+        "title": "OrganizationStatus",
+        "type": "object"
+      },
       "OutputSpec": {
         "additionalProperties": false,
         "properties": {
@@ -13751,6 +14354,28 @@
           "email"
         ],
         "title": "PasswordResetRequest",
+        "type": "object"
+      },
+      "Patch": {
+        "additionalProperties": false,
+        "properties": {
+          "patch": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Patch",
+            "type": "string"
+          },
+          "type": {
+            "const": "patch",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "patch"
+        ],
+        "title": "Patch",
         "type": "object"
       },
       "PathBinarySource": {
@@ -14440,10 +15065,6 @@
       "RegisterEnvironmentRequest": {
         "additionalProperties": false,
         "properties": {
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess",
-            "default": "full"
-          },
           "configuration": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
@@ -14593,6 +15214,27 @@
           "queued_submission_ids"
         ],
         "title": "ReorderQueuedSubmissionsRequest",
+        "type": "object"
+      },
+      "Replace": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "maxLength": 262144,
+            "title": "Text",
+            "type": "string"
+          },
+          "type": {
+            "const": "replace",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "text"
+        ],
+        "title": "Replace",
         "type": "object"
       },
       "ReplaceAccountCredentialsRequest": {
@@ -14822,6 +15464,33 @@
           "new_text"
         ],
         "title": "ReplaceTextOperation",
+        "type": "object"
+      },
+      "Replacement": {
+        "additionalProperties": false,
+        "properties": {
+          "new_string": {
+            "maxLength": 262144,
+            "title": "New String",
+            "type": "string"
+          },
+          "old_string": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Old String",
+            "type": "string"
+          },
+          "replace_all": {
+            "default": false,
+            "title": "Replace All",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "old_string",
+          "new_string"
+        ],
+        "title": "Replacement",
         "type": "object"
       },
       "ResolvedAgentModel": {
@@ -15202,6 +15871,48 @@
           "expected_thread_version"
         ],
         "title": "RetryRunRequest",
+        "type": "object"
+      },
+      "ReviseDocument": {
+        "additionalProperties": false,
+        "properties": {
+          "change": {
+            "discriminator": {
+              "mapping": {
+                "append": "#/components/schemas/Append",
+                "edit": "#/components/schemas/Edit",
+                "patch": "#/components/schemas/Patch",
+                "replace": "#/components/schemas/Replace"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Replace"
+              },
+              {
+                "$ref": "#/components/schemas/Append"
+              },
+              {
+                "$ref": "#/components/schemas/Edit"
+              },
+              {
+                "$ref": "#/components/schemas/Patch"
+              }
+            ],
+            "title": "Change"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "change",
+          "expected_version"
+        ],
+        "title": "ReviseDocument",
         "type": "object"
       },
       "RoleBinding": {
@@ -15649,9 +16360,6 @@
           "accepting_principal": {
             "$ref": "#/components/schemas/PrincipalRef"
           },
-          "access": {
-            "$ref": "#/components/schemas/EnvironmentAccess"
-          },
           "application_status": {
             "$ref": "#/components/schemas/MountApplicationStatus",
             "default": "pending"
@@ -15742,7 +16450,6 @@
           "run_id",
           "name",
           "environment_id",
-          "access",
           "created_at",
           "accepting_principal"
         ],
@@ -15910,17 +16617,6 @@
           "effective_agent_config_digest": {
             "title": "Effective Agent Config Digest",
             "type": "string"
-          },
-          "environment_access": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Environment Access"
           },
           "environment_id": {
             "anyOf": [
@@ -16140,7 +16836,6 @@
           "agent_revision_id",
           "effective_agent_config_digest",
           "environment_id",
-          "environment_access",
           "status",
           "wait_reason",
           "input_kind",
@@ -16344,6 +17039,22 @@
             ],
             "title": "Audience",
             "type": "string"
+          },
+          "auto_organize": {
+            "default": false,
+            "title": "Auto Organize",
+            "type": "boolean"
+          },
+          "backend_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backend Type"
           },
           "enabled": {
             "default": true,
@@ -16824,6 +17535,14 @@
         "title": "SessionPreview",
         "type": "object"
       },
+      "SessionPurpose": {
+        "enum": [
+          "execution",
+          "debug"
+        ],
+        "title": "SessionPurpose",
+        "type": "string"
+      },
       "SessionResource": {
         "additionalProperties": false,
         "properties": {
@@ -16861,6 +17580,9 @@
               }
             ]
           },
+          "purpose": {
+            "$ref": "#/components/schemas/SessionPurpose"
+          },
           "run_count": {
             "anyOf": [
               {
@@ -16884,6 +17606,7 @@
           }
         },
         "required": [
+          "purpose",
           "id",
           "workspace_id",
           "created_at",
@@ -17740,6 +18463,10 @@
             "title": "Session Labels",
             "type": "object"
           },
+          "session_purpose": {
+            "$ref": "#/components/schemas/SessionPurpose",
+            "default": "execution"
+          },
           "thread_labels": {
             "maxProperties": 32,
             "patternProperties": {
@@ -17961,6 +18688,82 @@
           "finalized_at"
         ],
         "title": "SteerStatus",
+        "type": "object"
+      },
+      "StoredMemoryScope": {
+        "properties": {
+          "availability": {
+            "const": "unresolved",
+            "default": "unresolved",
+            "title": "Availability",
+            "type": "string"
+          },
+          "environment_id": {
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "provider_identity": {
+            "title": "Provider Identity",
+            "type": "string"
+          },
+          "scope": {
+            "title": "Scope",
+            "type": "string"
+          },
+          "subject_id": {
+            "title": "Subject Id",
+            "type": "string"
+          },
+          "supports_changes": {
+            "default": false,
+            "title": "Supports Changes",
+            "type": "boolean"
+          },
+          "supports_revisions": {
+            "default": true,
+            "title": "Supports Revisions",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "subject_id",
+          "environment_id",
+          "provider_identity"
+        ],
+        "title": "StoredMemoryScope",
+        "type": "object"
+      },
+      "StoredScopeCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/StoredMemoryScope"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "StoredScopeCollection",
         "type": "object"
       },
       "SubagentOverride-Input": {
@@ -18788,6 +19591,9 @@
             "title": "Session Id",
             "type": "string"
           },
+          "session_purpose": {
+            "$ref": "#/components/schemas/SessionPurpose"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -18799,6 +19605,7 @@
           }
         },
         "required": [
+          "session_purpose",
           "id",
           "version",
           "queue_version",
@@ -51992,6 +52799,1117 @@
         "summary": "References Workspace Provider",
         "tags": [
           "memory-providers"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memory-scopes": {
+      "get": {
+        "operationId": "get_workspaces_workspace_memory_scopes",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "environment_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Environment Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "conversation_scope_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Conversation Scope Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredScopeCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Scopes",
+        "tags": [
+          "memory-documents"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents": {
+      "get": {
+        "operationId": "get_workspaces_workspace_memory_scopes_scope_id_documents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileDocumentCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Listing",
+        "tags": [
+          "memory-documents"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_workspace_memory_scopes_scope_id_documents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DocumentInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedDocumentMutation"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create",
+        "tags": [
+          "memory-documents"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}": {
+      "delete": {
+        "operationId": "delete_workspaces_workspace_memory_scopes_scope_id_documents_document_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Remove",
+        "tags": [
+          "memory-documents"
+        ]
+      },
+      "get": {
+        "operationId": "get_workspaces_workspace_memory_scopes_scope_id_documents_document_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedMemoryDocument"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Read",
+        "tags": [
+          "memory-documents"
+        ]
+      },
+      "put": {
+        "operationId": "put_workspaces_workspace_memory_scopes_scope_id_documents_document_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseDocument"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ManagedDocumentMutation"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Revise",
+        "tags": [
+          "memory-documents"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}/revisions": {
+      "get": {
+        "operationId": "get_workspaces_workspace_memory_scopes_scope_id_documents_document_id_revisions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "before_version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Version"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 20,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ManagedMemoryDocument"
+                  },
+                  "title": "Response History Api V1 Workspaces  Workspace  Memory Scopes  Scope Id  Documents  Document Id  Revisions Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "History",
+        "tags": [
+          "memory-documents"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}/toc": {
+      "get": {
+        "operationId": "get_workspaces_workspace_memory_scopes_scope_id_documents_document_id_toc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "document_id",
+            "required": true,
+            "schema": {
+              "title": "Document Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "version",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Version"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DocumentHeading"
+                  },
+                  "title": "Response Toc Api V1 Workspaces  Workspace  Memory Scopes  Scope Id  Documents  Document Id  Toc Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Toc",
+        "tags": [
+          "memory-documents"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/organization": {
+      "get": {
+        "operationId": "get_workspaces_workspace_memory_scopes_scope_id_organization",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "scope_id",
+            "required": true,
+            "schema": {
+              "title": "Scope Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/OrganizationStatus"
+                  },
+                  "title": "Response Organization Status Api V1 Workspaces  Workspace  Memory Scopes  Scope Id  Organization Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Organization Status",
+        "tags": [
+          "memory-documents"
         ]
       }
     },

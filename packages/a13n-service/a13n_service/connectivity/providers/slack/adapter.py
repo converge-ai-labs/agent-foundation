@@ -9,6 +9,7 @@ import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Literal
+from urllib.parse import parse_qs
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr, TypeAdapter, ValidationError
 
@@ -19,6 +20,7 @@ from a13n_service.connectivity.ingress.provider import (
     AdmissionReceipt,
     ExternalRef,
     InboundEvent,
+    ProviderActionDecision,
     ProviderCompleteDecision,
     ProviderEligibleEventRouting,
     ProviderEventDecision,
@@ -42,7 +44,7 @@ _SIGNATURE_MAX_AGE_SECONDS = 5 * 60
 _DEDUP_HORIZON_SECONDS = 24 * 60 * 60
 _EVENT_KINDS = frozenset({"app_mention", "message"})
 _CONVERSATION_KINDS = frozenset({"channel", "group", "im", "mpim"})
-_NATIVE_ACTIONS = ("slack.reply", "slack.list_members", "slack.read_messages")
+_NATIVE_ACTIONS = ("slack.reply", "slack.send_file", "slack.list_members", "slack.read_messages")
 _JSON_OBJECT = TypeAdapter(JsonObject)
 
 
@@ -132,7 +134,17 @@ class SlackIngressAdapter:
             return ProviderCompleteDecision(response=ProviderHttpResponse(status_code=404, body=b"", headers={}))
         secret = _required_string(credentials, "signing_secret")
         _authenticate(request, secret=secret, received_at=received_at)
-        payload = _parse_object(request.body)
+        if request.headers.get("content-type", "").split(";", 1)[0].strip() == "application/x-www-form-urlencoded":
+            try:
+                fields = parse_qs(request.body.decode("utf-8"), strict_parsing=True, max_num_fields=10)
+                values = fields.get("payload", [])
+                if len(values) != 1:
+                    raise ValueError("invalid interaction payload")
+                payload = _parse_object(values[0].encode())
+            except (ValueError, UnicodeDecodeError) as error:
+                raise _request_error(400, "invalid_payload") from error
+        else:
+            payload = _parse_object(request.body)
         return normalize_payload(payload, config, received_at)
 
     def reception_defaults(
@@ -249,15 +261,22 @@ def _normalize_event(
     if user_id == config.bot_user_id or event.get("bot_id") is not None:
         return None
     subtype = event.get("subtype")
-    if subtype is not None:
+    if subtype not in {None, "file_share"}:
         return None
-    text = event.get("text")
+    text = event.get("text", "")
     if not isinstance(text, str):
         return None
     mention_pattern = re.compile(rf"<@{re.escape(config.bot_user_id)}(?:\|[^>]+)?>")
     mentioned = mention_pattern.search(text) is not None
     normalized_text = " ".join(mention_pattern.sub(" ", text).split())
-    if not normalized_text:
+    files = event.get("files", [])
+    attachments: list[JsonValue] = []
+    if isinstance(files, list):
+        for file in files[:100]:
+            identifier = file.get("id") if isinstance(file, dict) else None
+            if isinstance(identifier, str) and 0 < len(identifier) <= 256:
+                attachments.append({"id": identifier})
+    if not normalized_text and not attachments:
         return None
     root_thread_ts = event.get("thread_ts")
     if not isinstance(root_thread_ts, str) or not root_thread_ts:
@@ -291,7 +310,7 @@ def _normalize_event(
                 id=f"{config.team_id}:{channel_id}:{message_ts}",
             ),
         },
-        data={},
+        data={"attachments": attachments} if attachments else {},
         ordering_key=f"{message_ts}:{event_id}",
     )
 
@@ -355,6 +374,8 @@ def _require_version(value: str) -> None:
 def normalize_payload(
     payload: JsonObject, config: SlackAccountConfig, received_at: datetime
 ) -> ProviderRequestDecision:
+    if payload.get("type") == "block_actions":
+        return _normalize_action(payload, config)
     _verify_installation(payload, config)
     payload_type = payload.get("type")
     if payload_type == "url_verification":
@@ -375,3 +396,53 @@ def normalize_payload(
     if normalized is None:
         return ProviderCompleteDecision(response=_acknowledgement())
     return ProviderEventDecision(event=normalized)
+
+
+def interaction_installation(payload: JsonObject) -> tuple[object, object]:
+    """Interactions carry installation IDs as objects, unlike Events API envelopes."""
+    team, enterprise = payload.get("team"), payload.get("enterprise")
+    return (
+        team.get("id") if isinstance(team, dict) else None,
+        enterprise.get("id") if isinstance(enterprise, dict) else None,
+    )
+
+
+def _normalize_action(payload: JsonObject, config: SlackAccountConfig) -> ProviderRequestDecision:
+    from .progress import STOP_ACTION_ID
+
+    team, enterprise = interaction_installation(payload)
+    if payload.get("api_app_id") != config.api_app_id or team != config.team_id or enterprise != config.enterprise_id:
+        raise _request_error(404, "ingress_not_found")
+    actions = payload.get("actions")
+    if not isinstance(actions, list):
+        raise _request_error(400, "invalid_card_action")
+    recognized = [a for a in actions if isinstance(a, dict) and a.get("action_id") == STOP_ACTION_ID]
+    if not recognized:
+        return ProviderCompleteDecision(response=_acknowledgement())
+    try:
+        if len(recognized) != 1 or len(actions) != 1:
+            raise ValueError("ambiguous action")
+        action = recognized[0]
+        container, user = payload.get("container"), payload.get("user")
+        if (
+            not isinstance(container, dict)
+            or container.get("type") != "message"
+            or container.get("is_ephemeral") is True
+        ):
+            raise ValueError("unsupported host")
+        encoded = action.get("value")
+        if not isinstance(user, dict) or not isinstance(encoded, str) or len(encoded) > 2000:
+            raise ValueError("invalid action")
+        value = _JSON_OBJECT.validate_json(encoded)
+        return ProviderActionDecision.model_validate(
+            {
+                "action": "stop",
+                "reference": value.get("run_id"),
+                "token": value.get("token"),
+                "actor_id": user.get("id"),
+                "conversation_id": container.get("channel_id"),
+                "message_id": container.get("message_ts"),
+            }
+        )
+    except (ValueError, ValidationError) as error:
+        raise _request_error(400, "invalid_card_action") from error

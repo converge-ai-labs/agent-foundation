@@ -15,10 +15,10 @@ import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { JsonView, TextAreaField } from "../../shared/form";
-import styles from "../conversations/conversations.module.css";
+import styles from "./conversations.module.css";
 import { QuestionResponse, readQuestions } from "./questions";
 
-export function ConfigurationFeedback({
+export function RunFeedback({
   run,
   thread,
   actions,

@@ -55,7 +55,6 @@ class RunEnvironment(Environment):
         environment_id: str,
         provider_key: str,
         descriptor: EnvironmentDescriptor,
-        access: str,
         *,
         mount_name: str = "workspace",
     ) -> None:
@@ -69,7 +68,6 @@ class RunEnvironment(Environment):
         self._delegate: Environment | None = None
         self._generation = 0
         self._credential_generation: int | None = None
-        self.access = access
 
     @property
     def backing_generation(self) -> int:
@@ -196,7 +194,7 @@ class _RunEnvironmentSelection:
     environment_id: str
     provider_key: str
     descriptor: EnvironmentDescriptor
-    access: str
+
     prepare_on_run: bool
 
 
@@ -253,7 +251,6 @@ async def validate_run_environment(
             row.id,
             provider.type,
             descriptor,
-            binding.access,
             not isinstance(configuration, TemplateConfiguration) or configuration.preparation == "on_run",
         )
 
@@ -283,7 +280,6 @@ async def prepare_run_environment(
             attempt,
             selection.environment_id,
             selection.descriptor,
-            selection.access,
             mount_name=selection.mount_name,
         )
     else:
@@ -293,7 +289,6 @@ async def prepare_run_environment(
             selection.environment_id,
             selection.provider_key,
             selection.descriptor,
-            selection.access,
             mount_name=selection.mount_name,
         )
     try:

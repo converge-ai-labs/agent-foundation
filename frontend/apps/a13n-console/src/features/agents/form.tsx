@@ -21,8 +21,7 @@ import { TextAreaField } from "../../shared/form";
 import { ResourceReference } from "../../shared/resource-reference";
 import { jsonObject, validateSettings } from "../../shared/validation";
 import styles from "./agents.module.css";
-import { AgentMemorySelection } from "../memory/selection";
-import { useMemoryProviders } from "../memory/availability";
+import { MemoryPresets } from "../memory/presets";
 import { AgentAvatar } from "./avatar";
 import { AgentCapabilities } from "./capabilities";
 import { AgentToolsets } from "./toolsets";
@@ -119,7 +118,6 @@ export function AgentForm({
     [modelValidation, setModelValidation] = useState<Error>();
   const [toolsets, setToolsets] = useState(initial.toolsets ?? {});
   const [memory, setMemory] = useState(initial.memory);
-  const { visible: memoryVisible } = useMemoryProviders();
   const [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []);
   const choices = useAgentChoices();
@@ -478,22 +476,25 @@ export function AgentForm({
               reviewer={initial.reviewer}
               readOnly={readonly}
             />
-            {(memoryVisible || memory || initial.memory) && (
-              <EditorSection
-                title={t("Memory")}
-                description={t(
-                  "Remember useful information across runs, with explicit control over what is stored.",
-                )}
-              >
-                <AgentMemorySelection
-                  agentId={agentId}
-                  savedProviderId={providedInitial.memory?.provider_id}
-                  readOnly={readonly}
-                  value={memory}
-                  onChange={setMemory}
-                />
-              </EditorSection>
-            )}
+            <EditorSection
+              title={t("Memory")}
+              description={t(
+                "Remember useful information across runs, with explicit control over what is stored.",
+              )}
+            >
+              <MemoryPresets
+                agentId={agentId}
+                savedProviderId={
+                  providedInitial.memory &&
+                  "provider_id" in providedInitial.memory
+                    ? providedInitial.memory.provider_id
+                    : undefined
+                }
+                readOnly={readonly}
+                value={memory}
+                onChange={setMemory}
+              />
+            </EditorSection>
             <EditorSection
               title={t("Advanced configuration")}
               description={t(

@@ -120,7 +120,7 @@ async def test_locally_invalidated_attempt_cannot_publish_even_before_database_e
         await store.publish(attempt, mount, "ready")
 
 
-@pytest.mark.parametrize("changes", [{"run_id": "different"}, {"name": "missing"}, {"access": "full"}])
+@pytest.mark.parametrize("changes", [{"run_id": "different"}, {"name": "missing"}])
 async def test_worker_cannot_publish_a_fabricated_association(interaction_sessions, mounted_attempt, changes):
     attempt, _ = mounted_attempt
     store = RunMountObservations(interaction_sessions, clock=lambda: NOW + timedelta(seconds=2))

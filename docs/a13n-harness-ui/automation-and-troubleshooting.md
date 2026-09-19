@@ -22,6 +22,10 @@ If interactive startup or `--resume` fails, the terminal prints the nested excep
 
 See [Tracing Harness UI](observation.md) for automatic OTLP export, Langfuse and Logfire profiles, embedding with an existing provider, and the separate `dev/harness-ui/.env` used by `make cli`. Traces complement diagnostics and saved conversation state; they do not replace them.
 
+## Long-running work
+
+Harness UI sets `request_limit=None` for root Agents and subagents instead of inheriting the Harness library's 1,000-request limit. Long-running work therefore does not stop solely because it reaches that request count. Cancellation, explicit child execution limits, provider limits, and the model-recovery budget still apply. This is not a guarantee of uninterrupted execution or crash recovery; longer Runs can consume more tokens and incur additional provider costs.
+
 ## Model connection interruptions
 
 Harness UI automatically continues eligible interrupted model requests from the available history, for up to five consecutive failed attempts including the first. A complete successful primary model response resets this budget and the retry delay; partial output and successful auxiliary requests do not. Intermittent failures therefore do not exhaust a lifetime Run budget, while continuous failures still stop. Permanent or unrecognized failures are not automatically retried. This applies to root Agents and subagents. The terminal shows a short `[System] Retrying model request…` notice rather than an error for each retry. If recovery succeeds, the same Run continues normally. If the budget is exhausted, a terminal error reports the attempt count and suggests continuing the conversation again.

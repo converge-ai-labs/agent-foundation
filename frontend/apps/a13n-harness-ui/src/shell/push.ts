@@ -49,7 +49,6 @@ export async function notificationWorker(): Promise<ServiceWorkerRegistration> {
 
 export async function enablePush(
   transport: Transport,
-  threadIds: string[],
   prompt = true,
 ): Promise<void> {
   if (!supportsPush())
@@ -131,7 +130,6 @@ export async function enablePush(
             endpoint: subscription.endpoint,
             keys: { p256dh: data.keys.p256dh, auth: data.keys.auth },
             origin: window.location.origin,
-            thread_ids: threadIds,
           },
         }),
       );
@@ -197,6 +195,31 @@ export async function disablePush(transport?: Transport): Promise<void> {
       throw new Error(
         "Could not disable background notifications. Check browser site permissions and try again.",
       );
+  });
+}
+
+export async function reportPushActivity(
+  transport: Transport,
+  signal: AbortSignal,
+): Promise<void> {
+  await serialized(async () => {
+    const id = pushSubscriptionId();
+    if (
+      signal.aborted ||
+      !id ||
+      !supportsPush() ||
+      readPreference("notifications.enabled", "true") === "false" ||
+      Notification.permission !== "granted" ||
+      document.visibilityState !== "visible"
+    )
+      return;
+    await transport.client.POST(
+      "/api/push/subscriptions/{subscription_id}/activity",
+      {
+        signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
+        params: { path: { subscription_id: id } },
+      },
+    );
   });
 }
 

@@ -33,6 +33,8 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20260918_ba240ec65035_add_planned_update_handoff.py").unlink()
+    (newer / "versions/20260918_63e8be47c2e2_replace_push_thread_interest_with_.py").unlink()
     (newer / "versions/20260918_e416fbd4674c_add_thread_default_model.py").unlink()
     (newer / "versions/20260917_768a6a993a59_add_indexed_thread_inspection_.py").unlink()
     (newer / "versions/20260917_acd7efeb9fd8_add_continuation_read_models.py").unlink()
@@ -68,6 +70,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
             # Keep unrelated query/push tables on both sides of this comment-only fixture.
             for name in (
+                "planned_restart",
                 "web_push_key",
                 "web_push_subscription",
                 "thread_inspection",

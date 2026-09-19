@@ -10,6 +10,8 @@ from .models import (
     EnvironmentDescribeResult,
     EnvironmentReadinessParams,
     EnvironmentReadinessResult,
+    FileCommitParams,
+    FileCommitResult,
     FileCopyParams,
     FileCopyResult,
     FileFindParams,
@@ -138,6 +140,18 @@ FILE_CLOSE_READER = MethodSpec(
     transfer_direction="server_to_client",
     params_type=FileReaderCloseParams,
     result_type=FileReaderCloseResult,
+)
+
+FILE_COMMIT = MethodSpec(
+    name="file.commit",
+    kind="request_response",
+    replay_class="terminal_evidence",
+    introduced="0.1",
+    error_family="resource",
+    transfer_action=None,
+    transfer_direction=None,
+    params_type=FileCommitParams,
+    result_type=FileCommitResult,
 )
 
 FILE_COMMIT_WRITER = MethodSpec(
@@ -518,6 +532,7 @@ METHODS = MappingProxyType(
         ENVIRONMENT_READINESS.name: ENVIRONMENT_READINESS,
         FILE_ABORT_WRITER.name: FILE_ABORT_WRITER,
         FILE_CLOSE_READER.name: FILE_CLOSE_READER,
+        FILE_COMMIT.name: FILE_COMMIT,
         FILE_COMMIT_WRITER.name: FILE_COMMIT_WRITER,
         FILE_COPY.name: FILE_COPY,
         FILE_FIND.name: FILE_FIND,

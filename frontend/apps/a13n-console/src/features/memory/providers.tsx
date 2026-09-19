@@ -92,9 +92,11 @@ export function MemoryProviders({ scope }: { scope: MemoryProviderScope }) {
                 label: t("Credentials"),
                 render: (item) =>
                   t(
-                    item.credential_configured
-                      ? "Configured"
-                      : "Not configured",
+                    item.type === "filesystem"
+                      ? "Not required"
+                      : item.credential_configured
+                        ? "Configured"
+                        : "Not configured",
                   ),
               },
               {

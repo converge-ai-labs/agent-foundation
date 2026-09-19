@@ -133,11 +133,11 @@ class WorkerAttemptPreparer:
         self._async_results = async_results
         self._prepared_skills: dict[str | None, PreparedSkillRuntime] | None = None
 
-    def _observed(self, environment: Environment, access: str) -> EnvironmentMount:
+    def _observed(
+        self, environment: Environment, access: EnvironmentAccess = EnvironmentAccess.FULL
+    ) -> EnvironmentMount:
         """Live Environment observation is declared on the mount before it is bound."""
-        return observe_environment_entry(
-            EnvironmentMount(environment, access=EnvironmentAccess(access)), self._environment_projector
-        )
+        return observe_environment_entry(EnvironmentMount(environment, access=access), self._environment_projector)
 
     async def claim_state_writer(self) -> None:
         await self._control.claim_state_writer(self._run)
@@ -228,7 +228,7 @@ class WorkerAttemptPreparer:
                 invocation = replace(
                     invocation,
                     environment=MountedHarnessEnvironments(
-                        entries={"builtin-skills": self._observed(environment, "read_only")},
+                        entries={"builtin-skills": self._observed(environment, EnvironmentAccess.READ_ONLY)},
                         default_environment="builtin-skills",
                     ),
                 )
@@ -240,9 +240,7 @@ class WorkerAttemptPreparer:
             if environment is not None:
                 stack.push_async_callback(environment.close)
             mounted = MountedHarnessEnvironments(
-                entries=(
-                    {"workspace": self._observed(environment, environment.access)} if environment is not None else {}
-                )
+                entries=({"workspace": self._observed(environment)} if environment is not None else {})
             )
 
             async def prepare_mount(mount: AcceptedRunMount):

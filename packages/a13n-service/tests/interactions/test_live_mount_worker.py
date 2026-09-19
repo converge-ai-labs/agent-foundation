@@ -77,7 +77,7 @@ async def test_live_mount_refreshes_facade_tools_and_context_at_next_root_reques
         facades.append(ctx.deps.environment)
         assert not ctx.deps.environment.snapshot.mounts
         async with transaction(sessions) as session:
-            session.add(accepted_mount(run.id, environment.id, name="computer", access="read_write"))
+            session.add(accepted_mount(run.id, environment.id, name="computer"))
         # The same read path used by the watcher cannot mutate an active tool batch.
         await controllers[0].reconcile()
         assert not ctx.deps.environment.snapshot.mounts

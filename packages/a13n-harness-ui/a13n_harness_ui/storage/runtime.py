@@ -43,6 +43,8 @@ class LocalStore:
         database: Database,
         objects: ImmutableObjectStore,
     ) -> None:
+        from .restarts import RestartRepository
+
         self.settings = settings
         self.layout = layout
         self.database = database
@@ -54,6 +56,7 @@ class LocalStore:
         self.inspections = InspectionRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
         self.comments = OutputCommentRepository(database.sessions)
+        self.restarts = RestartRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)
 

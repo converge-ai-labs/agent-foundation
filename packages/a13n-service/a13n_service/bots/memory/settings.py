@@ -29,6 +29,7 @@ class AccountSettingsRecord(Base):
     provider_id: Mapped[str | None] = mapped_column(String(72), ForeignKey("memory_providers.id", ondelete="RESTRICT"))
     use_memory: Mapped[bool] = mapped_column(Boolean)
     save_on_request: Mapped[bool] = mapped_column(Boolean)
+    auto_organize: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     timezone: Mapped[str] = mapped_column(String(128))
 
     def memory(self) -> MemorySettings | None:
@@ -39,6 +40,7 @@ class AccountSettingsRecord(Base):
                 provider_id=self.provider_id,
                 use_memory=self.use_memory,
                 save_on_request=self.save_on_request,
+                auto_organize=self.auto_organize,
                 timezone=self.timezone,
             )
         )
@@ -112,6 +114,14 @@ async def replace_settings(
                 catalog=service.catalog,
             )
             require_document_support(provider.type, service.catalog)
+            if selected.auto_organize and (
+                provider.type != "filesystem" or not selected.use_memory or not selected.save_on_request
+            ):
+                raise failure(
+                    "memory_organization_unsupported",
+                    "Automatic organization requires File-based storage with reading and saving enabled.",
+                    ErrorCategory.invalid_request,
+                )
         row = await session.get(AccountSettingsRecord, account_id)
         if row is None:
             row = AccountSettingsRecord(account_id=account_id)
@@ -121,6 +131,7 @@ async def replace_settings(
         row.use_memory = selected.use_memory if selected else False
         row.save_on_request = selected.save_on_request if selected else False
         row.timezone = selected.timezone if selected else "UTC"
+        row.auto_organize = selected.auto_organize if selected else False
         session.add(
             security_audit_record(
                 audit_id=new_object_id("aud"),

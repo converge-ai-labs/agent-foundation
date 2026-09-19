@@ -89,14 +89,14 @@ MODEL_TYPES: dict[str, type[BaseModel]] = {
 def test_generated_surface_covers_eip_v1() -> None:
     assert EIP_PROTOCOL_VERSION == "0.1"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
-    assert len(METHODS) == 35
+    assert len(METHODS) == 36
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
     assert all(method.introduced == "0.1" for method in METHODS.values())
     assert EIP_ERROR_CODES[ErrorType.INTEGRITY_MISMATCH] == -32061
     assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 19
-    assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 15
+    assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 16
     assert [method.name for method in METHODS.values() if method.replay_class == "ledger_external"] == ["initialize"]
     transfer_methods = [method for method in METHODS.values() if method.transfer_action is not None]
     assert len(transfer_methods) == 5

@@ -143,15 +143,6 @@ export function EnvironmentDetails({
                 <ReadOnlyField label={t("Generation")}>
                   {detail.data.value.generation}
                 </ReadOnlyField>
-                <ReadOnlyField label={t("Access permissions")}>
-                  {t(
-                    detail.data.value.access === "full"
-                      ? "Full access"
-                      : detail.data.value.access === "read_only"
-                        ? "Read only"
-                        : "Read and write",
-                  )}
-                </ReadOnlyField>
                 <ReadOnlyField label={t("Updated")}>
                   <Timestamp value={detail.data.value.updated_at} />
                 </ReadOnlyField>

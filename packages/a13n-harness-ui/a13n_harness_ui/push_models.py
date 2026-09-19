@@ -38,7 +38,6 @@ class PushSubscriptionInput(BaseModel):
     endpoint: str = Field(max_length=4096)
     keys: PushKeys
     origin: str = Field(max_length=512)
-    thread_ids: tuple[str, ...] = Field(default=(), max_length=256)
 
     @field_validator("endpoint")
     @classmethod
@@ -69,13 +68,6 @@ class PushSubscriptionInput(BaseModel):
         if not secure or not url.hostname or url.username or url.password or url.path or url.query or url.fragment:
             raise ValueError("A secure browser origin is required")
         return value
-
-    @field_validator("thread_ids")
-    @classmethod
-    def validate_threads(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        if any(not item or len(item) > 128 for item in value):
-            raise ValueError("Invalid Thread identity")
-        return tuple(dict.fromkeys(value))
 
     @property
     def subscription_id(self) -> str:

@@ -17,9 +17,11 @@ def test_settings_normalize_process_values(tmp_path: Path) -> None:
     )
 
     assert settings.storage.data_root == (tmp_path / "store").resolve()
+    assert settings.storage.max_object_bytes == 256 * 1024 * 1024
     assert settings.log_level == "DEBUG"
     assert settings.log_format == "pretty"
     assert settings.pricing_auto_update is True
+    assert settings.shutdown_timeout_seconds == 60.0
 
 
 def test_settings_reject_unknown_or_invalid_values(tmp_path: Path) -> None:
@@ -47,6 +49,7 @@ schema_version: "1"
 process:
   log_level: debug
   pricing_auto_update: false
+  max_object_bytes: 536870912
 """.strip()
         + "\n"
     )
@@ -60,6 +63,19 @@ process:
     assert source.settings.storage.data_root == data_root
     assert source.settings.log_level == "DEBUG"
     assert source.settings.pricing_auto_update is False
+    assert source.settings.storage.max_object_bytes == 512 * 1024 * 1024
+    assert source.configuration.document.process.max_object_bytes == 512 * 1024 * 1024
+
+
+@pytest.mark.parametrize("value", [512, 1024 * 1024 * 1024 + 1, True, "67108864", 67108864.0])
+async def test_storage_limit_rejects_invalid_yaml_values(tmp_path: Path, value: object) -> None:
+    import yaml
+
+    settings_path = tmp_path / "settings.yaml"
+    settings_path.write_text(yaml.safe_dump({"schema_version": "1", "process": {"max_object_bytes": value}}))
+    source = await load_harness_ui_settings(settings_path)
+    assert source.candidate_error is not None
+    assert source.configuration is None
 
 
 async def test_default_settings_use_one_fixed_user_root(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,6 +87,8 @@ async def test_default_settings_use_one_fixed_user_root(tmp_path: Path, monkeypa
     assert source.exists is False
     assert source.path == tmp_path / ".a13n-harness-ui/a13n-harness-ui.yaml"
     assert source.settings.storage.data_root == tmp_path / ".a13n-harness-ui/data"
+    assert source.settings.storage.max_object_bytes == 256 * 1024 * 1024
+    assert source.settings.shutdown_timeout_seconds == 60.0
 
     ensure_default_directories(source)
     assert (tmp_path / ".a13n-harness-ui/data").is_dir()

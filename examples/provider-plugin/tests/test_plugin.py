@@ -94,7 +94,7 @@ assert manifest.environment[0].type == "acme_workspace"
 from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
 assert len(BUILT_IN_CONNECTOR_PROVIDERS) == 1
 from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS
-assert len(BUILT_IN_MEMORY_PROVIDERS) == 2
+assert len(BUILT_IN_MEMORY_PROVIDERS) == 3
 from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 assert len(BUILT_IN_ENVIRONMENT_PROVIDERS) == 11
 assert not {"docker", "e2b", "modal"} & {name.split(".")[0] for name in sys.modules}

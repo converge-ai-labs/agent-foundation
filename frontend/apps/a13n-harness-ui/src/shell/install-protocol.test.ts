@@ -94,7 +94,6 @@ it("authenticates and validates push configuration and subscription CRUD without
       p256dh: receiver.generateKeys().toString("base64url"),
       auth: Buffer.alloc(16, 1).toString("base64url"),
     },
-    thread_ids: ["stale-thread"],
   };
   expect(
     (
@@ -128,6 +127,18 @@ it("authenticates and validates push configuration and subscription CRUD without
   expect(saved.status).toBe(200);
   const id = (await saved.json()).subscription_id;
   expect(id).toBe(createHash("sha256").update(endpoint).digest("hex"));
+  const activity = `${origin}/api/push/subscriptions/${id}/activity`;
+  expect((await fetch(activity, { method: "POST" })).status).toBe(401);
+  expect(
+    (
+      await fetch(activity, {
+        method: "POST",
+        headers: { ...headers, Origin: "https://other.example" },
+      })
+    ).status,
+  ).toBe(403);
+  expect((await fetch(activity, { method: "POST", headers })).status).toBe(204);
+
   expect(
     (
       await fetch(`${origin}/api/push/subscriptions/${id}`, {
@@ -144,6 +155,7 @@ it("authenticates and validates push configuration and subscription CRUD without
       })
     ).status,
   ).toBe(204);
+  expect((await fetch(activity, { method: "POST", headers })).status).toBe(404);
 });
 
 it("keeps root metadata links valid on deep links and keeps hashed assets immutable", async () => {

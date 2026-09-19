@@ -68,7 +68,7 @@ One App lifetime:
 3. loads or restores the last accepted file-and-Content-Plugin generation and reports current source diagnostics;
 4. initializes Capability and extension catalogs plus release-owned Model, MCP, and Environment adapter integrations;
 5. starts bounded configuration change observation;
-6. attaches the CLI, WebUI, or embedding adapter;
+6. stages any eligible WebUI restart handoff, then attaches the CLI, WebUI, or embedding adapter;
 7. serves commands until shutdown;
 8. stops new admissions, requests cancellation after a bounded graceful-drain interval, joins owned tasks, and then closes collaborators.
 
@@ -77,6 +77,16 @@ The shutdown timeout bounds graceful draining before cooperative cancellation. H
 When `process.pricing_auto_update` is enabled, the App owns Pydantic AI's background price updater for its lifespan. Startup does not wait for the first download; upstream downloads happen immediately and hourly with last-good fallback. Root, async-child, and resumed-child construction capture the current Harness catalog off the event loop and bind it through the public build API. Already constructed Agents and emitted usage remain unchanged under the [Harness cost contract](../a13n-harness/12-events-observability-and-usage.md#cost-calculation). Price availability is diagnostic, not an App-readiness dependency. Shutdown releases this App's updater ownership without waiting for an in-flight download or clearing process-global prices. There is no App-owned second scheduler, disk price cache, or historical cost revaluation.
 
 A source change triggers a stable complete-tree candidate load. Invalid intermediate saves do not replace the accepted generation. Module import starts no task, process, listener, or database connection.
+
+## Graceful WebUI Restart
+
+Normal WebUI App exit, including the server's SIGTERM/SIGINT lifespan shutdown, owns continuation for a sequential restart. There is no prepare/cancel/dismiss maintenance API. CLI exit and abnormal App context unwinding retain ordinary cancellation and checkpoint behavior; neither publishes a restart handoff. The server continues to own signal handling and connection shutdown, without doing checkpoint I/O in signal handlers.
+
+The App stops external root/input admission and removes pending human-decision timers before requesting safe-boundary pauses. Already executing model requests and tool batches may finish, including child delegation from those batches. Roots and children pause before the next outer canonical model request, after context transformations, retaining complete Harness state. Parent waits on children wake so a paused child cannot deadlock its parent. Auxiliary model requests are not outer continuation boundaries. Only after drain completes or times out does the App stop child admission and cancel/join its Runs for finalization.
+
+The existing `shutdown_timeout_seconds` bounds waiting for these safe boundaries, not total process exit. A timeout does not promote unfinished tools to safely replayable work. Checkpoint publication, Environment cleanup, and structured joins still finish before storage closes; the process supervisor owns any hard kill deadline. Only successful draining and finalization publish the [graceful restart handoff](03-local-storage-and-recovery.md#graceful-restart-handoff).
+
+The same-data-root WebUI startup consumes and stages that exact task forest before accepting normal work. A failed family does not release models, but recovery failure never locks unrelated admission or requires an operator reset. The browser observes disconnection and refetches saved and live state after reconnect; it never resubmits recovery input. The App neither installs packages nor starts its replacement process.
 
 ## Observation
 

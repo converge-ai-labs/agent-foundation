@@ -15,13 +15,22 @@ from a13n_harness.providers.memory import MemoryProviderCatalog
 from anyio import create_task_group, to_thread
 from pydantic_ai import prices
 
+from a13n_service.background import PeriodicTask
 from a13n_service.bots.connectivity.ingress import BotIngress
 from a13n_service.bots.connectivity.replies import ReplyObservations
 from a13n_service.bots.connectivity.service import BotService
 from a13n_service.bots.memory.behavior import ConversationMemory
+from a13n_service.bots.memory.files import authorize_management
+from a13n_service.bots.memory.organization import authorize_organization
 from a13n_service.bots.memory.verification import BotMemoryVerifier
+from a13n_service.bots.progress.delivery import CardDelivery
+from a13n_service.bots.progress.replies import CardReplies
+from a13n_service.bots.progress.service import ProgressService
 from a13n_service.connectivity.http import cookie_free_jar
+from a13n_service.connectivity.ingress.attachments import AttachmentInputs
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
+from a13n_service.environments.file_access import ExistingEnvironmentFiles
+from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle
@@ -29,6 +38,7 @@ from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.memory.behaviors import MemoryBehaviors
 from a13n_service.memory.composition import build_memory_service
 from a13n_service.memory.ordinary import OrdinaryMemory
+from a13n_service.memory.organization import admit_organization
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
@@ -112,9 +122,9 @@ async def open_process_runtime(
             shared = SharedRuntime(
                 storage=storage,
                 lifecycle=LifecycleWriter(
-                    (write_hook_lifecycle, append_matching_a2a_push_outbox)
+                    (write_hook_lifecycle, append_matching_a2a_push_outbox, admit_organization)
                     if settings.gateway.a2a_enabled
-                    else (write_hook_lifecycle,)
+                    else (write_hook_lifecycle, admit_organization)
                 ),
                 secret_protector=protector,
                 memories=build_memory_service(
@@ -132,6 +142,9 @@ async def open_process_runtime(
                 protector,
                 memory_catalog,
             )
+            memory_service.authorize_conversation = authorize_management
+            memory_service.authorize_organization = authorize_organization
+            memory_service.verify_organization = bot_verifier.verify_organization if bot_verifier else None
             shared = replace(
                 shared,
                 memory_behaviors=MemoryBehaviors(
@@ -140,6 +153,20 @@ async def open_process_runtime(
                     behaviors=(ConversationMemory(memory_service, bot_verifier),),
                 ),
             )
+            environment_catalog = (
+                build_environment_catalog(settings, components, provider_catalogs)
+                if owns_control(settings.service.role) or owns_worker(settings.service.role)
+                else None
+            )
+            if environment_catalog is not None:
+                memory_service.files = ExistingEnvironmentFiles(
+                    EnvironmentLifecycle(
+                        storage.sessions,
+                        environment_catalog,
+                        protector,
+                        timeout_seconds=settings.environments.operation_timeout_seconds,
+                    )
+                )
             agent_resources = build_agent_resources(
                 components,
                 shared,
@@ -157,11 +184,6 @@ async def open_process_runtime(
                 if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None
             )
-            environment_catalog = (
-                build_environment_catalog(settings, components, provider_catalogs)
-                if owns_control(settings.service.role) or owns_worker(settings.service.role)
-                else None
-            )
             worker = None
             worker_background: tuple[BackgroundTask, ...] = ()
             if owns_worker(settings.service.role):
@@ -172,6 +194,7 @@ async def open_process_runtime(
                     )
                 if execution is None or environment_catalog is None:
                     raise RuntimeError("Worker execution resources were not constructed")
+                assert memory_http is not None
                 worker, worker_background = await build_worker_runtime(
                     settings,
                     shared,
@@ -184,7 +207,18 @@ async def open_process_runtime(
                     invocations=agent_resources.invocations,
                     configuration_resolver=build_agent_resolver(components, shared, agent_resources),
                     observability=observability,
-                    observations=ReplyObservations(storage.sessions),
+                    observations=ReplyObservations(
+                        storage.sessions,
+                        cards=CardReplies(
+                            CardDelivery(
+                                storage.sessions,
+                                memory_http,
+                                settings.connectivity_endpoint_policy(),
+                                protector,
+                                public_origin=settings.iam.public_origin,
+                            )
+                        ),
+                    ),
                 )
             control = None
             control_background: tuple[BackgroundTask, ...] = ()
@@ -206,8 +240,10 @@ async def open_process_runtime(
             if owns_connectivity_data(settings.service.role) and input_acceptor is None:
                 if control is not None:
                     commands = control.gateway.commands
+                    attachment_uploads = control.asset_uploads
                 else:
                     assets = await build_asset_bundle(settings, shared)
+                    attachment_uploads = assets.uploads
                     commands = build_input_commands(
                         settings,
                         shared,
@@ -215,10 +251,20 @@ async def open_process_runtime(
                         assets.catalog,
                         InlineHookValidator(EndpointPolicy()),
                     )
+                attachment_http = await stack.enter_async_context(
+                    httpx2.AsyncClient(cookies=cookie_free_jar(), follow_redirects=False, timeout=15)
+                )
                 input_acceptor = IngressInputAcceptor(
                     storage.sessions,
                     commands,
                     contributions={"slack": BotIngress(), "lark": BotIngress(), "github": BotIngress()},
+                    attachments=AttachmentInputs(
+                        storage.sessions,
+                        attachment_uploads,
+                        protector,
+                        attachment_http,
+                        settings.connectivity_endpoint_policy(),
+                    ),
                 )
             connectivity, connectivity_background = await build_connectivity_runtime(
                 settings,
@@ -245,6 +291,35 @@ async def open_process_runtime(
                     accounts=connectivity.control.accounts,
                     timeout_seconds=settings.connectivity.total_timeout_seconds,
                 )
+            progress_background: tuple[BackgroundTask, ...] = ()
+            if control is not None:
+                assert memory_http is not None
+                progress = ProgressService(
+                    storage.sessions,
+                    control.gateway.commands,
+                    memory_http,
+                    settings.connectivity_endpoint_policy(),
+                    protector,
+                    public_origin=settings.iam.public_origin,
+                )
+                progress_loop = PeriodicTask(
+                    "bot_task_progress",
+                    progress.scan,
+                    interval_seconds=2,
+                    timeout_seconds=240,
+                )
+
+                async def shutdown_progress() -> None:
+                    await progress_loop.shutdown(timeout_seconds=5)
+
+                progress_background = (
+                    BackgroundTask(
+                        "bot task progress",
+                        progress_loop.run,
+                        return_is_expected=progress_loop.is_draining,
+                        shutdown=shutdown_progress,
+                    ),
+                )
             runtime = ProcessRuntime(
                 settings=settings,
                 status=status,
@@ -257,7 +332,12 @@ async def open_process_runtime(
                 connectivity=connectivity,
                 bots=bot_service,
             )
-            background_components = (*worker_background, *control_background, *connectivity_background)
+            background_components = (
+                *worker_background,
+                *control_background,
+                *connectivity_background,
+                *progress_background,
+            )
             async with create_task_group() as background_tasks:
                 for component in background_components:
                     background_tasks.start_soon(

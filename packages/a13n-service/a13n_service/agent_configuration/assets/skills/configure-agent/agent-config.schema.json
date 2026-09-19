@@ -408,6 +408,28 @@
       "title": "ExtendedAgentCardPolicy",
       "type": "object"
     },
+    "InlineMemoryBackend": {
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "const": "filesystem",
+          "title": "Type",
+          "type": "string"
+        },
+        "configuration": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Configuration",
+          "type": "object"
+        }
+      },
+      "required": [
+        "type"
+      ],
+      "title": "InlineMemoryBackend",
+      "type": "object"
+    },
     "InputAdapterConfig": {
       "additionalProperties": false,
       "properties": {
@@ -431,6 +453,154 @@
       "type": "object"
     },
     "JsonValue": {},
+    "ManagedMemoryBackend": {
+      "additionalProperties": false,
+      "properties": {
+        "provider_id": {
+          "maxLength": 72,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+          "title": "Provider Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider_id"
+      ],
+      "title": "ManagedMemoryBackend",
+      "type": "object"
+    },
+    "MemoryConfiguration": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MemorySelection"
+        },
+        {
+          "$ref": "#/$defs/MemoryEntries"
+        }
+      ]
+    },
+    "MemoryEntries": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "items": {
+            "$ref": "#/$defs/MemoryEntrySelection"
+          },
+          "maxItems": 16,
+          "minItems": 1,
+          "title": "Entries",
+          "type": "array"
+        }
+      },
+      "required": [
+        "entries"
+      ],
+      "title": "MemoryEntries",
+      "type": "object"
+    },
+    "MemoryEntrySelection": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z][a-z0-9_]{0,23}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "records",
+            "documents"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 2000,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Description",
+          "type": "string"
+        },
+        "backend": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ManagedMemoryBackend"
+            },
+            {
+              "$ref": "#/$defs/InlineMemoryBackend"
+            }
+          ],
+          "title": "Backend"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryScope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "toolset": {
+          "default": true,
+          "title": "Toolset",
+          "type": "boolean"
+        },
+        "recall_required": {
+          "default": false,
+          "title": "Recall Required",
+          "type": "boolean"
+        },
+        "auto_organize": {
+          "default": false,
+          "title": "Auto Organize",
+          "type": "boolean"
+        },
+        "auto_recall": {
+          "default": true,
+          "title": "Auto Recall",
+          "type": "boolean"
+        },
+        "recall_limit": {
+          "default": 5,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Recall Limit",
+          "type": "integer"
+        },
+        "recall_threshold": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recall Threshold"
+        },
+        "recall_timeout": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Recall Timeout",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "mode",
+        "description",
+        "backend"
+      ],
+      "title": "MemoryEntrySelection",
+      "type": "object"
+    },
     "MemoryScope": {
       "enum": [
         "thread",
@@ -1222,7 +1392,7 @@
     "memory": {
       "anyOf": [
         {
-          "$ref": "#/$defs/MemorySelection"
+          "$ref": "#/$defs/MemoryConfiguration"
         },
         {
           "type": "null"

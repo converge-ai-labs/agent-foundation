@@ -39,7 +39,6 @@ async def provision_provider(journey, section, settings):
             {
                 "name": "Configured live sandbox",
                 "provider_id": provider["id"],
-                "access": "full",
                 "preparation": "on_run",
                 "retention": {"idle": {"stop_after": None, "delete_after": None}},
                 "configuration": {"template": settings.template, "timeout_seconds": 300},

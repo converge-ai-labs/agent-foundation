@@ -77,6 +77,9 @@ function SettingsForm({
   const [providerId, setProviderId] = useState(
     account.memory?.provider_id ?? "",
   );
+  const [organize, setOrganize] = useState(
+    account.memory?.auto_organize ?? false,
+  );
   const [useMemory, setUseMemory] = useState(
     account.memory?.use_memory ?? true,
   );
@@ -137,6 +140,7 @@ function SettingsForm({
                   use_memory: useMemory,
                   save_on_request: saveMemory,
                   timezone,
+                  auto_organize: organize,
                 },
           },
         })
@@ -168,7 +172,10 @@ function SettingsForm({
         <Label>
           <Switch
             checked={useMemory}
-            onCheckedChange={setUseMemory}
+            onCheckedChange={(value) => {
+              setUseMemory(value);
+              if (!value) setOrganize(false);
+            }}
             disabled={!enabled}
           />
           {t("Refer to memory when answering")}
@@ -176,7 +183,10 @@ function SettingsForm({
         <Label>
           <Switch
             checked={saveMemory}
-            onCheckedChange={setSaveMemory}
+            onCheckedChange={(value) => {
+              setSaveMemory(value);
+              if (!value) setOrganize(false);
+            }}
             disabled={!enabled}
           />
           {t("Allow saving or deleting memory through chat")}
@@ -210,7 +220,10 @@ function SettingsForm({
               <ChoiceField
                 label={t("Memory storage")}
                 value={providerId}
-                onValueChange={setProviderId}
+                onValueChange={(value) => {
+                  setProviderId(value);
+                  setOrganize(false);
+                }}
                 options={[
                   {
                     value: "",
@@ -257,6 +270,18 @@ function SettingsForm({
           )}
         </>
       )}
+      {enabled &&
+        providers.data?.find((item) => item.id === providerId)?.type ===
+          "filesystem" && (
+          <Label>
+            <Switch
+              checked={organize}
+              onCheckedChange={setOrganize}
+              disabled={!useMemory || !saveMemory}
+            />
+            {t("Automatic organization")}
+          </Label>
+        )}
       <MemoryProviderEditor
         scope={{ kind: "workspace", id: workspace.id }}
         controlledOpen={addingProvider}
@@ -366,6 +391,9 @@ function GroupForm({
   const [visibility, setVisibility] = useState<"group" | "installation">(
     "group",
   );
+  const [organize, setOrganize] = useState(
+    initialScope?.auto_organize ?? false,
+  );
   const [loaded, setLoaded] = useState(false);
   const [expectedVersion, setExpectedVersion] = useState<number | undefined>();
   const choices = useQuery({
@@ -435,6 +463,7 @@ function GroupForm({
     setVisibility(scope?.visibility ?? "group");
     setRead(scope?.use_memory ?? true);
     setWrite(scope?.save_on_request ?? true);
+    setOrganize(scope?.auto_organize ?? false);
     setTimezone(scope?.timezone ?? account.memory?.timezone ?? "UTC");
     setExpectedVersion(scope?.version);
   }
@@ -451,6 +480,7 @@ function GroupForm({
             visibility,
             use_memory: read,
             save_on_request: write,
+            auto_organize: organize,
             timezone,
           },
         })
@@ -492,6 +522,7 @@ function GroupForm({
               (item) => item.external_conversation_id === value,
             );
             setExpectedVersion(selected?.version);
+            setOrganize(selected?.auto_organize ?? false);
             setEnabled(selected?.enabled ?? true);
             setVisibility(selected?.visibility ?? "group");
             setRead(selected?.use_memory ?? true);
@@ -510,7 +541,10 @@ function GroupForm({
         <Label>
           <Switch
             checked={read}
-            onCheckedChange={setRead}
+            onCheckedChange={(value) => {
+              setRead(value);
+              if (!value) setOrganize(false);
+            }}
             disabled={!enabled}
           />
           {t("Refer to memory when answering")}
@@ -518,12 +552,25 @@ function GroupForm({
         <Label>
           <Switch
             checked={write}
-            onCheckedChange={setWrite}
+            onCheckedChange={(value) => {
+              setWrite(value);
+              if (!value) setOrganize(false);
+            }}
             disabled={!enabled}
           />
           {t("Allow saving or deleting memory through chat")}
         </Label>
       </div>
+      {account.memory?.auto_organize && (
+        <Label>
+          <Switch
+            checked={organize}
+            onCheckedChange={setOrganize}
+            disabled={!enabled || !read || !write}
+          />
+          {t("Automatic organization")}
+        </Label>
+      )}
       <ChoiceField
         label={t("Who can read this group's memory?")}
         value={visibility}
@@ -539,7 +586,10 @@ function GroupForm({
                 ? "All connected channels in this Slack workspace"
                 : "All connected groups in this Feishu enterprise",
             ),
-            disabled: !scope || !["public", "private"].includes(scope.audience),
+            disabled:
+              !scope ||
+              scope.backend_type === "filesystem" ||
+              !["public", "private"].includes(scope.audience),
           },
         ]}
       />

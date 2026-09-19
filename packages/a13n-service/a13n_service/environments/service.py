@@ -573,7 +573,6 @@ class EnvironmentService:
             workspace_id=workspace_id,
             provider_id=provider.id,
             ownership="external",
-            access=request.access.value,
             external_configuration={
                 "configuration_schema_version": request.configuration_schema_version,
                 "configuration": request.configuration,

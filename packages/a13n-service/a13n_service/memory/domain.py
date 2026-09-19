@@ -1,11 +1,12 @@
 """Memory subjects, Agent selection, and bounded public representations."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from a13n_harness.providers.authentication import Authentication
 from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
+from a13n_harness.providers.memory.filesystem.configuration import FilesystemMemoryConfiguration
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_serializer, model_validator
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId
@@ -27,6 +28,83 @@ class MemorySelection(BaseModel):
     recall_threshold: float | None = Field(default=None, ge=0, le=1)
     recall_timeout: float = Field(default=2, gt=0, le=300)
     recall_required: bool = False
+
+
+class ManagedMemoryBackend(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    provider_id: ObjectId
+
+
+class InlineMemoryBackend(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: Literal["filesystem"]
+    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_configuration(self) -> "InlineMemoryBackend":
+        FilesystemMemoryConfiguration.model_validate(self.configuration)
+        return self
+
+
+class MemoryEntrySelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,23}$")
+    mode: Literal["records", "documents"]
+    description: str = Field(min_length=1, max_length=2000, pattern=r"\S")
+    backend: ManagedMemoryBackend | InlineMemoryBackend
+    scope: ScopeKind | None = None
+    toolset: bool = True
+    recall_required: bool = False
+    auto_organize: bool = False
+    auto_recall: bool = True
+    recall_limit: int = Field(default=5, ge=1, le=100)
+    recall_threshold: float | None = Field(default=None, ge=0, le=1)
+    recall_timeout: float = Field(default=2, gt=0, le=300)
+
+    @model_serializer(mode="wrap")
+    def serialize_mode(self, handler):
+        result = handler(self)
+        excluded = (
+            {"auto_organize"}
+            if self.mode == "records"
+            else {"auto_recall", "recall_limit", "recall_threshold", "recall_timeout"}
+        )
+        return {key: value for key, value in result.items() if key not in excluded}
+
+    @model_validator(mode="after")
+    def mode_options(self) -> "MemoryEntrySelection":
+        if self.mode == "records":
+            if isinstance(self.backend, InlineMemoryBackend):
+                raise ValueError("Filesystem memory requires documents mode")
+            if "auto_organize" in self.model_fields_set:
+                raise ValueError("auto_organize is a document option")
+        elif self.model_fields_set & {"auto_recall", "recall_limit", "recall_threshold", "recall_timeout"}:
+            raise ValueError("Recall options are only available in records mode")
+        return self
+
+
+class MemoryEntries(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    entries: tuple[MemoryEntrySelection, ...] = Field(min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def unique_names(self) -> "MemoryEntries":
+        if len({entry.name for entry in self.entries}) != len(self.entries):
+            raise ValueError("Memory entry names must be unique")
+        return self
+
+
+type MemoryConfiguration = MemorySelection | MemoryEntries
+
+
+def memory_provider_ids(selection: MemoryConfiguration) -> tuple[str, ...]:
+    if isinstance(selection, MemorySelection):
+        return (selection.provider_id,)
+    return tuple(
+        dict.fromkeys(
+            entry.backend.provider_id for entry in selection.entries if isinstance(entry.backend, ManagedMemoryBackend)
+        )
+    )
 
 
 class MemoryScope(BaseModel):
@@ -143,6 +221,9 @@ class MemoryProviderDefinition(BaseModel):
     setup_url: str | None = None
     setup_label: str | None = None
     supports_documents: bool = False
+    supports_records: bool = True
+    supports_revisions: bool = False
+    supports_changes: bool = False
 
 
 class MemoryProviderDefinitionCollection(BaseModel):

@@ -33,6 +33,7 @@ from .models import (
     ConfigurationSourceRecord,
     CurrentConfigurationRecord,
     EnvironmentBindingRecord,
+    PlannedRestartRecord,
     ProjectModelPreferenceRecord,
     ResourceIndexRecord,
     ThreadConfigurationRecord,
@@ -415,7 +416,7 @@ class ThreadRepository:
             return {record.thread_id: value for record in records if (value := _read_model(record)) is not None}
 
     async def missing_read_models(self, *, after: str = "", limit: int = 16) -> tuple[tuple[str, ObjectRef], ...]:
-        """Keyset batch for maintenance, including heads advanced by older writers."""
+        """Keyset batch for restart_coordinator, including heads advanced by older writers."""
         async with short_session(self._sessions) as session:
             records = await session.scalars(
                 select(ThreadRecord)
@@ -575,6 +576,7 @@ class ChildExecutionRepository:
         execution_id: str,
         child_run_id: str,
         run_composition: ObjectRef,
+        restart_batch_id: str | None = None,
         created_at: datetime | None = None,
     ) -> ChildExecutionHead:
         _require_kind(run_composition, ObjectKind.run_composition)
@@ -583,7 +585,33 @@ class ChildExecutionRepository:
             previous = await session.get(ChildExecutionRecord, previous_execution_id)
             if previous is None:
                 raise StoreIntegrityError("Previous child execution does not exist.", code="child_execution_missing")
-            if previous.status != "succeeded" or previous.selected_checkpoint_digest is None:
+            planned = False
+            if restart_batch_id is not None:
+                from a13n_harness_ui.restart_models import RestartBatch
+
+                record_batch = await session.get(PlannedRestartRecord, 1)
+                batch = None if record_batch is None else RestartBatch.model_validate_json(record_batch.payload)
+                planned = (
+                    batch is not None
+                    and batch.state == "consumed"
+                    and batch.batch_id == restart_batch_id
+                    and any(
+                        item.execution_id == previous_execution_id
+                        and item.checkpoint.logical_digest == previous.selected_checkpoint_digest
+                        and item.composition == run_composition
+                        for item in batch.items
+                    )
+                )
+                successor = await session.scalar(
+                    select(ChildExecutionRecord.execution_id).where(
+                        ChildExecutionRecord.resumed_from == previous_execution_id
+                    )
+                )
+                if not planned or successor is not None:
+                    raise StoreIntegrityError(
+                        "The child update handoff is stale or already used.", code="restart_conflict"
+                    )
+            if (previous.status != "succeeded" and not planned) or previous.selected_checkpoint_digest is None:
                 raise StoreIntegrityError(
                     "Previous child execution is not resumable.", code="child_execution_not_resumable"
                 )
@@ -604,6 +632,12 @@ class ChildExecutionRepository:
                 updated_at=now,
                 completed_at=None,
             )
+            if planned:
+                previous.failure_json = SafeFailure(
+                    code="planned_update",
+                    message=f"Continued after a planned update as {execution_id} (Run {child_run_id}).",
+                ).model_dump_json()
+                previous.updated_at = now
             session.add(record)
             await session.flush()
             return _child_value(record)

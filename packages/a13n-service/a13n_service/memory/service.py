@@ -1,7 +1,7 @@
 """Authorized typed memory management without a second memory store."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
 from a13n_harness.providers.memory import MemoryProviderCatalog
@@ -13,14 +13,18 @@ from a13n_harness.providers.memory.contracts import (
     require_memory_subject,
     validate_memory_text,
 )
+from a13n_harness.providers.memory.documents import MemoryDocumentError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.collection_cursors import decode_collection_cursor, encode_collection_cursor
+from a13n_service.environments.file_access import ExistingEnvironmentFiles
 from a13n_service.iam import AuthenticatedActor, AuthorizationError
 from a13n_service.secrets.crypto import SecretProtector
 
 from .domain import Memory, MemoryAccess, MemoryCollection, MemoryPagination, MemoryScope, MemorySearch
 from .execution import open_memory_backend
+from .models import MemoryStorageRecord
 from .scopes import MemoryAuthorizer
 
 
@@ -35,6 +39,18 @@ async def memory_io(timeout: float, *, write: bool = False) -> AsyncIterator[Non
             yield
     except asyncio.CancelledError:
         raise
+    except MemoryDocumentError as error:
+        category = (
+            ErrorCategory.stale_version
+            if error.code in {"memory_conflict", "memory_edit_conflict"}
+            else ErrorCategory.not_found
+            if error.code == "memory_not_found"
+            else ErrorCategory.invalid_request
+            if error.code
+            in {"memory_query_invalid", "memory_cursor_invalid", "memory_document_invalid", "memory_patch_invalid"}
+            else ErrorCategory.unavailable
+        )
+        raise failure(error.code, "The memory operation could not be completed.", category) from error
     except MemoryRecordNotFound as error:
         raise failure("memory_not_found", "Memory not found.", ErrorCategory.not_found) from error
     except MemoryPaginationUnsupported as error:
@@ -67,11 +83,20 @@ class MemoryService:
         authorizer: MemoryAuthorizer,
         *,
         timeout: float = 30,
+        files: ExistingEnvironmentFiles | None = None,
     ) -> None:
         self.catalog = catalog
         self.protector = protector
         self.authorizer = authorizer
         self.timeout = timeout
+        self.files = files
+        self.authorize_organization: (
+            Callable[[AsyncSession, str, MemoryStorageRecord, dict[str, object]], Awaitable[None]] | None
+        ) = None
+        self.verify_organization: Callable[[str, str], Awaitable[None]] | None = None
+        self.authorize_conversation: (
+            Callable[[AsyncSession, AuthenticatedActor, MemoryStorageRecord, bool], Awaitable[None]] | None
+        ) = None
 
     async def access(
         self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str, selection: MemoryScope

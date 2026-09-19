@@ -49,8 +49,8 @@ def test_reviewed_ci_journeys_collect_once_without_external_or_stress_cases(coll
             for token in ("/model/", "/providers/", "/performance/", "/infrastructure_tests/", "e2b")
         )
     assert len(collected_suites["core"]) == 21
-    assert len(collected_suites["functional"]) == 121
-    assert len(seen) == 451
+    assert len(collected_suites["functional"]) == 119
+    assert len(seen) == 448
     assert len(collected_suites["smoke"]) == 34
     assert collected_suites["smoke"] <= seen
     assert not any("test_06_steer" in case for case in collected_suites["smoke"])

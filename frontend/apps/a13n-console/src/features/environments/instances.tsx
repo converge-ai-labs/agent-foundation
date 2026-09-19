@@ -170,8 +170,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
     [schemaVersion, setSchemaVersion] = useState("1"),
     [configuration, setConfiguration] = useState("{}"),
     [state, setState] = useState(""),
-    [stateVersion, setStateVersion] = useState("1"),
-    [access, setAccess] = useState<Schema["EnvironmentAccess"]>("full");
+    [stateVersion, setStateVersion] = useState("1");
   const save = useMutation({
     mutationFn: () => {
       const provider = providers.data?.find((item) => item.id === providerId);
@@ -190,7 +189,7 @@ function EnvironmentForm({ close }: { close: () => void }) {
               ...(name.trim() && { name: name.trim() }),
               configuration: jsonObject(configuration),
               configuration_schema_version: schemaVersion,
-              access,
+
               ...(state.trim() &&
                 provider && {
                   state: {
@@ -275,25 +274,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
                 ?.filter((item) => item.enabled)
                 .map((item) => ({ value: item.id, label: item.name })) ?? []
             }
-          />
-          <ChoiceField
-            placeholder={t("Select access")}
-            value={access}
-            className="min-w-0"
-            onValueChange={(value) => {
-              if (
-                value === "full" ||
-                value === "read_only" ||
-                value === "read_write"
-              )
-                setAccess(value);
-            }}
-            label={t("Access permissions")}
-            options={[
-              { value: "full", label: t("Full access") },
-              { value: "read_write", label: t("Read and write") },
-              { value: "read_only", label: t("Read only") },
-            ]}
           />
           <FormField
             className="min-w-0 w-full"

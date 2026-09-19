@@ -45,7 +45,7 @@ if TYPE_CHECKING:
         MediaReadRequest,
         MediaResource,
     )
-    from .memory import MemoryCapability, MemoryScope
+    from .memory import MemoryCapability, MemoryEntry, MemoryScope
     from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
     from .skills import (
         BoundSkillCatalog,
@@ -180,6 +180,7 @@ _EXPORTS = {
     "MediaReadRequest": ("a13n_harness.capabilities.media", "MediaReadRequest"),
     "MediaResource": ("a13n_harness.capabilities.media", "MediaResource"),
     "MemoryCapability": ("a13n_harness.capabilities.memory", "MemoryCapability"),
+    "MemoryEntry": ("a13n_harness.capabilities.memory", "MemoryEntry"),
     "MemoryScope": ("a13n_harness.capabilities.memory", "MemoryScope"),
     "NativeImageGenerationCapability": (
         "a13n_harness.capabilities.native_image_generation",
@@ -330,6 +331,7 @@ __all__ = [
     "MediaReader",
     "MediaResource",
     "MemoryCapability",
+    "MemoryEntry",
     "MemoryScope",
     "NativeImageGenerationCapability",
     "NativeImageSaver",

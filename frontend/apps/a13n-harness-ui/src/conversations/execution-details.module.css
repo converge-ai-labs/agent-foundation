@@ -1,0 +1,96 @@
+.preview {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  margin-block: 8px 18px;
+  padding: 12px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  color: var(--a13n-text-supporting);
+  text-align: start;
+  cursor: pointer;
+}
+.preview:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.previewHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.previewHeading > svg {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+}
+.excerpt {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.fullscreen[data-slot="dialog-popup"] {
+  position: fixed;
+  inset: var(--visible-top, 0px) 0 auto;
+  width: 100%;
+  height: var(--visible-height, 100dvh);
+  max-width: none;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--a13n-canvas);
+  transition: none;
+}
+.fullscreen[hidden] {
+  display: none;
+}
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: calc(8px + env(safe-area-inset-top))
+    max(12px, env(safe-area-inset-right)) 8px
+    max(8px, env(safe-area-inset-left));
+  border-bottom: 1px solid var(--a13n-border);
+}
+.header > button {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.title[data-slot="dialog-title"] {
+  font-size: 15px;
+}
+.metrics {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.fullscreen > [data-execution-reader] {
+  min-height: 0;
+  max-height: none;
+  margin: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 12px max(16px, env(safe-area-inset-right))
+    max(24px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+}
+/* The fullscreen reader owns vertical scrolling, including expanded tools,
+   source text, code and diagrams. Horizontal code scrolling remains native. */
+.fullscreen :global([data-tool-details]),
+.fullscreen :global([data-tool-resources]),
+.fullscreen [data-execution-reader] pre,
+.fullscreen :global([data-diagram-canvas]) {
+  max-height: none;
+}
+.fullscreen :global([data-tool-details]),
+.fullscreen :global([data-tool-resources]) {
+  overflow: visible;
+}

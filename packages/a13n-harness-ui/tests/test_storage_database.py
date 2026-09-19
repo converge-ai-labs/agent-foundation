@@ -35,6 +35,7 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "current_configuration",
             "environment_binding",
             "project_model_preference",
+            "planned_restart",
             "output_comment",
             "output_comment_tombstone",
             "resource_index",
@@ -53,6 +54,32 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
                 opts={"compare_type": True, "compare_server_default": True, "render_as_batch": True},
             )
             assert compare_metadata(context, harness_ui_metadata()) == []
+    finally:
+        engine.dispose()
+
+
+def test_planned_handoff_migration_requires_resolution_before_downgrade(tmp_path: Path) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator.upgrade()
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("INSERT INTO planned_restart (singleton_id, payload) VALUES (1, '{}')"))
+        with pytest.raises(RuntimeError, match="retained restart data"):
+            migrator._run(  # pyright: ignore[reportPrivateUsage]
+                lambda config: command.downgrade(config, "63e8be47c2e2"), write=True
+            )
+        migrator.verify_current()
+        with engine.begin() as connection:
+            assert connection.execute(text("SELECT payload FROM planned_restart")).scalar_one() == "{}"
+            connection.execute(text("DELETE FROM planned_restart"))
+        migrator._run(  # pyright: ignore[reportPrivateUsage]
+            lambda config: command.downgrade(config, "63e8be47c2e2"), write=True
+        )
+        assert "planned_restart" not in inspect(engine).get_table_names()
+        migrator.upgrade()
+        migrator.verify_current()
     finally:
         engine.dispose()
 

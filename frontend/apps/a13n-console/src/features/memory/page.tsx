@@ -11,6 +11,7 @@ import { allPages, data } from "../../shared/api";
 import { Empty, ErrorNotice, Page } from "../../shared/feedback";
 import { providersPath } from "../providers/navigation";
 import { memoryKey, type MemoryTarget } from "./api";
+import { FileMemoryBrowser } from "./documents";
 import { MemoryContents } from "./contents";
 import {
   useMemoryProviders,
@@ -20,12 +21,34 @@ import {
 
 export function MemoriesPage() {
   const [params, setParams] = useSearchParams();
+  const { t } = useTranslation();
+  const [mode, setMode] = useState("records");
   return (
-    <MemoryPageSelection
-      key={params.toString()}
-      params={params}
-      onSelect={setParams}
-    />
+    <>
+      <div className="mb-5 flex gap-2">
+        <Button
+          variant={mode === "records" ? "default" : "outline"}
+          onClick={() => setMode("records")}
+        >
+          {t("Mem0 records")}
+        </Button>
+        <Button
+          variant={mode === "files" ? "default" : "outline"}
+          onClick={() => setMode("files")}
+        >
+          {t("File-based memory")}
+        </Button>
+      </div>
+      {mode === "files" ? (
+        <FileMemoryBrowser />
+      ) : (
+        <MemoryPageSelection
+          key={params.toString()}
+          params={params}
+          onSelect={setParams}
+        />
+      )}
+    </>
   );
 }
 
