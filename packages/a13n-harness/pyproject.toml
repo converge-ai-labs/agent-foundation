@@ -13,6 +13,7 @@ dependencies = [
     "genai-prices>=0.1.6,<1",
     "httpx2>=2.5,<3",
     "jsonschema>=4.25,<5",
+    "markdown-it-py>=4,<5",
     "mem0ai>=2.0.19,<3",
     "opentelemetry-api>=1.39,<2",
     "pydantic>=2.12,<3",

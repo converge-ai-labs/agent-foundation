@@ -121,7 +121,61 @@ async with plugin.open(configuration, credential) as backend:
 
 Catalogs also accept explicit plugin objects or selected installed entry-point keys from `a13n_harness.memory_backends`. Installing a distribution does not enable it. Duplicate keys fail rather than shadowing, and unselected entry points are not imported. Embedded applications can continue injecting a backend directly. Hosted applications instead select an authorized [Memory Provider resource](../a13n-service/memory.md); provider selection and Agent behavior are separate settings.
 
-The public names are `MemoryCapability` and `MemoryScope`, with Capability ID `a13n.memory`. There are no compatibility aliases for the earlier Mem0-only Capability. Backend objects, credentials, and transports are not serialized in `AgentSpec` or `HarnessState`.
+The public names are `MemoryCapability`, `MemoryEntry`, and `MemoryScope`, with Capability ID `a13n.memory`. There are no compatibility aliases for the earlier Mem0-only Capability. Backend objects, credentials, and transports are not serialized in `AgentSpec` or `HarnessState`.
+
+### Embedded filesystem documents
+
+`FilesystemMemoryStore` in `a13n_harness.filesystem_memory` stores Markdown revisions with validated JSON frontmatter through a borrowed Environment `FileOperator`. It never opens a Worker-local path or executes shell commands. The Host supplies a root-confined, incarnation-pinned file operator, the exact storage identity, trusted subject and principal, and callbacks that check current read/write and source authority. `FilesystemMemoryBackendPlugin` is available under the explicitly selected `a13n.filesystem` catalog key; its empty credential schema does not grant Environment access. Use its `open_documents(configuration, binding=...)` factory with a `FilesystemMemoryBinding`; native `open()` rejects this document-only backend.
+
+Service and Console expose this backend through document entries. Embedded Hosts can use the same store directly. A raw filesystem operator alone is not a complete hosted memory binding: the Host also supplies current authority, stable target identity, and conditional publication.
+
+Writes require a Host-supplied `MemoryFileCoordinator`. Its transaction coordinates cooperating writes and erasure across processes, keeps the exact storage binding, settles issued I/O before releasing ownership, and publishes complete bytes conditionally and durably. An in-process lock, a lease without storage fencing, or ordinary `FileOperator.write_text()` alone does not implement that contract. `EnvironmentMemoryFileCoordinator` stages one operation and publishes through the optional Environment `commit` capability. POSIX Direct Local and current EIP/envd adapters implement that capability; unsupported adapters fail explicitly. Set the coordinator root to `store.subject_root`. Native OS locking serializes cooperating commits across processes, and all observed content digests are checked before ordered publication. This is not an all-or-nothing multi-file transaction and does not serialize shell or ordinary file edits. Without one, document reads remain available, writes fail before mutation, and model write tools are omitted.
+
+Call `initialize()` only after the Host has explicitly admitted a new corpus. Ordinary reads and reconnection verify its marker and never recreate a missing store. The default plugin root is `/memory` in the selected Environment; a configured Environment ID/root must match the supplied binding. Environment adapters remain Host-owned and are not closed by the memory factory.
+
+The current implementation includes:
+
+- `semantic`, `procedural`, and immutable `episodic` documents; legacy `daily`/`long_term` writes are rejected rather than classified implicitly;
+- exact-version reads, revision history, and conditional replace/append/edit/patch operations;
+- request-key recovery for acknowledged and uncertain publication, including append without duplication;
+- digest-bound navigation metadata, lexical substring search including Chinese, AST-based headings, and bounded UTF-8 reads;
+- deletion tombstones followed by erasure of revisions, content-bearing changes, and derived metadata;
+- one to 1,000 document heads per navigation/search scan, at most 1,000 revisions per document, and an 8 MiB content scan ceiling for lexical search. Exceeding a ceiling reports unavailable retrieval rather than a complete-looking partial result.
+
+Bodies and metadata must fit 256 KiB, reads return at most 32 KiB, and computed diffs have an additional 10,000-line input ceiling. A successful mutation reports committed identity separately from `indexed`; failed derived-cache publication does not undo a committed document. Missing indexes are reconstructed from committed revisions during retrieval. Revisions and commit records are authoritative; caches are not. Out-of-band changes to a revision fail digest verification rather than becoming trusted history.
+
+The Host can list documents and apply bounded organization plans through `memory_organization`. The Host owns durable completion admission, model extraction, current authorization, retry scheduling, and opt-in policy; the embedded store does not start background model calls itself. The complete document-memory specification also describes physical navigation trees, metadata edits, source correction workflows, and management change queries. Those surfaces remain outside this embedded store. `supports_changes` remains false: retaining internal commit diffs alone does not claim the complete public change-query and retention contract.
+
+### Multiple embedded entries
+
+One Capability can combine separately prepared record and document entries:
+
+```python
+from a13n_harness.capabilities import MemoryCapability, MemoryEntry
+
+memory = MemoryCapability(
+    entries=(
+        MemoryEntry(
+            name="preferences",
+            mode="records",
+            description="User preferences and personal facts.",
+            capability=MemoryCapability(backend=mem0_backend),
+        ),
+        MemoryEntry(
+            name="project",
+            mode="documents",
+            description="Project requirements and operating procedures.",
+            capability=MemoryCapability(document_store=filesystem_store),
+        ),
+    )
+)
+```
+
+The Host opens `mem0_backend` and prepares `filesystem_store` with the bindings described above before constructing the Capability. Entries require distinct names, explicit modes, and nonblank authored purposes; one to sixteen entries are accepted. Multiple entries of the same mode are supported. Tools and permission identities are namespaced independently, such as `preferences_memory_add` and `project_memory_read`. Document references include their entry, such as `memory://project/mdoc_...`; another entry rejects that reference even if it happens to point at the same corpus.
+
+Entries contribute peer guidance and distinct untrusted context blocks under a shared 64 KiB memory budget. Oversized document navigation is explicitly deferred to that entry's index tool. Required document-index failure stops before model work; optional failure leaves an explicit unavailable projection. Native entries retain their bounded once-per-run recall. Host-owned typed record calls select an entry explicitly, for example `await memory.add(ctx, text, entry="preferences", scope=MemoryScope.USER)` on the current run Capability.
+
+Entry names route tools; they do not change storage namespaces. There is no implicit synchronization, dual writing, cross-entry transaction, or fallback. The existing single-backend constructor remains supported for existing embedded Hosts and retained Service integrations.
 
 ## Working State
 

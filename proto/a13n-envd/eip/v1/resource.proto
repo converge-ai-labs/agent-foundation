@@ -250,6 +250,30 @@ message FileWriteTextResult {
   OperationReceipt receipt = 3;
 }
 
+message FileCommitCondition {
+  EIPPath path = 1;
+  optional ContentDigest digest = 2;
+}
+
+message FileCommitWrite {
+  EIPPath path = 1;
+  string text = 2;
+}
+
+message FileCommitParams {
+  EIPCallContext context = 1;
+  EIPPath root = 2;
+  repeated FileCommitCondition conditions = 3;
+  repeated EIPPath directories = 4;
+  repeated FileCommitWrite writes = 5;
+  repeated EIPPath removals = 6;
+}
+
+message FileCommitResult {
+  uint64 files_written = 1;
+  OperationReceipt receipt = 2;
+}
+
 message FileWriterOpenParams {
   reserved 4, 6;
   reserved "expected_revision", "transfer_deadline";

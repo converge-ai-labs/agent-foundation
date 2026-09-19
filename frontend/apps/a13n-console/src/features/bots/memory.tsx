@@ -1,3 +1,4 @@
+import { FileMemoryBrowser } from "../memory/documents";
 import type { BotAccount } from "./account";
 import {
   FileTextIcon,
@@ -259,7 +260,22 @@ function MemoryBrowser({
   );
 }
 
-function ScopeDocuments({
+function ScopeDocuments(props: Parameters<typeof NativeScopeDocuments>[0]) {
+  return props.scope?.backend_type === "a13n.filesystem" ? (
+    <div className="min-w-0 p-5">
+      <GroupMemorySettings
+        account={props.account}
+        initialScope={props.scope}
+        target={props.target}
+      />
+      <FileMemoryBrowser conversationScopeId={props.scopeId} />
+    </div>
+  ) : (
+    <NativeScopeDocuments {...props} />
+  );
+}
+
+function NativeScopeDocuments({
   account,
   scopeId,
   scopeName,

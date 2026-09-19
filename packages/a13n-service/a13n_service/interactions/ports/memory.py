@@ -37,14 +37,14 @@ class ActiveMemory:
 
     @property
     def retrieval(self) -> Literal["automatic", "index_first", "on_request"]:
-        if self.capability.document_store is not None:
+        if self.capability.document_store is not None or self.capability.document_factory is not None:
             return "index_first"
         return "automatic" if self.capability.auto_recall else "on_request"
 
     @property
     def operations(self) -> frozenset[MemoryOperation]:
         capability = self.capability
-        if capability.document_store is not None:
+        if capability.document_store is not None or capability.document_factory is not None:
             operations: set[MemoryOperation] = set()
             if capability.document_read:
                 operations.update(("index", "search", "read"))

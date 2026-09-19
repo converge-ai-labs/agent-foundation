@@ -4,7 +4,8 @@ import json
 from datetime import timedelta
 
 from a13n_harness.memory_plugins import MemoryBackendCatalog
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, cast, or_, select
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -68,6 +69,10 @@ class MemoryProviderService:
                     type=key,
                     display_name=plugin.display_name,
                     supports_documents=plugin.supports_documents,
+                    supports_records=plugin.supports_records,
+                    supports_revisions=plugin.supports_revisions,
+                    supports_changes=plugin.supports_changes,
+                    requires_credential=plugin.requires_credential,
                     configuration_schema=plugin.configuration_model.model_json_schema(),
                     credential_schema={**plugin.credential_model.model_json_schema(), "writeOnly": True},
                 )
@@ -106,7 +111,8 @@ class MemoryProviderService:
                     created_at=now,
                     updated_at=now,
                 )
-                record.replace_credential(json.dumps(credentials), self.protector)
+                if self.catalog[request.type].requires_credential:
+                    record.replace_credential(json.dumps(credentials), self.protector)
                 session.add(record)
                 self.audit(session, actor, record, "create", tuple(request.model_fields_set))
                 await session.flush()
@@ -265,7 +271,12 @@ class MemoryProviderService:
                 .join(AgentRecord, AgentRecord.id == AgentRevisionRecord.agent_id)
                 .where(
                     AgentRecord.organization_id == scope.organization_id,
-                    AgentRevisionRecord.config["memory"]["provider_id"].as_string() == provider_id,
+                    or_(
+                        AgentRevisionRecord.config["memory"]["provider_id"].as_string() == provider_id,
+                        cast(AgentRevisionRecord.config, JSONB)["memory"]["entries"].contains(
+                            [{"backend": {"provider_id": provider_id}}]
+                        ),
+                    ),
                 )
             )
             if workspace_id is not None:

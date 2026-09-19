@@ -18,6 +18,7 @@ class MemorySettings(StrictModel):
     provider_id: ObjectId
     use_memory: bool = True
     save_on_request: bool = True
+    auto_organize: bool = False
     timezone: str = Field(default="UTC", max_length=128)
 
     @field_validator("timezone")
@@ -35,6 +36,7 @@ class ScopeSettings(StrictModel):
     enabled: bool = True
     use_memory: bool = True
     save_on_request: bool = True
+    auto_organize: bool = False
     timezone: str = Field(default="UTC", max_length=128)
 
     _timezone = field_validator("timezone")(MemorySettings.valid_timezone.__func__)
@@ -47,6 +49,7 @@ class ConfigureScope(ScopeSettings):
 
 
 class Scope(ScopeSettings):
+    backend_type: str | None = None
     id: ObjectId
     account_id: ObjectId
     provider_id: ObjectId

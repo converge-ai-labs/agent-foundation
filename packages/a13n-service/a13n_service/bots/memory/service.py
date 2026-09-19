@@ -19,6 +19,7 @@ from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_workspace
 from a13n_service.ids import new_object_id
 from a13n_service.memory.execution import MemoryProviderAccess, open_memory_backend
+from a13n_service.memory.models import MemoryProviderRecord
 from a13n_service.memory.resources import require_document_support, require_provider
 from a13n_service.memory.service import MemoryService, failure, memory_io
 from a13n_service.storage import short_session, transaction
@@ -127,8 +128,13 @@ class BotMemoryService:
             if cursor:
                 query = query.where(ScopeRecord.id > self._cursor(cursor, binding))
             rows = list(await session.scalars(query.order_by(ScopeRecord.id).limit(limit + 1)))
+            provider = await session.get(MemoryProviderRecord, provider_id)
             return ScopeCollection(
-                items=tuple(row.to_resource() for row in rows[:limit]), next_cursor=self._next(rows, limit, binding)
+                items=tuple(
+                    row.to_resource().model_copy(update={"backend_type": provider.type if provider else None})
+                    for row in rows[:limit]
+                ),
+                next_cursor=self._next(rows, limit, binding),
             )
 
     async def configure_scope(self, actor: AuthenticatedActor, account_id: str, body: ConfigureScope) -> Scope:
@@ -209,7 +215,21 @@ class BotMemoryService:
                     "Verify a group conversation before opening its memory to other groups.",
                     ErrorCategory.conflict,
                 )
-            await self._provider(session, scope)
+            provider_access = await self._provider(session, scope)
+            if provider_access.provider_type == "a13n.filesystem" and body.visibility == "installation":
+                raise failure(
+                    "memory_visibility_unavailable",
+                    "File-based conversation stores currently require group-only visibility.",
+                    ErrorCategory.conflict,
+                )
+            if body.auto_organize and (
+                provider_access.provider_type != "a13n.filesystem" or not body.use_memory or not body.save_on_request
+            ):
+                raise failure(
+                    "memory_organization_unsupported",
+                    "Automatic organization requires File-based memory with reading and saving enabled.",
+                    ErrorCategory.invalid_request,
+                )
             await session.flush()
             await audit(
                 session,

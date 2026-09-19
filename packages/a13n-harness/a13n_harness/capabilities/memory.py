@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator, Mapping, Sequence
+import re
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from secrets import token_urlsafe
@@ -151,6 +152,30 @@ class _MemoryBinding:
             return await self.backend.add(text, subject=self.scope_binding(scope))
 
 
+@dataclass(frozen=True, slots=True)
+class MemoryEntry:
+    """An explicitly named, Host-prepared memory binding and its authored purpose."""
+
+    name: str
+    mode: Literal["records", "documents"]
+    description: str
+    capability: MemoryCapability
+
+    def __post_init__(self) -> None:
+        if re.fullmatch(r"[a-z][a-z0-9_]{0,23}", self.name) is None:
+            raise ValueError("Memory entry names must be valid stable tool prefixes")
+        if not self.description.strip() or len(self.description) > 2000:
+            raise ValueError("Memory entries require a bounded nonblank purpose")
+        if not isinstance(self.capability, MemoryCapability):
+            raise ValueError("Memory entries require a prepared MemoryCapability")
+        if self.capability.entries is not None:
+            raise ValueError("Memory entries cannot be nested")
+        if self.mode not in {"records", "documents"} or (self.mode == "documents") != (
+            self.capability.document_store is not None or self.capability.document_factory is not None
+        ):
+            raise ValueError("Memory entry mode must match its prepared binding")
+
+
 @dataclass(init=False)
 class MemoryCapability(AbstractModelContextCapability):
     """Recall and expose bounded long-term memory through a host-owned backend."""
@@ -161,7 +186,9 @@ class MemoryCapability(AbstractModelContextCapability):
         self,
         *,
         backend: MemoryBackend | None = None,
+        entries: Sequence[MemoryEntry] | None = None,
         document_store: MemoryDocumentStore | None = None,
+        document_factory: Callable[[AgentContext], Awaitable[MemoryDocumentStore]] | None = None,
         document_read: bool = True,
         document_write: bool = True,
         scope_ids: Mapping[MemoryScope, str] | None = None,
@@ -173,7 +200,19 @@ class MemoryCapability(AbstractModelContextCapability):
         recall_timeout: float = 2.0,
         recall_required: bool = False,
     ) -> None:
-        if (backend is None) == (document_store is None):
+        self.entries = tuple(entries) if entries is not None else None
+        if self.entries is not None:
+            if not 1 <= len(self.entries) <= 16 or len({entry.name for entry in self.entries}) != len(self.entries):
+                raise ValueError("Memory requires one to sixteen uniquely named entries")
+            if (
+                backend is not None
+                or document_store is not None
+                or document_factory is not None
+                or scope is not None
+                or scope_ids is not None
+            ):
+                raise ValueError("Entry composition cannot also select an unnamed memory binding")
+        elif sum(value is not None for value in (backend, document_store, document_factory)) != 1:
             raise TypeError("Supply exactly one Memory backend or document store")
         if backend is not None and not isinstance(backend, MemoryBackend):
             raise TypeError("backend must be a MemoryBackend")
@@ -181,8 +220,11 @@ class MemoryCapability(AbstractModelContextCapability):
             raise TypeError("document_store must be a MemoryDocumentStore")
         if type(document_read) is not bool or type(document_write) is not bool:
             raise TypeError("Document access options must be booleans")
-        if document_store is not None and (scope_ids is not None or scope is not None):
+        if (document_store is not None or document_factory is not None) and (
+            scope_ids is not None or scope is not None
+        ):
             raise ValueError("The host document store owns its scope")
+        self.document_factory = document_factory
         self.document_store = document_store
         self.document_read = document_read
         self.document_write = document_write
@@ -223,26 +265,67 @@ class MemoryCapability(AbstractModelContextCapability):
         self.recall_required = recall_required
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
-        from .memory_documents import DocumentMemoryRunCapability
+        from .memory_documents import DocumentMemoryRunCapability, UnavailableDocumentRunCapability
+        from .memory_entries import ComposedMemoryRunCapability
 
         existing = ctx.deps._run_capability(MEMORY_CAPABILITY_ID)
         if existing is not None:
-            if not isinstance(existing, (_MemoryRunCapability, DocumentMemoryRunCapability)):
+            if not isinstance(
+                existing,
+                (
+                    _MemoryRunCapability,
+                    DocumentMemoryRunCapability,
+                    ComposedMemoryRunCapability,
+                    UnavailableDocumentRunCapability,
+                ),
+            ):
                 raise DefinitionError(
-                    "Memory has an incompatible logical-run replacement.",
-                    code="capability_type_mismatch",
+                    "Memory has an incompatible logical-run replacement.", code="capability_type_mismatch"
                 )
             return existing
+        if self.entries is not None:
+            replacement = await ComposedMemoryRunCapability.prepare(self.entries, ctx)
+        else:
+            replacement = await self._prepare_run(ctx)
+        ctx.deps._record_run_capability(MEMORY_CAPABILITY_ID, replacement)
+        return replacement
 
-        if self.document_store is not None:
+    async def _prepare_run(
+        self, ctx: RunContext[AgentContext], *, context_budget: int = _MAX_RECALL_BLOCK_BYTES
+    ) -> MemoryCapability:
+        from .memory_documents import DocumentMemoryRunCapability
+
+        try:
+            async with asyncio.timeout(_TOOL_TIMEOUT_SECONDS):
+                store = (
+                    await self.document_factory(ctx.deps) if self.document_factory is not None else self.document_store
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            if self.recall_required:
+                raise RunError("Required memory storage is unavailable.", code="memory_unavailable") from error
+            from .memory_documents import UnavailableDocumentRunCapability
+
+            return UnavailableDocumentRunCapability(self, ctx.deps)
+        if store is not None:
             document_replacement = DocumentMemoryRunCapability(
-                self.document_store,
+                store,
                 context=ctx.deps,
                 read=self.document_read,
                 write=self.document_write,
                 toolset=self.toolset,
+                required=self.recall_required,
+                timeout=_TOOL_TIMEOUT_SECONDS,
             )
-            ctx.deps._record_run_capability(MEMORY_CAPABILITY_ID, document_replacement)
+            if self.recall_required and self.document_read:
+                try:
+                    async with asyncio.timeout(_TOOL_TIMEOUT_SECONDS):
+                        (await store.index()).render_context(source=store.index_name)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    raise RunError("Required memory index is unavailable.", code="memory_unavailable") from error
             return document_replacement
 
         scopes = _resolve_scopes(ctx.deps, self.scope, self.scope_ids)
@@ -251,15 +334,16 @@ class MemoryCapability(AbstractModelContextCapability):
         recall_block: str | None = None
         if self.auto_recall:
             binding = _MemoryBinding(backend=backend, scopes=scopes, fixed_scope=self.scope)
-            recall_block = await self._recall(ctx, binding)
+            recall_block = await self._recall(ctx, binding, context_budget=context_budget)
 
         replacement = _MemoryRunCapability(
             self, context=ctx.deps, backend=backend, scopes=scopes, recall_block=recall_block
         )
-        ctx.deps._record_run_capability(MEMORY_CAPABILITY_ID, replacement)
         return replacement
 
-    def _current_binding(self, ctx: RunContext[AgentContext]) -> _MemoryBinding:
+    def _current_binding(self, ctx: RunContext[AgentContext], entry: str | None = None) -> _MemoryBinding:
+        if entry is not None:
+            raise DefinitionError("No named memory entry exists in this binding.", code="memory_entry_invalid")
         if (
             not isinstance(self, _MemoryRunCapability)
             or self._context is not ctx.deps
@@ -276,13 +360,14 @@ class MemoryCapability(AbstractModelContextCapability):
         ctx: RunContext[AgentContext],
         query: str,
         *,
+        entry: str | None = None,
         scope: MemoryScope | None = None,
         limit: int = 20,
         threshold: float | None = None,
         timeout: float = _TOOL_TIMEOUT_SECONDS,
     ) -> tuple[MemoryRecord, ...]:
         """Search the selected, authorized current-run scope without native filters."""
-        return await self._current_binding(ctx).search(
+        return await self._current_binding(ctx, entry).search(
             query, scope=scope, limit=limit, threshold=threshold, timeout=timeout
         )
 
@@ -290,32 +375,35 @@ class MemoryCapability(AbstractModelContextCapability):
         self,
         ctx: RunContext[AgentContext],
         *,
+        entry: str | None = None,
         scope: MemoryScope | None = None,
         limit: int = 1000,
         cursor: str | None = None,
         timeout: float = _TOOL_TIMEOUT_SECONDS,
     ) -> MemoryPage:
-        return await self._current_binding(ctx).list(scope=scope, limit=limit, cursor=cursor, timeout=timeout)
+        return await self._current_binding(ctx, entry).list(scope=scope, limit=limit, cursor=cursor, timeout=timeout)
 
     async def add(
         self,
         ctx: RunContext[AgentContext],
         text: str,
         *,
+        entry: str | None = None,
         scope: MemoryScope | None = None,
         timeout: float = _TOOL_TIMEOUT_SECONDS,
     ) -> MemoryRecord:
-        return await self._current_binding(ctx).add(text, scope=scope, timeout=timeout)
+        return await self._current_binding(ctx, entry).add(text, scope=scope, timeout=timeout)
 
     async def get(
         self,
         ctx: RunContext[AgentContext],
         memory_id: str,
         *,
+        entry: str | None = None,
         scope: MemoryScope | None = None,
         timeout: float = _TOOL_TIMEOUT_SECONDS,
     ) -> MemoryRecord:
-        binding = self._current_binding(ctx)
+        binding = self._current_binding(ctx, entry)
         async with asyncio.timeout(timeout):
             return await binding.backend.get(memory_id, subject=binding.scope_binding(scope))
 
@@ -325,10 +413,11 @@ class MemoryCapability(AbstractModelContextCapability):
         memory_id: str,
         text: str,
         *,
+        entry: str | None = None,
         scope: MemoryScope | None = None,
         timeout: float = _TOOL_TIMEOUT_SECONDS,
     ) -> MemoryRecord:
-        binding = self._current_binding(ctx)
+        binding = self._current_binding(ctx, entry)
         async with _write_timeout(timeout):
             return await binding.backend.update(memory_id, text, subject=binding.scope_binding(scope))
 
@@ -337,10 +426,11 @@ class MemoryCapability(AbstractModelContextCapability):
         ctx: RunContext[AgentContext],
         memory_id: str,
         *,
+        entry: str | None = None,
         scope: MemoryScope | None = None,
         timeout: float = _TOOL_TIMEOUT_SECONDS,
     ) -> None:
-        binding = self._current_binding(ctx)
+        binding = self._current_binding(ctx, entry)
         async with _write_timeout(timeout):
             await binding.backend.delete(memory_id, subject=binding.scope_binding(scope))
 
@@ -348,6 +438,8 @@ class MemoryCapability(AbstractModelContextCapability):
         self,
         ctx: RunContext[AgentContext],
         binding: _MemoryBinding,
+        *,
+        context_budget: int = _MAX_RECALL_BLOCK_BYTES,
     ) -> str | None:
         operation_id = f"memory-recall-{token_urlsafe(12)}"
         scope_values = cast(tuple[_ScopeValue, ...], tuple(item.scope.value for item in binding.scopes))
@@ -398,7 +490,7 @@ class MemoryCapability(AbstractModelContextCapability):
                         threshold=self.recall_threshold,
                     )
                 memories = _normalize_memories(response, limit=self.recall_limit)
-                recall_block = _recall_block(memories) if memories else None
+                recall_block = _recall_block(memories, max_bytes=context_budget) if memories else None
                 record_span_metadata(span, {"memory_recall.result_count": len(memories)})
                 observe_output(
                     span,
@@ -573,12 +665,12 @@ def _bounded_utf8_text(value: str, *, max_bytes: int) -> str:
     return encoded[:max_bytes].decode("utf-8", errors="ignore")
 
 
-def _recall_block(memories: tuple[_MemoryProjection, ...]) -> str:
+def _recall_block(memories: tuple[_MemoryProjection, ...], *, max_bytes: int = _MAX_RECALL_BLOCK_BYTES) -> str:
     selected: list[dict[str, JsonValue]] = []
     for memory in memories:
         candidate = [*selected, memory.as_json()]
         content = _encode_recall(candidate)
-        if len(content.encode("utf-8")) > _MAX_RECALL_BLOCK_BYTES:
+        if len(content.encode("utf-8")) > max_bytes:
             break
         selected = candidate
     return _encode_recall(selected)

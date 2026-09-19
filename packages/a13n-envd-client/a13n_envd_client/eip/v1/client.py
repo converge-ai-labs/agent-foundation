@@ -8,6 +8,7 @@ from .methods import (
     ENVIRONMENT_READINESS,
     FILE_ABORT_WRITER,
     FILE_CLOSE_READER,
+    FILE_COMMIT,
     FILE_COMMIT_WRITER,
     FILE_COPY,
     FILE_FIND,
@@ -46,6 +47,8 @@ from .models import (
     EnvironmentDescribeResult,
     EnvironmentReadinessParams,
     EnvironmentReadinessResult,
+    FileCommitParams,
+    FileCommitResult,
     FileCopyParams,
     FileCopyResult,
     FileFindParams,
@@ -134,6 +137,9 @@ class EIPClient:
 
     async def file_close_reader(self, params: FileReaderCloseParams) -> FileReaderCloseResult:
         return await self._requester.request(FILE_CLOSE_READER, params)
+
+    async def file_commit(self, params: FileCommitParams) -> FileCommitResult:
+        return await self._requester.request(FILE_COMMIT, params)
 
     async def file_commit_writer(self, params: FileWriterCommitParams) -> FileWriterCommitResult:
         return await self._requester.request(FILE_COMMIT_WRITER, params)

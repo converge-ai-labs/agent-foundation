@@ -8,7 +8,9 @@ from a13n_environment import EnvironmentProviderError
 from a13n_environment.native.http import NativeHTTP
 
 
-@pytest.mark.parametrize("body", [b"not-json", b"x" * (32 * 1024 * 1024 + 1)])
+@pytest.mark.parametrize(
+    "body", [b"not-json", b"x" * (32 * 1024 * 1024 + 1)], ids=["invalid-json", "oversized-response"]
+)
 @pytest.mark.parametrize("method", ["POST", "GET"])
 def test_invalid_acknowledgement_certainty_without_replay(body, method):
     async def scenario():

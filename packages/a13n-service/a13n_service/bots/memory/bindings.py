@@ -36,6 +36,7 @@ class RunMemoryBindingRecord(Base):
     scope_version: Mapped[int | None] = mapped_column(Integer)
     use_memory: Mapped[bool] = mapped_column(Boolean)
     save_on_request: Mapped[bool] = mapped_column(Boolean)
+    auto_organize: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
 
     def binding(self) -> BotMemoryBinding:
         return BotMemoryBinding(
@@ -46,6 +47,7 @@ class RunMemoryBindingRecord(Base):
             scope_version=self.scope_version,
             use_memory=self.use_memory,
             save_on_request=self.save_on_request,
+            auto_organize=self.auto_organize,
         )
 
 

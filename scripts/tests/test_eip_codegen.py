@@ -89,9 +89,9 @@ def test_checked_inspection_artifacts_follow_eip_json_profile() -> None:
     assert readiness_result["properties"]["environment_id"]["minLength"] == 1
 
     methods = json.loads(METHODS_PATH.read_text(encoding="utf-8"))
-    assert methods["method_count"] == 35
+    assert methods["method_count"] == 36
     assert sum(method["replay_class"] == "active_only" for method in methods["methods"]) == 19
-    assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 15
+    assert sum(method["replay_class"] == "terminal_evidence" for method in methods["methods"]) == 16
     assert sum(method["replay_class"] == "ledger_external" for method in methods["methods"]) == 1
     descriptor = (REPOSITORY_ROOT / DESCRIPTOR_PATH).read_bytes()
     manifest = json.loads((REPOSITORY_ROOT / MANIFEST_PATH).read_text(encoding="utf-8"))

@@ -45,13 +45,61 @@ def _document_id(reference: str) -> str:
     return match[1]
 
 
+class UnavailableDocumentRunCapability(MemoryCapability):
+    """An optional failed binding remains visible without rerouting its tools."""
+
+    def __init__(self, source: MemoryCapability, context: AgentContext) -> None:
+        super().__init__(document_factory=source.document_factory, toolset=False)
+        self.context = context
+
+    def get_toolset(self) -> None:
+        return None
+
+    async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+        if ctx.deps is not self.context:
+            raise DefinitionError("Memory cannot cross logical runs.", code="capability_scope_invalid")
+        return self
+
+    async def wrap_model_context(
+        self, ctx: RunContext[AgentContext], request: ModelContextProjectionRequest, handler: ModelContextNext
+    ) -> ModelContextProjection:
+        projection = await handler(request)
+        if request.kind is not ModelContextRequestKind.INPUT:
+            return projection
+        return ModelContextProjection(
+            blocks=(
+                *projection.blocks,
+                ModelContextBlock(
+                    source_id=_ID,
+                    placement=ModelContextPlacement.INPUT_PREAMBLE,
+                    content="Memory storage is unavailable for this run. This is not an empty store. Its tools are unavailable; do not route its writes to another entry.",
+                ),
+            )
+        )
+
+
 class DocumentMemoryRunCapability(MemoryCapability):
     id = _ID
 
     def __init__(
-        self, store: MemoryDocumentStore, *, context: AgentContext, read: bool, write: bool, toolset: bool
+        self,
+        store: MemoryDocumentStore,
+        *,
+        context: AgentContext,
+        read: bool,
+        write: bool,
+        toolset: bool,
+        required: bool = False,
+        timeout: float = _OPERATION_TIMEOUT_SECONDS,
     ) -> None:
-        super().__init__(document_store=store, document_read=read, document_write=write, toolset=toolset)
+        super().__init__(
+            document_store=store,
+            document_read=read,
+            document_write=write,
+            toolset=toolset,
+            recall_required=required,
+            recall_timeout=timeout,
+        )
         self.store = store
         self.context = context
         self.read = read
@@ -66,6 +114,12 @@ class DocumentMemoryRunCapability(MemoryCapability):
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
         if not self.toolset:
             return None
+        from a13n_harness.filesystem_memory import FilesystemMemoryStore
+
+        from .filesystem_memory import FilesystemMemoryTools
+
+        if isinstance(self.store, FilesystemMemoryStore):
+            return FilesystemMemoryTools(self.store, read=self.read, write=self.write).get_toolset()
         return _DocumentTools(self.store, read=self.read, write=self.write).get_toolset()
 
     async def wrap_model_context(
@@ -78,13 +132,15 @@ class DocumentMemoryRunCapability(MemoryCapability):
         started = monotonic()
         stage = "load_index"
         try:
-            async with asyncio.timeout(_OPERATION_TIMEOUT_SECONDS):
+            async with asyncio.timeout(self.recall_timeout):
                 index = await self.store.index()
             stage = "render_index"
-            content = index.render_context()
+            content = index.render_context(source=self.store.index_name)
         except asyncio.CancelledError:
             raise
         except Exception as error:
+            if self.recall_required:
+                raise RunError("Required memory index is unavailable.", code="memory_unavailable") from error
             # Provider exceptions may contain credentials or memory content; retain only safe diagnostics.
             _LOGGER.warning(
                 "memory_index_projection_failed",
@@ -97,7 +153,7 @@ class DocumentMemoryRunCapability(MemoryCapability):
                     "timeout_seconds": _OPERATION_TIMEOUT_SECONDS,
                 },
             )
-            content = "MEMORY.md is unavailable. Do not treat this as an empty memory store."
+            content = f"{self.store.index_name} is unavailable. Do not treat this as an empty memory store."
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,

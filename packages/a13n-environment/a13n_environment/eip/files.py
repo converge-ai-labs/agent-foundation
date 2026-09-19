@@ -8,6 +8,7 @@ from a13n_envd_client.eip import v1 as eip
 from pydantic import ValidationError
 
 from ..files import (
+    FileCommitRequest,
     FileCopyResult,
     FileEntriesResult,
     FileMetadata,
@@ -70,6 +71,32 @@ class EIPFileOperator:
             raise EnvironmentError("EIP returned an unknown mount", code="environment_provider_failure")
         root = mount.logical_root.rstrip("/") or "/"
         return path.path if root == "/" else root + ("" if path.path == "/" else path.path)
+
+    async def commit(self, request: FileCommitRequest) -> FileMutationResult:
+        self._require_transfer_method("file.commit")
+        result = await invoke(
+            self._client.file_commit(
+                eip.FileCommitParams(
+                    context=new_context(),
+                    root=self.to_eip_path(request.root),
+                    conditions=tuple(
+                        eip.FileCommitCondition(
+                            path=self.to_eip_path(item.path),
+                            digest=eip.ContentDigest(algorithm="sha256", value=item.digest)
+                            if item.digest is not None
+                            else None,
+                        )
+                        for item in request.conditions
+                    ),
+                    directories=tuple(self.to_eip_path(path) for path in request.directories),
+                    writes=tuple(
+                        eip.FileCommitWrite(path=self.to_eip_path(item.path), text=item.text) for item in request.writes
+                    ),
+                    removals=tuple(self.to_eip_path(path) for path in request.removals),
+                )
+            )
+        )
+        return FileMutationResult(path=request.root, receipt=self._receipt(result.receipt))
 
     async def read_text(
         self,

@@ -34,9 +34,9 @@ from a13n_service.interactions.domain import Run
 from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
-from .domain import MemorySelection
+from .domain import MemoryEntries, MemorySelection
 from .execution import MemoryProviderAccess, open_memory_backend
-from .resources import MemoryProviderError, require_provider
+from .resources import MemoryProviderError, require_memory_configuration, require_provider
 from .scopes import memory_subject
 from .service import MemoryService
 
@@ -147,22 +147,24 @@ async def validate_memory_providers(
     service: MemoryService, *, organization_id: str, workspace_id: str, config: EffectiveAgentConfig
 ) -> None:
     pending = [config]
-    selected: set[str] = set()
-    while pending:
-        node = pending.pop()
-        if node.memory is not None:
-            selected.add(node.memory.provider_id)
-        pending.extend(child.effective_config for child in node.child_configs.values())
     async with short_session(service.authorizer.sessions) as session:
-        for provider_id in sorted(selected):
-            await require_provider(
-                session,
-                organization_id=organization_id,
-                workspace_id=workspace_id,
-                provider_id=provider_id,
-                eligible=True,
-                catalog=service.catalog,
-            )
+        while pending:
+            node = pending.pop()
+            if node.memory is not None:
+                selections = (
+                    [MemoryEntries(entries=(entry,)) for entry in node.memory.entries if entry.recall_required]
+                    if isinstance(node.memory, MemoryEntries)
+                    else [node.memory]
+                )
+                for selection in selections:
+                    await require_memory_configuration(
+                        session,
+                        selection=selection,
+                        organization_id=organization_id,
+                        workspace_id=workspace_id,
+                        catalog=service.catalog,
+                    )
+            pending.extend(child.effective_config for child in node.child_configs.values())
 
 
 def memory_capability(

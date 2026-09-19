@@ -12,8 +12,8 @@ from a13n_service.connectivity.selection_resolution import ConnectivitySelection
 from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding, authorize_workspace
 from a13n_service.iam.authorization import WorkspaceAction
-from a13n_service.memory.resources import MemoryProviderError
-from a13n_service.memory.resources import require_provider as require_memory_provider
+from a13n_service.memory.domain import memory_provider_ids
+from a13n_service.memory.resources import MemoryProviderError, require_memory_configuration
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
 from a13n_service.storage import short_session
 from a13n_service.web.domain import ScrapeSelection, provider_selections
@@ -191,18 +191,18 @@ class AgentResolver:
             template_id=prepared.config.default_environment_template_id,
         )
         if prepared.config.memory is not None:
-            await authorize_workspace(
+            if memory_provider_ids(prepared.config.memory):
+                await authorize_workspace(
+                    session,
+                    actor=prepared.actor,
+                    workspace_id=prepared.workspace_id,
+                    action=WorkspaceAction.memory_provider_read,
+                )
+            await require_memory_configuration(
                 session,
-                actor=prepared.actor,
-                workspace_id=prepared.workspace_id,
-                action=WorkspaceAction.memory_provider_read,
-            )
-            await require_memory_provider(
-                session,
+                selection=prepared.config.memory,
                 organization_id=prepared.organization_id,
                 workspace_id=prepared.workspace_id,
-                provider_id=prepared.config.memory.provider_id,
-                eligible=True,
                 catalog=self._memory_backend_catalog,
             )
         for operation, selection in provider_selections(web_selection(prepared.config.toolsets)):
