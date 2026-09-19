@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .auth.credentials import require_current_credential
 from .domain import AuthenticatedActor, AuthorizationError, PrincipalRef, PrincipalType
 from .models import OrganizationRecord, RoleBindingRecord, ServiceAccountRecord, UserRecord, WorkspaceRecord
+from .operation import PrincipalAuthorization, RoleGrant, WorkspaceIdentity, current_operation
 from .role_rules import validate_binding
 
 
@@ -356,13 +357,7 @@ async def _authorize_actor_snapshot(
 @dataclass(frozen=True, slots=True)
 class _WorkspaceAuthorizationContext:
     authorized: AuthorizedWorkspace
-    bindings: tuple[RoleBindingRecord, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _PrincipalAuthorizationContext:
-    workspace: WorkspaceRecord
-    bindings: tuple[RoleBindingRecord, ...]
+    bindings: tuple[RoleGrant, ...]
 
 
 async def authorize_workspace(
@@ -420,9 +415,14 @@ async def require_ordinary_agent(session: AsyncSession, *, agent_id: str) -> Non
     """Role grants never reveal or authorize a system-purpose Agent."""
     from a13n_service.agents.models import AgentRecord
 
+    operation = current_operation()
+    if operation is not None and agent_id in operation.ordinary_agents:
+        return
     purpose = await session.scalar(select(AgentRecord.system_purpose).where(AgentRecord.id == agent_id))
     if purpose is not None:
         raise AuthorizationError("agent_not_found", concealed=True)
+    if operation is not None:
+        operation.ordinary_agents.add(agent_id)
 
 
 async def authorize_agent(
@@ -566,9 +566,12 @@ async def _load_workspace_authorization(
     include_agent_bindings: bool = False,
     reuse_request_authentication: bool = False,
 ) -> _WorkspaceAuthorizationContext:
-    identity_verified = reuse_request_authentication and actor.request_authenticated
-    if not identity_verified:
+    operation = current_operation()
+    identity_verified = actor.request_authenticated and (reuse_request_authentication or operation is not None)
+    if not identity_verified and (operation is None or actor not in operation.credentials):
         await require_current_credential(session, actor)
+    if operation is not None:
+        operation.credentials.add(actor)
     if actor.boundary_workspace_id is not None and actor.boundary_workspace_id != workspace_id:
         raise AuthorizationError("credential_boundary_mismatch", concealed=True)
 
@@ -603,7 +606,11 @@ async def _load_principal_authorization(
     agent_id: str | None = None,
     include_agent_bindings: bool = False,
     identity_verified: bool = False,
-) -> _PrincipalAuthorizationContext:
+) -> PrincipalAuthorization:
+    operation = current_operation()
+    key = (principal, workspace_id)
+    if operation is not None and (observed := operation.principals.get(key)) is not None:
+        return observed
 
     workspace = await session.scalar(
         select(WorkspaceRecord).where(WorkspaceRecord.id == workspace_id, WorkspaceRecord.deleted_at.is_(None))
@@ -623,8 +630,8 @@ async def _load_principal_authorization(
                 _binding_query(
                     principal,
                     workspace,
-                    agent_id=agent_id,
-                    include_agent_bindings=include_agent_bindings,
+                    agent_id=None if operation is not None else agent_id,
+                    include_agent_bindings=include_agent_bindings or operation is not None,
                 )
             )
         ).all()
@@ -636,13 +643,21 @@ async def _load_principal_authorization(
     ):
         raise AuthorizationError("organization_membership_required", concealed=True)
 
-    return _PrincipalAuthorizationContext(
-        workspace=workspace,
-        bindings=bindings,
+    observed = PrincipalAuthorization(
+        workspace=WorkspaceIdentity(id=workspace.id, organization_id=workspace.organization_id),
+        bindings=tuple(
+            RoleGrant(resource_type=item.resource_type, resource_id=item.resource_id, role_key=item.role_key)
+            for item in bindings
+        ),
     )
+    if operation is not None:
+        # Concurrent nested readers must use the first complete observation, not
+        # publish competing permission sets for the same operation.
+        return operation.principals.setdefault(key, observed)
+    return observed
 
 
-def _workspace_permissions(bindings: tuple[RoleBindingRecord, ...]) -> frozenset[WorkspaceAction]:
+def _workspace_permissions(bindings: tuple[RoleGrant, ...]) -> frozenset[WorkspaceAction]:
     permissions: set[WorkspaceAction] = set()
     for binding in bindings:
         if binding.resource_type == "organization" and binding.role_key == "admin":
@@ -653,7 +668,7 @@ def _workspace_permissions(bindings: tuple[RoleBindingRecord, ...]) -> frozenset
 
 
 def _agent_permissions(
-    bindings: tuple[RoleBindingRecord, ...],
+    bindings: tuple[RoleGrant, ...],
     *,
     agent_id: str,
 ) -> frozenset[WorkspaceAction]:

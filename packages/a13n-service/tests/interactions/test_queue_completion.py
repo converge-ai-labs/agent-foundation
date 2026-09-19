@@ -226,7 +226,7 @@ async def test_drain_failure_preserves_completed_source_and_scanner_recovers(
 
 
 @pytest.mark.parametrize("change", ["principal_disabled", "queue_version"])
-async def test_drain_revalidates_prepared_intent_without_changing_completed_source(
+async def test_drain_retains_checked_authority_but_revalidates_queue_version(
     interaction_sessions, interaction_object_store, monkeypatch, change
 ):
     sessions = interaction_sessions
@@ -246,11 +246,17 @@ async def test_drain_revalidates_prepared_intent_without_changing_completed_sour
         return prepared
 
     monkeypatch.setattr(commands.queued, "prepare_queued_run", change_after_preparation)
-    assert not await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
+    consumed = await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
+    assert consumed is (change == "principal_disabled")
     async with short_session(sessions) as database:
         entry = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
-        assert entry.position == 1 and entry.consumed_run_id is None and entry.failure_json is None
+        assert entry.failure_json is None
         assert (await database.get(RunRecord, source.id)).status == "completed"
+        if change == "principal_disabled":
+            assert entry.consumed_run_id is not None
+            assert await database.scalar(select(func.count()).select_from(RunRecord)) == 2
+            return
+        assert entry.position == 1 and entry.consumed_run_id is None
         assert await database.scalar(select(func.count()).select_from(RunRecord)) == 1
     async with transaction(sessions) as database:
         (await database.get(UserRecord, USER_ID)).status = "active"

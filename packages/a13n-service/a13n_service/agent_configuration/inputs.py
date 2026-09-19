@@ -15,9 +15,10 @@ from a13n_service.agents.domain import StrictModel
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, AuthorizationError
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceReceipt, RunAcceptanceService
 from a13n_service.interactions.command_evidence import RunCommandEvidence, fingerprint_request
-from a13n_service.interactions.command_preparation import CommandInput, PreparedCommandInput, validate_invocation
+from a13n_service.interactions.command_preparation import CommandInput, PreparedCommandInput
 from a13n_service.interactions.domain import ExecutionBudget, Run, RunLineageKind, RunUsageLimit, Thread, new_run_id
 from a13n_service.interactions.environment_selection import EnvironmentDefault, requested_environment
 from a13n_service.interactions.initialization import (
@@ -31,7 +32,7 @@ from a13n_service.interactions.input import AgentInput
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
 from .authorization import authorize_session
@@ -105,6 +106,7 @@ class ConfigurationInputs:
             ),
         )
 
+    @authorization_operation
     async def submit(
         self, *, actor: AuthenticatedActor, thread_id: str, request: ConfigurationInputRequest, idempotency_key: str
     ) -> RunAcceptanceReceipt:
@@ -145,8 +147,7 @@ class ConfigurationInputs:
             config=assistant_config(self._definition, ready.selected_model),
             context=context,
         )
-        async with transaction(self._sessions) as session:
-            frozen = await self._invocations.freezing.freeze_in_transaction(session, prepared=invocation)
+        frozen = self._invocations.freezing.freeze_selected(prepared=invocation)
         accepted = await self._inputs.accept(
             actor=actor,
             workspace_id=actor.workspace_id,
@@ -204,7 +205,6 @@ class ConfigurationInputs:
             if draft is None:
                 raise not_found()
             require_open(draft, expected_version=selected.draft.version)
-            await validate_invocation(session, self._invocations, prepared=prepared.invocation, frozen=prepared.frozen)
 
         try:
             return await self._acceptance.advance_thread(

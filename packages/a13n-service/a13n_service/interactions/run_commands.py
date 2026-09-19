@@ -22,6 +22,7 @@ from a13n_service.iam import (
     WorkspaceAction,
     authorize_agent,
 )
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceReceipt, RunAcceptanceService
 from a13n_service.interactions.domain import (
     Run,
@@ -58,7 +59,7 @@ from .command_evidence import (
     fingerprint_request,
     require_idempotency_key,
 )
-from .command_preparation import CommandInput, PreparedCommandInput, validate_invocation
+from .command_preparation import CommandInput, PreparedCommandInput
 from .command_values import (
     ContinueRunCommand,
     ForkRunCommand,
@@ -90,6 +91,7 @@ class RunCommands:
         self._policy = policy
         self._clock = clock
 
+    @authorization_operation
     async def start(
         self,
         *,
@@ -207,11 +209,6 @@ class RunCommands:
                 updated_at=now,
             )
 
-            async def validate_final(database: AsyncSession) -> None:
-                await validate_invocation(
-                    database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
-                )
-
             try:
                 return await self._acceptance.accept_new_thread(
                     session=session,
@@ -220,7 +217,6 @@ class RunCommands:
                     state=state,
                     hook_subscription=request.hook_subscription,
                     environment=requested_environment(environment, default=EnvironmentDefault.agent),
-                    final_validator=validate_final,
                     transaction_hook=partial(evidence.commit, now=self._clock()),
                     thread_label_overrides=request.thread_labels,
                     run_label_overrides=request.labels,
@@ -228,8 +224,9 @@ class RunCommands:
             except RunAcceptanceError as error:
                 return await evidence.reconcile(error)
 
-        return await self._inputs.accept_with_skill_refresh(self._invocations, prepared_input, accept)
+        return await accept(prepared_input)
 
+    @authorization_operation
     async def continue_from(
         self,
         *,
@@ -272,6 +269,7 @@ class RunCommands:
         except RunAcceptanceError as error:
             return await evidence.reconcile(error)
 
+    @authorization_operation
     async def accept_continuation(
         self,
         *,
@@ -344,9 +342,6 @@ class RunCommands:
                     )
                 except AuthorizationError as error:
                     raise command_not_found() from error
-                await validate_invocation(
-                    database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
-                )
 
             return await self._acceptance.advance_thread(
                 label_overrides=request.labels,
@@ -367,8 +362,9 @@ class RunCommands:
                 transaction_hook=transaction_hook,
             )
 
-        return await self._inputs.accept_with_skill_refresh(self._invocations, prepared_input, accept)
+        return await accept(prepared_input)
 
+    @authorization_operation
     async def continue_empty_thread(
         self,
         *,
@@ -409,6 +405,7 @@ class RunCommands:
         except RunAcceptanceError as error:
             return await evidence.reconcile(error)
 
+    @authorization_operation
     async def accept_empty_thread(
         self,
         *,
@@ -479,9 +476,6 @@ class RunCommands:
                     )
                 except AuthorizationError as error:
                     raise command_not_found() from error
-                await validate_invocation(
-                    database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
-                )
 
             return await self._acceptance.advance_thread(
                 label_overrides=request.labels,
@@ -497,8 +491,9 @@ class RunCommands:
                 transaction_hook=transaction_hook,
             )
 
-        return await self._inputs.accept_with_skill_refresh(self._invocations, prepared_input, accept)
+        return await accept(prepared_input)
 
+    @authorization_operation
     async def fork(
         self,
         *,
@@ -640,9 +635,6 @@ class RunCommands:
                         return
                 except AuthorizationError as error:
                     raise command_not_found() from error
-                await validate_invocation(
-                    database, self._invocations, prepared=selected.invocation, frozen=selected.frozen
-                )
 
             try:
                 return await self._acceptance.accept_new_thread(
@@ -664,7 +656,7 @@ class RunCommands:
 
         if prepared_input is None:
             return await accept(None)
-        return await self._inputs.accept_with_skill_refresh(self._invocations, prepared_input, accept)
+        return await accept(prepared_input)
 
     async def _load_continue_source(self, *, actor: AuthenticatedActor, source_run_id: str):
         async with short_session(self._sessions) as database:

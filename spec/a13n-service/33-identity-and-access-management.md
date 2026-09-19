@@ -502,7 +502,7 @@ class AuthorizationDecision:
     reason_code: str
 ```
 
-Every protected operation uses the canonical authorizer. A credential-authenticated request loads current Principal, credential, and applicable RoleBindings from the database once, then reuses that immutable request-local snapshot. A stream continuation or later request authorizes again. OSS performs no cross-request authorization caching. Agent execution instead uses the [Attempt IAM snapshot](#attempt-iam-snapshot); internal operations reuse the latest published snapshot between periodic refreshes.
+Every protected operation uses the canonical authorizer. A credential-authenticated request loads current Principal, credential, and applicable RoleBindings from the database once, then reuses that immutable request-local snapshot. The bounded Run command or subagent operation checks each Principal/Workspace and credential on first use, then reuses detached facts through nested calls and external preparation I/O. Applicable Agent grants are included in that Workspace observation, but every action, target Agent, and credential boundary is still checked separately. A revocation after that observation affects the next operation; it does not invalidate the current operation. Normal short reads need no IAM row locks or shared database timestamp. A stream continuation, each subagent wait poll, each background reconciliation item, or later request authorizes again. Neither a whole batch nor a whole Run inherits this operation snapshot. OSS performs no cross-request authorization caching. Agent execution instead uses the [Attempt IAM snapshot](#attempt-iam-snapshot); internal operations reuse the latest published snapshot between periodic refreshes.
 
 The core evaluation is equivalent to:
 

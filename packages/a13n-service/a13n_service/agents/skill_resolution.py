@@ -199,7 +199,7 @@ async def freeze_skill_locks(
     workspace_id: str,
     prepared: tuple[PreparedSkillLock, ...],
 ) -> tuple[SkillRevisionLock, ...]:
-    """Lock lifecycle heads and exact revisions at Run acceptance."""
+    """Revalidate lifecycle heads and exact revisions for Agent management writes."""
 
     if not prepared:
         return ()
@@ -279,16 +279,20 @@ async def _prepare_locks(
         bindings=bindings,
     )
     default_ids = tuple(skills[binding.skill_id].default_revision_id for binding in bindings if binding.version is None)
-    defaults = tuple(
-        (
-            await session.scalars(
-                select(SkillRevisionRecord).where(
-                    SkillRevisionRecord.organization_id == organization_id,
-                    SkillRevisionRecord.workspace_id == workspace_id,
-                    SkillRevisionRecord.id.in_(default_ids),
+    defaults = (
+        tuple(
+            (
+                await session.scalars(
+                    select(SkillRevisionRecord).where(
+                        SkillRevisionRecord.organization_id == organization_id,
+                        SkillRevisionRecord.workspace_id == workspace_id,
+                        SkillRevisionRecord.id.in_(default_ids),
+                    )
                 )
-            )
-        ).all()
+            ).all()
+        )
+        if default_ids
+        else ()
     )
     by_default_id = {record.id: record for record in defaults}
     result: list[PreparedSkillLock] = []

@@ -24,6 +24,7 @@ from a13n_service.iam import (
     AuthorizationError,
     WorkspaceAction,
 )
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.control_domain import (
     InterruptRequest,
     SteerReceipt,
@@ -78,6 +79,7 @@ class ActiveRunCommands:
         self._inputs = inputs
         self._clock = clock
 
+    @authorization_operation
     async def interrupt(
         self,
         *,
@@ -171,6 +173,7 @@ class ActiveRunCommands:
         assert outcome.sealed_at is not None
         return InterruptReceipt(run_id=run_id, interrupted_at=outcome.sealed_at)
 
+    @authorization_operation
     async def steer(
         self,
         *,
@@ -248,6 +251,7 @@ class ActiveRunCommands:
                 category=ErrorCategory.conflict,
             ) from error
 
+    @authorization_operation
     async def get_steer(
         self,
         *,

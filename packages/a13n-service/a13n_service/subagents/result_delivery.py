@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.control_domain import ThreadInboxEntry
 from a13n_service.interactions.models import RunRecord, SessionRecord
 from a13n_service.run_stream import RunDisplayStore
@@ -32,6 +33,7 @@ class AsyncSubagentResultMaterializer:
         self._sessions = sessions
         self._displays = displays
 
+    @authorization_operation
     async def __call__(self, entry: ThreadInboxEntry) -> str:
         authority = await self._read_authorized(entry)
         terminal_item = await load_async_subagent_terminal_item(

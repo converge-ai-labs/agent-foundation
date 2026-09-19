@@ -31,17 +31,19 @@ class AgentInvocationResolver:
     ) -> None:
         policy = protocol_policy or AgentProtocolPolicy()
         connectivity = connectivity_resolver or ConnectivitySelectionResolver(sessions)
+        web = web_provider_registry or built_in_web_provider_registry()
+        memory = memory_backend_catalog if memory_backend_catalog is not None else MemoryBackendCatalog()
         self.preparation = AgentInvocationPreparer(
             sessions,
             model_selector,
             connectivity_resolver=connectivity,
             protocol_policy=policy,
+            web_provider_registry=web,
+            memory_backend_catalog=memory,
         )
         self.freezing = AgentInvocationFreezer(
             model_selector,
             connectivity_resolver=connectivity,
-            web_provider_registry=web_provider_registry or built_in_web_provider_registry(),
-            memory_backend_catalog=memory_backend_catalog
-            if memory_backend_catalog is not None
-            else MemoryBackendCatalog(),
+            web_provider_registry=web,
+            memory_backend_catalog=memory,
         )

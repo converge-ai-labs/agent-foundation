@@ -24,6 +24,7 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.context import BuiltSubagent
 from a13n_harness.execution import DelegationContextPolicy
+from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.domain import Run
 from a13n_service.interactions.inbox import ThreadInboxStore
@@ -32,15 +33,16 @@ from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.scheduling import AttemptScheduler
 from a13n_service.interactions.state import CompletedOutcomeCandidate
-from a13n_service.storage import ObjectStore, short_session
+from a13n_service.storage import ObjectStore, short_session, transaction
 from a13n_service.subagents import (
     ChildRunAcceptanceService,
     ChildRunAdmissionPreparer,
     DurableSubagentOperator,
 )
-from a13n_service.subagents.execution_store import ACTIVITY_OUTPUT_PREVIEW_LIMIT
+from a13n_service.subagents.execution_store import ACTIVITY_OUTPUT_PREVIEW_LIMIT, SubagentOperatorError
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.models.test import TestModel
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
@@ -56,6 +58,22 @@ from .test_subagent_acceptance import (
 )
 
 pytestmark = pytest.mark.anyio
+
+
+async def test_wait_reauthorizes_after_each_poll(interaction_sessions, interaction_object_store, monkeypatch):
+    operator, context, plan, _, _, _ = await _operator(interaction_sessions, interaction_object_store)
+    delegated = await operator.delegate(plan, AsyncDelegateRequest(subagent_name="researcher", prompt="research"))
+    sleeps = []
+
+    async def revoke_between_polls(_delay):
+        sleeps.append(_delay)
+        async with transaction(interaction_sessions) as session:
+            await session.execute(delete(RoleBindingRecord))
+
+    monkeypatch.setattr("a13n_service.subagents.operator.sleep", revoke_between_polls)
+    with pytest.raises(SubagentOperatorError):
+        await operator.wait(context, SubagentWaitRequest(execution_id=delegated.execution_id, timeout_seconds=5))
+    assert len(sleeps) == 1
 
 
 @dataclass(slots=True)

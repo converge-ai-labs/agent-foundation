@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agent_configuration.context import ConfigurationRunContext
@@ -20,6 +21,7 @@ from a13n_service.iam import (
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.storage import short_session
+from a13n_service.web.registry import WebProviderRegistry
 
 from ..connectivity_resolution import prepare_invocation_connectivity
 from ..domain import (
@@ -50,6 +52,7 @@ from .queries import (
     require_invocable_agent,
     select_child_revision_id,
 )
+from .resources import validate_selected_resources
 from .skills import prepare_skills
 
 
@@ -68,11 +71,15 @@ class AgentInvocationPreparer:
         *,
         connectivity_resolver: ConnectivitySelectionResolver,
         protocol_policy: AgentProtocolPolicy,
+        web_provider_registry: WebProviderRegistry,
+        memory_backend_catalog: MemoryBackendCatalog,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver
         self._protocol_policy = protocol_policy
+        self._web_provider_registry = web_provider_registry
+        self._memory_backend_catalog = memory_backend_catalog
 
     async def prepare(
         self,
@@ -135,6 +142,16 @@ class AgentInvocationPreparer:
                     validate_agent_config(merged, protocol_policy=self._protocol_policy)
                 except AgentConfigValidationError as error:
                     raise agent_revision_not_executable(error.reason) from error
+                await validate_selected_resources(
+                    session,
+                    actor=actor,
+                    organization_id=authorized.organization_id,
+                    workspace_id=workspace_id,
+                    authored=revision.config,
+                    selected=merged,
+                    memory_backend_catalog=self._memory_backend_catalog,
+                    web_provider_registry=self._web_provider_registry,
+                )
                 await authorize_workspace(
                     session,
                     actor=actor,
@@ -236,13 +253,23 @@ class AgentInvocationPreparer:
         from a13n_service.agent_configuration.authorization import authorize_invocation
 
         try:
+            merged = merge_agent_run_override(config, None)
+            validate_agent_config(merged, protocol_policy=self._protocol_policy)
             async with short_session(self._sessions) as session:
                 authorized = await authorize_invocation(session, actor=actor, agent_id=agent_id, context=context)
                 await authorize_workspace(
                     session, actor=actor, workspace_id=actor.workspace_id, action=WorkspaceAction.models_read
                 )
-            merged = merge_agent_run_override(config, None)
-            validate_agent_config(merged, protocol_policy=self._protocol_policy)
+                await validate_selected_resources(
+                    session,
+                    actor=actor,
+                    organization_id=authorized.organization_id,
+                    workspace_id=actor.workspace_id,
+                    authored=config,
+                    selected=merged,
+                    memory_backend_catalog=self._memory_backend_catalog,
+                    web_provider_registry=self._web_provider_registry,
+                )
             model = await self._model_selector.prepare(
                 organization_id=authorized.organization_id,
                 workspace_id=actor.workspace_id,

@@ -235,23 +235,13 @@ Stable error codes include `skill_not_found`, `skill_key_conflict`, `skill_key_m
 
 Skill lifecycle has two states: active and deleted. Deletion is terminal; availability while active is determined by authorization and package validity.
 
-Deletion prevents every later Run acceptance that would use the deleted `skill_id`, whether the binding is pinned or unpinned. An AgentRevision frozen to that identity never switches to a newly created Skill with the same key. A fresh Run override resolves its `skill_key` among currently active Skills and can therefore select a later Skill identity; adopting that identity in the Agent's base Skill configuration requires a new AgentRevision.
+Deletion prevents every later configuration selection that would use the deleted `skill_id`, whether the binding is pinned or unpinned. An AgentRevision frozen to that identity never switches to a newly created Skill with the same key. A fresh Run override resolves its `skill_key` among currently active Skills and can therefore select a later Skill identity; adopting that identity in the Agent's base Skill configuration requires a new AgentRevision.
 
 A Run already durably accepted before deletion continues with its exact internal `SkillRevisionLock`. Worker replacement and recovery of that same Run retain internal read authority. A Retry, waiting Continue, or any other successor is a new Run: it preserves the source selection where its operation requires that, but acceptance fails if the referenced Skill has since been deleted.
 
-Deletion and Run acceptance lock the applicable Skill row and linearize at commit:
+Ordinary Run configuration selection reads active Skill identities and exact Revision metadata once, without locking the Skill rows. Publication, default selection, or deletion after this check does not alter the prepared Run snapshot or cause a refresh/rebuild of its initial state. The next operation observes the new lifecycle and default. Root and descendant configurations follow the same rule; a pinned selection never follows the default. Retained-source successors validate their exact locks at their own acceptance boundary using ordinary reads; they neither follow nor lock a newer default.
 
-- when Run acceptance commits first, the Run retains its exact locks and deletion can proceed subject to the blocking-reference check;
-- when deletion commits first, Run acceptance fails.
-
-AgentRevision publication, Agent unarchive, and Skill deletion likewise linearize against the Skill row. When an operation that makes a Skill binding part of an unarchived Agent's default AgentRevision commits first, deletion sees the blocking reference. When deletion commits first, publication or unarchive fails validation. A disabled but unarchived Agent still blocks deletion.
-
-Unpinned default resolution, Revision publication, and default selection use the same boundary:
-
-- when Run acceptance locks and resolves first, it records the old default Revision;
-- when publication or selection repoints the head first, acceptance records the new default Revision.
-
-If publication or selection repoints an unpinned head after detached preparation, acceptance resolves the default Revision under the same stable Skill identity. If an initial state already contains older locks, Service rebuilds that unaccepted state outside the transaction and retries within a finite bound. This refresh preserves the original AgentRevision, pinned selections, input, and non-Skill configuration; deletion, authority loss, or unrelated invocation drift still rejects acceptance. Continuous publication that exhausts this bound returns `409 run_invocation_changed`, rather than classifying the active Skill as an invalid selection.
+AgentRevision publication, Agent unarchive, and Skill deletion still linearize against the Skill row. When an operation that makes a Skill binding part of an unarchived Agent's default AgentRevision commits first, deletion sees the blocking reference. When deletion commits first, publication or unarchive fails validation. A disabled but unarchived Agent still blocks deletion.
 
 Once Run acceptance commits, its exact locks never change.
 
