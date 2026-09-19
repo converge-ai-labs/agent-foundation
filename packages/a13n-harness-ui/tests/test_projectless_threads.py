@@ -258,7 +258,7 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
             )
         ).value
 
-        async def runtime(_provider):
+        async def runtime(_roots, **kwargs):
             return LocalEnvdProviderRuntime(
                 executable=tmp_path / "envd",
                 allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
@@ -267,10 +267,10 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
         prepared = []
 
         async def unavailable(environment, **scope):
-            prepared.append(environment._configuration.workspace.path)
+            prepared.append(Path(environment._configuration.working_directory))
             raise RuntimeError("Sandbox unavailable")
 
-        monkeypatch.setattr(executor._environments._reconstructor, "_runtime_collaborator", runtime)
+        monkeypatch.setattr(executor._environments._reconstructor, "sandbox_runtime", runtime)
         monkeypatch.setattr(LocalEnvdEnvironment, "_prepare", unavailable)
         with pytest.raises(RuntimeError, match="Sandbox unavailable"):
             await executor._environments.prepare(composition)

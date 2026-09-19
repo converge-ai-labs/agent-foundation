@@ -22,6 +22,7 @@ from .models import (
     AgentResource,
     CanonicalSubagent,
     ConfigurationModel,
+    DeviceResource,
     EnvironmentProfileResource,
     EnvironmentRunExtensionResource,
     ExtensionResource,
@@ -46,12 +47,13 @@ _STABLE_READ_ATTEMPTS = 3
 # Version normalized snapshots independently of user-owned source byte digests.
 _NORMALIZATION_VERSION = "1"
 logger = logging.getLogger(__name__)
-_YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects")
+_YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects", "devices")
 _RESOURCE_TYPES: dict[str, type[Any]] = {
     "models": ModelResource,
     "mcp": McpServerResource,
     "agents": AgentResource,
     "projects": ProjectResource,
+    "devices": DeviceResource,
 }
 _EXTENSION_ADAPTER = TypeAdapter(ExtensionResource)
 
@@ -264,6 +266,7 @@ def _parse_complete_tree(
     agents: dict[str, AgentResource] = {}
     subagents: dict[str, CanonicalSubagent] = {}
     projects: dict[str, ProjectResource] = {}
+    devices: dict[str, DeviceResource] = {}
     sources: list[SourceDocument] = []
 
     for relative_path, content, _fingerprint_value in captured:
@@ -334,6 +337,7 @@ def _parse_complete_tree(
                     "mcp": "mcp_server",
                     "agents": "agent",
                     "projects": "project",
+                    "devices": "device",
                 }[directory]
                 if resource.kind != expected_kind:
                     raise _error(
@@ -346,6 +350,7 @@ def _parse_complete_tree(
                     "mcp": mcp,
                     "agents": agents,
                     "projects": projects,
+                    "devices": devices,
                 }[directory]
                 _insert_unique(target, resource.id, resource, source_path)
             kind = resource.kind
@@ -406,6 +411,7 @@ def _parse_complete_tree(
             agents=agents,
             subagents=subagents,
             projects=projects,
+            devices=devices,
         )
     except ValidationError as exc:
         raise _validation_error(

@@ -28,3 +28,15 @@ it("does not guess a document on invalid or markdown input", () => {
   expect(readDocument("plain instructions")).toBeNull();
   expect(() => updateDocument("not: [valid", ["name"], "new")).toThrow();
 });
+
+it("creates a Device template with references instead of credential bytes or Sessions", () => {
+  expect(parse(template("device", "device-build"))).toEqual({
+    schema_version: "1",
+    kind: "device",
+    id: "device-build",
+    name: "Untitled",
+    device_id: "",
+    transport: { kind: "http", configuration: { endpoint: "" } },
+    authentication: { kind: "api_key", env: "A13N_DEVICE_TOKEN" },
+  });
+});

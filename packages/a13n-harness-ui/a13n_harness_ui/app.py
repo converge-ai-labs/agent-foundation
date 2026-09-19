@@ -14,6 +14,8 @@ from typing import Any, Literal
 from uuid import uuid4
 
 import httpx2
+from a13n_envd_client.eip.v1 import DirectoryListResult
+from a13n_envd_client.websocket import WebSocketConnection
 from a13n_environment import EnvironmentProvider
 from a13n_harness import HarnessInstrumentation
 from a13n_harness.environment import EnvironmentRunExtensionFactory
@@ -50,6 +52,7 @@ from a13n_harness_ui.configuration import (
     mutate_configuration_source,
     preview_external_subagent_import,
 )
+from a13n_harness_ui.configuration.models import DeviceResource
 from a13n_harness_ui.configuration.mutation import validate_configuration_source
 from a13n_harness_ui.configuration.setup import (
     SetupPreview,
@@ -73,6 +76,7 @@ from a13n_harness_ui.configuration_inspection import (
     captured_configuration,
 )
 from a13n_harness_ui.content_plugins import ContentPluginStore
+from a13n_harness_ui.devices import DeviceAttachment, DeviceConnections, DeviceInfo, DeviceSummary
 from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES, built_in_environment_profile
 from a13n_harness_ui.environment_runtime import (
     EnvironmentRunService,
@@ -303,7 +307,11 @@ class ThreadWatch:
 
 
 def _cwd_project_ids(source: LoadedHarnessUiConfiguration, directory: str) -> tuple[str, ...]:
-    return tuple(sorted(project.id for project in source.projects.values() if project.roots[0].path == directory))
+    return tuple(
+        sorted(
+            project.id for project in source.projects.values() if project.roots and project.roots[0].path == directory
+        )
+    )
 
 
 def _new_cwd_project_id(directory: str) -> str:
@@ -336,6 +344,7 @@ class HarnessUiApp:
             [], Awaitable[tuple[CodexAccountStore | None, GrokAccountStore | None, dict[Provider, AccountStoreError]]]
         ],
         resolve_sandbox_executable: Callable[[], Awaitable[Path]],
+        devices: DeviceConnections,
         grok_account: GrokAccountStore | None,
         grok_account_error: AccountStoreError | None,
         codex_login: CodexLoginCallback | None,
@@ -375,6 +384,7 @@ class HarnessUiApp:
         self._codex_account_error = codex_account_error
         self._rediscover_accounts = rediscover_accounts
         self._resolve_sandbox_executable = resolve_sandbox_executable
+        self._devices = devices
         self._configuration_lock = Lock()
         self._sandbox_ready_paths: set[Path] = set()
         self._grok_account = grok_account
@@ -1066,6 +1076,8 @@ class HarnessUiApp:
                         agent_source="thread",
                         default_model_id="thread" if selected.default_model_id is not None else "agent",
                         environment_profile_id="thread",
+                        environment_bindings="thread",
+                        default_environment="thread",
                         harness_plugin_ids="thread",
                         environment_run_extension_ids="thread",
                         mcp_server_ids="thread",
@@ -2026,13 +2038,60 @@ class HarnessUiApp:
             await self._reload_configuration_from_path()
             return result
 
+    async def list_devices(self) -> tuple[DeviceSummary, ...]:
+        async with self._operation():
+            source = await self._configurations.current()
+            if source is None:
+                return ()
+            return tuple(
+                DeviceSummary(id=item.id, name=item.name, transport=item.transport.kind)
+                for item in source.devices.values()
+            )
+
+    async def _device_resource(self, device_id: str) -> DeviceResource:
+        source = await self._configurations.current()
+        resource = None if source is None else source.devices.get(device_id)
+        if resource is None:
+            raise HarnessUiError("The selected Device is not configured.", code="device_missing")
+        return resource
+
+    async def device_info(self, device_id: str) -> DeviceInfo:
+        async with self._operation():
+            return await self._devices.info(await self._device_resource(device_id))
+
+    async def device_directories(
+        self, device_id: str, *, path: str | None = None, offset: int = 0, limit: int = 100
+    ) -> DirectoryListResult:
+        async with self._operation():
+            return await self._devices.list_directories(
+                await self._device_resource(device_id), path=path, offset=offset, limit=limit
+            )
+
+    async def authenticate_device_attachment(self, device_id: str, token: str) -> DeviceAttachment:
+        async with self._operation():
+            return await self._devices.authenticate_attachment(await self._device_resource(device_id), token)
+
+    async def attach_device(self, attachment: DeviceAttachment, connection: WebSocketConnection) -> None:
+        async with self._operation():
+            await attachment.attach(connection)
+
     async def preflight_environment(
         self, profile_id: Literal["environment-native", "environment-sandbox"], *, project_path: str
     ) -> EnvironmentReadiness:
         async with self._operation():
             path = Path(project_path).expanduser().resolve()
             self._sandbox_ready_paths.discard(path)
-            result = await preflight_environment(profile_id, path, resolve_executable=self._resolve_sandbox_executable)
+            result = await preflight_environment(
+                profile_id,
+                path,
+                resolve_executable=self._resolve_sandbox_executable,
+                protected_roots=(
+                    self._store.layout.root,
+                    *((self._configuration_path.expanduser().resolve().parent,) if self._configuration_path else ()),
+                ),
+                # Projectless setup probes only its exact Host-owned staging directory.
+                owned_probe_root=self._store.layout.staging if path == self._store.layout.staging else None,
+            )
             if profile_id == "environment-sandbox" and result.ready:
                 self._sandbox_ready_paths.add(path)
             return result
@@ -2392,13 +2451,21 @@ async def open_harness_ui_app(
                 envd_settings=settings.envd_runtime,
                 local_runtime_parent=store.layout.runtimes,
                 runtime_factories=selected_integrations.provider_runtime_factories,
+                protected_roots=(
+                    store.layout.root,
+                    *((configuration_path.expanduser().resolve().parent,) if configuration_path else ()),
+                ),
             )
+            resources.push_async_callback(environment_reconstructor.close)
             thread_files = ThreadFiles(store.layout.root, retention_seconds=settings.storage.scratch_retention_seconds)
             resources.push_async_callback(thread_files.close)
             await thread_files.prune()
+            devices = DeviceConnections(api_keys=ApiKeyStore(store.layout.root / "auth.json"))
+            resources.push_async_callback(devices.close)
             environment_service = EnvironmentRunService(
                 store,
                 environment_reconstructor,
+                devices=devices,
                 thread_files=thread_files,
                 configuration_root=configuration_path.expanduser().resolve().parent
                 if configuration_path is not None
@@ -2548,6 +2615,7 @@ async def open_harness_ui_app(
                 codex_account_error=codex_account_error,
                 rediscover_accounts=rediscover_accounts,
                 resolve_sandbox_executable=environment_reconstructor.resolve_sandbox_executable,
+                devices=devices,
                 grok_account=grok_account,
                 grok_account_error=grok_account_error,
                 codex_login=codex_login,

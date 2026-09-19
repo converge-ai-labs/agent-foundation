@@ -12,6 +12,7 @@ from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_binding_aliases
 
 from .objects import ObjectKind, ObjectRef
 
@@ -42,12 +43,15 @@ class ThreadConfiguration(StoredContract):
     agent_source: AgentSource
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str = Field(min_length=1, max_length=128)
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] = Field(default=(), max_length=64)
+    default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     harness_plugin_ids: tuple[str, ...] = ()
     environment_run_extension_ids: tuple[str, ...] = ()
     mcp_server_ids: tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _unique_lists(self) -> Self:
+        validate_binding_aliases(self.environment_bindings)
         for values in (
             self.harness_plugin_ids,
             self.environment_run_extension_ids,
@@ -65,6 +69,8 @@ class ThreadConfigurationPatch(StoredContract):
     agent_source: AgentSource | None = None
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = None
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = Field(default=None, max_length=64)
+    default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
     mcp_server_ids: tuple[str, ...] | None = None
@@ -72,7 +78,7 @@ class ThreadConfigurationPatch(StoredContract):
     @model_validator(mode="after")
     def _set_fields_are_not_null(self) -> Self:
         for name in self.model_fields_set:
-            if name not in {"project_id", "default_model_id"} and getattr(self, name) is None:
+            if name not in {"project_id", "default_model_id", "default_environment"} and getattr(self, name) is None:
                 raise ValueError(f"{name} cannot be null when supplied")
         return self
 
@@ -275,10 +281,12 @@ class ChildExecutionHead(StoredContract):
 
 class EnvironmentBindingKey(StoredContract):
     thread_id: str = Field(min_length=1, max_length=80)
-    environment_profile_id: str = Field(min_length=1, max_length=128)
+    environment_profile_id: str = Field(max_length=128)
     profile_digest: Digest
     adapter_key: str = Field(min_length=1, max_length=200)
     normalized_root: str = Field(min_length=1, max_length=4096)
+    device_id: str = Field(default="", max_length=128)
+    alias: str = Field(default="", max_length=63)
 
 
 class StoredEnvironmentState(StoredContract):

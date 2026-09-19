@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 
 from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_binding_aliases
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
 from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_thinking import ThinkingControl, ThinkingSelection
@@ -67,6 +68,8 @@ class NewThreadDefaults(SurfaceModel):
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = Field(default=None, max_length=64)
+    default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
     mcp_server_ids: tuple[str, ...] | None = None
@@ -78,6 +81,8 @@ class ThreadConfigurationView(SurfaceModel):
     agent_source: AgentSourceView
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str = Field(min_length=1, max_length=128)
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] = ()
+    default_environment: str | None = None
     harness_plugin_ids: tuple[str, ...] = ()
     environment_run_extension_ids: tuple[str, ...] = ()
     mcp_server_ids: tuple[str, ...] = ()
@@ -91,6 +96,8 @@ class ConfigurationProvenance(SurfaceModel):
     agent_source: ConfigurationOrigin
     default_model_id: ConfigurationOrigin = "agent"
     environment_profile_id: ConfigurationOrigin
+    environment_bindings: ConfigurationOrigin = "builtin"
+    default_environment: ConfigurationOrigin = "builtin"
     harness_plugin_ids: ConfigurationOrigin
     environment_run_extension_ids: ConfigurationOrigin
     mcp_server_ids: ConfigurationOrigin
@@ -302,7 +309,7 @@ class ProjectSummary(SurfaceModel):
     project_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     position: int
-    roots: tuple[str, ...] = Field(min_length=1, max_length=64)
+    roots: tuple[str, ...] = Field(max_length=64)
     last_active_at: datetime | None = None
     defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
 
@@ -712,6 +719,8 @@ class ThreadConfigurationPatch(SurfaceModel):
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = Field(default=None, max_length=64)
+    default_environment: str | None = Field(default=None, min_length=1, max_length=63)
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
     mcp_server_ids: tuple[str, ...] | None = None
@@ -722,10 +731,11 @@ class ThreadConfigurationPatch(SurfaceModel):
             raise ValueError("Thread configuration patch must not be empty")
         values = self.model_dump(exclude_unset=True)
         for name, value in values.items():
-            if name not in {"project_id", "default_model_id"} and value is None:
+            if name not in {"project_id", "default_model_id", "default_environment"} and value is None:
                 raise ValueError(f"{name} cannot be null when supplied")
-            if isinstance(value, tuple) and len(value) != len(set(value)):
+            if name != "environment_bindings" and isinstance(value, tuple) and len(value) != len(set(value)):
                 raise ValueError(f"{name} must be unique and ordered")
+        validate_binding_aliases(self.environment_bindings or ())
         return self
 
 

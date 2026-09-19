@@ -17,6 +17,7 @@ from urllib.parse import quote, urlsplit
 
 import click
 import uvicorn
+from a13n_envd_client.eip.v1 import DirectoryListResult
 from anyio import CancelScope, Event, Lock, create_task_group, fail_after, move_on_after, sleep
 from anyio.abc import TaskStatus
 from fastapi import FastAPI, Query, Request, WebSocket
@@ -39,6 +40,8 @@ from a13n_harness_ui.configuration.views import (
     ConfigurationValidation,
 )
 from a13n_harness_ui.configuration_inspection import CapturedConfiguration, ThreadConfigurationInspection
+from a13n_harness_ui.device_transport import DeviceWebSocket
+from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.extensions import CatalogReference
 from a13n_harness_ui.host_files import (
@@ -576,6 +579,48 @@ def create_webui(
     @server.get("/api/presence", response_model=PresenceFrame)
     async def presence(participant_id: Annotated[str | None, Query(max_length=80)] = None) -> PresenceFrame:
         return await app().page_presence_snapshot(participant_id)
+
+    @server.get("/api/devices")
+    async def devices() -> tuple[DeviceSummary, ...]:
+        return await app().list_devices()
+
+    @server.get("/api/devices/{device_id}")
+    async def device_info(device_id: str) -> DeviceInfo:
+        return await app().device_info(device_id)
+
+    @server.get("/api/devices/{device_id}/directories")
+    async def device_directories(
+        device_id: str,
+        path: Annotated[str | None, Query(max_length=4096)] = None,
+        offset: Annotated[int, Query(ge=0, le=1_000_000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    ) -> DirectoryListResult:
+        return await app().device_directories(device_id, path=path, offset=offset, limit=limit)
+
+    @server.websocket("/api/devices/{device_id}/connect")
+    async def connect_device(socket: WebSocket, device_id: str) -> None:
+        # Device carriers authenticate at upgrade, never through human login or
+        # query parameters. Browser-facing APIs never return this credential.
+        authorization = socket.headers.get("authorization", "")
+        if (
+            socket.query_params
+            or not authorization.startswith("Bearer ")
+            or "eip.v1" not in socket.scope.get("subprotocols", [])
+        ):
+            await socket.close(code=4403)
+            return
+        try:
+            attachment = await app().authenticate_device_attachment(device_id, authorization[7:])
+        except HarnessUiError:
+            await socket.close(code=4403)
+            return
+        await socket.accept(subprotocol="eip.v1")
+        connection = DeviceWebSocket(socket)
+        try:
+            await app().attach_device(attachment, connection)
+        finally:
+            with CancelScope(shield=True):
+                await connection.close()
 
     @server.websocket("/api/presence/connect")
     async def connect_presence(socket: WebSocket) -> None:
@@ -1643,6 +1688,11 @@ def create_webui(
             "settings/catalog",
             "settings/models",
             "settings/notifications",
+            "settings/agents",
+            "settings/capabilities",
+            "settings/environments",
+            "settings/connections",
+            "archived",
         } or (len(segments) == 2 and segments[0] in {"threads", "projects", "new"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)

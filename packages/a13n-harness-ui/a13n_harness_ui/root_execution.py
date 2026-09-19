@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from functools import partial
 from typing import Any, Literal
@@ -98,6 +98,19 @@ class RootRunOutcome:
     interaction_timeout_seconds: float = 120.0
 
 
+@dataclass(frozen=True, slots=True)
+class RootRunAdmission:
+    """Detached input captured before scheduling, with no live Environment resources."""
+
+    thread: Thread
+    source: LoadedHarnessUiConfiguration
+    published: PublishedRunComposition
+    previous_state: HarnessState
+    deferred_resume: DeferredToolResume | None
+    prompt: RunInputValue | None
+    response: ThreadDeferredResponse | None
+
+
 class RootRunExecutor:
     """Execute one coordinator-admitted root input with fresh native collaborators."""
 
@@ -149,7 +162,7 @@ class RootRunExecutor:
             raise RuntimeError("Root Thread Capability factory is already configured")
         self._root_capability_factory = factory
 
-    async def execute(
+    async def capture(
         self,
         *,
         thread_id: str,
@@ -159,66 +172,80 @@ class RootRunExecutor:
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         environment_profile_id: str | None = None,
+    ) -> RootRunAdmission:
+        """Resolve admission using detached store reads; never connect to a Device."""
+        if sum(value is not None for value in (prompt, response, restart)) != 1:
+            raise RunCoordinationError(
+                "A root operation requires one prompt, deferred response, or planned continuation.",
+                code="run_input_invalid",
+            )
+        prompt = None if prompt is None else detach_input(prompt)
+        response = None if response is None else response.model_copy(deep=True)
+        thread = await self._threads.get(thread_id)
+        if thread.parent_thread_id is not None:
+            raise ThreadError("run_thread accepts only root Threads.", code="child_thread_scoped")
+        if thread.archived:
+            raise ThreadError("An archived Thread cannot run.", code="thread_archived")
+        if mutation is not None:
+            thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
+        if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
+            raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
+        previous_state, deferred, previous_composition = await self._load_run_state(thread)
+        deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
+        if prompt is not None and deferred is not None:
+            raise RunCoordinationError(
+                "The selected Thread continuation has unresolved deferred tool requests.",
+                code="thread_deferred_pending",
+            )
+        selection = _selection(thread, environment_profile_id)
+        if response is not None:
+            assert previous_composition is not None
+            captured = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
+            patched = set() if mutation is None else mutation.patch.model_fields_set
+            selection = replace(
+                selection,
+                environment_profile_id=(
+                    captured.environment_profile.profile_id
+                    if environment_profile_id is None and "environment_profile_id" not in patched
+                    else selection.environment_profile_id
+                ),
+                environment_bindings=(
+                    tuple(item.selection for item in captured.environment_bindings)
+                    if "environment_bindings" not in patched
+                    else selection.environment_bindings
+                ),
+                default_environment=(
+                    captured.default_environment
+                    if "default_environment" not in patched
+                    else selection.default_environment
+                ),
+            )
+        if restart is None:
+            source = await self._required_configuration()
+            published = await self._compositions.publish(source, selection, model_overrides=model_overrides)
+        else:
+            captured = await self._store.objects.read_model(restart.composition, ResolvedRunComposition)
+            source = await self._configurations.load(captured.generation_digest)
+            published = PublishedRunComposition(value=captured, reference=restart.composition)
+        return RootRunAdmission(thread, source, published, previous_state, deferred_resume, prompt, response)
+
+    async def execute(
+        self,
+        admission: RootRunAdmission,
+        *,
         on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
-        on_composition: Callable[[ObjectRef], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
+        thread = admission.thread
+        thread_id = thread.thread_id
+        source, published = admission.source, admission.published
+        previous_state, deferred_resume = admission.previous_state, admission.deferred_resume
+        prompt = admission.prompt
         with phase("prepare") as preparation_span:
             record_span_metadata(
                 preparation_span,
-                {
-                    "prepare.input_kind": "deferred_response" if response is not None else "prompt",
-                    "prepare.configuration_mutation": mutation is not None,
-                },
+                {"prepare.input_kind": "deferred_response" if admission.response is not None else "prompt"},
             )
-            if sum(value is not None for value in (prompt, response, restart)) != 1:
-                raise RunCoordinationError(
-                    "A root operation requires one prompt, deferred response, or planned continuation.",
-                    code="run_input_invalid",
-                )
-            if prompt is not None:
-                prompt = detach_input(prompt)
-            preparation_span.set_attribute("a13n.phase.step", "thread")
-            thread = await self._threads.get(thread_id)
-            if thread.parent_thread_id is not None:
-                raise ThreadError("run_thread accepts only root Threads.", code="child_thread_scoped")
-            if thread.archived:
-                raise ThreadError("An archived Thread cannot run.", code="thread_archived")
-            if mutation is not None:
-                thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
-            preparation_span.set_attribute("a13n.phase.step", "continuation")
-            if restart is not None and (thread.continuation != restart.checkpoint or thread_id != restart.thread_id):
-                raise RunCoordinationError("The saved restart continuation changed.", code="restart_conflict")
-            previous_state, deferred, previous_composition = await self._load_run_state(thread)
             display = DisplayHistoryCollector(previous_state.message_history, saved_display_history(previous_state))
-            deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
-            if prompt is not None and deferred is not None:
-                raise RunCoordinationError(
-                    "The selected Thread continuation has unresolved deferred tool requests.",
-                    code="thread_deferred_pending",
-                )
-            # Answering a deferred request (including an automatic timeout) must
-            # not silently drop a Run-only Sandbox selection. An explicit
-            # Environment mutation still has the ordinary next-admission effect.
-            if (
-                response is not None
-                and environment_profile_id is None
-                and not (mutation and "environment_profile_id" in mutation.patch.model_fields_set)
-            ):
-                assert previous_composition is not None
-                captured = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
-                environment_profile_id = captured.environment_profile.profile_id
-            preparation_span.set_attribute("a13n.phase.step", "configuration")
-            if restart is None:
-                source = await self._required_configuration()
-                published = await self._compositions.publish(
-                    source, _selection(thread, environment_profile_id), model_overrides=model_overrides
-                )
-            else:
-                captured = await self._store.objects.read_model(restart.composition, ResolvedRunComposition)
-                source = await self._configurations.load(captured.generation_digest)
-                published = PublishedRunComposition(value=captured, reference=restart.composition)
-            if on_composition is not None:
-                await on_composition(published.reference)
             base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
 
             async def save_checkpoint(state: HarnessState) -> str:
@@ -752,6 +779,8 @@ def _selection(thread: Thread, environment_profile_id: str | None = None) -> Thr
         environment_profile_id=(
             thread.configuration.environment_profile_id if environment_profile_id is None else environment_profile_id
         ),
+        environment_bindings=thread.configuration.environment_bindings,
+        default_environment=thread.configuration.default_environment,
         harness_plugin_ids=thread.configuration.harness_plugin_ids,
         environment_run_extension_ids=thread.configuration.environment_run_extension_ids,
         mcp_server_ids=thread.configuration.mcp_server_ids,

@@ -7,6 +7,7 @@ import inspect
 import os
 import stat
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from functools import partial
@@ -23,7 +24,6 @@ from a13n_environment import (
     EnvironmentProvider,
     EnvironmentState,
     LocalEnvdProviderRuntime,
-    TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
 )
 from a13n_harness.environment import (
@@ -35,11 +35,14 @@ from a13n_harness.environment import (
 )
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.providers import EnvironmentRuntime
-from anyio import CancelScope, move_on_after, to_thread
+from anyio import CancelScope, Lock, move_on_after, to_thread
 
 from a13n_harness_ui.composition import ResolvedEnvironmentProfile, ResolvedRunComposition
+from a13n_harness_ui.composition.models import ResolvedEnvironmentBinding
+from a13n_harness_ui.configuration.models import HttpDeviceTransport, canonical_digest
+from a13n_harness_ui.devices import DeviceConnections
 from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, EnvironmentPathLayout
-from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError, StoreError
+from a13n_harness_ui.errors import CompositionError, EnvironmentLifecycleError
 from a13n_harness_ui.extensions import (
     LOCAL_ENVD_PROVIDER_KEY,
     NATIVE_PROVIDER_KEY,
@@ -48,6 +51,7 @@ from a13n_harness_ui.extensions import (
 )
 from a13n_harness_ui.extensions.environment_adapters import LocalEnvdProjectAdapter, NativeProjectAdapter
 from a13n_harness_ui.managed_runtime import ManagedEnvdRuntime
+from a13n_harness_ui.sandbox import create_sandbox_runtime
 from a13n_harness_ui.settings import EnvdRuntimeSettings
 from a13n_harness_ui.storage import EnvironmentBindingKey, LocalStore, ObjectRef, StoredEnvironmentState
 from a13n_harness_ui.storage.objects import ObjectKind
@@ -89,6 +93,8 @@ class _PreparedMount:
     environment: Environment
     permission_ceiling: EnvironmentPermissionSet
     mount_path: str | None
+    provider_root: str = "/"
+    provider_schema_version: str = "1"
 
 
 class EnvironmentSnapshotReconstructor:
@@ -101,11 +107,15 @@ class EnvironmentSnapshotReconstructor:
         envd_settings: EnvdRuntimeSettings | None = None,
         runtime_factories: Mapping[str, ProviderRuntimeFactory] | None = None,
         local_runtime_parent: Path | None = None,
+        protected_roots: tuple[Path, ...] = (),
     ) -> None:
         self._catalog = catalog or HarnessUiExtensionCatalog()
         self._envd_settings = envd_settings or EnvdRuntimeSettings()
         self._runtime_factories = MappingProxyType(dict(runtime_factories or {}))
         self._local_runtime_parent = local_runtime_parent
+        self._protected_roots = protected_roots
+        self._local_runtimes: dict[tuple[Path, ...], LocalEnvdProviderRuntime] = {}
+        self._local_lock = Lock()
         self._managed_envd = (
             None
             if local_runtime_parent is None
@@ -133,8 +143,13 @@ class EnvironmentSnapshotReconstructor:
         *,
         root: Path,
         state: EnvironmentState | None,
+        local_runtime: LocalEnvdProviderRuntime | None = None,
     ) -> Environment:
-        collaborator = await self._runtime_collaborator(reconstructed.provider)
+        collaborator = (
+            local_runtime or await self.sandbox_runtime((root,))
+            if reconstructed.provider.key == LOCAL_ENVD_PROVIDER_KEY
+            else await self._runtime_collaborator(reconstructed.provider)
+        )
         try:
             environment = await reconstructed.adapter.bind(
                 profile=reconstructed.profile,
@@ -185,15 +200,34 @@ class EnvironmentSnapshotReconstructor:
             )
         return await self._managed_envd.resolve()
 
+    async def sandbox_runtime(
+        self, roots: tuple[Path, ...], *, thread_files_root: Path | None = None
+    ) -> LocalEnvdProviderRuntime:
+        # Each immutable grant set gets its own Device; Sessions share only that
+        # Device, never a union of grants from different Threads or Projects.
+        async with self._local_lock:
+            if roots not in self._local_runtimes:
+                executable = await self.resolve_sandbox_executable()
+                self._local_runtimes[roots] = await to_thread.run_sync(
+                    partial(
+                        create_sandbox_runtime,
+                        executable,
+                        roots=roots,
+                        runtime_parent=self._local_runtime_parent,
+                        protected_roots=self._protected_roots,
+                        thread_files_root=thread_files_root,
+                    )
+                )
+            return self._local_runtimes[roots]
+
+    async def close(self) -> None:
+        async with AsyncExitStack() as stack:
+            for runtime in self._local_runtimes.values():
+                stack.push_async_callback(runtime.close)
+
     async def _runtime_collaborator(self, provider: EnvironmentProvider) -> object | None:
         if provider.key == NATIVE_PROVIDER_KEY:
             return DirectLocalProviderRuntime()
-        if provider.key == LOCAL_ENVD_PROVIDER_KEY:
-            resolved = await self.resolve_sandbox_executable()
-            return LocalEnvdProviderRuntime(
-                executable=resolved,
-                allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=self._local_runtime_parent),
-            )
         factory = self._runtime_factories.get(provider.key)
         if factory is None:
             raise EnvironmentLifecycleError(
@@ -216,6 +250,7 @@ class EnvironmentRunPlan:
         mounts: Sequence[_PreparedMount],
         runtime: EnvironmentRuntime,
         tool_result_directory: str,
+        default_environment: str,
     ) -> None:
         self._store = store
         self.profile = profile
@@ -225,7 +260,7 @@ class EnvironmentRunPlan:
         self.environments: Mapping[str, Environment] = MappingProxyType(
             {item.alias: item.environment for item in mounts}
         )
-        self.default_environment = mounts[0].alias
+        self.default_environment = default_environment
         self._finalized = False
 
     async def finalize(self, *, timeout_seconds: float = 30.0) -> EnvironmentFinalization:
@@ -284,7 +319,7 @@ class EnvironmentRunPlan:
                 if final_state is not None:
                     stored = StoredEnvironmentState(
                         binding=mount.key,
-                        provider_schema_version=self.profile.provider_schema_version,
+                        provider_schema_version=mount.provider_schema_version,
                         state=final_state,
                         created_at=_utc_now(),
                     )
@@ -335,12 +370,14 @@ class EnvironmentRunService:
         user_skills_root: Path | None = None,
         thread_files: ThreadFiles | None = None,
         configuration_root: Path | None = None,
+        devices: DeviceConnections | None = None,
     ) -> None:
         self._store = store
         self._reconstructor = reconstructor
         self._user_skills_root = user_skills_root
         self._thread_files = thread_files or ThreadFiles(store.layout.root)
         self._configuration_root = configuration_root
+        self._devices = devices
 
     async def prepare(self, composition: ResolvedRunComposition) -> EnvironmentRunPlan:
         profile = composition.environment_profile
@@ -354,6 +391,12 @@ class EnvironmentRunService:
             user_skills_root=self._user_skills_root,
             content_plugins=content_plugins,
         )
+        thread_root = await self._thread_files.touch(composition.thread_id)
+        local_runtime = (
+            await self._reconstructor.sandbox_runtime((*roots, thread_root), thread_files_root=thread_root)
+            if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
+            else None
+        )
         mounts: list[_PreparedMount] = []
         try:
             for index, root in enumerate(roots, start=1):
@@ -366,11 +409,17 @@ class EnvironmentRunService:
                 )
                 head = await self._store.environment_states.get(key)
                 expected = None if head is None else head.state
-                state = await self._load_state(key=key, reference=expected, profile=profile)
+                state = await self._load_state(
+                    key=key,
+                    reference=expected,
+                    provider_key=profile.provider_key,
+                    provider_schema_version=profile.provider_schema_version,
+                )
                 environment = await self._reconstructor.bind(
                     reconstructed,
                     root=root,
                     state=state,
+                    local_runtime=local_runtime,
                 )
                 mounts.append(
                     _PreparedMount(
@@ -381,8 +430,14 @@ class EnvironmentRunService:
                         environment=environment,
                         permission_ceiling=EnvironmentPermissionSet(operations=frozenset(EnvironmentAction)),
                         mount_path=(path_layout.project_mounts[index - 1] if canonical_host_paths else None),
+                        provider_root=root.as_posix()
+                        if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter)
+                        else "/",
+                        provider_schema_version=profile.provider_schema_version,
                     )
                 )
+            for binding in composition.environment_bindings:
+                mounts.append(await self._prepare_device_mount(composition.thread_id, binding))
             for index, ((_plugin_id, root, _skills), (_layout_id, mount_path)) in enumerate(
                 zip(content_plugins, path_layout.content_plugin_roots, strict=True),
                 start=1,
@@ -424,8 +479,9 @@ class EnvironmentRunService:
                             mount_path=root.as_posix() if canonical_host_paths else None,
                         )
                     )
-            root = await self._thread_files.touch(composition.thread_id)
-            thread_mount = await self._prepare_thread_files_mount(reconstructed, root)
+            thread_mount = await self._prepare_thread_files_mount(
+                reconstructed, thread_root, local_runtime=local_runtime
+            )
             if roots:
                 mounts.append(thread_mount)
             else:
@@ -438,12 +494,15 @@ class EnvironmentRunService:
                     item.alias: EnvironmentMount(
                         environment=item.environment,
                         permission_ceiling=item.permission_ceiling,
-                        working_directory="/tmp" if item.alias == "thread-files" else None,
+                        working_directory=f"{item.provider_root.rstrip('/')}/tmp"
+                        if item.alias == "thread-files"
+                        else None,
                         mount_path=item.mount_path,
+                        provider_root=item.provider_root,
                     )
                     for item in mounts
                 },
-                default_mount=mounts[0].alias,
+                default_mount=composition.default_environment or mounts[0].alias,
                 extensions=extensions,
             )
         except BaseException as exc:
@@ -458,16 +517,62 @@ class EnvironmentRunService:
             profile=profile,
             mounts=mounts,
             runtime=runtime,
+            default_environment=composition.default_environment or mounts[0].alias,
             tool_result_directory=(
                 f"{(thread_mount.mount_path or '/environment/thread-files').rstrip('/')}/tmp/tool-results"
             ),
         )
 
+    async def _prepare_device_mount(self, thread_id: str, binding: ResolvedEnvironmentBinding) -> _PreparedMount:
+        if self._devices is None:
+            raise EnvironmentLifecycleError(
+                "Device connections are unavailable.", code="device_connections_unavailable"
+            )
+        provider_key = (
+            "a13n.http-envd" if isinstance(binding.device.transport, HttpDeviceTransport) else "a13n.websocket-envd"
+        )
+        selection = binding.selection
+        key = EnvironmentBindingKey(
+            thread_id=thread_id,
+            environment_profile_id="",
+            device_id=binding.device.id,
+            alias=selection.alias,
+            profile_digest=canonical_digest(
+                {
+                    "device": binding.device.model_dump(mode="json", exclude={"name", "id"}),
+                    "selection": selection.model_dump(mode="json"),
+                }
+            ),
+            adapter_key=provider_key,
+            normalized_root=selection.working_directory,
+        )
+        head = await self._store.environment_states.get(key)
+        expected = None if head is None else head.state
+        state = await self._load_state(
+            key=key, reference=expected, provider_key=provider_key, provider_schema_version="1"
+        )
+        environment = await self._devices.bind(binding, environment_id=f"device-{key.profile_digest[:20]}", state=state)
+        return _PreparedMount(
+            alias=selection.alias,
+            key=key,
+            expected_state_ref=expected,
+            supplied_state=state,
+            environment=environment,
+            permission_ceiling=selection.permission_ceiling,
+            mount_path=f"/environment/{selection.alias}",
+        )
+
     async def _prepare_thread_files_mount(
-        self, reconstructed: ReconstructedEnvironmentProfile, root: Path
+        self,
+        reconstructed: ReconstructedEnvironmentProfile,
+        root: Path,
+        *,
+        local_runtime: LocalEnvdProviderRuntime | None = None,
     ) -> _PreparedMount:
         if isinstance(reconstructed.adapter, (NativeProjectAdapter, LocalEnvdProjectAdapter)):
-            environment = await self._reconstructor.bind(reconstructed, root=root, state=None)
+            environment = await self._reconstructor.bind(
+                reconstructed, root=root, state=None, local_runtime=local_runtime
+            )
             operations = frozenset(EnvironmentAction)
         else:
             # Host files are not silently interpreted as a remote provider root.
@@ -497,6 +602,7 @@ class EnvironmentRunService:
             environment=environment,
             permission_ceiling=EnvironmentPermissionSet(operations=operations),
             mount_path=root.as_posix() if reconstructed.adapter.preserves_host_paths else None,
+            provider_root=root.as_posix() if isinstance(reconstructed.adapter, LocalEnvdProjectAdapter) else "/",
         )
 
     async def _prepare_host_files_mount(
@@ -584,23 +690,21 @@ class EnvironmentRunService:
         *,
         key: EnvironmentBindingKey,
         reference: ObjectRef | None,
-        profile: ResolvedEnvironmentProfile,
+        provider_key: str,
+        provider_schema_version: str,
     ) -> EnvironmentState | None:
         if reference is None:
             return None
-        try:
-            value = await self._store.objects.read_model(reference, StoredEnvironmentState)
-        except StoreError:
-            raise
+        value = await self._store.objects.read_model(reference, StoredEnvironmentState)
         if (
             value.binding != key
-            or value.provider_schema_version != profile.provider_schema_version
-            or value.state.provider_key != profile.provider_key
+            or value.provider_schema_version != provider_schema_version
+            or value.state.provider_key != provider_key
         ):
             raise EnvironmentLifecycleError(
                 "Stored Environment state is incompatible with its binding.",
                 code="environment_state_incompatible",
-                details={"adapter_key": profile.adapter_key, "provider_key": profile.provider_key},
+                details={"adapter_key": key.adapter_key, "provider_key": provider_key},
             )
         return value.state
 

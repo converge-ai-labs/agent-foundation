@@ -17,6 +17,7 @@ class EnvironmentPathLayout:
 
     project_mounts: tuple[str, ...]
     user_skills: str
+    device_working_directories: tuple[tuple[str, str], ...] = ()
     content_plugin_roots: tuple[tuple[str, str], ...] = ()
     content_plugin_skills: tuple[tuple[str, str], ...] = ()
 
@@ -28,12 +29,15 @@ class EnvironmentPathLayout:
         project_roots: tuple[str | Path, ...],
         user_skills_root: Path | None = None,
         content_plugins: tuple[tuple[str, str, str | None], ...] = (),
+        device_bindings: tuple[tuple[str, str], ...] = (),
     ) -> EnvironmentPathLayout:
+        device_directories = tuple((alias, f"/environment/{alias}{cwd.rstrip('/')}") for alias, cwd in device_bindings)
         if canonical_host_paths:
             project_mounts = tuple(Path(root).as_posix() for root in project_roots)
             skills_root = (user_skills_root or Path.home() / ".agents" / "skills").expanduser().resolve(strict=False)
             return cls(
                 project_mounts=project_mounts,
+                device_working_directories=device_directories,
                 user_skills=skills_root.as_posix(),
                 content_plugin_roots=tuple(
                     (plugin_id, Path(root).as_posix()) for plugin_id, root, _ in content_plugins
@@ -50,6 +54,7 @@ class EnvironmentPathLayout:
                 for index in range(1, len(project_roots) + 1)
             ),
             user_skills="/environment/user-skills",
+            device_working_directories=device_directories,
             content_plugin_roots=tuple(
                 (plugin_id, f"/environment/content-plugin-{index}")
                 for index, (plugin_id, _, _) in enumerate(content_plugins, start=1)

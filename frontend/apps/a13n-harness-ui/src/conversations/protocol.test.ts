@@ -341,25 +341,19 @@ it("selects a model for one HTTP admission without changing sticky configuration
       ?.thinking?.options.map((option) => option.value),
   ).toEqual([null, "minimal", "low", "medium", "high"]);
   expect(inspection.next_model_id).toBe("model-fixture");
-  const rejected = await transport.client.POST(
-    "/api/threads/{thread_id}/submit",
-    {
+  await expect(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
       body: { prompt: "Do not silently fall back", model_id: "missing-model" },
-    },
+    }),
+  ).rejects.toMatchObject({ status: 400, code: "model_missing" });
+  const retained = await result(
+    transport.client.GET("/api/threads/{thread_id}/configuration", {
+      params: { path: { thread_id: thread } },
+    }),
   );
-  expect(rejected.data?.receipt_id).toBeTruthy();
-  await vi.waitFor(
-    async () => {
-      const operation = await result(
-        transport.client.GET("/api/operations/{receipt_id}", {
-          params: { path: { receipt_id: rejected.data!.receipt_id } },
-        }),
-      );
-      expect(operation.status).toBe("failed");
-    },
-    { timeout: 10000 },
-  );
+  expect(retained.captured).toEqual(inspection.captured);
+  expect(retained.next_model_id).toBe("model-fixture");
 });
 
 it("projects skills before creation and validates references on submit and active steering", async () => {
@@ -835,7 +829,7 @@ it("captures an HTTP environment override without changing defaults and never fa
       }),
     }),
   ).rejects.toMatchObject({ status: 400 });
-  const invalid = await result(
+  await expect(
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
       body: {
@@ -843,17 +837,12 @@ it("captures an HTTP environment override without changing defaults and never fa
         environment_profile_id: "missing-environment",
       },
     }),
+  ).rejects.toMatchObject({ status: 400, code: "environment_profile_missing" });
+  const retained = await result(
+    transport.client.GET("/api/threads/{thread_id}/configuration", {
+      params: { path: { thread_id: thread } },
+    }),
   );
-  await vi.waitFor(
-    async () => {
-      const operation = await result(
-        transport.client.GET("/api/operations/{receipt_id}", {
-          params: { path: { receipt_id: invalid.receipt_id } },
-        }),
-      );
-      expect(operation.status).toBe("failed");
-      expect(operation.failure?.code).toBe("environment_profile_missing");
-    },
-    { timeout: 10000 },
-  );
+  expect(retained.captured).toEqual(inspection.captured);
+  expect(retained.next_run.configuration).toEqual(before.thread.configuration);
 });

@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import ResolvedRunComposition
+from a13n_harness_ui.errors import CompositionError, RunCoordinationError
 from a13n_harness_ui.root_execution import _selection
 from a13n_harness_ui.storage import StoredContinuation, ThreadConfigurationMutation, ThreadConfigurationPatch
 from a13n_harness_ui.surfaces import ExternalToolResult, NewThreadDefaults, RootOperationStatus, ThreadDeferredResponse
@@ -70,13 +71,17 @@ async def test_invalid_or_unavailable_run_environment_never_falls_back(tmp_path,
             raise RuntimeError("Sandbox unavailable")
 
         monkeypatch.setattr(app._root_runs._executor._environments, "prepare", unavailable)
-        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Run", environment_profile_id=profile)
-        outcome = await app.wait_root_operation(receipt.receipt_id)
-        assert outcome.status is RootOperationStatus.failed
-        assert prepared == ([] if profile == "missing-profile" else ["environment-sandbox"])
-        assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
         if profile == "missing-profile":
-            assert outcome.failure is not None and outcome.failure.code == "environment_profile_missing"
+            with pytest.raises(CompositionError) as error:
+                await app.submit_thread(thread_id=thread.thread_id, prompt="Run", environment_profile_id=profile)
+            assert error.value.code == "environment_profile_missing"
+            assert prepared == []
+        else:
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Run", environment_profile_id=profile)
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+            assert outcome.status is RootOperationStatus.failed
+            assert prepared == ["environment-sandbox"]
+        assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
 
 
 @pytest.mark.parametrize("patch", [None, {"project_id": None}, {"environment_profile_id": "environment-native"}])
@@ -94,11 +99,12 @@ async def test_deferred_response_retains_run_environment_unless_explicitly_chang
         detail = await app.get_thread(thread.thread_id)
         assert detail.continuation_id is not None
         responses = (ExternalToolResult(request_id=detail.deferred_requests[0].request_id, result="Answer"),)
-        stale = await app.respond_thread(
-            thread_id=thread.thread_id,
-            response=ThreadDeferredResponse(expected_continuation_id="0" * 64, responses=responses),
-        )
-        assert (await app.wait_root_operation(stale.receipt_id)).status is RootOperationStatus.failed
+        with pytest.raises(RunCoordinationError) as error:
+            await app.respond_thread(
+                thread_id=thread.thread_id,
+                response=ThreadDeferredResponse(expected_continuation_id="0" * 64, responses=responses),
+            )
+        assert error.value.code == "thread_continuation_conflict"
         assert len(captures) == 1
         resumed = await app.respond_thread(
             thread_id=thread.thread_id,
