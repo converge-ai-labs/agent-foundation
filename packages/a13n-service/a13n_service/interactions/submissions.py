@@ -23,6 +23,7 @@ from a13n_service.durable_operations.idempotency import (
 from a13n_service.durable_operations.requests import request_scope
 from a13n_service.environments.selection import Omitted
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.command_evidence import command_identity
 from a13n_service.interactions.command_values import ContinueRunCommand, WaitingContinueRunCommand
 from a13n_service.interactions.commands import InteractionCommands
@@ -83,6 +84,7 @@ class QueuedSubmissionService:
         self._commands = commands
         self._clock = clock
 
+    @authorization_operation
     async def submit(
         self,
         *,
@@ -239,6 +241,7 @@ class QueuedSubmissionService:
         assert accepted_receipt is not None
         return accepted_receipt
 
+    @authorization_operation
     async def list(
         self,
         *,
@@ -260,6 +263,7 @@ class QueuedSubmissionService:
         except (QueuedSubmissionConflict, ValueError) as error:
             raise _queue_error(error) from error
 
+    @authorization_operation
     async def consume(
         self,
         *,
@@ -275,6 +279,7 @@ class QueuedSubmissionService:
             idempotency_key=idempotency_key,
         )
 
+    @authorization_operation
     async def get(self, *, actor: AuthenticatedActor, queued_submission_id: str) -> QueuedSubmission:
         scope = await self._submission_scope(
             actor=actor,
@@ -289,6 +294,7 @@ class QueuedSubmissionService:
         except QueuedSubmissionConflict as error:
             raise _queue_error(error) from error
 
+    @authorization_operation
     async def enqueue(
         self,
         *,
@@ -339,6 +345,7 @@ class QueuedSubmissionService:
             ),
         )
 
+    @authorization_operation
     async def update(
         self,
         *,
@@ -386,6 +393,7 @@ class QueuedSubmissionService:
             ),
         )
 
+    @authorization_operation
     async def delete(
         self,
         *,
@@ -435,6 +443,7 @@ class QueuedSubmissionService:
             ),
         )
 
+    @authorization_operation
     async def reorder(
         self,
         *,

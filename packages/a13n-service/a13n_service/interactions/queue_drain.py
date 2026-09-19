@@ -10,6 +10,7 @@ from sqlalchemy.orm import aliased
 
 from a13n_service.application_errors import ApplicationError
 from a13n_service.background import Sweep
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.storage import ObjectStoreError, short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -70,6 +71,7 @@ class QueueDrain:
                 deferred += 1
         return Sweep(examined=len(candidates), completed=completed, deferred=deferred, oldest_age_seconds=oldest_age)
 
+    @authorization_operation
     async def consume_thread(self, *, organization_id: str, thread_id: str) -> bool:
         """Consume at most one eligible head using fresh committed Thread state."""
         async with short_session(self._sessions) as database:

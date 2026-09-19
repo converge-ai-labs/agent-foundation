@@ -11,7 +11,8 @@ from datetime import datetime, timedelta
 import rfc8785
 from a13n_harness import SafeFailure
 from a13n_harness.usage import ModelUsageRecord, UsageRecord
-from sqlalchemy import select
+from pydantic import JsonValue
+from sqlalchemy import Select, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import load_only
 
@@ -122,6 +123,13 @@ class AttemptPreparationRejected:
 type AttemptPreparationResult = AttemptPreparationAccepted | AttemptPreparationRejected
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedUsageReceipt:
+    record: UsageRecord
+    content: dict[str, JsonValue]
+    digest: str
+
+
 class AttemptExecutionService:
     """Apply lease-authorized execution transitions under fresh session row locks."""
 
@@ -152,9 +160,20 @@ class AttemptExecutionService:
     ) -> AttemptMutationReceipt:
         if lease_duration <= timedelta(0):
             raise ValueError("lease_duration must be positive")
-        now = assume_utc(self._clock())
         async with transaction(self._sessions) as session:
-            run, attempt, _ = await lock_attempt_authority(session, authority, now)
+            # Every release/replacement of current authority terminalizes this
+            # Attempt under its row lock. Renewal need not lock its ancestors.
+            row = (
+                await session.execute(
+                    _attempt_authority_query(authority, load_execution_state=False).with_for_update(of=RunAttemptRecord)
+                )
+            ).one_or_none()
+            if row is None:
+                raise AttemptAuthorityError("Attempt authority was not found")
+            run, attempt, thread = row
+            # Lock contention must not allow an already expired lease to revive.
+            now = assume_utc(self._clock())
+            _validate_lease(run, attempt, thread, authority, now)
             attempt.heartbeat_at = now
             attempt.lease_expires_at = now + lease_duration
             attempt.updated_at = now
@@ -297,7 +316,14 @@ class AttemptExecutionService:
         """
         if not records:
             return
-        now = assume_utc(self._clock())
+        prepared: dict[str, _PreparedUsageReceipt] = {}
+        for record in records:
+            content = record.model_dump(mode="json")
+            digest = hashlib.sha256(rfc8785.dumps(content)).hexdigest()
+            prior = prepared.get(record.record_id)
+            if prior is not None and prior.digest != digest:
+                raise AttemptMutationError("Conflicting immutable usage receipt")
+            prepared[record.record_id] = _PreparedUsageReceipt(record, content, digest)
         async with transaction(self._sessions) as session:
             # Preserve the lifecycle lock order, including on the late-evidence path.
             thread = await session.scalar(
@@ -337,29 +363,38 @@ class AttemptExecutionService:
                 or not hmac.compare_digest(attempt.lease_token_digest, _token_digest(authority.lease_token))
             ):
                 raise AttemptAuthorityError("Usage receipt does not match its originating Attempt")
-            delta = RunUsage()
-            for record in records:
-                content = record.model_dump(mode="json")
-                digest = hashlib.sha256(rfc8785.dumps(content)).hexdigest()
-                existing = await session.get(RunUsageRecord, (authority.organization_id, record.record_id))
-                if existing is not None:
-                    if existing.run_attempt_id != attempt.id or existing.content_digest != digest:
-                        raise AttemptMutationError("Conflicting immutable usage receipt")
-                    continue
-                session.add(
-                    RunUsageRecord(
-                        organization_id=authority.organization_id,
-                        record_id=record.record_id,
-                        run_id=run.id,
-                        run_attempt_id=attempt.id,
-                        harness_run_id=record.run_id,
-                        content_digest=digest,
-                        record_json=content,
-                        ingested_at=now,
+            now = assume_utc(self._clock())
+            existing = {
+                row.record_id: row
+                for row in await session.execute(
+                    select(
+                        RunUsageRecord.record_id, RunUsageRecord.run_attempt_id, RunUsageRecord.content_digest
+                    ).where(
+                        RunUsageRecord.organization_id == authority.organization_id,
+                        RunUsageRecord.record_id.in_(prepared),
                     )
                 )
-                # Flush so duplicate IDs within this delivery use the same durable check.
-                await session.flush()
+            }
+            delta = RunUsage()
+            new_records = []
+            for record_id, receipt in prepared.items():
+                if (stored := existing.get(record_id)) is not None:
+                    if stored.run_attempt_id != attempt.id or stored.content_digest != receipt.digest:
+                        raise AttemptMutationError("Conflicting immutable usage receipt")
+                    continue
+                new_records.append(
+                    {
+                        "organization_id": authority.organization_id,
+                        "record_id": record_id,
+                        "run_id": run.id,
+                        "run_attempt_id": attempt.id,
+                        "harness_run_id": receipt.record.run_id,
+                        "content_digest": receipt.digest,
+                        "record_json": receipt.content,
+                        "ingested_at": now,
+                    }
+                )
+                record = receipt.record
                 if isinstance(record, ModelUsageRecord):
                     delta = delta.plus(
                         RunUsage(
@@ -367,6 +402,8 @@ class AttemptExecutionService:
                             output_tokens=record.request_usage.output_tokens,
                         )
                     )
+            if new_records:
+                await session.execute(insert(RunUsageRecord).values(new_records))
             if (
                 attempt.status == RunAttemptStatus.running.value
                 and run.current_run_attempt_id == attempt.id
@@ -527,6 +564,18 @@ async def read_attempt_authority(
 ) -> tuple[RunRecord, RunAttemptRecord, ThreadRecord]:
     """Validate current authority; pure checks can omit execution payloads and budgets."""
 
+    result = await session.execute(_attempt_authority_query(authority, load_execution_state=load_execution_state))
+    row = result.one_or_none()
+    if row is None:
+        raise AttemptAuthorityError("Attempt authority was not found")
+    run, attempt, thread = row
+    _validate_lease(run, attempt, thread, authority, now)
+    return run, attempt, thread
+
+
+def _attempt_authority_query(
+    authority: AttemptContext, *, load_execution_state: bool
+) -> Select[tuple[RunRecord, RunAttemptRecord, ThreadRecord]]:
     statement = (
         select(RunRecord, RunAttemptRecord, ThreadRecord)
         .join(
@@ -564,13 +613,7 @@ async def read_attempt_authority(
             ),
             load_only(ThreadRecord.current_run_id, raiseload=True),
         )
-    result = await session.execute(statement)
-    row = result.one_or_none()
-    if row is None:
-        raise AttemptAuthorityError("Attempt authority was not found")
-    run, attempt, thread = row
-    _validate_lease(run, attempt, thread, authority, now)
-    return run, attempt, thread
+    return statement
 
 
 def _validate_lease(

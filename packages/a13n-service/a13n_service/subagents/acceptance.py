@@ -13,6 +13,7 @@ from a13n_service.digests import digest_request
 from a13n_service.environments.websocket.admission import OnlineAdmission, OnlineEvidence
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
 )
@@ -85,6 +86,7 @@ class ChildRunAcceptanceService:
         self._lifecycle = lifecycle
         self._bindings = bindings
 
+    @authorization_operation
     async def accept(
         self,
         prepared: PreparedChildRunAcceptance,
@@ -175,6 +177,7 @@ class ChildRunAcceptanceService:
             ) from error
         return _receipt(prepared.relationship, prepared.run.session_id)
 
+    @authorization_operation
     async def accept_resume(
         self,
         prepared: PreparedChildRunResume,

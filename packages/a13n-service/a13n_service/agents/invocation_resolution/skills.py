@@ -76,7 +76,7 @@ async def validate_retained_skills(
     workspace_id: str,
     locks: tuple[SkillRevisionLock, ...],
 ) -> None:
-    """Recheck exact source locks inside a successor's acceptance transaction."""
+    """Check a successor's retained selections once, without locking configuration."""
 
     # A successor retains exact versions even when the source selected current.
     prepared = tuple(
@@ -89,12 +89,14 @@ async def validate_retained_skills(
         for lock in locks
     )
     try:
-        await freeze_skill_locks(
+        observed = await prepare_skill_locks_from_bindings(
             session,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            prepared=prepared,
+            bindings=tuple(item.binding for item in prepared),
         )
+        if observed != prepared:
+            raise SkillSelectionInvalid
     except SkillSelectionInvalid as error:
         raise agent_revision_not_executable("skill_selection_invalid") from error
 

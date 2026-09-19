@@ -16,6 +16,7 @@ from anyio import create_task_group
 from sqlalchemy import select
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.sql_capture import capture_sql
 
 from .conftest import NOW
 from .test_attempt_execution import _accept_root, _authority, _worker
@@ -126,14 +127,47 @@ async def test_expired_owner_can_only_add_evidence(interaction_sessions, interac
 async def test_concurrent_delivery_counts_once(interaction_sessions, interaction_object_store):
     execution, authority = await setup_usage(interaction_sessions, interaction_object_store)
 
-    async def deliver():
-        await execution.ingest_usage(authority, harness_run_id="harness-usage", records=[receipt()])
+    async def deliver(offset):
+        await execution.ingest_usage(
+            authority, harness_run_id="harness-usage", records=[receipt(i) for i in range(offset, offset + 50)]
+        )
 
     async with create_task_group() as group:
-        for _ in range(4):
-            group.start_soon(deliver)
+        for offset in (0, 25, 50, 0):
+            group.start_soon(deliver, offset)
     usage, records, _ = await read_usage(interaction_sessions, authority)
-    assert usage["input_tokens"] == 12 and usage["output_tokens"] == 3 and len(records) == 1
+    assert usage["input_tokens"] == 1200 and usage["output_tokens"] == 300 and len(records) == 100
+
+
+async def test_batch_conflict_rolls_back_all_receipts(interaction_sessions, interaction_object_store):
+    execution, authority = await setup_usage(interaction_sessions, interaction_object_store)
+    before = await read_usage(interaction_sessions, authority)
+    with pytest.raises(AttemptMutationError, match="Conflicting"):
+        await execution.ingest_usage(
+            authority,
+            harness_run_id="harness-usage",
+            records=[receipt(1), receipt(2), receipt(1, input_tokens=99)],
+        )
+    assert await read_usage(interaction_sessions, authority) == before
+
+
+@pytest.mark.parametrize("size", [1, 100])
+async def test_usage_batch_has_bounded_database_round_trips(interaction_sessions, interaction_object_store, size):
+    execution, authority = await setup_usage(interaction_sessions, interaction_object_store)
+    batch = [receipt(i) for i in range(size)]
+    with capture_sql(interaction_sessions) as statements:
+        await execution.ingest_usage(authority, harness_run_id="harness-usage", records=batch + batch)
+    assert len(statements) == 6, statements
+    assert sum("FROM run_usage_records" in sql for sql in statements) == 1
+    assert sum(sql.startswith("INSERT INTO run_usage_records") for sql in statements) == 1
+    usage, records, _ = await read_usage(interaction_sessions, authority)
+    assert len(records) == size
+    assert (usage["input_tokens"], usage["output_tokens"]) == (12 * size, 3 * size)
+    with capture_sql(interaction_sessions) as statements:
+        await execution.ingest_usage(authority, harness_run_id="harness-usage", records=batch)
+    assert len(statements) == 4, statements
+    assert not any(sql.startswith(("INSERT", "UPDATE")) for sql in statements)
+    assert (await read_usage(interaction_sessions, authority))[:2] == (usage, records)
 
 
 async def test_incurred_usage_survives_budget_exhaustion(interaction_sessions, interaction_object_store):

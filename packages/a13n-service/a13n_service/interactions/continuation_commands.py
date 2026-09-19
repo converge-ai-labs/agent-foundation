@@ -17,6 +17,7 @@ from a13n_service.iam import (
     AuthorizationError,
     WorkspaceAction,
 )
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceReceipt, RunAcceptanceService
 from a13n_service.interactions.control_domain import (
     WaitingRunContinueInput,
@@ -87,6 +88,7 @@ class ContinuationCommands:
         self._inputs = inputs
         self._clock = clock
 
+    @authorization_operation
     async def retry(
         self,
         *,
@@ -217,6 +219,7 @@ class ContinuationCommands:
         except RunAcceptanceError as error:
             return await evidence.reconcile(error)
 
+    @authorization_operation
     async def feedback(
         self,
         *,
@@ -292,6 +295,7 @@ class ContinuationCommands:
         except RunAcceptanceError as error:
             return await evidence.reconcile(error)
 
+    @authorization_operation
     async def continue_waiting(
         self,
         *,
@@ -342,6 +346,7 @@ class ContinuationCommands:
         except RunAcceptanceError as error:
             return await evidence.reconcile(error)
 
+    @authorization_operation
     async def accept_waiting_continue(
         self,
         *,

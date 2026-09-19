@@ -62,7 +62,7 @@ class AsyncSubagentResultInboxPayload:
     result_digest: str | None
 ```
 
-`subagent_name` is the exact named edge selected from the parent Run's `EffectiveAgentConfig` and supplies stable result provenance. `cancellation_policy` can request cooperative child cancellation but never claims rollback. Delivery always targets the parent Thread; `result_visibility` only bounds whether authorized reads can expose the retained result outside that Thread within the Session. Current authorization is rechecked on every read or incorporation.
+`subagent_name` is the exact named edge selected from the parent Run's `EffectiveAgentConfig` and supplies stable result provenance. `cancellation_policy` can request cooperative child cancellation but never claims rollback. Delivery always targets the parent Thread; `result_visibility` only bounds whether authorized reads can expose the retained result outside that Thread within the Session. Current authorization is checked for every bounded read, publication, or incorporation operation. Within that operation, source and destination action checks reuse the Principal/Workspace observations defined by the [request-local IAM contract](33-identity-and-access-management.md#authorization-contract). Each wait poll and each reconciled item starts a fresh operation; durable source, target, Thread, and Attempt predicates remain live checks.
 
 A Host-managed spawn is an ordinary completed parent tool operation. Its retained Item names the accepted child Thread and Run. It is not a deferred request, and child completion never fills the original spawn tool-call ID.
 

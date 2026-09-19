@@ -26,6 +26,7 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_persisted_agent_principal_actions,
 )
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceService
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
@@ -60,7 +61,7 @@ from .command_evidence import (
     run_command_scope,
     scoped_idempotency_key,
 )
-from .command_preparation import CommandInput, PreparedCommandInput, validate_invocation
+from .command_preparation import CommandInput, PreparedCommandInput
 from .errors import InteractionCommandError, command_not_found, idempotency_conflict, map_acceptance_error
 from .initialization import NewRunPolicy
 
@@ -96,6 +97,7 @@ class QueuedRunCommands:
         self._policy = policy
         self._clock = clock
 
+    @authorization_operation
     async def recover_queued(
         self, *, workspace_id: str, thread: Thread, queued: QueuedSubmission
     ) -> QueuedSubmissionConsumptionReceipt:
@@ -144,6 +146,7 @@ class QueuedRunCommands:
             ),
         )
 
+    @authorization_operation
     async def consume_queued(
         self,
         *,
@@ -247,8 +250,9 @@ class QueuedRunCommands:
                     return replay
                 raise map_acceptance_error(error) from error
 
-        return await self._inputs.accept_with_skill_refresh(self._invocations, prepared.preparation, accept)
+        return await accept(prepared.preparation)
 
+    @authorization_operation
     async def prepare_queued_run(
         self,
         *,
@@ -335,9 +339,6 @@ class QueuedRunCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            await validate_invocation(
-                database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
-            )
 
         return PreparedQueuedRun(run, state, prepared_input.input, validate_final, prepared_input)
 

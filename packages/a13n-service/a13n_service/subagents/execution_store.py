@@ -20,6 +20,7 @@ from sqlalchemy.orm import aliased
 
 from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.iam import WorkspaceAction
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.attempts import AttemptContext, read_attempt_authority
 from a13n_service.interactions.domain import Run, RunStatus, Thread
 from a13n_service.interactions.input import AcceptedAgentInput, TextContent
@@ -120,6 +121,7 @@ class SubagentExecutionStore:
             )
         return page.items[0]
 
+    @authorization_operation
     async def read_page(
         self,
         context: SubagentOperatorContext,

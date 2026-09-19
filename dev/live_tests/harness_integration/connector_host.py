@@ -1,6 +1,7 @@
 """Run the real Composio adapter against the lab-owned HTTPS peer."""
 
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx2
 from a13n_harness.providers.catalog import ProviderCatalog
@@ -18,9 +19,13 @@ class PeerEndpoint:
         self.policy = EndpointPolicy.from_operator_allowlist(private_cidrs=("127.0.0.1/32",), require_https=True)
 
     async def validate(self, endpoint, *, resolve_dns=True):
-        if endpoint != COMPOSIO_ENDPOINT:
+        """Accept only Composio destinations and route them to the lab peer, keeping the request path."""
+        target = urlsplit(endpoint)
+        if f"{target.scheme}://{target.netloc}" != COMPOSIO_ENDPOINT:
             raise ValueError("Live Connector adapter attempted an unexpected upstream")
-        return await self.policy.validate(self.origin, resolve_dns=resolve_dns)
+        peer = urlsplit(self.origin)
+        rewritten = urlunsplit((peer.scheme, peer.netloc, target.path, target.query, target.fragment))
+        return await self.policy.validate(rewritten, resolve_dns=resolve_dns)
 
 
 class ConnectorHost:

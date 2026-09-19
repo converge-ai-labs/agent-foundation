@@ -18,6 +18,7 @@ from a13n_service.background import Sweep
 from a13n_service.environments.websocket.admission import OnlineAdmission, OnlineEvidence
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam.operation import authorization_operation
 from a13n_service.interactions.acceptance_validation import validate_prepared_run
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, ThreadInboxEntry
 from a13n_service.interactions.control_models import ThreadInboxRecord
@@ -101,6 +102,7 @@ class AsyncSubagentSuccessorReconciler:
         self._run_id_factory = run_id_factory or _successor_run_id
         self._clock = clock
 
+    @authorization_operation
     async def reconcile_thread(
         self,
         *,
