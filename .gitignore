@@ -43,6 +43,7 @@ venv/
 # Tests, coverage, and static analysis
 .coverage
 .coverage.*
+.tia/
 .cache/
 .hypothesis/
 .mypy_cache/

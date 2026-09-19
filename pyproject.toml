@@ -26,6 +26,7 @@ dev = [
     "protobuf>=6.32,<7",
     "pyright>=1.1,<2",
     "pytest>=9,<10",
+    "pytest-tia==1.1.1",
     "pytest-timeout>=2.4,<3",
     "pytest-xdist>=3.8,<4",
     "ruff>=0.16,<0.17",
@@ -76,6 +77,8 @@ include = [
     "scripts/release_notes.py",
     "scripts/release_version.py",
     "scripts/run_python_tests.py",
+    "scripts/impact.py",
+    "scripts/verify.py",
     "scripts/k8s_local.py",
 ]
 exclude = ["**/tests", "**/node_modules", "**/__pycache__", "**/.*", ".venv"]

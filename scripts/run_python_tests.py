@@ -43,21 +43,29 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workers", type=int, help="Override each suite's worker count; 0 runs without xdist")
     parser.add_argument("--no-lock", action="store_true", help="Do not serialize whole-workspace runs per machine")
-    parser.add_argument("paths", nargs="*", help="Workspace test directories, files, or pytest node IDs")
+    parser.add_argument(
+        "paths", nargs="*", help="Workspace test directories, files, or pytest node IDs (@FILE reads one per line)"
+    )
     args = parser.parse_args(argv)
     if args.workers is not None and args.workers < 0:
         parser.error("--workers must be non-negative")
+    requested: list[str] = []
+    for entry in args.paths:
+        if entry.startswith("@"):
+            requested.extend(line.strip() for line in Path(entry[1:]).read_text().splitlines() if line.strip())
+        else:
+            requested.append(entry)
 
     roots = [*sorted(Path("packages").glob("*/tests")), Path("scripts/tests")]
     batches: dict[Path, list[str]] = {}
-    for selection in args.paths or [str(root) for root in roots]:
+    for selection in requested or [str(root) for root in roots]:
         path = Path(selection.split("::", 1)[0]).resolve()
         owner = next((root for root in roots if path.is_relative_to(root.resolve())), None)
         if owner is None or not path.exists():
             parser.error(f"not a workspace test path: {selection}")
         batches.setdefault(owner, []).append(selection)
 
-    with full_run_lock(enabled=not args.paths and not args.no_lock):
+    with full_run_lock(enabled=not requested and not args.no_lock):
         for owner, selections in batches.items():
             workers = args.workers if args.workers is not None else default_workers(owner)
             print(f"\n==> {owner} ({workers} workers)", flush=True)
