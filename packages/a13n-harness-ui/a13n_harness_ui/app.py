@@ -79,6 +79,7 @@ from a13n_harness_ui.configuration_inspection import (
 from a13n_harness_ui.content_plugins import ContentPluginStore
 from a13n_harness_ui.device_pairing import DevicePairings
 from a13n_harness_ui.devices import DeviceAttachment, DeviceConnections, DeviceInfo, DeviceSummary
+from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_profiles import BUILT_IN_ENVIRONMENT_PROFILES, built_in_environment_profile
 from a13n_harness_ui.environment_runtime import (
     EnvironmentRunService,
@@ -912,11 +913,13 @@ class HarnessUiApp:
         *,
         thread_id: str | None = None,
         defaults: NewThreadDefaults | None = None,
+        environment: EnvironmentSelectionPatch | None = None,
     ) -> SkillCatalogView:
         async with self._operation():
             return await self._terminal_projections.skill_catalog(
                 thread_id=thread_id,
                 defaults=defaults,
+                local_roots_override=None if environment is None else environment.local_roots,
             )
 
     async def validate_skill_references(
@@ -1080,6 +1083,7 @@ class HarnessUiApp:
                         project_id="thread",
                         agent_source="thread",
                         default_model_id="thread" if selected.default_model_id is not None else "agent",
+                        local_roots="thread",
                         environment_profile_id="thread",
                         environment_bindings="thread",
                         default_environment="thread",
@@ -1108,15 +1112,22 @@ class HarnessUiApp:
                 continuation_id=continuation_id,
             )
 
-    async def preview_project_defaults(self, *, thread_id: str) -> ProjectDefaultsPreview:
+    async def preview_project_defaults(
+        self, *, thread_id: str, environments_only: bool = False
+    ) -> ProjectDefaultsPreview:
         async with self._operation():
-            return await self._threads.preview_project_defaults(thread_id)
+            return await self._threads.preview_project_defaults(thread_id, environments_only=environments_only)
 
-    async def apply_project_defaults(self, *, thread_id: str, request: ProjectDefaultsApply) -> ThreadSummary:
+    async def apply_project_defaults(
+        self, *, thread_id: str, request: ProjectDefaultsApply, environments_only: bool = False
+    ) -> ThreadSummary:
         # Serialize with this App's generation acceptance, not with Agent execution.
         async with self._operation(), self._configuration_lock:
             await self._threads.apply_project_defaults(
-                thread_id=thread_id, expected_version=request.expected_version, defaults_digest=request.defaults_digest
+                thread_id=thread_id,
+                expected_version=request.expected_version,
+                defaults_digest=request.defaults_digest,
+                environments_only=environments_only,
             )
             await self._summary_hub.publish(kind="thread", thread_id=thread_id)
             return await self._projections.get_thread(thread_id)
@@ -1703,7 +1714,7 @@ class HarnessUiApp:
         model_overrides: RunModelOverrides | None = None,
         skill_references: tuple[SkillReference, ...] = (),
         input_surface: Literal["tui", "webui"] | None = None,
-        environment_profile_id: str | None = None,
+        environment: EnvironmentSelectionPatch | None = None,
         mode: GoalMode = "normal",
     ) -> RootRunReceipt:
         prompt = deepcopy(prompt)
@@ -1733,7 +1744,16 @@ class HarnessUiApp:
                 if configuration is None:
                     raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
                 goal = GoalView(objective=objective, max_iterations=configuration.document.max_goal_iterations)
-            catalog = await self._terminal_projections.skill_catalog(thread_id=thread_id)
+            catalog = await self._terminal_projections.skill_catalog(
+                thread_id=thread_id,
+                local_roots_override=(
+                    environment.local_roots
+                    if environment is not None and environment.local_roots is not None
+                    else mutation.patch.local_roots
+                    if mutation is not None
+                    else None
+                ),
+            )
             self._terminal_projections.validate_references_against(
                 catalog,
                 skill_references,
@@ -1747,7 +1767,7 @@ class HarnessUiApp:
                 prompt=prompt,
                 mutation=mutation,
                 model_overrides=model_overrides,
-                environment_profile_id=environment_profile_id,
+                environment=environment,
                 goal=goal,
                 touch=True,
             )

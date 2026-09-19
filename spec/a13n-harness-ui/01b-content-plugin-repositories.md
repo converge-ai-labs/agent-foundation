@@ -85,7 +85,7 @@ Every installed plugin with a valid manifest contributes its entire plugin direc
 
 Host-path-preserving adapters retain the plugin directory's absolute path. Virtual adapters use `/environment/content-plugin-<position>` in ascending plugin-ID order. Skill sources use the manifest-declared path *beneath* the same mount; for example `/environment/content-plugin-1/skills`. File writes cover Skills, subagents, manifest metadata, and supporting files within that plugin, but grant no shell, process, port, output, or sibling-directory authority.
 
-Only a selected `skills` Capability constructs a Skill catalog. Plugin sources are optional and opt into skipping invalid individual Skill entries with diagnostics. Valid entries retain the [Skill source precedence](02b-environment-skill-sources.md#run-source-set): explicit and Project roots override plugins, lexicographically later plugin IDs override earlier ones, and plugins override user-global Skills. The Harness owns the catalog format and frozen-catalog behavior.
+Only a selected `skills` Capability constructs a Skill catalog. Plugin sources are optional and opt into skipping invalid individual Skill entries with diagnostics. Valid entries retain the [Skill source precedence](02b-environment-skill-sources.md#run-source-set): explicit and selected local-root sources override plugins, lexicographically later plugin IDs override earlier ones, and plugins override user-global Skills. The Harness owns the catalog format and frozen-catalog behavior.
 
 If a captured directory was uninstalled before preparation, it is not recreated or mounted. An absent optional Skill source contributes no catalog entries. Files already removed during a Run are reported through ordinary Environment file failures.
 

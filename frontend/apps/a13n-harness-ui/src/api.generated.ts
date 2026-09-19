@@ -869,7 +869,8 @@ export interface paths {
         /** Thread Skills */
         get: operations["thread_skills_api_threads__thread_id__skills_get"];
         put?: never;
-        post?: never;
+        /** Preview Thread Skills */
+        post: operations["preview_thread_skills_api_threads__thread_id__skills_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1062,6 +1063,24 @@ export interface paths {
         put?: never;
         /** Apply Project Defaults */
         post: operations["apply_project_defaults_api_threads__thread_id__project_defaults_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/project-environments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Project Environments */
+        get: operations["project_environments_api_threads__thread_id__project_environments_get"];
+        put?: never;
+        /** Apply Project Environments */
+        post: operations["apply_project_environments_api_threads__thread_id__project_environments_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2133,6 +2152,12 @@ export interface components {
              */
             default_model_id?: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
             /**
+             * Local Roots
+             * @default builtin
+             * @enum {string}
+             */
+            local_roots?: "explicit" | "project" | "agent" | "global" | "builtin" | "thread";
+            /**
              * Environment Profile Id
              * @enum {string}
              */
@@ -2930,6 +2955,7 @@ export interface components {
              */
             access: "api_key" | "dangerous_bypass";
         };
+        LocalRoots: string[];
         /** LoginStatus */
         LoginStatus: {
             /** Session Id */
@@ -3386,6 +3412,7 @@ export interface components {
             agent_source?: components["schemas"]["AgentSource"] | null;
             /** Default Model Id */
             default_model_id?: string | null;
+            local_roots?: components["schemas"]["LocalRoots"] | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Environment Bindings */
@@ -4259,6 +4286,8 @@ export interface components {
             agent_source: components["schemas"]["AgentSource"];
             /** Default Model Id */
             default_model_id?: string | null;
+            /** @default [] */
+            local_roots?: components["schemas"]["LocalRoots"];
             /** Environment Profile Id */
             environment_profile_id: string;
             /**
@@ -4329,6 +4358,8 @@ export interface components {
              * @default null
              */
             default_model_id?: string | null;
+            /** @default [] */
+            local_roots?: components["schemas"]["LocalRoots"];
             /** Environment Profile Id */
             environment_profile_id: string;
             /**
@@ -5403,6 +5434,7 @@ export interface components {
             agent_id?: string | null;
             /** Default Model Id */
             default_model_id?: string | null;
+            local_roots?: components["schemas"]["LocalRoots"] | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Environment Bindings */
@@ -5416,6 +5448,19 @@ export interface components {
             /** Mcp Server Ids */
             mcp_server_ids?: string[] | null;
         };
+        /**
+         * EnvironmentSelectionPatch
+         * @description Run-only choices; omitted fields retain the Thread selection.
+         */
+        EnvironmentSelectionPatch: {
+            local_roots?: components["schemas"]["LocalRoots"] | null;
+            /** Environment Profile Id */
+            environment_profile_id?: string | null;
+            /** Environment Bindings */
+            environment_bindings?: components["schemas"]["EnvironmentBindingSelection"][] | null;
+            /** Default Environment */
+            default_environment?: string | null;
+        };
         /** ThreadConfigurationPatch */
         ThreadConfigurationPatch: {
             /** Project Id */
@@ -5424,6 +5469,7 @@ export interface components {
             agent_id?: string | null;
             /** Default Model Id */
             default_model_id?: string | null;
+            local_roots?: components["schemas"]["LocalRoots"] | null;
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Environment Bindings */
@@ -5604,8 +5650,7 @@ export interface components {
              * @enum {string}
              */
             mode?: "normal" | "goal";
-            /** Environment Profile Id */
-            environment_profile_id?: string | null;
+            environment?: components["schemas"]["EnvironmentSelectionPatch"] | null;
             /** Model Id */
             model_id?: string | null;
             thinking?: components["schemas"]["ThinkingSelection"] | null;
@@ -7325,6 +7370,41 @@ export interface operations {
             };
         };
     };
+    preview_thread_skills_api_threads__thread_id__skills_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EnvironmentSelectionPatch"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     inspect_configuration_api_threads__thread_id__configuration_get: {
         parameters: {
             query?: never;
@@ -7827,6 +7907,72 @@ export interface operations {
         };
     };
     apply_project_defaults_api_threads__thread_id__project_defaults_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectDefaultsApply"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    project_environments_api_threads__thread_id__project_environments_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProjectDefaultsPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    apply_project_environments_api_threads__thread_id__project_environments_post: {
         parameters: {
             query?: never;
             header?: never;

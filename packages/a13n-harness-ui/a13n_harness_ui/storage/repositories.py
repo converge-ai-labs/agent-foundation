@@ -901,6 +901,7 @@ def _configuration_record(thread_id: str, value: ThreadConfiguration) -> ThreadC
         agent_source_kind=value.agent_source.kind,
         agent_source_id=value.agent_source.id,
         default_model_id=value.default_model_id,
+        local_roots_json=_json_list(value.local_roots),
         environment_profile_id=value.environment_profile_id,
         environment_bindings_json=json.dumps([item.model_dump(mode="json") for item in value.environment_bindings]),
         default_environment=value.default_environment,
@@ -916,6 +917,7 @@ def _assign_configuration(record: ThreadConfigurationRecord, value: ThreadConfig
     record.agent_source_kind = value.agent_source.kind
     record.agent_source_id = value.agent_source.id
     record.default_model_id = value.default_model_id
+    record.local_roots_json = _json_list(value.local_roots)
     record.environment_profile_id = value.environment_profile_id
     record.environment_bindings_json = json.dumps([item.model_dump(mode="json") for item in value.environment_bindings])
     record.default_environment = value.default_environment
@@ -934,6 +936,7 @@ def _configuration_value(record: ThreadConfigurationRecord) -> ThreadConfigurati
         version=record.version,
         project_id=record.project_id,
         agent_source=source,
+        local_roots=_parse_list(record.local_roots_json),
         default_model_id=record.default_model_id,
         environment_profile_id=record.environment_profile_id,
         environment_bindings=tuple(

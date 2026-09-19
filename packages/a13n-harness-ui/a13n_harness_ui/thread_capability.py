@@ -150,7 +150,10 @@ class ThreadToolController:
                 project_id=configuration.project_id,
                 agent_id=configuration.agent_source.id,
                 default_model_id=(default_model_id if sidekick is not None else configuration.default_model_id),
+                local_roots=configuration.local_roots,
                 environment_profile_id=configuration.environment_profile_id,
+                environment_bindings=configuration.environment_bindings,
+                default_environment=configuration.default_environment,
                 harness_plugin_ids=configuration.harness_plugin_ids,
                 environment_run_extension_ids=configuration.environment_run_extension_ids,
                 mcp_server_ids=configuration.mcp_server_ids,
@@ -236,7 +239,7 @@ class ThreadCollaborationCapability(AbstractCapability[AgentContext]):
         if self.composition is not None:
             identity += (
                 f"Your captured Project: {self.composition.project_id or 'No Project'}. "
-                f"Project roots: {list(self.composition.project_roots)!r}. "
+                f"Captured local roots: {list(self.composition.project_roots)!r}. "
                 "These are this Run's captured selections; no discovery call is needed to identify yourself.\n"
             )
         instructions = identity + (

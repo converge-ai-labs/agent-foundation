@@ -22,6 +22,7 @@ from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.diagnostics import exception_feedback
+from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.interaction_timeout import timeout_response
@@ -226,7 +227,7 @@ class RootRunCoordinator:
         *,
         thread_id: str,
         prompt: RunInputValue,
-        environment_profile_id: str | None = None,
+        environment: EnvironmentSelectionPatch | None = None,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         touch: bool = False,
@@ -237,7 +238,7 @@ class RootRunCoordinator:
             thread_id=thread_id,
             prompt=prompt,
             response=None,
-            environment_profile_id=environment_profile_id,
+            environment=environment,
             mutation=mutation,
             model_overrides=model_overrides,
             touch=touch,
@@ -284,7 +285,7 @@ class RootRunCoordinator:
         touch: bool,
         timeout: _InteractionWait | None = None,
         restart: RestartItem | None = None,
-        environment_profile_id: str | None = None,
+        environment: EnvironmentSelectionPatch | None = None,
         goal: GoalView | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
@@ -341,7 +342,7 @@ class RootRunCoordinator:
                     restart=restart,
                     mutation=mutation,
                     model_overrides=None if model_overrides is None else model_overrides.model_copy(deep=True),
-                    environment_profile_id=environment_profile_id,
+                    environment=environment,
                 )
                 operation.composition = admission.published.reference
                 if matching and pending is not None:

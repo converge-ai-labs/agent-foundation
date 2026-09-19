@@ -316,7 +316,7 @@ Harness UI also includes the Harness File Context Capability by default, reading
 
 For each Run, Harness UI:
 
-1. detaches the accepted generation, Thread configuration version, Project roots and complete Device/Environment selections before scheduling asynchronous preparation or returning its admission receipt;
+1. detaches the accepted generation, Thread configuration version, selected local roots and complete Device/Environment selections before scheduling asynchronous preparation or returning its admission receipt;
 2. resolves the Thread's current Agent-resource or Markdown-subagent source;
 3. applies exact Thread Harness Plugin and MCP lists to the root Agent;
 4. resolves Capability selections, skipping unusable source entries with [warnings](01a-extension-discovery-and-management.md#capability-catalog), and resolves tool visibility and every subagent edge;
@@ -337,7 +337,7 @@ flowchart LR
     Generation & Thread --> Graph --> Validate --> Composition --> Native
 ```
 
-The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, Project roots, the exact installed Content Plugin identities and captured editable paths, local Environment profile selection, captured Device definitions and directory selections, binding aliases/action ceilings/working directories and explicit default, Environment Run Extensions, and dependency provenance. A selected `skills` Capability captures only its ordered explicit Environment roots; automatic Project, plugin, and user sources are derived during fresh reconstruction under [Environment Skill Sources](02b-environment-skill-sources.md). The composition contains no Skill bytes or discovered catalog, Host-resolved authentication credential bytes, native client, Environment adapter, task, callback, or active state coordinator. Opaque settings and extension payloads are retained verbatim; their contents are not classified or scrubbed as credentials.
+The resolved composition contains complete normalized Agent nodes, Models, Capability specs, selected Harness Plugin and MCP recipes, subagent edges, package prompt identity, selected local roots (`project_roots` in the captured composition), the exact installed Content Plugin identities and captured editable paths, local Environment profile selection, captured Device definitions and directory selections, binding aliases/action ceilings/working directories and explicit default, Environment Run Extensions, and dependency provenance. A selected `skills` Capability captures only its ordered explicit Environment roots; automatic local-root, plugin, and user sources are derived during fresh reconstruction under [Environment Skill Sources](02b-environment-skill-sources.md). The composition contains no Skill bytes or discovered catalog, Host-resolved authentication credential bytes, native client, Environment adapter, task, callback, or active state coordinator. Opaque settings and extension payloads are retained verbatim; their contents are not classified or scrubbed as credentials.
 
 ## Continuing Across Composition Changes
 

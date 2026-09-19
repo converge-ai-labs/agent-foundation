@@ -5,12 +5,26 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Sequence
+from pathlib import Path
+from typing import Annotated, Self
 
 from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentPermissionSet
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 _HOST_ALIASES = frozenset({"workspace", "thread-files", "configuration", "builtin-skills", "user-skills"})
+
+
+def validate_local_roots(roots: tuple[str, ...]) -> tuple[str, ...]:
+    """Validate saved path references without consulting the filesystem."""
+    if len(roots) != len(set(roots)):
+        raise ValueError("Local roots must be unique and ordered")
+    if any(not root or len(root) > 4096 or "\x00" in root or not Path(root).is_absolute() for root in roots):
+        raise ValueError("Local roots must be absolute, NUL-free paths of at most 4096 characters")
+    return roots
+
+
+type LocalRoots = Annotated[tuple[str, ...], Field(max_length=64), AfterValidator(validate_local_roots)]
 
 
 class EnvironmentBindingSelection(BaseModel):
@@ -38,6 +52,25 @@ class EnvironmentBindingSelection(BaseModel):
         if value in _HOST_ALIASES or re.fullmatch(r"(?:workspace|content-plugin)-[0-9]+", value):
             raise ValueError("Environment alias is reserved for Host mounts")
         return value
+
+
+class EnvironmentSelectionPatch(BaseModel):
+    """Run-only choices; omitted fields retain the Thread selection."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    local_roots: LocalRoots | None = None
+    environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = Field(default=None, max_length=64)
+    default_environment: str | None = Field(default=None, min_length=1, max_length=63)
+
+    @model_validator(mode="after")
+    def _non_null_selections(self) -> Self:
+        for name, value in self.model_dump(exclude_unset=True).items():
+            if name != "default_environment" and value is None:
+                raise ValueError(f"{name} cannot be null when supplied")
+        validate_binding_aliases(self.environment_bindings or ())
+        return self
 
 
 def validate_binding_aliases(bindings: Sequence[EnvironmentBindingSelection]) -> None:

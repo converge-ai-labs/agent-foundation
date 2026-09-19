@@ -768,6 +768,7 @@ def _configuration(value: ThreadConfiguration) -> ThreadConfigurationView:
         project_id=value.project_id,
         agent_source=AgentSourceView.from_stored(value.agent_source),
         default_model_id=value.default_model_id,
+        local_roots=value.local_roots,
         environment_profile_id=value.environment_profile_id,
         environment_bindings=value.environment_bindings,
         default_environment=value.default_environment,

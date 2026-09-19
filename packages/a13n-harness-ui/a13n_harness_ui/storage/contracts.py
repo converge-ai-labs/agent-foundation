@@ -12,7 +12,7 @@ from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
-from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_binding_aliases
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
 
 from .objects import ObjectKind, ObjectRef
@@ -43,6 +43,7 @@ class ThreadConfiguration(StoredContract):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_source: AgentSource
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    local_roots: LocalRoots = ()
     environment_profile_id: str = Field(min_length=1, max_length=128)
     environment_bindings: tuple[EnvironmentBindingSelection, ...] = Field(default=(), max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)
@@ -69,6 +70,7 @@ class ThreadConfigurationPatch(StoredContract):
     project_id: str | None = None
     agent_source: AgentSource | None = None
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    local_roots: LocalRoots | None = None
     environment_profile_id: str | None = None
     environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = Field(default=None, max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)

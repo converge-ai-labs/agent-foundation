@@ -90,6 +90,7 @@ async def test_scratch_cwd_and_selected_configuration_file_mount(tmp_path: Path,
                     thread_id=thread.thread_id,
                     version=1,
                     project_id=thread.configuration.project_id,
+                    local_roots=thread.configuration.local_roots,
                     agent_source_kind="agent",
                     agent_source_id="agent-assistant",
                     environment_profile_id="environment-native",
@@ -183,7 +184,7 @@ async def test_projectless_migration_preserves_existing_threads_and_refuses_loss
     path = _write_configuration(tmp_path)
     settings = _settings(tmp_path / "state")
     async with open_harness_ui_app(settings, configuration_path=path) as app:
-        thread = await app.create_thread(title="Preserved")
+        thread = await app.create_thread(title="Preserved", defaults=NewThreadDefaults(local_roots=()))
         app._root_runs._executor._agents = _CompletedReconstructor()
         receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Retain my history")
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed

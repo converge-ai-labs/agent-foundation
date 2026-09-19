@@ -51,22 +51,22 @@ Capability omission disables Skill discovery and omits the built-in and dedicate
 For a Run whose root Agent selects `skills`, Harness UI constructs sources from the captured initial mount set in this precedence order, from highest to lowest:
 
 1. additional explicit roots, with a later configured root winning over an earlier root;
-2. the first Project root's `/.agents/skills` directory, addressed through mount alias `workspace`;
-3. later Project roots' `/.agents/skills` directories in Project order;
+2. the first captured local root's `/.agents/skills` directory, addressed through mount alias `workspace`;
+3. later captured local roots' `/.agents/skills` directories in selection order;
 4. installed Content Plugin Skill roots, with lexicographically later plugin IDs winning over earlier IDs;
 5. the dedicated user Skill mount backed by `~/.agents/skills`;
 6. release-owned Skills from the read-only `builtin-skills` mount.
 
-A Thread without a Project omits both Project source tiers. Built-in, user, Content Plugin, and explicit Skill sources remain selected under the same rules; the configuration file mount does not automatically contribute Project Skills.
+A Run without local roots omits both local-root source tiers, independently of Project grouping. Built-in, user, Content Plugin, and explicit Skill sources remain selected under the same rules; the configuration file mount does not automatically contribute Project Skills.
 
 Harness conflict policy is `prefer_later`; Harness UI supplies sources in the reverse order needed to realize that precedence. Plugin source IDs use `a13n-harness-ui:content-plugin:<plugin-id>` and do not depend on installation order or directory enumeration. Source IDs are deterministic from source kind and captured mount alias or explicit-list position. The same Skill `name` therefore resolves predictably while retained catalog items preserve their winning source ID and Environment path.
 
-For Full Control, Sandbox, and other Host-path-preserving adapters, automatic Project roots preserve the captured canonical Host paths:
+For Full Control, Sandbox, and other Host-path-preserving adapters, automatic local-root sources preserve the captured canonical Host paths:
 
 ```text
-<first-project-root>/.agents/skills
-<second-project-root>/.agents/skills
-<third-project-root>/.agents/skills
+<first-local-root>/.agents/skills
+<second-local-root>/.agents/skills
+<third-local-root>/.agents/skills
 ...
 ```
 
@@ -79,7 +79,7 @@ For virtual-layout adapters, they retain the compatibility routes:
 ...
 ```
 
-The deterministic source IDs continue to use `workspace`, `workspace-2`, and later mount aliases in either layout; changing presentation paths does not change Skill precedence or provenance identity. A missing automatic Project or user Skill directory contributes no Skills. An unavailable, unroutable, or unreadable explicit root fails catalog preparation. Harness per-root and total catalog bounds apply independently of the number of mounted Project roots; exceeding a bound fails rather than truncating an ambiguous catalog.
+The deterministic source IDs continue to use `workspace`, `workspace-2`, and later mount aliases in either layout; changing presentation paths does not change Skill precedence or provenance identity. A missing automatic Project or user Skill directory contributes no Skills. An unavailable, unroutable, or unreadable explicit root fails catalog preparation. Harness per-root and total catalog bounds apply independently of the number of mounted local roots; exceeding a bound fails rather than truncating an ambiguous catalog.
 
 Plugin files use the whole-directory mount defined by [Skill and File Access](01b-content-plugin-repositories.md#skill-and-file-access), including editable subagent files. Skill sources resolve the manifest-declared subdirectory beneath that mount. Mount availability does not depend on selecting `skills`; catalog construction does. Plugin Skill sources are optional and skip invalid individual entries with diagnostics without hiding valid siblings.
 
@@ -87,7 +87,7 @@ The catalog is prepared after initial Environment entry and frozen for the logic
 
 ## Interactive Skill References
 
-`HarnessUiApp` exposes a bounded, credential-free Skill catalog projection for interactive completion. A draft or idle Thread preview uses its effective next-Run Agent, Project roots, and Environment selection and invokes the same ordered Environment-routed source composition used for Run preparation. Preview does not create a Thread, persist a catalog, mutate a source, or claim that its observed provider generation will remain current. An active root operation instead projects only the catalog already frozen for that Run.
+`HarnessUiApp` exposes a bounded, credential-free Skill catalog projection for interactive completion. A draft or idle Thread preview uses its effective next-Run Agent, Thread-owned local roots, and Environment selection, including an explicit Run-only patch and invokes the same ordered Environment-routed source composition used for Run preparation. Preview does not create a Thread, persist a catalog, mutate a source, or claim that its observed provider generation will remain current. An active root operation instead projects only the catalog already frozen for that Run.
 
 The App accepts optional Skill references from adapters and validates each against the applicable fresh or active catalog before admitting a prompt or steering action. References from an older catalog are automatically resolved by name against the applicable catalog, including its current source precedence; a catalog or item fingerprint change alone does not reject input or require resubmission. References claiming the applicable catalog must still match its item identity. Missing, ambiguous, or duplicate names reject the input. Steering resolves only against the active Run's pinned catalog and does not refresh that Run's source set. The full-terminal CLI attaches references for dollar-prefixed names recognized by its completion catalog; unrecognized dollar-prefixed text remains ordinary prompt text.
 

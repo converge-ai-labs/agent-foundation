@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.composition import ResolvedRunComposition
+from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import CompositionError, RunCoordinationError
 from a13n_harness_ui.root_execution import _selection
 from a13n_harness_ui.storage import StoredContinuation, ThreadConfigurationMutation, ThreadConfigurationPatch
@@ -43,7 +44,9 @@ async def test_run_environment_override_is_captured_without_changing_thread(tmp_
         captures = await _stub_sandbox_runtime(app, thread.thread_id, monkeypatch)
         for override, expected in [("environment-sandbox", "environment-sandbox"), (None, "environment-native")]:
             receipt = await app.submit_thread(
-                thread_id=thread.thread_id, prompt="Continue", environment_profile_id=override
+                thread_id=thread.thread_id,
+                prompt="Continue",
+                environment=None if override is None else EnvironmentSelectionPatch(environment_profile_id=override),
             )
             outcome = await app.wait_root_operation(receipt.receipt_id)
             assert outcome.status is RootOperationStatus.completed
@@ -73,18 +76,28 @@ async def test_invalid_or_unavailable_run_environment_never_falls_back(tmp_path,
         monkeypatch.setattr(app._root_runs._executor._environments, "prepare", unavailable)
         if profile == "missing-profile":
             with pytest.raises(CompositionError) as error:
-                await app.submit_thread(thread_id=thread.thread_id, prompt="Run", environment_profile_id=profile)
+                await app.submit_thread(
+                    thread_id=thread.thread_id,
+                    prompt="Run",
+                    environment=EnvironmentSelectionPatch(environment_profile_id=profile),
+                )
             assert error.value.code == "environment_profile_missing"
             assert prepared == []
         else:
-            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Run", environment_profile_id=profile)
+            receipt = await app.submit_thread(
+                thread_id=thread.thread_id,
+                prompt="Run",
+                environment=EnvironmentSelectionPatch(environment_profile_id=profile),
+            )
             outcome = await app.wait_root_operation(receipt.receipt_id)
             assert outcome.status is RootOperationStatus.failed
             assert prepared == ["environment-sandbox"]
         assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
 
 
-@pytest.mark.parametrize("patch", [None, {"project_id": None}, {"environment_profile_id": "environment-native"}])
+@pytest.mark.parametrize(
+    "patch", [None, {"project_id": None}, {"environment_profile_id": "environment-native"}, {"local_roots": ()}]
+)
 async def test_deferred_response_retains_run_environment_unless_explicitly_changed(tmp_path, monkeypatch, patch):
     async with open_harness_ui_app(
         _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
@@ -92,8 +105,14 @@ async def test_deferred_response_retains_run_environment_unless_explicitly_chang
         app._root_runs._executor._agents = _DeferredReconstructor()
         thread = await app.create_thread()
         captures = await _stub_sandbox_runtime(app, thread.thread_id, monkeypatch)
+        override_root = tmp_path / "run-only"
+        override_root.mkdir()
         receipt = await app.submit_thread(
-            thread_id=thread.thread_id, prompt="Ask", environment_profile_id="environment-sandbox"
+            thread_id=thread.thread_id,
+            prompt="Ask",
+            environment=EnvironmentSelectionPatch(
+                environment_profile_id="environment-sandbox", local_roots=(str(override_root),)
+            ),
         )
         assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.suspended
         detail = await app.get_thread(thread.thread_id)
@@ -120,12 +139,15 @@ async def test_deferred_response_retains_run_environment_unless_explicitly_chang
         assert (await app.wait_root_operation(resumed.receipt_id)).status is RootOperationStatus.completed
         expected = "environment-native" if patch and "environment_profile_id" in patch else "environment-sandbox"
         assert [capture.environment_profile.profile_id for capture in captures] == ["environment-sandbox", expected]
+        assert captures[0].project_roots == (str(override_root),)
+        assert captures[1].project_roots == (() if patch and "local_roots" in patch else (str(override_root),))
         updated = (await app.get_thread(thread.thread_id)).thread.configuration
         assert updated.environment_profile_id == "environment-native"
         assert updated.version == thread.configuration.version + (patch is not None)
         next_run = await app.submit_thread(thread_id=thread.thread_id, prompt="New task")
         assert (await app.wait_root_operation(next_run.receipt_id)).status is RootOperationStatus.completed
         assert captures[-1].environment_profile.profile_id == "environment-native"
+        assert captures[-1].project_roots == updated.local_roots
 
 
 async def test_automatic_interaction_timeout_retains_run_environment(tmp_path, monkeypatch):
@@ -135,8 +157,14 @@ async def test_automatic_interaction_timeout_retains_run_environment(tmp_path, m
         app._root_runs._executor._agents = _DeferredReconstructor()
         thread = await app.create_thread()
         captures = await _stub_sandbox_runtime(app, thread.thread_id, monkeypatch)
+        override_root = tmp_path / "run-only"
+        override_root.mkdir()
         receipt = await app.submit_thread(
-            thread_id=thread.thread_id, prompt="Ask", environment_profile_id="environment-sandbox"
+            thread_id=thread.thread_id,
+            prompt="Ask",
+            environment=EnvironmentSelectionPatch(
+                environment_profile_id="environment-sandbox", local_roots=(str(override_root),)
+            ),
         )
         await app.wait_root_operation(receipt.receipt_id)
         pending = app._root_runs._interaction_waits[thread.thread_id]

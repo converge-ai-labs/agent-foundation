@@ -374,6 +374,7 @@ def test_default_model_migration_preserves_populated_configuration(tmp_path: Pat
             after = dict(connection.execute(text("SELECT * FROM thread_configuration")).mappings().one())
             assert after.pop("default_model_id") is None
             assert after.pop("environment_bindings_json") == "[]"
+            assert after.pop("local_roots_json") == "[]"
             assert after.pop("default_environment") is None
             assert after == before
             assert connection.execute(text("SELECT initial_state_digest FROM thread")).scalar_one() == "1" * 64

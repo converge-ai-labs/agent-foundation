@@ -48,6 +48,7 @@ from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
 from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, checkpoint_excerpt
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.display_history import DisplayHistoryCollector, saved_display_history, with_display_history
+from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.goal import GoalCapability, GoalView, saved_goal, with_goal
@@ -172,7 +173,7 @@ class RootRunExecutor:
         restart: RestartItem | None = None,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
-        environment_profile_id: str | None = None,
+        environment: EnvironmentSelectionPatch | None = None,
     ) -> RootRunAdmission:
         """Resolve admission using detached store reads; never connect to a Device."""
         if sum(value is not None for value in (prompt, response, restart)) != 1:
@@ -198,18 +199,37 @@ class RootRunExecutor:
                 "The selected Thread continuation has unresolved deferred tool requests.",
                 code="thread_deferred_pending",
             )
-        selection = _selection(thread, environment_profile_id)
+        selection = _selection(thread)
+        if environment is not None:
+            selection = replace(
+                selection,
+                local_roots=selection.local_roots if environment.local_roots is None else environment.local_roots,
+                environment_profile_id=environment.environment_profile_id or selection.environment_profile_id,
+                environment_bindings=(
+                    selection.environment_bindings
+                    if environment.environment_bindings is None
+                    else environment.environment_bindings
+                ),
+                default_environment=(
+                    environment.default_environment
+                    if "default_environment" in environment.model_fields_set
+                    else selection.default_environment
+                ),
+            )
         if response is not None:
             assert previous_composition is not None
             captured = await self._store.objects.read_model(previous_composition, ResolvedRunComposition)
-            patched = set() if mutation is None else mutation.patch.model_fields_set
+            patched = set() if mutation is None else set(mutation.patch.model_fields_set)
+            if environment is not None:
+                patched.update(environment.model_fields_set)
             selection = replace(
                 selection,
                 environment_profile_id=(
                     captured.environment_profile.profile_id
-                    if environment_profile_id is None and "environment_profile_id" not in patched
+                    if "environment_profile_id" not in patched
                     else selection.environment_profile_id
                 ),
+                local_roots=(captured.project_roots if "local_roots" not in patched else selection.local_roots),
                 environment_bindings=(
                     tuple(item.selection for item in captured.environment_bindings)
                     if "environment_bindings" not in patched
@@ -796,18 +816,17 @@ def _validate_question_result(arguments: object, value: object) -> dict[str, obj
     return answers.model_dump(mode="json", exclude_none=True)
 
 
-def _selection(thread: Thread, environment_profile_id: str | None = None) -> ThreadCompositionSelection:
+def _selection(thread: Thread) -> ThreadCompositionSelection:
     source = thread.configuration.agent_source
     return ThreadCompositionSelection(
         thread_id=thread.thread_id,
         version=thread.configuration.version,
         project_id=thread.configuration.project_id,
+        local_roots=thread.configuration.local_roots,
         agent_source_kind=source.kind,
         agent_source_id=source.id,
         default_model_id=thread.configuration.default_model_id,
-        environment_profile_id=(
-            thread.configuration.environment_profile_id if environment_profile_id is None else environment_profile_id
-        ),
+        environment_profile_id=thread.configuration.environment_profile_id,
         environment_bindings=thread.configuration.environment_bindings,
         default_environment=thread.configuration.default_environment,
         harness_plugin_ids=thread.configuration.harness_plugin_ids,

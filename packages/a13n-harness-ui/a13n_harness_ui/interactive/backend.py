@@ -409,11 +409,18 @@ class SessionBackend:
         thread = detail.thread
         if thread.configuration.project_id not in matches:
             project_id = await self.app.ensure_cwd_project(self.directory)
+            source = await self.app.current_configuration()
+            assert source is not None
+            local_roots = tuple(root.path for root in source.projects[project_id].roots)
             thread = await self.app.update_thread_configuration(
                 thread_id=selected,
                 mutation=ThreadConfigurationMutation(
                     expected_version=thread.configuration.version,
-                    patch=ThreadConfigurationPatch(project_id=project_id),
+                    patch=ThreadConfigurationPatch(
+                        project_id=project_id,
+                        local_roots=local_roots,
+                        default_environment="workspace",
+                    ),
                 ),
             )
         if thread.configuration.default_model_id is None:

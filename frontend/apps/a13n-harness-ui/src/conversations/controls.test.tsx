@@ -481,3 +481,55 @@ it("unmounting a timed form never sends a response and a restored untimed batch 
     vi.useRealTimers();
   }
 });
+
+it("edits Run-only local and remote selections without changing the Thread", async () => {
+  const { RunEnvironments } = await import("./thread-run-choices");
+  const onChange = vi.fn();
+  const wrapper = harness({ GET: vi.fn(async () => ({ data: [] })) });
+  render(
+    <RunEnvironments
+      configuration={{
+        ...configuration,
+        local_roots: ["/old"],
+        environment_bindings: [
+          {
+            device_id: "device-build",
+            alias: "build",
+            working_directory: "/remote",
+          },
+        ],
+        default_environment: "build",
+      }}
+      onChange={onChange}
+      disabled={false}
+    />,
+    { wrapper },
+  );
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole("button", { name: "Working environments" }),
+  );
+  const path = screen.getByRole("textbox", { name: "Server directory" });
+  await user.clear(path);
+  await user.type(path, "/selected");
+  expect(onChange).not.toHaveBeenCalled();
+  await user.click(screen.getByRole("button", { name: "Use for next Run" }));
+  expect(onChange).toHaveBeenCalledWith({
+    local_roots: ["/selected"],
+    environment_bindings: [
+      {
+        device_id: "device-build",
+        alias: "build",
+        working_directory: "/remote",
+      },
+    ],
+    default_environment: "build",
+  });
+  await user.click(
+    screen.getByRole("button", { name: "Working environments" }),
+  );
+  await user.click(
+    screen.getByRole("button", { name: "Use conversation defaults" }),
+  );
+  expect(onChange).toHaveBeenLastCalledWith(undefined);
+});

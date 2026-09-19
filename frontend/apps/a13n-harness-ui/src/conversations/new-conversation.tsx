@@ -33,7 +33,7 @@ import type { Profile } from "../shell/presence";
 import { Composer, ComposerDrafts, useDraft } from "./composer";
 import { NewDraftStore, type NewDraft } from "./new-draft";
 import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
-import { EnvironmentPicker, ThreadRunChoices } from "./thread-run-choices";
+import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { refreshThreadLists } from "./queries";
 import { ConversationTranscript } from "./transcript";
 import { ConversationOpening, useInitialReady } from "./opening";
@@ -335,13 +335,13 @@ function NewConversation({
             onReviewOutcome={openConversation}
             modelId={composerDraft.modelId}
             leadingControls={
-              <EnvironmentPicker
+              <RunEnvironments
                 catalog={selectors.data}
-                defaultProfileId={effectiveEnvironment?.profile_id}
-                value={composerDraft.environmentProfileId}
+                configuration={preview.data?.configuration}
+                value={composerDraft.environment}
                 disabled={choicesDisabled}
                 onChange={(value) => {
-                  composerDraft.environmentProfileId = value;
+                  composerDraft.environment = value;
                   composerDraft.notify();
                 }}
               />

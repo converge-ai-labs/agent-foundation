@@ -260,11 +260,10 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_name: str
 ) -> None:
     from a13n_harness_ui.app import open_harness_ui_app
-    from a13n_harness_ui.cli import CliRequest
-    from a13n_harness_ui.interactive.backend import SessionBackend
-    from a13n_harness_ui.interactive.rendering import Status, StreamRenderer
+    from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
     from a13n_harness_ui.model_runtime import HarnessUiModelResolver
     from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.surfaces import NewThreadDefaults, RootOperationStatus
     from pydantic_ai.messages import ModelRequest, ToolReturnPart
     from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -343,14 +342,23 @@ async def test_native_delegate_wait_and_linked_resume_use_captured_inherited_or_
         HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False),
         configuration_path=path,
     ) as app:
-        backend = SessionBackend(app, CliRequest(agent_id="agent-main"), tmp_path, Status())
-        renderer = StreamRenderer(backend.status)
-        assert await backend.execute(renderer, prompt="Delegate and resume") == ""
-        assert "Parent completed." in renderer.drain()
-        page = await app.query_child_executions(parent_thread_id=backend.thread_id)
+        selected_root = tmp_path / "run-only"
+        selected_root.mkdir()
+        thread = await app.create_thread(defaults=NewThreadDefaults(agent_id="agent-main"))
+        receipt = await app.submit_thread(
+            thread_id=thread.thread_id,
+            prompt="Delegate and resume",
+            environment=EnvironmentSelectionPatch(local_roots=(str(selected_root),)),
+        )
+        assert (await app.wait_root_operation(receipt.receipt_id)).status is RootOperationStatus.completed
+        assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration
+        page = await app.query_child_executions(parent_thread_id=thread.thread_id)
         assert len(page.executions) == 2
         assert {item.persisted_status for item in page.executions} == {"succeeded"}
-        usage = await app.thread_usage(thread_id=backend.thread_id)
+        for execution in page.executions:
+            child = await app.get_thread(execution.child_thread_id)
+            assert child.thread.configuration.local_roots == (str(selected_root),)
+        usage = await app.thread_usage(thread_id=thread.thread_id)
         assert usage.root.model_requests == 5
         assert usage.descendants.model_requests == 2
         assert usage.combined.model_requests == 7

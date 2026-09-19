@@ -80,6 +80,7 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert preview.status_code == 200, preview.text
             assert preview.json()["provenance"] == {
                 "project_id": "global",
+                "local_roots": "project",
                 "agent_source": "global",
                 "default_model_id": "agent",
                 "environment_profile_id": "builtin",

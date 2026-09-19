@@ -169,9 +169,7 @@ class ResolvedRunComposition(CompositionModel):
     dependencies: tuple[DependencyProvenance, ...] = ()
 
     @model_validator(mode="after")
-    def _project_roots_match_selection(self) -> Self:
-        if self.project_id is None and self.project_roots:
-            raise ValueError("Projectless captures cannot contain local Project roots")
+    def _valid_environment_selection(self) -> Self:
         validate_environment_selection(
             tuple(item.selection for item in self.environment_bindings),
             self.default_environment,

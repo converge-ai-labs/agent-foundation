@@ -48,6 +48,7 @@ from a13n_harness_ui.configuration.views import (
 from a13n_harness_ui.configuration_inspection import CapturedConfiguration, ThreadConfigurationInspection
 from a13n_harness_ui.device_transport import DeviceWebSocket
 from a13n_harness_ui.devices import DeviceInfo, DeviceSummary
+from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.extensions import CatalogReference
 from a13n_harness_ui.host_files import (
@@ -229,7 +230,7 @@ class SteerRequest(SurfaceModel):
 
 class SubmitRequest(PromptRequest):
     mode: Literal["normal", "goal"] = "normal"
-    environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
+    environment: EnvironmentSelectionPatch | None = None
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     thinking: ThinkingSelection | None = None
     fast: bool | None = None
@@ -1137,6 +1138,16 @@ def create_webui(
     async def thread_skills(thread_id: str) -> SkillCatalogView:
         return await app().skill_catalog(thread_id=thread_id)
 
+    @server.post(
+        "/api/threads/{thread_id}/skills",
+        response_model=SkillCatalogView,
+        openapi_extra=_body(EnvironmentSelectionPatch),
+    )
+    async def preview_thread_skills(thread_id: str, request: Request) -> SkillCatalogView:
+        return await app().skill_catalog(
+            thread_id=thread_id, environment=await _document(request, EnvironmentSelectionPatch)
+        )
+
     @server.get("/api/threads/{thread_id}/configuration", response_model=ThreadConfigurationInspection)
     async def inspect_configuration(thread_id: str) -> ThreadConfigurationInspection:
         return await app().inspect_thread_configuration(thread_id)
@@ -1252,6 +1263,24 @@ def create_webui(
     async def apply_project_defaults(thread_id: str, request: Request) -> ThreadSummary:
         return await app().apply_project_defaults(
             thread_id=thread_id, request=await _document(request, ProjectDefaultsApply)
+        )
+
+    @server.get(
+        "/api/threads/{thread_id}/project-environments",
+        response_model=ProjectDefaultsPreview,
+        response_model_exclude_unset=True,
+    )
+    async def project_environments(thread_id: str) -> ProjectDefaultsPreview:
+        return await app().preview_project_defaults(thread_id=thread_id, environments_only=True)
+
+    @server.post(
+        "/api/threads/{thread_id}/project-environments",
+        response_model=ThreadSummary,
+        openapi_extra=_body(ProjectDefaultsApply),
+    )
+    async def apply_project_environments(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().apply_project_defaults(
+            thread_id=thread_id, request=await _document(request, ProjectDefaultsApply), environments_only=True
         )
 
     @server.get("/api/projects", response_model=tuple[ProjectSummary, ...])
@@ -1491,7 +1520,7 @@ def create_webui(
                 prompt=document.input(),
                 mode=document.mode,
                 attachment_ids=document.attachment_ids,
-                environment_profile_id=document.environment_profile_id,
+                environment=document.environment,
                 model_overrides=RunModelOverrides(
                     model_id=document.model_id, thinking=document.thinking, fast=document.fast
                 ),

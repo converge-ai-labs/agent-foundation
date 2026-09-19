@@ -52,6 +52,7 @@ async def test_builtin_skill_discovery_and_read_only_environment(
                     project_id=thread.configuration.project_id,
                     agent_source_kind="agent",
                     agent_source_id="agent-assistant",
+                    local_roots=thread.configuration.local_roots,
                     environment_profile_id="environment-native",
                     harness_plugin_ids=(),
                     environment_run_extension_ids=(),
@@ -146,6 +147,7 @@ async def test_user_and_project_skills_override_builtin_in_preview_and_runtime(
                     project_id="project-main",
                     agent_source_kind="agent",
                     agent_source_id="agent-assistant",
+                    local_roots=thread.configuration.local_roots,
                     environment_profile_id="environment-native",
                     harness_plugin_ids=(),
                     environment_run_extension_ids=(),
@@ -237,3 +239,25 @@ async def test_root_run_reads_builtin_skill_navigation_and_documentation(
         assert operation.status is RootOperationStatus.completed
         assert operation.outcome.execution.output.startswith("Read the bundled")
     assert observed == list(documents)
+
+
+async def test_skill_preview_uses_run_only_roots_without_retargeting_thread(tmp_path):
+    from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
+
+    path = _write_configuration(tmp_path)
+    agent = tmp_path / "agents/assistant.yaml"
+    agent.write_text(agent.read_text() + "capabilities:\n  - capability: skills\n")
+    selected = tmp_path / "run-only"
+    document = selected / ".agents/skills/run-only/SKILL.md"
+    document.parent.mkdir(parents=True)
+    document.write_text("---\nname: run-only\ndescription: Selected directory skill.\n---\n\nRun instructions.\n")
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=path) as app:
+        thread = await app.create_thread()
+        ordinary = await app.skill_catalog(thread_id=thread.thread_id)
+        assert "run-only" not in {item.name for item in ordinary.items}
+        preview = await app.skill_catalog(
+            thread_id=thread.thread_id,
+            environment=EnvironmentSelectionPatch(local_roots=(str(selected),)),
+        )
+        assert "run-only" in {item.name for item in preview.items}
+        assert (await app.get_thread(thread.thread_id)).thread.configuration == thread.configuration

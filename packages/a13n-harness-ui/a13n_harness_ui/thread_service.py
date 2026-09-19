@@ -32,18 +32,19 @@ from a13n_harness_ui.surfaces import (
 )
 
 
-class _ProjectDefault(Enum):
+class _CreationDefault(Enum):
     global_default = "global_default"
 
 
 @dataclass(frozen=True, slots=True)
 class RootThreadDefaults:
-    project_id: str | _ProjectDefault | None = _ProjectDefault.global_default
+    project_id: str | _CreationDefault | None = _CreationDefault.global_default
     agent_id: str | None = None
     default_model_id: str | None = None
+    local_roots: tuple[str, ...] | None = None
     environment_profile_id: str | None = None
     environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = None
-    default_environment: str | None = None
+    default_environment: str | _CreationDefault | None = _CreationDefault.global_default
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
     mcp_server_ids: tuple[str, ...] | None = None
@@ -96,7 +97,9 @@ class ThreadService:
     async def explain_creation(self, defaults: RootThreadDefaults | None = None) -> ThreadConfigurationResolution:
         return resolve_thread_configuration_details(await self._required_configuration(), defaults)
 
-    async def preview_project_defaults(self, thread_id: str) -> ProjectDefaultsPreview:
+    async def preview_project_defaults(
+        self, thread_id: str, *, environments_only: bool = False
+    ) -> ProjectDefaultsPreview:
         thread = await self.get(thread_id)
         if thread.parent_thread_id is not None:
             raise ThreadError("Child Threads are managed through their parent execution.", code="child_thread_scoped")
@@ -104,21 +107,35 @@ class ThreadService:
         project = source.projects.get(thread.configuration.project_id or "")
         if project is None:
             raise ThreadError("The Thread has no available Project.", code="thread_project_missing")
-        patch = project_defaults_patch(project.defaults)
+        if environments_only:
+            patch = ProjectDefaultsPatch(
+                local_roots=tuple(root.path for root in project.roots),
+                environment_profile_id=(
+                    project.defaults.environment_profile
+                    or source.document.defaults.environment_profile
+                    or FULL_CONTROL_PROFILE_ID
+                ),
+                environment_bindings=project.defaults.environment_bindings or (),
+                default_environment=project.defaults.default_environment,
+            )
+        else:
+            patch = project_defaults_patch(project.defaults)
         replacement = patch.apply(thread.configuration)
         _validate_configuration(source, replacement, root=True)
         return ProjectDefaultsPreview(
             thread_id=thread_id,
             project_id=project.id,
-            defaults_digest=canonical_digest(project.defaults),
+            defaults_digest=canonical_digest(patch if environments_only else project.defaults),
             expected_version=thread.configuration.version,
             patch=patch,
             current=thread.configuration,
             replacement=replacement,
         )
 
-    async def apply_project_defaults(self, *, thread_id: str, expected_version: int, defaults_digest: str) -> Thread:
-        preview = await self.preview_project_defaults(thread_id)
+    async def apply_project_defaults(
+        self, *, thread_id: str, expected_version: int, defaults_digest: str, environments_only: bool = False
+    ) -> Thread:
+        preview = await self.preview_project_defaults(thread_id, environments_only=environments_only)
         if preview.expected_version != expected_version or preview.defaults_digest != defaults_digest:
             raise ThreadError(
                 "Project defaults or Thread configuration changed; preview again.", code="project_defaults_stale"
@@ -215,7 +232,7 @@ def resolve_thread_configuration_details(
 ) -> ThreadConfigurationResolution:
     requested = defaults or RootThreadDefaults()
     global_defaults = source.document.defaults
-    project_id = global_defaults.project if isinstance(requested.project_id, _ProjectDefault) else requested.project_id
+    project_id = global_defaults.project if isinstance(requested.project_id, _CreationDefault) else requested.project_id
     if project_id is not None and project_id not in source.projects:
         raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
     project = ProjectDefaults() if project_id is None else source.projects[project_id].defaults
@@ -234,9 +251,12 @@ def resolve_thread_configuration_details(
     bindings, bindings_origin = _first_selection(
         (requested.environment_bindings, "explicit"), (project.environment_bindings, "project"), ((), "builtin")
     )
-    default_environment, default_origin = _first_selection(
-        (requested.default_environment, "explicit"), (project.default_environment, "project"), (None, "builtin")
-    )
+    if isinstance(requested.default_environment, _CreationDefault):
+        default_environment, default_origin = _first_selection(
+            (project.default_environment, "project"), (None, "builtin")
+        )
+    else:
+        default_environment, default_origin = requested.default_environment, "explicit"
     plugins, plugins_origin = _first_selection(
         (requested.harness_plugin_ids, "explicit"),
         (project.harness_plugins, "project"),
@@ -255,8 +275,14 @@ def resolve_thread_configuration_details(
         (global_defaults.mcp_servers, "global"),
     )
     assert environment is not None and plugins is not None and extensions is not None and mcp is not None
+    roots, roots_origin = _first_selection(
+        (requested.local_roots, "explicit"),
+        (None if project_id is None else tuple(root.path for root in source.projects[project_id].roots), "project"),
+        ((), "builtin"),
+    )
     configuration = ThreadConfiguration(
         version=1,
+        local_roots=roots or (),
         project_id=project_id,
         agent_source=AgentResourceSource(id=agent_id),
         default_model_id=requested.default_model_id,
@@ -271,9 +297,10 @@ def resolve_thread_configuration_details(
     return ThreadConfigurationResolution(
         configuration=configuration,
         provenance=ConfigurationProvenance(
-            project_id="global" if isinstance(requested.project_id, _ProjectDefault) else "explicit",
+            project_id="global" if isinstance(requested.project_id, _CreationDefault) else "explicit",
             agent_source=agent_origin,
             default_model_id="explicit" if requested.default_model_id is not None else "agent",
+            local_roots=roots_origin,
             environment_profile_id=environment_origin,
             environment_bindings=bindings_origin,
             default_environment=default_origin,
@@ -309,12 +336,11 @@ def _validate_configuration(
     for binding in value.environment_bindings:
         if binding.device_id not in source.devices:
             raise ThreadError("The selected Device is unavailable.", code="thread_device_missing")
-    project = source.projects.get(value.project_id or "")
     try:
         validate_environment_selection(
             value.environment_bindings,
             value.default_environment,
-            local_root_count=0 if project is None else len(project.roots),
+            local_root_count=len(value.local_roots),
         )
     except ValueError as error:
         raise ThreadError(str(error), code="thread_environment_invalid") from error

@@ -416,3 +416,156 @@ async def test_creation_provenance_tracks_the_winning_axis_even_for_empty_lists(
     assert value.provenance.project_id == "global"
     projectless = resolve_thread_configuration_details(source, RootThreadDefaults(project_id=None))
     assert projectless.configuration.project_id is None and projectless.provenance.project_id == "explicit"
+
+
+async def test_thread_local_roots_are_independent_path_references(tmp_path):
+    from a13n_harness_ui.root_execution import _selection
+
+    root = _write_configuration(tmp_path)
+    settings = _settings(tmp_path / "state")
+    original = str(tmp_path / "workspace")
+    replacement = str(tmp_path / "not-created")
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        assert thread.configuration.local_roots == (original,)
+        await app.mutate_configuration(
+            relative_path="projects/main.yaml",
+            request=ResourceMutationRequest(content=_project(tmp_path / "not-created", {})),
+        )
+        assert (await app.create_thread()).configuration.local_roots == (replacement,)
+        stored = await app._threads.get(thread.thread_id)
+        assert stored.configuration.local_roots == (original,)
+        captured = await app._root_runs._executor._compositions.publish(
+            await app.current_configuration(), _selection(stored)
+        )
+        assert captured.value.project_roots == (original,)
+        cleared_project = await app.patch_thread_configuration(
+            thread_id=thread.thread_id,
+            mutation=ThreadConfigurationMutationInput(
+                expected_version=1, patch=ThreadConfigurationPatch(project_id=None)
+            ),
+        )
+        assert cleared_project.configuration.local_roots == (original,)
+        explicit = await app.create_thread(defaults=NewThreadDefaults(project_id=None, local_roots=(replacement,)))
+        assert explicit.configuration.local_roots == (replacement,)
+        empty = await app.create_thread(defaults=NewThreadDefaults(local_roots=()))
+        assert empty.configuration.local_roots == ()
+        assert not (tmp_path / "not-created").exists()
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        restored = (await app.get_thread(thread.thread_id)).thread.configuration
+        assert restored.local_roots == (original,) and restored.project_id is None
+        cleared = await app.patch_thread_configuration(
+            thread_id=thread.thread_id,
+            mutation=ThreadConfigurationMutationInput(
+                expected_version=2, patch=ThreadConfigurationPatch(local_roots=())
+            ),
+        )
+        assert cleared.configuration.local_roots == ()
+
+
+async def test_apply_project_environments_replaces_only_environment_axes(tmp_path):
+    from .test_device_configuration import binding, source
+
+    await source(tmp_path)
+    root = tmp_path / "a13n-harness-ui.yaml"
+    settings = _settings(tmp_path / "state")
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread(
+            defaults=NewThreadDefaults(
+                project_id="project-remote",
+                local_roots=(str(tmp_path / "old"),),
+                default_model_id="model-main",
+            )
+        )
+        assert thread.configuration.environment_bindings == (binding(),)
+        project = {
+            "schema_version": "1",
+            "kind": "project",
+            "id": "project-remote",
+            "name": "Local now",
+            "roots": [{"path": str(tmp_path / "new")}],
+            "defaults": {"environment_profile": "environment-sandbox"},
+        }
+        await app.mutate_configuration(
+            relative_path="projects/remote.yaml", request=ResourceMutationRequest(content=json.dumps(project))
+        )
+        preview = await app.preview_project_defaults(thread_id=thread.thread_id, environments_only=True)
+        assert preview.patch.model_fields_set == {
+            "local_roots",
+            "environment_profile_id",
+            "environment_bindings",
+            "default_environment",
+        }
+        assert preview.replacement.environment_bindings == ()
+        assert preview.replacement.default_environment is None
+        assert preview.replacement.local_roots == (str(tmp_path / "new"),)
+        assert preview.replacement.default_model_id == "model-main"
+        project["defaults"]["mcp_servers"] = []
+        await app.mutate_configuration(
+            relative_path="projects/remote.yaml", request=ResourceMutationRequest(content=json.dumps(project))
+        )
+        applied = await app.apply_project_defaults(
+            thread_id=thread.thread_id,
+            environments_only=True,
+            request=ProjectDefaultsApply(
+                expected_version=preview.expected_version,
+                defaults_digest=preview.defaults_digest,
+            ),
+        )
+        assert applied.configuration.environment_bindings == ()
+        assert applied.configuration.default_model_id == "model-main"
+        assert applied.configuration.agent_source == thread.configuration.agent_source
+        preview = await app.preview_project_defaults(thread_id=thread.thread_id, environments_only=True)
+        project["roots"] = [{"path": str(tmp_path / "changed")}]
+        await app.mutate_configuration(
+            relative_path="projects/remote.yaml", request=ResourceMutationRequest(content=json.dumps(project))
+        )
+        with pytest.raises(ThreadError, match="preview again"):
+            await app.apply_project_defaults(
+                thread_id=thread.thread_id,
+                environments_only=True,
+                request=ProjectDefaultsApply(
+                    expected_version=preview.expected_version,
+                    defaults_digest=preview.defaults_digest,
+                ),
+            )
+
+
+async def test_explicit_null_default_does_not_reinherit_project_mount(tmp_path):
+    root = _write_configuration(tmp_path)
+    document = json.loads(_project(tmp_path / "workspace", {"default_environment": "workspace-2"}))
+    document["roots"].append({"path": str(tmp_path / "extra")})
+    (tmp_path / "projects/main.yaml").write_text(json.dumps(document))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        inherited = await app.preview_thread_configuration()
+        assert inherited.default_environment == "workspace-2"
+        exact = await app.create_thread(
+            defaults=NewThreadDefaults(
+                local_roots=(str(tmp_path / "workspace"),),
+                environment_bindings=(),
+                default_environment=None,
+            )
+        )
+        assert exact.configuration.default_environment is None
+        assert exact.configuration.local_roots == (str(tmp_path / "workspace"),)
+
+
+async def test_cross_directory_resume_uses_saved_agent_without_creation_default(tmp_path):
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.interactive.rendering import Status
+
+    root = _write_configuration(tmp_path)
+    root.write_text('schema_version: "1"\n')
+    directory = tmp_path / "other"
+    directory.mkdir()
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        thread = await app.create_thread(
+            defaults=NewThreadDefaults(project_id="project-main", agent_id="agent-assistant")
+        )
+        backend = SessionBackend(app, CliRequest(), directory, Status())
+        await backend.resume(thread.thread_id)
+        selected = (await app.get_thread(thread.thread_id)).thread.configuration
+        assert selected.agent_source == thread.configuration.agent_source
+        assert selected.local_roots == (str(directory),)
+        assert selected.default_environment == "workspace"

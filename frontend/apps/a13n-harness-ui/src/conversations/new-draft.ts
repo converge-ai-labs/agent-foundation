@@ -50,8 +50,12 @@ function restore(): Omit<NewDraft, "save"> | undefined {
   }
   if (saved.mode === "goal") composer.mode = "goal";
   if (typeof saved.modelId === "string") composer.modelId = saved.modelId;
-  if (typeof saved.environmentProfileId === "string")
-    composer.environmentProfileId = saved.environmentProfileId;
+  if (
+    saved.environment &&
+    typeof saved.environment === "object" &&
+    !Array.isArray(saved.environment)
+  )
+    composer.environment = saved.environment;
   if (typeof saved.draftId === "string") composer.draftId = saved.draftId;
   // A reload is not an acknowledgement. Never turn an interrupted Send into
   // an idle composer that can silently replay the same input.
@@ -123,7 +127,9 @@ export class NewDraftStore {
     Y.applyUpdate(composer.doc, Y.encodeStateAsUpdate(old.composer.doc));
     composer.mode = old.composer.mode;
     composer.modelId = old.composer.modelId;
-    composer.environmentProfileId = old.composer.environmentProfileId;
+    composer.environment = old.composer.environment
+      ? structuredClone(old.composer.environment)
+      : undefined;
     // A new Thread cannot use the archived Thread's uploaded handles. Keep
     // visible markers for reattachment, and stage any still-local file bytes.
     for (const key of composer.doc.getMap<string>("attachments").keys()) {
@@ -176,7 +182,7 @@ export class NewDraftStore {
             draftId: draft.composer.draftId,
             mode: draft.composer.mode,
             modelId: draft.composer.modelId,
-            environmentProfileId: draft.composer.environmentProfileId,
+            environment: draft.composer.environment,
             submission: draft.composer.submission.kind,
           }),
         );

@@ -88,7 +88,13 @@ export function NativeWorkspace({
   if (isWorkspace && !projectLoading) retainedProject.current = resolvedProject;
   const project = isWorkspace ? resolvedProject : retainedProject.current;
   const projectId = project?.project_id;
-  const projectRoot = project?.roots[0] ?? "";
+  const retainedRoots = useRef<string[]>([]);
+  const selectedRoots = threadId
+    ? (thread.data?.thread.configuration.local_roots ?? [])
+    : (resolvedProject?.roots ?? []);
+  if (isWorkspace && !projectLoading) retainedRoots.current = selectedRoots;
+  const localRoots = isWorkspace ? selectedRoots : retainedRoots.current;
+  const projectRoot = localRoots[0] ?? "";
   const [expanded, setExpanded] = useState(false);
   const [width, setWidth] = usePanelSize("a13n.native.width", 44, 28, 70);
   const resizeStart = useRef<{
@@ -137,9 +143,9 @@ export function NativeWorkspace({
   const openingRequest = useRef<AbortController | null>(null);
   const appliedProject = useRef<string | null>(null);
   const fileRoot =
-    project?.roots.includes(root) && withinRoot(directory, root)
+    localRoots.includes(root) && withinRoot(directory, root)
       ? root
-      : project?.roots.find((folder) => withinRoot(directory, folder));
+      : localRoots.find((folder) => withinRoot(directory, folder));
   const parentDirectory = parentPath(directory);
   const canGoUp =
     !!directory && directory !== fileRoot && parentDirectory !== directory;
@@ -781,12 +787,12 @@ export function NativeWorkspace({
                     {pane === "changes" && (
                       <strong title={root}>{project?.name}</strong>
                     )}
-                    {project && project.roots.length > 1 && (
+                    {localRoots.length > 1 && (
                       <nav
                         className={styles.projectFolders}
-                        aria-label="Project folders"
+                        aria-label="Working folders"
                       >
-                        {project.roots.map((folder) => (
+                        {localRoots.map((folder) => (
                           <Button
                             key={folder}
                             size="sm"
@@ -849,7 +855,8 @@ export function NativeWorkspace({
                                   {index === 0 && <Folder aria-hidden="true" />}
                                   <span>
                                     {part === fileRoot &&
-                                    project?.roots.length === 1
+                                    localRoots.length === 1 &&
+                                    project
                                       ? project.name
                                       : basename(part)}
                                   </span>
@@ -928,7 +935,7 @@ export function NativeWorkspace({
                     {pane === "files" ? (
                       <Files
                         directory={directory}
-                        roots={project?.roots}
+                        roots={localRoots}
                         path={path}
                         open={(target) => void open(target)}
                         refresh={refresh}
@@ -972,7 +979,7 @@ export function NativeWorkspace({
           >
             <TerminalPanel
               visible={isWorkspace && terminalOpen && !projectLoading}
-              directory={project?.roots.includes(root) ? root : projectRoot}
+              directory={localRoots.includes(root) ? root : projectRoot}
               projectId={project?.project_id ?? ""}
               projectName={project?.name}
               request={terminalRequest}

@@ -71,7 +71,14 @@ async def test_offline_forget_http_checks_graph_references_and_repairs_sticky_se
         assert invalid.status_code == 400, invalid.text
         repaired = await client.patch(
             url,
-            json={"expected_version": 1, "patch": {"environment_bindings": [], "default_environment": "workspace"}},
+            json={
+                "expected_version": 1,
+                "patch": {
+                    "local_roots": [str(tmp_path)],
+                    "environment_bindings": [],
+                    "default_environment": "workspace",
+                },
+            },
         )
         assert repaired.status_code == 200, repaired.text
         selected = repaired.json()["configuration"]
@@ -122,7 +129,9 @@ async def test_forget_and_repair_leave_completed_run_capture_and_history_unchang
             thread_id=thread.thread_id,
             mutation=ThreadConfigurationMutation(
                 expected_version=1,
-                patch=ThreadConfigurationPatch(environment_bindings=(), default_environment="workspace"),
+                patch=ThreadConfigurationPatch(
+                    local_roots=(str(tmp_path),), environment_bindings=(), default_environment="workspace"
+                ),
             ),
         )
         assert await app.inspect_operation_configuration(receipt.receipt_id) == capture

@@ -2257,6 +2257,53 @@
             }
           }
         }
+      },
+      "post": {
+        "summary": "Preview Thread Skills",
+        "operationId": "preview_thread_skills_api_threads__thread_id__skills_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillCatalogView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnvironmentSelectionPatch"
+              }
+            }
+          }
+        }
       }
     },
     "/api/threads/{thread_id}/configuration": {
@@ -3075,6 +3122,92 @@
       "post": {
         "summary": "Apply Project Defaults",
         "operationId": "apply_project_defaults_api_threads__thread_id__project_defaults_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectDefaultsApply"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/project-environments": {
+      "get": {
+        "summary": "Project Environments",
+        "operationId": "project_environments_api_threads__thread_id__project_environments_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectDefaultsPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Apply Project Environments",
+        "operationId": "apply_project_environments_api_threads__thread_id__project_environments_post",
         "parameters": [
           {
             "name": "thread_id",
@@ -6378,6 +6511,19 @@
             "title": "Default Model Id",
             "default": "agent"
           },
+          "local_roots": {
+            "type": "string",
+            "enum": [
+              "explicit",
+              "project",
+              "agent",
+              "global",
+              "builtin",
+              "thread"
+            ],
+            "title": "Local Roots",
+            "default": "builtin"
+          },
           "environment_profile_id": {
             "type": "string",
             "enum": [
@@ -8484,6 +8630,13 @@
         ],
         "title": "ListenerStatus"
       },
+      "LocalRoots": {
+        "items": {
+          "type": "string"
+        },
+        "maxItems": 64,
+        "type": "array"
+      },
       "LoginStatus": {
         "properties": {
           "session_id": {
@@ -9696,6 +9849,16 @@
               }
             ],
             "title": "Default Model Id"
+          },
+          "local_roots": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalRoots"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "environment_profile_id": {
             "anyOf": [
@@ -12034,6 +12197,10 @@
             ],
             "title": "Default Model Id"
           },
+          "local_roots": {
+            "$ref": "#/components/schemas/LocalRoots",
+            "default": []
+          },
           "environment_profile_id": {
             "type": "string",
             "maxLength": 128,
@@ -12266,6 +12433,10 @@
             ],
             "default": null,
             "title": "Default Model Id"
+          },
+          "local_roots": {
+            "$ref": "#/components/schemas/LocalRoots",
+            "default": []
           },
           "environment_profile_id": {
             "maxLength": 128,
@@ -15174,6 +15345,16 @@
             ],
             "title": "Default Model Id"
           },
+          "local_roots": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalRoots"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "environment_profile_id": {
             "anyOf": [
               {
@@ -15261,6 +15442,65 @@
         "title": "NewThreadDefaults",
         "type": "object"
       },
+      "EnvironmentSelectionPatch": {
+        "additionalProperties": false,
+        "description": "Run-only choices; omitted fields retain the Thread selection.",
+        "properties": {
+          "local_roots": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalRoots"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "environment_profile_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Profile Id"
+          },
+          "environment_bindings": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/EnvironmentBindingSelection"
+                },
+                "maxItems": 64,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Bindings"
+          },
+          "default_environment": {
+            "anyOf": [
+              {
+                "maxLength": 63,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment"
+          }
+        },
+        "title": "EnvironmentSelectionPatch",
+        "type": "object"
+      },
       "ThreadConfigurationPatch": {
         "additionalProperties": false,
         "properties": {
@@ -15302,6 +15542,16 @@
               }
             ],
             "title": "Default Model Id"
+          },
+          "local_roots": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LocalRoots"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "environment_profile_id": {
             "anyOf": [
@@ -15924,18 +16174,15 @@
             "title": "Mode",
             "type": "string"
           },
-          "environment_profile_id": {
+          "environment": {
             "anyOf": [
               {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
+                "$ref": "#/components/schemas/EnvironmentSelectionPatch"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Environment Profile Id"
+            ]
           },
           "model_id": {
             "anyOf": [

@@ -161,7 +161,9 @@ function setup(
                       {
                         project_id: "project-one",
                         name: "Current project",
-                        roots: currentRoots,
+                        roots: initial.startsWith("/threads/")
+                          ? ["/changed-project-root"]
+                          : currentRoots,
                       },
                       {
                         project_id: "project-two",
@@ -174,6 +176,14 @@ function setup(
                         thread: {
                           title: "Current conversation",
                           configuration: {
+                            local_roots:
+                              options?.params?.path?.thread_id === "other"
+                                ? otherProject === "project-two"
+                                  ? ["/other"]
+                                  : currentRoots
+                                : currentProject
+                                  ? currentRoots
+                                  : [],
                             project_id:
                               options?.params?.path?.thread_id === "other"
                                 ? otherProject
@@ -526,7 +536,7 @@ it("shows pending and failed file opens beside the retained diff instead of hidi
   expect(screen.queryByText("Opening path…")).toBeNull();
 });
 
-it("Files, Changes and new-terminal context follow the current Project instead of a remembered folder or the first Project", async () => {
+it("Files, Changes and new-terminal context follow Thread roots instead of changed Project roots or remembered folders", async () => {
   localStorage.setItem("a13n-harness-ui.native-directory", "/unrelated");
   setup("/threads/current", true, undefined, "project-one", "project-two");
   fireEvent.click(await screen.findByRole("button", { name: "Files" }));
@@ -725,7 +735,7 @@ it("switching configured roots from a file view returns to the selected folder i
   await screen.findByText("Editor /native/first.txt");
   fireEvent.click(
     within(
-      screen.getByRole("navigation", { name: "Project folders" }),
+      screen.getByRole("navigation", { name: "Working folders" }),
     ).getByRole("button", { name: "second-root" }),
   );
   await screen.findByText("Folder /second-root");

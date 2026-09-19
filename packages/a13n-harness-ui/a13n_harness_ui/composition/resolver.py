@@ -84,6 +84,7 @@ class ThreadCompositionSelection:
     harness_plugin_ids: tuple[str, ...]
     environment_run_extension_ids: tuple[str, ...]
     mcp_server_ids: tuple[str, ...]
+    local_roots: tuple[str, ...] = ()
     default_model_id: str | None = None
     environment_bindings: tuple[EnvironmentBindingSelection, ...] = ()
     default_environment: str | None = None
@@ -154,7 +155,6 @@ class AgentCompositionResolver:
             model_overrides = (model_overrides or RunModelOverrides()).model_copy(
                 update={"model_id": selection.default_model_id}
             )
-        project = source.projects[selection.project_id] if selection.project_id is not None else None
         plugin_catalog = self.catalog.plugin_catalog(tuple(item.plugin_key for item in source.harness_plugins.values()))
         budget = [_MAX_RESOLVED_NODES]
         if selection.agent_source_kind == "agent":
@@ -211,7 +211,7 @@ class AgentCompositionResolver:
             thread_id=selection.thread_id,
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
-            project_roots=tuple(item.path for item in project.roots) if project is not None else (),
+            project_roots=selection.local_roots,
             webui_sidekick=(
                 SidekickConfiguration(
                     agent=source.document.webui.sidekick.agent, model=source.document.webui.sidekick.model
@@ -258,12 +258,11 @@ class AgentCompositionResolver:
         ):
             raise CompositionError("The Thread Environment profile is unavailable.", code="environment_profile_missing")
         _require_ids(tuple(item.device_id for item in selection.environment_bindings), source.devices, "Device")
-        project = source.projects.get(selection.project_id or "")
         try:
             validate_environment_selection(
                 selection.environment_bindings,
                 selection.default_environment,
-                local_root_count=0 if project is None else len(project.roots),
+                local_root_count=len(selection.local_roots),
             )
         except ValueError as error:
             raise CompositionError(str(error), code="environment_selection_invalid") from error

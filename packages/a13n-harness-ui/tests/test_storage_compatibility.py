@@ -35,6 +35,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
     (newer / "versions/20260918_ba240ec65035_add_planned_update_handoff.py").unlink()
     (newer / "versions/20260918_63e8be47c2e2_replace_push_thread_interest_with_.py").unlink()
+    (newer / "versions/20260919_3a52b4914bbb_add_thread_owned_local_roots.py").unlink()
     (newer / "versions/20260919_0c38589db1f4_add_device_environment_bindings_and_.py").unlink()
     (newer / "versions/20260918_e416fbd4674c_add_thread_default_model.py").unlink()
     (newer / "versions/20260917_768a6a993a59_add_indexed_thread_inspection_.py").unlink()
@@ -60,6 +61,9 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     try:
         with engine.begin() as connection:
             connection.execute(text("ALTER TABLE thread_configuration ADD COLUMN default_model_id VARCHAR(128)"))
+            connection.execute(
+                text("ALTER TABLE thread_configuration ADD COLUMN local_roots_json JSON NOT NULL DEFAULT '[]'")
+            )
             connection.execute(
                 text("ALTER TABLE thread_configuration ADD COLUMN environment_bindings_json TEXT NOT NULL DEFAULT '[]'")
             )

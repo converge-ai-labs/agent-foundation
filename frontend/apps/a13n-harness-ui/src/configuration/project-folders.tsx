@@ -32,8 +32,8 @@ export function ProjectFolders({
     <div className={styles.folders}>
       <p className={styles.hint}>
         Existing absolute directories on the server or container, not this
-        browser's computer. The first folder is the local workspace. A Project
-        with Device environments may have no local folders.
+        browser's computer. The first folder is the local workspace. These are
+        path references; no files or directories are copied.
       </p>
       {roots.map((root, index) => (
         <div key={index} className={styles.folder}>

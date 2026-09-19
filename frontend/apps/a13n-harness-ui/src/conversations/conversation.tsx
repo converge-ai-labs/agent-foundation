@@ -17,7 +17,7 @@ import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, submitContinuation, useDraft } from "./composer";
 import { ComposerStatus } from "./composer-status";
-import { EnvironmentPicker, ThreadRunChoices } from "./thread-run-choices";
+import { RunEnvironments, ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
@@ -791,12 +791,12 @@ function Conversation({
             }
             modelId={draft.modelId}
             leadingControls={
-              <EnvironmentPicker
+              <RunEnvironments
                 catalog={selectors.data}
-                defaultProfileId={thread?.configuration.environment_profile_id}
-                value={draft.environmentProfileId}
+                configuration={thread?.configuration}
+                value={draft.environment}
                 onChange={(value) => {
-                  draft.environmentProfileId = value;
+                  draft.environment = value;
                   draft.notify();
                 }}
                 disabled={

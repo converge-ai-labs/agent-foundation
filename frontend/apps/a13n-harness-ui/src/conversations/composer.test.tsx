@@ -662,7 +662,12 @@ it.each(["send", "steer"] as const)(
     const draft = new ThreadDraft();
     draft.thinking = false;
     draft.fast = false;
-    draft.environmentProfileId = "environment-sandbox";
+    draft.environment = {
+      environment_profile_id: "environment-sandbox",
+      local_roots: ["/work/selected"],
+      environment_bindings: [],
+      default_environment: "workspace",
+    };
     draft.doc.getText("text").insert(0, "Use $review $review $unknown");
     draft.status = "Connected";
     draft.receive({
@@ -703,7 +708,10 @@ it.each(["send", "steer"] as const)(
       async () => {
         draft.thinking = "high";
         draft.fast = true;
-        draft.environmentProfileId = "environment-native";
+        draft.environment = {
+          environment_profile_id: "environment-native",
+          local_roots: [],
+        };
         draft.doc
           .getText("text")
           .insert(draft.doc.getText("text").length, " later");
@@ -726,13 +734,13 @@ it.each(["send", "steer"] as const)(
     if (action === "send") expect(POST.mock.calls[0][1].body.fast).toBe(false);
     else expect(POST.mock.calls[0][1].body).not.toHaveProperty("fast");
     if (action === "send")
-      expect(POST.mock.calls[0][1].body.environment_profile_id).toBe(
-        "environment-sandbox",
-      );
-    else
-      expect(POST.mock.calls[0][1].body).not.toHaveProperty(
-        "environment_profile_id",
-      );
+      expect(POST.mock.calls[0][1].body.environment).toEqual({
+        environment_profile_id: "environment-sandbox",
+        local_roots: ["/work/selected"],
+        environment_bindings: [],
+        default_environment: "workspace",
+      });
+    else expect(POST.mock.calls[0][1].body).not.toHaveProperty("environment");
     expect(values(draft.doc).prompt).toBe(" later");
   },
 );

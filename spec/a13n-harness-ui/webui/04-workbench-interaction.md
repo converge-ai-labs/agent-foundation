@@ -186,7 +186,7 @@ Save changes includes validation; Check configuration is optional and does not s
 
 Each inherited field shows its effective value and source. Users see Use default, Custom selection, and, for a collection, None rather than needing to infer the difference between omitted and empty YAML. Lists follow the [whole-list replacement rules](../01-configuration-and-resource-catalog.md#global-defaults); the UI does not silently union Project and Agent plugins.
 
-One Project has one default combination, not a nested preset library. Saving defaults states that they affect new conversations. Editing shared resource content separately explains that later Runs using that resource can change. Changes to Project roots retain their existing later-Run effect and are not described as defaults-only edits.
+One Project has one default combination, not a nested preset library. Saving defaults states that they affect new conversations. Editing shared resource content separately explains that later Runs using that resource can change. Project roots initialize new Threads as path references; editing them does not retarget existing Threads. An explicit Apply Project environments action previews and replaces only the Thread's local roots, local profile, remote bindings, and default environment.
 
 An existing Thread offers Apply Project defaults. It displays a before/after comparison and applies the selected Project's explicitly configured axes, leaving unspecified axes unchanged. It uses the Thread's expected configuration version; a competing update requires refresh and another review. During a Run the UI distinguishes the captured configuration from next-run selections. Applying settings never claims to reconfigure the running Agent.
 

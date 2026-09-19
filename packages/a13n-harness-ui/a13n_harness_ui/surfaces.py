@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 
 from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
-from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_binding_aliases
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, LocalRoots, validate_binding_aliases
 from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
 from a13n_harness_ui.model_fast import FastControl
@@ -68,6 +68,7 @@ class NewThreadDefaults(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    local_roots: LocalRoots | None = None
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = Field(default=None, max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)
@@ -81,6 +82,7 @@ class ThreadConfigurationView(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_source: AgentSourceView
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    local_roots: LocalRoots = ()
     environment_profile_id: str = Field(min_length=1, max_length=128)
     environment_bindings: tuple[EnvironmentBindingSelection, ...] = ()
     default_environment: str | None = None
@@ -96,6 +98,7 @@ class ConfigurationProvenance(SurfaceModel):
     project_id: ConfigurationOrigin
     agent_source: ConfigurationOrigin
     default_model_id: ConfigurationOrigin = "agent"
+    local_roots: ConfigurationOrigin = "builtin"
     environment_profile_id: ConfigurationOrigin
     environment_bindings: ConfigurationOrigin = "builtin"
     default_environment: ConfigurationOrigin = "builtin"
@@ -721,6 +724,7 @@ class ThreadConfigurationPatch(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     default_model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    local_roots: LocalRoots | None = None
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = Field(default=None, max_length=64)
     default_environment: str | None = Field(default=None, min_length=1, max_length=63)

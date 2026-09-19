@@ -11,6 +11,7 @@ from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
 from a13n_harness.providers.environment.local_envd.provider import LocalEnvdEnvironment
 from a13n_harness.providers.environment.models import EnvironmentError
+from a13n_harness_ui.environment_bindings import EnvironmentSelectionPatch
 from a13n_harness_ui.errors import EnvironmentLifecycleError
 from a13n_harness_ui.sandbox import SandboxLaunch, create_sandbox_runtime, validate_sandbox_runtime
 
@@ -198,7 +199,9 @@ async def test_root_runs_use_captured_sandbox_with_fresh_sessions(binary, tmp_pa
         monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
         for index in range(2):
             receipt = await app.submit_thread(
-                thread_id=thread.thread_id, prompt="Exercise Sandbox", environment_profile_id="environment-sandbox"
+                thread_id=thread.thread_id,
+                prompt="Exercise Sandbox",
+                environment=EnvironmentSelectionPatch(environment_profile_id="environment-sandbox"),
             )
             async with asyncio.timeout(30):
                 result = await app.wait_root_operation(receipt.receipt_id)

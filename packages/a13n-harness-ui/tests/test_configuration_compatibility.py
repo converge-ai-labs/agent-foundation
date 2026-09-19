@@ -351,6 +351,7 @@ async def test_unavailable_project_is_local_to_selected_run_and_history_survives
             thread_id=stored.thread_id,
             version=stored.configuration.version,
             project_id=stored.configuration.project_id,
+            local_roots=stored.configuration.local_roots,
             agent_source_kind=stored.configuration.agent_source.kind,
             agent_source_id=stored.configuration.agent_source.id,
             environment_profile_id=stored.configuration.environment_profile_id,

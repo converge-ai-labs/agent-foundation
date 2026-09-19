@@ -20,7 +20,7 @@ Windows supports **Full Control only** for the built-in local modes. Setup and t
 
 Model, Agent, Device, extension, MCP, and Project resources live in sibling YAML directories. A Project selects local directories, Device working environments, or both. Without an explicit default environment, the first local directory is its default working directory. Launching the CLI in that first directory uses the same Project and all its roots. For example, a Project with roots `[code, notes]` is entered from `code`; adding `notes` later does not create a new Project or hide existing CLI sessions.
 
-The first prompt creates a single-root Project only when no Project's first directory matches. It never adopts a parent Project, treats a secondary root as another entry point, or rewrites an existing Project. Multiple matching Projects require resuming a specific session or editing their roots. To retain a conversation's workspace, launch the CLI in its Project's first directory. An explicit resume from another directory reassigns the Thread to the launch directory's Project for future turns while preserving its history and other selections. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
+The first prompt creates a single-root Project only when no Project's first directory matches. It never adopts a parent Project, treats a secondary root as another entry point, or rewrites an existing Project. Multiple matching Projects require resuming a specific session or editing their roots. To retain a conversation's workspace, launch the CLI in its Project's first directory. An explicit resume from another directory selects the launch directory's Project and local path references, and makes `workspace` the default. History, remote bindings, and the local execution mode are preserved. Resuming within the same Project keeps the Thread's saved environment choices even if that Project's roots have since changed. `--resume` cannot be combined with Agent, Environment, or title overrides; resume first, then use an explicit slash command.
 
 Configuration publication failures belong to [setup recovery](setup.md#cancel-or-recover-setup), not Project selection. Review completed paths and retained recovery files before retrying setup.
 
@@ -62,7 +62,7 @@ roots:
 | `roots`          | `[]`               | Up to 64 ordered unique local `{path: ...}` directories; at least one local root or Device binding is required |
 | `defaults`       | `{}`               | Optional creation combination; see below                                                                       |
 
-Local paths must be absolute after `~` expansion and must exist. The first local root is the terminal entry point and the automatic working directory when no explicit default environment is selected. A remote-only Project has no local terminal entry point. Changing a root list changes later captures, not an active Run. Project roots organize work and Environment mounts; they do not confine Full Control's host authority.
+Local paths must be absolute after `~` expansion and must exist. The first local root is the terminal entry point and the automatic working directory when no explicit default environment is selected. A remote-only Project has no local terminal entry point. Project roots initialize new Threads as path references only; no files, directories, or worktrees are copied. Later Project edits do not change existing Threads. Project roots organize work and Environment mounts; they do not confine Full Control's host authority.
 
 ### Defaults for new conversations
 
@@ -82,6 +82,16 @@ Place this `defaults` mapping alongside `roots` in the Project file, and replace
 New conversations resolve explicit selections first, then Project defaults, then the selected Agent's Plugin/MCP defaults, then root YAML defaults. An omitted Environment ultimately selects `environment-native`. An explicit projectless conversation skips Project defaults. Creation previews and the terminal's pre-conversation Skill catalog use these same choices.
 
 Changing these defaults does not update existing conversations. Use the [HTTP configuration workflow](http-api.md#configure-projects-and-threads) to preview and explicitly apply only the Project's configured axes to a saved Thread. Other Thread choices remain unchanged; stale previews fail instead of silently applying changed defaults. In WebUI, edit these values under **Settings → Projects**. A conversation's **Conversation details → Configuration** separates its captured Run configuration from editable next-Run selections.
+
+### Thread environments and Run-only choices
+
+Each Thread stores its own local directories, local execution mode, remote bindings, and default environment. Changing its Project only changes grouping, not those selections. A Thread can keep local directories without a Project.
+
+- In **Conversation details → Configuration**, edit next-Run selections to save a new environment combination for that Thread.
+- Choose **Apply Project environments**, review the replacement, then apply it to replace just the four environment axes. A local-only Project clears old remote bindings. Agent, Model, MCP, Plugins, and Run Extensions stay unchanged.
+- In the composer, open **Working environments** to choose directories, remote bindings, and the default for the next Run only. The adjacent **Execution mode** control selects the local Full Control/Sandbox profile, not remote shell permissions. **Use conversation defaults** clears temporary overrides.
+
+Run-only choices do not change the saved Thread. Steering keeps the active Run's captured environment. Deferred replies keep the suspended Run's environment unless explicitly changed; a new child starts with the parent's captured selections and then owns them independently.
 
 ## Add Device working environments
 

@@ -195,7 +195,8 @@ def _selection(source_digest: str = "unused") -> ThreadCompositionSelection:
 
 async def test_resolves_complete_credential_free_run_composition(tmp_path: Path) -> None:
     source = await load_harness_ui_configuration(_write_source(tmp_path))
-    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    selection = replace(_selection(), local_roots=(str(tmp_path / "workspace"),))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, selection)
 
     assert composition.generation_digest == source.source_digest
     assert composition.project_roots == (str((tmp_path / "workspace").resolve()),)
@@ -639,7 +640,8 @@ async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: 
         )
     )
     source = await load_harness_ui_configuration(path)
-    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    selection = replace(_selection(), local_roots=tuple(root.path for root in source.projects["project-main"].roots))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, selection)
 
     user_skills = tmp_path / "user-skills"
     reconstructed = AgentReconstructor(

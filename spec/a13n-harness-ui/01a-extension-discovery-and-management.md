@@ -112,7 +112,7 @@ adapter_key: a13n.docker-project-roots
 adapter_configuration: {}
 ```
 
-`provider_configuration` contains desired Provider behavior independent of a particular Project root. The Harness UI Host adapter validates that template, resolves runtime collaborators, and binds each captured Project root into one fresh Provider configuration and `Environment` adapter. The adapter also declares whether its aggregate path presentation preserves canonical Host paths. An adapter that does not explicitly preserve them receives the provider-neutral virtual layout.
+`provider_configuration` contains desired Provider behavior independent of a particular Project root. The Harness UI Host adapter validates that template, resolves runtime collaborators, and binds each captured local root into one fresh Provider configuration and `Environment` adapter. The adapter also declares whether its aggregate path presentation preserves canonical Host paths. An adapter that does not explicitly preserve them receives the provider-neutral virtual layout.
 
 Provider discovery alone can prove installation but cannot prove that Harness UI knows how to map local Project roots or construct Docker, E2B, credential, transport, or bootstrap collaborators. A discovered Provider without an approved Host adapter is reported as installed but not configurable. Full Control, Sandbox, and other Harness UI-supported Providers use release-owned adapters. Explicit embedding integrations can add exact approved adapters without placing Python import targets in YAML.
 

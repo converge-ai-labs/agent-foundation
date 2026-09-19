@@ -156,7 +156,9 @@ export async function submitDraft(
   const mode = draft.mode;
   const thinking = draft.thinking;
   const fast = draft.fast;
-  const environmentProfileId = draft.environmentProfileId;
+  const environment = draft.environment
+    ? structuredClone(draft.environment)
+    : undefined;
   // Own the shared submission state before any asynchronous preparation so
   // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
   draft.submission = { kind: "pending", action };
@@ -201,9 +203,7 @@ export async function submitDraft(
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
-            ...(environmentProfileId
-              ? { environment_profile_id: environmentProfileId }
-              : {}),
+            ...(environment ? { environment } : {}),
             ...(thinking != null ? { thinking } : {}),
             ...(fast != null ? { fast } : {}),
           },
@@ -377,6 +377,7 @@ export function Composer({
   const skillContext = JSON.stringify([
     local,
     skillDefaults,
+    draft.environment?.local_roots,
     activity.receipt_id,
   ]);
   const loadSkills: LoadSkills = () =>
@@ -386,16 +387,29 @@ export function Composer({
         local
           ? result(
               transport.client.POST("/api/threads/skills-preview", {
-                body: skillDefaults ?? {},
+                body: {
+                  ...skillDefaults,
+                  ...(draft.environment?.local_roots !== undefined
+                    ? { local_roots: draft.environment.local_roots }
+                    : {}),
+                },
                 signal,
               }),
             )
-          : result(
-              transport.client.GET("/api/threads/{thread_id}/skills", {
-                params: { path: { thread_id: threadId } },
-                signal,
-              }),
-            ),
+          : draft.environment?.local_roots !== undefined
+            ? result(
+                transport.client.POST("/api/threads/{thread_id}/skills", {
+                  params: { path: { thread_id: threadId } },
+                  body: { local_roots: draft.environment.local_roots },
+                  signal,
+                }),
+              )
+            : result(
+                transport.client.GET("/api/threads/{thread_id}/skills", {
+                  params: { path: { thread_id: threadId } },
+                  signal,
+                }),
+              ),
       staleTime: 10000,
     });
   const [syncDelayed, setSyncDelayed] = useState(false);

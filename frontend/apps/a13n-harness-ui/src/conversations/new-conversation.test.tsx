@@ -1543,7 +1543,9 @@ it.each(["new", "existing"])(
     const user = userEvent.setup();
     await user.click(picker);
     await user.click(await screen.findByRole("option", { name: /Sandbox/ }));
-    expect(drafts.get(id)!.environmentProfileId).toBe("environment-sandbox");
+    expect(drafts.get(id)!.environment?.environment_profile_id).toBe(
+      "environment-sandbox",
+    );
     await waitFor(() => expect(picker.textContent).toContain("Sandbox"));
     expect(writes).toHaveLength(0);
     fireEvent.click(screen.getByRole("button", { name: "Send" }));
@@ -1554,7 +1556,7 @@ it.each(["new", "existing"])(
     );
     const submit = writes.find((request) => request.url.endsWith("/submit"))!;
     expect(await submit.json()).toMatchObject({
-      environment_profile_id: "environment-sandbox",
+      environment: { environment_profile_id: "environment-sandbox" },
     });
     expect(writes.some((request) => request.method === "PATCH")).toBe(false);
     if (kind === "new") {

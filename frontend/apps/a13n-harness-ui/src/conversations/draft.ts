@@ -99,7 +99,7 @@ export class ThreadDraft {
   // A private, in-tab Send choice, not shared input or sticky Thread configuration.
   mode: "normal" | "goal" = "normal";
   modelId: string | undefined;
-  environmentProfileId: string | undefined;
+  environment: Schema<"EnvironmentSelectionPatch"> | undefined;
   thinking: Schema<"SubmitRequest">["thinking"] = null;
   fast: Schema<"SubmitRequest">["fast"] = null;
   replacement: Schema<"DraftFrame"> | undefined;

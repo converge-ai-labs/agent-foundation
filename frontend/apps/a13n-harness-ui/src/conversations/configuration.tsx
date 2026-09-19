@@ -9,6 +9,7 @@ import {
   BindingSummary,
   EnvironmentBindings,
 } from "../configuration/environment-bindings";
+import { ProjectFolders } from "../configuration/project-folders";
 import styles from "./conversation.module.css";
 
 function ConfigurationSummary({
@@ -29,6 +30,10 @@ function ConfigurationSummary({
       <div>
         <dt>Local environment profile</dt>
         <dd>{configuration.environment_profile_id}</dd>
+      </div>
+      <div>
+        <dt>Local folders</dt>
+        <dd>{configuration.local_roots?.join(", ") || "None"}</dd>
       </div>
       <div>
         <dt>Working environments</dt>
@@ -76,25 +81,36 @@ export function ConversationConfiguration({
   });
   const [reviewed, setReviewed] =
     useState<Schema<"ProjectDefaultsPreview"> | null>(null);
+  const [applyEnvironments, setApplyEnvironments] = useState(false);
   const preview = useMutation({
-    mutationFn: () =>
+    mutationFn: (environmentsOnly: boolean) =>
       result(
-        client.GET("/api/threads/{thread_id}/project-defaults", {
-          params: { path: { thread_id: threadId } },
-        }),
+        client.GET(
+          environmentsOnly
+            ? "/api/threads/{thread_id}/project-environments"
+            : "/api/threads/{thread_id}/project-defaults",
+          {
+            params: { path: { thread_id: threadId } },
+          },
+        ),
       ),
     onSuccess: setReviewed,
   });
   const apply = useMutation({
     mutationFn: () =>
       result(
-        client.POST("/api/threads/{thread_id}/project-defaults", {
-          params: { path: { thread_id: threadId } },
-          body: {
-            expected_version: reviewed!.expected_version,
-            defaults_digest: reviewed!.defaults_digest,
+        client.POST(
+          applyEnvironments
+            ? "/api/threads/{thread_id}/project-environments"
+            : "/api/threads/{thread_id}/project-defaults",
+          {
+            params: { path: { thread_id: threadId } },
+            body: {
+              expected_version: reviewed!.expected_version,
+              defaults_digest: reviewed!.defaults_digest,
+            },
           },
-        }),
+        ),
       ),
     onSuccess: () => {
       setReviewed(null);
@@ -147,7 +163,7 @@ export function ConversationConfiguration({
                     </dd>
                   </div>
                   <div>
-                    <dt>Project roots on server</dt>
+                    <dt>Captured local folders</dt>
                     <dd>{data.captured.project_roots.join(", ") || "None"}</dd>
                   </div>
                   <div>
@@ -212,11 +228,29 @@ export function ConversationConfiguration({
                 onClick={() => {
                   setReviewed(null);
                   apply.reset();
-                  preview.mutate();
+                  setApplyEnvironments(false);
+                  preview.mutate(false);
                 }}
               >
-                Preview changes
+                Preview defaults
               </Button>
+              <Button
+                variant="outline"
+                loading={preview.isPending}
+                onClick={() => {
+                  setReviewed(null);
+                  apply.reset();
+                  setApplyEnvironments(true);
+                  preview.mutate(true);
+                }}
+              >
+                Apply Project environments
+              </Button>
+              <p>
+                Applying environments replaces local folders, local mode, remote
+                bindings and the default only. Agent, Model and other selections
+                stay unchanged.
+              </p>
               {reviewed && (
                 <div className={styles.form}>
                   <div className={styles.detailGrid}>
@@ -238,7 +272,9 @@ export function ConversationConfiguration({
                     }
                     onClick={() => apply.mutate()}
                   >
-                    Apply reviewed defaults
+                    {applyEnvironments
+                      ? "Apply reviewed environments"
+                      : "Apply reviewed defaults"}
                   </Button>
                   {apply.isError && (
                     <p>
@@ -355,32 +391,35 @@ export function ThreadSelections({
             label: environment.name,
           }))}
         />
-        {projects.data && (
-          <EnvironmentBindings
-            bindings={
-              patch.environment_bindings ??
-              configuration.environment_bindings ??
-              []
-            }
-            defaultEnvironment={
-              patch.default_environment === undefined
-                ? configuration.default_environment
-                : patch.default_environment
-            }
-            localRoots={
-              projects.data.find(
-                (project) =>
-                  project.project_id ===
-                  (patch.project_id === undefined
-                    ? configuration.project_id
-                    : patch.project_id),
-              )?.roots ?? []
-            }
-            onChange={(environment_bindings, default_environment) =>
-              setPatch({ ...patch, environment_bindings, default_environment })
-            }
-          />
-        )}
+        <p>
+          Changing Project only changes grouping. Use Apply Project environments
+          to replace environment selections.
+        </p>
+        <ProjectFolders
+          allowEmpty
+          roots={(patch.local_roots ?? configuration.local_roots ?? []).map(
+            (path) => ({ path }),
+          )}
+          onChange={(roots) =>
+            setPatch({ ...patch, local_roots: roots.map((root) => root.path) })
+          }
+        />
+        <EnvironmentBindings
+          bindings={
+            patch.environment_bindings ??
+            configuration.environment_bindings ??
+            []
+          }
+          defaultEnvironment={
+            patch.default_environment === undefined
+              ? configuration.default_environment
+              : patch.default_environment
+          }
+          localRoots={patch.local_roots ?? configuration.local_roots ?? []}
+          onChange={(environment_bindings, default_environment) =>
+            setPatch({ ...patch, environment_bindings, default_environment })
+          }
+        />
         {(
           [
             {

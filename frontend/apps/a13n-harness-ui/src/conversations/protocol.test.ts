@@ -792,7 +792,7 @@ it("captures an HTTP environment override without changing defaults and never fa
       params: { path: { thread_id: thread } },
       body: {
         prompt: "Use Full Control for this Run",
-        environment_profile_id: "environment-native",
+        environment: { environment_profile_id: "environment-native" },
       },
     }),
   );
@@ -836,7 +836,7 @@ it("captures an HTTP environment override without changing defaults and never fa
       params: { path: { thread_id: thread } },
       body: {
         prompt: "Do not fall back",
-        environment_profile_id: "missing-environment",
+        environment: { environment_profile_id: "missing-environment" },
       },
     }),
   ).rejects.toMatchObject({ status: 400, code: "environment_profile_missing" });

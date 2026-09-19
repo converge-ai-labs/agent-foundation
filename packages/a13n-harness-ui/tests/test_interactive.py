@@ -250,8 +250,12 @@ async def test_cross_directory_resume_reassigns_thread_without_retargeting_proje
         after = await app.get_thread(thread_id)
         assert after.thread.configuration.project_id == "project-local"
         assert after.thread.configuration.version == before.thread.configuration.version + 1
-        assert after.thread.configuration.model_dump(exclude={"project_id", "version"}) == (
-            before.thread.configuration.model_dump(exclude={"project_id", "version"})
+        assert after.thread.configuration.model_dump(
+            exclude={"project_id", "version", "local_roots", "default_environment"}
+        ) == (
+            before.thread.configuration.model_dump(
+                exclude={"project_id", "version", "local_roots", "default_environment"}
+            )
         )
         assert after.continuation_id == before.continuation_id
         assert other.thread_id == thread_id
@@ -343,8 +347,12 @@ async def test_resume_creates_cwd_project_and_preserves_history_across_restart(
         project_id = after.thread.configuration.project_id
         assert project_id not in (None, "project-local")
         assert after.thread.configuration.version == before.thread.configuration.version + 1
-        assert after.thread.configuration.model_dump(exclude={"project_id", "version"}) == (
-            before.thread.configuration.model_dump(exclude={"project_id", "version"})
+        assert after.thread.configuration.model_dump(
+            exclude={"project_id", "version", "local_roots", "default_environment"}
+        ) == (
+            before.thread.configuration.model_dump(
+                exclude={"project_id", "version", "local_roots", "default_environment"}
+            )
         )
         assert after.continuation_id == before.continuation_id
         assert after.thread.metadata_version == before.thread.metadata_version
@@ -433,6 +441,7 @@ async def test_cli_reuses_and_resumes_projects_after_adding_roots(
             thread_id=thread_id,
             version=1,
             project_id=project_id,
+            local_roots=(str(directory),),
             agent_source_kind="agent",
             agent_source_id="agent-codex",
             environment_profile_id="environment-native",
@@ -455,7 +464,7 @@ async def test_cli_reuses_and_resumes_projects_after_adding_roots(
         assert set(after.projects) == set(before.projects)
         assert tuple(root.path for root in after.projects[project_id].roots) == (str(directory), str(extra))
         assert captured.project_roots == (str(directory),)
-        assert resolver.resolve_run(after, selection).project_roots == (str(directory), str(extra))
+        assert resolver.resolve_run(after, selection).project_roots == (str(directory),)
 
         resumed = SessionBackend(app, CliRequest(), directory, Status())
         assert thread_id in {item.thread_id for item in (await resumed.resume_sessions()).threads}
@@ -464,6 +473,8 @@ async def test_cli_reuses_and_resumes_projects_after_adding_roots(
         fresh = SessionBackend(app, CliRequest(), directory, Status())
         fresh_id = await fresh.ensure_session()
         assert (await app.get_thread(fresh_id)).thread.configuration.project_id == project_id
+        assert (await app.get_thread(fresh_id)).thread.configuration.local_roots == (str(directory), str(extra))
+        assert (await app.get_thread(thread_id)).thread.configuration.local_roots == (str(directory),)
         assert project_file.read_bytes() == source_bytes
 
 

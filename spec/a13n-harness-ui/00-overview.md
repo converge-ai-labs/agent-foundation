@@ -49,7 +49,7 @@ The core concepts are:
 | Thread                   | Root or async child conversation with independent metadata and sticky-configuration heads plus one selected continuation |
 | Thread configuration     | Versioned Project, Agent, Environment, Plugin, Run Extension, and MCP selections used by default on subsequent Runs      |
 | Root operation           | One process-local prompt or deferred-response admission identified by an exact receipt                                   |
-| Resolved Run composition | Immutable configuration, resource content, Project roots, and dependency provenance captured for one admitted Run        |
+| Resolved Run composition | Immutable configuration, resource content, selected local roots, and dependency provenance captured for one admitted Run |
 | Execution segment        | One accepted child `delegate` or `resume_subagent` execution; normally one Harness Run plus bounded denial continuation  |
 | Surface projection       | Detached, bounded, serializable summary, detail, transcript, operation, child, or live value                             |
 | Compact display          | Bounded AG-UI projection used for inspection and rendering, never for resume                                             |

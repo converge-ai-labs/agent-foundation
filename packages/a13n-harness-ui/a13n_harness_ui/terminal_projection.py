@@ -527,6 +527,7 @@ class TerminalProjectionService:
         *,
         thread_id: str | None = None,
         defaults: NewThreadDefaults | None = None,
+        local_roots_override: tuple[str, ...] | None = None,
     ) -> SkillCatalogView:
         receipt_id: str | None = None
         context_kind: Literal["draft", "idle", "active"] = "draft"
@@ -555,9 +556,11 @@ class TerminalProjectionService:
             )
             project_id = resolved.project_id
             agent_id = resolved.agent_source.id
+            local_roots = resolved.local_roots
         else:
             project_id = thread.configuration.project_id
             agent_id = thread.configuration.agent_source.id
+            local_roots = thread.configuration.local_roots
         if project_id is not None and project_id not in source.projects:
             raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
         if agent_id is None or agent_id not in source.agents:
@@ -565,7 +568,7 @@ class TerminalProjectionService:
         catalog = await to_thread.run_sync(
             _scan_skill_catalog,
             source,
-            project_id,
+            local_roots if local_roots_override is None else local_roots_override,
             agent_id,
             context_kind,
             thread_id,
@@ -903,13 +906,12 @@ def _scan_project_paths(
 
 def _scan_skill_catalog(
     source: LoadedHarnessUiConfiguration,
-    project_id: str | None,
+    local_roots: tuple[str, ...],
     agent_id: str,
     context_kind: Literal["draft", "idle", "active"],
     thread_id: str | None,
     receipt_id: str | None,
 ) -> SkillCatalogView:
-    project = source.projects[project_id] if project_id is not None else None
     agent = source.agents[agent_id]
     capability = next((item for item in agent.capabilities if item.capability == "skills"), None)
     sources: list[tuple[str, Path, bool]] = []
@@ -917,7 +919,7 @@ def _scan_skill_catalog(
         sources.append((BUILTIN_SKILLS_SOURCE_ID, BUILTIN_SKILLS_ROOT, True))
         user_root = (Path.home() / ".agents" / "skills").resolve(strict=False)
         sources.append(("a13n-harness-ui:user-skills", user_root, False))
-        roots = tuple(Path(item.path) for item in project.roots) if project is not None else ()
+        roots = tuple(Path(path) for path in local_roots)
         for index in range(len(roots), 1, -1):
             sources.append(
                 (f"a13n-harness-ui:project:workspace-{index}", roots[index - 1] / ".agents" / "skills", False)
@@ -933,7 +935,7 @@ def _scan_skill_catalog(
                     )
 
     selected: dict[str, SkillCatalogItemView] = {}
-    fingerprints: list[str] = [source.source_digest, project_id or "", agent_id]
+    fingerprints: list[str] = [source.source_digest, *local_roots, agent_id]
     for source_id, root, required in sources:
         if not root.exists():
             if required:

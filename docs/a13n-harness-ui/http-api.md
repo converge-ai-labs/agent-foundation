@@ -22,16 +22,21 @@ Authentication and Host/Origin validation apply at the listener boundary. Use a 
 
 ## Run-only execution environment
 
-`POST /api/threads/{thread_id}/submit` accepts an optional `environment_profile_id` alongside the prompt or ordered input parts:
+`POST /api/threads/{thread_id}/submit` accepts an optional `environment` patch alongside the prompt or ordered input parts:
 
 ```json
 {
   "prompt": "Review this project",
-  "environment_profile_id": "environment-sandbox"
+  "environment": {
+    "environment_profile_id": "environment-sandbox",
+    "local_roots": ["/absolute/path/to/code"],
+    "environment_bindings": [],
+    "default_environment": "workspace"
+  }
 }
 ```
 
-Use `environment-native` for Full Control, `environment-sandbox` for Sandbox, or a profile ID from `GET /api/selectors`. Omission or null uses the Thread's saved default. An explicit choice affects this Run without updating the Thread configuration or version. A returned receipt acknowledges admission, not successful environment preparation: inspect the operation for unavailable profiles or runtime failures. Neither case silently falls back to Full Control. Steering rejects this field. Deferred responses retain the suspended continuation's captured Environment profile; a later ordinary submit without an override uses the saved default again.
+Use `environment-native` for Full Control, `environment-sandbox` for Sandbox, or a profile ID from `GET /api/selectors`. Omitted axes use the Thread's saved selections; empty collections clear selections and null clears only `default_environment`. An explicit choice affects this Run without updating the Thread configuration or version. A returned receipt acknowledges admission, not successful environment preparation: inspect the operation for unavailable profiles or runtime failures. Neither case silently falls back to Full Control. Steering rejects this field. Deferred responses retain the suspended continuation's captured environment selections; a later ordinary submit without an override uses the saved default again.
 
 ## Device connections and working environments
 
@@ -75,7 +80,7 @@ Existing Thread selections and historical captures are not cascade-edited. Inspe
 }
 ```
 
-For a Thread with local Project roots, `workspace` is another valid replacement. Omitting the replacement while removing its selected default fails rather than silently redirecting future tools. Forgetting configuration or repairing next selections does not rewrite an active capture, saved Run, transcript, or continuation.
+For a Thread with selected local roots, `workspace` is another valid replacement. Omitting the replacement while removing its selected default fails rather than silently redirecting future tools. Forgetting configuration or repairing next selections does not rewrite an active capture, saved Run, transcript, or continuation.
 
 ## Conversation input navigation
 
@@ -290,6 +295,8 @@ These are all schema-listed operations; the grouped table preserves method disti
 | `PATCH /api/threads/{thread_id}/configuration`                      | Versioned exact configuration change                                   |
 | `GET /api/threads/{thread_id}/project-defaults`                     | Preview the selected Project's configured defaults                     |
 | `POST /api/threads/{thread_id}/project-defaults`                    | Apply reviewed defaults with version/digest checks                     |
+| `GET /api/threads/{thread_id}/project-environments`                 | Preview complete Project environment replacement                       |
+| `POST /api/threads/{thread_id}/project-environments`                | Apply only the four reviewed environment axes                          |
 | `GET /api/projects`                                                 | Available Projects and creation defaults                               |
 | `GET /api/selectors`                                                | Configuration selection options                                        |
 | `GET /api/threads`                                                  | Query/page Threads                                                     |
@@ -320,7 +327,7 @@ These are all schema-listed operations; the grouped table preserves method disti
 
 ## Skill catalogs and references
 
-`POST /api/threads/skills-preview` accepts `NewThreadDefaults` and returns a `SkillCatalogView` without creating a Thread. `GET /api/threads/{thread_id}/skills` returns the idle Thread's next-Run catalog or the active Run's pinned catalog. Items expose `item_id`, `name`, `description`, `source_id`, and `logical_path`; the response includes `catalog_id` and `context_kind`.
+`POST /api/threads/skills-preview` accepts `NewThreadDefaults` and returns a `SkillCatalogView` without creating a Thread. `GET /api/threads/{thread_id}/skills` returns the idle Thread's next-Run catalog or the active Run's pinned catalog. `POST /api/threads/{thread_id}/skills` accepts an `EnvironmentSelectionPatch` to preview Run-only local-root choices without changing the Thread; an active Run still returns its pinned catalog. Items expose `item_id`, `name`, `description`, `source_id`, and `logical_path`; the response includes `catalog_id` and `context_kind`.
 
 Submit and root steer accept an optional `skill_references` array (at most 512 entries), each with `catalog_id`, `item_id`, and `name`. The App validates these references before admission. Old-catalog references resolve by name; references claiming the applicable catalog must match its item identity. Missing, ambiguous, or duplicate references reject input. Keep `$name` in the ordinary prompt or ordered text parts; the references do not expand Skill bytes or grant permissions. Omitting this field preserves existing input behavior.
 
@@ -386,9 +393,11 @@ curl --fail-with-body "$HUI_URL/api/threads/preview" \
 
 This request body is `NewThreadDefaults` directly, whereas Thread creation nests it under `defaults`. The preview resolves the exact Agent, Environment, Plugin, Run Extension, and MCP selections from current configuration; creation resolves again rather than reserving that preview. Null Project suppresses the global Project default. Project defaults are shown by `/api/projects`; existing Thread selections are shown in Thread detail.
 
-`PATCH /api/threads/{thread_id}/configuration` accepts `expected_version` and `patch`. Supported patch fields are `project_id`, `agent_id`, `environment_profile_id`, `environment_bindings`, `default_environment`, `harness_plugin_ids`, `environment_run_extension_ids`, and `mcp_server_ids`. Omission preserves the saved value, `project_id: null` clears the Project, and an empty list selects none. Changing Agent does not implicitly replace other saved axes. These root-Thread commands do not modify child Threads or an already captured Run.
+`PATCH /api/threads/{thread_id}/configuration` accepts `expected_version` and `patch`. Supported patch fields are `project_id`, `agent_id`, `default_model_id`, `local_roots`, `environment_profile_id`, `environment_bindings`, `default_environment`, `harness_plugin_ids`, `environment_run_extension_ids`, and `mcp_server_ids`. Omission preserves the saved value, `project_id: null` clears the Project, and an empty list selects none. Changing Agent does not implicitly replace other saved axes. These root-Thread commands do not modify child Threads or an already captured Run.
 
-To apply the selected Project's configured defaults:
+To replace only local roots, local profile, remote bindings, and default environment, use GET/POST `/api/threads/{thread_id}/project-environments`. Its preview includes the effective complete replacement, and apply uses the returned `expected_version` and `defaults_digest`. Project edits do not otherwise change saved environment selections. Paths are references, never filesystem copies.
+
+To apply the selected Project's broader configured defaults:
 
 1. GET `/api/threads/{thread_id}/project-defaults` and inspect `current`, `replacement`, and `patch`.
 2. POST to the same path with the returned `expected_version` and `defaults_digest`.

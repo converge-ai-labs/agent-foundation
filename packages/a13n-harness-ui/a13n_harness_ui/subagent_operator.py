@@ -1943,6 +1943,7 @@ def _initial_child_configuration(
     return ThreadConfiguration(
         version=1,
         project_id=parent.project_id,
+        local_roots=parent.project_roots,
         agent_source=source,
         environment_profile_id=parent.environment_profile.profile_id,
         environment_bindings=tuple(item.selection for item in parent.environment_bindings),
@@ -1959,6 +1960,7 @@ def _selection(thread_id: str, configuration: ThreadConfiguration) -> ThreadComp
         thread_id=thread_id,
         version=configuration.version,
         project_id=configuration.project_id,
+        local_roots=configuration.local_roots,
         agent_source_kind=source.kind,
         agent_source_id=source.id,
         default_model_id=configuration.default_model_id,
