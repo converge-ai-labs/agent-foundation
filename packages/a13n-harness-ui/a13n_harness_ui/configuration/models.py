@@ -204,6 +204,7 @@ class HarnessUiDocument(ConfigurationModel):
     security: SecurityConfiguration = Field(default_factory=SecurityConfiguration)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
     webui: WebUiConfiguration = Field(default_factory=WebUiConfiguration)
+    max_goal_iterations: int = 10
 
 
 class EnvironmentVariableSource(StrictModel):

@@ -219,6 +219,7 @@ class SteerRequest(SurfaceModel):
 
 
 class SubmitRequest(PromptRequest):
+    mode: Literal["normal", "goal"] = "normal"
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
     thinking: ThinkingSelection | None = None
@@ -1402,6 +1403,7 @@ def create_webui(
             return await app().submit_thread(
                 thread_id=thread_id,
                 prompt=document.input(),
+                mode=document.mode,
                 attachment_ids=document.attachment_ids,
                 environment_profile_id=document.environment_profile_id,
                 model_overrides=RunModelOverrides(

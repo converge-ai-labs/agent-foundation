@@ -58,6 +58,14 @@ The shared document contains prompt text and selected attachment references only
 
 Page presence, editor presence, and the draft are distinct values even when an implementation shares an authenticated connection. Page changes update presence, not the CRDT roots. A same-page group uses that page's existing capabilities: the shared composer for prompt coediting, [comments](05-output-comments.md) for saved AI output, and the existing native-operation rules for files or terminals. Presence does not make every text surface collaboratively editable.
 
+## Goal Submission Mode
+
+The shared composer exposes a per-submission Goal toggle for new and existing root conversations. Its `normal`/`goal` selection is private browser draft state, not shared CRDT content or Thread configuration. New-conversation draft restoration preserves this selection and defaults older drafts to `normal`. Another participant's shared-text edits do not change it.
+
+Send captures the mode together with the submitted draft before asynchronous preparation and passes it to ordinary root admission. Only confirmed acceptance resets the selection to `normal`; rejected or unknown submissions retain it and never resend automatically. Steering has no Goal-mode field. The toggle is unavailable while submission is preparing, pending/unknown, or the conversation cannot admit a new Run.
+
+The conversation status area consumes the App's optional live/saved [Goal projection](../05-runtime-subagents-and-surfaces.md#goal-execution). It shows the phase and iteration count, with inspectable original objective, restore-audit status, and observed token totals. Terminal failures and exhaustion explicitly remain incomplete. Where a new Run is permitted, preparing another Goal copies the objective into the draft without overwriting existing text; it does not submit, silently resume the old budget, or imply independent verification.
+
 ## Editing, Synchronization, and Submission
 
 Browsers interact through one shared CRDT document per participating root Thread. The server retains synchronization state in memory under the [storage boundary](../03-local-storage-and-recovery.md#shared-browser-drafts); the CRDT library owns document identities and merging, while the App owns validated publication, membership, and transport delivery. A draft can exist before a Run and remain editable while a Run executes.

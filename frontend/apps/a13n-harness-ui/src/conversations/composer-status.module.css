@@ -101,3 +101,11 @@ button.metric:hover,
 .numbers .scope {
   margin: 2px 0 0;
 }
+
+.goalObjective {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 200px;
+  overflow-y: auto;
+  margin: 12px 0;
+}

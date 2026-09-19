@@ -25,6 +25,7 @@ from a13n_harness_ui.environment_profiles import (
     require_supported_local_profile,
 )
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
+from a13n_harness_ui.goal import GoalMode
 from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
 from a13n_harness_ui.model_adapters import service_tier_setting
 from a13n_harness_ui.model_fast import FastControl, apply_fast, describe_fast, fast_state
@@ -139,6 +140,16 @@ class SessionBackend:
                     raise
         return self._refresh_status(configuration, thread, draft=draft)
 
+    async def refresh_goal(self) -> None:
+        thread_id = self.thread_id
+        if thread_id is None:
+            self.status.goal = None
+            return
+        operation = await self.app.active_root_operation(thread_id)
+        goal = operation.goal if operation is not None else (await self.app.get_thread(thread_id)).thread.goal
+        if thread_id == self.thread_id:
+            self.status.goal = goal
+
     async def _draft_configuration(self) -> ThreadConfiguration:
         projects = await self.app.cwd_project_ids(self.directory)
         # No exact match means ensure_session will create a new, empty-default Project.
@@ -158,6 +169,7 @@ class SessionBackend:
         *,
         draft: ThreadConfiguration | None = None,
     ) -> bool:
+        self.status.goal = None if thread is None else thread.goal
         agent_id = None if draft is None else draft.agent_source.id
         if thread is not None:
             agent_id = thread.configuration.agent_source.id
@@ -636,6 +648,7 @@ class SessionBackend:
         flush: Callable[[], Awaitable[None]] | None = None,
         admitted: Callable[[], None] | None = None,
         skill_references: tuple[SkillReference, ...] = (),
+        mode: GoalMode = "normal",
     ) -> Coroutine[object, object, str]:
         # Reset at scheduling, not first coroutine execution: Enter and Ctrl+C
         # may arrive in the same terminal input batch before this task starts.
@@ -647,6 +660,7 @@ class SessionBackend:
             flush=flush,
             admitted=admitted,
             skill_references=skill_references,
+            mode=mode,
         )
 
     async def _execute(
@@ -658,6 +672,7 @@ class SessionBackend:
         flush: Callable[[], Awaitable[None]] | None,
         admitted: Callable[[], None] | None,
         skill_references: tuple[SkillReference, ...],
+        mode: GoalMode,
     ) -> str:
         if self.cancel_requested:
             return "Cancelled before admission. No operation was submitted."
@@ -715,6 +730,7 @@ class SessionBackend:
                         model_overrides=self.overrides,
                         skill_references=skill_references,
                         input_surface="tui",
+                        mode=mode,
                     )
                     if response is None
                     else await self.app.respond_thread(
@@ -724,9 +740,11 @@ class SessionBackend:
                 self.receipt_id = receipt.receipt_id
                 if admitted is not None:
                     admitted()
+                self.status.goal = (await self.app.get_root_operation(receipt.receipt_id)).goal
                 if self.cancel_requested:
                     await self.app.cancel_root_operation(receipt.receipt_id)
                 operation = await self.app.wait_root_operation(receipt.receipt_id)
+                self.status.goal = operation.goal
             finally:
                 pump.cancel()
                 with suppress(asyncio.CancelledError):
@@ -751,6 +769,15 @@ class SessionBackend:
         usage = await self.app.context_usage(thread_id)
         self.status.context_tokens = usage.latest_request_tokens
         outcome = operation.outcome
+        if operation.goal is not None and not operation.goal.active:
+            goal = operation.goal
+            total = goal.input_tokens + goal.output_tokens
+            detail = "Agent-verified" if goal.status == "verified" else goal.status.replace("_", " ")
+            warning = "" if goal.status == "verified" else " Task may be incomplete."
+            renderer.append(
+                f"Goal {detail} at iteration {goal.iteration}/{goal.max_iterations}; {total:,} tokens.{warning}\n",
+                kind="notice",
+            )
         if outcome is not None and operation.status == RootOperationStatus.completed:
             if not renderer.assistant_seen or renderer.gap:
                 if renderer.gap:

@@ -2533,6 +2533,50 @@ export interface components {
             /** Next Offset */
             next_offset: number | null;
         };
+        /**
+         * GoalView
+         * @description Detached Goal progress; saved progress alone never proves live execution.
+         */
+        GoalView: {
+            /** Objective */
+            objective: string;
+            /**
+             * Iteration
+             * @default 0
+             */
+            iteration?: number;
+            /**
+             * Max Iterations
+             * @default 10
+             */
+            max_iterations?: number;
+            /**
+             * Status
+             * @default working
+             * @enum {string}
+             */
+            status?: "working" | "checking" | "auditing" | "suspended" | "verified" | "max_iterations" | "cancelled" | "error" | "unverified_stop";
+            /**
+             * Needs Restore Audit
+             * @default false
+             */
+            needs_restore_audit?: boolean;
+            /**
+             * Restore Source
+             * @default null
+             */
+            restore_source?: string | null;
+            /**
+             * Input Tokens
+             * @default 0
+             */
+            input_tokens?: number;
+            /**
+             * Output Tokens
+             * @default 0
+             */
+            output_tokens?: number;
+        };
         /** GrokSubscriptionAuthentication */
         GrokSubscriptionAuthentication: {
             /**
@@ -3256,6 +3300,8 @@ export interface components {
             outcome?: components["schemas"]["RootRunOutcomeView"] | null;
             /** @default null */
             failure?: components["schemas"]["FailureView"] | null;
+            /** @default null */
+            goal?: components["schemas"]["GoalView"] | null;
             /**
              * Available Actions
              * @default []
@@ -4072,6 +4118,8 @@ export interface components {
             root_activity: components["schemas"]["RootActivityView"];
             /** @default null */
             completion?: components["schemas"]["ThreadCompletion"] | null;
+            /** @default null */
+            goal?: components["schemas"]["GoalView"] | null;
         };
         /** ThreadUsageView */
         ThreadUsageView: {
@@ -5202,6 +5250,12 @@ export interface components {
             skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
+            /**
+             * Mode
+             * @default normal
+             * @enum {string}
+             */
+            mode?: "normal" | "goal";
             /** Environment Profile Id */
             environment_profile_id?: string | null;
             /** Model Id */

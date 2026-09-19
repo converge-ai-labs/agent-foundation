@@ -814,7 +814,10 @@ async def test_model_selection_is_remembered_for_project_and_preserves_agent(
 
 
 @pytest.mark.anyio
-async def test_cancel_is_receipt_owned_and_session_is_reusable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("mode", ["normal", "goal"])
+async def test_cancel_is_receipt_owned_and_session_is_reusable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode
+) -> None:
     import a13n_harness.model_auth as runtime
 
     path = await _seed(tmp_path, monkeypatch)
@@ -832,13 +835,16 @@ async def test_cancel_is_receipt_owned_and_session_is_reusable(tmp_path: Path, m
     ) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         renderer = StreamRenderer(backend.status)
-        job = asyncio.create_task(backend.execute(renderer, prompt="Wait"))
+        job = asyncio.create_task(backend.execute(renderer, prompt="Wait", mode=mode))
         await asyncio.wait_for(entered.wait(), timeout=5)
         await backend.cancel()
         result = await asyncio.wait_for(job, timeout=5)
         assert "cancel" in result.lower()
         assert "Never reached" not in renderer.drain()
         assert await app.active_root_operation(backend.thread_id) is None
+        if mode == "goal":
+            assert backend.status.goal.status == "cancelled"
+            assert (await app.get_thread(backend.thread_id)).thread.goal.status == "cancelled"
 
 
 @pytest.mark.anyio
@@ -1317,8 +1323,9 @@ async def test_enqueued_bodies_render_once_with_delivery_notices(count: int) -> 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("timeout", [False, True])
+@pytest.mark.parametrize("mode", ["normal", "goal"])
 async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
-    tmp_path: Path, monkeypatch, timeout: bool
+    tmp_path: Path, monkeypatch, timeout: bool, mode
 ) -> None:
     import a13n_harness.model_auth as runtime
     import yaml
@@ -1376,7 +1383,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
         else:
             if timeout:
                 assert "No answer or approval was provided" in str(messages)
-            yield "Choice applied."
+            yield "Choice applied.\n[GOAL_COMPLETE]" if mode == "goal" else "Choice applied."
 
     monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
     async with open_harness_ui_app(
@@ -1384,7 +1391,11 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
     ) as app:
         backend = SessionBackend(app, CliRequest(), tmp_path, Status())
         renderer = StreamRenderer(backend.status)
-        assert await backend.execute(renderer, prompt="Create a task and ask") == ""
+        assert await backend.execute(renderer, prompt="Create a task and ask", mode=mode) == ""
+        if mode == "goal":
+            assert backend.status.goal.status == "suspended"
+            assert backend.status.goal.iteration == 0
+            assert backend.status.goal.objective == "Create a task and ask"
         assert len(renderer.tasks.tasks) == 1
         assert len((await app.thread_tasks(thread_id=backend.thread_id)).tasks) == 1
         interaction = await backend.interaction()
@@ -1399,6 +1410,10 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
         assert response is not None and not isinstance(response, str)
         assert await backend.execute(renderer, response=response) == ""
         assert "Choice applied" in "".join(block.source for block in renderer.transcript.blocks.values())
+        if mode == "goal":
+            assert backend.status.goal.status == "verified"
+            assert backend.status.goal.iteration == 0
+            assert (await app.get_thread(backend.thread_id)).thread.goal == backend.status.goal
 
 
 @pytest.mark.anyio
@@ -2059,3 +2074,60 @@ async def test_resume_thread_default_outranks_restored_memory_but_not_explicit_c
         await fresh.initialize()
         assert fresh.overrides.model_id is None
         assert fresh.status.model == model["route"]
+
+
+@pytest.mark.anyio
+async def test_goal_live_status_and_saved_outcome_share_app_execution(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import asyncio
+
+    import a13n_harness.model_auth as runtime
+
+    path = await _seed(tmp_path, monkeypatch)
+    waiting, release = asyncio.Event(), asyncio.Event()
+    calls = 0
+
+    async def stream(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield "There is still work to verify."
+        else:
+            waiting.set()
+            await release.wait()
+            yield "All requirements checked.\n[GOAL_COMPLETE]"
+
+    monkeypatch.setattr(runtime, "CodexRequestModel", lambda *args, **kwargs: FunctionModel(stream_function=stream))
+    async with open_harness_ui_app(
+        HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data")), configuration_path=path
+    ) as app:
+        status = Status(state="working")
+        backend = SessionBackend(app, CliRequest(), tmp_path, status)
+        task = asyncio.create_task(
+            backend.execute(StreamRenderer(status), prompt="Verify the entire task", mode="goal")
+        )
+        try:
+            await asyncio.wait_for(waiting.wait(), 10)
+            await backend.refresh_goal()
+            assert not task.done()
+            assert status.goal.iteration == 1
+            assert "Goal checking 1/10" in status.line(80)
+            assert status.line(30).strip().startswith("Goal")
+            receipt = backend.receipt_id
+            assert (await app.get_root_operation(receipt)).goal.iteration == 1
+        finally:
+            release.set()
+            await asyncio.wait_for(task, 10)
+        assert calls == 2
+        assert (await app.get_root_operation(receipt)).goal.status == "verified"
+        thread_id = backend.thread_id
+        assert (await app.get_thread(thread_id)).thread.goal.status == "verified"
+        assert "Goal verified 1/10" in status.line(80)
+        await backend.new()
+        assert status.goal is None
+        await backend.resume(thread_id)
+        assert status.goal.status == "verified"
+        await backend.execute(StreamRenderer(status), prompt="An ordinary new task")
+        assert status.goal is None
+        assert (await app.get_thread(thread_id)).thread.goal is None

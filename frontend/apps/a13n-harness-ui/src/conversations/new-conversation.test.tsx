@@ -435,6 +435,7 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
     defaults: { project_id: "project-one" },
   });
   expect(await writes[2].json()).toEqual({
+    mode: "normal",
     parts: [{ attachment_id: "attachment-one" }, "Build this"],
     source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
   });
@@ -608,6 +609,7 @@ it("distinguishes inherited choices and sends an independent model without chang
     defaults: { project_id: "project-one", agent_id: "agent-two" },
   });
   expect(await writes[1].json()).toEqual({
+    mode: "normal",
     parts: ["Build this"],
     source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
     model_id: "model-one",

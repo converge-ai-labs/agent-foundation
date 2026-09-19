@@ -98,6 +98,7 @@ from a13n_harness_ui.file_context import (
     CommentReferencePreview,
     context_text,
 )
+from a13n_harness_ui.goal import GoalMode, GoalView
 from a13n_harness_ui.host_files import (
     DirectoryCreateRequest,
     DirectoryPage,
@@ -1687,10 +1688,35 @@ class HarnessUiApp:
         skill_references: tuple[SkillReference, ...] = (),
         input_surface: Literal["tui", "webui"] | None = None,
         environment_profile_id: str | None = None,
+        mode: GoalMode = "normal",
     ) -> RootRunReceipt:
         prompt = deepcopy(prompt)
         attachment_ids = tuple(attachment_ids)
+        if mode not in {"normal", "goal"}:
+            raise ValueError("Unknown submission mode")
         async with self._operation():
+            goal = None
+            if mode == "goal":
+                objective = (
+                    prompt.text
+                    if isinstance(prompt, ComposerInput)
+                    else prompt
+                    if isinstance(prompt, str)
+                    else "".join(
+                        part
+                        if isinstance(part, str)
+                        else part.content
+                        if isinstance(part, TextContent) and (part.metadata or {}).get("display") is not False
+                        else ""
+                        for part in prompt
+                    )
+                ).strip()
+                if not objective:
+                    raise ValueError("A Goal requires a task description.")
+                configuration = await self._configurations.current()
+                if configuration is None:
+                    raise AppStateError("No accepted configuration is selected.", code="configuration_not_accepted")
+                goal = GoalView(objective=objective, max_iterations=configuration.document.max_goal_iterations)
             catalog = await self._terminal_projections.skill_catalog(thread_id=thread_id)
             self._terminal_projections.validate_references_against(
                 catalog,
@@ -1706,6 +1732,7 @@ class HarnessUiApp:
                 mutation=mutation,
                 model_overrides=model_overrides,
                 environment_profile_id=environment_profile_id,
+                goal=goal,
                 touch=True,
             )
             self._terminal_projections.pin_active_skill_catalog(

@@ -7621,6 +7621,78 @@
         ],
         "title": "GitStatus"
       },
+      "GoalView": {
+        "additionalProperties": false,
+        "description": "Detached Goal progress; saved progress alone never proves live execution.",
+        "properties": {
+          "objective": {
+            "minLength": 1,
+            "title": "Objective",
+            "type": "string"
+          },
+          "iteration": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Iteration",
+            "type": "integer"
+          },
+          "max_iterations": {
+            "default": 10,
+            "title": "Max Iterations",
+            "type": "integer"
+          },
+          "status": {
+            "default": "working",
+            "enum": [
+              "working",
+              "checking",
+              "auditing",
+              "suspended",
+              "verified",
+              "max_iterations",
+              "cancelled",
+              "error",
+              "unverified_stop"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "needs_restore_audit": {
+            "default": false,
+            "title": "Needs Restore Audit",
+            "type": "boolean"
+          },
+          "restore_source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Restore Source"
+          },
+          "input_tokens": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Input Tokens",
+            "type": "integer"
+          },
+          "output_tokens": {
+            "default": 0,
+            "minimum": 0,
+            "title": "Output Tokens",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "objective"
+        ],
+        "title": "GoalView",
+        "type": "object"
+      },
       "GrokSubscriptionAuthentication": {
         "properties": {
           "kind": {
@@ -9534,6 +9606,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/FailureView"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalView"
               },
               {
                 "type": "null"
@@ -11660,6 +11743,17 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ThreadCompletion"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "goal": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoalView"
               },
               {
                 "type": "null"
@@ -14912,6 +15006,15 @@
               }
             ],
             "title": "Source Id"
+          },
+          "mode": {
+            "default": "normal",
+            "enum": [
+              "normal",
+              "goal"
+            ],
+            "title": "Mode",
+            "type": "string"
           },
           "environment_profile_id": {
             "anyOf": [

@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 
 from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
+from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
 from a13n_harness_ui.model_fast import FastControl
 from a13n_harness_ui.model_thinking import ThinkingControl, ThinkingSelection
@@ -140,6 +141,7 @@ class ThreadSummary(SurfaceModel):
     continuation_state: Literal["initial", "selected"]
     root_activity: RootActivityView
     completion: ThreadCompletion | None = None
+    goal: GoalView | None = None
 
     @field_validator("created_at", "updated_at")
     @classmethod
@@ -381,6 +383,7 @@ class RootOperationView(SurfaceModel):
     completed_at: datetime | None = None
     outcome: RootRunOutcomeView | None = None
     failure: FailureView | None = None
+    goal: GoalView | None = None
     available_actions: tuple[Literal["wait", "steer", "cancel"], ...] = ()
 
     @field_validator("started_at", "completed_at")

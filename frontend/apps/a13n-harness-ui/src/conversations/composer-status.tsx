@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
-import { result } from "../transport/client";
+import { result, type Schema } from "../transport/client";
+import { GoalStatus } from "./goal-status";
 import {
   Button,
   Popover,
@@ -25,11 +26,15 @@ export function ComposerStatus({
   receipt,
   busy = false,
   liveTokens,
+  savedGoal,
+  onRetryGoal,
 }: {
   threadId: string;
   receipt?: string | null;
   busy?: boolean;
   liveTokens?: number;
+  savedGoal?: Schema<"GoalView"> | null;
+  onRetryGoal?: (objective: string) => void;
 }) {
   const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
   const observed = useOperation(threadId, receipt);
@@ -38,6 +43,7 @@ export function ComposerStatus({
     activity.data?.pages
       .flatMap((page) => page.rows)
       .find((row) => row.thread.thread_id === threadId)?.latest_operation;
+  const goal = operation?.goal ?? savedGoal;
   const active =
     busy ||
     operation?.status === "running" ||
@@ -95,6 +101,14 @@ export function ComposerStatus({
   return (
     <div className={styles.bar}>
       <div className={styles.metrics}>
+        {goal && (
+          <GoalStatus
+            goal={goal}
+            onRetry={
+              onRetryGoal ? () => onRetryGoal(goal.objective) : undefined
+            }
+          />
+        )}
         {(
           [
             ["Tokens", summary.tokens, "Token usage"],

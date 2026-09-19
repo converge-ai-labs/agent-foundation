@@ -97,6 +97,7 @@ export class ThreadDraft {
   // Private presentation only. This is neither shared input nor an execution queue.
   localInputs: LocalInput[] = [];
   // A private, in-tab Send choice, not shared input or sticky Thread configuration.
+  mode: "normal" | "goal" = "normal";
   modelId: string | undefined;
   environmentProfileId: string | undefined;
   thinking: Schema<"SubmitRequest">["thinking"] = null;

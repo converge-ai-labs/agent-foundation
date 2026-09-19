@@ -728,6 +728,7 @@ it("retries with an ordinary continuation without consuming the shared draft or 
     params: { path: { thread_id: "thread-one" } },
     body: {
       parts: ["Continue completing the previous task."],
+      mode: "normal",
       source_id: expect.any(String),
       thinking: "low",
     },
@@ -1012,3 +1013,58 @@ it("keeps a single pending action while steering waits for synchronization", asy
   view.unmount();
   query.clear();
 });
+
+it.each(["accepted", "rejected", "unknown"] as const)(
+  "captures private Goal intent and retains it only on %s failure",
+  async (outcome) => {
+    const draft = new ThreadDraft();
+    draft.mode = "goal";
+    draft.doc.getText("text").insert(0, "Verify every requirement");
+    draft.receive({
+      draft_id: "draft-goal",
+      participant_id: "one",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+    const post = vi.fn().mockImplementation(async () => {
+      if (outcome === "rejected") throw new ApiError("Busy", 409);
+      if (outcome === "unknown") throw new Error("Disconnected");
+      return { data: { receipt_id: "receipt-goal", thread_id: "thread-goal" } };
+    });
+    const transport = { client: { POST: post } } as unknown as Transport;
+    let release!: () => void;
+    const prepare = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const pending = submitDraft(
+      draft,
+      transport,
+      "thread-goal",
+      "send",
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => prepare,
+    );
+    expect(draft.submission.kind).toBe("pending");
+    expect(post).not.toHaveBeenCalled();
+    release();
+    await pending;
+    expect(post.mock.calls[0][1].body.mode).toBe("goal");
+    expect(draft.submission.kind).toBe(outcome);
+    expect(draft.mode).toBe(outcome === "accepted" ? "normal" : "goal");
+    expect(values(draft.doc).prompt).toBe(
+      outcome === "accepted" ? "" : "Verify every requirement",
+    );
+    // Private intent is absent from the replicated editor document.
+    const peer = new ThreadDraft();
+    Y.applyUpdate(peer.doc, Y.encodeStateAsUpdate(draft.doc));
+    expect(peer.mode).toBe("normal");
+    draft.doc.destroy();
+    peer.doc.destroy();
+  },
+);

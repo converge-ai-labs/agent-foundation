@@ -60,6 +60,7 @@ This example shows every root option. Replace the example default IDs with resou
 
 ```yaml
 schema_version: "1"
+max_goal_iterations: 10
 process:
   pricing_auto_update: true
   terminal_update_check: true
@@ -131,6 +132,10 @@ These settings take effect when the application starts; restart after changing t
 `process.max_object_bytes` defaults to `268435456` (256 MiB), with an allowed range of 1 KiB through 1 GiB. It limits each complete **uncompressed** immutable storage object, including continuation checkpoints; it is not a Thread disk quota or a model context limit. Long coding Threads retain display history and file-edit evidence even after model-context compaction. If a checkpoint exceeds this limit, raise it (for example to `536870912` for 512 MiB) and restart the application before continuing. Larger limits increase peak memory use during serialization and validation. No history is truncated to fit, and a failed save leaves the previous selected checkpoint unchanged. Lowering the limit can prevent reading previously saved larger objects.
 
 Use `--no-update-check` for a one-invocation override. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
+
+### Goal checks
+
+Root `max_goal_iterations` defaults to `10` and accepts an integer. It limits additional checks after the initial response for `/goal` and the WebUI Goal toggle. Values at or below zero disable automatic follow-ups. Each new Goal captures its limit; changing this setting does not reset a suspended Goal or change an active one's budget. Native request, tool, and token limits still apply. See [Work toward a Goal](everyday-use.md#work-toward-a-goal) for completion and recovery behavior.
 
 ### Long-text inputs
 

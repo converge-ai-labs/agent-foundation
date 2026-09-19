@@ -148,6 +148,13 @@ async def main() -> None:
         async def model(messages, info):
             nonlocal attempts
             attempts += 1
+            if "--goal" in sys.argv:
+                if attempts == 1:
+                    yield "Implementation complete; checking the evidence next."
+                else:
+                    await asyncio.sleep(1)
+                    yield "Every requirement checked.\n[GOAL_COMPLETE]"
+                return
             if "--execution-layout" in sys.argv:
                 # Long, multi-page turns for independent conversation/execution QA.
                 step = attempts % 41

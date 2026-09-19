@@ -152,6 +152,7 @@ export async function submitDraft(
     draft.submission.kind === "unknown"
   )
     return;
+  const mode = draft.mode;
   const thinking = draft.thinking;
   const fast = draft.fast;
   const environmentProfileId = draft.environmentProfileId;
@@ -195,6 +196,7 @@ export async function submitDraft(
           params: { path: { thread_id: threadId } },
           body: {
             parts,
+            mode,
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
@@ -237,6 +239,7 @@ export async function submitDraft(
       acceptedReceipt = receipt;
     }
     input.state = "accepted";
+    if (action === "send") draft.mode = "normal";
     if (captured) draft.clear(captured);
     draft.submission = {
       kind: "accepted",
@@ -963,6 +966,19 @@ export function Composer({
             </Button>
             <div className={styles.composerOptions} data-open={mobileOptions}>
               {leadingControls}
+              <Button
+                variant={draft.mode === "goal" ? "secondary" : "ghost"}
+                size="sm"
+                aria-pressed={draft.mode === "goal"}
+                title="Keep working and checking the full objective until the Agent verifies completion or reaches the continuation limit."
+                disabled={!canRun || busy || preparing || pending || unknown}
+                onClick={() => {
+                  draft.mode = draft.mode === "goal" ? "normal" : "goal";
+                  draft.notify();
+                }}
+              >
+                Goal
+              </Button>
             </div>
             <span className={styles.composerSync}>
               {showSyncStatus && draft.status === "Connected" && (
