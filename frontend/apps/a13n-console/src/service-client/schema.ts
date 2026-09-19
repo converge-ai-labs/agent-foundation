@@ -5487,17 +5487,17 @@ export interface components {
        */
       required?: boolean;
     };
-    /** Collection_EnvironmentProviderDefinition_ */
-    Collection_EnvironmentProviderDefinition_: {
+    /** Collection_EnvironmentProviderAccount_ */
+    Collection_EnvironmentProviderAccount_: {
       /** Items */
-      items: components["schemas"]["EnvironmentProviderDefinition"][];
+      items: components["schemas"]["EnvironmentProviderAccount"][];
       /** Next Cursor */
       next_cursor?: string | null;
     };
-    /** Collection_EnvironmentProvider_ */
-    Collection_EnvironmentProvider_: {
+    /** Collection_EnvironmentProviderMetadata_ */
+    Collection_EnvironmentProviderMetadata_: {
       /** Items */
-      items: components["schemas"]["EnvironmentProvider"][];
+      items: components["schemas"]["EnvironmentProviderMetadata"][];
       /** Next Cursor */
       next_cursor?: string | null;
     };
@@ -7053,8 +7053,8 @@ export interface components {
       /** Workspace Id */
       workspace_id: string;
     };
-    /** EnvironmentProvider */
-    EnvironmentProvider: {
+    /** EnvironmentProviderAccount */
+    EnvironmentProviderAccount: {
       /** Configuration */
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -7090,14 +7090,13 @@ export interface components {
       /** Workspace Id */
       workspace_id: string | null;
     };
-    /** EnvironmentProviderDefinition */
-    EnvironmentProviderDefinition: {
+    /** EnvironmentProviderMetadata */
+    EnvironmentProviderMetadata: {
+      authentication: components["schemas"]["Authentication"];
       /** Configuration Schema */
       configuration_schema: {
         [key: string]: components["schemas"]["JsonValue"];
       };
-      /** Configuration Versions */
-      configuration_versions: string[];
       /** Credential Schema */
       credential_schema: {
         [key: string]: components["schemas"]["JsonValue"];
@@ -7111,6 +7110,10 @@ export interface components {
       display_name: string;
       /** Requires Keepalive */
       requires_keepalive: boolean;
+      /** Setup Label */
+      setup_label?: string | null;
+      /** Setup Url */
+      setup_url?: string | null;
       /** Supports Destroy */
       supports_destroy: boolean;
       /** Supports Managed */
@@ -7123,6 +7126,8 @@ export interface components {
           [key: string]: components["schemas"]["JsonValue"];
         };
       };
+      /** Template Configuration Versions */
+      template_configuration_versions: string[];
       /** Type */
       type: string;
     };
@@ -15496,7 +15501,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Collection_EnvironmentProviderDefinition_"];
+          "application/json": components["schemas"]["Collection_EnvironmentProviderMetadata_"];
         };
       };
       /** @description Service error. */
@@ -15530,7 +15535,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["EnvironmentProviderDefinition"];
+          "application/json": components["schemas"]["EnvironmentProviderMetadata"];
         };
       };
       /** @description Invalid request. */
@@ -15580,7 +15585,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["EnvironmentProvider"];
+          "application/json": components["schemas"]["EnvironmentProviderAccount"];
         };
       };
       /** @description Invalid request. */
@@ -15674,7 +15679,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["EnvironmentProvider"];
+          "application/json": components["schemas"]["EnvironmentProviderAccount"];
         };
       };
       /** @description Invalid request. */
@@ -15813,7 +15818,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["EnvironmentProvider"];
+          "application/json": components["schemas"]["EnvironmentProviderAccount"];
         };
       };
       /** @description Invalid request. */
@@ -17351,7 +17356,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Collection_EnvironmentProvider_"];
+          "application/json": components["schemas"]["Collection_EnvironmentProviderAccount_"];
         };
       };
       /** @description Invalid request. */
@@ -17399,7 +17404,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["EnvironmentProvider"];
+          "application/json": components["schemas"]["EnvironmentProviderAccount"];
         };
       };
       /** @description Invalid request. */
@@ -23876,7 +23881,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["Collection_EnvironmentProvider_"];
+          "application/json": components["schemas"]["Collection_EnvironmentProviderAccount_"];
         };
       };
       /** @description Invalid request. */
@@ -23924,7 +23929,7 @@ export interface operations {
           [name: string]: unknown;
         };
         content: {
-          "application/json": components["schemas"]["EnvironmentProvider"];
+          "application/json": components["schemas"]["EnvironmentProviderAccount"];
         };
       };
       /** @description Invalid request. */

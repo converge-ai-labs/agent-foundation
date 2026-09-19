@@ -243,7 +243,7 @@ export function TemplateConfig({
                 )?.type;
                 const versions = types.data?.items.find(
                   (entry) => entry.type === type,
-                )?.configuration_versions;
+                )?.template_configuration_versions;
                 setVersion(versions?.at(-1) ?? "1");
                 setConfigurationError(undefined);
                 cancelImageTest();
@@ -288,7 +288,7 @@ export function TemplateConfig({
               ]}
             />
           </div>
-          {definition?.type === "direct-local" && (
+          {definition?.type === "direct_local" && (
             <p>
               {t(
                 "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.",
@@ -339,17 +339,20 @@ export function TemplateConfig({
                   { value: "on_use", label: t("On first use") },
                 ]}
               />
-              {(definition?.configuration_versions.length ?? 0) > 1 && (
+              {(definition?.template_configuration_versions.length ?? 0) >
+                1 && (
                 <ChoiceField
                   readOnly={readOnly}
                   label={t("Configuration schema version")}
                   value={version}
                   onValueChange={setVersion}
                   options={
-                    definition?.configuration_versions.map((value) => ({
-                      value,
-                      label: value,
-                    })) ?? []
+                    definition?.template_configuration_versions.map(
+                      (value) => ({
+                        value,
+                        label: value,
+                      }),
+                    ) ?? []
                   }
                 />
               )}

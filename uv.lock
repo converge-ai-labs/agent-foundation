@@ -11,7 +11,6 @@ resolution-markers = [
 [manifest]
 members = [
     "a13n-envd-client",
-    "a13n-environment",
     "a13n-harness",
     "a13n-harness-ui",
     "a13n-logging",
@@ -46,54 +45,11 @@ requires-dist = [
 test = [{ name = "pytest", specifier = ">=9,<10" }]
 
 [[package]]
-name = "a13n-environment"
-version = "0.0.0"
-source = { editable = "packages/a13n-environment" }
-dependencies = [
-    { name = "a13n-envd-client" },
-    { name = "anyio" },
-    { name = "docker" },
-    { name = "e2b" },
-    { name = "httpx2" },
-    { name = "modal" },
-    { name = "pathspec" },
-    { name = "pydantic" },
-    { name = "pydantic-core" },
-    { name = "websockets" },
-]
-
-[package.dev-dependencies]
-test = [
-    { name = "pytest" },
-    { name = "websockets" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
-    { name = "anyio", specifier = ">=4,<5" },
-    { name = "docker", specifier = ">=7.2,<8" },
-    { name = "e2b", specifier = ">=2.46.4,<3" },
-    { name = "httpx2", specifier = ">=2.5,<3" },
-    { name = "modal", specifier = ">=1.5.5,<2" },
-    { name = "pathspec", specifier = ">=1.1,<2" },
-    { name = "pydantic", specifier = ">=2.12,<3" },
-    { name = "pydantic-core", specifier = ">=2.41,<3" },
-    { name = "websockets", specifier = ">=15,<16" },
-]
-
-[package.metadata.requires-dev]
-test = [
-    { name = "pytest", specifier = ">=9,<10" },
-    { name = "websockets", specifier = ">=15,<16" },
-]
-
-[[package]]
 name = "a13n-harness"
 version = "0.0.0"
 source = { editable = "packages/a13n-harness" }
 dependencies = [
-    { name = "a13n-environment" },
+    { name = "a13n-envd-client" },
     { name = "a13n-logging" },
     { name = "anthropic" },
     { name = "anyio" },
@@ -105,6 +61,7 @@ dependencies = [
     { name = "jsonschema" },
     { name = "openai" },
     { name = "opentelemetry-api" },
+    { name = "pathspec" },
     { name = "pydantic" },
     { name = "pydantic-ai", extra = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"] },
     { name = "pydantic-core" },
@@ -114,11 +71,21 @@ dependencies = [
     { name = "referencing" },
     { name = "tenacity" },
     { name = "typing-extensions" },
+    { name = "websockets" },
 ]
 
 [package.optional-dependencies]
+docker = [
+    { name = "docker" },
+]
+e2b = [
+    { name = "e2b" },
+]
 mem0 = [
     { name = "mem0ai" },
+]
+modal = [
+    { name = "modal" },
 ]
 
 [package.dev-dependencies]
@@ -129,19 +96,23 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-environment", editable = "packages/a13n-environment" },
+    { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "anthropic", specifier = ">=1.3,<2" },
     { name = "anyio", specifier = ">=4,<5" },
     { name = "botocore", specifier = ">=1.43.3,<1.43.57" },
+    { name = "docker", marker = "extra == 'docker'", specifier = ">=7.2,<8" },
+    { name = "e2b", marker = "extra == 'e2b'", specifier = ">=2.46.4,<3" },
     { name = "genai-prices", specifier = ">=0.1.6,<1" },
     { name = "google-auth", specifier = ">=2.40,<3" },
     { name = "google-genai", specifier = ">=1.0,<3" },
     { name = "httpx2", specifier = ">=2.5,<3" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
     { name = "mem0ai", marker = "extra == 'mem0'", specifier = ">=2.0.19,<3" },
+    { name = "modal", marker = "extra == 'modal'", specifier = ">=1.5.5,<2" },
     { name = "openai", specifier = ">=3.5,<4" },
     { name = "opentelemetry-api", specifier = ">=1.39,<2" },
+    { name = "pathspec", specifier = ">=1.1,<2" },
     { name = "pydantic", specifier = ">=2.12,<3" },
     { name = "pydantic-ai", extras = ["bedrock", "bedrock-mantle", "cohere", "google-realtime", "groq", "huggingface", "mistral", "openai-realtime", "openrouter", "retries", "xai", "xai-realtime"], specifier = ">=2.41.0,<3" },
     { name = "pydantic-core", specifier = ">=2.41,<3" },
@@ -151,8 +122,9 @@ requires-dist = [
     { name = "referencing", specifier = ">=0.37,<1" },
     { name = "tenacity", specifier = ">=9,<10" },
     { name = "typing-extensions", specifier = ">=4.15,<5" },
+    { name = "websockets", specifier = ">=15,<16" },
 ]
-provides-extras = ["mem0"]
+provides-extras = ["docker", "e2b", "modal", "mem0"]
 
 [package.metadata.requires-dev]
 test = [
@@ -165,8 +137,7 @@ name = "a13n-harness-ui"
 version = "0.0.0"
 source = { editable = "packages/a13n-harness-ui" }
 dependencies = [
-    { name = "a13n-environment" },
-    { name = "a13n-harness" },
+    { name = "a13n-harness", extra = ["docker", "e2b", "modal"] },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
     { name = "ag-ui-protocol" },
@@ -217,8 +188,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a13n-environment", editable = "packages/a13n-environment" },
-    { name = "a13n-harness", editable = "packages/a13n-harness" },
+    { name = "a13n-harness", extras = ["docker", "e2b", "modal"], editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
     { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
@@ -284,8 +254,7 @@ version = "0.0.0"
 source = { editable = "packages/a13n-service" }
 dependencies = [
     { name = "a13n-envd-client" },
-    { name = "a13n-environment" },
-    { name = "a13n-harness", extra = ["mem0"] },
+    { name = "a13n-harness", extra = ["docker", "e2b", "mem0", "modal"] },
     { name = "a13n-logging" },
     { name = "a13n-stream-protocol" },
     { name = "a2a-sdk", extra = ["fastapi"] },
@@ -331,8 +300,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "a13n-envd-client", editable = "packages/a13n-envd-client" },
-    { name = "a13n-environment", editable = "packages/a13n-environment" },
-    { name = "a13n-harness", extras = ["mem0"], editable = "packages/a13n-harness" },
+    { name = "a13n-harness", extras = ["mem0", "docker", "e2b", "modal"], editable = "packages/a13n-harness" },
     { name = "a13n-logging", editable = "packages/a13n-logging" },
     { name = "a13n-stream-protocol", editable = "packages/a13n-stream-protocol" },
     { name = "a2a-sdk", extras = ["fastapi"], specifier = ">=1.1.2,<1.2" },

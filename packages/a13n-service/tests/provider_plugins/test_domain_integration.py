@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-from a13n_environment import EnvironmentProvider
+from a13n_harness.providers.authentication import Authentication, CredentialMode
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import EnvironmentDescriptor, EnvironmentState
 from a13n_harness.providers.model import ModelProviderDefinition, ProviderConfiguration
 from a13n_service.process.components import Components
 from a13n_service.process.environment import build_environment_catalog
-from a13n_service.provider_plugins import (
-    PROVIDER_EXTENSION_API_VERSION,
-    ProviderCatalogs,
-    ProviderPluginRegistry,
-)
+from a13n_service.provider_plugins import ProviderCatalogs
 from a13n_service.settings import Settings
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -39,29 +38,34 @@ class AliasedModelConfiguration(ProviderConfiguration):
     required_nullable: str | None
 
 
-class ExternalEnvironmentProvider(EnvironmentProvider):
-    @property
-    def key(self) -> str:
-        return "external.environment"
-
-    @property
-    def configuration_models(self) -> dict[str, type[BaseModel]]:
-        return {"1": Configuration}
-
-    def describe_configuration(self, configuration):
-        raise NotImplementedError
-
-    def create_environment(self, *, configuration: BaseModel, environment_id: str, state, runtime=None):
-        del configuration, environment_id, state, runtime
-        raise NotImplementedError
+def _describe(configuration: BaseModel) -> EnvironmentDescriptor:
+    del configuration
+    raise NotImplementedError
 
 
-def test_external_environment_registration_enters_service_catalog() -> None:
-    registry = ProviderPluginRegistry(api_version=PROVIDER_EXTENSION_API_VERSION)
-    provider = ExternalEnvironmentProvider()
-    registry.environment.register(provider)
+def _construct(
+    *, configuration: BaseModel, environment_id: str, state: EnvironmentState | None, runtime: None
+) -> Environment:
+    del configuration, environment_id, state, runtime
+    raise NotImplementedError
+
+
+EXTERNAL_ENVIRONMENT = EnvironmentProviderDefinition(
+    type="external_environment",
+    display_name="External Environment",
+    configuration_model=Configuration,
+    credential_model=None,
+    environment_models={"1": Configuration},
+    construct=_construct,
+    describe_environment=_describe,
+    authentication=Authentication(mode=CredentialMode.forbidden),
+    supports_managed=False,
+)
+
+
+def test_installed_environment_definition_enters_the_service_catalog() -> None:
     catalogs = ProviderCatalogs(
-        environment=registry.environment.values(),
+        environment=(EXTERNAL_ENVIRONMENT,),
         model=(),
         connector=(),
         web=(),
@@ -74,7 +78,7 @@ def test_external_environment_registration_enters_service_catalog() -> None:
         catalogs,
     )
 
-    assert selected.require("external.environment") is provider
+    assert selected.require("external_environment") is EXTERNAL_ENVIRONMENT
 
 
 def test_external_model_configuration_preserves_aliases_and_explicit_nulls() -> None:

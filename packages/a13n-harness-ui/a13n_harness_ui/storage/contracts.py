@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated, Literal, Self
 
-from a13n_environment import EnvironmentState
 from a13n_harness import HarnessState, SafeFailure
+from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai.tools import DeferredToolRequests
 

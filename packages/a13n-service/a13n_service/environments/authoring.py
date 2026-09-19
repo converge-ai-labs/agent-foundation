@@ -48,5 +48,5 @@ async def authorize_template(
         raise environment_not_found()
     if revision_id is not None:
         provider = await session.get(EnvironmentProviderRecord, revision.provider_id)
-        if provider is not None and provider.type == "direct-local":
+        if provider is not None and provider.type == "direct_local":
             raise invalid_environment("Direct Local does not support dedicated child environments")

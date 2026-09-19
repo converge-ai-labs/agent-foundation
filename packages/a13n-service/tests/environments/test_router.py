@@ -7,7 +7,8 @@ from pathlib import Path
 
 import httpx2
 import pytest
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam import authorization as iam_authorization
@@ -22,7 +23,7 @@ from fastapi import Request
 from .conftest import ORG_ID, USER_ID, WORKSPACE_ID
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
-PROVIDER_KEY = "direct-local"
+PROVIDER_KEY = "direct_local"
 
 
 async def authenticate(request: Request) -> AuthenticatedActor:
@@ -125,8 +126,8 @@ async def environment_api_client(
         config,
         components=Components(
             request_authenticator=authenticate,
-            environment_provider_catalog=build_environment_provider_catalog(
-                builtin_keys=(PROVIDER_KEY, "docker", "sprites")
+            environment_provider_catalog=EnvironmentProviderCatalog(
+                select_builtin_environment_providers((PROVIDER_KEY, "docker", "sprites"))
             ),
         ),
     )
@@ -227,7 +228,7 @@ async def test_instance_name_creation_rename_and_stale_write(environment_api_cli
 async def test_template_schemas_are_versioned_and_provider_specific(environment_api_client):
     response = await environment_api_client.get("/api/v1/environment-provider-types")
     definition = response.json()["items"][0]
-    assert set(definition["template_configuration_schemas"]) == set(definition["configuration_versions"])
+    assert set(definition["template_configuration_schemas"]) == set(definition["template_configuration_versions"])
     template_config = definition["template_configuration_schemas"]["1"]
     assert "root" in template_config["required"]
     assert "host_id" not in definition["configuration_schema"]["properties"]

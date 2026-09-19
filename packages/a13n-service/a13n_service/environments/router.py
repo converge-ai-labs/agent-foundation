@@ -25,8 +25,8 @@ from .domain import (
     EnvironmentCommand,
     EnvironmentCommandRequest,
     EnvironmentDetail,
-    EnvironmentProvider,
-    EnvironmentProviderDefinition,
+    EnvironmentProviderAccount,
+    EnvironmentProviderMetadata,
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
     ReplaceCredentialRequest,
@@ -58,12 +58,12 @@ def _service(request: Request) -> EnvironmentService:
 
 
 @router.get("/environment-provider-types")
-async def provider_types(request: Request, actor: Actor) -> Collection[EnvironmentProviderDefinition]:
+async def provider_types(request: Request, actor: Actor) -> Collection[EnvironmentProviderMetadata]:
     return await _service(request).provider_types(actor)
 
 
 @router.get("/environment-provider-types/{provider_type}")
-async def get_provider_type(request: Request, actor: Actor, provider_type: str) -> EnvironmentProviderDefinition:
+async def get_provider_type(request: Request, actor: Actor, provider_type: str) -> EnvironmentProviderMetadata:
     catalog = await _service(request).provider_types(actor)
     for item in catalog.items:
         if item.type == provider_type:
@@ -76,14 +76,14 @@ async def get_provider_type(request: Request, actor: Actor, provider_type: str) 
 @router.post("/workspaces/{workspace}/environment-providers", status_code=201)
 async def create_provider(
     request: Request, actor: Actor, workspace_id: WorkspaceId, body: CreateProviderRequest
-) -> EnvironmentProvider:
+) -> EnvironmentProviderAccount:
     return await _service(request).create_provider(actor=actor, workspace_id=workspace_id, request=body)
 
 
 @router.patch("/environment-providers/{provider_id}")
 async def update_provider(
     request: Request, actor: Actor, provider_id: str, body: UpdateProviderRequest, if_match: IfMatch
-) -> EnvironmentProvider:
+) -> EnvironmentProviderAccount:
     return await _service(request).update_provider(
         actor=actor, provider_id=provider_id, request=body, if_match=if_match
     )
@@ -92,7 +92,7 @@ async def update_provider(
 @router.put("/environment-providers/{provider_id}/credential")
 async def replace_credential(
     request: Request, actor: Actor, provider_id: str, body: ReplaceCredentialRequest, if_match: IfMatch
-) -> EnvironmentProvider:
+) -> EnvironmentProviderAccount:
     return await _service(request).replace_credential(
         actor=actor, provider_id=provider_id, request=body, if_match=if_match
     )
@@ -200,12 +200,14 @@ async def create_environment(
 @router.get("/workspaces/{workspace}/environment-providers")
 async def list_providers(
     request: Request, actor: Actor, workspace_id: WorkspaceId, limit: Limit = 50, cursor: str | None = None
-) -> Collection[EnvironmentProvider]:
+) -> Collection[EnvironmentProviderAccount]:
     return await _service(request).list_providers(actor=actor, workspace_id=workspace_id, limit=limit, cursor=cursor)
 
 
 @router.get("/environment-providers/{resource_id}")
-async def get_provider(request: Request, response: Response, actor: Actor, resource_id: str) -> EnvironmentProvider:
+async def get_provider(
+    request: Request, response: Response, actor: Actor, resource_id: str
+) -> EnvironmentProviderAccount:
     resource = await _service(request).get_provider(actor=actor, resource_id=resource_id)
     response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
     return resource
@@ -355,7 +357,7 @@ async def get_command(request: Request, actor: Actor, command_id: str) -> Enviro
 @router.post("/organizations/{organization}/environment-providers", status_code=201)
 async def organization_create_provider(
     request: Request, actor: Actor, organization_id: OrganizationId, body: CreateProviderRequest
-) -> EnvironmentProvider:
+) -> EnvironmentProviderAccount:
     require_organization_boundary(actor, organization_id)
     return await _service(request).create_provider(actor=actor, workspace_id=None, request=body)
 
@@ -377,7 +379,7 @@ async def organization_create_template(
 @router.get("/organizations/{organization}/environment-providers")
 async def organization_list_providers(
     request: Request, actor: Actor, organization_id: OrganizationId, limit: Limit = 50, cursor: str | None = None
-) -> Collection[EnvironmentProvider]:
+) -> Collection[EnvironmentProviderAccount]:
     require_organization_boundary(actor, organization_id)
     return await _service(request).list_providers(actor=actor, workspace_id=None, limit=limit, cursor=cursor)
 

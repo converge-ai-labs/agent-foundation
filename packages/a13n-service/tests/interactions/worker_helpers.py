@@ -3,8 +3,8 @@
 from contextlib import AsyncExitStack, asynccontextmanager
 from unittest.mock import AsyncMock, Mock
 
-from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.process.agents import build_agent_resources
 from a13n_service.process.components import Components

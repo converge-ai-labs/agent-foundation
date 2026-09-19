@@ -43,14 +43,14 @@ flowchart TB
 
 You do not need every component. Environment works without an Agent; Harness works without an Environment; Stream Protocol is optional when you need AG-UI rather than native Harness observations.
 
-| Component       | Python distribution / import                    | Responsibility                                                                   |
-| --------------- | ----------------------------------------------- | -------------------------------------------------------------------------------- |
-| Harness UI      | `a13n-harness-ui` / `a13n_harness_ui`           | Local configuration, conversations, terminal interaction, and Host lifecycle     |
-| Harness         | `a13n-harness` / `a13n_harness`                 | Agent composition, scoped Runs, continuation, and observation                    |
-| Environment     | `a13n-environment` / `a13n_environment`         | Providers, single-Environment operations, and target state                       |
-| Envd            | Native `a13n-envd` executable                   | Environment Interaction Protocol (EIP), command containment, and file operations |
-| Envd client     | `a13n-envd-client` / `a13n_envd_client`         | Generated low-level Python EIP client                                            |
-| Stream Protocol | `a13n-stream-protocol` / `a13n_stream_protocol` | Harness-to-AG-UI conversion, not transport or rendering                          |
+| Component       | Python distribution / import                          | Responsibility                                                                   |
+| --------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Harness UI      | `a13n-harness-ui` / `a13n_harness_ui`                 | Local configuration, conversations, terminal interaction, and Host lifecycle     |
+| Harness         | `a13n-harness` / `a13n_harness`                       | Agent composition, scoped Runs, continuation, and observation                    |
+| Environment     | `a13n-harness` / `a13n_harness.providers.environment` | Providers, single-Environment operations, and target state                       |
+| Envd            | Native `a13n-envd` executable                         | Environment Interaction Protocol (EIP), command containment, and file operations |
+| Envd client     | `a13n-envd-client` / `a13n_envd_client`               | Generated low-level Python EIP client                                            |
+| Stream Protocol | `a13n-stream-protocol` / `a13n_stream_protocol`       | Harness-to-AG-UI conversion, not transport or rendering                          |
 
 These are component names, not alternative names for the same runtime. In particular, Envd does not run an Agent, and a saved stream snapshot is not Agent continuation state.
 

@@ -2,8 +2,8 @@
 
 from contextlib import AsyncExitStack
 
-from a13n_environment import EnvironmentProviderCatalog
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 
 from a13n_service.environments.domain import LOCAL_PROVIDER_TYPES
 from a13n_service.environments.local import synchronize_local_providers

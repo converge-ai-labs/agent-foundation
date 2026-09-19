@@ -29,7 +29,6 @@ RELEASE_NOTES_DIRECTORY = Path(".github/release-notes")
 # Shared root lockfiles and unrelated release channels do not select a change.
 COMPONENT_PATHS = {
     "a13n-harness": (
-        "packages/a13n-environment",
         "packages/a13n-harness",
         "packages/a13n-stream-protocol",
         "docs/a13n-environment",

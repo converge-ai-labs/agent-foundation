@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
-from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_harness.providers.memory import MemoryProviderCatalog
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver

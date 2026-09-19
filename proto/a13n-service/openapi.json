@@ -3909,12 +3909,12 @@
         "title": "ClientToolPolicy",
         "type": "object"
       },
-      "Collection_EnvironmentProviderDefinition_": {
+      "Collection_EnvironmentProviderAccount_": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/EnvironmentProviderDefinition"
+              "$ref": "#/components/schemas/EnvironmentProviderAccount"
             },
             "title": "Items",
             "type": "array"
@@ -3934,15 +3934,15 @@
         "required": [
           "items"
         ],
-        "title": "Collection_EnvironmentProviderDefinition_",
+        "title": "Collection_EnvironmentProviderAccount_",
         "type": "object"
       },
-      "Collection_EnvironmentProvider_": {
+      "Collection_EnvironmentProviderMetadata_": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "items": {
-              "$ref": "#/components/schemas/EnvironmentProvider"
+              "$ref": "#/components/schemas/EnvironmentProviderMetadata"
             },
             "title": "Items",
             "type": "array"
@@ -3962,7 +3962,7 @@
         "required": [
           "items"
         ],
-        "title": "Collection_EnvironmentProvider_",
+        "title": "Collection_EnvironmentProviderMetadata_",
         "type": "object"
       },
       "Collection_EnvironmentTemplateRevision_": {
@@ -8709,7 +8709,7 @@
         "title": "EnvironmentDetail",
         "type": "object"
       },
-      "EnvironmentProvider": {
+      "EnvironmentProviderAccount": {
         "additionalProperties": false,
         "properties": {
           "configuration": {
@@ -8794,25 +8794,21 @@
           "created_at",
           "updated_at"
         ],
-        "title": "EnvironmentProvider",
+        "title": "EnvironmentProviderAccount",
         "type": "object"
       },
-      "EnvironmentProviderDefinition": {
+      "EnvironmentProviderMetadata": {
         "additionalProperties": false,
         "properties": {
+          "authentication": {
+            "$ref": "#/components/schemas/Authentication"
+          },
           "configuration_schema": {
             "additionalProperties": {
               "$ref": "#/components/schemas/JsonValue"
             },
             "title": "Configuration Schema",
             "type": "object"
-          },
-          "configuration_versions": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Configuration Versions",
-            "type": "array"
           },
           "credential_schema": {
             "anyOf": [
@@ -8841,6 +8837,28 @@
             "title": "Requires Keepalive",
             "type": "boolean"
           },
+          "setup_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Label"
+          },
+          "setup_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Setup Url"
+          },
           "supports_destroy": {
             "title": "Supports Destroy",
             "type": "boolean"
@@ -8863,6 +8881,13 @@
             "title": "Template Configuration Schemas",
             "type": "object"
           },
+          "template_configuration_versions": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Template Configuration Versions",
+            "type": "array"
+          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -8871,16 +8896,17 @@
         "required": [
           "type",
           "display_name",
-          "configuration_versions",
+          "template_configuration_versions",
           "configuration_schema",
           "template_configuration_schemas",
           "credential_schema",
+          "authentication",
           "supports_managed",
           "supports_stop",
           "supports_destroy",
           "requires_keepalive"
         ],
-        "title": "EnvironmentProviderDefinition",
+        "title": "EnvironmentProviderMetadata",
         "type": "object"
       },
       "EnvironmentSelection": {
@@ -8899,9 +8925,7 @@
         "description": "Provider-owned portable semantic soft reference for one target.",
         "properties": {
           "provider_key": {
-            "maxLength": 128,
-            "minLength": 3,
-            "pattern": "^(?:docker|e2b|sprites|daytona|modal|vercel|runloop|direct-local|[a-z0-9]+(?:[._-][a-z0-9]+)+)$",
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
             "title": "Provider Key",
             "type": "string"
           },
@@ -30613,7 +30637,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Collection_EnvironmentProviderDefinition_"
+                  "$ref": "#/components/schemas/Collection_EnvironmentProviderMetadata_"
                 }
               }
             },
@@ -30682,7 +30706,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProviderDefinition"
+                  "$ref": "#/components/schemas/EnvironmentProviderMetadata"
                 }
               }
             },
@@ -30788,7 +30812,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },
@@ -30980,7 +31004,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },
@@ -31261,7 +31285,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },
@@ -34421,7 +34445,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Collection_EnvironmentProvider_"
+                  "$ref": "#/components/schemas/Collection_EnvironmentProviderAccount_"
                 }
               }
             },
@@ -34515,7 +34539,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },
@@ -48869,7 +48893,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Collection_EnvironmentProvider_"
+                  "$ref": "#/components/schemas/Collection_EnvironmentProviderAccount_"
                 }
               }
             },
@@ -48963,7 +48987,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/EnvironmentProvider"
+                  "$ref": "#/components/schemas/EnvironmentProviderAccount"
                 }
               }
             },

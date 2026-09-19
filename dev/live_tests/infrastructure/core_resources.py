@@ -53,7 +53,7 @@ async def provision(client: LiveClient, *, on_created: Callable[[dict], None] | 
         "environment_provider_id",
         base + "/environment-providers",
         {
-            "type": "direct-local",
+            "type": "direct_local",
             "name": "Live-test local files",
             "configuration": {},
         },

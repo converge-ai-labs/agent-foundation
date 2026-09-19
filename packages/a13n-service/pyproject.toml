@@ -8,7 +8,6 @@ license-files = ["LICENSE"]
 requires-python = ">=3.13"
 dependencies = [
     "a13n-envd-client",
-    "a13n-environment",
     "a2a-sdk[fastapi]>=1.1.2,<1.2",
     "aiobotocore[httpx2]>=3.9,<4",
     "alembic>=1.17.1,<2",
@@ -16,7 +15,7 @@ dependencies = [
     "botocore>=1.43.3,<1.43.57",
     "click>=8.2,<9",
     "cryptography>=50,<51",
-    "a13n-harness[mem0]",
+    "a13n-harness[mem0,docker,e2b,modal]",
     "a13n-logging",
     "a13n-stream-protocol",
     "ag-ui-protocol>=0.1.18,<0.2",
@@ -67,7 +66,7 @@ a13n-envd-client = ">=0.0.6,<0.1.0"
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
-package_module_name_map = { "a13n-envd-client" = "a13n_envd_client", "a13n-environment" = "a13n_environment", "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "a13n-stream-protocol" = "a13n_stream_protocol", "a2a-sdk" = "a2a", "ag-ui-protocol" = "ag_ui", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "a13n-envd-client" = "a13n_envd_client", "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "a13n-stream-protocol" = "a13n_stream_protocol", "a2a-sdk" = "a2a", "ag-ui-protocol" = "ag_ui", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
 
 # Database drivers are loaded by SQLAlchemy from the selected backend. httpx2
 # is the service-wide outbound client contract and is used by service tests.

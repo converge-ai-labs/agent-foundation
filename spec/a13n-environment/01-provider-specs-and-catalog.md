@@ -166,7 +166,7 @@ The built-in catalog keys are:
 | `a13n.http-envd`      | One externally operated daemon through HTTP(S)                           |
 | `a13n.websocket-envd` | One externally operated daemon through a Host-accepted reverse WebSocket |
 
-Third-party Providers register under the `a13n_environment.providers` entry-point group. One selected entry point must load one concrete `EnvironmentProvider` class with safe no-argument construction. Preconstructed objects are not valid entry-point targets. The entry-point name and constructed `provider.key` must match. Only selected extension keys are imported.
+Third-party Providers register under the `a13n_harness.providers.environment.providers` entry-point group. One selected entry point must load one concrete `EnvironmentProvider` class with safe no-argument construction. Preconstructed objects are not valid entry-point targets. The entry-point name and constructed `provider.key` must match. Only selected extension keys are imported.
 
 Explicit Provider objects support embedded applications, tests, and source-level development without installed distribution metadata. They enter the same immutable catalog and Provider validation path. Their registrations have no import target or distribution provenance and are not built-ins.
 

@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
-from a13n_environment import (
-    EnvironmentProvider,
-    EnvironmentState,
-    HttpEnvdBackendConfiguration,
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
-    HttpEnvdEnvironmentProvider,
-    HttpEnvdProviderRuntime,
-    RemoteEnvdProviderConfiguration,
-    WebSocketEnvdBackendConfiguration,
-    WebSocketEnvdConnections,
-    WebSocketEnvdEnvironmentProvider,
-    WebSocketEnvdProviderRuntime,
+    RemoteEnvdEnvironmentConfiguration,
+    WebSocketEnvdConnectionConfiguration,
 )
+from a13n_harness.providers.environment.remote_envd.connections import WebSocketEnvdConnections
+from a13n_harness.providers.environment.remote_envd.http import HTTP_ENVD, HttpEnvdProviderRuntime
+from a13n_harness.providers.environment.remote_envd.websocket import WEBSOCKET_ENVD, WebSocketEnvdProviderRuntime
 from pydantic import SecretStr
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.http11 import Request, Response
@@ -31,32 +30,27 @@ class RemoteExampleResult:
     state: EnvironmentState
 
 
-async def use_remote(
-    provider: EnvironmentProvider, runtime: object, *, daemon_environment_id: str
+async def use_remote[R](
+    provider: EnvironmentProviderDefinition[Any, Any, R], runtime: R, *, daemon_environment_id: str
 ) -> RemoteExampleResult:
     """Two independent Runs share files, not their process-local Environment adapter."""
     state = EnvironmentState(
-        provider_key=provider.key,
+        provider_key=provider.type,
         state_version="1",
         state={"daemon_environment_id": daemon_environment_id},
     )
-    configuration = RemoteEnvdProviderConfiguration(required_methods=("file.read_text", "file.write_text"))
+    configuration = RemoteEnvdEnvironmentConfiguration(required_methods=("file.read_text", "file.write_text"))
     generations: list[str] = []
     text = ""
     for index in range(2):
-        environment = provider.create_environment(
+        environment = provider.construct(
             configuration=configuration,
             environment_id="env-example",  # Host identity, distinct from daemon identity.
             state=state,
             runtime=runtime,
         )
         try:
-            await environment.enter(
-                thread_id="thread-example",
-                run_id=f"run-{index + 1}",
-                agent_instance_id="agent-example",
-                mount_id="workspace",
-            )
+            await environment.enter(mount_id="workspace")
             await environment.ensure_ready(frozenset({"files"}))
             files = environment.operations.files
             assert files is not None
@@ -69,15 +63,15 @@ async def use_remote(
             assert current is not None
             state = current  # Persist this under your Host's authority, not in the Provider.
             await environment.close()  # Does not stop the remote daemon.
-    return RemoteExampleResult(provider.key, text, generations[0] == generations[1], state)
+    return RemoteExampleResult(provider.type, text, generations[0] == generations[1], state)
 
 
 async def run_http(endpoint: str, token: SecretStr, daemon_environment_id: str) -> RemoteExampleResult:
     runtime = HttpEnvdProviderRuntime(
-        configuration=HttpEnvdBackendConfiguration(endpoint=endpoint),
+        configuration=HttpEnvdConnectionConfiguration(endpoint=endpoint),
         credential=HttpEnvdCredential(token=token),
     )
-    return await use_remote(HttpEnvdEnvironmentProvider(), runtime, daemon_environment_id=daemon_environment_id)
+    return await use_remote(HTTP_ENVD, runtime, daemon_environment_id=daemon_environment_id)
 
 
 async def run_websocket(*, token: SecretStr, daemon_environment_id: str, port: int = 8788) -> RemoteExampleResult:
@@ -107,8 +101,6 @@ async def run_websocket(*, token: SecretStr, daemon_environment_id: str, port: i
         ):
             print(f"Host example listening on ws://127.0.0.1:{port}; waiting for envd", flush=True)
             runtime = WebSocketEnvdProviderRuntime(
-                connections, WebSocketEnvdBackendConfiguration(connection_timeout=60)
+                connections, WebSocketEnvdConnectionConfiguration(connection_timeout=60)
             )
-            return await use_remote(
-                WebSocketEnvdEnvironmentProvider(), runtime, daemon_environment_id=daemon_environment_id
-            )
+            return await use_remote(WEBSOCKET_ENVD, runtime, daemon_environment_id=daemon_environment_id)

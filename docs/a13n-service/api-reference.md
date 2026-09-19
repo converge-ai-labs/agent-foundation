@@ -1643,7 +1643,7 @@ List Connector Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: ConnectorProviderDefinitionCollection`).
+- **200** — Successful Response (`application/json: ConnectorProviderMetadataCollection`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/connector-providers/{connector_provider_id}`
@@ -1955,7 +1955,7 @@ Provider Types.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_EnvironmentProviderDefinition_`).
+- **200** — Successful Response (`application/json: Collection_EnvironmentProviderMetadata_`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/environment-provider-types/{provider_type}`
@@ -1968,7 +1968,7 @@ Get Provider Type.
 
 Responses:
 
-- **200** — Successful Response (`application/json: EnvironmentProviderDefinition`).
+- **200** — Successful Response (`application/json: EnvironmentProviderMetadata`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -1987,7 +1987,7 @@ Request body: required.
 
 Responses:
 
-- **200** — Successful Response (`application/json: EnvironmentProvider`).
+- **200** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2020,7 +2020,7 @@ Request body: required.
 
 Responses:
 
-- **200** — Successful Response (`application/json: EnvironmentProvider`).
+- **200** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2071,7 +2071,7 @@ Get Provider.
 
 Responses:
 
-- **200** — Successful Response (`application/json: EnvironmentProvider`).
+- **200** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2325,7 +2325,7 @@ Organization List Providers.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_EnvironmentProvider_`).
+- **200** — Successful Response (`application/json: Collection_EnvironmentProviderAccount_`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2343,7 +2343,7 @@ Request body: required.
 
 Responses:
 
-- **201** — Successful Response (`application/json: EnvironmentProvider`).
+- **201** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2430,7 +2430,7 @@ List Providers.
 
 Responses:
 
-- **200** — Successful Response (`application/json: Collection_EnvironmentProvider_`).
+- **200** — Successful Response (`application/json: Collection_EnvironmentProviderAccount_`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -2448,7 +2448,7 @@ Request body: required.
 
 Responses:
 
-- **201** — Successful Response (`application/json: EnvironmentProvider`).
+- **201** — Successful Response (`application/json: EnvironmentProviderAccount`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

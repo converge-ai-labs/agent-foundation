@@ -1,24 +1,26 @@
 """Hold real Docker effects before the disposable Worker's Service publication."""
 
+from dataclasses import replace
 from pathlib import Path
 
-from a13n_environment import DockerEnvironmentProvider, build_environment_provider_catalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.docker.provider import DOCKER
 
 from .lifecycle_host import native_effect_barrier
 
 
-class LifecycleBarrierProvider(DockerEnvironmentProvider):
-    def __init__(self, root):
-        self.root = root
+def _barrier_definition(root):
+    """Wrap the released definition's construction; the Provider itself stays immutable."""
 
-    def create_environment(self, **arguments):
-        environment = super().create_environment(**arguments)
+    def construct(**arguments):
+        environment = DOCKER.construct(**arguments)
         prepare, stop, destroy = environment._prepare, environment._stop, environment._destroy
 
         async def barrier(action):
             state = environment.dump_state()
             if state is not None:
-                await native_effect_barrier(self.root, environment.environment_id, action, state.state["container_id"])
+                await native_effect_barrier(root, environment.environment_id, action, state.state["container_id"])
 
         async def open_after_create(*args, **kwargs):
             await prepare(*args, **kwargs)
@@ -37,10 +39,14 @@ class LifecycleBarrierProvider(DockerEnvironmentProvider):
         environment._destroy = destroy_before_publication
         return environment
 
+    return replace(DOCKER, construct=construct)
+
 
 def environment_catalog(config, builtin_keys):
     root = Path(config["workspace_root"]).parent / "docker-fault"
-    return build_environment_provider_catalog(
-        builtin_keys=tuple(key for key in builtin_keys if key != "docker"),
-        explicit_providers=(LifecycleBarrierProvider(root),),
+    return EnvironmentProviderCatalog(
+        (
+            *select_builtin_environment_providers(tuple(key for key in builtin_keys if key != "docker")),
+            _barrier_definition(root),
+        )
     )

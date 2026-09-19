@@ -4,12 +4,12 @@ This standalone project demonstrates the supported configuration and direct-code
 
 ## Composition Matrix
 
-| Boundary                  | Declarative or installed-package mode                                                                                                          | Explicit code mode                                                                                         |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| Custom Capability         | Authorize an exact type with `CapabilityTypeCatalog`, then select its serialization name in `AgentSpec.capabilities`                           | Construct the Capability and place it in `AgentDefinition.capabilities`                                    |
-| Environment provider      | Explicitly enable an `EnvironmentProvider` from `a13n_environment.providers`, then validate configuration and construct fresh adapters         | Register an `EnvironmentProvider` object directly, then use the same validation and construction path      |
-| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `a13n_harness.environment_run_extensions`, then call `create_extension()`                      | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method |
-| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                    |
+| Boundary                  | Declarative or installed-package mode                                                                                                              | Explicit code mode                                                                                            |
+| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Custom Capability         | Authorize an exact type with `CapabilityTypeCatalog`, then select its serialization name in `AgentSpec.capabilities`                               | Construct the Capability and place it in `AgentDefinition.capabilities`                                       |
+| Environment provider      | Explicitly enable one installed `ProviderManifest` from `a13n_harness.providers.plugins`, then validate configuration and construct fresh adapters | Select an `EnvironmentProviderDefinition` object directly, then use the same validation and construction path |
+| Environment run extension | Select an `EnvironmentRunExtensionFactory` from `a13n_harness.environment_run_extensions`, then call `create_extension()`                          | Supply an `EnvironmentRunExtensionFactory` object directly, then call the same `create_extension()` method    |
+| Harness middleware        | Let a `HarnessBuildContext` load preferred YAML or JSON, select enabled `HarnessPluginFactory` entries, and apply fresh instances during build     | Construct an `AbstractHarnessPlugin` directly and place it in `AgentDefinition.plugins`                       |
 
 Entry-point metadata provides only a stable key and import target. Harness middleware configuration uses the Harness-owned versioned envelope; YAML is preferred for files, JSON is supported for files and inline environment values, and each plugin package owns only the typed `configuration` payload.
 
@@ -49,7 +49,6 @@ The project is intentionally outside the root release workspace. Its independent
 
 ```toml
 [tool.uv.sources]
-a13n-environment = { path = "../../packages/a13n-environment", editable = true }
 a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 ```
 
@@ -57,25 +56,24 @@ A standalone integration distribution should remove those development sources an
 
 ## Environment Provider
 
-The distribution registers one no-argument Provider class:
+The distribution exports one immutable manifest through the single Provider entry-point group:
 
 ```toml
-[project.entry-points."a13n_environment.providers"]
-"example.workspace" = "a13n_plugin_examples.environment:WorkspaceEnvironmentProvider"
+[project.entry-points."a13n_harness.providers.plugins"]
+workspace = "a13n_plugin_examples.environment:manifest"
 ```
 
 [`environment.py`](src/a13n_plugin_examples/environment.py) contains:
 
 - a strict package-owned schema-version-1 `WorkspaceEnvironmentConfiguration` model;
-- an optional process-local `WorkspaceEnvironmentRuntime` collaborator;
-- a no-argument, side-effect-free `WorkspaceEnvironmentProvider`;
+- a constant immutable `WORKSPACE_ENVIRONMENT` definition exported through `ProviderManifest`;
 - a fresh `WorkspaceEnvironment` adapter backed by Direct Local operations.
 
-Provider construction, configuration validation, and `create_environment()` perform no filesystem I/O. The workspace is checked when the Host explicitly prepares the adapter or its first operation requests readiness; scope entry performs no target I/O. The Provider is stateless because its target is the deterministic Host-selected directory; `dump_state()` returns `None`, and neither `close()` nor explicit `destroy()` deletes that directory.
+Manifest import, configuration validation, and `construct()` perform no filesystem I/O. The workspace is checked when the Host explicitly prepares the adapter or its first operation requests readiness; scope entry performs no target I/O. The Provider is stateless because its target is the deterministic Host-selected directory; `dump_state()` returns `None`, and neither `close()` nor explicit `destroy()` deletes that directory.
 
 ### Installed entry-point mode
 
-[`run_environment_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment.py) explicitly enables only `example.workspace`, resolves the installed Provider, validates two configurations, and constructs two fresh Environments.
+[`run_environment_entrypoint_demo()`](src/a13n_plugin_examples/demo_environment.py) explicitly enables only the `workspace` plugin, resolves its Environment definition, validates two configurations, and constructs two fresh Environments.
 
 ```bash
 uv run plugin-example-environment-entrypoint
@@ -83,7 +81,7 @@ uv run plugin-example-environment-entrypoint
 
 ### Explicit code mode
 
-[`run_environment_code_demo()`](src/a13n_plugin_examples/demo_environment.py) supplies `WorkspaceEnvironmentProvider()` through `explicit_providers` without scanning package metadata. It then uses the same immutable catalog, validation, construction, and Harness Run path.
+[`run_environment_code_demo()`](src/a13n_plugin_examples/demo_environment.py) selects `WORKSPACE_ENVIRONMENT` directly without scanning package metadata. It then uses the same immutable catalog, validation, construction, and Harness Run path.
 
 ```bash
 uv run plugin-example-environment-code
@@ -93,7 +91,7 @@ Both paths pass two already constructed adapters to a real offline Harness Run, 
 
 ```text
 selection mode: entrypoint
-selected provider: example.workspace
+selected provider: example_workspace
 active aliases: source, docs
 default route: source workspace
 docs route: documentation workspace

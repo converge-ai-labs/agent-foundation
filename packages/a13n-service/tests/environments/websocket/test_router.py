@@ -23,7 +23,7 @@ async def client_api(request, tmp_path, service_database, redis_url):
     values = settings(tmp_path, service_database).model_dump()
     values["service"]["role"] = request.param
     values["environments"] = {
-        "provider_builtins": ("a13n.websocket-envd",),
+        "provider_builtins": ("websocket_envd",),
         "client_public_origin": "wss://foundation.example",
     }
     values["redis"] = {"backend": "redis", "url": redis_url}
@@ -37,9 +37,7 @@ async def client_api(request, tmp_path, service_database, redis_url):
 
 async def register(client):
     base = f"/api/v1/workspaces/{WORKSPACE_ID}"
-    response = await client.post(
-        f"{base}/environment-providers", json={"type": "a13n.websocket-envd", "name": "Computer"}
-    )
+    response = await client.post(f"{base}/environment-providers", json={"type": "websocket_envd", "name": "Computer"})
     assert response.status_code == 201, response.text
     response = await client.post(
         f"{base}/environments",
@@ -48,7 +46,7 @@ async def register(client):
             "provider_id": response.json()["id"],
             "configuration": {},
             "state": {
-                "provider_key": "a13n.websocket-envd",
+                "provider_key": "websocket_envd",
                 "state_version": "1",
                 "state": {"daemon_environment_id": "local-computer"},
             },
@@ -146,7 +144,7 @@ async def test_unsupported_client_deployment_fails_before_readiness(tmp_path, se
     values = settings(tmp_path, service_database).model_dump()
     values["service"]["role"] = "control"
     values["environments"] = {
-        "provider_builtins": ("a13n.websocket-envd",),
+        "provider_builtins": ("websocket_envd",),
         "client_public_origin": origin,
     }
     app = create_app(Settings.model_validate(values), components=Components(request_authenticator=authenticate))

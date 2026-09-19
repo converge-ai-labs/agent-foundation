@@ -6,7 +6,6 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from a13n_environment import EnvironmentProviderRegistration
 from a13n_harness.environment import (
     EnvironmentRunExtensionFactoryContext,
     EnvironmentRunExtensionFactoryRegistration,
@@ -776,13 +775,19 @@ class AgentCompositionResolver:
         profile: ResolvedEnvironmentProfile,
     ) -> tuple[DependencyProvenance, ...]:
         provider = self.catalog.provider_catalog((profile.provider_key,))
-        registration = next(item for item in provider.registrations if item.provider_key == profile.provider_key)
+        definition = provider.require(profile.provider_key)
+        reference = self.catalog.provider_reference(profile.provider_key)
         adapter = self.catalog.adapter_reference(profile.adapter_key)
         return (
-            _registration_provenance(
-                "environment_provider",
-                registration,
+            DependencyProvenance(
+                kind="environment_provider",
+                key=definition.type,
                 source=self.catalog.provider_source(profile.provider_key),
+                class_module=definition.construct.__module__,
+                class_qualname=definition.construct.__qualname__,
+                import_target=reference.import_target,
+                distribution_name=reference.distribution_name,
+                distribution_version=reference.distribution_version,
             ),
             DependencyProvenance(
                 kind="environment_adapter",
@@ -798,17 +803,13 @@ class AgentCompositionResolver:
 
 
 def _registration_provenance(
-    kind: Literal["harness_plugin", "environment_provider", "environment_run_extension"],
-    registration: HarnessPluginFactoryRegistration
-    | EnvironmentProviderRegistration
-    | EnvironmentRunExtensionFactoryRegistration,
+    kind: Literal["harness_plugin", "environment_run_extension"],
+    registration: HarnessPluginFactoryRegistration | EnvironmentRunExtensionFactoryRegistration,
     *,
     source: Literal["installed", "host"],
 ) -> DependencyProvenance:
     if isinstance(registration, HarnessPluginFactoryRegistration):
         key = registration.plugin_key
-    elif isinstance(registration, EnvironmentProviderRegistration):
-        key = registration.provider_key
     else:
         key = registration.extension_key
     return DependencyProvenance(

@@ -5,7 +5,8 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
 from a13n_service.interactions.objects import RunPayloadStore
 from a13n_service.interactions.outcomes import RunOutcomeService
@@ -57,7 +58,7 @@ async def test_worker_trace_matches_real_phase_boundaries_and_durable_outcomes(
     environment_catalog = None
     if scenario in {"on_run", "on_use_unused"}:
         await template_config(interaction_sessions, tmp_path, "on_run" if scenario == "on_run" else "on_use")
-        environment_catalog = build_environment_provider_catalog(builtin_keys=("direct-local",))
+        environment_catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("direct_local",)))
     else:
         await seed_hook_actor_access(interaction_sessions)
     _, run, _ = await _accept_root(
@@ -270,9 +271,7 @@ async def test_lazy_environment_span_times_actual_first_use(interaction_sessions
             )
             assert environment is not None
             try:
-                await environment.enter(
-                    thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace"
-                )
+                await environment.enter(mount_id="workspace")
                 assert provider.force_flush()
                 assert not exporter.get_finished_spans()
                 # A first-use prepare is a root child even when initiated from a tool.

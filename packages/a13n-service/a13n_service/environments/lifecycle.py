@@ -3,20 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
-from a13n_environment import Environment as OperationEnvironment
-from a13n_environment import (
-    EnvironmentError,
-    EnvironmentProviderCatalog,
-    EnvironmentProviderError,
-    EnvironmentProviderOutcomeCertainty,
-    EnvironmentState,
-)
-from a13n_environment.management import ProviderRuntimeContext
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderOutcomeCertainty
+from a13n_harness.providers.environment.management import Environment as OperationEnvironment
+from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
 from a13n_logging import exception_details, get_logger
 from anyio import fail_after
 from sqlalchemy import select
@@ -113,7 +108,6 @@ class EnvironmentLifecycle:
         sessions: async_sessionmaker[AsyncSession],
         catalog: EnvironmentProviderCatalog,
         protector: SecretProtector,
-        storage_root: Path,
         *,
         timeout_seconds: float = 60,
         clock: Clock = utc_now,
@@ -122,7 +116,6 @@ class EnvironmentLifecycle:
         self.sessions = sessions
         self.catalog = catalog
         self.protector = protector
-        self.storage_root = storage_root
         self.timeout_seconds = timeout_seconds
         self.clock = clock
         self.capacity = capacity
@@ -219,25 +212,16 @@ class EnvironmentLifecycle:
 
     async def construct(self, operation: LifecycleOperation) -> OperationEnvironment:
         provider = self.catalog.require(operation.provider_type)
-        credential = None
-        if provider.credential_model is not None:
-            credential = provider.credential_model.model_validate_json(operation.credential.decrypt(self.protector))
-        configuration = provider.validate_configuration(
+        raw = operation.credential.decrypt(self.protector) if operation.credential.ciphertext is not None else None
+        return await provider.create(
+            instance_configuration(operation.provider_type, operation.environment_id, operation.configuration),
             schema_version=operation.configuration.configuration_schema_version,
-            value=instance_configuration(operation.provider_type, operation.environment_id, operation.configuration),
-        )
-        runtime = await provider.create_runtime(
-            configuration=provider.provider_configuration_model.model_validate(operation.provider_configuration),
-            credential=credential,
-            context=ProviderRuntimeContext(
-                operation.environment_id,
-                operation.operation_id,
-                self.storage_root,
-                isinstance(operation.configuration, TemplateConfiguration),
-            ),
-        )
-        return provider.create_environment(
-            configuration=configuration, environment_id=operation.environment_id, state=operation.state, runtime=runtime
+            configuration=operation.provider_configuration,
+            credential=json.loads(raw) if raw is not None else None,
+            environment_id=operation.environment_id,
+            operation_id=operation.operation_id,
+            allow_create=isinstance(operation.configuration, TemplateConfiguration),
+            state=operation.state,
         )
 
     async def execute(
@@ -404,7 +388,7 @@ class EnvironmentLifecycle:
             and (state is not None or outcome.succeeded)
             and operation.action in {"prepare", "reconcile"}
         ):
-            configuration = provider.validate_configuration(
+            configuration = provider.validate_environment(
                 schema_version=operation.configuration.configuration_schema_version,
                 value=instance_configuration(
                     operation.provider_type, operation.environment_id, operation.configuration

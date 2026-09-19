@@ -45,7 +45,7 @@ Projects under `examples/` may carry their own manifests and lock files when rea
 
 The [Harness UI development image](a13n-harness-ui/webui/03-distribution.md#docker-development-image) is a container delivery of the same workbench, including its bundled browser. Its build and deployment definitions belong under `deploy/`. It creates neither an independent frontend release line nor an Agent Environment Provider; existing Harness UI version and cross-group dependency ownership remain unchanged.
 
-Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-environment` and `a13n-environment`. Python imports normalize hyphens to underscores, such as `a13n_environment`; the same rule applies to Harness, Harness UI, Stream Protocol, Envd client, Service, and logging. Independent Service SDK repositories own their package identities and publication metadata.
+Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-harness` and `a13n-harness`. Python imports normalize hyphens to underscores, such as `a13n_harness`; the same rule applies to Harness UI, Stream Protocol, Envd client, Service, and logging. Independent Service SDK repositories own their package identities and publication metadata.
 
 ## Frontend Workspace
 

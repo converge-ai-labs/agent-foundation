@@ -632,10 +632,13 @@ async def test_large_groups_keep_model_surface_constant_and_search_bounded(codea
 async def test_proxy_run_program_reads_source_and_dispatches_through_current_manager(
     tmp_path: Path, use_plan: bool
 ) -> None:
-    from a13n_environment import DirectLocalProviderConfiguration, DirectLocalRootConfiguration
     from a13n_harness.environment import EnvironmentAction, EnvironmentPermissionSet
     from a13n_harness.environment.advanced import create_environment_runtime
     from a13n_harness.environment.providers import EnvironmentRuntimeMount
+    from a13n_harness.providers.environment.direct_local.configuration import (
+        DirectLocalEnvironmentConfiguration,
+        DirectLocalRootConfiguration,
+    )
 
     from .environment_helpers import DirectLocalEnvironmentProviderBinding
 
@@ -647,7 +650,7 @@ async def test_proxy_run_program_reads_source_and_dispatches_through_current_man
         encoding="utf-8",
     )
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(root=DirectLocalRootConfiguration(path=tmp_path)),
+        DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=tmp_path)),
         environment_id="proxy-program-test",
     )
     environment = create_environment_runtime(

@@ -20,7 +20,7 @@ on:
       - "scripts/tests/provider_smoke/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
-      - "packages/a13n-environment/**"
+      - "packages/a13n-harness/**"
       - "packages/a13n-envd-client/**"
       - "uv.lock"
   push:
@@ -42,7 +42,7 @@ on:
       - "scripts/tests/provider_smoke/**"
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
-      - "packages/a13n-environment/**"
+      - "packages/a13n-harness/**"
       - "packages/a13n-envd-client/**"
       - "uv.lock"
   workflow_dispatch:

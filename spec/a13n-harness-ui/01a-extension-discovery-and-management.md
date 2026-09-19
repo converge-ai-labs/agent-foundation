@@ -86,7 +86,7 @@ Plugin order is the selection order stored by the Agent or Thread. There is no r
 
 ## Environment Provider Discovery and Profile Resources
 
-Environment extension packages use `a13n_environment.providers`, `discover_environment_provider_references()`, and `build_environment_provider_catalog()`. Harness UI consumes these public values directly and does not reimplement entry-point loading.
+Environment extension packages export a `ProviderManifest` under `a13n_harness.providers.plugins`. Harness UI selects them through `load_provider_plugins()` and does not reimplement entry-point loading.
 
 An Environment profile selects one installed Provider and one approved Host adapter configuration. It is not the Provider implementation and is distinct from the runtime `Environment.environment_id`.
 

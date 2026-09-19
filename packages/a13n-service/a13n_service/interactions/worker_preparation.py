@@ -21,6 +21,7 @@ from a13n_harness import (
 from a13n_harness.capabilities import SubagentCapability, UserInteractionCapability, WebBinding
 from a13n_harness.errors import RunError
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_harness.providers.environment.management import Environment
 from anyio import to_thread
 from pydantic import TypeAdapter
 from pydantic_ai import ToolDenied
@@ -41,6 +42,7 @@ from a13n_service.environments.mount_observations import RunMountObservations
 from a13n_service.environments.mount_runtime import RunMountRuntime
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
 from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
+from a13n_service.interactions.environment_observation import EnvironmentHookProjector, observe_environment_entry
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
@@ -101,8 +103,10 @@ class WorkerAttemptPreparer:
         web: WebRuntime | None = None,
         memory: ExecutionMemoryRuntime | None = None,
         configuration_capability: Callable[[], ConfigurationCapability] | None = None,
+        environment_projector: EnvironmentHookProjector,
         client_connections: WorkerClientConnections | None = None,
     ) -> None:
+        self._environment_projector = environment_projector
         self._subagent_capability = subagent_capability
         self._secrets = secrets
         self._web = web
@@ -128,6 +132,12 @@ class WorkerAttemptPreparer:
         self._asset_publication = asset_publication
         self._async_results = async_results
         self._prepared_skills: dict[str | None, PreparedSkillRuntime] | None = None
+
+    def _observed(self, environment: Environment, access: str) -> EnvironmentMount:
+        """Live Environment observation is declared on the mount before it is bound."""
+        return observe_environment_entry(
+            EnvironmentMount(environment, access=EnvironmentAccess(access)), self._environment_projector
+        )
 
     async def claim_state_writer(self) -> None:
         await self._control.claim_state_writer(self._run)
@@ -218,9 +228,7 @@ class WorkerAttemptPreparer:
                 invocation = replace(
                     invocation,
                     environment=MountedHarnessEnvironments(
-                        entries={
-                            "builtin-skills": EnvironmentMount(environment, access=EnvironmentAccess("read_only"))
-                        },
+                        entries={"builtin-skills": self._observed(environment, "read_only")},
                         default_environment="builtin-skills",
                     ),
                 )
@@ -233,9 +241,7 @@ class WorkerAttemptPreparer:
                 stack.push_async_callback(environment.close)
             mounted = MountedHarnessEnvironments(
                 entries=(
-                    {"workspace": EnvironmentMount(environment, access=EnvironmentAccess(environment.access))}
-                    if environment is not None
-                    else {}
+                    {"workspace": self._observed(environment, environment.access)} if environment is not None else {}
                 )
             )
 
@@ -257,6 +263,7 @@ class WorkerAttemptPreparer:
                     observations=RunMountObservations(self._sessions, clock=self._environments.clock),
                     current_attempt=lambda: self._control.current_context,
                     prepare=prepare_mount,
+                    observe=self._observed,
                 )
             )
             yield replace(invocation, environment=mounted)

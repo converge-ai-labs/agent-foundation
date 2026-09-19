@@ -28,7 +28,7 @@ Use a trusted Provider before calling Harness. Direct Local is stateless, so eac
 ```python
 from pathlib import Path
 
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,

@@ -2,9 +2,7 @@
 
 from typing import TYPE_CHECKING, Any
 
-from a13n_environment import Environment
-
-from .commands import (
+from a13n_harness.providers.environment.commands import (
     ArgvCommand,
     BoundProcessHandle,
     CommandEnvironment,
@@ -26,23 +24,7 @@ from .commands import (
     ShellCommand,
     ShellExecResult,
 )
-from .extension_factories import (
-    ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP,
-    EnvironmentRunExtensionFactory,
-    EnvironmentRunExtensionFactoryCatalog,
-    EnvironmentRunExtensionFactoryContext,
-    EnvironmentRunExtensionFactoryReference,
-    EnvironmentRunExtensionFactoryRegistration,
-    build_environment_run_extension_factory_catalog,
-    discover_environment_run_extension_factory_references,
-)
-from .extensions import (
-    EnvironmentRunCallback,
-    EnvironmentRunCallbacks,
-    EnvironmentRunExtension,
-    EnvironmentRunExtensionContext,
-)
-from .files import (
+from a13n_harness.providers.environment.files import (
     FileCopyResult,
     FileEntriesResult,
     FileIgnoreMode,
@@ -58,7 +40,8 @@ from .files import (
     FileWriteMode,
     FileWriteResult,
 )
-from .models import (
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_CATALOG_VERSION,
     ENVIRONMENT_ACTION_DISPATCH,
@@ -78,8 +61,7 @@ from .models import (
     EnvironmentSnapshot,
     EnvironmentState,
 )
-from .providers import FileScopeSelection
-from .retention import (
+from a13n_harness.providers.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,
@@ -90,6 +72,24 @@ from .retention import (
     OpaqueOutputReference,
     OpaqueProcessHandle,
 )
+
+from .extension_factories import (
+    ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP,
+    EnvironmentRunExtensionFactory,
+    EnvironmentRunExtensionFactoryCatalog,
+    EnvironmentRunExtensionFactoryContext,
+    EnvironmentRunExtensionFactoryReference,
+    EnvironmentRunExtensionFactoryRegistration,
+    build_environment_run_extension_factory_catalog,
+    discover_environment_run_extension_factory_references,
+)
+from .extensions import (
+    EnvironmentRunCallback,
+    EnvironmentRunCallbacks,
+    EnvironmentRunExtension,
+    EnvironmentRunExtensionContext,
+)
+from .providers import FileScopeSelection
 from .sources import EnvironmentAccess, EnvironmentEntry, EnvironmentMount
 from .virtual_files import VirtualFileOperator
 

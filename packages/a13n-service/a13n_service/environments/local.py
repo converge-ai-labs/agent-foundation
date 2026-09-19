@@ -2,7 +2,7 @@
 
 from collections.abc import Mapping
 
-from a13n_environment import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -27,7 +27,7 @@ async def synchronize_local_providers(
     """
     desired = {
         key: catalog.require(key)
-        .provider_configuration_model.model_validate(value)
+        .configuration_model.model_validate(value)
         .model_dump(mode="json", by_alias=True, exclude_none=False)
         for key, value in configurations.items()
     }

@@ -5,13 +5,12 @@ import sys
 from pathlib import Path
 
 import pytest
-from a13n_environment import (
-    EnvironmentProviderError,
-    build_environment_provider_catalog,
-)
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
 
 from a13n_plugin_examples.demo_environment import (
-    PROVIDER_KEY,
+    PROVIDER_TYPE,
+    installed_environment_catalog,
     run_environment_code_demo,
     run_environment_entrypoint_demo,
 )
@@ -32,62 +31,55 @@ def _workspace_roots(tmp_path: Path) -> tuple[Path, Path]:
 def test_environment_entrypoint_loading_is_explicit_and_construction_is_inert(tmp_path: Path) -> None:
     assert PLUGIN_MODULE not in sys.modules
 
-    catalog = build_environment_provider_catalog(extension_keys=(PROVIDER_KEY,))
+    catalog = installed_environment_catalog()
 
     assert PLUGIN_MODULE in sys.modules
-    assert tuple(catalog) == (PROVIDER_KEY,)
-    provider = catalog.require(PROVIDER_KEY)
-    assert provider.configuration_versions == frozenset({"1"})
+    assert tuple(catalog) == (PROVIDER_TYPE,)
+    provider = catalog.require(PROVIDER_TYPE)
+    assert provider.environment_versions == frozenset({"1"})
     root = tmp_path / "not-created-by-the-provider"
-    configuration = provider.validate_configuration(
-        schema_version="1",
-        value={"root": str(root)},
+    configuration = provider.validate_environment(schema_version="1", value={"root": str(root)})
+    environment = provider.construct(
+        environment_id="workspace-inert", configuration=configuration, state=None, runtime=None
     )
-    environment = provider.create_environment(
-        environment_id="workspace-inert",
-        configuration=configuration,
-        state=None,
-    )
-    assert environment.provider_key == PROVIDER_KEY
+    assert environment.provider_key == PROVIDER_TYPE
     assert not root.exists()
 
 
-def test_environment_explicit_provider_needs_no_metadata_scan(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+def test_environment_explicit_definition_needs_no_metadata_scan(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    from a13n_plugin_examples.environment import WorkspaceEnvironmentProvider
+    from a13n_plugin_examples.environment import WORKSPACE_ENVIRONMENT
 
     monkeypatch.setattr(
-        "a13n_environment.catalog._entry_points",
-        lambda: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
+        "a13n_harness.providers.plugins.importlib.metadata.entry_points",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("explicit mode must not scan metadata")),
     )
-    catalog = build_environment_provider_catalog(
-        explicit_providers=(WorkspaceEnvironmentProvider(),),
-    )
-    provider = catalog.require(PROVIDER_KEY)
+    catalog = EnvironmentProviderCatalog((WORKSPACE_ENVIRONMENT,))
+    provider = catalog.require(PROVIDER_TYPE)
     root = tmp_path / "still-inert"
-    configuration = provider.validate_configuration(
-        schema_version="1",
-        value={"root": str(root)},
-    )
-    provider.create_environment(configuration=configuration, environment_id="workspace-code", state=None)
+    configuration = provider.validate_environment(schema_version="1", value={"root": str(root)})
+    provider.construct(configuration=configuration, environment_id="workspace-code", state=None, runtime=None)
 
-    assert tuple(catalog) == (PROVIDER_KEY,)
+    assert tuple(catalog) == (PROVIDER_TYPE,)
     assert not root.exists()
 
 
 def test_environment_provider_rejects_invalid_json_configuration() -> None:
-    catalog = build_environment_provider_catalog(extension_keys=(PROVIDER_KEY,))
-    provider = catalog.require(PROVIDER_KEY)
+    provider = installed_environment_catalog().require(PROVIDER_TYPE)
 
     with pytest.raises(EnvironmentProviderError) as exc_info:
-        provider.validate_configuration(
-            schema_version="1",
-            value={"environment_id": "missing-root"},
-        )
+        provider.validate_environment(schema_version="1", value={"environment_id": "missing-root"})
 
     assert exc_info.value.code == "provider_spec_invalid"
+
+
+def test_missing_provider_selection_is_a_safe_configuration_error() -> None:
+    with pytest.raises(EnvironmentProviderError) as exc_info:
+        EnvironmentProviderCatalog(()).require(PROVIDER_TYPE)
+
+    assert exc_info.value.code == "provider_not_selected"
+    assert exc_info.value.safe_projection().category.value == "missing"
 
 
 def test_environment_entrypoint_demo_routes_two_fresh_environments(tmp_path: Path) -> None:
@@ -96,7 +88,7 @@ def test_environment_entrypoint_demo_routes_two_fresh_environments(tmp_path: Pat
     result = asyncio.run(run_environment_entrypoint_demo(source_root=source, docs_root=docs))
 
     assert result.selection_mode == "entrypoint"
-    assert result.provider_key == PROVIDER_KEY
+    assert result.provider_key == PROVIDER_TYPE
     assert result.default_text == "source workspace\n"
     assert result.docs_text == "documentation workspace\n"
     assert result.aliases == ("source", "docs")
@@ -110,7 +102,7 @@ def test_environment_code_demo_routes_two_fresh_environments(tmp_path: Path) -> 
     result = asyncio.run(run_environment_code_demo(source_root=source, docs_root=docs))
 
     assert result.selection_mode == "code"
-    assert result.provider_key == PROVIDER_KEY
+    assert result.provider_key == PROVIDER_TYPE
     assert result.default_text == "source workspace\n"
     assert result.docs_text == "documentation workspace\n"
     assert result.aliases == ("source", "docs")

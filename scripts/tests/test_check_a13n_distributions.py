@@ -7,10 +7,7 @@ from types import ModuleType
 import pytest
 
 SCRIPT = Path(__file__).parents[1] / "check-a13n-distributions.py"
-INTERNAL_REQUIREMENTS = (
-    "a13n-environment",
-    "a13n-harness",
-)
+INTERNAL_REQUIREMENTS = ("a13n-harness",)
 
 
 def load_checker() -> ModuleType:

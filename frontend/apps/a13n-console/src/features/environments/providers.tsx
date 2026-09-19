@@ -43,6 +43,7 @@ import { FormActions } from "../../shared/form";
 import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
+import { credentialMode } from "../../shared/provider-authentication";
 import { environmentApi, type EnvironmentScope } from "./api";
 
 export function useEnvironmentTypes() {
@@ -71,7 +72,7 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
     { t } = useTranslation(),
     page = useCursor(),
     api = environmentApi(client, scope);
-  const rows = useResourceRows<Schema["EnvironmentProvider"]>();
+  const rows = useResourceRows<Schema["EnvironmentProviderAccount"]>();
   const query = useQuery({
     queryKey: [
       "environment-providers",
@@ -157,9 +158,12 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
                 label: t("Credentials"),
                 render: (item) =>
                   t(
-                    providerTypes.data?.items.find(
-                      (entry) => entry.type === item.type,
-                    )?.credential_schema == null
+                    credentialMode(
+                      providerTypes.data?.items.find(
+                        (entry) => entry.type === item.type,
+                      ),
+                      item.configuration,
+                    ) === "forbidden"
                       ? "Not required"
                       : item.credential_configured
                         ? "Configured"
@@ -280,8 +284,10 @@ function ProviderForm({
   reload,
 }: {
   scope: EnvironmentScope;
-  initial?: ReturnType<typeof representation<Schema["EnvironmentProvider"]>>;
-  definitions: Schema["EnvironmentProviderDefinition"][];
+  initial?: ReturnType<
+    typeof representation<Schema["EnvironmentProviderAccount"]>
+  >;
+  definitions: Schema["EnvironmentProviderMetadata"][];
   close: () => void;
   reload: () => Promise<void>;
 }) {
@@ -300,7 +306,8 @@ function ProviderForm({
   const deployment = basis?.value.configuration_source === "deployment";
   const definition = definitions.find((item) => item.type === type),
     configSchema = schema(definition?.configuration_schema),
-    credentialSchema = schema(definition?.credential_schema);
+    credentialSchema = schema(definition?.credential_schema),
+    mode = credentialMode(definition, configuration);
   const connectivity = useQuery({
     queryKey: ["environment-provider-connectivity", basis?.value.id],
     enabled: basis?.value.type === "docker",
@@ -412,8 +419,11 @@ function ProviderForm({
             setCredential({});
           }}
           labelAction={
-            type === "e2b" && (
-              <ProviderKeyLink href="https://e2b.dev/dashboard?tab=keys" />
+            definition?.setup_url && (
+              <ProviderKeyLink
+                href={definition.setup_url}
+                label={definition.setup_label ?? undefined}
+              />
             )
           }
         />
@@ -445,17 +455,20 @@ function ProviderForm({
               value={configuration}
               onChange={setConfiguration}
             />
-            <SchemaFields
-              secret
-              key={`${type}-credential`}
-              schema={credentialSchema}
-              value={credential}
-              onChange={setCredential}
-            />
+            {mode !== "forbidden" && (
+              <SchemaFields
+                secret
+                key={`${type}-credential`}
+                requireFields={mode === "required"}
+                schema={credentialSchema}
+                value={credential}
+                onChange={setCredential}
+              />
+            )}
           </>
         )}
       </FormSection>
-      {basis && !!Object.keys(schema(credentialSchema.properties)).length && (
+      {basis && mode !== "forbidden" && (
         <FormSection title={t("Credentials")}>
           <CredentialEditor
             configured={basis.value.credential_configured}

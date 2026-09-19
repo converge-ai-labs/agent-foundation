@@ -11,7 +11,6 @@ from inspect import isawaitable
 from types import MappingProxyType
 from typing import Any, Literal, Protocol
 
-from a13n_environment import Environment
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -39,6 +38,7 @@ from a13n_harness.errors import RunError
 from a13n_harness.events import UsageReportPayload
 from a13n_harness.model_context import ModelContextMiddleware
 from a13n_harness.pricing import get_current_pricing_catalog
+from a13n_harness.providers.environment.management import Environment
 from a13n_harness.usage import UsageRecord
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -617,9 +617,6 @@ def _observe_environment(
 ) -> ServiceHarnessEnvironment:
     if isinstance(environment, SingleHarnessEnvironment):
         return SingleHarnessEnvironment(observe_environment_entry(environment.entry, projector))
-    if isinstance(environment, MountedHarnessEnvironments):
-        for entry in environment.entries.values():
-            observe_environment_entry(entry, projector)
     return environment
 
 

@@ -7,7 +7,8 @@ from contextlib import contextmanager
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_environment import EnvironmentError, EnvironmentProviderError
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.models import EnvironmentError
 
 from .file_contract import (
     BASE,

@@ -31,13 +31,13 @@ State excludes endpoints, credentials, sockets, Sessions, generations, heartbeat
 
 ### HTTP backend and runtime
 
-`HttpEnvdBackendConfiguration` supplies a credential-free origin, explicit private-link plaintext choice, finite connection/request timeouts and bounded concurrency. Runtime collaborators supply the current credential and TLS configuration. Public origins use verified HTTPS; plaintext requires an explicitly trusted local/private deployment. Credentials never appear in URLs or portable state.
+`HttpEnvdConnectionConfiguration` supplies a credential-free origin, explicit private-link plaintext choice, finite connection/request timeouts and bounded concurrency. Runtime collaborators supply the current credential and TLS configuration. Public origins use verified HTTPS; plaintext requires an explicitly trusted local/private deployment. Credentials never appear in URLs or portable state.
 
 One backend selects one origin. Changing that origin is an explicit Host target change. Construction does not connect. Preparation initializes the expected Device, opens a fresh Session with the captured working directory and validates readiness. TCP pooling has no ownership significance.
 
 ### WebSocket backend and runtime
 
-`WebSocketEnvdBackendConfiguration` supplies a finite connection-acquisition timeout. The Host supplies `WebSocketEnvdConnections` through its runtime, not a listener address or socket in Provider configuration. An unwired Provider remains inert and fails runtime creation explicitly.
+`WebSocketEnvdConnectionConfiguration` supplies a finite connection-acquisition timeout. The Host supplies `WebSocketEnvdConnections` through its runtime, not a listener address or socket in Provider configuration. An unwired Provider remains inert and fails runtime creation explicitly.
 
 The Host authenticates the upgrade, negotiates `eip.v1` and resolves expected Device identity before handing an accepted `WebSocketConnection` to the SDK. This structural async interface provides send, receive, close and non-consuming closure observation; framework adapters normalize disconnects without adding another socket reader.
 

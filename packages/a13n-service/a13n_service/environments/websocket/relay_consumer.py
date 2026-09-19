@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from time import monotonic
 from typing import Protocol
 
-from a13n_environment.models import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 from pydantic import JsonValue
 
 from a13n_service.ids import ObjectId

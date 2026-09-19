@@ -5,7 +5,8 @@ import shlex
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from a13n_environment import EnvironmentError, EnvironmentProviderError
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.models import EnvironmentError
 from e2b import AsyncSandbox
 
 from .e2b_support import OUTPUT, command, eventually, past
@@ -24,7 +25,7 @@ def stdout(page):
 async def test_e2b_inert_entry_concurrent_prepare_and_exact_destroy(e2b_sandboxes):
     pool = e2b_sandboxes
     unused = pool.adapter()
-    await unused.enter(thread_id="t", run_id="r", agent_instance_id="a", mount_id="m")
+    await unused.enter(mount_id="m")
     assert unused.dump_state() is None
     await unused.close()
     await unused.close()

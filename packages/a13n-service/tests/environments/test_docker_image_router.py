@@ -6,8 +6,9 @@ import socket
 
 import httpx2
 import pytest
-from a13n_environment import build_environment_provider_catalog
-from a13n_environment.docker.commands import DockerCommands
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.docker.commands import DockerCommands
 from a13n_service.app import Components, create_app
 from a13n_service.environments import image_jobs
 from a13n_service.environments.models import EnvironmentProviderRecord
@@ -339,7 +340,9 @@ async def test_network_disconnect_cleans_real_worker_container(tmp_path, service
         config,
         components=Components(
             request_authenticator=authenticate,
-            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=(PROVIDER_KEY, "docker")),
+            environment_provider_catalog=EnvironmentProviderCatalog(
+                select_builtin_environment_providers((PROVIDER_KEY, "docker"))
+            ),
         ),
     )
     reached = asyncio.Event()
@@ -413,7 +416,7 @@ async def test_docker_image_http_timeout_reports_image_and_cleans_container(envi
         json={"type": "docker", "name": "Docker"},
     )
     assert provider.status_code == 201, provider.text
-    from a13n_environment.docker.image_test import test_docker_image
+    from a13n_harness.providers.environment.docker.image_test import test_docker_image
     from a13n_service.environments import image_jobs
 
     async def short_test(engine, configuration):

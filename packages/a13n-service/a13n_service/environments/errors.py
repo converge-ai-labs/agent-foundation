@@ -17,6 +17,15 @@ def invalid_environment(message: str) -> EnvironmentManagementError:
     return EnvironmentManagementError("environment_invalid", message, category=ErrorCategory.invalid_input)
 
 
+def provider_unavailable() -> EnvironmentManagementError:
+    """A stored Provider type that this deployment no longer selects is a configuration fault."""
+    return EnvironmentManagementError(
+        "environment_provider_unavailable",
+        "The Environment Provider implementation is not available in this deployment.",
+        category=ErrorCategory.unavailable,
+    )
+
+
 def is_target_identity_conflict(error: BaseException) -> bool:
     from sqlalchemy.exc import IntegrityError
 

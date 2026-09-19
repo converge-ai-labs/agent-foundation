@@ -208,12 +208,12 @@ def test_service_generated_references_match_current_definitions(built_site: Path
     environment_reference = (ROOT / "docs/a13n-environment/configuration-reference.md").read_text(encoding="utf-8")
     assert normalized(environment_reference) == normalized(namespace["render_environment_configuration"]())
     for model in (
-        "E2BProviderConfiguration",
-        "DaytonaConfiguration",
-        "ModalConfiguration",
-        "VercelConfiguration",
-        "SpritesConfiguration",
-        "RunloopConfiguration",
+        "E2BEnvironmentConfiguration",
+        "DaytonaEnvironmentConfiguration",
+        "ModalEnvironmentConfiguration",
+        "VercelEnvironmentConfiguration",
+        "SpritesEnvironmentConfiguration",
+        "RunloopEnvironmentConfiguration",
     ):
         assert f"## `{model}`" in environment_reference
 

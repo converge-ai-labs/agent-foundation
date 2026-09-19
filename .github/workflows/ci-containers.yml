@@ -15,7 +15,6 @@ on:
       - "LICENSE"
       - "crates/a13n-envd/**"
       - "packages/a13n-envd-client/pyproject.toml"
-      - "packages/a13n-environment/pyproject.toml"
       - "packages/a13n-harness/pyproject.toml"
       - "packages/a13n-stream-protocol/pyproject.toml"
       - "packages/a13n-harness-ui/pyproject.toml"
@@ -64,7 +63,6 @@ jobs:
               - 'deploy/containers/a13n-service/Dockerfile'
               - 'deploy/containers/a13n-service/service.toml'
               - 'packages/a13n-envd-client/pyproject.toml'
-              - 'packages/a13n-environment/pyproject.toml'
               - 'packages/a13n-harness/pyproject.toml'
               - 'packages/a13n-stream-protocol/pyproject.toml'
               - 'packages/a13n-harness-ui/pyproject.toml'

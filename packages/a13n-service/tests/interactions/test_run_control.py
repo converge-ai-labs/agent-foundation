@@ -7,7 +7,6 @@ from datetime import timedelta
 from unittest.mock import Mock
 
 import pytest
-from a13n_environment import EnvironmentState
 from a13n_harness import (
     AgentContext,
     AgentDefinition,
@@ -24,6 +23,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
+from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.interactions.attempts import (
     AttemptContext,
@@ -985,7 +985,7 @@ async def test_control_excludes_provider_state_from_run_checkpoints(
         agent_context_state=state.agent_context_state,
         environment_states={
             "workspace": EnvironmentState(
-                provider_key="test.provider",
+                provider_key="test_provider",
                 state_version="1",
                 state={"target": "must-not-persist"},
             )

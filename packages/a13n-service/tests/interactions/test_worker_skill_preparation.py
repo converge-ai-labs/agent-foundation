@@ -5,9 +5,10 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from a13n_environment import build_environment_provider_catalog
-from a13n_environment.direct_local.files import LocalFileOperator
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
 from a13n_service.digests import digest_request
 from a13n_service.environments.domain import ExistingEnvironmentSelection
 from a13n_service.hooks import InlineHookValidator
@@ -121,7 +122,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
     )
 
     # Keep real Worker wiring, replacing only the helper's placeholder dependencies.
-    catalog = build_environment_provider_catalog(builtin_keys=("direct-local",))
+    catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("direct_local",)))
     monkeypatch.setattr(worker_helpers, "EnvironmentProviderCatalog", lambda: catalog)
     monkeypatch.setattr(
         "a13n_service.process.worker.SkillRuntimePreparer",

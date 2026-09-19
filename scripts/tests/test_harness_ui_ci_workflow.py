@@ -178,7 +178,7 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
         (["frontend/.prettierignore"], {"frontend", "distribution"}),
         (["packages/a13n-harness-ui/tests/test_cli_interactions.py"], {"tests"}),
         (["packages/a13n-harness-ui/tests/conftest.py"], {"tests"}),
-        (["packages/a13n-environment/tests/test_direct_local.py"], {"tests"}),
+        (["packages/a13n-harness/tests/providers_environment/test_direct_local.py"], {"tests"}),
         (["packages/a13n-harness-ui/a13n_harness_ui/app.py"], {"tests", "distribution"}),
         (["packages/a13n-harness-ui/build_skills.py"], {"tests", "distribution"}),
         (["packages/a13n-harness-ui/pyproject.toml"], {"tests", "distribution"}),
@@ -247,7 +247,7 @@ def test_windows_native_selection_exists_and_full_suite_is_retained() -> None:
     lifecycle = by_name["Test native command lifecycle"]
     assert "if" not in lifecycle
     for name in ("test_direct_local.py", "test_direct_local_processes.py"):
-        assert f"packages/a13n-environment/tests/{name}" in shlex.split(lifecycle["run"])
+        assert f"packages/a13n-harness/tests/providers_environment/{name}" in shlex.split(lifecycle["run"])
 
 
 def test_bundled_documentation_is_a_ui_image_input() -> None:

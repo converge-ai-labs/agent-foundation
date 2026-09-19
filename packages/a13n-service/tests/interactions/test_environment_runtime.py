@@ -2,7 +2,8 @@ import base64
 from datetime import timedelta
 
 import pytest
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.persistence import copy_revision
 from a13n_service.environments.domain import (
@@ -42,12 +43,12 @@ pytestmark = pytest.mark.anyio
 async def template_config(sessions, path, preparation, *, shell=False):
     await seed_hook_actor_access(sessions)
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
-    catalog = build_environment_provider_catalog(builtin_keys=("direct-local",))
+    catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("direct_local",)))
     service = EnvironmentService(sessions, catalog, protector)
     provider = await service.create_provider(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="direct-local", name="Local"),
+        request=CreateProviderRequest(type="direct_local", name="Local"),
     )
     template = await service.create_template(
         actor=hook_actor(),
@@ -71,7 +72,7 @@ async def template_config(sessions, path, preparation, *, shell=False):
     return (
         service,
         template,
-        EnvironmentLifecycle(sessions, catalog, protector, path, clock=lambda: NOW + timedelta(seconds=2)),
+        EnvironmentLifecycle(sessions, catalog, protector, clock=lambda: NOW + timedelta(seconds=2)),
     )
 
 
@@ -98,7 +99,7 @@ async def test_run_automatically_allocates_and_prepares_at_configured_boundary(
     async with short_session(interaction_sessions) as session:
         stored = await session.get(RunRecord, run.id)
         assert (stored.environment_use_started_at is not None) == (preparation == "on_run")
-    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     if preparation == "on_use":
         async with short_session(interaction_sessions) as session:
             assert (await session.get(RunRecord, run.id)).environment_use_started_at is None
@@ -241,7 +242,7 @@ async def test_lazy_unused_environment_closes_without_preparation(
     environment = await prepare_run_environment(
         lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
     )
-    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     assert environment.dump_state() is None
     await environment.close()
     async with short_session(interaction_sessions) as session:
@@ -254,8 +255,8 @@ async def test_lazy_unused_environment_closes_without_preparation(
 async def test_reconnect_preserves_backing_generation_after_cleanup_failure(
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch
 ):
-    from a13n_environment import EnvironmentError
-    from a13n_environment.direct_local.provider import DirectLocalEnvironment
+    from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
+    from a13n_harness.providers.environment.models import EnvironmentError
 
     _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
@@ -265,7 +266,7 @@ async def test_reconnect_preserves_backing_generation_after_cleanup_failure(
     environment = await prepare_run_environment(
         lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
     )
-    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     original = environment.descriptor.backing_identity
     real_close = DirectLocalEnvironment._close
     cleanup_failed = False
@@ -303,8 +304,8 @@ async def test_close_during_readiness_never_recovers_or_leaks_connection(
     import asyncio
     from unittest.mock import AsyncMock
 
-    from a13n_environment import EnvironmentError
-    from a13n_environment.direct_local.provider import DirectLocalEnvironment
+    from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
+    from a13n_harness.providers.environment.models import EnvironmentError
 
     _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
@@ -314,7 +315,7 @@ async def test_close_during_readiness_never_recovers_or_leaks_connection(
     environment = await prepare_run_environment(
         lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
     )
-    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     started, release = asyncio.Event(), asyncio.Event()
 
     async def unavailable(self, operations):
@@ -347,7 +348,7 @@ async def test_concurrent_lazy_use_prepares_once(interaction_sessions, interacti
     environment = await prepare_run_environment(
         lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
     )
-    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     entered, release = asyncio.Event(), asyncio.Event()
     execute = lifecycle.execute
 
@@ -373,7 +374,7 @@ async def test_cancelled_delegate_entry_closes_acquired_connection(
     import asyncio
     from unittest.mock import AsyncMock
 
-    from a13n_environment.direct_local.provider import DirectLocalEnvironment
+    from a13n_harness.providers.environment.direct_local.provider import DirectLocalEnvironment
 
     _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
@@ -453,7 +454,7 @@ async def test_postgresql_environment_lease_fences_competing_workers(
 ):
     import asyncio
 
-    from a13n_environment import EnvironmentProviderOutcomeCertainty
+    from a13n_harness.providers.environment.errors import EnvironmentProviderOutcomeCertainty
     from a13n_service.environments.lifecycle import EnvironmentOperationBusy, LifecycleOutcome
 
     _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
@@ -590,7 +591,7 @@ async def test_registered_external_environment_uses_connection_configuration(
     environment = await prepare_run_environment(
         lifecycle, await prepare_permissions(interaction_sessions, run, _authority(claim))
     )
-    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     await environment.ensure_ready(frozenset({"files"}))
     await environment.close()
     construct.assert_awaited_once()
@@ -621,8 +622,8 @@ async def test_environment_operations_use_no_database_queries_or_commits(
 ):
     from a13n_harness import AgentIdentityRef, AgentInstanceContext
     from a13n_harness.environment.advanced import create_environment_runtime
-    from a13n_harness.environment.commands import CommandRequest, ShellCommand
-    from a13n_harness.environment.retention import EnvironmentOutputPolicy
+    from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+    from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
     from sqlalchemy import event
 
     sessions = interaction_sessions
@@ -700,7 +701,7 @@ async def test_environment_eligibility_changes_at_shared_iam_refresh(
     )
     context = await prepare_permissions(sessions, run, _authority(claim))
     environment = await prepare_run_environment(lifecycle, context)
-    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     try:
         with pytest.raises(AuthorizationError, match="environment_not_found"):
             context.authorization.require_environment("env_another717171")
@@ -748,7 +749,7 @@ async def test_environment_rejects_lost_local_lease_before_dispatch(
     )
     context = await prepare_permissions(sessions, run, _authority(claim))
     environment = await prepare_run_environment(lifecycle, context)
-    await environment.enter(thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-1", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     try:
         if loss == "invalidated":
             context.lease.invalidate()

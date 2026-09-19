@@ -68,6 +68,7 @@ class HarnessUiSettings(BaseModel):
 
     storage: StorageSettings = Field(default_factory=StorageSettings)
     envd_runtime: EnvdRuntimeSettings = Field(default_factory=EnvdRuntimeSettings)
+    provider_plugins: tuple[str, ...] = Field(default=(), strict=False, max_length=64)
     pricing_auto_update: bool = True
     shutdown_timeout_seconds: float = Field(default=10.0, gt=0, le=300)
     log_level: str = Field(default="INFO", min_length=1, max_length=32)

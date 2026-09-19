@@ -4,19 +4,15 @@ import asyncio
 import os
 import secrets
 
-from a13n_environment import (
-    CommandRequest,
-    E2BEnvironment,
-    E2BProviderConfiguration,
-    E2BProviderRuntime,
-    EnvironmentOutputPolicy,
-    ShellCommand,
-)
+from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
+from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from pydantic import SecretStr
 
 
 async def main() -> None:
-    configuration = E2BProviderConfiguration()
+    configuration = E2BEnvironmentConfiguration()
     runtime = E2BProviderRuntime(api_key=SecretStr(os.environ["E2B_API_KEY"]))
     identity = "environment-example-" + secrets.token_hex(8)
     environment = E2BEnvironment(configuration, environment_id=identity, state=None, runtime=runtime)

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from time import monotonic
 from typing import Literal
 
-from a13n_environment import Environment, EnvironmentError
-from a13n_harness import EnvironmentAccess, EnvironmentMount, SafeFailure
+from a13n_harness import EnvironmentMount, SafeFailure
 from a13n_harness.environment.providers import EnvironmentRuntime
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_logging import get_logger
 from anyio import fail_after
 
@@ -46,8 +47,10 @@ class RunMountRuntime:
         observations: RunMountObservations,
         current_attempt: Callable[[], AttemptContext],
         prepare: Callable[[AcceptedRunMount], Awaitable[Environment]],
+        observe: Callable[[Environment, str], EnvironmentMount],
         clock: Callable[[], float] = monotonic,
     ) -> None:
+        self._observe = observe
         self._runtime = runtime
         self._has_primary = has_primary
         self._observations = observations
@@ -111,9 +114,7 @@ class RunMountRuntime:
             await self._observations.validate(self._current_attempt(), mount)
             await self._runtime.mount(
                 mount.name,
-                EnvironmentMount(
-                    environment, access=EnvironmentAccess(mount.access), mount_path=f"/environment/{mount.name}"
-                ),
+                replace(self._observe(environment, mount.access), mount_path=f"/environment/{mount.name}"),
                 make_default=make_default,
             )
         except BaseException as error:

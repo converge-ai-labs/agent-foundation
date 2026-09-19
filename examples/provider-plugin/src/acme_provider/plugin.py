@@ -21,6 +21,7 @@ from anyio import move_on_after
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 from .connector import acme_connector
+from .environment import acme_environment
 
 
 class AcmeWebConfiguration(BaseModel):
@@ -164,5 +165,10 @@ acme_memory = MemoryProviderDefinition(
 )
 
 manifest = ProviderManifest(
-    api_version=1, web=(acme_web,), model=(acme_model,), memory=(acme_memory,), connector=(acme_connector,)
+    api_version=1,
+    web=(acme_web,),
+    model=(acme_model,),
+    memory=(acme_memory,),
+    connector=(acme_connector,),
+    environment=(acme_environment,),
 )

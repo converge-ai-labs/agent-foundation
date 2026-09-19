@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Annotated, Literal
 
-from a13n_environment.models import (
+from a13n_harness.providers.environment.models import (
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,

@@ -36,7 +36,7 @@ When retention policy selects removal, the Host constructs a different fresh ada
 A persisted `EnvironmentProviderSpec` contains only a provider key, exact configuration schema version, and credential-free JSON configuration:
 
 ```python
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     EnvironmentProviderSpec,
     build_environment_provider_catalog,
 )

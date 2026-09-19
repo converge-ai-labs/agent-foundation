@@ -6,7 +6,8 @@ from urllib.parse import urlsplit
 
 from pydantic import BaseModel
 
-_PROVIDER_TYPE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+PROVIDER_TYPE_PATTERN = r"^[a-z][a-z0-9_]{0,63}$"
+_PROVIDER_TYPE = re.compile(PROVIDER_TYPE_PATTERN)
 
 
 def validate_definition(

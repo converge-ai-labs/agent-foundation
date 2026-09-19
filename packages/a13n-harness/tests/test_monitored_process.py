@@ -12,15 +12,6 @@ from typing import Any, cast
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_environment import (
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-    DirectLocalShellProfile,
-    EnvironmentOutputCapture,
-    EnvironmentOutputSegment,
-    ProcessDiscovery,
-    ProcessStreamRead,
-)
 from a13n_harness import RunBindings
 from a13n_harness.environment import (
     EnvironmentAction,
@@ -29,6 +20,13 @@ from a13n_harness.environment import (
 )
 from a13n_harness.environment.advanced import create_environment_runtime
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntimeMount
+from a13n_harness.providers.environment.commands import ProcessDiscovery, ProcessStreamRead
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+    DirectLocalShellProfile,
+)
+from a13n_harness.providers.environment.retention import EnvironmentOutputCapture, EnvironmentOutputSegment
 from a13n_harness.toolsets.process_manager import (
     _await_cleanup_shielded,
     _ProcessController,
@@ -91,7 +89,7 @@ async def _bound_process_environment(
         mounts={
             "local": EnvironmentRuntimeMount(
                 binding=DirectLocalEnvironmentProviderBinding(
-                    DirectLocalProviderConfiguration(
+                    DirectLocalEnvironmentConfiguration(
                         root=DirectLocalRootConfiguration(path=root),
                         shell_profiles=(
                             DirectLocalShellProfile(
@@ -585,7 +583,7 @@ async def test_foreground_capture_requires_only_shell_execution(tmp_path: Path) 
 
 
 async def test_native_exit_is_observable_before_tree_cleanup_and_output_completion(tmp_path: Path, monkeypatch) -> None:
-    from a13n_environment.direct_local.processes import LocalProcessManager
+    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
 
     cleanup_started = asyncio.Event()
     cleanup_release = asyncio.Event()
@@ -624,7 +622,7 @@ async def test_native_exit_is_observable_before_tree_cleanup_and_output_completi
 
 
 async def test_input_close_permission_is_checked_before_writing(tmp_path: Path, monkeypatch) -> None:
-    from a13n_environment.direct_local.processes import LocalProcessManager
+    from a13n_harness.providers.environment.direct_local.processes import LocalProcessManager
 
     writes = []
     original = LocalProcessManager.write_stdin

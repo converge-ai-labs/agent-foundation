@@ -39,9 +39,9 @@ Read the small, copyable [Host integration](https://github.com/converge-ai-labs/
 The operator supplies an HTTP(S) origin, the configured `A13N_ENVD_ENVIRONMENT_ID`, and a credential through a protected channel. The origin has no `/eip/control` suffix: the client constructs EIP resource paths.
 
 ```python
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     EnvironmentState,
-    HttpEnvdBackendConfiguration,
+    HttpEnvdConnectionConfiguration,
     HttpEnvdCredential,
     HttpEnvdEnvironmentProvider,
     HttpEnvdProviderRuntime,
@@ -51,7 +51,7 @@ from pydantic import SecretStr
 
 provider = HttpEnvdEnvironmentProvider()
 runtime = HttpEnvdProviderRuntime(
-    configuration=HttpEnvdBackendConfiguration(endpoint="https://envd.example.com"),
+    configuration=HttpEnvdConnectionConfiguration(endpoint="https://envd.example.com"),
     credential=HttpEnvdCredential(token=SecretStr(token_from_your_secret_store)),
 )
 state = EnvironmentState(
@@ -103,8 +103,8 @@ Await `attach()` for the handler's entire lifetime. The SDK immediately initiali
 To use one of those connections:
 
 ```python
-from a13n_environment import (
-    WebSocketEnvdBackendConfiguration,
+from a13n_harness.providers.environment import (
+    WebSocketEnvdConnectionConfiguration,
     WebSocketEnvdEnvironmentProvider,
     WebSocketEnvdProviderRuntime,
 )
@@ -120,7 +120,7 @@ environment = provider.create_environment(
     ),
     runtime=WebSocketEnvdProviderRuntime(
         connections,
-        WebSocketEnvdBackendConfiguration(connection_timeout=30),
+        WebSocketEnvdConnectionConfiguration(connection_timeout=30),
     ),
 )
 ```
@@ -164,6 +164,6 @@ The WebSocket SDK is process-local. If the listener and executing worker live in
 
 ## Hosted use
 
-a13n Service includes HTTP Envd in its default Provider catalog. Create a Provider with `HttpEnvdBackendConfiguration` and a separate write-only `{"token": "..."}` credential, then externally register an Environment with the recipe and state shown above. Remote Providers report `supports_managed=False`, so managed templates are rejected before target I/O.
+a13n Service includes HTTP Envd in its default Provider catalog. Create a Provider with `HttpEnvdConnectionConfiguration` and a separate write-only `{"token": "..."}` credential, then externally register an Environment with the recipe and state shown above. Remote Providers report `supports_managed=False`, so managed templates are rejected before target I/O.
 
 WebSocket Envd is available as a library Provider but is not enabled by default in a13n Service: the Host must wire its SDK and connection routing. Enabling a key alone does not supply a listener or runtime. Harness UI recognizes both keys in its catalog; project integration still requires a Host-approved adapter supplying remote state and runtime. Neither becomes a default local execution mode.

@@ -1,59 +1,29 @@
-"""Selected entry-point loading and immutable Provider catalog snapshots."""
+"""Service deployment selection of the shared immutable Provider manifests."""
 
-from __future__ import annotations
-
-import importlib.metadata
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import Protocol
 
-from a13n_environment import EnvironmentProvider
 from a13n_harness.providers.connector import ConnectorProviderDefinition
 from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
+from a13n_harness.providers.environment import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
 from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS
 from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from a13n_harness.providers.model.definition import ModelProviderDefinition
-from a13n_harness.providers.plugins import ProviderManifest, selected_entry_points
+from a13n_harness.providers.plugins import LoadedProviderPlugin, ProviderManifest, load_provider_plugins
 from a13n_harness.providers.web.builtins import built_in_web_providers
 from a13n_harness.providers.web.definition import WebProviderDefinition
 
-from .api import (
-    PROVIDER_EXTENSION_API_VERSION,
-    ProviderPluginRegistry,
-    _DomainRegistry,
-)
-
-_ENVIRONMENT_BUILTINS = frozenset(
-    {
-        "direct-local",
-        "docker",
-        "e2b",
-        "daytona",
-        "modal",
-        "vercel",
-        "sprites",
-        "runloop",
-        "a13n.http-envd",
-        "a13n.websocket-envd",
-    }
-)
-
 
 class ProviderPluginError(RuntimeError):
-    """Safe deployment configuration failure raised before Service readiness."""
-
-
-@dataclass(frozen=True, slots=True)
-class LoadedProviderPlugin:
-    entry_point: str
-    distribution_name: str
-    distribution_version: str
-    import_target: str
+    """Safe deployment failure before Service readiness."""
 
 
 @dataclass(frozen=True, slots=True)
 class ProviderCatalogs:
-    environment: tuple[EnvironmentProvider, ...]
+    environment: tuple[EnvironmentProviderDefinition, ...]
     model: tuple[ModelProviderDefinition, ...]
     connector: tuple[ConnectorProviderDefinition, ...]
     web: tuple[WebProviderDefinition, ...]
@@ -61,92 +31,34 @@ class ProviderCatalogs:
     memory: tuple[MemoryProviderDefinition, ...] = ()
 
 
+class _TypedDefinition(Protocol):
+    @property
+    def type(self) -> str: ...
+
+
+def _domain[D: _TypedDefinition](
+    label: str,
+    builtins: Iterable[D],
+    plugins: Iterable[LoadedProviderPlugin],
+    contribution: Callable[[ProviderManifest], tuple[D, ...]],
+) -> tuple[D, ...]:
+    """Combine native and installed definitions of one domain without duplicate types."""
+    selected = (*builtins, *(item for plugin in plugins for item in contribution(plugin.manifest)))
+    if len({definition.type for definition in selected}) != len(selected):
+        raise ValueError(f"duplicate {label} Provider type")
+    return selected
+
+
 def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
-    """Register built-ins plus only explicitly selected installed entry points."""
-
     try:
-        selected = selected_entry_points(enabled)
-    except Exception as error:
-        raise ProviderPluginError(str(error)) from error
-
-    registry = ProviderPluginRegistry(api_version=PROVIDER_EXTENSION_API_VERSION)
-    connector = _DomainRegistry("Connector", ConnectorProviderDefinition, lambda definition: definition.type)
-    for definition in BUILT_IN_CONNECTOR_PROVIDERS:
-        connector.register(definition)
-    model = _DomainRegistry("Model", ModelProviderDefinition, lambda definition: definition.type)
-    for definition in BUILT_IN_MODEL_PROVIDERS:
-        model.register(definition)
-    web = _DomainRegistry("Web", WebProviderDefinition, lambda definition: definition.type)
-    for definition in built_in_web_providers():
-        web.register(definition)
-    memory = _DomainRegistry("Memory", MemoryProviderDefinition, lambda definition: definition.type)
-    for definition in BUILT_IN_MEMORY_PROVIDERS:
-        memory.register(definition)
-    loaded: list[LoadedProviderPlugin] = []
-    for entry_point in selected:
-        name = entry_point.name
-        distribution = entry_point.dist
-        distribution_name = _metadata_text(distribution, "Name")
-        distribution_version = "unknown" if distribution is None else distribution.version
-        try:
-            register = entry_point.load()
-            if isinstance(register, ProviderManifest):
-                for definition in register.connector:
-                    connector.register(definition)
-                for definition in register.memory:
-                    memory.register(definition)
-                for definition in register.model:
-                    model.register(definition)
-                for definition in register.web:
-                    web.register(definition)
-            elif not isinstance(register, Callable):
-                raise TypeError("entry point is not callable")
-            api_version = (
-                register.api_version
-                if isinstance(register, ProviderManifest)
-                else getattr(register, "a13n_provider_api_version", None)
-            )
-            if api_version != PROVIDER_EXTENSION_API_VERSION:
-                raise TypeError(
-                    f"unsupported extension API version {api_version!r}; expected {PROVIDER_EXTENSION_API_VERSION}"
-                )
-            if not isinstance(register, ProviderManifest):
-                register(registry)
-        except Exception as error:
-            raise ProviderPluginError(
-                f"Provider plugin {name!r} from {distribution_name!r} failed registration: {type(error).__name__}"
-            ) from error
-        loaded.append(
-            LoadedProviderPlugin(
-                entry_point=name,
-                distribution_name=distribution_name,
-                distribution_version=distribution_version,
-                import_target=entry_point.value,
-            )
+        plugins = load_provider_plugins(enabled)
+        return ProviderCatalogs(
+            environment=_domain("Environment", BUILT_IN_ENVIRONMENT_PROVIDERS, plugins, lambda m: m.environment),
+            model=_domain("Model", BUILT_IN_MODEL_PROVIDERS, plugins, lambda m: m.model),
+            connector=_domain("Connector", BUILT_IN_CONNECTOR_PROVIDERS, plugins, lambda m: m.connector),
+            web=_domain("Web", built_in_web_providers(), plugins, lambda m: m.web),
+            memory=_domain("Memory", BUILT_IN_MEMORY_PROVIDERS, plugins, lambda m: m.memory),
+            plugins=plugins,
         )
-
-    try:
-        _validate(registry)
-    except ValueError as error:
-        raise ProviderPluginError(str(error)) from error
-    return ProviderCatalogs(
-        environment=registry.environment.values(),
-        model=model.values(),
-        connector=connector.values(),
-        web=web.values(),
-        plugins=tuple(loaded),
-        memory=memory.values(),
-    )
-
-
-def _metadata_text(distribution: importlib.metadata.Distribution | None, key: str) -> str:
-    if distribution is None:
-        return "unknown"
-    value = distribution.metadata.get(key)
-    return value if isinstance(value, str) and value else "unknown"
-
-
-def _validate(registry: ProviderPluginRegistry) -> None:
-    for provider in registry.environment.values():
-        if provider.key in _ENVIRONMENT_BUILTINS:
-            raise ProviderPluginError(f"Environment Provider {provider.key!r} uses a reserved built-in key")
+    except (ValueError, TypeError, ImportError) as error:
+        raise ProviderPluginError(f"Provider plugin selection failed: {type(error).__name__}") from error

@@ -15,7 +15,7 @@ pytestmark = pytest.mark.anyio
 logger = logging.getLogger(__name__)
 
 
-@pytest.mark.parametrize("backend", ["direct-local", "local-envd", "http-envd", "websocket-envd"])
+@pytest.mark.parametrize("backend", ["direct_local", "local_envd", "http_envd", "websocket_envd"])
 async def test_full_filesystem_preserves_files_and_releases_candidates(request, backend):
     if not request.config.getoption("--live-environments"):
         pytest.skip("Opt in with --live-environments for disposable limited-storage containers")
@@ -28,9 +28,9 @@ async def test_full_filesystem_preserves_files_and_releases_candidates(request, 
                 mem_limit="512m",
                 pids_limit=128,
                 tmpfs={"/limited": "size=1m,uid=10001,gid=10001,mode=0700"},
-                security_opt=["seccomp=unconfined", "apparmor=unconfined"] if backend == "local-envd" else None,
+                security_opt=["seccomp=unconfined", "apparmor=unconfined"] if backend == "local_envd" else None,
             )
-            if backend == "local-envd":
+            if backend == "local_envd":
                 # Docker CLI's systempaths=unconfined permits the native isolation
                 # probe to mount proc inside its own nested PID namespace.
                 host_config.update(MaskedPaths=[], ReadonlyPaths=[])

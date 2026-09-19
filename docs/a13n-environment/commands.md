@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     ArgvCommand,
     CommandRequest,
     EnvironmentOutputPolicy,

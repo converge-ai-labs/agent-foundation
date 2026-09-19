@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal, get_args
 
-from a13n_environment import EnvironmentState
+from a13n_harness.providers.authentication import Authentication
+from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
+from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import (
     BaseModel,
     ConfigDict,
@@ -20,7 +22,7 @@ from a13n_service.ids import ObjectId
 from a13n_service.labels import Labels
 
 EnvironmentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
-type LocalProviderType = Literal["direct-local", "docker"]
+type LocalProviderType = Literal["direct_local", "docker"]
 LOCAL_PROVIDER_TYPES = frozenset(get_args(LocalProviderType.__value__))
 JsonObject = dict[str, JsonValue]
 Duration = Annotated[int, Field(ge=0, strict=True)]
@@ -51,7 +53,7 @@ class RetentionPolicy(DomainModel):
     idle: RetentionWindow
 
 
-class EnvironmentProvider(DomainModel):
+class EnvironmentProviderAccount(DomainModel):
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId | None
@@ -65,18 +67,47 @@ class EnvironmentProvider(DomainModel):
     updated_at: datetime
 
 
-class EnvironmentProviderDefinition(DomainModel):
+class EnvironmentProviderMetadata(DomainModel):
     type: str
     display_name: str
-    configuration_versions: tuple[str, ...]
+    template_configuration_versions: tuple[str, ...]
     configuration_schema: JsonObject
     template_configuration_schemas: dict[str, JsonObject]
     deployment_managed: bool = False
     credential_schema: JsonObject | None
+    authentication: Authentication
+    setup_url: str | None = None
+    setup_label: str | None = None
     supports_managed: bool
     supports_stop: bool
     supports_destroy: bool
     requires_keepalive: bool
+
+    @classmethod
+    def describe(
+        cls, definition: EnvironmentProviderDefinition, *, deployment_managed: bool
+    ) -> EnvironmentProviderMetadata:
+        """Project the installed definition; credential schemas are always write-only."""
+        return cls(
+            type=definition.type,
+            display_name=definition.display_name,
+            template_configuration_versions=tuple(sorted(definition.environment_versions)),
+            configuration_schema=definition.configuration_model.model_json_schema(),
+            template_configuration_schemas={
+                version: model.model_json_schema() for version, model in definition.environment_models.items()
+            },
+            deployment_managed=deployment_managed,
+            credential_schema={**definition.credential_model.model_json_schema(), "writeOnly": True}
+            if definition.credential_model
+            else None,
+            authentication=definition.authentication,
+            setup_url=definition.setup_url,
+            setup_label=definition.setup_label,
+            supports_managed=definition.supports_managed,
+            supports_stop=definition.supports_stop,
+            supports_destroy=definition.supports_destroy,
+            requires_keepalive=definition.requires_keepalive,
+        )
 
 
 class EnvironmentConfiguration(DomainModel):

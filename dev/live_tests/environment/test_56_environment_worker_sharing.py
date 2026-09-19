@@ -13,7 +13,7 @@ from .environment_backends import EnvironmentBackend
 from .environment_workers import add_second_worker, native_file, reset_workers, shell
 
 pytestmark = pytest.mark.anyio
-KINDS = ["direct-local", "docker", "e2b", "http-envd", "websocket-envd"]
+KINDS = ["direct_local", "docker", "e2b", "http_envd", "websocket_envd"]
 
 
 @pytest.fixture(scope="module")
@@ -34,7 +34,7 @@ async def worker_backend(request):
             pytest.skip("Configure E2B for its real two-Worker cases")
     binary = Path(os.environ.get("A13N_ENVD_TEST_BINARY", REPOSITORY / "target/debug/a13n-envd")).resolve()
     async with open_lab(
-        suite="management", environment_workers=True, websocket_envd=request.param == "websocket-envd"
+        suite="management", environment_workers=True, websocket_envd=request.param == "websocket_envd"
     ) as lab:
         lab.worker_environment["A13N_ENVD_EXECUTABLE"] = str(binary)
         yield EnvironmentBackend(lab, request.param, binary, settings)
@@ -45,7 +45,7 @@ async def shared(worker_backend):
     backend = worker_backend
     await reset_workers(backend.lab)
     async with backend.target() as target:
-        pair = await add_second_worker(backend.lab, no_reverse=backend.kind == "websocket-envd")
+        pair = await add_second_worker(backend.lab, no_reverse=backend.kind == "websocket_envd")
         try:
             yield backend, target, pair
         finally:
@@ -55,7 +55,7 @@ async def shared(worker_backend):
 @pytest.mark.parametrize("preparation", ["on_run", "on_use"])
 async def test_first_prepare_is_serialized_between_processes(shared, preparation):
     backend, target, pair = shared
-    if backend.kind in {"http-envd", "websocket-envd"}:
+    if backend.kind in {"http_envd", "websocket_envd"}:
         pytest.skip("Registered external targets have no managed first-create operation")
     environment = await target.allocate(preparation=preparation)
     first, second = pair.workers
@@ -86,7 +86,7 @@ async def test_first_prepare_is_serialized_between_processes(shared, preparation
 @pytest.mark.parametrize("ending", ["cancel", "crash"])
 async def test_one_user_lost_does_not_close_other_worker_use(shared, ending):
     backend, target, pair = shared
-    if backend.kind not in {"direct-local", "docker", "e2b"}:
+    if backend.kind not in {"direct_local", "docker", "e2b"}:
         pytest.skip("This provider admits one concurrent Session; contention is covered separately")
     environment = await target.allocate()
     cases = [
@@ -122,8 +122,8 @@ async def test_repeated_worker_handoffs_release_resources_and_preserve_shared_wr
     environment = await target.allocate()
     original = None
     for index in range(6):
-        worker = pair.workers[0 if backend.kind == "websocket-envd" else index % 2]
-        if index == 1 and backend.kind == "websocket-envd":
+        worker = pair.workers[0 if backend.kind == "websocket_envd" else index % 2]
+        if index == 1 and backend.kind == "websocket_envd":
             # A process-local rendezvous is deliberately not a cross-Worker relay.
             case = await pair.journey.case(steps=[shell("printf STOLEN >> rounds")])
             receipt = await pair.start(pair.workers[1], case, environment)
@@ -152,7 +152,7 @@ async def test_concurrent_workers_preserve_owner_and_release_only_their_scope(sh
     before = await pair.record(environment)
     contender_case = await pair.journey.case(steps=[shell("printf OTHER > other")])
     contender = await pair.start(second, contender_case, environment)
-    if backend.kind in {"http-envd", "websocket-envd"}:
+    if backend.kind in {"http_envd", "websocket_envd"}:
         failed = await pair.journey.live.finish(contender["run_id"], "failed")
         assert failed["failure"]["code"] == "attempt_execution_failed"
     else:
@@ -160,7 +160,7 @@ async def test_concurrent_workers_preserve_owner_and_release_only_their_scope(sh
         result = last_tool_result(pair.journey.observations(contender_case)[-1])
         assert result["ok"] is True, result
         assert await native_file(backend, target, environment, "other") == b"OTHER"
-    if backend.kind in {"http-envd", "websocket-envd"}:
+    if backend.kind in {"http_envd", "websocket_envd"}:
         assert not (target.root / "other").exists()
     assert (await pair.record(environment))["active_runs"] == [owner["run_id"]]
     assert (await pair.journey.live.run(owner["run_id"]))["status"] == "running"

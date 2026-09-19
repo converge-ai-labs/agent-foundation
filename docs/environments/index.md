@@ -76,7 +76,7 @@ Direct Local exposes an existing directory selected by the Host:
 ```python
 from pathlib import Path
 
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     DirectLocalEnvironmentProvider,
     DirectLocalProviderConfiguration,
     DirectLocalRootConfiguration,
@@ -114,7 +114,7 @@ Local Envd launches one compatible `a13n-envd` generation for a Host-selected wo
 ```python
 from pathlib import Path
 
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     LocalEnvdProviderRuntime,
     LocalEnvdWorkspaceConfiguration,
     TemporaryLocalEnvdRuntimeAllocator,

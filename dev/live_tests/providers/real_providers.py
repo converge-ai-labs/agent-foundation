@@ -100,7 +100,7 @@ async def cleanup_provider_lab(journey):
             continue
         try:
             provider = await live.request("GET", f"/api/v1/environment-providers/{environment['provider_id']}")
-            if provider["type"] == "direct-local":
+            if provider["type"] == "direct_local":
                 # Direct Local owns no destroyable target. Keep its lab-owned directory
                 # with the private evidence; the outer lab removes its database record.
                 logger.info("Direct Local evidence retained in lab: %s", environment["id"])

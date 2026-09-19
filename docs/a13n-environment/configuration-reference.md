@@ -8,16 +8,16 @@ Required means no default. Fields backed by a factory have a model-computed defa
 
 All six cloud providers use the same configuration, backend, and private-credential boundaries. Their schemas are peer entries below; capability differences remain in the [cloud provider guide](providers.md#cloud-providers).
 
-| Provider       | Recipe                                                | Backend                                                     | Credential                          |
-| -------------- | ----------------------------------------------------- | ----------------------------------------------------------- | ----------------------------------- |
-| E2B            | [E2BProviderConfiguration](#e2bproviderconfiguration) | [E2BBackendConfiguration](#e2bbackendconfiguration)         | [E2BCredential](#e2bcredential)     |
-| Daytona        | [DaytonaConfiguration](#daytonaconfiguration)         | [DaytonaBackendConfiguration](#daytonabackendconfiguration) | [TokenCredential](#tokencredential) |
-| Modal          | [ModalConfiguration](#modalconfiguration)             | [ModalBackendConfiguration](#modalbackendconfiguration)     | [ModalCredential](#modalcredential) |
-| Vercel Sandbox | [VercelConfiguration](#vercelconfiguration)           | [VercelBackendConfiguration](#vercelbackendconfiguration)   | [TokenCredential](#tokencredential) |
-| Fly.io Sprites | [SpritesConfiguration](#spritesconfiguration)         | [SpritesBackendConfiguration](#spritesbackendconfiguration) | [TokenCredential](#tokencredential) |
-| Runloop        | [RunloopConfiguration](#runloopconfiguration)         | [RunloopBackendConfiguration](#runloopbackendconfiguration) | [TokenCredential](#tokencredential) |
+| Provider       | Recipe                                                              | Backend                                                           | Credential                          |
+| -------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------- | ----------------------------------- |
+| E2B            | [E2BEnvironmentConfiguration](#e2benvironmentconfiguration)         | [E2BConnectionConfiguration](#e2bconnectionconfiguration)         | [E2BCredential](#e2bcredential)     |
+| Daytona        | [DaytonaEnvironmentConfiguration](#daytonaenvironmentconfiguration) | [DaytonaConnectionConfiguration](#daytonaconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Modal          | [ModalEnvironmentConfiguration](#modalenvironmentconfiguration)     | [ModalConnectionConfiguration](#modalconnectionconfiguration)     | [ModalCredential](#modalcredential) |
+| Vercel Sandbox | [VercelEnvironmentConfiguration](#vercelenvironmentconfiguration)   | [VercelConnectionConfiguration](#vercelconnectionconfiguration)   | [TokenCredential](#tokencredential) |
+| Fly.io Sprites | [SpritesEnvironmentConfiguration](#spritesenvironmentconfiguration) | [SpritesConnectionConfiguration](#spritesconnectionconfiguration) | [TokenCredential](#tokencredential) |
+| Runloop        | [RunloopEnvironmentConfiguration](#runloopenvironmentconfiguration) | [RunloopConnectionConfiguration](#runloopconnectionconfiguration) | [TokenCredential](#tokencredential) |
 
-## `DirectLocalProviderConfiguration`
+## `DirectLocalEnvironmentConfiguration`
 
 | Field                      | Required | Type / choices                   | Constraints and default                 |
 | -------------------------- | -------- | -------------------------------- | --------------------------------------- |
@@ -51,7 +51,7 @@ All six cloud providers use the same configuration, backend, and private-credent
 | `dialect`         | false    | "posix", "powershell" | default="posix"            |
 | `allow_login`     | false    | boolean               | default=false              |
 
-## `LocalEnvdProviderConfiguration`
+## `LocalEnvdEnvironmentConfiguration`
 
 | Field                         | Required | Type / choices                  | Constraints and default                             |
 | ----------------------------- | -------- | ------------------------------- | --------------------------------------------------- |
@@ -85,7 +85,7 @@ Choices: `"host", "deny"`.
 | `path`      | true     | string         | format="path"           |
 | `read_only` | false    | boolean        | default=false           |
 
-## `DockerProviderConfiguration`
+## `DockerEnvironmentConfiguration`
 
 | Field                         | Required | Type / choices                    | Constraints and default                                                                     |
 | ----------------------------- | -------- | --------------------------------- | ------------------------------------------------------------------------------------------- |
@@ -117,7 +117,7 @@ Choices: `"host", "deny"`.
 | `target`    | true     | string         | format="path"           |
 | `read_only` | false    | boolean        | default=true            |
 
-## `E2BProviderConfiguration`
+## `E2BEnvironmentConfiguration`
 
 | Field                       | Required | Type / choices | Constraints and default                                   |
 | --------------------------- | -------- | -------------- | --------------------------------------------------------- |
@@ -135,7 +135,7 @@ Choices: `"host", "deny"`.
 | `max_retained_output_bytes` | false    | integer        | maximum=1073741824; exclusiveMinimum=0; default=134217728 |
 | `max_query_entries`         | false    | integer        | maximum=100000; exclusiveMinimum=0; default=10000         |
 
-## `DaytonaConfiguration`
+## `DaytonaEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices | Constraints and default                                |
 | ------------------------- | -------- | -------------- | ------------------------------------------------------ |
@@ -152,7 +152,7 @@ Choices: `"host", "deny"`.
 | `memory`                  | false    | integer        | minimum=1; maximum=128; default=4                      |
 | `disk`                    | false    | integer        | minimum=1; maximum=1024; default=10                    |
 
-## `ModalConfiguration`
+## `ModalEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices | Constraints and default                                |
 | ------------------------- | -------- | -------------- | ------------------------------------------------------ |
@@ -169,7 +169,7 @@ Choices: `"host", "deny"`.
 | `cpu`                     | false    | number         | maximum=64; exclusiveMinimum=0; default=1              |
 | `memory`                  | false    | integer        | minimum=128; maximum=262144; default=1024              |
 
-## `VercelConfiguration`
+## `VercelEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices | Constraints and default                                |
 | ------------------------- | -------- | -------------- | ------------------------------------------------------ |
@@ -185,7 +185,7 @@ Choices: `"host", "deny"`.
 | `timeout_seconds`         | false    | integer        | minimum=300; maximum=18000; default=3600               |
 | `vcpus`                   | false    | integer        | minimum=2; maximum=8; default=2                        |
 
-## `SpritesConfiguration`
+## `SpritesEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices | Constraints and default                                |
 | ------------------------- | -------- | -------------- | ------------------------------------------------------ |
@@ -199,7 +199,7 @@ Choices: `"host", "deny"`.
 | `max_output_bytes`        | false    | integer        | maximum=16777216; exclusiveMinimum=0; default=1048576  |
 | `region`                  | false    | string or null | default=null                                           |
 
-## `RunloopConfiguration`
+## `RunloopEnvironmentConfiguration`
 
 | Field                     | Required | Type / choices                                   | Constraints and default                                |
 | ------------------------- | -------- | ------------------------------------------------ | ------------------------------------------------------ |
@@ -215,7 +215,7 @@ Choices: `"host", "deny"`.
 | `resource_size`           | false    | "X_SMALL", "SMALL", "MEDIUM", "LARGE", "X_LARGE" | default="SMALL"                                        |
 | `idle_timeout_seconds`    | false    | integer                                          | minimum=300; maximum=172800; default=3600              |
 
-## `RemoteEnvdProviderConfiguration`
+## `RemoteEnvdEnvironmentConfiguration`
 
 | Field              | Required | Type / choices  | Constraints and default  |
 | ------------------ | -------- | --------------- | ------------------------ |
@@ -227,13 +227,13 @@ Choices: `"host", "deny"`.
 | --------- | -------- | -------------- | ------------------------------------------------------ |
 | `host_id` | false    | string         | minLength=1; maxLength=256; default from model factory |
 
-## `DockerBackendConfiguration`
+## `DockerConnectionConfiguration`
 
 | Field         | Required | Type / choices | Constraints and default                 |
 | ------------- | -------- | -------------- | --------------------------------------- |
 | `docker_host` | false    | string         | minLength=1; default from model factory |
 
-## `E2BBackendConfiguration`
+## `E2BConnectionConfiguration`
 
 | Field     | Required | Type / choices | Constraints and default                                                    |
 | --------- | -------- | -------------- | -------------------------------------------------------------------------- |
@@ -246,14 +246,14 @@ Choices: `"host", "deny"`.
 | --------- | -------- | -------------- | ------------------------------ |
 | `api_key` | true     | string         | minLength=1; format="password" |
 
-## `DaytonaBackendConfiguration`
+## `DaytonaConnectionConfiguration`
 
 | Field             | Required | Type / choices | Constraints and default                 |
 | ----------------- | -------- | -------------- | --------------------------------------- |
 | `organization_id` | true     | string         | minLength=1; maxLength=128              |
 | `target`          | false    | string         | minLength=1; maxLength=64; default="us" |
 
-## `ModalBackendConfiguration`
+## `ModalConnectionConfiguration`
 
 | Field              | Required | Type / choices | Constraints and default                    |
 | ------------------ | -------- | -------------- | ------------------------------------------ |
@@ -268,20 +268,20 @@ Choices: `"host", "deny"`.
 | `token_id`     | true     | string         | minLength=1; format="password" |
 | `token_secret` | true     | string         | minLength=1; format="password" |
 
-## `VercelBackendConfiguration`
+## `VercelConnectionConfiguration`
 
 | Field        | Required | Type / choices | Constraints and default    |
 | ------------ | -------- | -------------- | -------------------------- |
 | `team_id`    | true     | string         | minLength=1; maxLength=128 |
 | `project_id` | true     | string         | minLength=1; maxLength=128 |
 
-## `SpritesBackendConfiguration`
+## `SpritesConnectionConfiguration`
 
 | Field          | Required | Type / choices | Constraints and default    |
 | -------------- | -------- | -------------- | -------------------------- |
 | `organization` | true     | string         | minLength=1; maxLength=128 |
 
-## `RunloopBackendConfiguration`
+## `RunloopConnectionConfiguration`
 
 | Field          | Required | Type / choices | Constraints and default    |
 | -------------- | -------- | -------------- | -------------------------- |
@@ -293,7 +293,7 @@ Choices: `"host", "deny"`.
 | --------- | -------- | -------------- | ------------------------------ |
 | `api_key` | true     | string         | minLength=1; format="password" |
 
-## `HttpEnvdBackendConfiguration`
+## `HttpEnvdConnectionConfiguration`
 
 | Field                          | Required | Type / choices | Constraints and default                      |
 | ------------------------------ | -------- | -------------- | -------------------------------------------- |
@@ -309,7 +309,7 @@ Choices: `"host", "deny"`.
 | ------- | -------- | -------------- | ---------------------------------------------- |
 | `token` | true     | string         | minLength=1; maxLength=4096; format="password" |
 
-## `WebSocketEnvdBackendConfiguration`
+## `WebSocketEnvdConnectionConfiguration`
 
 | Field                | Required | Type / choices | Constraints and default                     |
 | -------------------- | -------- | -------------- | ------------------------------------------- |

@@ -8,10 +8,10 @@ import json
 import time
 from typing import Literal
 
-from a13n_environment.docker.configuration import DockerProviderConfiguration
-from a13n_environment.docker.factory import DockerBackendConfiguration
-from a13n_environment.docker.image_test import DockerImageTestFailure, test_docker_image
-from a13n_environment.docker.runtime import DockerSDKEngine
+from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
+from a13n_harness.providers.environment.docker.image_test import DockerImageTestFailure, test_docker_image
+from a13n_harness.providers.environment.docker.provider import DockerConnectionConfiguration
+from a13n_harness.providers.environment.docker.runtime import DockerSDKEngine
 from a13n_logging import get_logger
 from pydantic import BaseModel, ConfigDict, Field
 from redis.asyncio import Redis
@@ -77,7 +77,7 @@ class ImageTestRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     identity: ImageTestIdentity
-    configuration: DockerProviderConfiguration
+    configuration: DockerEnvironmentConfiguration
     expires_at: float = Field(default_factory=lambda: _now() + _REQUEST_SECONDS)
 
 
@@ -182,7 +182,7 @@ class DockerImageTestWorker:
                 provider = await session.get(EnvironmentProviderRecord, request.identity.provider_id)
                 if provider is None or provider.type != "docker" or not provider.enabled:
                     raise ValueError("Docker Provider is unavailable or disabled")
-                backend = DockerBackendConfiguration.model_validate(provider.configuration)
+                backend = DockerConnectionConfiguration.model_validate(provider.configuration)
             configuration = request.configuration
             configuration_hash = hashlib.sha256(
                 json.dumps(configuration.model_dump(mode="json"), sort_keys=True).encode()
@@ -252,7 +252,7 @@ class DockerConnectivityProbe:
     async def probe_connectivity(self) -> None:
         async with short_session(self.sessions) as session:
             providers = tuple(
-                (row.id, DockerBackendConfiguration.model_validate(row.configuration).docker_host)
+                (row.id, DockerConnectionConfiguration.model_validate(row.configuration).docker_host)
                 for row in await session.scalars(
                     select(EnvironmentProviderRecord).where(
                         EnvironmentProviderRecord.type == "docker", EnvironmentProviderRecord.enabled.is_(True)

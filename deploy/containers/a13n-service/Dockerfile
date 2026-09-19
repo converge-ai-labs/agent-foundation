@@ -8,7 +8,6 @@ WORKDIR /app
 
 COPY pyproject.toml uv.lock ./
 COPY packages/a13n-envd-client/pyproject.toml packages/a13n-envd-client/pyproject.toml
-COPY packages/a13n-environment/pyproject.toml packages/a13n-environment/pyproject.toml
 COPY packages/a13n-harness/pyproject.toml packages/a13n-harness/pyproject.toml
 COPY packages/a13n-stream-protocol/pyproject.toml packages/a13n-stream-protocol/pyproject.toml
 COPY packages/a13n-harness-ui/pyproject.toml packages/a13n-harness-ui/pyproject.toml
@@ -18,7 +17,6 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package a13n-service --no-install-workspace
 
 COPY packages/a13n-envd-client packages/a13n-envd-client
-COPY packages/a13n-environment packages/a13n-environment
 COPY packages/a13n-harness packages/a13n-harness
 COPY packages/a13n-stream-protocol packages/a13n-stream-protocol
 COPY packages/a13n-logging packages/a13n-logging
@@ -26,7 +24,6 @@ COPY packages/a13n-service packages/a13n-service
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --package a13n-service \
     && rm -rf packages/a13n-envd-client/tests \
-        packages/a13n-environment/tests \
         packages/a13n-harness/tests \
         packages/a13n-stream-protocol/tests \
         packages/a13n-logging/tests \

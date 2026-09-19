@@ -3,7 +3,7 @@
 import asyncio
 
 import pytest
-from a13n_environment import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 
 from .file_backends import KINDS, FileBackend
 
@@ -45,7 +45,7 @@ async def test_close_fences_file_facets_and_fresh_scope_preserves_workspace(back
     fresh = backend.adapter(state=state)
     await backend.prepare(fresh)
     assert await fresh.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
-    if backend.kind in {"direct-local", "local-envd"}:
+    if backend.kind in {"direct_local", "local_envd"}:
         assert fresh.dump_state() is None
         assert fresh.descriptor.generation != original_generation
         assert fresh.descriptor.backing_identity == original_backing
@@ -59,7 +59,7 @@ async def test_close_serializes_with_real_preparation(backend, monkeypatch, canc
     state = backend.environment.dump_state()
     await backend.environment.close()
     environment = backend.adapter(state=state)
-    await environment.enter(thread_id="files", run_id="racing-run", agent_instance_id="agent", mount_id="workspace")
+    await environment.enter(mount_id="workspace")
     opened, release = asyncio.Event(), asyncio.Event()
     prepare_native = environment._prepare
 

@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .connector.definition import ConnectorProviderDefinition
+from .environment.definition import EnvironmentProviderDefinition
 from .memory.definition import MemoryProviderDefinition
 from .model.definition import ModelProviderDefinition
 from .web.definition import WebProviderDefinition
@@ -23,6 +24,7 @@ class ProviderManifest:
     model: tuple[ModelProviderDefinition[Any, Any], ...] = ()
     web: tuple[WebProviderDefinition[Any, Any], ...] = ()
     memory: tuple[MemoryProviderDefinition[Any, Any], ...] = ()
+    environment: tuple[EnvironmentProviderDefinition[Any, Any, Any], ...] = ()
     connector: tuple[ConnectorProviderDefinition[Any, Any], ...] = ()
 
     def __post_init__(self) -> None:
@@ -33,6 +35,7 @@ class ProviderManifest:
             ("Model", self.model, ModelProviderDefinition),
             ("Memory", self.memory, MemoryProviderDefinition),
             ("Connector", self.connector, ConnectorProviderDefinition),
+            ("Environment", self.environment, EnvironmentProviderDefinition),
         ):
             if not isinstance(definitions, tuple) or not all(isinstance(item, kind) for item in definitions):
                 raise TypeError(f"{label} definitions must be an immutable tuple")
@@ -83,6 +86,7 @@ def load_provider_plugins(enabled: Iterable[str]) -> tuple[LoadedProviderPlugin,
             ("Model", manifest.model),
             ("Memory", manifest.memory),
             ("Connector", manifest.connector),
+            ("Environment", manifest.environment),
         ):
             for definition in definitions:
                 key = (label, definition.type)

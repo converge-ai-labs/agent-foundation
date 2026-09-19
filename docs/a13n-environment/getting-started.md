@@ -23,7 +23,7 @@ import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.environment import build_environment_provider_catalog
 
 
 async def main() -> None:

@@ -200,6 +200,7 @@ class WorkerAttempts:
                     current_context=lambda: control.current_context,
                 )
 
+            projector = AttemptRunStreamProjector(self._stream, context)
             preparer = WorkerAttemptPreparer(
                 sessions=sessions,
                 run=run,
@@ -223,8 +224,8 @@ class WorkerAttempts:
                 web=self._web,
                 memory=self._shared.memory_behaviors,
                 configuration_capability=configuration_capability if self._configuration_drafts is not None else None,
+                environment_projector=projector,
             )
-            projector = AttemptRunStreamProjector(self._stream, context)
             driver = HarnessDriver(
                 HarnessBuilder(
                     configured_plugins_enabled=False,

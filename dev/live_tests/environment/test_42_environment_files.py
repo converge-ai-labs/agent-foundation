@@ -5,7 +5,7 @@ import os
 from contextlib import contextmanager
 
 import pytest
-from a13n_environment import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 
 from .file_backends import KINDS, FileBackend
 from .file_contract import (
@@ -78,7 +78,7 @@ async def test_file_symlink_escape_and_provider_link_replacement_semantics(file_
         await files.move(BASE + "/source", BASE + "/escape/sentinel", replace=True)
     assert backend.snapshot() == before
     assert (await files.stat(BASE + "/link")).kind == "symlink"
-    if backend.kind == "direct-local":
+    if backend.kind == "direct_local":
         with failure("environment_denied"):
             await files.move(BASE + "/source", BASE + "/link", replace=True)
         assert backend.snapshot() == before
@@ -96,7 +96,7 @@ async def test_file_symlink_escape_and_provider_link_replacement_semantics(file_
 @pytest.mark.parametrize("read_only", [True])
 async def test_file_read_only_rejects_all_mutations_before_consuming_upload(file_backend):
     backend, files = file_backend, file_backend.environment.operations.files
-    code = "environment_denied" if backend.kind == "direct-local" else "environment_unsupported"
+    code = "environment_denied" if backend.kind == "direct_local" else "environment_unsupported"
     before = backend.snapshot()
     await assert_read_only_files(files, code, failure)
     assert backend.snapshot() == before
@@ -128,7 +128,7 @@ async def test_wrong_file_types_preserve_source_and_nonempty_destination(file_ba
     before = backend.snapshot()
     code = (
         "environment_request_invalid"
-        if backend.kind == "direct-local"
+        if backend.kind == "direct_local"
         else ("environment_conflict" if name == "mkdir-below-file" else "environment_denied")
     )
     with failure(code):

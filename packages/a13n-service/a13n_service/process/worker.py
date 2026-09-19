@@ -7,11 +7,11 @@ from datetime import timedelta
 from functools import partial
 
 import httpx2
-from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.connector import ConnectorProviderCatalog
 from a13n_harness.providers.connector.http import ConnectorHttpClient
 from a13n_harness.providers.endpoint_policy import EndpointPolicy
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 
 from a13n_service.agent_configuration.drafts import ConfigurationDrafts
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
@@ -79,7 +79,6 @@ async def build_worker_runtime(
         shared.storage.sessions,
         environment_catalog,
         shared.secret_protector,
-        shared.storage.files_root,
         timeout_seconds=settings.environments.operation_timeout_seconds,
         capacity=CapacityLimits(
             max_targets=settings.environments.max_targets_per_workspace,

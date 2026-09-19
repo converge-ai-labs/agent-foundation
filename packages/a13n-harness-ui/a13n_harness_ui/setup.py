@@ -6,13 +6,14 @@ from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Literal
 
-from a13n_environment import EnvironmentError, EnvironmentProviderError
-from a13n_environment.local_envd import (
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdEnvironmentConfiguration,
     LocalEnvdNetworkMode,
-    LocalEnvdProviderConfiguration,
     LocalEnvdWorkspaceConfiguration,
-    validate_local_envd_runtime,
 )
+from a13n_harness.providers.environment.local_envd.provider import validate_local_envd_runtime
+from a13n_harness.providers.environment.models import EnvironmentError
 from anyio import fail_after
 from pydantic import Field
 
@@ -84,7 +85,7 @@ async def preflight_environment(
             executable = await resolve_executable()
             await validate_local_envd_runtime(
                 executable,
-                LocalEnvdProviderConfiguration(
+                LocalEnvdEnvironmentConfiguration(
                     workspace=LocalEnvdWorkspaceConfiguration(path=project_path),
                     execution_network=LocalEnvdNetworkMode.DENY,
                 ),

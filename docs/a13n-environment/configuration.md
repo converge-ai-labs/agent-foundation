@@ -44,7 +44,7 @@ The private container filesystem supplies `/workspace`. Optional host mounts hav
 
 Advanced options include user, shell, Python executable, stop grace (ten seconds), per-helper request timeout (60 seconds; includes init scripts, not Agent Runs or ordinary shell duration), file values (16 MiB), output previews (64 KiB), captured bytes per stream (16 MiB), aggregate observation/retention budgets (64 MiB each), and concurrent process observations (128). Custom images need Linux, Python 3.10+, the configured shell, writable `/workspace` and `/tmp/a13n`; Git is required only for git-ignore queries.
 
-`DockerBackendConfiguration.docker_host` selects the Engine socket. Worker restarts must reach that same Engine. Service permits Docker only in `deployment.mode = "single_host"`; the shipped Compose mounts the host socket and grants its non-root Service process access.
+`DockerConnectionConfiguration.docker_host` selects the Engine socket. Worker restarts must reach that same Engine. Service permits Docker only in `deployment.mode = "single_host"`; the shipped Compose mounts the host socket and grants its non-root Service process access.
 
 Use **Test image** beside the template image field before saving when checking a custom image. The test runs on the selected Worker Engine and returns the exact image ID used by the temporary container plus file, command/output, and process-control checks. It omits the init script and external mounts; leaving the editor or changing the draft sends an explicit cancellation request. The Provider details show Engine connectivity separately from whether the Provider is enabled. Normal Environment creation still checks requirements even if no manual test ran.
 
@@ -62,23 +62,23 @@ Sandbox timeout defaults to 3,600 seconds (30–86,400); request timeout default
 
 ### Daytona
 
-`DaytonaConfiguration` selects snapshot and resources, defaulting to writable `/home/daytona`. `DaytonaBackendConfiguration` supplies organization and target region; `TokenCredential` supplies the API key.
+`DaytonaEnvironmentConfiguration` selects snapshot and resources, defaulting to writable `/home/daytona`. `DaytonaConnectionConfiguration` supplies organization and target region; `TokenCredential` supplies the API key.
 
 ### Modal
 
-`ModalConfiguration` selects image, resources and bounded lifetime. `ModalBackendConfiguration` names the workspace and existing deployed App; `ModalCredential` contains token ID and secret. Filesystem snapshot stop/resume is managed-only.
+`ModalEnvironmentConfiguration` selects image, resources and bounded lifetime. `ModalConnectionConfiguration` names the workspace and existing deployed App; `ModalCredential` contains token ID and secret. Filesystem snapshot stop/resume is managed-only.
 
 ### Vercel Sandbox
 
-`VercelConfiguration` selects runtime, vCPUs, and session lifetime, with root `/vercel/sandbox`. `VercelBackendConfiguration` names team and project; `TokenCredential` holds the Vercel access token. Persistent native lifecycle is intrinsic to the adapter.
+`VercelEnvironmentConfiguration` selects runtime, vCPUs, and session lifetime, with root `/vercel/sandbox`. `VercelConnectionConfiguration` names team and project; `TokenCredential` holds the Vercel access token. Persistent native lifecycle is intrinsic to the adapter.
 
 ### Fly.io Sprites
 
-`SpritesConfiguration` selects region and defaults to `/home/sprite`. `SpritesBackendConfiguration` identifies the organization; `TokenCredential` holds the Sprites token. Disable explicit stop retention because Sprites sleep automatically.
+`SpritesEnvironmentConfiguration` selects region and defaults to `/home/sprite`. `SpritesConnectionConfiguration` identifies the organization; `TokenCredential` holds the Sprites token. Disable explicit stop retention because Sprites sleep automatically.
 
 ### Runloop
 
-`RunloopConfiguration` selects blueprint, resource size, and idle suspension interval, with root `/home/user`. `RunloopBackendConfiguration` identifies the organization; `TokenCredential` supplies the API key.
+`RunloopEnvironmentConfiguration` selects blueprint, resource size, and idle suspension interval, with root `/home/user`. `RunloopConnectionConfiguration` identifies the organization; `TokenCredential` supplies the API key.
 
 Daytona, Sprites, and Runloop select `python3` on the guest PATH. Modal uses `/usr/local/bin/python3` and Vercel its runtime Python path. Custom guest images must supply their configured root, Python, and shell; these paths do not refer to the Host filesystem. Shared command/file limits are listed in each generated recipe schema.
 

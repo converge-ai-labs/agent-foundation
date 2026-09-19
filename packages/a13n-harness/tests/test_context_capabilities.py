@@ -10,10 +10,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_environment import (
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-)
 from a13n_harness import AgentSpec as HarnessAgentSpec
 from a13n_harness import (
     HarnessBuilder,
@@ -64,6 +60,10 @@ from a13n_harness.model_context import (
     _commit_projection,
     user_prompt_content,
 )
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
 from a13n_harness.state import AgentContextStateSnapshot, CapabilityState
 from pydantic_ai import ModelRetry
 from pydantic_ai.agent.spec import AgentSpec
@@ -98,7 +98,7 @@ pytestmark = pytest.mark.anyio
 
 def _local_binding(root: Path, *, default_working_directory: str = "/"):
     provider = DirectLocalEnvironmentProviderBinding(
-        DirectLocalProviderConfiguration(
+        DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root),
             max_value_bytes=128 * 1024,
         ),

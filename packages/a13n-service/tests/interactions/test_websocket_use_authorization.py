@@ -5,8 +5,9 @@ import base64
 from dataclasses import dataclass, replace
 
 import pytest
-from a13n_environment import EnvironmentAction, EnvironmentState, build_environment_provider_catalog
-from a13n_environment.models import EnvironmentError
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError, EnvironmentState
 from a13n_service.environments.domain import CreateProviderRequest, RegisterEnvironmentRequest
 from a13n_service.environments.models import EnvironmentProviderRecord
 from a13n_service.environments.service import EnvironmentService
@@ -44,12 +45,14 @@ async def client_environment(interaction_sessions):
     await seed_hook_actor_access(interaction_sessions)
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
     service = EnvironmentService(
-        interaction_sessions, build_environment_provider_catalog(builtin_keys=("a13n.websocket-envd",)), protector
+        interaction_sessions,
+        EnvironmentProviderCatalog(select_builtin_environment_providers(("websocket_envd",))),
+        protector,
     )
     provider = await service.create_provider(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
-        request=CreateProviderRequest(type="a13n.websocket-envd", name="Client"),
+        request=CreateProviderRequest(type="websocket_envd", name="Client"),
     )
     environment = await service.create_environment(
         actor=hook_actor(),
@@ -59,7 +62,7 @@ async def client_environment(interaction_sessions):
             provider_id=provider.id,
             configuration={},
             state=EnvironmentState(
-                provider_key="a13n.websocket-envd", state_version="1", state={"daemon_environment_id": "native"}
+                provider_key="websocket_envd", state_version="1", state={"daemon_environment_id": "native"}
             ),
         ),
     )

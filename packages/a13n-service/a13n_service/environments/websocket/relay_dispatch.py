@@ -7,14 +7,14 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from a13n_envd_client import EIPSession
-from a13n_environment import (
+from a13n_harness.providers.environment.eip.binding import EIPEnvironmentSession
+from a13n_harness.providers.environment.models import (
+    ENVIRONMENT_ACTION_DISPATCH,
     EnvironmentAction,
     EnvironmentError,
     EnvironmentPermissionSet,
 )
-from a13n_environment.eip.binding import EIPEnvironmentSession
-from a13n_environment.models import ENVIRONMENT_ACTION_DISPATCH
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from pydantic import JsonValue
 
 from ..domain import DomainModel

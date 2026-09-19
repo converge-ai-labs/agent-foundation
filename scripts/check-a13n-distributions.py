@@ -13,12 +13,10 @@ from email.policy import default
 from pathlib import Path
 
 PACKAGES = {
-    "a13n-environment": "a13n_environment",
     "a13n-harness": "a13n_harness",
     "a13n-stream-protocol": "a13n_stream_protocol",
 }
 INTERNAL_REQUIREMENTS = {
-    "a13n-harness": "a13n-environment",
     "a13n-stream-protocol": "a13n-harness",
 }
 LOCAL_INSTALL_DEPENDENCIES = {
@@ -139,8 +137,6 @@ def validate_distributions(
                 raise DistributionError(f"Cannot create smoke environment for {distribution}:\n{create.stderr}")
             python = _venv_python(environment)
             install_wheels = [wheels[name] for name in LOCAL_INSTALL_DEPENDENCIES] if require_local_dependencies else []
-            if distribution in {"a13n-harness", "a13n-stream-protocol"}:
-                install_wheels.append(wheels["a13n-environment"])
             if distribution == "a13n-stream-protocol":
                 install_wheels.append(wheels["a13n-harness"])
             install_wheels.append(wheels[distribution])

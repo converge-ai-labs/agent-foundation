@@ -28,7 +28,7 @@ from a13n_service.temporal import assume_utc
 from .domain import (
     Environment,
     EnvironmentCommand,
-    EnvironmentProvider,
+    EnvironmentProviderAccount,
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
 )
@@ -71,8 +71,8 @@ class EnvironmentProviderRecord(ResourceCredential[str | None], ResourceColumns[
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     configuration_source: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
 
-    def to_resource(self) -> EnvironmentProvider:
-        return EnvironmentProvider.model_validate(
+    def to_resource(self) -> EnvironmentProviderAccount:
+        return EnvironmentProviderAccount.model_validate(
             {
                 **self.identity(),
                 "type": self.type,

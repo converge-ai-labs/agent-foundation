@@ -1,7 +1,7 @@
 from datetime import timedelta
 
 import pytest
-from a13n_environment import EnvironmentState
+from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_service.environments.domain import RegisterEnvironmentRequest
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.retention import active_use_exists, has_active_use
@@ -37,7 +37,7 @@ async def test_additional_use_retains_only_its_target_after_first_use(
             provider_id=provider.id,
             configuration={},
             state=EnvironmentState(
-                provider_key="a13n.websocket-envd", state_version="1", state={"daemon_environment_id": "other"}
+                provider_key="websocket_envd", state_version="1", state={"daemon_environment_id": "other"}
             ),
         ),
     )

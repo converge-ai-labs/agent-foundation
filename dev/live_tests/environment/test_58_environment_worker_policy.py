@@ -38,7 +38,7 @@ async def local_workers(policy_lab, request):
     )
     await lab.start_worker()
     pair = await add_second_worker(lab)
-    backend = EnvironmentBackend(lab, "direct-local", Path(REPOSITORY / "target/debug/a13n-envd"))
+    backend = EnvironmentBackend(lab, "direct_local", Path(REPOSITORY / "target/debug/a13n-envd"))
     try:
         async with backend.target() as target:
             yield backend, target, pair

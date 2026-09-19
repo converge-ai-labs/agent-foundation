@@ -2,7 +2,8 @@
 
 import httpx2
 import pytest
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor
 from fastapi import Request
@@ -28,7 +29,9 @@ async def test_five_configuration_resources_support_org_collections(
         components=Components(
             request_authenticator=authenticate,
             connector_providers=fake_registry(FakeConnectorBackend()),
-            environment_provider_catalog=build_environment_provider_catalog(builtin_keys=("direct-local",)),
+            environment_provider_catalog=EnvironmentProviderCatalog(
+                select_builtin_environment_providers(("direct_local",))
+            ),
             model_catalog=model_catalog,
         ),
     )
@@ -65,7 +68,7 @@ async def test_five_configuration_resources_support_org_collections(
             environment_provider = await client.post(
                 f"{org_path}/environment-providers",
                 headers=headers,
-                json={"type": "direct-local", "name": "Organization local"},
+                json={"type": "direct_local", "name": "Organization local"},
             )
             assert environment_provider.status_code == 201, environment_provider.text
             template = await client.post(

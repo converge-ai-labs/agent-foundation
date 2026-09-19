@@ -4,8 +4,12 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-from a13n_environment import EnvironmentProviderError, EnvironmentState
-from a13n_environment.errors import EnvironmentProviderErrorCategory, EnvironmentProviderOutcomeCertainty
+from a13n_harness.providers.environment.errors import (
+    EnvironmentProviderError,
+    EnvironmentProviderErrorCategory,
+    EnvironmentProviderOutcomeCertainty,
+)
+from a13n_harness.providers.environment.models import EnvironmentState
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.iam.models import SecurityAuditRecord
@@ -18,6 +22,7 @@ from tests.environments.test_lifecycle import Target
 from tests.environments.test_outcomes import interrupt_publication
 from tests.lifecycle_support import test_lifecycle_writer
 
+from ..environments.conftest import catalog_with
 from .conftest import NOW
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .test_environment_runtime import template_config
@@ -51,9 +56,7 @@ async def test_first_use_exposes_one_published_generation_after_write_interrupti
 
     monkeypatch.setattr(lifecycle, "construct", counted)
     attempts = interrupt_publication(monkeypatch, lifecycle, after_commit=after_commit)
-    await environment.enter(
-        thread_id=run.thread_id, run_id=run.id, agent_instance_id="agent-test", mount_id="workspace"
-    )
+    await environment.enter(mount_id="workspace")
     try:
         await environment.ensure_ready(frozenset({"files"}))
         await environment.operations.files.write_text("/published.txt", "ready", mode="create")
@@ -80,7 +83,7 @@ async def test_first_preparation_failure_retains_known_target_and_dispatch_certa
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, failure
 ):
     lifecycle, environment, _ = await accepted_environment(interaction_sessions, interaction_object_store, tmp_path)
-    state = EnvironmentState(provider_key="direct-local", state_version="1", state={"target": "allocated"})
+    state = EnvironmentState(provider_key="direct_local", state_version="1", state={"target": "allocated"})
     events = []
 
     class AllocatedTarget(Target):
@@ -102,7 +105,7 @@ async def test_first_preparation_failure_retains_known_target_and_dispatch_certa
         return AllocatedTarget(None, events)
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    monkeypatch.setattr(lifecycle.catalog.require("direct-local"), "target_identity", lambda **kwargs: "allocated")
+    lifecycle.catalog = catalog_with(lifecycle.catalog, "direct_local", target_identity=lambda **kwargs: "allocated")
     attempts = interrupt_publication(monkeypatch, lifecycle, after_commit=True)
     with pytest.raises(BaseException, match=r"[Cc]ancelled|[Cc]onstruction|Readiness") as error:
         await environment.prepare()

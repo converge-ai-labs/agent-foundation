@@ -43,7 +43,7 @@ async def test_e2b_cleanup_discovers_lost_state_and_continues_after_failures(mon
     pages = Pages()
 
     def discover(*, query, **options):
-        assert query.metadata == {"a13n_environment": "env-owned"}
+        assert query.metadata == {"a13n_harness.providers.environment": "env-owned"}
         return pages
 
     kill = AsyncMock(side_effect=[RuntimeError("first cleanup failed"), True])

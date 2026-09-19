@@ -8,17 +8,13 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
-from a13n_environment import (
-    E2BEnvironment,
-    E2BProviderConfiguration,
-    E2BProviderRuntime,
-    EnvironmentAction,
-    EnvironmentPermissionSet,
-)
-from a13n_environment._guest_files import GuestFiles
-from a13n_environment.e2b.commands import GuestCommands
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
+from a13n_harness.providers.environment._guest_files import GuestFiles
+from a13n_harness.providers.environment.e2b.commands import GuestCommands
+from a13n_harness.providers.environment.e2b.configuration import E2BEnvironmentConfiguration
+from a13n_harness.providers.environment.e2b.provider import E2BEnvironment, E2BProviderRuntime
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentPermissionSet
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
 from pydantic import SecretStr
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
@@ -94,7 +90,7 @@ async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_k
         async def _ensure_ready(self, operations):
             pass
 
-    configuration = E2BProviderConfiguration()
+    configuration = E2BEnvironmentConfiguration()
     runtime = E2BProviderRuntime(SecretStr("test-only"))
     policy_resources = []
 

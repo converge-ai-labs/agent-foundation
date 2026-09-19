@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from a13n_environment import EnvironmentAction, EnvironmentError
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from a13n_harness import EnvironmentAccess
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from sqlalchemy import literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 

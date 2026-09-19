@@ -19,13 +19,13 @@ def anyio_backend():
     return "asyncio"
 
 
-@pytest.fixture(scope="module", params=["http-envd", "websocket-envd"])
+@pytest.fixture(scope="module", params=["http_envd", "websocket_envd"])
 async def remote_service(request):
     if not request.config.getoption("--live-environments"):
         pytest.skip("Opt in for real remote Service faults")
     binary = Path(os.environ.get("A13N_ENVD_TEST_BINARY", REPOSITORY / "target/debug/a13n-envd")).resolve()
     assert binary.is_file(), "Build a13n-envd before running live remote Service tests"
-    async with open_lab(suite="management", websocket_envd=request.param == "websocket-envd") as lab:
+    async with open_lab(suite="management", websocket_envd=request.param == "websocket_envd") as lab:
         yield EnvironmentBackend(lab, request.param, binary, network_faults=True)
 
 
@@ -64,13 +64,13 @@ async def test_service_reports_unknown_effect_without_replay_and_accepts_fresh_u
             assert effect.read_bytes() == b"ONCE"
         finally:
             target.proxy.restore()
-        if fault == "daemon-restart" or backend.kind == "http-envd":
+        if fault == "daemon-restart" or backend.kind == "http_envd":
             # HTTP cannot take over an abandoned admitted Session. The fixture
             # acts as the external operator and restarts that owned daemon.
             await target.restart_daemon()
         else:
             assert original_daemon.returncode is None, "Service must preserve the external daemon"
-        if backend.kind == "websocket-envd":
+        if backend.kind == "websocket_envd":
             # The daemon backs off up to 30 seconds after prolonged outage;
             # wait for its actual new carrier before requesting a fresh lease.
             await live.wait(

@@ -3,20 +3,19 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from a13n_environment import (
-    Environment,
+from a13n_harness.observation import record_span_metadata
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentOperationFamily,
-    EnvironmentOperations,
     EnvironmentState,
 )
-from a13n_environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
-from a13n_harness.observation import record_span_metadata
+from a13n_harness.providers.environment.operations import EnvironmentOperations
+from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from a13n_logging import get_logger
 from anyio import fail_after
 
@@ -102,9 +101,7 @@ class RunEnvironment(Environment):
     def operations(self) -> EnvironmentOperations:
         return self._delegate.operations if self._delegate else EnvironmentOperations()
 
-    async def _prepare(
-        self, *, thread_id: str, run_id: str, agent_instance_id: str, mount_id: str, host_refs: Mapping[str, str]
-    ) -> None:
+    async def _prepare(self, *, mount_id: str) -> None:
         # This boundary runs for eager preparation, first use, and target recovery.
         with observe_phase("a13n.service.environment.prepare") as span:
             previous_generation = self.backing_generation
@@ -113,11 +110,7 @@ class RunEnvironment(Environment):
                     span, {"environment.id": self.environment_id, "environment.generation_before": previous_generation}
                 )
             await self._prepare_target(
-                thread_id=thread_id,
-                run_id=run_id,
-                agent_instance_id=agent_instance_id,
                 mount_id=mount_id,
-                host_refs=host_refs,
             )
             if span is not None:
                 record_span_metadata(span, {"environment.generation": self.backing_generation})
@@ -128,9 +121,7 @@ class RunEnvironment(Environment):
                 generation_changed=previous_generation != self.backing_generation,
             )
 
-    async def _prepare_target(
-        self, *, thread_id: str, run_id: str, agent_instance_id: str, mount_id: str, host_refs: Mapping[str, str]
-    ) -> None:
+    async def _prepare_target(self, *, mount_id: str) -> None:
         delay = 0.1
         async with asyncio.timeout(self._coordinator.lease_duration.total_seconds()):
             while True:
@@ -162,13 +153,7 @@ class RunEnvironment(Environment):
         self._cache_state(delegate.dump_state())
         try:
             if not delegate.is_entered:
-                await delegate.enter(
-                    thread_id=thread_id,
-                    run_id=run_id,
-                    agent_instance_id=agent_instance_id,
-                    mount_id=mount_id,
-                    host_refs=host_refs,
-                )
+                await delegate.enter(mount_id=mount_id)
         except BaseException as error:
             try:
                 with fail_after(10, shield=True):
@@ -258,11 +243,11 @@ async def validate_run_environment(
             raise ValueError("Environment Provider is unavailable")
         configuration = await load_configuration(session, row)
         implementation = lifecycle.catalog.require(provider.type)
-        validated = implementation.validate_configuration(
+        validated = implementation.validate_environment(
             schema_version=configuration.configuration_schema_version,
             value=instance_configuration(provider.type, row.id, configuration),
         )
-        descriptor = implementation.describe_configuration(validated)
+        descriptor = implementation.describe_environment(validated)
         return _RunEnvironmentSelection(
             binding.name,
             row.id,
@@ -289,7 +274,7 @@ async def prepare_run_environment(
         return None
     if selection.provider_key == WEBSOCKET_PROVIDER_KEY:
         if client_connections is None:
-            from a13n_environment import EnvironmentError
+            from a13n_harness.providers.environment.models import EnvironmentError
 
             raise EnvironmentError("Client Environment support is unavailable", code="environment_worker_incompatible")
         environment = ClientRunEnvironment(

@@ -1,6 +1,6 @@
 # Environment Provider Example
 
-This standalone project demonstrates how a Host selects and drives the built-in `a13n-environment` backends without involving Agent Harness or a model.
+This standalone project demonstrates how a Host selects and drives the built-in `a13n_harness.providers.environment` backends without involving Agent Harness or a model.
 
 It covers the common Provider lifecycle:
 
@@ -17,12 +17,12 @@ It covers the common Provider lifecycle:
 
 | Route  | Provider                 | Use it for                               | Operation and ownership boundary                            |
 | ------ | ------------------------ | ---------------------------------------- | ----------------------------------------------------------- |
-| Native | `direct-local`           | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `direct_local`           | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
 | Native | `e2b`                    | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
-| Envd   | `a13n.local-envd`        | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Envd   | `local_envd`             | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
 | Native | `docker` (Native Docker) | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
-| Envd   | `a13n.http-envd`         | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
-| Envd   | `a13n.websocket-envd`    | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
+| Envd   | `http_envd`              | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
+| Envd   | `websocket_envd`         | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 The cloud demos here exercise E2B only. The complete [cloud-provider catalog](../../docs/a13n-environment/providers.md#cloud-providers) also includes the peer Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop implementations; their opt-in checks are documented there.
 
@@ -35,9 +35,9 @@ Build the daemon once, then try both transports without credentials, Docker, or 
 cargo build --locked --package a13n-envd
 cd examples/environment-provider
 uv sync --locked
-uv run environment-provider-example remote-envd-demo \
+uv run environment-provider-example remote_envd_demo \
   --transport http --executable ../../target/debug/a13n-envd
-uv run environment-provider-example remote-envd-demo \
+uv run environment-provider-example remote_envd_demo \
   --transport websocket --executable ../../target/debug/a13n-envd
 ```
 
@@ -48,7 +48,7 @@ Both write a file, close the adapter and read it through a fresh adapter with th
 To use an existing HTTP daemon instead:
 
 ```bash
-uv run environment-provider-example http-envd \
+uv run environment-provider-example http_envd \
   --endpoint https://envd.example.com \
   --daemon-environment-id env-remote-machine \
   --credential-file /private/envd-token
@@ -57,7 +57,7 @@ uv run environment-provider-example http-envd \
 For reverse WebSocket, start the example Host first and point your daemon at `ws://127.0.0.1:8788` with the matching identity and token:
 
 ```bash
-uv run environment-provider-example websocket-envd \
+uv run environment-provider-example websocket_envd \
   --daemon-environment-id env-remote-machine \
   --credential-file /private/envd-token
 ```
@@ -73,7 +73,7 @@ Direct Local is the default offline path and needs no daemon, container engine, 
 ```bash
 cd examples/environment-provider
 uv sync --locked
-uv run environment-provider-example direct-local
+uv run environment-provider-example direct_local
 ```
 
 The Host creates `.environment-provider-example/direct-local-workspace`, gives its absolute path to the Provider, writes and reads `/provider-example.txt`, and closes the adapter. The workspace remains because Direct Local never owns or deletes it.
@@ -81,7 +81,7 @@ The Host creates `.environment-provider-example/direct-local-workspace`, gives i
 Select another Host-owned directory with:
 
 ```bash
-uv run environment-provider-example direct-local --workspace /absolute/path/to/workspace
+uv run environment-provider-example direct_local --workspace /absolute/path/to/workspace
 ```
 
 Direct Local shares the embedding Host account. Its operation policy is not an operating-system sandbox.
@@ -91,7 +91,7 @@ Direct Local shares the embedding Host account. Its operation policy is not an o
 Local Envd starts one private `a13n-envd` generation for the fresh adapter and exposes the Host-owned workspace through EIP:
 
 ```bash
-uv run environment-provider-example local-envd \
+uv run environment-provider-example local_envd \
   --executable /absolute/path/to/a13n-envd
 ```
 

@@ -10,8 +10,8 @@ from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from typing import Literal
 
-from a13n_environment.files import FileOperator, FileWriteMode
-from a13n_environment.models import EnvironmentError
+from a13n_harness.providers.environment.files import FileOperator, FileWriteMode
+from a13n_harness.providers.environment.models import EnvironmentError
 from pydantic import Field, JsonValue
 
 from a13n_service.ids import ObjectId

@@ -9,7 +9,7 @@ Choose a Provider for the target you actually operate. Desired configuration is 
 `EnvironmentProviderCatalog` is an immutable explicit allowlist. Built-ins and installed extension entry points are selected by exact key, while trusted embedded code can supply Provider objects directly:
 
 ```python
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     build_environment_provider_catalog,
     discover_environment_provider_references,
 )
@@ -30,7 +30,7 @@ Package presence is availability, not authorization. No catalog accepts arbitrar
 Register one concrete no-argument Provider class through the entry-point group:
 
 ```toml
-[project.entry-points."a13n_environment.providers"]
+[project.entry-points."a13n_harness.providers.environment.providers"]
 "acme.sandbox" = "acme_agent_environment:AcmeSandboxProvider"
 ```
 
@@ -79,7 +79,7 @@ Start with the [built-in examples](examples.md) or [run both remote transports l
 The Host selects one compatible `a13n-envd` executable and private-runtime allocator:
 
 ```python
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     resolve_a13n_envd_executable,
@@ -101,7 +101,7 @@ Docker uses an Engine connection from the Worker. No bootstrap store, guest daem
 
 ```python
 import docker
-from a13n_environment import DockerProviderRuntime, DockerSDKEngine
+from a13n_harness.providers.environment import DockerProviderRuntime, DockerSDKEngine
 
 engine = DockerSDKEngine(docker.from_env())
 runtime = DockerProviderRuntime(engine=engine)
@@ -156,7 +156,7 @@ E2B executes commands directly through its native asynchronous SDK. Bounded Pyth
 ```python
 import os
 from pydantic import SecretStr
-from a13n_environment import E2BEnvironment, E2BProviderConfiguration, E2BProviderRuntime
+from a13n_harness.providers.environment import E2BEnvironment, E2BProviderConfiguration, E2BProviderRuntime
 
 configuration = E2BProviderConfiguration(template="base", timeout_seconds=300)
 runtime = E2BProviderRuntime(api_key=SecretStr(os.environ["E2B_API_KEY"]))
@@ -224,8 +224,8 @@ Use the same catalog and typed runtime construction as Service:
 
 ```python
 from pathlib import Path
-from a13n_environment import build_environment_provider_catalog
-from a13n_environment.management import ProviderRuntimeContext
+from a13n_harness.providers.environment import build_environment_provider_catalog
+from a13n_harness.providers.environment.management import ProviderRuntimeContext
 
 provider = build_environment_provider_catalog(builtin_keys=["daytona"]).require("daytona")
 recipe = provider.validate_configuration(schema_version="1", value={})

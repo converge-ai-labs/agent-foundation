@@ -123,7 +123,7 @@ class SubagentsSettings(Section):
 
 
 class EnvironmentsSettings(Section):
-    provider_builtins: tuple[str, ...] = ("e2b", "daytona", "modal", "vercel", "sprites", "runloop", "a13n.http-envd")
+    provider_builtins: tuple[str, ...] = ("e2b", "daytona", "modal", "vercel", "sprites", "runloop", "http_envd")
     client_public_origin: str | None = None
     client_max_connections: int = Field(default=128, ge=1, le=1000)
     local_providers: dict[LocalProviderType, JsonObject] = Field(default_factory=dict)
@@ -136,7 +136,7 @@ class EnvironmentsSettings(Section):
 
     @model_validator(mode="after")
     def local_provider_configuration(self) -> Self:
-        if "a13n.local-envd" in self.provider_builtins:
+        if "local_envd" in self.provider_builtins:
             raise ValueError("Local Envd is not supported by Service")
         if LOCAL_PROVIDER_TYPES.intersection(self.provider_builtins):
             raise ValueError("Configure local backends through environments.local_providers, not provider_builtins")

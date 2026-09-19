@@ -34,7 +34,7 @@ packages = ["src/acme_provider"]
 members = []
 
 [tool.uv.sources]
-a13n-environment = { path = "../../packages/a13n-environment", editable = true }
+a13n-envd-client = { path = "../../packages/a13n-envd-client", editable = true }
 a13n-harness = { path = "../../packages/a13n-harness", editable = true }
 a13n-logging = { path = "../../packages/a13n-logging", editable = true }
 a13n-stream-protocol = { path = "../../packages/a13n-stream-protocol", editable = true }

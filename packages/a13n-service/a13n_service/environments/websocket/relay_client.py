@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from time import monotonic
 from typing import Literal
 
-from a13n_environment import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
 from anyio import move_on_after
 from pydantic import JsonValue
 

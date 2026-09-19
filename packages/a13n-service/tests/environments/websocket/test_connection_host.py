@@ -11,10 +11,10 @@ from pathlib import Path
 
 import pytest
 import uvicorn
-from a13n_environment import EnvironmentAction, EnvironmentError
-from a13n_environment.commands import ArgvCommand, CommandRequest
-from a13n_environment.retention import EnvironmentOutputPolicy
 from a13n_harness import EnvironmentAccess
+from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from a13n_service.environments.websocket.authority import UseIdentity
 from a13n_service.environments.websocket.connection_host import ClientConnectionHost
 from a13n_service.environments.websocket.coordination import ConnectionCoordination

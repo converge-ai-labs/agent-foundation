@@ -4,7 +4,8 @@ import asyncio
 from datetime import timedelta
 
 import pytest
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.environments import lifecycle as lifecycle_module
 from a13n_service.environments.domain import (
     CreateManagedEnvironmentRequest,
@@ -36,7 +37,7 @@ pytestmark = pytest.mark.anyio
 async def due_environment(interaction_sessions, tmp_path):
     sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
-    catalog = build_environment_provider_catalog(builtin_keys=("docker",))
+    catalog = EnvironmentProviderCatalog(select_builtin_environment_providers(("docker",)))
     protector = SecretProtector(key=b"e" * 32, encryption_key_id="test")
     service = EnvironmentService(sessions, catalog, protector)
     provider = await service.create_provider(
@@ -63,7 +64,7 @@ async def due_environment(interaction_sessions, tmp_path):
     async with transaction(sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since, row.next_maintenance_at = "running", NOW - timedelta(seconds=60), now
-    return sessions, environment.id, EnvironmentLifecycle(sessions, catalog, protector, tmp_path, clock=lambda: now)
+    return sessions, environment.id, EnvironmentLifecycle(sessions, catalog, protector, clock=lambda: now)
 
 
 async def test_maintenance_decision_and_claim_commit_together_and_skip_competitors(due_environment, monkeypatch):

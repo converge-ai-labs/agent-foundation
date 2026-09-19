@@ -6,11 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from a13n_environment import LocalEnvdEnvironmentProvider
 from a13n_harness.capabilities import SubagentOperator
 from a13n_harness.capabilities.skills import SkillsCapability
 from a13n_harness.plugin_factories import HarnessPluginFactory, HarnessPluginFactoryContext
 from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness_ui.composition import (
     IMPLICIT_NATIVE_PROFILE,
     PACKAGE_SYSTEM_PROMPT,
@@ -238,7 +238,7 @@ async def test_resolves_release_owned_sandbox_profile_without_configuration_reso
     assert composition.environment_profile.profile_id == SANDBOX_PROFILE_ID
     assert composition.environment_profile.provider_key == LOCAL_ENVD_PROVIDER_KEY
     assert composition.environment_profile.adapter_key == LOCAL_ENVD_ADAPTER_KEY
-    assert isinstance(reconstructed.provider, LocalEnvdEnvironmentProvider)
+    assert reconstructed.provider is LOCAL_ENVD
     assert reconstructed.adapter.preserves_host_paths
 
 
@@ -1064,9 +1064,8 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
     import shlex
     import sys
 
-    from a13n_environment import DirectLocalProviderRuntime
-    from a13n_environment.commands import CommandEnvironment, CommandRequest, ShellCommand
-    from a13n_environment.retention import EnvironmentOutputPolicy
+    from a13n_harness.providers.environment.commands import CommandEnvironment, CommandRequest, ShellCommand
+    from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
     source = await load_harness_ui_configuration(_write_source(tmp_path))
     composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
@@ -1086,9 +1085,9 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
         root=root,
         state=None,
         provider=selected.provider,
-        runtime=DirectLocalProviderRuntime(),
+        runtime=None,
     )
-    await environment.enter(thread_id="thread-test", run_id="run-test", agent_instance_id="agent-test", mount_id=mount)
+    await environment.enter(mount_id=mount)
     try:
         await environment.prepare()
         shell = environment.operations.shell

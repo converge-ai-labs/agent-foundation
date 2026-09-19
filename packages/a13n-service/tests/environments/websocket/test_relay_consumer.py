@@ -4,9 +4,9 @@ import asyncio
 from dataclasses import replace
 
 import pytest
-from a13n_environment.direct_local.files import LocalFileOperator
-from a13n_environment.direct_local.provider import _DirectLocalFilePolicy
-from a13n_environment.models import EnvironmentAction
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+from a13n_harness.providers.environment.direct_local.provider import _DirectLocalFilePolicy
+from a13n_harness.providers.environment.models import EnvironmentAction
 from a13n_service.environments.websocket.relay_files import FileRelayDispatch
 from a13n_service.environments.websocket.relay_storage import (
     RelayStoreError,

@@ -5,7 +5,8 @@ from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
-from a13n_environment import build_environment_provider_catalog
+from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
 from a13n_service.environments.service import EnvironmentService
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
@@ -118,7 +119,16 @@ async def environment_sessions(service_database: PostgreSQLConfig) -> AsyncItera
 
 @pytest.fixture
 def provider_catalog():
-    return build_environment_provider_catalog(builtin_keys=("direct-local", "docker"))
+    return EnvironmentProviderCatalog(select_builtin_environment_providers(("direct_local", "docker")))
+
+
+def catalog_with(catalog: EnvironmentProviderCatalog, provider_type: str, **changes) -> EnvironmentProviderCatalog:
+    """Definitions are immutable: a test variant replaces the entry instead of mutating it."""
+    from dataclasses import replace
+
+    return EnvironmentProviderCatalog(
+        replace(definition, **changes) if key == provider_type else definition for key, definition in catalog.items()
+    )
 
 
 @pytest.fixture

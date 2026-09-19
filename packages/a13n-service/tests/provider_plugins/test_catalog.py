@@ -6,11 +6,7 @@ from typing import cast
 import pytest
 from a13n_harness.providers.plugins import ProviderManifest
 from a13n_harness.providers.web import WebProviderDefinition
-from a13n_service.provider_plugins import (
-    ProviderPluginError,
-    load_provider_catalogs,
-    provider_plugin,
-)
+from a13n_service.provider_plugins import ProviderPluginError, load_provider_catalogs
 from pydantic import BaseModel, ConfigDict
 
 
@@ -62,13 +58,10 @@ class EntryPoint:
         return self._register
 
 
-def compatible(register):
-    return provider_plugin(api_version=1)(register)
-
-
 def install(monkeypatch: pytest.MonkeyPatch, *entry_points: EntryPoint) -> None:
+    """Service selects installed plugins only through the shared Harness loader."""
     monkeypatch.setattr(
-        "a13n_service.provider_plugins.catalog.importlib.metadata.entry_points",
+        "a13n_harness.providers.plugins.importlib.metadata.entry_points",
         lambda *, group: entry_points,
     )
 
@@ -93,7 +86,7 @@ def test_only_selected_entry_point_is_imported(monkeypatch: pytest.MonkeyPatch) 
 
 def test_empty_selection_does_not_enumerate_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "a13n_service.provider_plugins.catalog.importlib.metadata.entry_points",
+        "a13n_harness.providers.plugins.importlib.metadata.entry_points",
         lambda **kwargs: (_ for _ in ()).throw(AssertionError(f"metadata scanned: {kwargs}")),
     )
 
@@ -110,18 +103,15 @@ def test_missing_and_duplicate_selection_fail(monkeypatch: pytest.MonkeyPatch, e
 
 
 def test_ambiguous_entry_point_fails_without_import(monkeypatch: pytest.MonkeyPatch) -> None:
-    entry_points = (EntryPoint("same", compatible(lambda registry: None)),) * 2
+    entry_points = (EntryPoint("same", ProviderManifest(api_version=1)),) * 2
     install(monkeypatch, *entry_points)
-    with pytest.raises(ProviderPluginError, match="ambiguous"):
+    with pytest.raises(ProviderPluginError, match="ValueError"):
         load_provider_catalogs(("same",))
     assert entry_points[0].loads == 0
 
 
-def test_incompatible_api_duplicate_type_and_bad_schema_fail(monkeypatch: pytest.MonkeyPatch) -> None:
-    def incompatible(_registry) -> None:
-        pass
-
-    install(monkeypatch, EntryPoint("incompatible", incompatible))
+def test_incompatible_export_duplicate_type_and_bad_schema_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    install(monkeypatch, EntryPoint("incompatible", object()))
     with pytest.raises(ProviderPluginError, match="TypeError"):
         load_provider_catalogs(("incompatible",))
 
@@ -146,26 +136,6 @@ def test_incompatible_api_duplicate_type_and_bad_schema_fail(monkeypatch: pytest
             setup_url="https://example.com",
             search=search,
         )
-
-
-def test_declared_old_api_is_rejected_before_callback_on_newer_service(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    called = False
-
-    @provider_plugin(api_version=1)
-    def old_plugin(_registry) -> None:
-        nonlocal called
-        called = True
-
-    monkeypatch.setattr("a13n_service.provider_plugins.api.PROVIDER_EXTENSION_API_VERSION", 2)
-    monkeypatch.setattr("a13n_service.provider_plugins.catalog.PROVIDER_EXTENSION_API_VERSION", 2)
-    install(monkeypatch, EntryPoint("old", old_plugin))
-
-    with pytest.raises(ProviderPluginError, match="TypeError"):
-        load_provider_catalogs(("old",))
-
-    assert not called
 
 
 def test_schema_exporter_must_be_a_pydantic_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -200,6 +170,22 @@ def test_manifest_rejects_version_and_duplicate_definitions():
         ProviderManifest(api_version=2)
     with pytest.raises(ValueError, match="duplicate"):
         ProviderManifest(api_version=1, web=(registration(), registration()))
+
+
+def test_environment_manifest_joins_builtins_and_rejects_builtin_collision(monkeypatch):
+    from dataclasses import replace
+
+    from a13n_harness.providers.environment.builtins import DIRECT_LOCAL
+
+    definition = replace(DIRECT_LOCAL, type="custom_workspace", display_name="Custom Workspace")
+    chosen = EntryPoint("workspace", ProviderManifest(api_version=1, environment=(definition,)))
+    install(monkeypatch, chosen)
+    catalogs = load_provider_catalogs(("workspace",))
+    assert definition in catalogs.environment
+    assert len(catalogs.environment) == 12
+    install(monkeypatch, EntryPoint("collision", ProviderManifest(api_version=1, environment=(DIRECT_LOCAL,))))
+    with pytest.raises(ProviderPluginError, match="ValueError"):
+        load_provider_catalogs(("collision",))
 
 
 def test_memory_manifest_reuses_shared_definition_and_rejects_builtin_collision(monkeypatch):

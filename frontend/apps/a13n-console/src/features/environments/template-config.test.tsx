@@ -97,15 +97,15 @@ beforeEach(() => {
               supports_managed: true,
               supports_stop: true,
               supports_destroy: true,
-              configuration_versions: ["1"],
+              template_configuration_versions: ["1"],
               template_configuration_schemas: { "1": e2bSchema },
             },
             {
-              type: "direct-local",
+              type: "direct_local",
               supports_managed: true,
               supports_stop: false,
               supports_destroy: false,
-              configuration_versions: ["1"],
+              template_configuration_versions: ["1"],
               template_configuration_schemas: { "1": localSchema },
             },
             {
@@ -113,16 +113,16 @@ beforeEach(() => {
               supports_managed: true,
               supports_stop: true,
               supports_destroy: true,
-              configuration_versions: ["1"],
+              template_configuration_versions: ["1"],
               template_configuration_schemas: { "1": dockerSchema },
             },
-            { type: "a13n.http-envd", supports_managed: false },
+            { type: "http_envd", supports_managed: false },
           ]
         : [
             { id: "envp_e2b", type: "e2b", name: "E2B", enabled: true },
             {
               id: "envp_local",
-              type: "direct-local",
+              type: "direct_local",
               name: "Local",
               enabled: true,
             },
@@ -134,7 +134,7 @@ beforeEach(() => {
             },
             {
               id: "envp_http",
-              type: "a13n.http-envd",
+              type: "http_envd",
               name: "External",
               enabled: true,
             },

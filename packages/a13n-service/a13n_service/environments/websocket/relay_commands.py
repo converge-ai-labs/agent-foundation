@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Literal, assert_never
 
-from a13n_environment.commands import PortTarget, ProcessIdentity
-from a13n_environment.models import EnvironmentAction, EnvironmentError
-from a13n_environment.operations import EnvironmentOperations
-from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.commands import PortTarget, ProcessIdentity
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.operations import EnvironmentOperations
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from pydantic import BaseModel, Field, JsonValue, TypeAdapter, model_validator
 
 from ..domain import DomainModel

@@ -7,11 +7,16 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from a13n_environment.direct_local.files import LocalFileOperator
-from a13n_environment.direct_local.provider import _DirectLocalFilePolicy
-from a13n_harness.environment.files import FileEntriesResult, FileMutationResult, FileWriteMode, FileWriteResult
-from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
+from a13n_harness.providers.environment.direct_local.files import LocalFileOperator
+from a13n_harness.providers.environment.direct_local.provider import _DirectLocalFilePolicy
+from a13n_harness.providers.environment.files import (
+    FileEntriesResult,
+    FileMutationResult,
+    FileWriteMode,
+    FileWriteResult,
+)
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.agents.errors import AgentError
 from a13n_service.agents.invocation_resolution.skills import validate_retained_skills
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord

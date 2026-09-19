@@ -410,7 +410,7 @@ async def test_native_preflight_never_resolves_envd(tmp_path: Path) -> None:
 async def test_sandbox_preflight_uses_production_denied_network_and_does_not_downgrade(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from a13n_environment import EnvironmentError
+    from a13n_harness.providers.environment.models import EnvironmentError
     from a13n_harness_ui import setup
 
     observed = []
@@ -841,22 +841,23 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
 async def test_windows_sandbox_shell_recipe_stays_in_eip_configuration(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from dataclasses import replace
     from unittest.mock import Mock
 
-    from a13n_environment import LocalEnvdEnvironmentProvider
+    from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
     from a13n_harness_ui.composition.models import ResolvedEnvironmentProfile
     from a13n_harness_ui.extensions import environment_adapters as adapters
 
-    provider = LocalEnvdEnvironmentProvider()
     create = Mock()
-    monkeypatch.setattr(provider, "create_environment", create)
+    # Definitions are immutable: observe construction through a replaced definition.
+    provider = replace(LOCAL_ENVD, construct=create)
     monkeypatch.setattr(adapters.sys, "platform", "win32")
     monkeypatch.setattr(adapters, "_host_shell", lambda: tmp_path / "pwsh.exe")
     profile = ResolvedEnvironmentProfile(
         profile_id="environment-sandbox",
         behavior_digest="a" * 64,
         provider_key=adapters.LOCAL_ENVD_PROVIDER_KEY,
-        provider_schema_version=next(iter(provider.configuration_versions)),
+        provider_schema_version=next(iter(provider.environment_versions)),
         adapter_key=adapters.LOCAL_ENVD_ADAPTER_KEY,
     )
     await adapters.LocalEnvdProjectAdapter().bind(

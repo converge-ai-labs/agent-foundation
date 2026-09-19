@@ -34,9 +34,7 @@ async def test_second_session_reads_original_file_after_stop_and_resume(
     first_environment = await prepare_run_environment(
         lifecycle, await prepare_permissions(sessions, first, _authority(claim))
     )
-    await first_environment.enter(
-        thread_id=first.thread_id, run_id=first.id, agent_instance_id="agent-a", mount_id="workspace"
-    )
+    await first_environment.enter(mount_id="workspace")
     await first_environment.ensure_ready(frozenset({"files"}))
     await first_environment.operations.files.write_text("/original.txt", "Session A's research", mode="create")
     environment_id = first_environment.environment_id
@@ -87,9 +85,7 @@ async def test_second_session_reads_original_file_after_stop_and_resume(
     second_environment = await prepare_run_environment(
         lifecycle, await prepare_permissions(sessions, second, _authority(claim))
     )
-    await second_environment.enter(
-        thread_id=second.thread_id, run_id=second.id, agent_instance_id="agent-b", mount_id="workspace"
-    )
+    await second_environment.enter(mount_id="workspace")
     await second_environment.ensure_ready(frozenset({"files"}))
     assert (await second_environment.operations.files.read_text("/original.txt")).text == "Session A's research"
     resumed = await service.get_environment(actor=hook_actor(), resource_id=environment_id)

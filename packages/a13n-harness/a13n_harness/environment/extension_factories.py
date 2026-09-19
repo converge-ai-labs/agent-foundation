@@ -12,9 +12,9 @@ from typing import cast
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
 from a13n_harness._json import require_finite_json
+from a13n_harness.providers.environment.models import EnvironmentError
 
 from .extensions import EnvironmentRunExtension
-from .models import EnvironmentError
 
 ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP = "a13n_harness.environment_run_extensions"
 _MAX_EXTENSION_IDENTIFIER_LENGTH = 200

@@ -1,15 +1,15 @@
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from a13n_environment import (
-    Environment,
+from a13n_harness.providers.environment.errors import EnvironmentProviderOutcomeCertainty
+from a13n_harness.providers.environment.management import Environment
+from a13n_harness.providers.environment.models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
-    EnvironmentOperations,
     EnvironmentPermissionSet,
-    EnvironmentProviderOutcomeCertainty,
     EnvironmentState,
 )
+from a13n_harness.providers.environment.operations import EnvironmentOperations
 from a13n_service.environments.domain import (
     CreateManagedEnvironmentRequest,
     CreateProviderRequest,
@@ -19,7 +19,7 @@ from a13n_service.environments.lifecycle import EnvironmentLifecycle, LifecycleO
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.storage import short_session, transaction
 
-from .conftest import WORKSPACE_ID, actor
+from .conftest import WORKSPACE_ID, actor, catalog_with
 
 pytestmark = pytest.mark.anyio
 
@@ -96,7 +96,7 @@ async def test_maintenance_stops_then_deletes_from_original_condition_time(
     environment = await fixture_environment(environment_service)
     start = datetime(2026, 9, 5, tzinfo=UTC)
     now = start + timedelta(seconds=60)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     events = []
 
     async def construct(operation):
@@ -130,7 +130,7 @@ async def test_stale_lifecycle_publication_cannot_change_target(
 ):
     environment = await fixture_environment(environment_service)
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since = "running", now - timedelta(seconds=60)
@@ -155,7 +155,7 @@ async def test_suspended_owner_cannot_dispatch_a_new_destructive_effect(
 ):
     environment = await fixture_environment(environment_service)
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     events = []
 
     async def construct(operation):
@@ -186,15 +186,15 @@ async def test_suspended_owner_cannot_dispatch_a_new_destructive_effect(
 async def test_known_stop_failure_releases_operation_and_records_failed_command(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch, caplog
 ):
-    from a13n_environment import EnvironmentProviderError
-    from a13n_environment.errors import EnvironmentProviderErrorCategory as Category
-    from a13n_environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+    from a13n_harness.providers.environment.errors import EnvironmentProviderError
+    from a13n_harness.providers.environment.errors import EnvironmentProviderErrorCategory as Category
+    from a13n_harness.providers.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
     from a13n_service.environments.domain import EnvironmentCommandRequest
     from a13n_service.environments.models import EnvironmentCommandRecord
 
     environment = await fixture_environment(environment_service)
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
 
     class MissingTarget(Target):
         async def _stop(self):
@@ -226,7 +226,7 @@ async def test_known_stop_failure_releases_operation_and_records_failed_command(
     record = next(record for record in caplog.records if record.msg == "environment_lifecycle_failed")
     assert record.environment_id == environment.id and record.operation_id == command.id
     assert record.action == "stop" and record.provider_type == "docker"
-    assert record.exception_chain[0]["type"] == "a13n_environment.errors.EnvironmentProviderError"
+    assert record.exception_chain[0]["type"] == "a13n_harness.providers.environment.errors.EnvironmentProviderError"
     assert record.exception_chain[0]["frames"] and record.exc_info is None
     async with short_session(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
@@ -255,7 +255,7 @@ async def test_abandoned_preparation_is_observed_without_starting_target(
 ):
     environment = await fixture_environment(environment_service)
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     events = []
 
     class ObservedTarget(Target):
@@ -303,8 +303,8 @@ async def test_absent_docker_allocation_releases_capacity_and_delete_is_idempote
 ):
     from unittest.mock import Mock
 
-    from a13n_environment import EnvironmentError
-    from a13n_environment.docker.runtime import DockerSDKEngine
+    from a13n_harness.providers.environment.docker.runtime import DockerSDKEngine
+    from a13n_harness.providers.environment.models import EnvironmentError
     from a13n_service.environments.capacity import CapacityLimits
     from a13n_service.environments.domain import EnvironmentCommandRequest
     from a13n_service.environments.models import EnvironmentCommandRecord, EnvironmentTemplateRevisionRecord
@@ -323,7 +323,7 @@ async def test_absent_docker_allocation_releases_capacity_and_delete_is_idempote
     now = datetime(2026, 9, 5, tzinfo=UTC)
     capacity = CapacityLimits(max_targets=1)
     lifecycle = EnvironmentLifecycle(
-        environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now, capacity=capacity
+        environment_sessions, provider_catalog, protector, clock=lambda: now, capacity=capacity
     )
     engine = DockerSDKEngine(Mock())
     engine.client.containers.get.side_effect = NotFound("absent")
@@ -415,7 +415,7 @@ async def test_periodic_batches_advance_past_failures_and_exclude_deleted_and_ex
             row = await session.get(EnvironmentRecord, environment_id)
             row.next_maintenance_at = now - timedelta(seconds=10 - index)
         (await session.get(EnvironmentRecord, third.id)).status = "deleted"
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     load_configuration = AsyncMock(side_effect=RuntimeError("configuration unavailable"))
     monkeypatch.setattr("a13n_service.environments.lifecycle.load_configuration", load_configuration)
     loop = EnvironmentMaintenanceLoop(lifecycle, concurrency=1, batch_size=1)
@@ -434,15 +434,15 @@ async def test_periodic_batches_advance_past_failures_and_exclude_deleted_and_ex
 async def test_unknown_stop_retains_operation_receipt_until_reconciled(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
 ):
-    from a13n_environment import EnvironmentProviderError
-    from a13n_environment.errors import EnvironmentProviderErrorCategory as Category
-    from a13n_environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
+    from a13n_harness.providers.environment.errors import EnvironmentProviderError
+    from a13n_harness.providers.environment.errors import EnvironmentProviderErrorCategory as Category
+    from a13n_harness.providers.environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
     from a13n_service.environments.domain import EnvironmentCommandRequest
     from a13n_service.environments.models import EnvironmentCommandRecord
 
     environment = await fixture_environment(environment_service)
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     failed = False
 
     class UncertainTarget(Target):
@@ -513,7 +513,7 @@ async def test_observed_expiry_schedules_renewal_without_repeated_provider_calls
         request=CreateManagedEnvironmentRequest(template_id=template.id),
     )
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     events = []
 
     class ExpiringTarget(Target):
@@ -529,7 +529,7 @@ async def test_observed_expiry_schedules_renewal_without_repeated_provider_calls
         return ExpiringTarget(operation.state, [])
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    monkeypatch.setattr(provider_catalog.require("docker"), "requires_keepalive", True)
+    lifecycle.catalog = catalog_with(provider_catalog, "docker", requires_keepalive=True)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.next_maintenance_at = "running", now
@@ -558,7 +558,7 @@ async def test_competing_maintenance_does_not_shorten_pending_operation_deadline
 
     environment = await fixture_environment(environment_service)
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     started, release = asyncio.Event(), asyncio.Event()
     calls = []
 
@@ -573,7 +573,7 @@ async def test_competing_maintenance_does_not_shorten_pending_operation_deadline
         return SlowTarget(operation.state, [])
 
     monkeypatch.setattr(lifecycle, "construct", construct)
-    monkeypatch.setattr(provider_catalog.require("docker"), "requires_keepalive", True)
+    lifecycle.catalog = catalog_with(provider_catalog, "docker", requires_keepalive=True)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since, row.next_maintenance_at = "running", now, now
@@ -599,7 +599,7 @@ async def test_stop_preserves_absent_status_and_still_stops_stateless_targets(
 
     environment = await fixture_environment(environment_service)
     now = datetime(2026, 9, 5, tzinfo=UTC)
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     events = []
 
     async def construct(operation):
@@ -648,7 +648,7 @@ async def test_slow_target_does_not_block_available_workers_at_a_page_boundary(
     async with transaction(environment_sessions) as session:
         for environment_id in ids:
             (await session.get(EnvironmentRecord, environment_id)).next_maintenance_at = now
-    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
+    lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, clock=lambda: now)
     release, progressed = asyncio.Event(), asyncio.Event()
     visited = []
 

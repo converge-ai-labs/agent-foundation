@@ -4,9 +4,10 @@ import asyncio
 import signal
 
 import pytest
-from a13n_environment import EnvironmentError, EnvironmentProviderError
-from a13n_environment.commands import CommandRequest, ShellCommand
-from a13n_environment.retention import EnvironmentOutputPolicy
+from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.models import EnvironmentError
+from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
 from .e2b_support import eventually
 from .file_backends import FileBackend
@@ -21,7 +22,7 @@ def command(script, *, stdin=False):
     )
 
 
-@pytest.fixture(params=["http-envd", "websocket-envd"])
+@pytest.fixture(params=["http_envd", "websocket_envd"])
 async def remote(request, tmp_path):
     if not request.config.getoption("--live-environments"):
         pytest.skip("Opt in for real remote Envd transport faults")
@@ -124,7 +125,7 @@ async def test_real_connection_loss_does_not_replay_dispatched_command(remote):
         await original.close()
     except (EnvironmentError, EnvironmentProviderError):
         pass
-    if backend.kind == "http-envd":
+    if backend.kind == "http_envd":
         # An abandoned HTTP Session stays admitted; a fresh adapter must not steal it.
         with pytest.raises(EnvironmentProviderError):
             await backend.prepare(backend.adapter())
@@ -132,7 +133,7 @@ async def test_real_connection_loss_does_not_replay_dispatched_command(remote):
         await backend.stop_daemon()
         await backend.launch_daemon()
     fresh = await backend.prepare(backend.adapter())
-    if backend.kind == "websocket-envd":
+    if backend.kind == "websocket_envd":
         assert fresh.descriptor.generation == original.descriptor.generation
         await finish_rebound(fresh, handle.identity)
     else:

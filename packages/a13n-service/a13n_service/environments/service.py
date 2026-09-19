@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from typing import cast
 
-from a13n_environment import EnvironmentProviderCatalog, EnvironmentProviderError
-from a13n_environment.docker.configuration import DockerProviderConfiguration
+from a13n_harness.providers.environment.catalog import EnvironmentProviderCatalog
+from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
+from a13n_harness.providers.environment.errors import EnvironmentProviderError
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -41,8 +41,8 @@ from .domain import (
     EnvironmentCommand,
     EnvironmentCommandRequest,
     EnvironmentDetail,
-    EnvironmentProvider,
-    EnvironmentProviderDefinition,
+    EnvironmentProviderAccount,
+    EnvironmentProviderMetadata,
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
     JsonObject,
@@ -54,7 +54,12 @@ from .domain import (
     UpdateProviderRequest,
     UpdateTemplateRequest,
 )
-from .errors import EnvironmentManagementError, environment_not_found, invalid_environment, is_target_identity_conflict
+from .errors import (
+    EnvironmentManagementError,
+    environment_not_found,
+    invalid_environment,
+    is_target_identity_conflict,
+)
 from .identity import default_environment_name
 from .identity import target_identity as scoped_target_identity
 from .image_jobs import (
@@ -73,6 +78,7 @@ from .models import (
     EnvironmentTemplateRecord,
     EnvironmentTemplateRevisionRecord,
 )
+from .provider_inputs import provider_configuration, provider_credential, provider_implementation
 from .selection import allocate_selection, resolve_selection
 
 
@@ -92,7 +98,7 @@ class EnvironmentService:
         self.deployment_provider_types = deployment_provider_types
         self.redis = redis
 
-    async def provider_types(self, actor: AuthenticatedActor) -> Collection[EnvironmentProviderDefinition]:
+    async def provider_types(self, actor: AuthenticatedActor) -> Collection[EnvironmentProviderMetadata]:
         async with short_session(self.sessions) as session:
             await authorize_environment_workspace(
                 session,
@@ -102,22 +108,8 @@ class EnvironmentService:
             )
         return Collection(
             items=tuple(
-                EnvironmentProviderDefinition(
-                    type=provider.key,
-                    display_name=provider.display_name,
-                    configuration_versions=tuple(sorted(provider.configuration_versions)),
-                    configuration_schema=provider.provider_configuration_model.model_json_schema(),
-                    template_configuration_schemas={
-                        version: model.model_json_schema() for version, model in provider.configuration_models.items()
-                    },
-                    deployment_managed=provider.key in self.deployment_provider_types,
-                    credential_schema=provider.credential_model.model_json_schema()
-                    if provider.credential_model
-                    else None,
-                    supports_managed=provider.supports_managed,
-                    supports_stop=provider.supports_stop,
-                    supports_destroy=provider.supports_destroy,
-                    requires_keepalive=provider.requires_keepalive,
+                EnvironmentProviderMetadata.describe(
+                    provider, deployment_managed=provider.type in self.deployment_provider_types
                 )
                 for provider in self.catalog.values()
             )
@@ -154,7 +146,9 @@ class EnvironmentService:
             require_enabled=True,
         )
         try:
-            checked = self.catalog.require("docker").validate_configuration(schema_version="1", value=configuration)
+            checked = provider_implementation(self.catalog, "docker").validate_environment(
+                schema_version="1", value=configuration
+            )
         except (ValidationError, EnvironmentProviderError) as error:
             raise invalid_environment("Docker image configuration is invalid") from error
         try:
@@ -162,7 +156,7 @@ class EnvironmentService:
                 self.redis,
                 ImageTestRequest(
                     identity=identity,
-                    configuration=cast(DockerProviderConfiguration, checked).model_copy(
+                    configuration=cast(DockerEnvironmentConfiguration, checked).model_copy(
                         update={"mounts": (), "init_script": None}
                     ),
                 ),
@@ -225,15 +219,17 @@ class EnvironmentService:
 
     async def create_provider(
         self, *, actor: AuthenticatedActor, workspace_id: str | None, request: CreateProviderRequest
-    ) -> EnvironmentProvider:
+    ) -> EnvironmentProviderAccount:
         if request.type in self.deployment_provider_types:
             raise invalid_environment("Local Providers are configured by the deployment")
+        # An unknown requested type is caller input, not a deployment fault.
+        if request.type not in self.catalog:
+            raise invalid_environment("Provider type or configuration is invalid")
         try:
-            provider = self.catalog.require(request.type)
-            configuration = provider.provider_configuration_model.model_validate(request.configuration)
-        except (ValidationError, EnvironmentProviderError) as error:
+            configuration = provider_configuration(self.catalog, request.type, request.configuration)
+        except ValidationError as error:
             raise invalid_environment("Provider type or configuration is invalid") from error
-        credential = self._credential(request.type, request.credential)
+        credential = provider_credential(self.catalog, request.type, configuration, request.credential)
         now = utc_now()
         async with transaction(self.sessions) as session:
             workspace = await authorize_environment_workspace(
@@ -256,25 +252,9 @@ class EnvironmentService:
             await session.flush()
             return row.to_resource()
 
-    def _credential(self, provider_type: str, value: dict | None) -> str | None:
-        model = self.catalog.require(provider_type).credential_model
-        if model is None:
-            if value is not None:
-                raise invalid_environment("this Provider does not accept credentials")
-            return None
-        try:
-            if value is None:
-                return None
-            model.model_validate(value)
-            # Validate with the Provider schema, then encrypt the submitted JSON.
-            # Serializing SecretStr fields would irreversibly store their display mask.
-            return json.dumps(value)
-        except ValidationError as error:
-            raise invalid_environment("Provider credential is invalid") from error
-
     async def update_provider(
         self, *, actor: AuthenticatedActor, provider_id: str, request: UpdateProviderRequest, if_match: str
-    ) -> EnvironmentProvider:
+    ) -> EnvironmentProviderAccount:
         async with transaction(self.sessions) as session:
             row = await self._provider(session, actor, provider_id, manage=True, lock=True)
             self._match(row.id, row.updated_at, if_match)
@@ -285,13 +265,16 @@ class EnvironmentService:
             if request.enabled is not None:
                 row.enabled = request.enabled
             if "credential" in request.model_fields_set:
-                row.replace_credential(self._credential(row.type, request.credential), self.protector)
+                configuration = provider_configuration(self.catalog, row.type, row.configuration)
+                row.replace_credential(
+                    provider_credential(self.catalog, row.type, configuration, request.credential), self.protector
+                )
             row.updated_at = utc_now()
             return row.to_resource()
 
     async def replace_credential(
         self, *, actor: AuthenticatedActor, provider_id: str, request: ReplaceCredentialRequest, if_match: str
-    ) -> EnvironmentProvider:
+    ) -> EnvironmentProviderAccount:
         return await self.update_provider(
             actor=actor,
             provider_id=provider_id,
@@ -392,11 +375,11 @@ class EnvironmentService:
         row = await self._provider(session, actor, template_config.provider_id)
         if (row.workspace_id is not None and row.workspace_id != workspace_id) or not row.enabled:
             raise environment_not_found()
-        provider = self.catalog.require(row.type)
+        provider = provider_implementation(self.catalog, row.type)
         if not provider.supports_managed:
             raise invalid_environment("the selected Provider supports external registration only")
         try:
-            provider.validate_configuration(
+            provider.validate_environment(
                 schema_version=template_config.configuration_schema_version, value=template_config.configuration
             )
         except (ValidationError, EnvironmentProviderError) as error:
@@ -567,9 +550,9 @@ class EnvironmentService:
         provider = await self._provider(session, actor, request.provider_id)
         if (provider.workspace_id is not None and provider.workspace_id != workspace_id) or not provider.enabled:
             raise environment_not_found()
-        implementation = self.catalog.require(provider.type)
+        implementation = provider_implementation(self.catalog, provider.type)
         try:
-            configuration = implementation.validate_configuration(
+            configuration = implementation.validate_environment(
                 schema_version=request.configuration_schema_version, value=request.configuration
             )
         except (ValidationError, EnvironmentProviderError) as error:
@@ -779,13 +762,13 @@ class EnvironmentService:
                 "precondition_failed", "The resource changed.", category=ErrorCategory.stale_version
             )
 
-    async def get_provider(self, *, actor: AuthenticatedActor, resource_id: str) -> EnvironmentProvider:
+    async def get_provider(self, *, actor: AuthenticatedActor, resource_id: str) -> EnvironmentProviderAccount:
         async with short_session(self.sessions) as session:
             return (await self._provider(session, actor, resource_id)).to_resource()
 
     async def list_providers(
         self, *, actor: AuthenticatedActor, workspace_id: str | None, limit: int = 50, cursor: str | None = None
-    ) -> Collection[EnvironmentProvider]:
+    ) -> Collection[EnvironmentProviderAccount]:
         scope = {
             "collection": "providers",
             "workspace_id": workspace_id,
@@ -958,7 +941,7 @@ class EnvironmentService:
             provider = await session.get(EnvironmentProviderRecord, environment.provider_id)
             if provider is None:
                 raise environment_not_found()
-            implementation = self.catalog.require(provider.type)
+            implementation = provider_implementation(self.catalog, provider.type)
             supported = implementation.supports_stop if request.action == "stop" else implementation.supports_destroy
             if not supported:
                 raise invalid_environment("Provider does not support this lifecycle action")

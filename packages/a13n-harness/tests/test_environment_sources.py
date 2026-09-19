@@ -1,16 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
-from a13n_environment import (
-    DirectLocalEnvironment,
-    DirectLocalEnvironmentProvider,
-    DirectLocalProviderConfiguration,
-    DirectLocalRootConfiguration,
-    Environment,
-)
 from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
@@ -21,6 +14,13 @@ from a13n_harness import (
 )
 from a13n_harness.environment import EnvironmentAction, EnvironmentError, EnvironmentPermissionSet
 from a13n_harness.environment.advanced import create_empty_environment_runtime, create_environment_runtime
+from a13n_harness.environment.sources import EnvironmentScope
+from a13n_harness.providers.environment.direct_local.configuration import (
+    DirectLocalEnvironmentConfiguration,
+    DirectLocalRootConfiguration,
+)
+from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
+from a13n_harness.providers.environment.management import Environment
 from pydantic_ai.agent.spec import AgentSpec
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -42,13 +42,14 @@ def _executable():
 
 
 def _environment(root: Path, environment_id: str, *, read_only: bool = False) -> Environment:
-    provider = DirectLocalEnvironmentProvider()
-    return provider.create_environment(
-        configuration=DirectLocalProviderConfiguration(
+    provider = DIRECT_LOCAL
+    return provider.construct(
+        configuration=DirectLocalEnvironmentConfiguration(
             root=DirectLocalRootConfiguration(path=root, read_only=read_only),
         ),
         state=None,
         environment_id=environment_id,
+        runtime=None,
     )
 
 
@@ -62,37 +63,23 @@ class _TrackingEnvironment(DirectLocalEnvironment):
         fail_entry: bool = False,
     ) -> None:
         super().__init__(
-            DirectLocalProviderConfiguration(
+            DirectLocalEnvironmentConfiguration(
                 root=DirectLocalRootConfiguration(path=root),
             ),
             environment_id=environment_id,
         )
-        self.entry: tuple[str, str, str, str, dict[str, str]] | None = None
+        self.entry: str | None = None
         self.close_calls = 0
         self._lifecycle_events = lifecycle_events
         self._fail_entry = fail_entry
 
-    async def _prepare(
-        self,
-        *,
-        thread_id: str,
-        run_id: str,
-        agent_instance_id: str,
-        mount_id: str,
-        host_refs: Mapping[str, str],
-    ) -> None:
-        self.entry = (thread_id, run_id, agent_instance_id, mount_id, dict(host_refs))
+    async def _prepare(self, *, mount_id: str) -> None:
+        self.entry = mount_id
         if self._lifecycle_events is not None:
             self._lifecycle_events.append(f"enter:{self.environment_id}")
         if self._fail_entry:
             raise RuntimeError("entry failed")
-        await super()._prepare(
-            thread_id=thread_id,
-            run_id=run_id,
-            agent_instance_id=agent_instance_id,
-            mount_id=mount_id,
-            host_refs=host_refs,
-        )
+        await super()._prepare(mount_id=mount_id)
 
     async def _close(self) -> None:
         self.close_calls += 1
@@ -119,6 +106,7 @@ async def test_environment_input_is_entered_as_workspace_and_closed_non_destruct
     tmp_path: Path,
 ) -> None:
     environment = _TrackingEnvironment(tmp_path, "workspace-environment")
+    observed: list[tuple[str, EnvironmentScope]] = []
     bindings = RunBindings(
         instance=AgentInstanceContext(
             identity=AgentIdentityRef(issuer="test", subject="agent"),
@@ -136,20 +124,20 @@ async def test_environment_input_is_entered_as_workspace_and_closed_non_destruct
 
     result = await _executable().run(
         input_factory=prepare,
-        environment=environment,
+        environment=EnvironmentMount(environment, observer=lambda event, scope, error: observed.append((event, scope))),
         bindings=bindings,
     )
 
     assert result.output_or_raise() == "ok"
     assert (tmp_path / "value.txt").read_text() == "preserved"
     assert environment.close_calls == 1
-    assert environment.entry is not None
-    thread_id, run_id, agent_instance_id, mount_id, host_refs = environment.entry
-    assert thread_id == result.thread_id
-    assert run_id == result.run_id
-    assert agent_instance_id == "agent-instance-1"
-    assert mount_id.startswith("mount-")
-    assert host_refs == {"attempt": "attempt-1"}
+    # The Provider only ever sees a real mount ID; Run identity stays in the Harness layer.
+    assert environment.entry is not None and environment.entry.startswith("mount-")
+    scope = observed[0][1]
+    assert (scope.thread_id, scope.run_id) == (result.thread_id, result.run_id)
+    assert scope.agent_instance_id == "agent-instance-1"
+    assert scope.mount_id == environment.entry
+    assert [event for event, _scope in observed] == ["started", "ready", "closed"]
 
 
 async def test_environment_mount_exposes_an_explicit_aggregate_path(tmp_path: Path) -> None:
@@ -465,12 +453,7 @@ async def test_failed_initial_environment_entry_discards_owned_inputs_once(
 
 async def test_externally_entered_environment_is_not_taken_or_closed(tmp_path: Path) -> None:
     environment = _TrackingEnvironment(tmp_path, "external")
-    await environment.enter(
-        thread_id="thread-external",
-        run_id="run-external",
-        agent_instance_id="agent-external",
-        mount_id="mount-external",
-    )
+    await environment.enter(mount_id="mount-external")
     try:
         with pytest.raises(EnvironmentError) as failure:
             await _executable().run("cannot take ownership", environment=environment)

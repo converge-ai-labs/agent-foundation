@@ -7,26 +7,27 @@ from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass, field
 from typing import Any
 
-from a13n_environment.operations import EnvironmentOperations as EnvironmentProviderOperations
 from pydantic import BaseModel
 
-from .commands import (
+from a13n_harness.providers.environment.commands import (
     BoundProcessHandle,
 )
-from .models import (
+from a13n_harness.providers.environment.models import (
     EnvironmentError,
     EnvironmentMountInfo,
     EnvironmentOperationReceipt,
     EnvironmentPermissionSet,
 )
-from .providers import (
-    BoundEnvironmentProvider,
-    EnvironmentProviderBinding,
-)
-from .retention import (
+from a13n_harness.providers.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+from a13n_harness.providers.environment.retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,
+)
+
+from .providers import (
+    BoundEnvironmentProvider,
+    EnvironmentProviderBinding,
 )
 
 

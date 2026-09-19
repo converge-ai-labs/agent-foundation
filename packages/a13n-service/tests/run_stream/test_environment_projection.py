@@ -28,7 +28,7 @@ def observation():
         harness_run_id=HARNESS_RUN_ID,
         mount_id="workspace",
         occurred_at=NOW,
-        payload={"mount_id": "workspace", "provider_key": "test.provider"},
+        payload={"mount_id": "workspace", "provider_key": "test_provider"},
     )
 
 

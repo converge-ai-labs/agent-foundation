@@ -42,7 +42,7 @@ Resolve the built-in Local Envd Provider, construct one fresh Environment, and p
 ```python
 from pathlib import Path
 
-from a13n_environment import (
+from a13n_harness.providers.environment import (
     LocalEnvdProviderRuntime,
     TemporaryLocalEnvdRuntimeAllocator,
     build_environment_provider_catalog,

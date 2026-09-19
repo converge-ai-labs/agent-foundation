@@ -32,7 +32,7 @@ async def environment_backend(request):
     if not request.config.getoption("--live-environments"):
         pytest.skip("Opt in with --live-environments for real envd, Docker and configured E2B")
     kind, binary, settings = request.param, None, None
-    if kind in {"local-envd", *REMOTE}:
+    if kind in {"local_envd", *REMOTE}:
         binary = Path(os.environ.get("A13N_ENVD_TEST_BINARY", REPOSITORY / "target/debug/a13n-envd")).resolve()
         if not binary.is_file():
             pytest.fail("Build a13n-envd or set A13N_ENVD_TEST_BINARY before enabling the Environment matrix")
@@ -42,7 +42,7 @@ async def environment_backend(request):
         settings = load_provider_settings().environment
         if settings is None:
             pytest.skip("Configure the optional E2B environment section to run its matrix")
-    async with open_lab(suite="management", websocket_envd=kind == "websocket-envd") as lab:
+    async with open_lab(suite="management", websocket_envd=kind == "websocket_envd") as lab:
         backend = EnvironmentBackend(lab, kind, binary, settings)
         yield backend
 

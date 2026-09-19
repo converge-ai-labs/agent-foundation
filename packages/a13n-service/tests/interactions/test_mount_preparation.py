@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
-from a13n_environment import EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.environments.capacity import CapacityLimits
 from a13n_service.environments.domain import CreateManagedEnvironmentRequest
 from a13n_service.environments.models import EnvironmentRecord

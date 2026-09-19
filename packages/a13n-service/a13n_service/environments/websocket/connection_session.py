@@ -8,7 +8,7 @@ from time import monotonic
 
 from a13n_envd_client import EIPSession
 from a13n_envd_client.websocket import AcceptedWebSocketTransport
-from a13n_environment import EnvironmentAction
+from a13n_harness.providers.environment.models import EnvironmentAction
 from a13n_logging import get_logger
 from anyio import move_on_after
 

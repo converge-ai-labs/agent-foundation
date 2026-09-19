@@ -11,28 +11,17 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, NoReturn, cast
 
-from a13n_environment import EnvironmentState
-from a13n_environment.operations import EnvironmentOperations as EnvironmentProviderOperations
 from pydantic import JsonValue
 
 from a13n_harness._json import dump_json_bytes
 from a13n_harness.identity import AgentInstanceContext
-
-from ._mount_path import (
-    mount_path_from_provider_path,
-    normalize_operation_path,
-    parse_mount_path,
-    provider_path_from_suffix,
-)
-from .changes import EnvironmentChangeJournal
-from .commands import (
+from a13n_harness.providers.environment.commands import (
     BoundProcessHandle,
     CommandRequest,
     ProcessIdentity,
 )
-from .extensions import EnvironmentRunExtension, EnvironmentRunExtensionContext
-from .files import FileOperator
-from .models import (
+from a13n_harness.providers.environment.files import FileOperator
+from a13n_harness.providers.environment.models import (
     DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_DISPATCH,
@@ -48,7 +37,18 @@ from .models import (
     EnvironmentPermissionSet,
     EnvironmentReadinessRequirement,
     EnvironmentSnapshot,
+    EnvironmentState,
 )
+from a13n_harness.providers.environment.operations import EnvironmentOperations as EnvironmentProviderOperations
+
+from ._mount_path import (
+    mount_path_from_provider_path,
+    normalize_operation_path,
+    parse_mount_path,
+    provider_path_from_suffix,
+)
+from .changes import EnvironmentChangeJournal
+from .extensions import EnvironmentRunExtension, EnvironmentRunExtensionContext
 from .providers import (
     BoundEnvironment,
     BoundEnvironmentProvider,

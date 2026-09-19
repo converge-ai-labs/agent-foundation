@@ -11,15 +11,15 @@ from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness.context import AgentContext
 from a13n_harness.environment._resources import EnvironmentResources
-from a13n_harness.environment.commands import (
+from a13n_harness.environment.providers import BoundEnvironment
+from a13n_harness.providers.environment.commands import (
     CommandEnvironment,
     CommandLimits,
     CommandRequest,
     ShellCommand,
 )
-from a13n_harness.environment.models import EnvironmentAction, EnvironmentError
-from a13n_harness.environment.providers import BoundEnvironment
-from a13n_harness.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
+from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.retention import EnvironmentOutputCapture, EnvironmentOutputPolicy
 from a13n_harness.tools.metadata import (
     CanonicalResource,
     HarnessTool,

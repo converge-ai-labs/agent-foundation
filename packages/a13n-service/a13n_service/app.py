@@ -105,7 +105,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
                 for plugin in provider_catalogs.plugins
             ],
             "provider_types": {
-                "environment": [provider.key for provider in provider_catalogs.environment],
+                "environment": [provider.type for provider in provider_catalogs.environment],
                 "model": [provider.type for provider in provider_catalogs.model],
                 "connector": [provider.type for provider in provider_catalogs.connector],
                 "web": [provider.type for provider in provider_catalogs.web],

@@ -167,7 +167,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
     [name, setName] = useState(""),
     [templateId, setTemplateId] = useState(""),
     [providerId, setProviderId] = useState(""),
-    [version, setVersion] = useState(""),
     [schemaVersion, setSchemaVersion] = useState("1"),
     [configuration, setConfiguration] = useState("{}"),
     [state, setState] = useState(""),
@@ -185,7 +184,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
           ? {
               template_id: templateId,
               ...(name.trim() && { name: name.trim() }),
-              ...(version && { version: Number(version) }),
             }
           : {
               provider_id: providerId,
@@ -262,19 +260,6 @@ function EnvironmentForm({ close }: { close: () => void }) {
                 .map((item) => ({ value: item.id, label: item.name })) ?? []
             }
           />
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Template version (optional)")}
-            description={t("Leave empty to select the current revision.")}
-          >
-            <Input
-              type="number"
-              min={1}
-              step={1}
-              value={version}
-              onChange={(event) => setVersion(event.target.value)}
-            />
-          </FormField>
         </>
       ) : (
         <>

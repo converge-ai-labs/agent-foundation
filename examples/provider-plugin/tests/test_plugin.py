@@ -64,6 +64,8 @@ async def test_installed_entry_point_and_direct_use_share_definition(transport) 
 
 
 def test_public_import_and_installed_loading_do_not_import_service_or_agent_runtime() -> None:
+    """Five domains load their metadata without Service, Agent runtime, or optional SDKs."""
+
     result = subprocess.run(
         [
             sys.executable,
@@ -73,7 +75,7 @@ import importlib.abc
 import sys
 class Block(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.startswith(("a13n_harness.providers.connector.composio.runtime", "a13n_service", "pydantic_ai", "mem0", "a13n_harness.execution", "a13n_harness.agent", "a13n_environment")):
+        if fullname.startswith(("a13n_harness.providers.connector.composio.runtime", "a13n_service", "pydantic_ai", "mem0", "a13n_harness.execution", "a13n_harness.agent")):
             raise AssertionError(fullname)
 sys.meta_path.insert(0, Block())
 import httpx2
@@ -88,10 +90,14 @@ assert manifest.web[0].type == "acme_web"
 assert manifest.model[0].type == "acme_model"
 assert manifest.memory[0].type == "acme_memory"
 assert manifest.connector[0].type == "acme_connector"
+assert manifest.environment[0].type == "acme_workspace"
 from a13n_harness.providers.connector.builtins import BUILT_IN_CONNECTOR_PROVIDERS
 assert len(BUILT_IN_CONNECTOR_PROVIDERS) == 1
 from a13n_harness.providers.memory.builtins import BUILT_IN_MEMORY_PROVIDERS
 assert len(BUILT_IN_MEMORY_PROVIDERS) == 2
+from a13n_harness.providers.environment.builtins import BUILT_IN_ENVIRONMENT_PROVIDERS
+assert len(BUILT_IN_ENVIRONMENT_PROVIDERS) == 11
+assert not {"docker", "e2b", "modal"} & {name.split(".")[0] for name in sys.modules}
 """,
         ],
         capture_output=True,
