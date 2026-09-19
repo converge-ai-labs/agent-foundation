@@ -9,7 +9,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from a13n_service.agents.domain import ResolvedSkillBinding, SkillSelection
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.agents.skill_resolution import (
+    freeze_skill_locks,
+    prepare_skill_locks_from_bindings,
+    prepare_skill_locks_from_selections,
+)
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
 from a13n_service.http_errors import application_error_status
@@ -265,7 +271,7 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
         idempotency_key="revision-same",
     )
     assert same.created is False
-    assert same.result.outcome == "already_current"
+    assert same.result.outcome == "already_default"
     assert same.result.skill.version == 1
     assert same.result.revision.id == created.result.revision.id
 
@@ -308,6 +314,170 @@ async def test_create_and_publish_revision_are_atomic_and_idempotent(
             "source_kind",
             "publication_outcome",
         }
+
+
+@pytest.mark.anyio
+async def test_default_revision_selection_repoints_the_head_without_publishing(
+    skill_services: SkillTestServices,
+) -> None:
+    uploads = skill_services.uploads
+    publication = skill_services.publication
+    catalog = skill_services.catalog
+    created = await publication.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateSkillRequest(source=await staged_source(uploads, key="default-create", content=archive())),
+        idempotency_key="default-create",
+    )
+    skill_id = created.result.skill.id
+    first = created.result.revision
+    second = await publication.publish_revision(
+        actor=actor(),
+        skill_id=skill_id,
+        request=CreateSkillRevisionRequest(
+            expected_version=1,
+            source=await staged_source(uploads, key="default-second", content=archive(body="# Second")),
+        ),
+        idempotency_key="default-second",
+    )
+    assert second.result.skill.default_revision_id == second.result.revision.id
+    other = await publication.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateSkillRequest(
+            source=await staged_source(uploads, key="default-other", content=archive(name="other-skill"))
+        ),
+        idempotency_key="default-other",
+    )
+    published_etag = resource_etag(skill_id, second.result.skill.updated_at)
+
+    for foreign_id in (other.result.revision.id, "skr_0000000000000000"):
+        with pytest.raises(SkillError) as concealed:
+            await catalog.set_default_revision(
+                actor=actor(), skill_id=skill_id, revision_id=foreign_id, if_match=published_etag
+            )
+        assert concealed.value.code == "skill_not_found"
+
+    restored = await catalog.set_default_revision(
+        actor=actor(), skill_id=skill_id, revision_id=first.id, if_match=published_etag
+    )
+    assert restored.default_revision_id == first.id
+    assert restored.version == 2
+    assert restored.updated_at > second.result.skill.updated_at
+    restored_etag = resource_etag(skill_id, restored.updated_at)
+    assert restored_etag != published_etag
+    assert await catalog.get(actor=actor(), skill_id=skill_id) == restored
+
+    with pytest.raises(SkillError) as stale:
+        await catalog.set_default_revision(
+            actor=actor(), skill_id=skill_id, revision_id=second.result.revision.id, if_match=published_etag
+        )
+    assert stale.value.code == "precondition_failed"
+    assert stale.value.details == {"current_etag": restored_etag}
+    same = await catalog.set_default_revision(
+        actor=actor(), skill_id=skill_id, revision_id=first.id, if_match=restored_etag
+    )
+    assert same == restored
+
+    listed = await catalog.list(actor=actor(), workspace_id=WORKSPACE_ID, limit=10, cursor=None, q="deploy")
+    assert [(item.id, item.version, item.default_version) for item in listed.items] == [(skill_id, 2, 1)]
+
+    # Dedup compares against the default Revision, and publication appends after the highest version.
+    same_as_default = await publication.publish_revision(
+        actor=actor(),
+        skill_id=skill_id,
+        request=CreateSkillRevisionRequest(
+            expected_version=2,
+            source=await staged_source(uploads, key="default-same", content=archive()),
+        ),
+        idempotency_key="default-same",
+    )
+    assert same_as_default.created is False
+    assert same_as_default.result.outcome == "already_default"
+    assert same_as_default.result.revision.id == first.id
+    assert same_as_default.result.skill.version == 2
+    same_as_highest = await publication.publish_revision(
+        actor=actor(),
+        skill_id=skill_id,
+        request=CreateSkillRevisionRequest(
+            expected_version=2,
+            source=await staged_source(uploads, key="default-highest", content=archive(body="# Second")),
+        ),
+        idempotency_key="default-highest",
+    )
+    assert same_as_highest.created is True
+    assert same_as_highest.result.outcome == "published"
+    assert same_as_highest.result.revision.version == 3
+    assert same_as_highest.result.skill.version == 3
+    assert same_as_highest.result.skill.default_revision_id == same_as_highest.result.revision.id
+
+    sessions = create_session_factory(skill_services.engine)
+    async with short_session(sessions) as session:
+        audits = tuple(
+            (
+                await session.scalars(
+                    select(SecurityAuditRecord).where(SecurityAuditRecord.action == "skill.default_revision.set")
+                )
+            ).all()
+        )
+    assert sorted(item.outcome for item in audits) == ["failure", "failure", "failure", "success"]
+    success = next(item for item in audits if item.outcome == "success")
+    assert success.resource_id == skill_id
+    assert success.details == {"previous_revision_id": second.result.revision.id, "selected_revision_id": first.id}
+
+
+@pytest.mark.anyio
+async def test_unpinned_binding_resolves_the_default_revision_at_run_acceptance(
+    skill_services: SkillTestServices,
+) -> None:
+    uploads = skill_services.uploads
+    publication = skill_services.publication
+    created = await publication.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateSkillRequest(source=await staged_source(uploads, key="resolve-create", content=archive())),
+        idempotency_key="resolve-create",
+    )
+    skill = created.result.skill
+    second = await publication.publish_revision(
+        actor=actor(),
+        skill_id=skill.id,
+        request=CreateSkillRevisionRequest(
+            expected_version=1,
+            source=await staged_source(uploads, key="resolve-second", content=archive(body="# Second")),
+        ),
+        idempotency_key="resolve-second",
+    )
+    restored = await skill_services.catalog.set_default_revision(
+        actor=actor(),
+        skill_id=skill.id,
+        revision_id=created.result.revision.id,
+        if_match=resource_etag(skill.id, second.result.skill.updated_at),
+    )
+    assert restored.version == 2
+
+    sessions = create_session_factory(skill_services.engine)
+    async with transaction(sessions) as session:
+        from_binding = await prepare_skill_locks_from_bindings(
+            session,
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            bindings=(ResolvedSkillBinding(skill_id=skill.id, skill_key=skill.key, version=None),),
+        )
+        from_override = await prepare_skill_locks_from_selections(
+            session,
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            selections=(SkillSelection(skill_key=skill.key, version=None),),
+        )
+        assert from_override == from_binding
+        locks = await freeze_skill_locks(
+            session,
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            prepared=from_binding,
+        )
+    assert [(lock.skill_revision_id, lock.version) for lock in locks] == [(created.result.revision.id, 1)]
 
 
 @pytest.mark.anyio

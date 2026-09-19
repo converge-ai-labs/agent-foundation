@@ -35,7 +35,7 @@ export function SkillDetail() {
         .then(representation),
   });
   const skill = query.data?.value;
-  const revisionId = search.get("revision") ?? skill?.current_revision_id ?? "";
+  const revisionId = search.get("revision") ?? skill?.default_revision_id ?? "";
   // One fetch serves the header summary and the file browser, so opening a
   // retained version never asks for the same manifest twice.
   const revision = useQuery({
@@ -59,7 +59,7 @@ export function SkillDetail() {
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     );
-  const current = revision.data?.id === skill.current_revision_id;
+  const current = revision.data?.id === skill.default_revision_id;
   return (
     <DetailPage
       back="../skills"
@@ -116,14 +116,14 @@ export function SkillDetail() {
                     ? "GitHub"
                     : t("ZIP")}
                 </span>
-                <Link to="?tab=files">{t("View current version")}</Link>
+                <Link to="?tab=files">{t("View default version")}</Link>
               </p>
             )}
             <SkillFiles key={revision.data.id} revision={revision.data} />
           </>
         )
       ) : tab === "versions" ? (
-        <Revisions skill={skill} />
+        <Revisions skill={skill} etag={query.data.etag} />
       ) : (
         <UsedByAgents skill={skill} />
       )}

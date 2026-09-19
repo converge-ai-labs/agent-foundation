@@ -28,7 +28,7 @@ import { environmentApi, type EnvironmentScope } from "./api";
 import { useEnvironmentTypes } from "./providers";
 import { TemplateEditor } from "./template-editor";
 
-/** Reusable environment definitions: one row per template, newest revision. */
+/** Reusable environment definitions: one row per template with its default revision. */
 export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
   const client = useClient(),
     { can, organizationAdmin } = useAccess(),
@@ -48,11 +48,11 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
   });
   const revisions = useQueries({
     queries: (query.data?.items ?? []).map((item) => ({
-      queryKey: ["environment-revision", item.current_revision_id],
+      queryKey: ["environment-revision", item.default_revision_id],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         client.http
           .GET("/api/v1/environment-template-revisions/{revision_id}", {
-            params: { path: { revision_id: item.current_revision_id } },
+            params: { path: { revision_id: item.default_revision_id } },
             signal,
           })
           .then(data),
@@ -73,7 +73,7 @@ export function EnvironmentTemplates({ scope }: { scope: EnvironmentScope }) {
       ? organizationAdmin
       : can("environment_template.manage");
   function providerOf(template: Schema["EnvironmentTemplate"]) {
-    const revision = revisionById.get(template.current_revision_id);
+    const revision = revisionById.get(template.default_revision_id);
     return revision ? providerById.get(revision.provider_id) : undefined;
   }
   function providerName(provider?: Schema["EnvironmentProvider"]) {

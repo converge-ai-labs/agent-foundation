@@ -147,7 +147,7 @@ async def test_multiworker_template_revision_survives_recovery(multiworker):
         owners.append(lab.execution_owner(receipt["run_id"]))
         run = await live.run(receipt["run_id"])
         environment = await live.request("GET", "/api/v1/environments/" + run["environment_id"])
-        assert environment["generation"] == 0 and environment["template_revision_id"] == template["current_revision_id"]
+        assert environment["generation"] == 0 and environment["template_revision_id"] == template["default_revision_id"]
     assert len({worker.pid for worker in owners}) == 3
     other = lab.root / "template-new"
     other.mkdir(mode=0o700)
@@ -173,7 +173,7 @@ async def test_multiworker_template_revision_survives_recovery(multiworker):
         run = await live.finish(receipt["run_id"])
         assert "TEMPLATE_OLD" in run["output_text"] and "TEMPLATE_NEW" not in run["output_text"]
         environment = await live.request("GET", "/api/v1/environments/" + run["environment_id"])
-        assert environment["generation"] == 1 and environment["template_revision_id"] == template["current_revision_id"]
+        assert environment["generation"] == 1 and environment["template_revision_id"] == template["default_revision_id"]
     later = await journey.case(steps=[{"tool": "view", "arguments": {"file_path": "/workspace/proof.txt"}}])
     receipt = await journey.start(later, environment={"template_id": template["id"]})
     run = await live.finish(receipt["run_id"])

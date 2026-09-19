@@ -289,8 +289,8 @@ export async function inspectAgentDependencies(
             value:
               kind === "environment_template"
                 ? item.id
-                : item.current_revision_id,
-            label: `${item.name} · v${item.version}`,
+                : item.default_revision_id,
+            label: item.name,
             id: item.id,
           }));
       }

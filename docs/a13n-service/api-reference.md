@@ -2189,6 +2189,22 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `POST /api/v1/environment-templates/{template_id}/revisions/{revision_id}/default`
+
+Set Default Revision.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `template_id` | path     | true     | string        | —                          |
+| `revision_id` | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: EnvironmentTemplate`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `PATCH /api/v1/environments/{environment_id}`
 
 Update Environment.
@@ -3826,6 +3842,169 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+## memory-documents
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes`
+
+Scopes.
+
+| Parameter               | Location | Required | Type / schema  | Constraints and default            |
+| ----------------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace`             | path     | true     | string         | —                                  |
+| `limit`                 | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`                | query    | false    | string or null | —                                  |
+| `environment_id`        | query    | false    | string or null | —                                  |
+| `subject_id`            | query    | false    | string or null | —                                  |
+| `conversation_scope_id` | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: StoredScopeCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents`
+
+Listing.
+
+| Parameter   | Location | Required | Type / schema  | Constraints and default            |
+| ----------- | -------- | -------- | -------------- | ---------------------------------- |
+| `scope_id`  | path     | true     | string         | —                                  |
+| `workspace` | path     | true     | string         | —                                  |
+| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: FileDocumentCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents`
+
+Create.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `scope_id`        | path     | true     | string        | —                          |
+| `workspace`       | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=128 |
+
+Request body: required.
+
+- `application/json`: `DocumentInput`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: ManagedDocumentMutation`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `DELETE /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}`
+
+Remove.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default |
+| ------------- | -------- | -------- | ------------- | ----------------------- |
+| `scope_id`    | path     | true     | string        | —                       |
+| `document_id` | path     | true     | string        | —                       |
+| `workspace`   | path     | true     | string        | —                       |
+
+Responses:
+
+- **204** — Successful Response.
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}`
+
+Read.
+
+| Parameter     | Location | Required | Type / schema   | Constraints and default |
+| ------------- | -------- | -------- | --------------- | ----------------------- |
+| `scope_id`    | path     | true     | string          | —                       |
+| `document_id` | path     | true     | string          | —                       |
+| `workspace`   | path     | true     | string          | —                       |
+| `version`     | query    | false    | integer or null | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ManagedMemoryDocument`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}`
+
+Revise.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `scope_id`        | path     | true     | string        | —                          |
+| `document_id`     | path     | true     | string        | —                          |
+| `workspace`       | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=128 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `ReviseDocument`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ManagedDocumentMutation`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}/revisions`
+
+History.
+
+| Parameter        | Location | Required | Type / schema   | Constraints and default            |
+| ---------------- | -------- | -------- | --------------- | ---------------------------------- |
+| `scope_id`       | path     | true     | string          | —                                  |
+| `document_id`    | path     | true     | string          | —                                  |
+| `workspace`      | path     | true     | string          | —                                  |
+| `before_version` | query    | false    | integer or null | —                                  |
+| `limit`          | query    | false    | integer         | minimum=1; maximum=100; default=20 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: array of ManagedMemoryDocument`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/documents/{document_id}/toc`
+
+Toc.
+
+| Parameter     | Location | Required | Type / schema   | Constraints and default |
+| ------------- | -------- | -------- | --------------- | ----------------------- |
+| `scope_id`    | path     | true     | string          | —                       |
+| `document_id` | path     | true     | string          | —                       |
+| `workspace`   | path     | true     | string          | —                       |
+| `version`     | query    | false    | integer or null | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: array of DocumentHeading`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-scopes/{scope_id}/organization`
+
+Organization Status.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `scope_id`  | path     | true     | string        | —                       |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: array of OrganizationStatus`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ## memory-providers
 
 ### `GET /api/v1/memory-provider-types`
@@ -5174,6 +5353,22 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: SkillPublicationReceipt`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/skills/{skill_id}/revisions/{skill_revision_id}/default`
+
+Set Default Skill Revision.
+
+| Parameter           | Location | Required | Type / schema | Constraints and default    |
+| ------------------- | -------- | -------- | ------------- | -------------------------- |
+| `skill_id`          | path     | true     | string        | —                          |
+| `skill_revision_id` | path     | true     | string        | —                          |
+| `If-Match`          | header   | true     | string        | minLength=1; maxLength=256 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Skill`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

@@ -58,7 +58,7 @@ Service does not define an Environment access level. Templates, instances, prima
 
 ## Templates and Revisions
 
-An `EnvironmentTemplate` is an Organization- or Workspace-owned resource with stable `id`, `name`, description, `version`, `current_revision_id`, timestamps and archive state. Creation publishes revision 1. Behavior changes publish a higher immutable revision; metadata-only changes do not. Selecting current resolves to an exact revision when an Environment record is allocated. A referenced revision remains retained.
+An `EnvironmentTemplate` is an Organization- or Workspace-owned resource with stable `id`, `name`, description, `version`, `default_revision_id`, timestamps and archive state. Creation publishes revision 1 and selects it as the default. Behavior changes publish a higher immutable revision numbered `version + 1` and select it as the default; metadata-only changes do not. A manager can select any retained revision as the default without publishing. An unpinned selection resolves the default revision when an Environment record is allocated. A referenced revision remains retained.
 
 The conceptual revision is:
 
@@ -77,9 +77,9 @@ class EnvironmentTemplateRevision:
 
 A revision retains its Template's ownership. Organization Templates reference only Organization Providers; Workspace Templates may reference local or parent Providers.
 
-`configuration` is the implementation's desired environment template configuration: image or provider template, resource limits, initialization and supported workspace settings. It contains no current sandbox/container ID, credentials, live client or process handle. Required Provider runtime collaborators come from the selected Provider configuration and deployment. Initialization is provider-validated and runs for a new backing target, not on every reconnect. Restoring an earlier template configuration creates a new revision.
+`configuration` is the implementation's desired environment template configuration: image or provider template, resource limits, initialization and supported workspace settings. It contains no current sandbox/container ID, credentials, live client or process handle. Required Provider runtime collaborators come from the selected Provider configuration and deployment. Initialization is provider-validated and runs for a new backing target, not on every reconnect. Restoring an earlier template configuration selects that revision as the default; it creates no revision.
 
-The revision stores its frozen template configuration as `template_config`, including preparation timing and retention. New revisions affect newly allocated Environments only. Existing Environments, including later automatic rebuilds, use their original revision. Credential rotation does not publish a template revision. Archiving a template prevents new allocation but does not revoke existing Environments.
+The revision stores its frozen template configuration as `template_config`, including preparation timing and retention. Publishing a revision compares `expected_version` with `EnvironmentTemplate.version`; configuration equal to the default revision returns it without publishing. Default selection uses `POST /environment-templates/{template_id}/revisions/{revision_id}/default` with the template's strong `ETag` in `If-Match` and no body; it revalidates the selected revision's Provider and configuration, rejects archived templates, conceals a revision of another template as `404`, treats reselecting the default as a no-op, and returns the template with its new `ETag`. A new default affects newly allocated Environments only. Existing Environments, including later automatic rebuilds, use their original revision. Credential rotation does not publish a template revision. Archiving a template prevents new allocation but does not revoke existing Environments.
 
 ## Live Additional Mounts
 
@@ -126,9 +126,9 @@ Control calls HTTP EIP directly or routes reverse-WebSocket requests to the curr
 
 ## Thread Defaults and Run Selection
 
-Interactions owns input validation, source-Run inheritance, Run creation and Thread defaults. Environment selection applies one rule for current or explicit template revisions, archive state, existing references, Provider availability. Management, Thread/Run acceptance and read-only Gateway preflight share that rule. Acceptance reloads and authorizes the selection in the same short transaction as allocation and Run creation; preflight does not grant execution authority.
+Interactions owns input validation, source-Run inheritance, Run creation and Thread defaults. Environment selection applies one rule for default or explicit template revisions, archive state, existing references, Provider availability. Management, Thread/Run acceptance and read-only Gateway preflight share that rule. Acceptance reloads and authorizes the selection in the same short transaction as allocation and Run creation; preflight does not grant execution authority.
 
-A root Thread can be created without accepting a Run. Ordinary creation requires the Workspace runner authority also used for root Run start, current access to the selected Session and Agent when supplied, and the Environment/template use permission for its selected choice. Creation selects an explicit environment choice or, when absent, the selected Agent default Revision's `AgentConfig.default_environment_template_id`. It resolves that template's current revision at allocation, creates a managed Environment record and records `Thread.default_environment_id`, but performs no external provisioning. An explicit no-environment choice is preserved. If no explicit choice or Revision default exists, the Thread has no Environment. Thread creation and Environment allocation are idempotent and atomic. A combined root Run using an exact historical AgentRevision takes its omitted choice from that selected Revision, not the Agent's live default. Accepted Run and existing Thread choices retain their own semantics.
+A root Thread can be created without accepting a Run. Ordinary creation requires the Workspace runner authority also used for root Run start, current access to the selected Session and Agent when supplied, and the Environment/template use permission for its selected choice. Creation selects an explicit environment choice or, when absent, the selected Agent default Revision's `AgentConfig.default_environment_template_id`. It resolves that template's default revision at allocation, creates a managed Environment record and records `Thread.default_environment_id`, but performs no external provisioning. An explicit no-environment choice is preserved. If no explicit choice or Revision default exists, the Thread has no Environment. Thread creation and Environment allocation are idempotent and atomic. A combined root Run using an exact historical AgentRevision takes its omitted choice from that selected Revision, not the Agent's live default. Accepted Run and existing Thread choices retain their own semantics.
 
 Configuration Thread creation uses [configuration-purpose authority](33-identity-and-access-management.md#configuration-assistant-authority) and the fixed knowledge-mount policy above; it cannot allocate or inherit a user Environment implicitly.
 
@@ -150,7 +150,7 @@ type EnvironmentSelection = ExistingEnvironmentSelection | NewEnvironmentSelecti
 
 `working_directory` is an absolute [Device path](../a13n-envd/04-resource-operations.md#path-model). For an explicit envd target, omission/null resolves its advertised default before the acceptance transaction; the accepted binding always stores an explicit path. Inherited bindings retain their stored path. Native selections reject this override and retain Provider-defined configuration. Native Docker, E2B and Direct Local retain their own target preparation, state and lifecycle contracts.
 
-Exactly one variant is accepted. A new-environment choice always allocates a new record; matching the same template never implies reuse. `version=None` selects current at allocation. The public `environment` field distinguishes omission from null:
+Exactly one variant is accepted. A new-environment choice always allocates a new record; matching the same template never implies reuse. `version=None` selects the default revision at allocation. The public `environment` field distinguishes omission from null:
 
 | Entry path                                      | Omitted                           | Explicit Environment or template choice | Explicit null  |
 | ----------------------------------------------- | --------------------------------- | --------------------------------------- | -------------- |
@@ -307,15 +307,15 @@ A Fork normally shares its source Run's Environment, but an explicit selection m
 
 The public resource catalog is:
 
-| Resource                        | Routes                                                                                                         |
-| ------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Provider types                  | `GET /environment-provider-types`, `GET /environment-provider-types/{type}`                                    |
-| Configured Providers            | `POST/GET /workspaces/{workspace}/environment-providers`, `GET/PATCH /environment-providers/{provider_id}`     |
-| Provider credential replacement | `PUT /environment-providers/{provider_id}/credential`                                                          |
-| Templates                       | `POST/GET /workspaces/{workspace}/environment-templates`, `GET/PATCH /environment-templates/{template_id}`     |
-| Revisions                       | `POST/GET /environment-templates/{template_id}/revisions`, `GET /environment-template-revisions/{revision_id}` |
-| Actual Environments             | `POST/GET /workspaces/{workspace}/environments`, `GET/PATCH /environments/{environment_id}`                    |
-| Explicit lifecycle commands     | `POST /environments/{environment_id}/stop`, `POST /environments/{environment_id}/delete`                       |
+| Resource                        | Routes                                                                                                                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider types                  | `GET /environment-provider-types`, `GET /environment-provider-types/{type}`                                                                                                                 |
+| Configured Providers            | `POST/GET /workspaces/{workspace}/environment-providers`, `GET/PATCH /environment-providers/{provider_id}`                                                                                  |
+| Provider credential replacement | `PUT /environment-providers/{provider_id}/credential`                                                                                                                                       |
+| Templates                       | `POST/GET /workspaces/{workspace}/environment-templates`, `GET/PATCH /environment-templates/{template_id}`                                                                                  |
+| Revisions                       | `POST/GET /environment-templates/{template_id}/revisions`, `POST /environment-templates/{template_id}/revisions/{revision_id}/default`, `GET /environment-template-revisions/{revision_id}` |
+| Actual Environments             | `POST/GET /workspaces/{workspace}/environments`, `GET/PATCH /environments/{environment_id}`                                                                                                 |
+| Explicit lifecycle commands     | `POST /environments/{environment_id}/stop`, `POST /environments/{environment_id}/delete`                                                                                                    |
 
 Environment creation accepts a template choice or an explicitly externally managed registration. Both accept an optional name; omission generates a readable name containing an Environment ID suffix. Automatic Run/Thread allocations use the same naming rule. `PATCH /environments/{environment_id}` changes only the name under `environment.manage` and an exact `If-Match` precondition. Renaming preserves the target, generation, frozen template configuration and existing Run references. It creates the record without mandatory immediate target preparation, matching Thread allocation. Stop/delete target commands use the [durable operation contract](06-durable-operations-and-outbox.md), reauthorize at dispatch and reject active use; manual commands explicitly override inactivity grace but do not affect unrelated target ownership. Delete here removes the backing target, not retained Environment history. There is no standalone connection test or template trial API. Saving configuration performs deterministic validation; actual preparation verifies runtime availability and reports bounded failures.
 

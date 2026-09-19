@@ -111,7 +111,7 @@ it("preserves historical dedicated-environment revisions that remain visible", a
             id: "et_local",
             name: "Sandbox",
             version: 2,
-            current_revision_id: "etr_new",
+            default_revision_id: "etr_new",
           },
         ],
       };
@@ -162,7 +162,7 @@ it("blocks an unavailable root template and remaps only its identity", async () 
           id: "et_local",
           name: "Sandbox",
           version: 2,
-          current_revision_id: "etr_local",
+          default_revision_id: "etr_local",
         },
       ],
     };

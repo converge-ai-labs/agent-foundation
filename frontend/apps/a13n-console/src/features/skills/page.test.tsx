@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -44,7 +50,7 @@ function setup(workspace: string, search = "") {
     key: "example",
     name: "Example skill",
     version: 2,
-    current_revision_id: "skr_example",
+    default_revision_id: "skr_example",
   };
   const currentFiles = {
     "SKILL.md": strToU8(
@@ -122,6 +128,9 @@ function setup(workspace: string, search = "") {
         return new Response(new Uint8Array(zipSync(olderFiles)), {
           headers: { "Content-Type": "application/zip" },
         });
+      case "POST /api/v1/skills/sk_example/revisions/skr_older/default":
+        skill.default_revision_id = "skr_older";
+        return Response.json(skill, { headers: { ETag: '"skill-v2"' } });
       case "PATCH /api/v1/skills/sk_example":
         Object.assign(skill, await request.json());
         return Response.json(skill);
@@ -243,7 +252,7 @@ it("opens SKILL.md by default, switches files without downloading again, and ope
   expect(screen.queryByRole("button", { name: "checklist.md" })).toBeNull();
   await user.click(screen.getByRole("button", { name: "notes.txt" }));
   await screen.findByText("Earlier notes");
-  await user.click(screen.getByRole("link", { name: "View current version" }));
+  await user.click(screen.getByRole("link", { name: "View default version" }));
   await screen.findByRole("heading", { name: "Current instructions" });
 });
 
@@ -262,4 +271,28 @@ it("does not download a revision belonging to another skill", async () => {
       new URL(request.url).pathname.endsWith("/content"),
     ),
   ).toBe(false);
+});
+
+it("sets an older version as the default with the workspace and existing ETag", async () => {
+  const { user, requests } = setup("ws_default");
+  await screen.findByRole("heading", { name: "Example skill" });
+  await user.click(screen.getByRole("tab", { name: /Versions/ }));
+  const row = (version: string) =>
+    within(screen.getByRole("link", { name: version }).closest("div")!);
+  expect(row("v2").getByText("Default version")).toBeTruthy();
+  await user.click(row("v1").getByRole("button", { name: "Set as default" }));
+  const confirm = await screen.findByRole("dialog", { name: "Set as default" });
+  await user.click(
+    within(confirm).getByRole("button", { name: "Set as default" }),
+  );
+  await waitFor(() => expect(row("v1").getByText("Default version")));
+  expect(
+    row("v2").getByRole("button", { name: "Set as default" }),
+  ).toBeTruthy();
+  const request = requests.find((request) => request.method === "POST")!;
+  expect(new URL(request.url).pathname).toBe(
+    "/api/v1/skills/sk_example/revisions/skr_older/default",
+  );
+  expect(request.headers.get("If-Match")).toBe('"skill-v1"');
+  expect(request.headers.get("X-A13N-CSRF-Token")).toBe("test-csrf");
 });

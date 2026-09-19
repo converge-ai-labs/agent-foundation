@@ -214,7 +214,7 @@ async def freeze_skill_locks(
     revision_ids = tuple(
         {
             *(item.revision_id for item in prepared),
-            *(skill.current_revision_id for skill in skills.values()),
+            *(skill.default_revision_id for skill in skills.values()),
         }
     )
     revisions = tuple(
@@ -247,11 +247,11 @@ async def freeze_skill_locks(
             raise SkillSelectionInvalid
         _validate_revision(revision, expected.binding.skill_key)
         if expected.binding.version is None:
-            current = by_revision_id.get(skill.current_revision_id)
-            if current is None or current.skill_id != skill.id:
+            default = by_revision_id.get(skill.default_revision_id)
+            if default is None or default.skill_id != skill.id:
                 raise SkillSelectionInvalid
-            _validate_revision(current, expected.binding.skill_key)
-            revision = current
+            _validate_revision(default, expected.binding.skill_key)
+            revision = default
         locks.append(
             SkillRevisionLock(
                 skill_id=skill.id,
@@ -278,25 +278,25 @@ async def _prepare_locks(
         workspace_id=workspace_id,
         bindings=bindings,
     )
-    current_ids = tuple(skills[binding.skill_id].current_revision_id for binding in bindings if binding.version is None)
-    current = tuple(
+    default_ids = tuple(skills[binding.skill_id].default_revision_id for binding in bindings if binding.version is None)
+    defaults = tuple(
         (
             await session.scalars(
                 select(SkillRevisionRecord).where(
                     SkillRevisionRecord.organization_id == organization_id,
                     SkillRevisionRecord.workspace_id == workspace_id,
-                    SkillRevisionRecord.id.in_(current_ids),
+                    SkillRevisionRecord.id.in_(default_ids),
                 )
             )
         ).all()
     )
-    by_current_id = {record.id: record for record in current}
+    by_default_id = {record.id: record for record in defaults}
     result: list[PreparedSkillLock] = []
     for binding in bindings:
         revision = (
             pinned[(binding.skill_id, binding.version)]
             if binding.version is not None
-            else by_current_id.get(skills[binding.skill_id].current_revision_id)
+            else by_default_id.get(skills[binding.skill_id].default_revision_id)
         )
         if revision is None or revision.skill_id != binding.skill_id:
             raise SkillSelectionInvalid

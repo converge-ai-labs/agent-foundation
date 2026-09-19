@@ -92,7 +92,7 @@ class EnvironmentTemplate(DomainModel):
     description: str | None
     labels: Labels = Field(default_factory=dict)
     version: int
-    current_revision_id: ObjectId
+    default_revision_id: ObjectId
     archived_at: datetime | None
     created_at: datetime
     updated_at: datetime

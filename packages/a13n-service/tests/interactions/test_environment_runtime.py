@@ -86,7 +86,7 @@ async def test_run_automatically_allocates_and_prepares_at_configured_boundary(
         environment_id = stored.environment_id
         assert environment_id and stored.environment_use_started_at is None
         environment = await session.get(EnvironmentRecord, environment_id)
-        assert environment.status == "unprepared" and environment.template_revision_id == template.current_revision_id
+        assert environment.status == "unprepared" and environment.template_revision_id == template.default_revision_id
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
@@ -167,7 +167,7 @@ async def test_historical_agent_choice_uses_current_template_revision_after_defa
     service, template, _ = await template_config(interaction_sessions, tmp_path, "on_use")
     _, first, _ = await _accept_root(interaction_sessions, interaction_object_store)
     async with short_session(interaction_sessions) as session:
-        template_revision = await session.get(EnvironmentTemplateRevisionRecord, template.current_revision_id)
+        template_revision = await session.get(EnvironmentTemplateRevisionRecord, template.default_revision_id)
         provider_id = template_revision.provider_id
     updated_template = await service.create_revision(
         actor=hook_actor(),
@@ -206,7 +206,7 @@ async def test_historical_agent_choice_uses_current_template_revision_after_defa
         assert allocated.template_revision_id == updated_template.id
         assert (
             await session.get(EnvironmentRecord, first_environment_id)
-        ).template_revision_id == template.current_revision_id
+        ).template_revision_id == template.default_revision_id
         default_run = historical_run.model_copy(update={"agent_revision_id": replacement.id})
         assert (
             await select_run_environment(

@@ -141,7 +141,7 @@ it("blocks an unavailable root Environment template until mapped in the destinat
               id: "et_fedcba9876543210",
               name: "Local sandbox",
               version: 2,
-              current_revision_id: "etr_fedcba9876543210",
+              default_revision_id: "etr_fedcba9876543210",
             },
           ],
         }
@@ -180,7 +180,7 @@ it("blocks an unavailable root Environment template until mapped in the destinat
   );
   await user.keyboard("{ArrowDown}");
   await user.click(
-    await screen.findByRole("option", { name: "Local sandbox · v2" }),
+    await screen.findByRole("option", { name: "Local sandbox" }),
   );
   await waitFor(() =>
     expect(

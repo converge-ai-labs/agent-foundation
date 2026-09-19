@@ -84,7 +84,7 @@ async def assert_template_preparation(journey, template, revised, *, preparation
     )
     allocated = []
     for selection, revision_id, proof in (
-        ({"template_id": template["id"], "version": 1}, template["current_revision_id"], proofs[0]),
+        ({"template_id": template["id"], "version": 1}, template["default_revision_id"], proofs[0]),
         ({"template_id": template["id"]}, revision["id"], proofs[1]),
     ):
         first_use = view("proof.txt") if proof is not None else listing()

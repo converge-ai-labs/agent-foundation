@@ -2,11 +2,11 @@
 
 ## Design Position
 
-Service manages a Skill as one stable Workspace-owned identity with an immutable technical `key`, mutable user-visible `name`, one current Revision, and an immutable Revision lineage. The initial package derives the key from the root `SKILL.md` `name`; every later Revision must declare that exact same value. The key is the Harness runtime name and is unique among non-deleted Skills in the Workspace.
+Service manages a Skill as one stable Workspace-owned identity with an immutable technical `key`, mutable user-visible `name`, one default Revision, and an immutable Revision lineage. The initial package derives the key from the root `SKILL.md` `name`; every later Revision must declare that exact same value. The key is the Harness runtime name and is unique among non-deleted Skills in the Workspace.
 
-A Builder publishes Revision content from a staged ZIP package or an explicit GitHub import. Publishing distinct content appends the next integer `version` and atomically advances `current_revision_id`, which always identifies the highest published version.
+A Builder publishes Revision content from a staged ZIP package or an explicit GitHub import. Publishing distinct content appends the next integer `version` and atomically selects the new Revision as `default_revision_id`. A Builder can later select any retained Revision as the default without publishing; `Skill.version` always records the highest published number.
 
-An AgentRevision freezes which stable Skill identity each selection means. A selection can pin one integer version or omit it so each newly accepted ordinary Run resolves that Skill's current Revision. Every accepted Run stores exact Revision locks; execution and recovery never follow a mutable head.
+An AgentRevision freezes which stable Skill identity each selection means. A selection can pin one integer version or omit it so each newly accepted ordinary Run resolves that Skill's default Revision. Every accepted Run stores exact Revision locks; execution and recovery never follow a mutable head.
 
 Service follows the shared [Managed Skill Package Contract](../managed-skill-packages.md) and never executes from an upload, repository, mutable ref, object URL, or Worker cache. A Worker materializes only the exact Skill locks in the Run's `EffectiveAgentConfig`, then uses the public Harness `SkillManager` and `SkillsCapability`. Managed Skills are content resources, not trusted Harness plugins. Service validates package `SKILL.md` metadata with its own admission parser; it does not import a Harness parser API.
 
@@ -37,7 +37,7 @@ class Skill:
     key: str
     name: str
     version: int
-    current_revision_id: SkillRevisionId
+    default_revision_id: SkillRevisionId
     created_at: datetime
     created_by: PrincipalRef
     updated_by: PrincipalRef
@@ -56,7 +56,7 @@ class SkillRevision:
     created_by: PrincipalRef
 ```
 
-`sk_`, `skr_`, and `sku_` prefix stable Skills, immutable Revisions, and staged ZIP receipts. A `SkillId` is permanent and never reused. A Skill is created atomically with Revision `1`, which is current immediately.
+`sk_`, `skr_`, and `sku_` prefix stable Skills, immutable Revisions, and staged ZIP receipts. A `SkillId` is permanent and never reused. A Skill is created atomically with Revision `1`, which is the default immediately.
 
 `Skill.key` is derived from Revision `1`'s `manifest.skill_name`; a caller never supplies it. It is immutable for that Skill and must contain 1 through 64 lowercase ASCII letters or digits separated by single hyphens:
 
@@ -68,9 +68,9 @@ Every later Revision must have `manifest.skill_name == Skill.key`; mismatch reje
 
 At most one non-deleted Skill can own a key in one Workspace. Tombstoning releases that key, so a later create can establish a new Skill with the same key and a new `skill_id` and v1 lineage. The new identity never inherits or merges the deleted Skill's Revisions, Agent bindings, provenance, or idempotency evidence.
 
-`Skill.name` is mutable human-readable metadata. It need not be unique and does not affect the key, Revision content, current pointer, or integer version. If create omits it, Service sets it to the derived key. `manifest.description` remains Revision content and is not copied into mutable Skill-head metadata.
+`Skill.name` is mutable human-readable metadata. It need not be unique and does not affect the key, Revision content, default pointer, or integer version. If create omits it, Service sets it to the derived key. `manifest.description` remains Revision content and is not copied into mutable Skill-head metadata.
 
-Publishing content whose normalized digest differs from the current Revision appends `version + 1` and advances the head in one transaction. Equality with the current Revision is a semantic no-op even when the ZIP encoding or submitted source differs; the existing Revision retains its original provenance. Content equal to a non-current historical Revision is still a new later Revision when it differs from current. Republishing historical content therefore appends a new later Revision and makes it current.
+Publishing content whose normalized digest differs from the default Revision appends `Skill.version + 1` and selects it as the default in one transaction, even when the default is an older Revision. Equality with the default Revision is a semantic no-op even when the ZIP encoding or submitted source differs; the existing Revision retains its original provenance. Content equal to a historical non-default Revision is still a new later Revision when it differs from the default. Restoring an earlier package therefore means selecting that Revision as the default, not republishing it.
 
 Service stores each normalized package as one immutable ZIP object. For package contract version `1`, its internal object key is derived exactly as follows:
 
@@ -97,7 +97,7 @@ Service retains `Idempotency-Key` evidence for ZIP staging, Skill creation, and 
 
 ## Persistence
 
-The `skills` relation stores stable identity and organization ownership, immutable `key`, mutable `name`, `version`, `current_revision_id`, actors, timestamps, and the tombstone. It enforces exact `(workspace_id, key)` uniqueness only where `deleted_at` is null. The `skill_revisions` relation stores immutable manifest, safe provenance, actor, and creation time with unique `(skill_id, version)`. The Skill head and a newly published Revision advance atomically.
+The `skills` relation stores stable identity and organization ownership, immutable `key`, mutable `name`, `version`, `default_revision_id`, actors, timestamps, and the tombstone. It enforces exact `(workspace_id, key)` uniqueness only where `deleted_at` is null. The `skill_revisions` relation stores immutable manifest, safe provenance, actor, and creation time with unique `(skill_id, version)`. The Skill head and a newly published Revision advance atomically; default selection updates only the head.
 
 AgentRevision storage contains the ordered `ResolvedSkillBinding` values defined below. Run state contains exact `SkillRevisionLock` values. Package object keys and source credentials stay outside both structures.
 
@@ -172,11 +172,20 @@ Idempotency-Key: opaque-caller-key
 
 Create derives the key from the normalized package and atomically returns the Skill and Revision `1` with `201`. Another active Skill with that key returns `409 skill_key_conflict`, including when its content is equal. An exact `Idempotency-Key` replay returns the earlier result.
 
-Revision publication compares `expected_version`. Different current content appends and selects one Revision with `201`; content equal to current returns it with `200` and does not advance the Skill. Both create and publish validate the stable key invariant before commit. Consuming a staged upload verifies its unexpired receipt.
+Revision publication compares `expected_version` with `Skill.version`. Content different from the default Revision appends and selects one Revision with `201`; content equal to the default returns it with `200` and does not advance the Skill. Both create and publish validate the stable key invariant before commit. Consuming a staged upload verifies its unexpired receipt.
 
 A GitHub source is a one-time acquisition performed during this request. Every create or later publication submits its own repository, ref, and subdirectory; Service resolves that selector once to one commit and stores safe provenance.
 
 `credential_secret_id` selects a current authorized Workspace Secret only for this GitHub acquisition. Service stores neither the selector nor its value in the Revision, package, provenance, logs, or errors. Re-importing private content requires another explicit request with an eligible Secret.
+
+### Default Selection
+
+```http
+POST /api/v1/skills/{skill_id}/revisions/{skill_revision_id}/default
+If-Match: "<skill-etag>"
+```
+
+Set default accepts no body and requires the current strong Skill `ETag` in `If-Match`. It repoints `default_revision_id` at one retained Revision of that Skill and returns the Skill with `200` and its new `ETag`. A Revision that does not belong to the Skill is concealed as `404`. Selecting the already-default Revision is a no-op that changes neither `updated_at` nor the `ETag`. Selection appends no Revision and never changes `version`; later publication still appends `version + 1`. `If-Match` makes a retry safe, so no `Idempotency-Key` is required. Selection authorizes `skill.revision.publish`.
 
 ### Read, Update, References, and Delete
 
@@ -207,16 +216,16 @@ class SkillAgentReference:
 class SkillPublicationReceipt:
     skill: Skill
     revision: SkillRevision
-    outcome: Literal["published", "already_current"]
+    outcome: Literal["published", "already_default"]
 ```
 
 Reads expose safe provenance and manifest metadata, never Secret selectors, object keys, or provider responses. Skill head reads return a strong representation `ETag`. The authorized `/content` route streams a normalized ZIP as `application/zip` with `ETag: W/"sha256:<content_digest>"`; it is not the original upload or a public object-storage URL. Skill collections order by `(name, id)`, Revision collections by `(version desc, id)`, and reference collections by `(agent_name, agent_id)` under the shared cursor contract.
 
-The Workspace-scoped Skill read resolves the exact active `skill_key`, never an ID alias, and returns the same representation and `ETag` as the ID read under `skill.read` authorization. Deleted or inaccessible Skills remain concealed. The collection's optional `q` performs a case-insensitive literal substring match on name or key, trimming surrounding whitespace. Search terms are bounded to 256 characters and bound to pagination cursors; switching terms requires a new first page. Collection items extend the Skill representation with `source_kind` (`zip` or `github`) from the current revision. The optional `source_kind` query filters that same current revision provenance before pagination, combines with `q`, and is bound to the cursor. Publishing a new current revision updates the observed source without changing historical provenance.
+The Workspace-scoped Skill read resolves the exact active `skill_key`, never an ID alias, and returns the same representation and `ETag` as the ID read under `skill.read` authorization. Deleted or inaccessible Skills remain concealed. The collection's optional `q` performs a case-insensitive literal substring match on name or key, trimming surrounding whitespace. Search terms are bounded to 256 characters and bound to pagination cursors; switching terms requires a new first page. Collection items extend the Skill representation with `default_version` and `source_kind` (`zip` or `github`) from the default Revision. The optional `source_kind` query filters that same default Revision provenance before pagination, combines with `q`, and is bound to the cursor. Publishing or selecting a different default Revision updates the observed version and source without changing historical provenance.
 
 PATCH changes only `name` and requires the current strong `ETag` in `If-Match`. It does not append a Revision or advance `Skill.version`; `key` is never patchable.
 
-Each reference includes the current Agent name and key for navigation. The references route returns exactly the unarchived Agents whose current AgentRevision contains a binding to this `skill_id`. Pinned and unpinned bindings both count. It excludes archived Agents, historical non-current AgentRevisions, and accepted Runs. DELETE uses the same query and returns `409 skill_in_use` when any item exists. The reference list is an observation, not a precondition token; DELETE always reevaluates the set in its own transaction.
+Each reference includes the current Agent name and key for navigation. The references route returns exactly the unarchived Agents whose default AgentRevision contains a binding to this `skill_id`. Pinned and unpinned bindings both count. It excludes archived Agents, historical non-default AgentRevisions, and accepted Runs. DELETE uses the same query and returns `409 skill_in_use` when any item exists. The reference list is an observation, not a precondition token; DELETE always reevaluates the set in its own transaction.
 
 DELETE otherwise requires the current strong `ETag`, tombstones the Skill, and releases its Workspace key. It appends no Revision and advances no version. After commit, the Skill is absent from collections and every ordinary public read for that Skill, its Revisions, and its content returns `404`. An exact mutation replay within its idempotency-evidence horizon remains operation evidence and follows the shared replay contract.
 
@@ -235,14 +244,14 @@ Deletion and Run acceptance lock the applicable Skill row and linearize at commi
 - when Run acceptance commits first, the Run retains its exact locks and deletion can proceed subject to the blocking-reference check;
 - when deletion commits first, Run acceptance fails.
 
-AgentRevision publication, Agent unarchive, and Skill deletion likewise linearize against the Skill row. When an operation that makes a Skill binding current on an unarchived Agent commits first, deletion sees the blocking reference. When deletion commits first, publication or unarchive fails validation. A disabled but unarchived Agent still blocks deletion.
+AgentRevision publication, Agent unarchive, and Skill deletion likewise linearize against the Skill row. When an operation that makes a Skill binding part of an unarchived Agent's default AgentRevision commits first, deletion sees the blocking reference. When deletion commits first, publication or unarchive fails validation. A disabled but unarchived Agent still blocks deletion.
 
-Unpinned current resolution and Revision publication use the same boundary:
+Unpinned default resolution, Revision publication, and default selection use the same boundary:
 
-- when Run acceptance locks and resolves first, it records the old current Revision;
-- when publication advances the head first, acceptance records the new current Revision.
+- when Run acceptance locks and resolves first, it records the old default Revision;
+- when publication or selection repoints the head first, acceptance records the new default Revision.
 
-If publication advances an unpinned head after detached preparation, acceptance resolves the current Revision under the same stable Skill identity. If an initial state already contains older locks, Service rebuilds that unaccepted state outside the transaction and retries within a finite bound. This refresh preserves the original AgentRevision, pinned selections, input, and non-Skill configuration; deletion, authority loss, or unrelated invocation drift still rejects acceptance. Continuous publication that exhausts this bound returns `409 run_invocation_changed`, rather than classifying the active Skill as an invalid selection.
+If publication or selection repoints an unpinned head after detached preparation, acceptance resolves the default Revision under the same stable Skill identity. If an initial state already contains older locks, Service rebuilds that unaccepted state outside the transaction and retries within a finite bound. This refresh preserves the original AgentRevision, pinned selections, input, and non-Skill configuration; deletion, authority loss, or unrelated invocation drift still rejects acceptance. Continuous publication that exhausts this bound returns `409 run_invocation_changed`, rather than classifying the active Skill as an invalid selection.
 
 Once Run acceptance commits, its exact locks never change.
 
@@ -254,10 +263,11 @@ The domain contributes `skill.read`, `skill.create`, `skill.revision.publish`, `
 
 Every request reauthorizes its Workspace and resource. AgentRevision creation reauthorizes `skill.bind` for every selected active Skill. Run acceptance reauthorizes every final selection. Workers read exact packages only under internal authority of an already accepted Run; invoking an Agent does not grant the caller package-download permission.
 
-Skill creation, Revision publication, metadata update, deletion, and denied management attempts emit bounded [IAM security audit events](33-identity-and-access-management.md#security_audit_events). Common event fields record the actor, Workspace, action, primary Skill resource when known, and success-or-failure outcome. Stable actions are `skill.create`, `skill.revision.publish`, `skill.update`, and `skill.delete`; denied attempts use the same action with failure outcome. Action-owned `details` use this allowlist:
+Skill creation, Revision publication, default selection, metadata update, deletion, and denied management attempts emit bounded [IAM security audit events](33-identity-and-access-management.md#security_audit_events). Common event fields record the actor, Workspace, action, primary Skill resource when known, and success-or-failure outcome. Stable actions are `skill.create`, `skill.revision.publish`, `skill.default_revision.set`, `skill.update`, and `skill.delete`; denied attempts use the same action with failure outcome. Action-owned `details` use this allowlist:
 
 - successful Skill creation records `selected_revision_id` and `source_kind`;
-- successful Revision publication records `previous_revision_id`, `selected_revision_id`, `source_kind`, and `publication_outcome`, whose value is `published` or `already_current`;
+- successful Revision publication records `previous_revision_id`, `selected_revision_id`, `source_kind`, and `publication_outcome`, whose value is `published` or `already_default`;
+- successful default selection records `previous_revision_id` and `selected_revision_id`;
 - successful metadata update records only `changed_fields`; it never records the old or new `name`;
 - rejected deletion due to references records only bounded `blocking_agent_count`.
 
@@ -295,9 +305,9 @@ sequenceDiagram
     end
 
     Control->>DB: Commit publication in one short transaction
-    Note right of DB: Validate stable key<br/>create or select Revision<br/>advance current when new<br/>consume ZIP receipt<br/>commit idempotency and audit
-    DB-->>Control: Published or already current
-    Control-->>Client: 201 published or 200 already_current
+    Note right of DB: Validate stable key<br/>create or select Revision<br/>select default when new<br/>consume ZIP receipt<br/>commit idempotency and audit
+    DB-->>Control: Published or already default
+    Control-->>Client: 201 published or 200 already_default
 
     Note over Objects,DB: Object presence alone never proves publication
 ```
@@ -332,13 +342,13 @@ class SkillRevisionLock:
     content_digest: str
 ```
 
-`SkillSelection.version` is the positive integer Skill version, not a Revision ID. When present, it selects that historical version within the active Skill. When absent or null, Run acceptance resolves the bound Skill's current Revision. The AgentRevision retains that policy, and the Worker receives only the Run's exact lock.
+`SkillSelection.version` is the positive integer Skill version, not a Revision ID. When present, it selects that historical version within the active Skill. When absent or null, Run acceptance resolves the bound Skill's default Revision. The AgentRevision retains that policy, and the Worker receives only the Run's exact lock.
 
 AgentRevision creation resolves each `skill_key` to one active Skill, verifies an explicit version when present, and freezes the resulting `ResolvedSkillBinding`. The internal `skill_id` prevents later key reuse from retargeting that Revision. Its content digest covers the ordered selection policy, not the eventual exact content of an unpinned Skill.
 
 An Agent selection list cannot contain the same `skill_key` or resolved `skill_id` more than once. One Agent or Run cannot expose several versions of the same Skill simultaneously. The selected list is the Agent's base Skill configuration.
 
-For an ordinary Run without a Skill override, acceptance resolves each frozen AgentRevision binding by `skill_id`: a pinned binding selects its exact version and an unpinned binding selects that Skill's current Revision. This rule applies to every newly accepted ordinary Run, including a later turn in the same Thread. The same AgentRevision can therefore produce different exact locks across Runs when an unpinned Skill advances.
+For an ordinary Run without a Skill override, acceptance resolves each frozen AgentRevision binding by `skill_id`: a pinned binding selects its exact version and an unpinned binding selects that Skill's default Revision. This rule applies to every newly accepted ordinary Run, including a later turn in the same Thread. The same AgentRevision can therefore produce different exact locks across Runs when an unpinned Skill's default changes.
 
 A present `AgentRunOverride.skills` whole-replaces the Agent list using fresh active-key resolution; `[]` selects no Skills and omission inherits the AgentRevision bindings. Waiting feedback, waiting Continue, and Retry accept no new override and preserve the source Run's exact locks, subject to current lifecycle authorization for accepting a new Run.
 
@@ -376,17 +386,17 @@ Materialization is content-addressed Host preparation, not an Agent tool call or
 
 ## Compatibility
 
-Stable Skill and Revision identity, active-key uniqueness and reuse, the relation between `key` and root `SKILL.md` `name`, source union, immutable-current lineage, Agent selection policy, exact Run lock fields, whole-list override semantics, deletion boundary, completion-manifest boundary, and internal package-key derivation are compatibility facts. Object-storage and GitHub acquisition implementations remain private.
+Stable Skill and Revision identity, active-key uniqueness and reuse, the relation between `key` and root `SKILL.md` `name`, source union, immutable Revision lineage with one default pointer, Agent selection policy, exact Run lock fields, whole-list override semantics, deletion boundary, completion-manifest boundary, and internal package-key derivation are compatibility facts. Object-storage and GitHub acquisition implementations remain private.
 
 ## Invariants
 
 01. A Skill has one permanent opaque ID and one immutable key derived from Revision `1`; every Revision's root `SKILL.md` declares that key.
 02. A Workspace has at most one non-deleted Skill per key; deletion releases the key but never reuses or retargets the old Skill identity.
-03. Publishing distinct current content appends and selects the next immutable Revision, so current always identifies the highest published version.
-04. AgentRevisions freeze stable Skill identities and pinned-or-current selection policy; accepted Runs freeze exact Revision locks.
+03. Publishing content different from the default appends the next immutable Revision numbered `version + 1` and selects it as the default; selecting a retained Revision as the default repoints the head without publishing.
+04. AgentRevisions freeze stable Skill identities and pinned-or-default selection policy; accepted Runs freeze exact Revision locks.
 05. An Agent or Run selects at most one version of a Skill.
 06. Deleted Skills are publicly unreadable and block every new Run, while already accepted Runs retain exact internal reconstruction authority.
 07. Uploads, GitHub refs, object URLs, caches, and package content grant no runtime authority by themselves.
 08. No database transaction spans source acquisition, object storage, Environment I/O, or Harness work.
 09. Harness scanning begins only after the complete materialized root verifies.
-10. Skill labels are mutable head metadata outside immutable Revisions. Publishing, restoring, or otherwise selecting a Revision retains the Skill head labels.
+10. Skill labels are mutable head metadata outside immutable Revisions. Publishing or selecting a default Revision retains the Skill head labels.

@@ -246,7 +246,7 @@ async def test_template_and_environment_labels_http_contract(environment_api_cli
         client,
         template_path,
         f"{collection}/environment-templates",
-        immutable_fields=["version", "current_revision_id"],
+        immutable_fields=["version", "default_revision_id"],
     )
     etag = (await client.get(template_path + "/labels")).headers["etag"]
     put = await client.put(
@@ -254,7 +254,7 @@ async def test_template_and_environment_labels_http_contract(environment_api_cli
     )
     assert put.status_code == 200
     original_revision = (
-        await client.get(f"/api/v1/environment-template-revisions/{template['current_revision_id']}")
+        await client.get(f"/api/v1/environment-template-revisions/{template['default_revision_id']}")
     ).json()
     published = await client.post(
         template_path + "/revisions",
@@ -296,6 +296,97 @@ async def test_template_and_environment_labels_http_contract(environment_api_cli
 
 
 @pytest.mark.anyio
+async def test_default_revision_pointer_http_contract(environment_api_client, tmp_path):
+    client = environment_api_client
+    template = await create_template(client, tmp_path)
+    base = f"/api/v1/workspaces/{WORKSPACE_ID}"
+    template_path = f"/api/v1/environment-templates/{template['id']}"
+    first_id = template["default_revision_id"]
+    provider_id = (await client.get(f"/api/v1/environment-template-revisions/{first_id}")).json()["provider_id"]
+
+    def revision_body(name: str, expected_version: int) -> dict:
+        return {
+            "expected_version": expected_version,
+            "provider_id": provider_id,
+            "configuration": {"root": {"path": str(tmp_path / name)}},
+            "retention": {"idle": {"stop_after": None, "delete_after": None}},
+            "preparation": "on_use",
+        }
+
+    def set_default(revision_id: str, etag: str):
+        return client.post(f"{template_path}/revisions/{revision_id}/default", headers={"If-Match": etag})
+
+    second = await client.post(template_path + "/revisions", json=revision_body("second", 1))
+    assert second.status_code == 201, second.text
+    second_id = second.json()["id"]
+    head = await client.get(template_path)
+    assert head.json()["default_revision_id"] == second_id and head.json()["version"] == 2
+    etag = head.headers["etag"]
+
+    same = await set_default(second_id, etag)
+    assert same.status_code == 200, same.text
+    assert same.headers["etag"] == etag and same.json() == head.json()
+    missing = await client.post(f"{template_path}/revisions/{first_id}/default")
+    assert missing.status_code == 428
+
+    rolled = await set_default(first_id, etag)
+    assert rolled.status_code == 200, rolled.text
+    assert rolled.json()["default_revision_id"] == first_id and rolled.json()["version"] == 2
+    assert rolled.headers["etag"] != etag
+    assert (await set_default(second_id, etag)).status_code == 412
+    etag = rolled.headers["etag"]
+
+    other = await client.post(
+        f"{base}/environment-templates",
+        headers={"Idempotency-Key": "other-template"},
+        json={"name": "Other", **{k: v for k, v in revision_body("other", 1).items() if k != "expected_version"}},
+    )
+    assert other.status_code == 201, other.text
+    foreign = await set_default(other.json()["default_revision_id"], etag)
+    assert foreign.status_code == 404
+    assert (await client.get(template_path)).headers["etag"] == etag
+
+    allocated = await client.post(
+        f"{base}/environments", headers={"Idempotency-Key": "default-pointer"}, json={"template_id": template["id"]}
+    )
+    assert allocated.status_code == 201, allocated.text
+    assert allocated.json()["template_revision_id"] == first_id
+    pinned = await client.post(
+        f"{base}/environments",
+        headers={"Idempotency-Key": "pinned-version"},
+        json={"template_id": template["id"], "version": 2},
+    )
+    assert pinned.status_code == 201, pinned.text
+    assert pinned.json()["template_revision_id"] == second_id
+
+    unchanged = await client.post(template_path + "/revisions", json=revision_body("absent", 2))
+    assert unchanged.status_code == 201, unchanged.text
+    assert unchanged.json()["id"] == first_id
+    third = await client.post(template_path + "/revisions", json=revision_body("third", 2))
+    assert third.status_code == 201, third.text
+    assert third.json()["version"] == 3
+    head = await client.get(template_path)
+    assert head.json()["default_revision_id"] == third.json()["id"] and head.json()["version"] == 3
+    etag = head.headers["etag"]
+
+    provider_path = f"/api/v1/environment-providers/{provider_id}"
+    provider_etag = (await client.get(provider_path)).headers["etag"]
+    disabled = await client.patch(provider_path, headers={"If-Match": provider_etag}, json={"enabled": False})
+    assert disabled.status_code == 200, disabled.text
+    assert (await set_default(first_id, etag)).status_code == 404
+    provider_etag = (await client.get(provider_path)).headers["etag"]
+    assert (
+        await client.patch(provider_path, headers={"If-Match": provider_etag}, json={"enabled": True})
+    ).status_code == 200
+
+    archived = await client.patch(template_path, headers={"If-Match": etag}, json={"archived": True})
+    assert archived.status_code == 200, archived.text
+    conflict = await set_default(first_id, (await client.get(template_path)).headers["etag"])
+    assert conflict.status_code == 409
+    assert conflict.json()["error"]["code"] == "environment_template_conflict"
+
+
+@pytest.mark.anyio
 async def test_environment_detail_returns_frozen_retention_and_external_ownership(environment_api_client, tmp_path):
     client = environment_api_client
     template = await create_template(client, tmp_path)
@@ -303,7 +394,7 @@ async def test_environment_detail_returns_frozen_retention_and_external_ownershi
     revisions = f"/api/v1/environment-templates/{template['id']}/revisions"
     original = {"idle": {"stop_after": 600, "delete_after": 86400}}
     disabled = {"idle": {"stop_after": None, "delete_after": None}}
-    revision = await client.get(f"/api/v1/environment-template-revisions/{template['current_revision_id']}")
+    revision = await client.get(f"/api/v1/environment-template-revisions/{template['default_revision_id']}")
     revision_body = {
         "provider_id": revision.json()["provider_id"],
         "configuration": {"root": {"path": str(tmp_path)}},
@@ -356,7 +447,7 @@ async def test_environment_retention_read_does_not_require_template_or_provider_
 ):
     client = environment_api_client
     template = await create_template(client, tmp_path)
-    revision = await client.get(f"/api/v1/environment-template-revisions/{template['current_revision_id']}")
+    revision = await client.get(f"/api/v1/environment-template-revisions/{template['default_revision_id']}")
     assert revision.status_code == 200
     provider_id = revision.json()["provider_id"]
     allocated = await client.post(
@@ -382,7 +473,7 @@ async def test_environment_retention_read_does_not_require_template_or_provider_
     for url in (
         f"/api/v1/environment-providers/{provider_id}",
         f"/api/v1/environment-templates/{template['id']}",
-        f"/api/v1/environment-template-revisions/{template['current_revision_id']}",
+        f"/api/v1/environment-template-revisions/{template['default_revision_id']}",
     ):
         assert (await client.get(url)).status_code == 404
     monkeypatch.setitem(iam_authorization._WORKSPACE_ROLE_ACTIONS, "builder", frozenset())

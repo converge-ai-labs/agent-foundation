@@ -340,11 +340,11 @@ class SkillPublicationService:
                 raise skill_version_conflict(locked.version)
             if prepared.package.manifest.skill_name != locked.key:
                 raise skill_key_mismatch()
-            current = await require_revision(
+            default = await require_revision(
                 session,
                 organization_id=workspace.organization_id,
                 workspace_id=command.workspace_id,
-                revision_id=locked.current_revision_id,
+                revision_id=locked.default_revision_id,
             )
             upload = await self._lock_upload(
                 session,
@@ -365,7 +365,7 @@ class SkillPublicationService:
                 session,
                 context=context,
                 locked=locked,
-                current=current,
+                default=default,
                 prepared=prepared,
             )
             if upload is not None:
@@ -384,7 +384,7 @@ class SkillPublicationService:
                     action="skill.revision.publish",
                     now=now,
                     details={
-                        "previous_revision_id": current.id,
+                        "previous_revision_id": default.id,
                         "selected_revision_id": selected.id,
                         "source_kind": request.source.kind,
                         "publication_outcome": outcome,
@@ -494,20 +494,22 @@ async def _select_revision(
     *,
     context: _PublicationContext,
     locked: SkillRecord,
-    current: SkillRevisionRecord,
+    default: SkillRevisionRecord,
     prepared: PreparedSkillSource,
-) -> tuple[SkillRevisionRecord, Literal["published", "already_current"], bool]:
-    if current.content_digest == prepared.package.manifest.content_digest:
-        return current, "already_current", False
+) -> tuple[SkillRevisionRecord, Literal["published", "already_default"], bool]:
+    """Append ``head.version + 1`` unless the content already equals the default Revision."""
+
+    if default.content_digest == prepared.package.manifest.content_digest:
+        return default, "already_default", False
     selected = _new_revision_record(
         context,
         revision_id=new_skill_revision_id(),
-        version=current.version + 1,
+        version=locked.version + 1,
         prepared=prepared,
     )
     session.add(selected)
     await session.flush((selected,))
-    locked.current_revision_id = selected.id
+    locked.default_revision_id = selected.id
     locked.version = selected.version
     locked.updated_by_type = context.actor.principal.principal_type.value
     locked.updated_by_id = context.actor.principal.principal_id
@@ -524,7 +526,7 @@ def _new_skill_record(context: _PublicationContext, *, key: str, name: str, revi
         name=name,
         labels=context.labels,
         version=1,
-        current_revision_id=revision_id,
+        default_revision_id=revision_id,
         created_by_type=context.actor.principal.principal_type.value,
         created_by_id=context.actor.principal.principal_id,
         updated_by_type=context.actor.principal.principal_type.value,

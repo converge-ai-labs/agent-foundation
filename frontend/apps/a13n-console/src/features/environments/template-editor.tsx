@@ -30,7 +30,7 @@ import { TemplateHistory } from "./template-history";
 
 /**
  * Templates are authored in one dialog: creation walks the provider catalog
- * into a configuration; editing opens the current revision beside its version
+ * into a configuration; editing opens the default revision beside its version
  * history and its settings.
  */
 export function TemplateEditor({
@@ -143,9 +143,9 @@ export function TemplateEditor({
                 <TabsPanel value="versions">
                   <TemplateHistory
                     template={query.data.value}
-                    scope={scope}
+                    etag={query.data.etag}
                     editable={editable}
-                    close={() => setOpen(false)}
+                    reload={reload}
                   />
                 </TabsPanel>
                 <TabsPanel value="settings" keepMounted>
@@ -179,11 +179,11 @@ export function CurrentTemplateConfig({
 }) {
   const client = useClient();
   const query = useQuery({
-    queryKey: ["environment-revision", template.current_revision_id],
+    queryKey: ["environment-revision", template.default_revision_id],
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/environment-template-revisions/{revision_id}", {
-          params: { path: { revision_id: template.current_revision_id } },
+          params: { path: { revision_id: template.default_revision_id } },
           signal,
         })
         .then(data),

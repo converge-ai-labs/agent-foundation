@@ -52,7 +52,7 @@ async def test_skill_publication_lifecycle_over_http(management: ManagementJourn
         {"expected_version": 1, "source": {"kind": "zip_upload", "upload_id": duplicate["upload_id"]}},
         expected=200,
     )
-    assert same["outcome"] == "already_current" and same["revision"] == first["revision"]
+    assert same["outcome"] == "already_default" and same["revision"] == first["revision"]
 
     second = await publish_skill(journey, key, "DOCUMENT_TWO", "ATTACHMENT_TWO", previous=first["skill"])
     restored = await publish_skill(journey, key, "DOCUMENT_ONE", "ATTACHMENT_ONE", previous=second["skill"])
@@ -78,6 +78,21 @@ async def test_skill_publication_lifecycle_over_http(management: ManagementJourn
             assert "DOCUMENT_" + marker in archive.read("SKILL.md").decode()
             assert archive.read("references/proof.txt").decode() == "ATTACHMENT_" + marker
 
+    head = await http.get(path)
+    default_path = path + "/revisions/" + second["revision"]["id"] + "/default"
+    selected = await http.post(default_path, headers={"If-Match": head.headers["etag"]})
+    assert selected.status_code == 200 and selected.headers["etag"] != head.headers["etag"]
+    assert selected.json()["default_revision_id"] == second["revision"]["id"] and selected.json()["version"] == 3
+    stale = await http.post(default_path, headers={"If-Match": head.headers["etag"]})
+    assert stale.status_code == 412
+    same = await http.post(default_path, headers={"If-Match": selected.headers["etag"]})
+    assert same.status_code == 200 and same.headers["etag"] == selected.headers["etag"]
+    unknown = await http.post(
+        path + "/revisions/skr_0000000000000000/default", headers={"If-Match": selected.headers["etag"]}
+    )
+    assert unknown.status_code == 404 and unknown.json()["error"]["code"] == "skill_not_found"
+    listed = await journey.live.request("GET", journey.base + "/skills", params={"q": key})
+    assert [(item["version"], item["default_version"]) for item in listed["items"]] == [(3, 2)]
     head = await http.get(path)
     renamed = await http.patch(path, headers={"If-Match": head.headers["etag"]}, json={"name": "Renamed " + key})
     assert renamed.status_code == 200
@@ -126,7 +141,7 @@ async def test_skill_concurrent_revision_publication_has_one_winner(management: 
     winner = next(response.json() for response in responses if response.status_code == 201)
     loser = next(response.json() for response in responses if response.status_code == 409)
     assert loser["error"]["code"] == "skill_version_conflict"
-    assert (await journey.live.request("GET", path))["current_revision_id"] == winner["revision"]["id"]
+    assert (await journey.live.request("GET", path))["default_revision_id"] == winner["revision"]["id"]
     revisions = await journey.live.collection(path + "/revisions")
     assert [revision["version"] for revision in revisions] == [2, 1]
     mismatch = await upload(
