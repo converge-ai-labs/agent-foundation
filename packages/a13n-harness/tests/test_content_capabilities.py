@@ -29,8 +29,10 @@ from a13n_harness.capabilities import (
     WebProviderError,
     WebRequest,
     WebResponse,
+    WebScrapeBackendBinding,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchBackendBinding,
     WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResponse,
@@ -280,13 +282,18 @@ async def test_content_toolsets_compose_directly_over_natural_provider_ports(tmp
         web = WebToolset(
             client=_WebClient(()),
             policy=_WebPolicy(),
-            search_provider=_WebProvider(),
-            scrape_provider=_ScrapeProvider(
-                WebScrapeResult(
-                    content="# Page",
-                    source_url="https://example.com/page",
-                    canonical_url="https://example.com/page",
-                )
+            search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
+            scrape_backends=(
+                WebScrapeBackendBinding(
+                    "default",
+                    _ScrapeProvider(
+                        WebScrapeResult(
+                            content="# Page",
+                            source_url="https://example.com/page",
+                            canonical_url="https://example.com/page",
+                        )
+                    ),
+                ),
             ),
             files=environment.files,
             file_scopes=environment,
@@ -752,8 +759,8 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
             web=WebBinding(
                 client=client,
                 policy=policy,
-                search_provider=search,
-                scrape_provider=scrape,
+                search_backends=(WebSearchBackendBinding("default", search),),
+                scrape_backends=(WebScrapeBackendBinding("default", scrape),),
             ),
         ),
     )
@@ -790,7 +797,7 @@ async def test_web_search_strips_credential_aliases_from_model_history(credentia
             web=WebBinding(
                 client=_WebClient(()),
                 policy=_WebPolicy(),
-                search_provider=search,
+                search_backends=(WebSearchBackendBinding("default", search),),
             ),
         ),
     )

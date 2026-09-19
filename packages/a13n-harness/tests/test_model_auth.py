@@ -963,7 +963,7 @@ async def test_grok_device_oauth_polls_pending_and_slow_down_without_exposing_de
             },
         )
 
-    monkeypatch.setattr("a13n_harness.providers.model.oauth.oauth.anyio.sleep", fake_sleep)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.grok.anyio.sleep", fake_sleep)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
         authorization = await GrokDeviceAuthorizationFlow.start(
             issuer=issuer,
@@ -999,7 +999,7 @@ async def test_grok_device_oauth_lifetime_starts_with_authorization_response(
             },
         )
 
-    monkeypatch.setattr("a13n_harness.providers.model.oauth.oauth.time.monotonic", lambda: now)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.grok.time.monotonic", lambda: now)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
         authorization = await GrokDeviceAuthorizationFlow.start(
             issuer="https://issuer.example",
@@ -1032,7 +1032,7 @@ async def test_grok_device_oauth_bounds_each_token_request(
         await anyio.Event().wait()
         raise AssertionError("unreachable")
 
-    monkeypatch.setattr("a13n_harness.providers.model.oauth.oauth.anyio.sleep", fake_sleep)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.grok.anyio.sleep", fake_sleep)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
         authorization = await GrokDeviceAuthorizationFlow.start(
             issuer="https://issuer.example",
@@ -1151,7 +1151,7 @@ async def test_codex_device_authorization_uses_vendor_protocol_and_device_redire
             },
         )
 
-    monkeypatch.setattr("a13n_harness.providers.model.oauth.oauth.anyio.sleep", fake_sleep)
+    monkeypatch.setattr("a13n_harness.providers.model.oauth.grok.anyio.sleep", fake_sleep)
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle), auth=("ambient", "secret")) as client:
         grant = await CodexDeviceAuthorizationFlow.start(http_client=client)
         assert "device-secret" not in repr(grant)
@@ -1305,7 +1305,7 @@ async def test_codex_login_retains_id_token_using_upstream_pkce(monkeypatch: pyt
     async def callback(self):
         return await self.exchange_code("callback-secret")
 
-    monkeypatch.setattr(codex_login, "_post_token", exchange)
+    monkeypatch.setattr(codex_login, "post_token", exchange)
     monkeypatch.setattr(OpenAICodexOAuthFlow, "exchange_code_from_callback", callback)
     login = await flow.exchange_login_from_callback()
     assert login.credentials.account_id == "account-1"

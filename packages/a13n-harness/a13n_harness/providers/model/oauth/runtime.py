@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator, Awaitable, Callable, Mapping
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from urllib.parse import urljoin, urlsplit
@@ -12,6 +12,7 @@ from pydantic_ai import UserError
 from pydantic_ai.models.openai import OpenAIResponsesModel
 from pydantic_ai.providers.openai import OpenAIProvider
 
+from .grok import refresh_grok_credentials
 from .models import (
     CredentialRefreshError,
     GrokCredentials,
@@ -19,8 +20,7 @@ from .models import (
     GrokRefresh,
     ModelAuthenticationError,
 )
-from .oauth import refresh_grok_credentials
-from .source import require_same_account
+from .rotation import require_same_account
 
 _GROK_BASE_URL = "https://api.x.ai/v1"
 _DEFAULT_REFRESH_WINDOW = timedelta(minutes=5)
@@ -93,14 +93,11 @@ class _GrokAuthentication:
 
 
 class _GrokAuth(httpx2.Auth):
-    def __init__(
-        self,
-        manager: _GrokAuthentication,
-        *,
-        base_url: str,
-        headers: Callable[[GrokCredentials], Mapping[str, str]],
-        protected_headers: tuple[str, ...],
-    ) -> None:
+    """Own the authorization header and the HTTP client the refresh exchange reuses."""
+
+    _AUTHORIZATION = "Authorization"
+
+    def __init__(self, manager: _GrokAuthentication, *, base_url: str, client: httpx2.AsyncClient) -> None:
         parsed = urlsplit(base_url)
         if parsed.scheme != "https" or parsed.hostname is None:
             raise ValueError("Model OAuth base_url must be an absolute HTTPS URL")
@@ -108,8 +105,7 @@ class _GrokAuth(httpx2.Auth):
         self._scheme = parsed.scheme
         self._host = parsed.hostname
         self._port = parsed.port or 443
-        self._headers = headers
-        self._protected_headers = protected_headers
+        self.client = client
 
     def sync_auth_flow(self, request: httpx2.Request):
         del request
@@ -143,12 +139,10 @@ class _GrokAuth(httpx2.Auth):
             self._strip_protected_headers(response.request)
 
     def _strip_protected_headers(self, request: httpx2.Request) -> None:
-        for name in self._protected_headers:
-            request.headers.pop(name, None)
+        request.headers.pop(self._AUTHORIZATION, None)
 
     def _apply(self, request: httpx2.Request, credentials: GrokCredentials) -> None:
-        for name, value in self._headers(credentials).items():
-            request.headers[name] = value
+        request.headers[self._AUTHORIZATION] = f"Bearer {credentials.access_token}"
 
 
 class _GrokProvider(OpenAIProvider):
@@ -192,20 +186,15 @@ def build_grok_model(
     if client.auth is not None:
         raise UserError("The Model OAuth HTTP client must not already have authentication configured.")
     client.follow_redirects = False
-    client_ref = [client]
 
     async def selected_refresh(credentials: GrokCredentials) -> GrokCredentials:
         if refresh is not None:
             return await refresh(credentials)
-        return await refresh_grok_credentials(credentials, http_client=client_ref[0])
+        # Called during a request, so `auth` always holds the client this Model currently owns.
+        return await refresh_grok_credentials(credentials, http_client=auth.client)
 
     manager = _GrokAuthentication(credential_source, selected_refresh, refresh_window)
-    auth = _GrokAuth(
-        manager,
-        base_url=_GROK_BASE_URL,
-        headers=lambda value: {"Authorization": f"Bearer {value.access_token}"},
-        protected_headers=("Authorization",),
-    )
+    auth = _GrokAuth(manager, base_url=_GROK_BASE_URL, client=client)
     client.auth = auth
     client.event_hooks["response"].append(auth.protect_redirect)
 
@@ -215,7 +204,7 @@ def build_grok_model(
             follow_redirects=False,
             event_hooks={"response": [auth.protect_redirect]},
         )
-        client_ref[0] = reopened
+        auth.client = reopened
         return reopened
 
     provider = _GrokProvider(

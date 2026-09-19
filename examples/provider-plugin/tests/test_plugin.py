@@ -52,7 +52,7 @@ async def test_installed_entry_point_and_direct_use_share_definition(transport) 
     assert result.results[0].title == "guides: plugins"
     assert "test-token" not in repr(web)
     async with definition.open(
-        {}, {"token": "test-token"}, search_options=SearchOptions(deny_domains=("example.com",)), transport=transport
+        {}, {"token": "test-token"}, options=SearchOptions(deny_domains=("example.com",)), transport=transport
     ) as web:
         assert (await web.search(WebSearchRequest(query="plugins", limit=2))).results == ()
     with pytest.raises(ValidationError):

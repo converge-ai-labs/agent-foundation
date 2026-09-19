@@ -12,7 +12,7 @@ from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.interactions.domain import Run
 from a13n_service.memory.file_runtime import bind_filesystem_store
 from a13n_service.memory.models import MemoryStorageRecord
-from a13n_service.memory.resources import require_provider
+from a13n_service.memory.resources import require_provider, supports_document_entries
 from a13n_service.memory.service import MemoryService, failure
 from a13n_service.storage import short_session
 
@@ -89,8 +89,9 @@ async def filesystem_store(
             catalog=service.catalog,
             eligible=True,
         )
-        if provider.type != "filesystem":
-            raise failure("memory_documents_unsupported", "A File-based provider is required.")
+        definition = service.catalog.get(provider.type)
+        if definition is None or not supports_document_entries(definition):
+            raise failure("memory_documents_unsupported", "A file-based Memory Provider is required.")
         configuration = FilesystemMemoryConfiguration.model_validate(provider.configuration)
     return await bind_filesystem_store(
         context,

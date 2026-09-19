@@ -64,6 +64,20 @@ const definition = {
     required: ["token"],
   },
 };
+function mockMemoryProviders(type: string) {
+  const mem0Definition = {
+    ...definition,
+    type,
+    authentication: { mode: "required" as const },
+  };
+  http.GET.mockImplementation(async (path: string) =>
+    response(
+      path.endsWith("memory-provider-types")
+        ? { items: [mem0Definition] }
+        : { items: [{ ...provider, type }], next_cursor: null },
+    ),
+  );
+}
 const response = (data: unknown, etag = '"v1"') => ({
   data,
   response: new Response(null, { headers: { ETag: etag } }),
@@ -440,12 +454,7 @@ it("adds independent file memory while preserving a legacy Mem0 selection", asyn
 });
 
 it("enables personal and project memory independently and restores a disabled draft", async () => {
-  http.GET.mockResolvedValue(
-    response({
-      items: [{ ...provider, type: "mem0_platform" }],
-      next_cursor: null,
-    }),
-  );
+  mockMemoryProviders("mem0_platform");
   const user = userEvent.setup();
   const change = vi.fn();
   function Draft() {
@@ -501,7 +510,9 @@ it("enables personal and project memory independently and restores a disabled dr
 });
 
 it("keeps file memory usable without Mem0 and directs personal setup to providers", async () => {
-  http.GET.mockResolvedValue(response({ items: [], next_cursor: null }));
+  http.GET.mockImplementation(async () =>
+    response({ items: [], next_cursor: null }),
+  );
   const change = vi.fn();
   const user = userEvent.setup();
   setup(<MemoryPresets value={null} onChange={change} />);
@@ -524,12 +535,7 @@ it("keeps file memory usable without Mem0 and directs personal setup to provider
 });
 
 it("preserves custom purposes even when their names match the presets", async () => {
-  http.GET.mockResolvedValue(
-    response({
-      items: [{ ...provider, type: "mem0_oss" }],
-      next_cursor: null,
-    }),
-  );
+  mockMemoryProviders("mem0_oss");
   const entries: Schema["MemoryEntrySelection"][] = [
     {
       name: "preferences",

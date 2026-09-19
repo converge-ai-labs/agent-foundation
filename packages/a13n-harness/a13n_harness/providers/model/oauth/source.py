@@ -1,30 +1,17 @@
 """Process-scoped Grok coordination for embedding hosts without durable coordination."""
 
+from contextlib import AbstractAsyncContextManager
 from typing import Protocol
 
 from anyio import Lock
 
-from .models import (
-    CredentialPersistenceError,
-    GrokCredentials,
-    GrokRefresh,
-    ModelAuthenticationError,
-    RefreshNotDispatched,
-)
+from .models import GrokCredentials, GrokRefresh
+from .rotation import load_grok_credentials, rotate_grok_grant
 
 
 class GrokCredentialStore(Protocol):
     async def load(self) -> GrokCredentials: ...
     async def save(self, credentials: GrokCredentials) -> None: ...
-
-
-def require_same_account(expected: GrokCredentials, actual: GrokCredentials) -> None:
-    if (expected.account_id, expected.issuer, expected.client_id) != (
-        actual.account_id,
-        actual.issuer,
-        actual.client_id,
-    ):
-        raise ModelAuthenticationError("grok", "The active Model account changed during the request.")
 
 
 class ProcessGrokCredentialSource:
@@ -33,41 +20,29 @@ class ProcessGrokCredentialSource:
     def __init__(self, store: GrokCredentialStore):
         self._store = store
         self._lock = Lock()
-        self._uncertain: set[str | None] = set()
+        self._uncertain: set[str] = set()
 
     async def load(self) -> GrokCredentials:
-        async with self._lock:
-            current = await self._store.load()
-            self._check(current)
-            return current
-
-    def _check(self, current: GrokCredentials) -> None:
-        if current.refresh_token in self._uncertain:
-            raise ModelAuthenticationError(
-                "grok", "The previous credential refresh outcome is unknown. Reauthenticate before retrying."
-            )
+        return await load_grok_credentials(self)
 
     async def rotate(self, expected: GrokCredentials, exchange: GrokRefresh) -> GrokCredentials:
-        async with self._lock:
-            current = await self._store.load()
-            self._check(current)
-            require_same_account(expected, current)
-            if current != expected:
-                return current
-            self._uncertain.add(current.refresh_token)
-            try:
-                rotated = await exchange(current)
-            except RefreshNotDispatched:
-                self._uncertain.discard(current.refresh_token)
-                raise
-            require_same_account(current, rotated)
-            try:
-                await self._store.save(rotated)
-            except Exception:
-                raise CredentialPersistenceError(
-                    "grok", "The refreshed Model credentials could not be persisted."
-                ) from None
-            # A successful durable save establishes whether this grant remained reusable.
-            if rotated.refresh_token == current.refresh_token:
-                self._uncertain.discard(current.refresh_token)
-            return rotated
+        return await rotate_grok_grant(self, expected, exchange)
+
+    def exclusive(self) -> AbstractAsyncContextManager[None]:
+        return self._lock
+
+    async def read(self) -> tuple[GrokCredentials, None]:
+        return await self._store.load(), None
+
+    async def publish(self, state: None, credentials: GrokCredentials) -> None:
+        del state
+        await self._store.save(credentials)
+
+    async def blocked(self, grant: str) -> bool:
+        return grant in self._uncertain
+
+    async def set_blocked(self, grant: str, blocked: bool) -> None:
+        if blocked:
+            self._uncertain.add(grant)
+        else:
+            self._uncertain.discard(grant)

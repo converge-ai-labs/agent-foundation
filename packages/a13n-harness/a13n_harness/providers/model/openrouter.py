@@ -31,6 +31,7 @@ def _build_provider(
 
 DEFINITION = ModelProviderDefinition(
     type="openrouter",
+    catalog_providers=("openrouter",),
     setup_url="https://openrouter.ai/settings/keys",
     display_name="OpenRouter",
     configuration_model=ProviderConfiguration,

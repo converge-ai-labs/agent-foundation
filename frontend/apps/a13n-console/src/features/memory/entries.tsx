@@ -10,7 +10,11 @@ import {
 import { useTranslation } from "react-i18next";
 import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { useMemoryProviders } from "./availability";
+import {
+  eligibleMemoryProvider,
+  useMemoryProviderDefinitions,
+  useMemoryProviders,
+} from "./availability";
 
 type Entry = Schema["MemoryEntrySelection"];
 
@@ -43,6 +47,7 @@ export function MemoryEntryFields({
 }) {
   const { t } = useTranslation();
   const { providers } = useMemoryProviders();
+  const definitions = useMemoryProviderDefinitions();
   const backend = entry.backend;
   const providerId = "provider_id" in backend ? backend.provider_id : undefined;
   const configured =
@@ -107,9 +112,7 @@ export function MemoryEntryFields({
                 .filter(
                   (item) =>
                     item.id === providerId ||
-                    (item.enabled &&
-                      (item.credential_configured ||
-                        item.type === "filesystem")),
+                    eligibleMemoryProvider(item, definitions.data?.items ?? []),
                 )
                 .map((item) => ({ value: item.id, label: item.name })),
               ...(providerId &&

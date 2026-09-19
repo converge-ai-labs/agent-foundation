@@ -27,6 +27,7 @@ def _build_provider(
 
 DEFINITION = ModelProviderDefinition(
     type="moonshot",
+    catalog_providers=("moonshotai", "moonshotai-cn"),
     setup_url="https://platform.kimi.ai/console/api-keys",
     display_name="Moonshot / Kimi",
     configuration_model=ProviderConfiguration,

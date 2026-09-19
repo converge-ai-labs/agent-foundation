@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
-from email.utils import parsedate_to_datetime
 from typing import Literal
 
 import httpx2
@@ -14,6 +11,7 @@ from a13n_logging import get_logger
 from anyio import move_on_after
 
 from a13n_harness.providers.endpoint_policy import EndpointPolicy, EndpointPolicyError
+from a13n_harness.providers.http import ProviderHttpError, bounded_response_body, retry_after_seconds
 from a13n_harness.providers.web.contracts import (
     WebProviderError,
 )
@@ -87,19 +85,17 @@ class WebProviderTransport:
             response = await client.send(outgoing, stream=True, follow_redirects=False)
             if len(response.headers) > 128 or sum(len(k) + len(v) for k, v in response.headers.raw) > 64 * 1024:
                 raise WebProviderError(response_invalid_code)
-            content = bytearray()
-            async for chunk in response.aiter_bytes(chunk_size=64 * 1024):
-                content.extend(chunk)
-                if len(content) > max_response_bytes:
-                    raise WebProviderError(response_invalid_code)
+            content = await bounded_response_body(response, max_bytes=max_response_bytes)
             if response.status_code != 200:
                 raise WebProviderResponseError(
                     _failure_code(response.status_code, operation=operation),
-                    retry_after=_retry_after(response.headers.get("Retry-After")),
+                    retry_after_seconds=retry_after_seconds(response.headers.get("Retry-After"), max_seconds=None),
                 )
-            return bytes(content)
+            return content
         except httpx2.TimeoutException as error:
             raise TimeoutError from error
+        except ProviderHttpError as error:
+            raise WebProviderError(response_invalid_code) from error
         except (httpx2.HTTPError, EndpointPolicyError, UnicodeError) as error:
             raise WebProviderError(failure_code) from error
         except (ValueError, TypeError, KeyError) as error:
@@ -124,16 +120,3 @@ def _failure_code(status: int, *, operation: Literal["search", "scrape"] = "sear
         503: f"{prefix}_unavailable",
         504: f"{prefix}_unavailable",
     }.get(status, f"{prefix}_failed")
-
-
-def _retry_after(value: str | None) -> float:
-    if value is None:
-        return 1.0
-    try:
-        delay = float(value)
-    except ValueError:
-        try:
-            delay = (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
-        except (TypeError, ValueError, OverflowError):
-            return math.inf
-    return max(0, delay) if math.isfinite(delay) else math.inf

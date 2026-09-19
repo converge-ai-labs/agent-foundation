@@ -7,6 +7,13 @@ from a13n_harness._exports import exported_names, load_export
 
 if TYPE_CHECKING:
     from .codex_login import CodexDeviceAuthorization, CodexDeviceAuthorizationFlow, CodexLoginFlow
+    from .flow import OAuthFlow
+    from .grok import (
+        GrokDeviceAuthorization,
+        GrokDeviceAuthorizationFlow,
+        GrokOAuthFlow,
+        refresh_grok_credentials,
+    )
     from .models import (
         CodexLoginResult,
         CredentialPersistenceError,
@@ -17,13 +24,6 @@ if TYPE_CHECKING:
         GrokRefresh,
         ModelAuthenticationError,
         RefreshNotDispatched,
-    )
-    from .oauth import (
-        GrokDeviceAuthorization,
-        GrokDeviceAuthorizationFlow,
-        GrokOAuthFlow,
-        OAuthFlow,
-        refresh_grok_credentials,
     )
     from .runtime import build_grok_model
     from .source import ProcessGrokCredentialSource
@@ -46,11 +46,11 @@ _EXPORTS = {
         "ModelAuthenticationError",
         "RefreshNotDispatched",
     ),
-    "a13n_harness.providers.model.oauth.oauth": (
+    "a13n_harness.providers.model.oauth.flow": ("OAuthFlow",),
+    "a13n_harness.providers.model.oauth.grok": (
         "GrokDeviceAuthorization",
         "GrokDeviceAuthorizationFlow",
         "GrokOAuthFlow",
-        "OAuthFlow",
         "refresh_grok_credentials",
     ),
     "a13n_harness.providers.model.oauth.runtime": ("build_grok_model",),

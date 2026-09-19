@@ -12,6 +12,7 @@ from a13n_service.bots.connectivity.replies import BotReplyObserver
 from a13n_service.bots.connectivity.reply_queries import list_bot_replies
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.native_context import InboundRunContext
+from a13n_service.connectivity.providers.definition import InboundActionContext
 from a13n_service.connectivity.providers.registry import require_native_provider
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.attempts import AttemptAuthorityError
@@ -82,7 +83,14 @@ async def _page(sessions, *, clock=lambda: NOW, limit=20, cursor=None):
 
 def _reply(context, http):
     return require_native_provider("slack").inbound_actions(
-        context.provider_context, context.action_policy, {}, {"bot_token": "private-token"}, http, EndpointPolicy()
+        InboundActionContext(
+            provider_context=context.provider_context,
+            action_policy=context.action_policy,
+            configuration={},
+            credentials={"bot_token": "private-token"},
+            http=http,
+            endpoints=EndpointPolicy(),
+        )
     )["slack.reply"]
 
 
@@ -374,12 +382,14 @@ async def test_feishu_receipts_use_the_same_observation_contract(reply_fixture, 
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         reply = require_native_provider("lark").inbound_actions(
-            context.provider_context,
-            context.action_policy,
-            _config(),
-            {"app_secret": "private-secret"},
-            http,
-            _AllowEndpoint(),
+            InboundActionContext(
+                provider_context=context.provider_context,
+                action_policy=context.action_policy,
+                configuration=_config(),
+                credentials={"app_secret": "private-secret"},
+                http=http,
+                endpoints=_AllowEndpoint(),
+            )
         )["lark.reply"]
         result = await reply.call_observed({"content": {"kind": "text", "text": "private message"}}, observer)
     assert len(writes) == 1
@@ -449,12 +459,18 @@ async def test_github_comment_receipt_is_retained_before_hiding_it(reply_fixture
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http:
         action = require_native_provider("github").inbound_actions(
-            context.provider_context,
-            {},
-            {"user_id": 99, "api_origin": "https://api.github.com", "web_origin": "https://github.com"},
-            {"personal_access_token": "private-pat"},
-            http,
-            _AllowEndpoint(),
+            InboundActionContext(
+                provider_context=context.provider_context,
+                action_policy={},
+                configuration={
+                    "user_id": 99,
+                    "api_origin": "https://api.github.com",
+                    "web_origin": "https://github.com",
+                },
+                credentials={"personal_access_token": "private-pat"},
+                http=http,
+                endpoints=_AllowEndpoint(),
+            )
         )["github.add_comment"]
         result = await action.call_observed({"body": "private-comment"}, observer)
         assert "receipt" not in result

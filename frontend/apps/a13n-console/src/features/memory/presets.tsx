@@ -11,7 +11,11 @@ import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { providersPath } from "../providers/navigation";
 import { memoriesPath } from "./api";
-import { useMemoryProviders } from "./availability";
+import {
+  eligibleMemoryProvider,
+  useMemoryProviderDefinitions,
+  useMemoryProviders,
+} from "./availability";
 import { fileEntry, MemoryEntryFields } from "./entries";
 
 type Entry = Schema["MemoryEntrySelection"];
@@ -53,13 +57,15 @@ export function MemoryPresets({
   const { t } = useTranslation();
   const { workspace, basePath, can } = useWorkspace();
   const { providers } = useMemoryProviders();
+  const definitions = useMemoryProviderDefinitions();
   const id = useId();
   const [chosenProvider, setChosenProvider] = useState("");
   const removed = useRef<Partial<Record<Kind, Entry>>>({});
   const entries = asEntries(value);
   const available = (providers.data ?? []).filter(
     (item) =>
-      mem0Types.has(item.type) && item.enabled && item.credential_configured,
+      mem0Types.has(item.type) &&
+      eligibleMemoryProvider(item, definitions.data?.items ?? []),
   );
   const selectedProvider =
     available.find((item) => item.id === chosenProvider) ?? available[0];
@@ -99,7 +105,9 @@ export function MemoryPresets({
   const providerUnavailable =
     !!providerId &&
     providers.isSuccess &&
-    (!currentProvider?.enabled || !currentProvider.credential_configured);
+    definitions.isSuccess &&
+    (!currentProvider ||
+      !eligibleMemoryProvider(currentProvider, definitions.data.items));
 
   function update(index: number, entry: Entry) {
     onChange({

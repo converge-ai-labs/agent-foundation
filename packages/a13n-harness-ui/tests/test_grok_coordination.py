@@ -168,7 +168,7 @@ async def test_uncertain_grant_blocks_new_models_runs_and_metadata_changes(
         async def fail(*args):
             raise OSError("disk full")
 
-        monkeypatch.setattr(GrokAccountStore, "_publish", fail)
+        monkeypatch.setattr(GrokAccountStore, "publish", fail)
     first = resolver(path, refresh)
     if failure == "cancel":
         async with anyio.create_task_group() as tasks:

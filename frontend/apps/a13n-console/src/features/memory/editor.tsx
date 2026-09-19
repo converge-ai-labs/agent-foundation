@@ -12,10 +12,10 @@ import {
 } from "../../shared/api";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
 import { CredentialEditor } from "../../shared/credential-editor";
+import { useCredentialSection } from "../../shared/use-credential-section";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { FormSection, formSectionStyles } from "../../shared/form-section";
-import { credentialMode } from "../../shared/provider-authentication";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderTypeField } from "../../shared/provider-type-field";
@@ -154,8 +154,6 @@ export function MemoryProviderForm({
   const [configuration, setConfiguration] = useState<Record<string, unknown>>(
     resource?.value.configuration ?? {},
   );
-  const [credential, setCredential] = useState<Record<string, unknown>>({});
-  const [removeCredential, setRemoveCredential] = useState(false);
   const [enabled, setEnabled] = useState(resource?.value.enabled ?? true);
   const [error, setError] = useState<unknown>();
   const [uncertainCreate, setUncertainCreate] = useState(false);
@@ -163,19 +161,18 @@ export function MemoryProviderForm({
   const api = memoryProviderApi(client, scope);
   const definition = definitions.find((item) => item.type === type);
   const configSchema = definition?.configuration_schema ?? {};
-  const credentialSchema = definition?.credential_schema ?? {};
-  const mode = credentialMode(definition, configuration);
-  const replacingCredential =
-    mode !== "forbidden" &&
-    (Object.keys(credential).length > 0 || (!original && mode === "required"));
+  const section = useCredentialSection(
+    definition,
+    configuration,
+    original?.value,
+  );
   const save = useMutation({
     gcTime: 0,
     retry: false,
     mutationFn: async () => {
       if (!name.trim()) throw new Error(t("Enter a provider name."));
-      const credentials = withSchemaValues(credentialSchema, credential);
-      if (replacingCredential && !removeCredential)
-        validateSettings(credentialSchema, credentials);
+      const credentials = section.payload();
+      if (credentials) validateSettings(section.schema, credentials);
       if (!original) {
         if (!definition) throw new Error(t("Choose a provider type."));
         const config = withSchemaValues(configSchema, configuration);
@@ -186,7 +183,7 @@ export function MemoryProviderForm({
             name,
             enabled,
             configuration: jsonObject(JSON.stringify(config)),
-            credential: replacingCredential
+            credential: credentials
               ? jsonObject(JSON.stringify(credentials))
               : null,
           });
@@ -207,15 +204,18 @@ export function MemoryProviderForm({
       return api.updateProvider(original.value.id, original.etag, {
         name,
         enabled,
-        ...(removeCredential || (definition && mode === "forbidden")
-          ? { credential: null }
-          : replacingCredential
-            ? { credential: jsonObject(JSON.stringify(credentials)) }
-            : {}),
+        ...(credentials === undefined
+          ? {}
+          : {
+              credential:
+                credentials === null
+                  ? null
+                  : jsonObject(JSON.stringify(credentials)),
+            }),
       });
     },
     onSuccess: (provider) => {
-      setCredential({});
+      section.setCredential({});
       void cache.invalidateQueries({ queryKey: ["memory-providers"] });
       void cache.invalidateQueries({ queryKey: ["memory-provider"] });
       onSaved(provider);
@@ -281,7 +281,7 @@ export function MemoryProviderForm({
             onValueChange={(value) => {
               setType(value);
               setConfiguration({});
-              setCredential({});
+              section.setCredential({});
               suggestName(
                 definitions.find((item) => item.type === value)?.display_name ??
                   value,
@@ -309,7 +309,7 @@ export function MemoryProviderForm({
             />
           )}
         </FormSection>
-        {(mode !== "forbidden" || original?.value.credential_configured) && (
+        {section.visible && (
           <FormSection title={t("Credentials")}>
             {readOnly ? (
               <ReadOnlyField label={t("Credentials")}>
@@ -321,20 +321,17 @@ export function MemoryProviderForm({
               </ReadOnlyField>
             ) : original ? (
               <CredentialEditor
-                configured={original.value.credential_configured}
-                removing={removeCredential}
-                onRemovingChange={(value) => {
-                  setRemoveCredential(value);
-                  setCredential({});
-                }}
+                configured={section.removable}
+                removing={section.removing}
+                onRemovingChange={section.setRemoving}
               >
-                {definition && mode !== "forbidden" ? (
+                {definition && section.mode !== "forbidden" ? (
                   <SchemaFields
                     secret
-                    schema={credentialSchema}
-                    requireFields={replacingCredential && !removeCredential}
-                    value={credential}
-                    onChange={setCredential}
+                    schema={section.schema}
+                    requireFields={section.requireFields}
+                    value={section.credential}
+                    onChange={section.setCredential}
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">
@@ -348,10 +345,10 @@ export function MemoryProviderForm({
               <SchemaFields
                 secret
                 key={`${type}-credentials`}
-                requireFields={mode === "required"}
-                schema={credentialSchema}
-                value={credential}
-                onChange={setCredential}
+                requireFields={section.requireFields}
+                schema={section.schema}
+                value={section.credential}
+                onChange={section.setCredential}
               />
             )}
           </FormSection>

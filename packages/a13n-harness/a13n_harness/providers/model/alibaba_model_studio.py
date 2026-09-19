@@ -75,6 +75,7 @@ def _endpoint(configuration: Mapping[str, object]) -> str:
 
 DEFINITION = ModelProviderDefinition(
     type="alibaba_model_studio",
+    catalog_providers=("alibaba", "alibaba-cn"),
     setup_url="https://www.alibabacloud.com/help/en/model-studio/get-api-key",
     display_name="Alibaba Model Studio / Qwen",
     configuration_model=Config,

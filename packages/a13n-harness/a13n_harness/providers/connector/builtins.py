@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from .composio.configuration import ComposioConfiguration, validate_setup
 from .configuration import ApiKeyCredentials
-from .definition import ConnectorProviderDefinition
+from .definition import ConnectorProviderDefinition, ConnectorSetupPolicy
 from .http import ConnectorHttpClient
 
 
@@ -26,5 +26,7 @@ COMPOSIO = ConnectorProviderDefinition(
     open_provider=_open,
     setup_url="https://platform.composio.dev/",
     setup_label="Composio dashboard",
+    # Composio completes setup in the user's browser and issues short-lived setup URLs.
+    setup_policy=ConnectorSetupPolicy(requires_browser_binding=True, max_setup_ttl_seconds=600),
 )
 BUILT_IN_CONNECTOR_PROVIDERS = (COMPOSIO,)

@@ -23,6 +23,7 @@ from .file_delivery import FileDelivery, SendFileArguments
 from .naming import source_key
 from .native_actions import NativeAction, NativeObservationFactory, action
 from .native_context import AccountRunContext, InboundRunContext, NativeToolContext, authorized_account
+from .providers.definition import InboundActionContext
 from .providers.registry import require_native_provider
 from .toolsets import local_capability
 
@@ -159,12 +160,14 @@ def _actions(
     if isinstance(context, AccountRunContext):
         return provider.account_tools.actions(configuration, credentials, context.target_scope, http, endpoints)
     return provider.inbound_actions(
-        context.provider_context,
-        context.action_policy,
-        configuration,
-        credentials,
-        http,
-        endpoints,
+        InboundActionContext(
+            provider_context=context.provider_context,
+            action_policy=context.action_policy,
+            configuration=configuration,
+            credentials=credentials,
+            http=http,
+            endpoints=endpoints,
+        )
     )
 
 

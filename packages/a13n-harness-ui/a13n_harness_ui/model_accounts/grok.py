@@ -5,17 +5,18 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Awaitable, Mapping
+from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from a13n_harness.providers.model.oauth import (
-    CredentialPersistenceError,
-    GrokCredentials,
-    GrokRefresh,
-    ModelAuthenticationError,
-    RefreshNotDispatched,
+from a13n_harness.providers.model.oauth import GrokCredentials, GrokRefresh
+from a13n_harness.providers.model.oauth.rotation import (
+    grant_fingerprint,
+    load_grok_credentials,
+    rotate_grok_grant,
+    same_account,
 )
 from anyio import CancelScope
 from anyio.lowlevel import checkpoint
@@ -29,7 +30,7 @@ from ._common import (
     timestamp_text,
     write_json_if_unchanged,
 )
-from .grok_coordination import RefreshJournal, grant_fingerprint, store_lock
+from .grok_coordination import RefreshJournal, store_lock
 from .models import (
     AccountProjection,
     AccountStoreConflictError,
@@ -191,18 +192,6 @@ def _validate_callback_credential(credential: object, scope: str) -> GrokCredent
     if parsed != credential:
         raise _error("The Grok OAuth callback returned an inconsistent result.", "oauth_callback_invalid")
     return parsed
-
-
-def _same_account(left: GrokCredentials, right: GrokCredentials) -> bool:
-    return (
-        left.account_id,
-        left.issuer,
-        left.client_id,
-    ) == (
-        right.account_id,
-        right.issuer,
-        right.client_id,
-    )
 
 
 def _newer(candidate: GrokCredentials, previous: GrokCredentials) -> bool:
@@ -384,56 +373,35 @@ class GrokAccountStore:
             ),
         )
 
-    async def _require_usable(self, loaded: _Loaded) -> GrokCredentials:
+    def exclusive(self) -> AbstractAsyncContextManager[None]:
+        return store_lock(self._path())
+
+    async def read(self) -> tuple[GrokCredentials, _Loaded]:
+        loaded = await self._load()
         if loaded.credential is None:
             raise _error("A compatible Grok login is required.", "authentication_required")
-        if await RefreshJournal(self._path(), self.scope).blocked(grant_fingerprint(loaded.credential.refresh_token)):
-            raise ModelAuthenticationError(
-                "grok", "The previous credential refresh outcome is unknown. Reauthenticate before retrying."
-            )
-        return loaded.credential
+        return loaded.credential, loaded
+
+    async def publish(self, state: _Loaded, credentials: GrokCredentials) -> None:
+        document = dict(state.snapshot.document or {})
+        document[self.scope] = _merge_entry(document.get(self.scope), credentials)
+        await write_json_if_unchanged(self._path(), document, state.snapshot.digest, provider=Provider.GROK)
+
+    async def blocked(self, grant: str) -> bool:
+        return await RefreshJournal(self._path(), self.scope).blocked(grant)
+
+    async def set_blocked(self, grant: str, blocked: bool) -> None:
+        # The journal fsyncs the marker before it returns, so a lock release never grants replay.
+        await RefreshJournal(self._path(), self.scope).set_blocked(grant, blocked)
 
     async def load(self) -> GrokCredentials:
-        async with store_lock(self._path()):
-            loaded = await self._load()
-            current = await self._require_usable(loaded)
-            return current
-
-    async def _publish(self, expected: _Loaded, refreshed: GrokCredentials) -> None:
-        assert expected.credential is not None
-        self._require_same_account(expected.credential, refreshed)
-        document = dict(expected.snapshot.document or {})
-        document[self.scope] = _merge_entry(document.get(self.scope), refreshed)
-        await write_json_if_unchanged(self._path(), document, expected.snapshot.digest, provider=Provider.GROK)
+        return await load_grok_credentials(self)
 
     async def rotate(self, expected: GrokCredentials, exchange: GrokRefresh) -> GrokCredentials:
-        """Reread, authorize one grant spend, exchange, and publish under one host lock."""
-        async with store_lock(self._path()):
-            loaded = await self._load()
-            current = await self._require_usable(loaded)
-            self._require_same_account(expected, current)
-            if current != expected:
-                return current
-            journal = RefreshJournal(self._path(), self.scope)
-            grant = grant_fingerprint(current.refresh_token)
-            # fsync the marker before dispatch; process death cannot turn lock release into replay permission.
-            await journal.set_blocked(grant, True)
-            try:
-                refreshed = _validate_callback_credential(await exchange(current), self.scope)
-            except RefreshNotDispatched:
-                with CancelScope(shield=True):
-                    await journal.set_blocked(grant, False)
-                raise
-            self._require_same_account(current, refreshed)
-            try:
-                await self._publish(loaded, refreshed)
-            except Exception:
-                raise CredentialPersistenceError(
-                    "grok", "The refreshed Model credentials could not be persisted."
-                ) from None
-            if refreshed.refresh_token == current.refresh_token:
-                await journal.set_blocked(grant, False)
-            return refreshed
+        async def validated(current: GrokCredentials) -> GrokCredentials:
+            return _validate_callback_credential(await exchange(current), self.scope)
+
+        return await rotate_grok_grant(self, expected, validated)
 
     async def login(
         self,
@@ -453,11 +421,7 @@ class GrokAccountStore:
             raise
         except Exception:
             raise _error("The Grok OAuth login failed.", "oauth_login_failed") from None
-        if (
-            initial.credential is not None
-            and not _same_account(initial.credential, result)
-            and not allow_account_switch
-        ):
+        if initial.credential is not None and not same_account(initial.credential, result) and not allow_account_switch:
             raise _error(
                 "Replacing the shared Grok account requires explicit confirmation.",
                 "account_switch_confirmation_required",
@@ -478,11 +442,11 @@ class GrokAccountStore:
                 and not await RefreshJournal(self._path(), self.scope).blocked(
                     grant_fingerprint(latest.credential.refresh_token)
                 )
-                and _same_account(latest.credential, result)
+                and same_account(latest.credential, result)
                 and _newer(latest.credential, result)
             ):
                 return await self.inspect()
-            if latest.credential is not None and not _same_account(latest.credential, result):
+            if latest.credential is not None and not same_account(latest.credential, result):
                 if initial.snapshot.digest != latest.snapshot.digest or not allow_account_switch:
                     raise AccountStoreConflictError(
                         "A different shared Grok account appeared during login.",
@@ -517,7 +481,7 @@ class GrokAccountStore:
 
     @staticmethod
     def _require_same_account(expected: GrokCredentials, actual: GrokCredentials) -> None:
-        if not _same_account(expected, actual):
+        if not same_account(expected, actual):
             raise AccountStoreConflictError(
                 "The active shared Grok account changed during the operation.",
                 code="account_identity_changed",

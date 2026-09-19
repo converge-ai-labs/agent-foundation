@@ -9,6 +9,7 @@ from a13n_service.bots.connectivity.replies import BotReplyObserver
 from a13n_service.bots.connectivity.setup_tests import get_bot_test
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
+from a13n_service.connectivity.providers.definition import InboundActionContext
 from a13n_service.connectivity.providers.registry import require_native_provider
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import transaction
@@ -144,12 +145,14 @@ async def test_feishu_text_and_post_replies_correlate_without_storing_body(reply
     )
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(send)) as http:
         reply = require_native_provider("lark").inbound_actions(
-            context.provider_context,
-            context.action_policy,
-            _config(),
-            {"app_secret": "private-secret"},
-            http,
-            _AllowEndpoint(),
+            InboundActionContext(
+                provider_context=context.provider_context,
+                action_policy=context.action_policy,
+                configuration=_config(),
+                credentials={"app_secret": "private-secret"},
+                http=http,
+                endpoints=_AllowEndpoint(),
+            )
         )["lark.reply"]
         assert await reply.call_observed({"content": content}, observer) == {"kind": "succeeded"}
     result = (

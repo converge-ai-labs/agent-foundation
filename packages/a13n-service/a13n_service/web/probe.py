@@ -12,7 +12,7 @@ from a13n_service.iam.resource_scope import authorize_scope
 from a13n_service.storage import transaction
 
 from .domain import ScrapeSelection, SearchSelection, WebProviderTestResult
-from .execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
+from .execution import WebDispatcher, WebProviderSnapshot
 from .resources import WebProviderError, require_eligible, require_provider
 from .service import WebProviderService
 
@@ -67,7 +67,7 @@ async def test_account(
     code: str | None = None
     try:
         if definition.supports_search:
-            search = AuthorizedSearch(
+            search = WebDispatcher(
                 selection=SearchSelection(provider_id=provider_id, max_results=1),
                 acquire=acquire_for_dispatch,
                 reauthorize=reauthorize,
@@ -78,7 +78,7 @@ async def test_account(
             )
             await search.search(WebSearchRequest(query="Agent Foundation", limit=1))
         else:
-            scrape = AuthorizedScrape(
+            scrape = WebDispatcher(
                 selection=ScrapeSelection(provider_id=provider_id, max_content_bytes=1024),
                 acquire=acquire_for_dispatch,
                 reauthorize=reauthorize,

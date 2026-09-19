@@ -12,7 +12,7 @@ from pydantic import BaseModel, TypeAdapter
 
 from ..definition import ProviderDefinition
 from ..endpoint_policy import EndpointPolicy
-from ..http import EndpointValidator
+from ..http import EndpointValidator, ProviderHttpError, bounded_response_body
 from .apis import MODEL_APIS
 from .credentials import ApiKeyCredential
 from .headers import ExtraHeaders, validate_header_names
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 
 _PROBE_TIMEOUT_SECONDS = 10
+_PROBE_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 
 
 class ProviderOperationError(ValueError):
@@ -58,6 +59,8 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
     connection_probe: Callable[[ModelConnection[C, K]], ConnectionProbeRequest] | None = None
     reserved_headers: tuple[str, ...] = ("authorization",)
     additional_endpoint_fields: tuple[str, ...] = ()
+    # Public model-directory channels that publish this Provider's own model names.
+    catalog_providers: tuple[str, ...] = ()
 
     def validate_domain(self) -> None:
         if not self.supported_model_apis or set(self.supported_model_apis) - MODEL_APIS.keys():
@@ -130,13 +133,11 @@ class ModelProviderDefinition[C: ProviderConfiguration, K: BaseModel](ProviderDe
                     follow_redirects=False,
                 ) as response:
                     response.raise_for_status()
-                    size = 0
-                    async for chunk in response.aiter_bytes():
-                        size += len(chunk)
-                        if size > 4 * 1024 * 1024:
-                            raise ProviderOperationError("Provider probe response exceeds its size limit")
+                    await bounded_response_body(response, max_bytes=_PROBE_MAX_RESPONSE_BYTES)
         except TimeoutError:
             raise ProviderOperationError("Provider connection probe timed out") from None
+        except ProviderHttpError as error:
+            raise ProviderOperationError("Provider probe response exceeds its size limit") from error
         except httpx2.HTTPError as error:
             raise ProviderOperationError("Provider connection probe failed") from error
 

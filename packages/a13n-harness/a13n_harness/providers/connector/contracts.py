@@ -108,7 +108,7 @@ class ConnectorProviderError(Exception):
         *,
         retryable: bool = False,
         outcome_unknown: bool = False,
-        retry_after_seconds: int | None = None,
+        retry_after_seconds: float | None = None,
         http_status: int | None = None,
     ) -> None:
         super().__init__(code)

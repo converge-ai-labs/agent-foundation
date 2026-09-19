@@ -13,8 +13,9 @@ import anyio
 import httpx2
 from pydantic_ai.providers.openai_codex import OpenAICodexCredentials, OpenAICodexOAuthFlow
 
+from ._jwt import jwt_payload
+from .flow import json_object, oauth_request, positive_integer, post_token, required_string
 from .models import CodexLoginResult, CredentialRefreshError, DeviceAuthorizationError
-from .oauth import _json_object, _jwt_payload, _positive_integer, _post_token, _request, _required_string
 
 _CODEX_TOKEN_URL = "https://auth.openai.com/oauth/token"
 _CODEX_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
@@ -34,7 +35,7 @@ class CodexLoginFlow(OpenAICodexOAuthFlow):
 
     async def exchange_code(self, code: str) -> OpenAICodexCredentials:
         self._login = _codex_login_result(
-            await _post_token(
+            await post_token(
                 _CODEX_TOKEN_URL,
                 {
                     "grant_type": "authorization_code",
@@ -70,7 +71,7 @@ class CodexDeviceAuthorization:
             with anyio.fail_after(max(0, self._expires_at - time.monotonic())):
                 while True:
                     await anyio.sleep(self.interval)
-                    response = await _request(
+                    response = await oauth_request(
                         "POST",
                         "https://auth.openai.com/api/accounts/deviceauth/token",
                         http_client=self._http_client,
@@ -80,13 +81,13 @@ class CodexDeviceAuthorization:
                         continue
                     if response.status_code != 200:
                         raise CredentialRefreshError("openai-codex", "The Codex device authorization failed.")
-                    document = _json_object(response, provider="openai-codex")
-                    tokens = await _post_token(
+                    document = json_object(response, provider="openai-codex")
+                    tokens = await post_token(
                         _CODEX_TOKEN_URL,
                         {
                             "grant_type": "authorization_code",
-                            "code": _required_string(document, "authorization_code", "openai-codex"),
-                            "code_verifier": _required_string(document, "code_verifier", "openai-codex"),
+                            "code": required_string(document, "authorization_code", "openai-codex"),
+                            "code_verifier": required_string(document, "code_verifier", "openai-codex"),
                             "redirect_uri": "https://auth.openai.com/deviceauth/callback",
                             "client_id": _CODEX_CLIENT_ID,
                         },
@@ -102,7 +103,7 @@ class CodexDeviceAuthorizationFlow:
 
     @staticmethod
     async def start(*, http_client: httpx2.AsyncClient | None = None) -> CodexDeviceAuthorization:
-        response = await _request(
+        response = await oauth_request(
             "POST",
             "https://auth.openai.com/api/accounts/deviceauth/usercode",
             http_client=http_client,
@@ -112,20 +113,20 @@ class CodexDeviceAuthorizationFlow:
             raise DeviceAuthorizationError("openai-codex", "unsupported")
         if response.status_code != 200:
             raise CredentialRefreshError("openai-codex", "The Codex device authorization request failed.")
-        document = _json_object(response, provider="openai-codex")
-        user_code = _required_string(document, "user_code", "openai-codex")
+        document = json_object(response, provider="openai-codex")
+        user_code = required_string(document, "user_code", "openai-codex")
         if not all(c.isascii() and (c.isalnum() or c == "-") for c in user_code):
             raise CredentialRefreshError("openai-codex", "The Codex device user code is invalid.")
         interval_value = document.get("interval", 5)
         if isinstance(interval_value, str) and interval_value.isascii() and interval_value.isdecimal():
             interval_value = int(interval_value)
-        interval = _positive_integer(interval_value, "interval", provider="openai-codex")
+        interval = positive_integer(interval_value, "interval", provider="openai-codex")
         return CodexDeviceAuthorization(
             verification_uri="https://auth.openai.com/codex/device",
             user_code=user_code,
             expires_in=900,
             interval=min(interval, 900),
-            _device_auth_id=_required_string(document, "device_auth_id", "openai-codex"),
+            _device_auth_id=required_string(document, "device_auth_id", "openai-codex"),
             _expires_at=time.monotonic() + 900,
             _http_client=http_client,
         )
@@ -133,11 +134,11 @@ class CodexDeviceAuthorizationFlow:
 
 def _codex_login_result(document: dict[str, object]) -> CodexLoginResult:
     """Retain login metadata without owning the model credential lifecycle."""
-    access_token = _required_string(document, "access_token", "openai-codex")
-    refresh_token = _required_string(document, "refresh_token", "openai-codex")
+    access_token = required_string(document, "access_token", "openai-codex")
+    refresh_token = required_string(document, "refresh_token", "openai-codex")
     account_value = document.get("account_id")
     account_id = account_value if isinstance(account_value, str) and account_value else None
-    id_token = _required_string(document, "id_token", "openai-codex")
+    id_token = required_string(document, "id_token", "openai-codex")
     if account_id is None and isinstance(id_token, str):
         account_id = _account_id(id_token)
     if account_id is None:
@@ -151,7 +152,7 @@ def _codex_login_result(document: dict[str, object]) -> CodexLoginResult:
 
 
 def _account_id(token: str) -> str | None:
-    payload = _jwt_payload(token)
+    payload = jwt_payload(token)
     if payload is None:
         return None
     nested = payload.get("https://api.openai.com/auth")

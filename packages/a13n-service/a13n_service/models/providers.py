@@ -10,12 +10,8 @@ from a13n_harness.providers.model.definition import ModelProviderDefinition
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.provider_metadata import ProviderMetadata, provider_metadata_core
 
-from .profiles import PROVIDER_CATALOGS
 from .service_common import ModelError
 from .settings import settings_schema
-
-# Two vendors publish their public catalog under a different name than their Provider type.
-CATALOG_PROVIDER_ALIASES = {"google_vertex": ("google-vertex",), "azure_openai": ("azure",)}
 
 
 class ModelProviderMetadata(ProviderMetadata):
@@ -32,7 +28,7 @@ class ModelProviderMetadata(ProviderMetadata):
             **provider_metadata_core(definition),
             supports_connection_probe=definition.supports_connection_probe,
             supported_model_apis=definition.supported_model_apis,
-            catalog_providers=CATALOG_PROVIDER_ALIASES.get(definition.type, PROVIDER_CATALOGS.get(definition.type, ())),
+            catalog_providers=definition.catalog_providers,
             default_model_api=definition.supported_model_apis[0],
             model_api_labels={
                 model_api: MODEL_APIS[model_api].display_name for model_api in definition.supported_model_apis

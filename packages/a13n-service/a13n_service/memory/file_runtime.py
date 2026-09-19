@@ -32,7 +32,7 @@ from a13n_service.temporal import utc_now
 
 from .domain import InlineMemoryBackend, MemoryEntrySelection
 from .models import MemoryStorageRecord, RunMemoryStorageRecord
-from .resources import require_provider
+from .resources import require_provider, supports_document_entries
 from .scopes import memory_subject
 from .service import MemoryService
 from .sources import authorize_sources
@@ -79,7 +79,9 @@ async def filesystem_store(
     if scope is MemoryScope.USER and run.authority_principal.principal_type is not PrincipalType.user:
         raise MemoryDocumentError("memory_scope_unavailable")
     inline = isinstance(entry.backend, InlineMemoryBackend)
-    provider_identity = "filesystem" if isinstance(entry.backend, InlineMemoryBackend) else entry.backend.provider_id
+    provider_identity = (
+        entry.backend.type if isinstance(entry.backend, InlineMemoryBackend) else entry.backend.provider_id
+    )
     subject_id = {
         MemoryScope.THREAD: run.thread_id,
         MemoryScope.AGENT: agent_id,
@@ -151,7 +153,8 @@ async def filesystem_store(
 
     await authorize(False)
     if isinstance(entry.backend, InlineMemoryBackend):
-        configuration = FilesystemMemoryConfiguration.model_validate(entry.backend.configuration)
+        declared = entry.backend.configuration
+        provider_type = entry.backend.type
     else:
         async with short_session(service.authorizer.sessions) as session:
             provider = await require_provider(
@@ -162,9 +165,16 @@ async def filesystem_store(
                 eligible=True,
                 catalog=service.catalog,
             )
-            if provider.type != "filesystem":
-                raise MemoryDocumentError("memory_documents_unsupported")
-            configuration = FilesystemMemoryConfiguration.model_validate(provider.configuration)
+            declared = provider.configuration
+            provider_type = provider.type
+    definition = service.catalog.get(provider_type)
+    if definition is None or not supports_document_entries(definition):
+        raise MemoryDocumentError("memory_documents_unsupported")
+    try:
+        configuration = FilesystemMemoryConfiguration.model_validate(declared)
+    except ValueError as error:
+        # A document Provider configures Host-owned file storage; anything else cannot bind one.
+        raise MemoryDocumentError("memory_documents_unsupported") from error
     return await bind_filesystem_store(
         context,
         service,

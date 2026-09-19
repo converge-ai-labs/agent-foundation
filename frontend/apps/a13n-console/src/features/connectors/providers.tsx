@@ -1,6 +1,7 @@
 import { useSuggestedName } from "../../shared/suggested-name";
 import { FormSection, formSectionStyles } from "../../shared/form-section";
 import { CredentialEditor } from "../../shared/credential-editor";
+import { useCredentialSection } from "../../shared/use-credential-section";
 import { ConfigurationSummary } from "../../shared/configuration-summary";
 import { ResourceReference } from "../../shared/resource-reference";
 import { ProviderTypeField } from "../../shared/provider-type-field";
@@ -36,10 +37,6 @@ import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
-import {
-  credentialMode,
-  providerSchema,
-} from "../../shared/provider-authentication";
 import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
@@ -256,31 +253,20 @@ function ProviderForm({
     [type, setType] = useState(initial?.type ?? ""),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       initial?.configuration ?? {},
-    ),
-    [credentials, setCredentials] = useState<Record<string, unknown>>({}),
-    [removeCredential, setRemoveCredential] = useState(false);
+    );
   const definition = definitions.find((item) => item.type === type);
-  const mode = credentialMode(definition, configuration);
-  const replacing =
-    mode !== "forbidden" &&
-    (Object.keys(credentials).length > 0 || (!basis && mode === "required"));
+  const section = useCredentialSection(definition, configuration, basis);
   function done() {
     void cache.invalidateQueries({ queryKey: ["connector-providers"] });
     close();
   }
   const save = useMutation({
     mutationFn: async () => {
-      const secret = withSchemaValues(
-        definition?.credential_schema ?? {},
-        credentials,
-      );
+      const secret = section.payload();
       if (basis) {
-        if (replacing && !removeCredential) {
+        if (secret) {
           if (!definition) throw new Error(t("Provider unavailable."));
-          validateSettings(
-            providerSchema(definition.credential_schema),
-            secret,
-          );
+          validateSettings(section.schema, secret);
         }
         return client.http
           .PATCH("/api/v1/connector-providers/{connector_provider_id}", {
@@ -289,11 +275,14 @@ function ProviderForm({
               name,
               status: enabled ? "active" : "disabled",
               expected_version: basis.version,
-              ...(removeCredential || (definition && mode === "forbidden")
-                ? { credentials: null }
-                : replacing
-                  ? { credentials: jsonObject(JSON.stringify(secret)) }
-                  : {}),
+              ...(secret === undefined
+                ? {}
+                : {
+                    credentials:
+                      secret === null
+                        ? null
+                        : jsonObject(JSON.stringify(secret)),
+                  }),
             },
           })
           .then(data);
@@ -304,13 +293,12 @@ function ProviderForm({
         configuration,
       );
       validateSettings(definition.configuration_schema, config);
-      if (replacing)
-        validateSettings(providerSchema(definition.credential_schema), secret);
+      if (secret) validateSettings(section.schema, secret);
       const body = {
         name,
         type,
         configuration: jsonObject(JSON.stringify(config)),
-        credentials: replacing ? jsonObject(JSON.stringify(secret)) : null,
+        credentials: secret ? jsonObject(JSON.stringify(secret)) : null,
       };
       return connectorApi(client, scope).create(body, key.forBody(body));
     },
@@ -368,8 +356,7 @@ function ProviderForm({
                 value,
             );
             setConfiguration({});
-            setCredentials({});
-            setRemoveCredential(false);
+            section.setRemoving(false);
           }}
         />
         {definition?.setup_url && (
@@ -431,14 +418,14 @@ function ProviderForm({
                   value={configuration}
                   onChange={setConfiguration}
                 />
-                {mode !== "forbidden" && (
+                {section.mode !== "forbidden" && (
                   <SchemaFields
                     secret
-                    requireFields={replacing}
+                    requireFields={section.requireFields}
                     key={`${type}-credentials`}
-                    schema={providerSchema(definition.credential_schema)}
-                    value={credentials}
-                    onChange={setCredentials}
+                    schema={section.schema}
+                    value={section.credential}
+                    onChange={section.setCredential}
                   />
                 )}
               </>
@@ -446,25 +433,20 @@ function ProviderForm({
           </>
         )}
         {basis &&
-          definition &&
-          Object.keys(
-            providerSchema(definition.credential_schema).properties ?? {},
-          ).length > 0 && (
+          section.visible &&
+          Object.keys(section.schema.properties ?? {}).length > 0 && (
             <CredentialEditor
-              configured={basis.credential_configured}
-              removing={removeCredential}
-              onRemovingChange={(value) => {
-                setRemoveCredential(value);
-                setCredentials({});
-              }}
+              configured={section.removable}
+              removing={section.removing}
+              onRemovingChange={section.setRemoving}
             >
-              {mode !== "forbidden" && (
+              {section.mode !== "forbidden" && (
                 <SchemaFields
                   secret
-                  schema={providerSchema(definition.credential_schema)}
-                  requireFields={replacing && !removeCredential}
-                  value={credentials}
-                  onChange={setCredentials}
+                  schema={section.schema}
+                  requireFields={section.requireFields}
+                  value={section.credential}
+                  onChange={section.setCredential}
                 />
               )}
             </CredentialEditor>
@@ -478,11 +460,12 @@ function ProviderForm({
                 loading={test.isPending}
                 disabled={
                   save.isPending ||
-                  removeCredential ||
-                  (mode === "required" && !basis.credential_configured) ||
+                  section.removing ||
+                  (section.mode === "required" &&
+                    !basis.credential_configured) ||
                   name !== basis.name ||
                   enabled !== (basis.status === "active") ||
-                  Object.keys(credentials).length > 0
+                  Object.keys(section.credential).length > 0
                 }
                 onClick={() => test.mutate()}
                 type="button"

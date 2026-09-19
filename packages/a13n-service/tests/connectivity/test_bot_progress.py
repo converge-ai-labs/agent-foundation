@@ -470,6 +470,7 @@ async def replying(task):
     from a13n_service.bots.progress.replies import CardReplies
     from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord
     from a13n_service.connectivity.native_context import InboundRunContext
+    from a13n_service.connectivity.providers.definition import InboundActionContext
     from a13n_service.connectivity.providers.registry import require_native_provider
     from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 
@@ -538,12 +539,14 @@ async def replying(task):
         credential_generation=generation,
     )
     native = require_native_provider(provider).inbound_actions(
-        context.provider_context,
-        context.action_policy,
-        slack_config() if slack else _config(),
-        {"bot_token": "fixture-token"} if slack else {"app_secret": "fixture-secret"},
-        task.service.delivery.http,
-        task.service.delivery.endpoints,
+        InboundActionContext(
+            provider_context=context.provider_context,
+            action_policy=context.action_policy,
+            configuration=slack_config() if slack else _config(),
+            credentials={"bot_token": "fixture-token"} if slack else {"app_secret": "fixture-secret"},
+            http=task.service.delivery.http,
+            endpoints=task.service.delivery.endpoints,
+        )
     )[f"{provider}.reply"]
 
     async def reply(text):

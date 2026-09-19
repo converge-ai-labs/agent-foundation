@@ -7711,17 +7711,17 @@ export interface components {
       hook_names: string[];
       webhook: components["schemas"]["WebhookDestinationConfig"];
     };
-    /** InlineMemoryBackend */
+    /**
+     * InlineMemoryBackend
+     * @description A document Provider configured on the Agent instead of a saved Memory Provider.
+     */
     InlineMemoryBackend: {
       /** Configuration */
       configuration?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
-      /**
-       * Type
-       * @constant
-       */
-      type: "filesystem";
+      /** Type */
+      type: string;
     };
     /** InputAdapterConfig */
     InputAdapterConfig: {

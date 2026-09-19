@@ -1,8 +1,13 @@
 """Bounded response mechanics shared by provider transports and hosts."""
 
+from datetime import UTC, datetime
+from email.utils import parsedate_to_datetime
 from typing import Protocol
 
 import httpx2
+
+# Connector and host transports never honour a delay longer than this.
+MAX_RETRY_AFTER_SECONDS = 3600.0
 
 
 class EndpointValidator(Protocol):
@@ -10,7 +15,7 @@ class EndpointValidator(Protocol):
 
 
 class ProviderHttpError(Exception):
-    def __init__(self, code: str, *, retry_after_seconds: int | None = None) -> None:
+    def __init__(self, code: str, *, retry_after_seconds: float | None = None) -> None:
         super().__init__(code)
         self.code = code
         self.retry_after_seconds = retry_after_seconds
@@ -35,11 +40,17 @@ async def bounded_response_body(response: httpx2.Response, *, max_bytes: int) ->
     return bytes(body)
 
 
-def retry_after_seconds(value: str | None) -> int | None:
+def retry_after_seconds(value: str | None, *, max_seconds: float | None = MAX_RETRY_AFTER_SECONDS) -> float | None:
+    """Parse delta-seconds or an HTTP-date. Missing, unusable, or over-long values return None."""
+
     if value is None:
         return None
     try:
-        parsed = int(value)
+        delay = float(value)
     except ValueError:
-        return None
-    return parsed if 0 <= parsed <= 3600 else None
+        try:
+            delay = (parsedate_to_datetime(value) - datetime.now(UTC)).total_seconds()
+        except (TypeError, ValueError, OverflowError):
+            return None
+    delay = max(0.0, delay)
+    return None if max_seconds is not None and delay > max_seconds else delay

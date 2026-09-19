@@ -72,6 +72,12 @@ def require_eligible(record: MemoryProviderRecord, catalog: ProviderCatalog[Memo
         ) from error
 
 
+def supports_document_entries(definition: MemoryProviderDefinition) -> bool:
+    """Document entries bind Host-owned files, so their Provider opens no record backend."""
+
+    return definition.supports_documents and not definition.supports_records
+
+
 def require_document_support(provider_type: str, catalog: ProviderCatalog[MemoryProviderDefinition] | None) -> None:
     definition = catalog.get(provider_type) if catalog is not None else None
     if definition is None:
@@ -119,16 +125,11 @@ async def require_memory_configuration(
         )
     if isinstance(selection, MemoryEntries):
         for entry in selection.entries:
-            key = (
-                entry.backend.type
-                if isinstance(entry.backend, InlineMemoryBackend)
-                else providers[entry.backend.provider_id].type
-            )
+            backend = entry.backend
+            key = backend.type if isinstance(backend, InlineMemoryBackend) else providers[backend.provider_id].type
             definition = catalog.get(key)
             supported = definition is not None and (
-                definition.supports_records
-                if entry.mode == "records"
-                else key == "filesystem" and definition.supports_documents
+                definition.supports_records if entry.mode == "records" else supports_document_entries(definition)
             )
             if not supported:
                 raise MemoryProviderError(
@@ -136,6 +137,16 @@ async def require_memory_configuration(
                     "The selected backend is unavailable for this memory mode.",
                     category=ErrorCategory.invalid_request,
                 )
+            if isinstance(backend, InlineMemoryBackend):
+                assert definition is not None
+                try:
+                    definition.configuration_model.model_validate(backend.configuration)
+                except ValueError as error:
+                    raise MemoryProviderError(
+                        "memory_backend_configuration_invalid",
+                        "The inline memory backend configuration is invalid.",
+                        category=ErrorCategory.invalid_request,
+                    ) from error
     elif not catalog[providers[selection.provider_id].type].supports_records:
         raise MemoryProviderError(
             "memory_mode_unsupported",

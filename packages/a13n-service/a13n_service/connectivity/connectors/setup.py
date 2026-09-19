@@ -56,6 +56,7 @@ from .management import (
     require_active_provider,
     require_connection,
     require_connector_provider,
+    require_implementation,
 )
 from .models import ConnectorAuthorizationRecord, ConnectorConnectionRecord, ConnectorProviderRecord
 from .shared_setup import reserve_shared_setup
@@ -135,8 +136,9 @@ class ConnectorSetupCoordinator:
         direct_credentials: bool = False,
     ) -> ConnectorAuthorizationRecord:
         binding = browser_digest(browser_nonce)
+        policy = require_implementation(self._connectors, connector.type).setup_policy
         if (
-            connector.type == "composio"
+            policy.requires_browser_binding
             and not direct_credentials
             and (
                 (binding is None and handoff is None)
@@ -146,7 +148,7 @@ class ConnectorSetupCoordinator:
         ):
             raise ConnectorError(
                 "browser_setup_required",
-                "Composio setup requires browser binding and an HTTPS or exact loopback HTTP origin.",
+                "This Connector setup requires browser binding and an HTTPS or exact loopback HTTP origin.",
                 category=ErrorCategory.invalid_request,
             )
         correlation = self.correlation(connector, workspace_id=connection.workspace_id)
@@ -169,10 +171,7 @@ class ConnectorSetupCoordinator:
             completion_method=SetupCompletionMethod.polling,
             status="starting",
             available_at=now,
-            expires_at=now
-            + timedelta(
-                seconds=min(self._setup_ttl_seconds, 600) if connector.type == "composio" else self._setup_ttl_seconds
-            ),
+            expires_at=now + timedelta(seconds=policy.setup_ttl_seconds(self._setup_ttl_seconds)),
             reserved_at=None,
             consumed_at=None,
             attempt_count=0,

@@ -2,13 +2,10 @@
 
 from functools import partial
 
-import httpx2
-from a13n_harness.providers.endpoint_policy import EndpointPolicy
-
 from a13n_service.ids import new_object_id
 
-from ...domain import JsonObject
 from ...native_actions import NativeAction, action, credential
+from ..definition import InboundActionContext
 from ..github.actions import (
     GitHubActionBinding,
     GitHubAddCommentArguments,
@@ -23,14 +20,10 @@ from .polling_config import GitHubPollingConfig
 from .rest import GitHubPersonalTokenProvider, GitHubREST
 
 
-def inbound_actions(
-    context: JsonObject,
-    policy: JsonObject,
-    configuration: JsonObject,
-    credentials: JsonObject,
-    http: httpx2.AsyncClient,
-    endpoints: EndpointPolicy,
-) -> dict[str, NativeAction]:
+def inbound_actions(inbound: InboundActionContext) -> dict[str, NativeAction]:
+    context = inbound.provider_context
+    configuration, credentials = inbound.configuration, inbound.credentials
+    http, endpoints = inbound.http, inbound.endpoints
     config = (GitHubPollingConfig if "user_id" in configuration else GitHubAccountConfig).model_validate(configuration)
     binding = GitHubActionBinding.model_validate(
         {

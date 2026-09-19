@@ -110,26 +110,14 @@ class WebToolset:
         client: WebClient,
         policy: WebPolicy,
         configuration: WebConfiguration | None = None,
-        search_provider: WebSearchProvider | None = None,
-        scrape_provider: WebScrapeProvider | None = None,
         search_backends: Sequence[WebSearchBackendBinding] = (),
         scrape_backends: Sequence[WebScrapeBackendBinding] = (),
         files: FileOperator,
         file_scopes: FileScopeProvider | None = None,
     ) -> None:
         self.configuration = (configuration or WebConfiguration()).model_copy(deep=True)
-        if search_provider is not None and search_backends:
-            raise ValueError("search_provider and search_backends are mutually exclusive")
-        if scrape_provider is not None and scrape_backends:
-            raise ValueError("scrape_provider and scrape_backends are mutually exclusive")
-        effective_search_backends = tuple(search_backends) or (
-            (WebSearchBackendBinding("default", search_provider),) if search_provider is not None else ()
-        )
-        effective_scrape_backends = tuple(scrape_backends) or (
-            (WebScrapeBackendBinding("default", scrape_provider),) if scrape_provider is not None else ()
-        )
-        validated_search_backends = _validate_search_backend_bindings(effective_search_backends)
-        validated_scrape_backends = _validate_scrape_backend_bindings(effective_scrape_backends)
+        validated_search_backends = _validate_search_backend_bindings(tuple(search_backends))
+        validated_scrape_backends = _validate_scrape_backend_bindings(tuple(scrape_backends))
         if (
             self.configuration.search.restricted
             and self.configuration.search.mode != "off"

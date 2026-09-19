@@ -3,6 +3,7 @@
 from collections.abc import Callable
 from typing import Any
 
+from a13n_harness.providers.model.builtins import BUILT_IN_MODEL_PROVIDERS
 from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.profiles.openai import openai_model_profile
 from pydantic_ai.providers import Provider
@@ -13,21 +14,13 @@ from pydantic_ai.providers.zai import ZaiProvider
 
 from .domain import CatalogRef
 
+# Gateways that resolve another vendor's published model names in addition to their own.
+_COMPATIBLE_CATALOGS: dict[str, tuple[str, ...]] = {"google_vertex": ("google",), "azure_openai": ("openai",)}
+
 # Only equivalent directory channels are interchangeable for native name lookup.
 PROVIDER_CATALOGS: dict[str, tuple[str, ...]] = {
-    "openai": ("openai",),
-    "anthropic": ("anthropic",),
-    "google_gemini": ("google",),
-    "google_vertex": ("google-vertex", "google"),
-    "azure_openai": ("azure", "openai"),
-    "aws_bedrock": ("amazon-bedrock",),
-    "openrouter": ("openrouter",),
-    "ollama": (),
-    "alibaba_model_studio": ("alibaba", "alibaba-cn"),
-    "deepseek": ("deepseek",),
-    "moonshot": ("moonshotai", "moonshotai-cn"),
-    "minimax": ("minimax",),
-    "zhipu": ("zhipuai", "zai"),
+    definition.type: (*definition.catalog_providers, *_COMPATIBLE_CATALOGS.get(definition.type, ()))
+    for definition in BUILT_IN_MODEL_PROVIDERS
 }
 
 _COMPATIBLE_CHAT_PROFILES: dict[str, Callable[[str], ModelProfile | None]] = {

@@ -112,6 +112,7 @@ def _official_endpoint(value: str) -> str:
 
 DEFINITION = ModelProviderDefinition(
     type="azure_openai",
+    catalog_providers=("azure",),
     setup_url="https://learn.microsoft.com/en-us/azure/ai-foundry/openai/quickstart",
     display_name="Azure OpenAI",
     configuration_model=Config,

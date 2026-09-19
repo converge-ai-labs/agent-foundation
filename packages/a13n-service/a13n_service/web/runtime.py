@@ -33,7 +33,7 @@ from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
 from .domain import ScrapeSelection, SearchSelection, WebSelection, provider_selections
-from .execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
+from .execution import WebDispatcher, WebProviderSnapshot
 from .resources import WebProviderError, require_operation, require_provider
 from .web import WebTransport, WebTransportPolicy
 
@@ -147,7 +147,7 @@ class WebRuntime:
             search_backends = (
                 WebSearchBackendBinding(
                     selected_search.provider_id,
-                    AuthorizedSearch(
+                    WebDispatcher(
                         selection=selected_search,
                         acquire=acquire_search,
                         reauthorize=reauthorize_search,
@@ -169,7 +169,7 @@ class WebRuntime:
             scrape_backends = (
                 WebScrapeBackendBinding(
                     selected_scrape.provider_id,
-                    AuthorizedScrape(
+                    WebDispatcher(
                         selection=selected_scrape,
                         acquire=acquire_scrape,
                         reauthorize=reauthorize_scrape,

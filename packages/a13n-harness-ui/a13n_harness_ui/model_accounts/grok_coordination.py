@@ -2,7 +2,6 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from hashlib import sha256
 from pathlib import Path
 
 from anyio import CancelScope, fail_after, sleep, to_thread
@@ -32,11 +31,6 @@ async def store_lock(path: Path) -> AsyncIterator[None]:
         if acquired:
             with CancelScope(shield=True):
                 await to_thread.run_sync(lock.release)
-
-
-def grant_fingerprint(refresh_token: str | None) -> str:
-    # Only a one-way fingerprint of a high-entropy grant enters host coordination state.
-    return sha256((refresh_token or "").encode()).hexdigest()
 
 
 class RefreshJournal:

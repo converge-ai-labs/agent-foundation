@@ -48,6 +48,7 @@ def _request(provider: ModelConnection[ProviderConfiguration, ApiKeyCredential])
 
 DEFINITION = ModelProviderDefinition(
     type="anthropic",
+    catalog_providers=("anthropic",),
     setup_url="https://platform.claude.com/settings/keys",
     display_name="Anthropic",
     configuration_model=ProviderConfiguration,

@@ -62,8 +62,7 @@ class WebProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C, K]
         configuration: object,
         credential: object = None,
         *,
-        search_options: SearchOptions | None = None,
-        scrape_options: ScrapeOptions | None = None,
+        options: SearchOptions | ScrapeOptions | None = None,
         transport: WebProviderTransport | None = None,
     ) -> AsyncIterator[WebProvider[C, K]]:
         """Validate host inputs before constructing an operation handle; no I/O at open."""
@@ -72,8 +71,7 @@ class WebProviderDefinition[C: BaseModel, K: BaseModel](ProviderDefinition[C, K]
             self,
             parsed,
             self.parse_credential(parsed, credential),
-            search_options or SearchOptions(),
-            scrape_options or ScrapeOptions(),
+            options,
             transport or WebProviderTransport(),
         )
 
@@ -83,13 +81,22 @@ class _PublicWebPolicy:
         await EndpointPolicy().validate(url)
 
 
+def _operation_options[OptionsT: SearchOptions | ScrapeOptions](
+    options: SearchOptions | ScrapeOptions | None, expected: type[OptionsT]
+) -> OptionsT:
+    if options is None:
+        return expected()
+    if not isinstance(options, expected):
+        raise TypeError(f"the Web Provider was opened with {type(options).__name__}")
+    return options
+
+
 @dataclass(frozen=True, slots=True)
 class WebProvider[C: BaseModel, K: BaseModel]:
     definition: WebProviderDefinition[C, K]
     configuration: C
     credential: K | None = field(repr=False)
-    search_options: SearchOptions
-    scrape_options: ScrapeOptions
+    options: SearchOptions | ScrapeOptions | None
     transport: WebProviderTransport
 
     @property
@@ -100,13 +107,14 @@ class WebProvider[C: BaseModel, K: BaseModel]:
         operation = self.definition.search
         if operation is None:
             raise WebProviderError("web_search_unavailable")
+        options = _operation_options(self.options, SearchOptions)
         response = WebSearchResponse.model_validate(
-            await operation(self.configuration, self.credential, request, self.search_options, self.transport)
+            await operation(self.configuration, self.credential, request, options, self.transport)
         )
         return response.model_copy(
             update={
-                "results": tuple(result for result in response.results if self.search_options.allows(result.url))[
-                    : min(request.limit, self.search_options.max_results)
+                "results": tuple(result for result in response.results if options.allows(result.url))[
+                    : min(request.limit, options.max_results)
                 ]
             }
         )
@@ -115,20 +123,19 @@ class WebProvider[C: BaseModel, K: BaseModel]:
         operation = self.definition.scrape
         if operation is None:
             raise WebProviderError("web_scrape_unavailable")
-        if self.scrape_options.restricted and not self.supports_domain_restrictions:
+        options = _operation_options(self.options, ScrapeOptions)
+        if options.restricted and not self.supports_domain_restrictions:
             raise WebProviderError("web_scrape_domain_restrictions_unsupported")
         with fail_after(request.deadline_seconds) as scope:
-            effective_policy = WebDomainPolicy(self.scrape_options, policy or _PublicWebPolicy())
+            effective_policy = WebDomainPolicy(options, policy or _PublicWebPolicy())
             await effective_policy.authorize(request.url, purpose="scrape")
             result = WebScrapeResult.model_validate(
-                await operation(
-                    self.configuration, self.credential, request, self.scrape_options, self.transport, effective_policy
-                )
+                await operation(self.configuration, self.credential, request, options, self.transport, effective_policy)
             )
             encoded = result.content.encode("utf-8")
             if current_time() >= scope.deadline:
                 raise TimeoutError
-            limit = min(request.max_content_bytes, self.scrape_options.max_content_bytes)
+            limit = min(request.max_content_bytes, options.max_content_bytes)
             if len(encoded) > limit:
                 return result.model_copy(
                     update={

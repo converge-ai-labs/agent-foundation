@@ -80,6 +80,7 @@ class Config(ProviderConfiguration):
 
 DEFINITION = ModelProviderDefinition(
     type="aws_bedrock",
+    catalog_providers=("amazon-bedrock",),
     setup_url="https://docs.aws.amazon.com/IAM/latest/UserGuide/access-key-self-managed.html",
     setup_label="Get access keys",
     display_name="AWS Bedrock",

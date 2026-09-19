@@ -43,6 +43,7 @@ def _request(provider: ModelConnection[ProviderConfiguration, ApiKeyCredential])
 
 DEFINITION = ModelProviderDefinition(
     type="google_gemini",
+    catalog_providers=("google",),
     setup_url="https://aistudio.google.com/app/apikey",
     display_name="Google Gemini",
     configuration_model=ProviderConfiguration,

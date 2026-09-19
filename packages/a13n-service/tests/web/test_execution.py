@@ -16,7 +16,7 @@ from a13n_harness.providers.web import WebProviderDefinition, WebProviderRespons
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.web.domain import ScrapeSelection, SearchSelection
-from a13n_service.web.execution import AuthorizedScrape, AuthorizedSearch, WebProviderSnapshot
+from a13n_service.web.execution import WebDispatcher, WebProviderSnapshot
 from pydantic import BaseModel, ConfigDict, SecretStr
 
 pytestmark = pytest.mark.anyio
@@ -115,7 +115,7 @@ def _boundary(operation: str, failures: list[BaseException | None], *, scrape_ca
         authorizations += 1
 
     if operation == "search":
-        authorized = AuthorizedSearch(
+        authorized = WebDispatcher(
             selection=SearchSelection(provider_id=PROVIDER_ID),
             acquire=acquire,
             reauthorize=reauthorize,
@@ -127,7 +127,7 @@ def _boundary(operation: str, failures: list[BaseException | None], *, scrape_ca
             return await authorized.search(WebSearchRequest(query="query", limit=1))
 
     else:
-        authorized = AuthorizedScrape(
+        authorized = WebDispatcher(
             selection=ScrapeSelection(provider_id=PROVIDER_ID),
             acquire=acquire,
             reauthorize=reauthorize,
@@ -188,7 +188,7 @@ async def test_credential_free_provider_dispatches_without_ciphertext() -> None:
     async def reauthorize() -> None:
         pass
 
-    authorized = AuthorizedSearch(
+    authorized = WebDispatcher(
         selection=SearchSelection(provider_id=PROVIDER_ID),
         acquire=acquire,
         reauthorize=reauthorize,
@@ -222,7 +222,7 @@ async def test_unknown_or_unexpected_failure_is_safe_and_never_replayed(operatio
 @pytest.mark.parametrize("kind", ["rate_limited", "unavailable"])
 async def test_explicit_retryable_response_permits_one_fresh_bounded_retry(operation, kind) -> None:
     code = f"web_{operation}_{kind}"
-    dispatch, runtime, counts = _boundary(operation, [WebProviderResponseError(code, retry_after=0), None])
+    dispatch, runtime, counts = _boundary(operation, [WebProviderResponseError(code, retry_after_seconds=0), None])
     await dispatch()
     assert runtime.calls == [operation, operation]
     assert counts() == (2, 2)
@@ -232,7 +232,7 @@ async def test_explicit_retryable_response_permits_one_fresh_bounded_retry(opera
 @pytest.mark.parametrize("explicit", [False, True])
 async def test_code_alone_or_nonretryable_response_cannot_authorize_replay(operation, explicit) -> None:
     code = f"web_{operation}_{'authentication_failed' if explicit else 'rate_limited'}"
-    failure = WebProviderResponseError(code, retry_after=0) if explicit else WebProviderError(code)
+    failure = WebProviderResponseError(code, retry_after_seconds=0) if explicit else WebProviderError(code)
     dispatch, runtime, counts = _boundary(operation, [failure])
     with pytest.raises(WebProviderError) as caught:
         await dispatch()
@@ -246,7 +246,7 @@ async def test_response_delay_outside_the_operation_budget_is_not_replayed(opera
     code = f"web_{operation}_rate_limited"
     dispatch, runtime, counts = _boundary(
         operation,
-        [WebProviderResponseError(code, retry_after=math.inf)],
+        [WebProviderResponseError(code, retry_after_seconds=math.inf)],
     )
     with pytest.raises(WebProviderResponseError):
         await dispatch()

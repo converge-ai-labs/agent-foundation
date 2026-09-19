@@ -34,8 +34,10 @@ from a13n_harness.capabilities import (
     WebConfiguration,
     WebRequest,
     WebResponse,
+    WebScrapeBackendBinding,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchBackendBinding,
     WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResponse,
@@ -162,8 +164,8 @@ def _bindings(root: Path) -> RunBindings:
         web=WebBinding(
             client=_WebClient(),
             policy=_WebPolicy(),
-            search_provider=_WebSearchProvider(),
-            scrape_provider=_WebScrapeProvider(),
+            search_backends=(WebSearchBackendBinding("default", _WebSearchProvider()),),
+            scrape_backends=(WebScrapeBackendBinding("default", _WebScrapeProvider()),),
         ),
     )
 

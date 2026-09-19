@@ -27,6 +27,7 @@ def _build_provider(
 
 DEFINITION = ModelProviderDefinition(
     type="deepseek",
+    catalog_providers=("deepseek",),
     setup_url="https://platform.deepseek.com/api_keys",
     display_name="DeepSeek",
     configuration_model=ProviderConfiguration,

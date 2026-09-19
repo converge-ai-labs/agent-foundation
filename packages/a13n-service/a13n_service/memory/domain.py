@@ -7,7 +7,6 @@ from typing import Annotated, Literal
 
 from a13n_harness.providers.memory import MemoryProviderDefinition
 from a13n_harness.providers.memory.contracts import MemoryScope as ScopeKind
-from a13n_harness.providers.memory.filesystem.configuration import FilesystemMemoryConfiguration
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_serializer, model_validator
 
 from a13n_service.iam.domain import PrincipalRef
@@ -39,14 +38,11 @@ class ManagedMemoryBackend(BaseModel):
 
 
 class InlineMemoryBackend(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    type: Literal["filesystem"]
-    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    """A document Provider configured on the Agent instead of a saved Memory Provider."""
 
-    @model_validator(mode="after")
-    def validate_configuration(self) -> InlineMemoryBackend:
-        FilesystemMemoryConfiguration.model_validate(self.configuration)
-        return self
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    type: str = Field(min_length=1, max_length=128)
+    configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
 
 class MemoryEntrySelection(BaseModel):
@@ -78,7 +74,7 @@ class MemoryEntrySelection(BaseModel):
     def mode_options(self) -> MemoryEntrySelection:
         if self.mode == "records":
             if isinstance(self.backend, InlineMemoryBackend):
-                raise ValueError("Filesystem memory requires documents mode")
+                raise ValueError("An inline backend requires documents mode")
             if "auto_organize" in self.model_fields_set:
                 raise ValueError("auto_organize is a document option")
         elif self.model_fields_set & {"auto_recall", "recall_limit", "recall_threshold", "recall_timeout"}:

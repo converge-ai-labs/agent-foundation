@@ -71,9 +71,7 @@ async def test_custom_scrape_enforces_utf8_limits_without_losing_metadata(
     async def scrape(configuration, credential, requested, options, transport, callback_policy):
         return original
 
-    async with definition(scrape).open(
-        {}, None, scrape_options=ScrapeOptions(max_content_bytes=provider_budget)
-    ) as web:
+    async with definition(scrape).open({}, None, options=ScrapeOptions(max_content_bytes=provider_budget)) as web:
         result = await web.scrape(request(budget=request_budget), policy=policy)
     assert result.content == expected
     assert len(result.content.encode("utf-8")) <= min(request_budget, provider_budget)

@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 from a13n_harness.providers.catalog import ProviderCatalog
-from a13n_harness.providers.connector import ConnectorProviderDefinition
+from a13n_harness.providers.connector import ConnectorProviderDefinition, ConnectorSetupPolicy
 from a13n_harness.providers.connector.contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
@@ -178,7 +178,12 @@ class FakeConnection:
         raise NotImplementedError
 
 
-def fake_catalog(backend: FakeConnectorBackend) -> ProviderCatalog[ConnectorProviderDefinition]:
+NO_SETUP_POLICY = ConnectorSetupPolicy()
+
+
+def fake_catalog(
+    backend: FakeConnectorBackend, *, setup_policy: ConnectorSetupPolicy = NO_SETUP_POLICY
+) -> ProviderCatalog[ConnectorProviderDefinition]:
     @asynccontextmanager
     async def open_provider(configuration, credentials, http):
         yield FakeConnectorProvider(backend)
@@ -192,6 +197,7 @@ def fake_catalog(backend: FakeConnectorBackend) -> ProviderCatalog[ConnectorProv
                 credential_model=FakeCredentials,
                 setup_validator=validate_fake_setup,
                 open_provider=open_provider,
+                setup_policy=setup_policy,
             ),
         )
     )

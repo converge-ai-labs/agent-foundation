@@ -22,6 +22,7 @@ from a13n_harness.toolsets.web import (
     WebScrapeConfiguration,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchBackendBinding,
     WebSearchConfiguration,
     WebSearchRequest,
     WebSearchResult,
@@ -139,8 +140,8 @@ async def test_web_instructions_follow_provider_activation() -> None:
 
     provider_parts = (
         await _toolset(
-            search_provider=_WebProvider(),
-            scrape_provider=_ScrapeProvider(),
+            search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
+            scrape_backends=(WebScrapeBackendBinding("default", _ScrapeProvider()),),
         )
         .get_toolset()
         .get_instructions(ctx)
@@ -187,7 +188,7 @@ async def test_semantic_disclosure_measures_the_redacted_representation() -> Non
 async def test_web_search_spills_full_results_and_returns_complete_items() -> None:
     ctx, context = _run_context()
     toolset = _toolset(
-        search_provider=_WebProvider(),
+        search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
         configuration=WebConfiguration(max_search_results=10),
     )
 
@@ -209,7 +210,7 @@ async def test_web_scrape_spills_full_content_before_semantic_truncation() -> No
     policy = _Policy()
     toolset = _toolset(
         policy=policy,
-        scrape_provider=_ScrapeProvider(),
+        scrape_backends=(WebScrapeBackendBinding("default", _ScrapeProvider()),),
     )
 
     result = await toolset.scrape(ctx, "https://example.com/start")
@@ -415,7 +416,7 @@ def test_invalid_domain_configuration_is_rejected(domain: str) -> None:
 async def test_search_domain_restrictions_filter_provider_results() -> None:
     ctx, _ = _run_context()
     toolset = _toolset(
-        search_provider=_WebProvider(),
+        search_backends=(WebSearchBackendBinding("default", _WebProvider()),),
         configuration=WebConfiguration(
             search=WebSearchConfiguration(mode="host", deny_domains=("example.com",)),
         ),

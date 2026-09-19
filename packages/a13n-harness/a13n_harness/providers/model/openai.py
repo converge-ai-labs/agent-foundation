@@ -103,6 +103,7 @@ def _request(provider: ModelConnection[Config, ApiKeyCredential]) -> ConnectionP
 
 DEFINITION = ModelProviderDefinition(
     type="openai",
+    catalog_providers=("openai",),
     setup_url="https://platform.openai.com/api-keys",
     display_name="OpenAI",
     configuration_model=Config,

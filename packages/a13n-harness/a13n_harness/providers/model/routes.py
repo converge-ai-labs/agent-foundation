@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import urlsplit
 
@@ -17,19 +18,39 @@ if TYPE_CHECKING:
     from pydantic_ai.models import Model
     from pydantic_ai.providers import Provider
 
+
+def _zai_model(model_name: str, model: Model) -> Model:
+    from pydantic_ai.models.zai import ZaiModel
+
+    assert model.provider is not None
+    return ZaiModel(model_name, provider=model.provider)
+
+
+@dataclass(frozen=True, slots=True)
+class RouteSpec:
+    """One native route: the Provider definition, its calling API and its own endpoint."""
+
+    provider_type: str
+    model_api: str
+    default_base_url: str | None = None
+    post_construct: Callable[[str, Model], Model] | None = None
+
+
 # Native route names select a calling API, never a hosted account or Model identity.
-_ROUTES = {
-    "openai": ("openai", "openai.responses"),
-    "openai-responses": ("openai", "openai.responses"),
-    "openai-chat": ("openai", "openai.chat_completions"),
-    "anthropic": ("anthropic", "anthropic.messages"),
-    "google": ("google_gemini", "google.generate_content"),
-    "openrouter": ("openrouter", "openrouter.chat_completions"),
-    "deepseek": ("deepseek", "openai.chat_completions"),
-    "zai": ("zhipu", "openai.chat_completions"),
-    "moonshotai": ("moonshot", "openai.chat_completions"),
-    "grok": ("openai", "openai.chat_completions"),
+ROUTES = {
+    "openai": RouteSpec("openai", "openai.responses"),
+    "openai-responses": RouteSpec("openai", "openai.responses"),
+    "openai-chat": RouteSpec("openai", "openai.chat_completions"),
+    "anthropic": RouteSpec("anthropic", "anthropic.messages"),
+    "google": RouteSpec("google_gemini", "google.generate_content"),
+    "openrouter": RouteSpec("openrouter", "openrouter.chat_completions"),
+    "deepseek": RouteSpec("deepseek", "openai.chat_completions"),
+    "zai": RouteSpec("zhipu", "openai.chat_completions", "https://api.z.ai/api/paas/v4", _zai_model),
+    "moonshotai": RouteSpec("moonshot", "openai.chat_completions", "https://api.moonshot.ai/v1"),
+    "grok": RouteSpec("openai", "openai.chat_completions", "https://api.x.ai/v1"),
 }
+# Google's developer and cloud transports share one inferred provider class.
+ROUTE_ALIASES = {"gemini": "google-cloud", "google-gla": "google-cloud", "google-vertex": "google-cloud"}
 _OPENAI_CLIENT_ROUTES = frozenset({"together", "fireworks"})
 
 
@@ -40,52 +61,50 @@ async def build_api_key_model(route: str, credential: ApiKeyCredential, *, base_
     allowed to resolve to private addresses for local embedding applications.
     Service uses definitions with its deployment policy instead.
     """
-    from pydantic_ai.models import infer_model
-    from pydantic_ai.providers import Provider, infer_provider_class
-
     provider_name, separator, model_name = route.partition(":")
     if not separator:
         raise ValueError("an API-key Model route must include a provider")
-    if provider_name in {"gemini", "google-gla", "google-vertex"}:
-        provider_name = "google-cloud"
-        route = f"{provider_name}:{model_name}"
-    selected = _ROUTES.get(provider_name)
-    if selected is not None:
-        provider_type, api = selected
-        definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == provider_type)
-        if provider_name == "grok" and base_url is None:
-            base_url = "https://api.x.ai/v1"
-        if base_url is None:
-            base_url = {"zai": "https://api.z.ai/api/paas/v4", "moonshotai": "https://api.moonshot.ai/v1"}.get(
-                provider_name
-            )
-        configuration = {"base_url": base_url} if base_url is not None else {}
-        hostname = urlsplit(base_url).hostname if base_url else None
-        policy = EndpointPolicy.from_operator_allowlist(private_domains=[hostname] if hostname else [])
-        client = httpx2.AsyncClient()
-        try:
-            model = await definition.build(
-                model_name,
-                configuration=configuration,
-                credential=credential,
-                model_api=api,
-                http_client=client,
-                endpoint_policy=policy,
-            )
-            # Native Provider context management also supports later re-entry.
-            assert model.provider is not None
-            model.provider._own_http_client = client
-            model.provider._http_client_factory = httpx2.AsyncClient
-            if provider_name == "zai":
-                from pydantic_ai.models.zai import ZaiModel
+    provider_name = ROUTE_ALIASES.get(provider_name, provider_name)
+    selected = ROUTES.get(provider_name)
+    if selected is None:
+        return await build_inferred_route(f"{provider_name}:{model_name}", credential, base_url=base_url)
+    return await _build_declared_route(selected, model_name, credential, base_url or selected.default_base_url)
 
-                return ZaiModel(model_name, provider=model.provider)
-            return model
-        except BaseException:
-            with move_on_after(5, shield=True):
-                await client.aclose()
-            raise
 
+async def _build_declared_route(
+    route: RouteSpec, model_name: str, credential: ApiKeyCredential, base_url: str | None
+) -> Model:
+    definition = next(item for item in BUILT_IN_MODEL_PROVIDERS if item.type == route.provider_type)
+    hostname = urlsplit(base_url).hostname if base_url else None
+    policy = EndpointPolicy.from_operator_allowlist(private_domains=[hostname] if hostname else [])
+    client = httpx2.AsyncClient()
+    try:
+        model = await definition.build(
+            model_name,
+            configuration={"base_url": base_url} if base_url is not None else {},
+            credential=credential,
+            model_api=route.model_api,
+            http_client=client,
+            endpoint_policy=policy,
+        )
+        # Native Provider context management also supports later re-entry.
+        assert model.provider is not None
+        model.provider._own_http_client = client
+        model.provider._http_client_factory = httpx2.AsyncClient
+        return route.post_construct(model_name, model) if route.post_construct is not None else model
+    except BaseException:
+        with move_on_after(5, shield=True):
+            await client.aclose()
+        raise
+
+
+async def build_inferred_route(route: str, credential: ApiKeyCredential, *, base_url: str | None = None) -> Model:
+    """Build a route Pydantic AI owns, whose provider class constructs its own transport."""
+
+    from pydantic_ai.models import infer_model
+    from pydantic_ai.providers import Provider, infer_provider_class
+
+    provider_name = route.partition(":")[0]
     owned_client: httpx2.AsyncClient | None = None
 
     def provider_factory(requested: str) -> Provider[Any]:

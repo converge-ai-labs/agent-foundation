@@ -24,6 +24,7 @@ def _build_provider(
 
 DEFINITION = ModelProviderDefinition(
     type="minimax",
+    catalog_providers=("minimax",),
     setup_url="https://platform.minimax.io/docs/guides/quickstart-preparation",
     display_name="MiniMax",
     configuration_model=ProviderConfiguration,

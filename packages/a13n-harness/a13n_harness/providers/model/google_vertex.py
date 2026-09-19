@@ -41,6 +41,7 @@ def _build_provider(
 
 DEFINITION = ModelProviderDefinition(
     type="google_vertex",
+    catalog_providers=("google-vertex",),
     setup_url="https://cloud.google.com/iam/docs/creating-managing-service-account-keys",
     setup_label="Get a service account key",
     display_name="Google Vertex AI",

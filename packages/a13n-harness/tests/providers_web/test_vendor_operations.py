@@ -76,7 +76,7 @@ async def test_vendor_search(provider: str, payload: object, providers) -> None:
         {},
         ApiKeyCredential(api_key="secret"),
         transport=transport(handle),
-        search_options=SearchOptions(max_results=2, allow_domains=("example.com",), deny_domains=()),
+        options=SearchOptions(max_results=2, allow_domains=("example.com",), deny_domains=()),
     ) as web:
         result = await web.search(WebSearchRequest(query="query", limit=2))
     assert [(item.title, item.url, item.snippet) for item in result.results] == [
@@ -99,7 +99,7 @@ async def test_duckduckgo_uses_html_search_without_credential(providers) -> None
         {},
         None,
         transport=transport(handle),
-        search_options=SearchOptions(max_results=2, allow_domains=("example.com",), deny_domains=()),
+        options=SearchOptions(max_results=2, allow_domains=("example.com",), deny_domains=()),
     ) as web:
         result = await web.search(WebSearchRequest(query="query", limit=2))
     assert [(item.title, item.url, item.snippet) for item in result.results] == [
@@ -113,7 +113,7 @@ async def test_serpapi_can_return_no_organic_results(providers) -> None:
         {},
         ApiKeyCredential(api_key="secret"),
         transport=transport(lambda _request: httpx2.Response(200, json={"search_metadata": {"status": "Success"}})),
-        search_options=SearchOptions(max_results=2, allow_domains=(), deny_domains=()),
+        options=SearchOptions(max_results=2, allow_domains=(), deny_domains=()),
     ) as web:
         result = await web.search(WebSearchRequest(query="query", limit=2))
     assert result.results == ()
@@ -141,7 +141,7 @@ async def test_vendor_scrape(provider: str, payload: object, providers, policy) 
         {},
         ApiKeyCredential(api_key="secret"),
         transport=transport(handle),
-        scrape_options=ScrapeOptions(max_content_bytes=4),
+        options=ScrapeOptions(max_content_bytes=4),
     ) as web:
         result = await web.scrape(
             WebScrapeRequest(url="https://example.com/a", max_content_bytes=4, deadline_seconds=30, max_redirects=0),

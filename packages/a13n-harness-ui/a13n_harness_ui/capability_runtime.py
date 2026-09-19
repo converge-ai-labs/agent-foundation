@@ -26,8 +26,10 @@ from a13n_harness.capabilities import (
     WebProviderError,
     WebRequest,
     WebResponse,
+    WebScrapeBackendBinding,
     WebScrapeRequest,
     WebScrapeResult,
+    WebSearchBackendBinding,
     WebSearchRequest,
     WebSearchResponse,
     WebSearchResult,
@@ -342,8 +344,8 @@ def production_run_bindings(
             web=WebBinding(
                 client=client,
                 policy=policy,
-                search_provider=DuckDuckGoSearchProvider(client, policy),
-                scrape_provider=HtmlScrapeProvider(client),
+                search_backends=(WebSearchBackendBinding("default", DuckDuckGoSearchProvider(client, policy)),),
+                scrape_backends=(WebScrapeBackendBinding("default", HtmlScrapeProvider(client)),),
             ),
         )
     if DOCUMENTS_CAPABILITY_ID in owner_capability_ids:

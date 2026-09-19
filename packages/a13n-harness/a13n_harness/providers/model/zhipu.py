@@ -27,6 +27,7 @@ def _build_provider(
 
 DEFINITION = ModelProviderDefinition(
     type="zhipu",
+    catalog_providers=("zhipuai", "zai"),
     setup_url="https://docs.bigmodel.cn/cn/guide/develop/apikey",
     display_name="Zhipu / GLM",
     configuration_model=ProviderConfiguration,

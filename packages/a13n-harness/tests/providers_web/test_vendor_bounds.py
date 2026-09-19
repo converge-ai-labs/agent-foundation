@@ -100,7 +100,7 @@ async def test_request_destination_credentials_limits_and_result_filter(provider
         {},
         {"api_key": "secret-key"},
         transport=transport(handle),
-        search_options=SearchOptions(max_results=2, allow_domains=("example.com",)),
+        options=SearchOptions(max_results=2, allow_domains=("example.com",)),
     ) as web:
         result = await web.search(WebSearchRequest(query="find sources", limit=10))
     assert [(item.title, item.url, item.snippet) for item in result.results] == [
@@ -135,11 +135,11 @@ async def test_failure_mapping_rejects_redirects_without_echoing_content(status,
 
     with pytest.raises(WebProviderResponseError) as caught:
         async with providers["exa"].open(
-            {}, {"api_key": "secret-key"}, transport=transport(handle), search_options=SearchOptions()
+            {}, {"api_key": "secret-key"}, transport=transport(handle), options=SearchOptions()
         ) as web:
             await web.search(WebSearchRequest(query="query", limit=1))
     assert caught.value.code == code
-    assert caught.value.retry_after == 45
+    assert caught.value.retry_after_seconds == 45
     assert "secret" not in str(caught.value)
     assert len(calls) == 1
 
@@ -152,7 +152,7 @@ async def test_scrape_failure_mapping_retains_operation_and_retry_context(provid
 
     with pytest.raises(WebProviderResponseError) as caught:
         async with providers["exa"].open(
-            {}, {"api_key": "key"}, transport=transport(handle), scrape_options=ScrapeOptions()
+            {}, {"api_key": "key"}, transport=transport(handle), options=ScrapeOptions()
         ) as web:
             await web.scrape(
                 WebScrapeRequest(
@@ -161,7 +161,7 @@ async def test_scrape_failure_mapping_retains_operation_and_retry_context(provid
                 policy=policy,
             )
     assert caught.value.code == "web_scrape_rate_limited"
-    assert caught.value.retry_after == 7
+    assert caught.value.retry_after_seconds == 7
     assert "private diagnostic" not in str(caught.value)
 
 
@@ -181,7 +181,7 @@ async def test_invalid_and_oversized_responses_fail(content, providers) -> None:
             {},
             {"api_key": "key"},
             transport=transport(lambda _: httpx2.Response(200, content=content)),
-            search_options=SearchOptions(),
+            options=SearchOptions(),
         ) as web:
             await web.search(WebSearchRequest(query="query", limit=1))
 
@@ -194,7 +194,7 @@ async def test_brave_query_limit_does_not_dispatch_or_truncate(providers) -> Non
 
     with pytest.raises(WebProviderError, match="web_search_request_invalid"):
         async with providers["brave"].open(
-            {}, {"api_key": "key"}, transport=transport(unexpected), search_options=SearchOptions()
+            {}, {"api_key": "key"}, transport=transport(unexpected), options=SearchOptions()
         ) as web:
             await web.search(WebSearchRequest(query="x" * 601, limit=1))
 
@@ -213,7 +213,7 @@ async def test_exa_scrape_is_single_url_bounded_and_normalized(providers, policy
         )
 
     async with providers["exa"].open(
-        {}, {"api_key": "secret-key"}, transport=transport(handle), scrape_options=ScrapeOptions()
+        {}, {"api_key": "secret-key"}, transport=transport(handle), options=ScrapeOptions()
     ) as web:
         result = await web.scrape(
             WebScrapeRequest(
@@ -236,7 +236,7 @@ async def test_exa_scrape_truncates_multibyte_content_on_utf8_boundary(providers
         return httpx2.Response(200, json={"results": [{"url": "https://example.com/article", "text": "界界"}]})
 
     async with providers["exa"].open(
-        {}, {"api_key": "key"}, transport=transport(handle), scrape_options=ScrapeOptions()
+        {}, {"api_key": "key"}, transport=transport(handle), options=ScrapeOptions()
     ) as web:
         result = await web.scrape(
             WebScrapeRequest(
@@ -257,7 +257,7 @@ async def test_exa_scrape_locally_bounds_long_text_when_provider_exceeds_request
         return httpx2.Response(200, json={"results": [{"url": "https://example.com/article", "text": "x" * 50000}]})
 
     async with providers["exa"].open(
-        {}, {"api_key": "key"}, transport=transport(handle), scrape_options=ScrapeOptions()
+        {}, {"api_key": "key"}, transport=transport(handle), options=ScrapeOptions()
     ) as web:
         result = await web.scrape(
             WebScrapeRequest(
@@ -281,7 +281,7 @@ async def test_exa_scrape_maximum_output_budget_is_reachable(providers, policy) 
         {},
         {"api_key": "key"},
         transport=transport(handle),
-        scrape_options=ScrapeOptions(max_content_bytes=MAX_SCRAPE_CONTENT_BYTES),
+        options=ScrapeOptions(max_content_bytes=MAX_SCRAPE_CONTENT_BYTES),
     ) as web:
         result = await web.scrape(
             WebScrapeRequest(
@@ -304,7 +304,7 @@ async def test_exa_scrape_rejects_wire_response_beyond_escaped_json_budget(provi
             {},
             {"api_key": "key"},
             transport=transport(lambda _: httpx2.Response(200, content=b" " * (wire_limit + 1))),
-            scrape_options=ScrapeOptions(max_content_bytes=MAX_SCRAPE_CONTENT_BYTES),
+            options=ScrapeOptions(max_content_bytes=MAX_SCRAPE_CONTENT_BYTES),
         ) as web:
             await web.scrape(
                 WebScrapeRequest(
@@ -328,7 +328,7 @@ async def test_brave_and_restricted_exa_scrape_are_rejected_before_dispatch(prov
     )
     with pytest.raises(WebProviderError, match="web_scrape_unavailable"):
         async with providers["brave"].open(
-            {}, {"api_key": "key"}, transport=transport(unexpected), scrape_options=ScrapeOptions()
+            {}, {"api_key": "key"}, transport=transport(unexpected), options=ScrapeOptions()
         ) as web:
             await web.scrape(request, policy=policy)
     with pytest.raises(WebProviderError, match="web_scrape_domain_restrictions_unsupported"):
@@ -336,6 +336,6 @@ async def test_brave_and_restricted_exa_scrape_are_rejected_before_dispatch(prov
             {},
             {"api_key": "key"},
             transport=transport(unexpected),
-            scrape_options=ScrapeOptions(allow_domains=("example.com",)),
+            options=ScrapeOptions(allow_domains=("example.com",)),
         ) as web:
             await web.scrape(request, policy=policy)

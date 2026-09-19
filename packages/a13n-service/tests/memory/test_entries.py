@@ -39,10 +39,6 @@ def test_entries_roundtrip_and_mode_validation():
     assert MemoryEntrySelection(**document(auto_organize=True)).auto_organize
     with pytest.raises(ValidationError):
         MemoryEntrySelection(**document(auto_recall=True))
-    with pytest.raises(ValidationError):
-        MemoryEntrySelection(
-            **document(backend={"type": "filesystem", "configuration": {"storage": {"root": "/memory/../other"}}})
-        )
 
 
 @pytest.mark.anyio
@@ -76,6 +72,40 @@ async def test_filesystem_provider_needs_no_credential_and_rejects_records(memor
             await require_memory_configuration(
                 session,
                 selection=MemoryEntries(entries=[document(mode="records", backend={"provider_id": provider.id})]),
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
+                catalog=catalog,
+            )
+
+
+@pytest.mark.anyio
+async def test_inline_backends_are_validated_by_the_selected_definition(memory_sessions):
+    catalog = ProviderCatalog((FILESYSTEM, MEM0_OSS))
+    async with short_session(memory_sessions) as session:
+        await require_memory_configuration(
+            session,
+            selection=MemoryEntries(entries=[document()]),
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            catalog=catalog,
+        )
+        with pytest.raises(MemoryProviderError, match="configuration is invalid"):
+            await require_memory_configuration(
+                session,
+                selection=MemoryEntries(
+                    entries=[
+                        document(backend={"type": "filesystem", "configuration": {"storage": {"root": "/a/../b"}}})
+                    ]
+                ),
+                organization_id=ORG_ID,
+                workspace_id=WORKSPACE_ID,
+                catalog=catalog,
+            )
+        # A record backend is not a document backend, whatever its declared document support.
+        with pytest.raises(MemoryProviderError, match="memory mode"):
+            await require_memory_configuration(
+                session,
+                selection=MemoryEntries(entries=[document(backend={"type": "mem0_oss"})]),
                 organization_id=ORG_ID,
                 workspace_id=WORKSPACE_ID,
                 catalog=catalog,
