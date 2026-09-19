@@ -190,7 +190,8 @@ async def test_default_agent_maps_timeout_without_fabricating_usage(
         await asyncio.Event().wait()
         raise AssertionError("unreachable")
 
-    monkeypatch.setitem(file_media_module._TIMEOUT_SECONDS_BY_KIND, "image", 0.01)
+    # The model never answers, so the budget only needs to outlast agent setup on a loaded machine.
+    monkeypatch.setitem(file_media_module._TIMEOUT_SECONDS_BY_KIND, "image", 0.5)
     provider = AgentMediaUnderstandingProvider(models={"image": CleanupFailingFunctionModel(understand)})
 
     with pytest.raises(MediaUnderstandingError) as exc_info:
@@ -227,7 +228,8 @@ async def test_default_agent_preserves_timeout_that_starts_during_cleanup(
         del messages, info
         return ModelResponse(parts=[TextPart("valid analysis")])
 
-    monkeypatch.setitem(file_media_module._TIMEOUT_SECONDS_BY_KIND, "image", 0.01)
+    # Cleanup blocks forever, so the budget only needs to outlast the answer on a loaded machine.
+    monkeypatch.setitem(file_media_module._TIMEOUT_SECONDS_BY_KIND, "image", 0.5)
     provider = AgentMediaUnderstandingProvider(models={"image": CleanupBlockingFunctionModel(understand)})
 
     with pytest.raises(MediaUnderstandingError) as exc_info:

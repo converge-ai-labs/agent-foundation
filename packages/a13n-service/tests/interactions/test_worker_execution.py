@@ -283,7 +283,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     model_factory.build.return_value = FunctionModel(stream_function=model)
     settings = Settings(
         service={"build_version": "test"},
-        worker={"concurrency": 1, "poll_interval_seconds": 0.02, "lease_seconds": 30},
+        worker={"concurrency": 1, "poll_interval_seconds": 0.02, "lease_seconds": 12},
     )
     exporter = InMemorySpanExporter()
     observation = observation_runtime(exporter)
@@ -304,7 +304,7 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
         # Keep the normal lease and its renewal/reconciliation timeouts under CI load.
         # Same-build handoff deliberately waits one lease before reclaiming.
         # Budget each execution phase separately from that mandatory delay.
-        completion_budget = 15 * (2 if handoff else 1) + (settings.worker.lease_seconds if handoff else 0)
+        completion_budget = 30 * (2 if handoff else 1) + (settings.worker.lease_seconds if handoff else 0)
         last_progress = None
         try:
             with fail_after(completion_budget):

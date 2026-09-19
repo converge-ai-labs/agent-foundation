@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from scripts.run_python_tests import main
+from scripts.run_python_tests import default_workers, main
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
 SERVICE = "packages/a13n-service/tests"
@@ -43,7 +43,7 @@ def test_selected_paths_share_one_process_per_package_in_selection_order(test_wo
     assert main([first, ui, second]) == 0
     assert test_workspace == [
         [sys.executable, "-m", "pytest", "-n", "7", "--dist", "loadgroup", first, second],
-        [sys.executable, "-m", "pytest", "-n", "2", "--dist", "loadgroup", ui],
+        [sys.executable, "-m", "pytest", "-n", str(default_workers(Path(UI))), "--dist", "loadgroup", ui],
     ]
 
 

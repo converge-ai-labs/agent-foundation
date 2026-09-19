@@ -173,9 +173,8 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
     assert selection["model"]["settings"]["thinking"] == "medium"
 
 
-@pytest.mark.parametrize(
-    "arguments",
-    [
+def test_cli_help_never_imports_runtime(tmp_path: Path) -> None:
+    invocations = [
         ["--help"],
         ["--version"],
         ["login", "--help"],
@@ -183,15 +182,18 @@ def test_setup_choices_expand_to_explicit_native_context_values(monkeypatch: pyt
         ["add", "--help"],
         ["add", "agent", "--help"],
         ["add", "model", "--help"],
-    ],
-)
-def test_cli_help_never_imports_runtime(arguments: list[str], tmp_path: Path) -> None:
+    ]
+    # One interpreter checks every help path: a runtime import after any call fails at that call.
     script = f"""
 import sys
 from a13n_harness_ui.cli import main
-main({arguments!r})
-for prefix in ('a13n_harness', 'pydantic', 'sqlalchemy', 'textual', 'fastapi', 'prompt_toolkit', 'a13n_harness_ui.app'):
-    assert not any(name == prefix or name.startswith(prefix + '.') for name in sys.modules), prefix
+for arguments in {invocations!r}:
+    try:
+        main(arguments)
+    except SystemExit as exit:
+        assert exit.code in (None, 0), (arguments, exit.code)
+    for prefix in ('a13n_harness', 'pydantic', 'sqlalchemy', 'textual', 'fastapi', 'prompt_toolkit', 'a13n_harness_ui.app'):
+        assert not any(name == prefix or name.startswith(prefix + '.') for name in sys.modules), (arguments, prefix)
 """
     result = subprocess.run(
         [sys.executable, "-c", script],

@@ -3,19 +3,17 @@
 import subprocess
 import sys
 
-import pytest
 
-
-@pytest.mark.parametrize(
-    "modules",
-    [
-        ("a13n_service.agents", "a13n_service.connectivity.accounts.reception"),
-        ("a13n_service.connectivity.accounts.reception", "a13n_service.agents"),
-    ],
-)
-def test_agents_and_connectivity_import_in_either_order(modules: tuple[str, str]) -> None:
-    script = "; ".join(f"import {module}" for module in modules)
-    subprocess.run([sys.executable, "-c", script], check=True)
+def test_agents_and_connectivity_import_in_either_order() -> None:
+    modules = ("a13n_service.agents", "a13n_service.connectivity.accounts.reception")
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", "; ".join(f"import {module}" for module in order)], stderr=subprocess.PIPE
+        )
+        for order in (modules, modules[::-1])
+    ]
+    failures = [(process.args, process.communicate()[1]) for process in processes if process.wait() != 0]
+    assert not failures, failures
 
 
 def test_agents_package_preserves_runtime_exports() -> None:

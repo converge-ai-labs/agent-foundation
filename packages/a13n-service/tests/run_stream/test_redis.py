@@ -49,8 +49,8 @@ def test_rejects_oversized_event_payload() -> None:
         RunStreamEvent.model_validate(values)
 
 
-async def test_append_is_idempotent_and_pages_forward(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client, max_events=5)
+async def test_append_is_idempotent_and_pages_forward(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client, max_events=5)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
     assert await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1) == first
@@ -70,8 +70,8 @@ async def test_append_is_idempotent_and_pages_forward(redis_client: Redis) -> No
     assert not page.trimmed
 
 
-async def test_trim_reports_explicit_replay_gap_and_blocks_snapshot(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client, max_events=2)
+async def test_trim_reports_explicit_replay_gap_and_blocks_snapshot(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client, max_events=2)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
     second = await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
@@ -92,8 +92,8 @@ async def test_trim_reports_explicit_replay_gap_and_blocks_snapshot(redis_client
         await stream.complete_source(ORGANIZATION_ID, RUN_ID)
 
 
-async def test_close_is_idempotent_and_rejects_late_append(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client)
+async def test_close_is_idempotent_and_rejects_late_append(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     entry_id = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
 
@@ -111,8 +111,8 @@ async def test_close_is_idempotent_and_rejects_late_append(redis_client: Redis) 
         await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
 
 
-async def test_successor_activation_is_atomic_idempotent_and_fences_every_old_write(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client)
+async def test_successor_activation_is_atomic_idempotent_and_fences_every_old_write(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client)
     first = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     old = _event(1)
     await stream.append(ORGANIZATION_ID, old, attempt_number=1)
@@ -153,20 +153,20 @@ async def test_successor_activation_is_atomic_idempotent_and_fences_every_old_wr
     assert page.items[3].stream_id == opening.leased_stream_id
     assert page.items[4].stream_id == opening.recovery_stream_id
     assert page.items[4].event.payload == {"reason": "lease_expired"}
-    assert all([await redis_client.ttl(key) == -1 for key in await redis_client.keys("a13n:run-stream:*")])
+    assert all([await any_redis_client.ttl(key) == -1 for key in await any_redis_client.keys("a13n:run-stream:*")])
 
 
 @pytest.mark.parametrize("lost", ["events", "metadata", "both", "incarnation"])
-async def test_state_loss_fails_closed(redis_client: Redis, lost: str) -> None:
+async def test_state_loss_fails_closed(any_redis_client: Redis, lost: str) -> None:
     from a13n_service.run_stream.redis import _keys
 
-    stream = RedisRunStream(redis_client)
+    stream = RedisRunStream(any_redis_client)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     events, metadata = _keys(ORGANIZATION_ID, RUN_ID)
     if lost == "incarnation":
-        await redis_client.hset(metadata, "server_id", "previous-primary")
+        await any_redis_client.hset(metadata, "server_id", "previous-primary")
     else:
-        await redis_client.delete(*(dict(events=[events], metadata=[metadata], both=[events, metadata])[lost]))
+        await any_redis_client.delete(*(dict(events=[events], metadata=[metadata], both=[events, metadata])[lost]))
     with pytest.raises(PublicationUnavailable):
         await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
     with pytest.raises(PublicationUnavailable):
@@ -186,8 +186,8 @@ async def test_state_loss_fails_closed(redis_client: Redis, lost: str) -> None:
         )
 
 
-async def test_snapshot_requires_projection_marker_before_closure(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client)
+async def test_snapshot_requires_projection_marker_before_closure(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     running = _event(1, event_type="run_attempt.running").model_copy(
         update={"payload": {"data": {"harness_run_id": "harness-run-1"}}, "lifecycle_event_id": "evt_1234567890abcdef"}
@@ -205,8 +205,8 @@ async def test_snapshot_requires_projection_marker_before_closure(redis_client: 
     assert source.entries[-1].event == running
 
 
-async def test_missing_projection_marker_blocks_snapshot(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client)
+async def test_missing_projection_marker_blocks_snapshot(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     running = _event(1, event_type="run_attempt.running").model_copy(
         update={"lifecycle_event_id": "evt_1234567890abcdef"}
@@ -225,8 +225,8 @@ async def test_missing_projection_marker_blocks_snapshot(redis_client: Redis) ->
         )
 
 
-async def test_trimmed_event_keeps_active_deduplication_evidence(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client, max_events=1)
+async def test_trimmed_event_keeps_active_deduplication_evidence(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client, max_events=1)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
     second = await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
@@ -238,19 +238,19 @@ async def test_trimmed_event_keeps_active_deduplication_evidence(redis_client: R
 
 @pytest.mark.parametrize("failure_point", ["event", "receipts", "retention"])
 async def test_partial_activation_blocks_all_admission_until_exact_retry(
-    redis_client: Redis,
+    any_redis_client: Redis,
     failure_point: str,
 ) -> None:
     from a13n_service.run_stream.redis import _SCRIPT, _keys
 
-    stream = RedisRunStream(redis_client, max_events=1)
+    stream = RedisRunStream(any_redis_client, max_events=1)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     broken = publication_failure("activate", after=failure_point)
-    stream._script = redis_client.register_script(broken)
+    stream._script = any_redis_client.register_script(broken)
     leased = opening_event(RUN_ID, THREAD_ID, attempt_id="rat_2222222222222222", number=2)
     with pytest.raises(PublicationUnavailable):
         await stream.activate(ORGANIZATION_ID, leased, attempt_number=2, reason="lease_expired", allow_create=True)
-    stream._script = redis_client.register_script(_SCRIPT)
+    stream._script = any_redis_client.register_script(_SCRIPT)
     old_publisher_error = PublicationPending if failure_point == "event" else PublicationRejected
     with pytest.raises(old_publisher_error):
         await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
@@ -272,16 +272,16 @@ async def test_partial_activation_blocks_all_admission_until_exact_retry(
         == result
     )
     events_key, metadata_key = _keys(ORGANIZATION_ID, RUN_ID)
-    rows = await redis_client.xrange(events_key)
+    rows = await any_redis_client.xrange(events_key)
     assert len(rows) == 4 and rows[-1][0].decode() == result.recovery_stream_id
-    assert await redis_client.hget(metadata_key, "pending_events") == b"4"
-    assert await redis_client.hget(metadata_key, "pending") is None
+    assert await any_redis_client.hget(metadata_key, "pending_events") == b"4"
+    assert await any_redis_client.hget(metadata_key, "pending") is None
 
 
-async def test_lost_activation_acknowledgement_retries_without_duplicate_opening(redis_client: Redis) -> None:
+async def test_lost_activation_acknowledgement_retries_without_duplicate_opening(any_redis_client: Redis) -> None:
     from redis.exceptions import ConnectionError
 
-    stream = RedisRunStream(redis_client)
+    stream = RedisRunStream(any_redis_client)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     script = stream._script
 
@@ -302,10 +302,10 @@ async def test_lost_activation_acknowledgement_retries_without_duplicate_opening
     assert page.items[-1].stream_id == result.recovery_stream_id
 
 
-async def test_append_racing_activation_is_before_opening_or_rejected(redis_client: Redis) -> None:
+async def test_append_racing_activation_is_before_opening_or_rejected(any_redis_client: Redis) -> None:
     import asyncio
 
-    stream = RedisRunStream(redis_client)
+    stream = RedisRunStream(any_redis_client)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     leased = opening_event(RUN_ID, THREAD_ID, attempt_id="rat_2222222222222222", number=2)
     old_write, activation = await asyncio.gather(
@@ -323,35 +323,35 @@ async def test_append_racing_activation_is_before_opening_or_rejected(redis_clie
         assert types == ["run.accepted", "run_attempt.leased", "agui.custom", "run_attempt.leased", "run.recovery"]
 
 
-async def test_bootstrap_refuses_primary_change_after_durable_authority_read(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client)
+async def test_bootstrap_refuses_primary_change_after_durable_authority_read(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client)
     with pytest.raises(PublicationUnavailable):
         await stream.initialize(
             ORGANIZATION_ID, opening_event(RUN_ID, THREAD_ID), allow_create=True, expected_server_id="previous-primary"
         )
-    assert not await redis_client.keys("a13n:run-stream:*")
+    assert not await any_redis_client.keys("a13n:run-stream:*")
 
 
-async def test_retirement_rejects_foreign_metadata_without_mutating_keys(redis_client: Redis) -> None:
+async def test_retirement_rejects_foreign_metadata_without_mutating_keys(any_redis_client: Redis) -> None:
     from a13n_service.run_stream.redis import _keys
 
-    stream = RedisRunStream(redis_client)
+    stream = RedisRunStream(any_redis_client)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     events, metadata = _keys(ORGANIZATION_ID, RUN_ID)
-    await redis_client.hset(metadata, "organization_id", "org_2222222222222222")
-    before = await redis_client.hgetall(metadata)
-    rows = await redis_client.xrange(events)
+    await any_redis_client.hset(metadata, "organization_id", "org_2222222222222222")
+    before = await any_redis_client.hgetall(metadata)
+    rows = await any_redis_client.xrange(events)
 
     with pytest.raises(RunStreamError, match="another resource"):
         await stream.retire(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
 
-    assert await redis_client.hgetall(metadata) == before
-    assert await redis_client.xrange(events) == rows
-    assert await redis_client.ttl(events) == await redis_client.ttl(metadata) == -1
+    assert await any_redis_client.hgetall(metadata) == before
+    assert await any_redis_client.xrange(events) == rows
+    assert await any_redis_client.ttl(events) == await any_redis_client.ttl(metadata) == -1
 
 
-async def test_backpressure_releases_only_after_durable_acknowledgement(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client, max_events=1, max_pending_events=3, backpressure_timeout_seconds=0)
+async def test_backpressure_releases_only_after_durable_acknowledgement(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client, max_events=1, max_pending_events=3, backpressure_timeout_seconds=0)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
     with pytest.raises(PublicationBackpressure):
@@ -366,20 +366,20 @@ async def test_backpressure_releases_only_after_durable_acknowledgement(redis_cl
     assert page.next_stream_id == second
 
 
-async def test_close_waits_for_final_display_before_expiry(redis_client: Redis) -> None:
+async def test_close_waits_for_final_display_before_expiry(any_redis_client: Redis) -> None:
     from a13n_service.run_stream.redis import _keys
 
-    stream = RedisRunStream(redis_client, closed_ttl_seconds=60)
+    stream = RedisRunStream(any_redis_client, closed_ttl_seconds=60)
     opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     await stream.close(ORGANIZATION_ID, RUN_ID, closed_at=NOW)
     keys = _keys(ORGANIZATION_ID, RUN_ID)
-    assert all([await redis_client.ttl(key) == -1 for key in keys])
+    assert all([await any_redis_client.ttl(key) == -1 for key in keys])
     await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=opening.leased_stream_id, finalized=True)
-    assert all([0 < await redis_client.ttl(key) <= 60 for key in keys])
+    assert all([0 < await any_redis_client.ttl(key) <= 60 for key in keys])
 
 
-async def test_acknowledgement_never_trims_beyond_durable_cursor(redis_client: Redis) -> None:
-    stream = RedisRunStream(redis_client, max_events=1)
+async def test_acknowledgement_never_trims_beyond_durable_cursor(any_redis_client: Redis) -> None:
+    stream = RedisRunStream(any_redis_client, max_events=1)
     opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
     second = await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
@@ -393,10 +393,10 @@ async def test_acknowledgement_never_trims_beyond_durable_cursor(redis_client: R
         await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor="9999999999999999-0", finalized=False)
 
 
-async def test_byte_bound_and_partial_acknowledgement_recovery(redis_client: Redis) -> None:
+async def test_byte_bound_and_partial_acknowledgement_recovery(any_redis_client: Redis) -> None:
     from a13n_service.run_stream.redis import _SCRIPT, _keys
 
-    stream = RedisRunStream(redis_client, max_events=1, max_pending_bytes=4096, backpressure_timeout_seconds=0)
+    stream = RedisRunStream(any_redis_client, max_events=1, max_pending_bytes=4096, backpressure_timeout_seconds=0)
     await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
     first = await stream.append(ORGANIZATION_ID, _event(1), attempt_number=1)
     with pytest.raises(PublicationBackpressure):
@@ -404,26 +404,26 @@ async def test_byte_bound_and_partial_acknowledgement_recovery(redis_client: Red
             ORGANIZATION_ID, _event(2).model_copy(update={"payload": {"text": "x" * 4096}}), attempt_number=1
         )
     marker = "    redis.call('HSET', metadata, 'durable_cursor', cursor,"
-    stream._script = redis_client.register_script(
+    stream._script = any_redis_client.register_script(
         _SCRIPT.replace(marker, "    error('injected failure after trim')\n" + marker)
     )
     with pytest.raises(PublicationUnavailable):
         await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=first, finalized=False)
-    stream._script = redis_client.register_script(_SCRIPT)
+    stream._script = any_redis_client.register_script(_SCRIPT)
     with pytest.raises(PublicationPending):
         await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
     await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=first, finalized=False)
     await stream.acknowledge_display(ORGANIZATION_ID, RUN_ID, cursor=first, finalized=False)
     _, metadata = _keys(ORGANIZATION_ID, RUN_ID)
-    assert await redis_client.hget(metadata, "pending_bytes") == b"0"
-    assert await redis_client.hget(metadata, "pending_events") == b"0"
+    assert await any_redis_client.hget(metadata, "pending_bytes") == b"0"
+    assert await any_redis_client.hget(metadata, "pending_events") == b"0"
     await stream.append(ORGANIZATION_ID, _event(2), attempt_number=1)
 
 
-async def test_backpressured_publisher_resumes_after_consumer_progress(redis_client: Redis) -> None:
+async def test_backpressured_publisher_resumes_after_consumer_progress(any_redis_client: Redis) -> None:
     from anyio import create_task_group, sleep
 
-    stream = RedisRunStream(redis_client, max_pending_events=2, backpressure_timeout_seconds=1)
+    stream = RedisRunStream(any_redis_client, max_pending_events=2, backpressure_timeout_seconds=1)
     opening = await activate_stream(stream, ORGANIZATION_ID, RUN_ID, THREAD_ID)
 
     async def acknowledge() -> None:

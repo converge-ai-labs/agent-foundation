@@ -85,6 +85,8 @@ reportTypedDictNotRequiredAccess = false
 
 [tool.pytest.ini_options]
 addopts = ["--import-mode=importlib"]
+# A hung test fails here instead of stalling the whole run; slow suites override per test.
+timeout = 120
 filterwarnings = [
     "error:The garbage collector is trying to clean up non-checked-in connection:sqlalchemy.exc.SAWarning",
     "error::pytest.PytestUnhandledThreadExceptionWarning",

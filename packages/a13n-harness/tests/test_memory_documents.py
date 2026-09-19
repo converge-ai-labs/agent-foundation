@@ -250,11 +250,15 @@ async def test_index_encoding_counts_utf8_envelope_and_preserves_navigation():
     assert json.loads(payload) == {"text": original.text, "next_cursor": "next"}
 
 
-async def test_slow_initial_index_and_explicit_index_share_the_operation_budget(caplog):
+async def test_slow_initial_index_and_explicit_index_share_the_operation_budget(caplog, monkeypatch):
+    from a13n_harness.capabilities import memory_documents
+
+    # Each index call is slow relative to the budget, but both must still fit inside it.
+    monkeypatch.setattr(memory_documents, "_OPERATION_TIMEOUT_SECONDS", 0.5)
+
     class SlowStore(Store):
         async def index(self, *, cursor=None):
-            # A valid operation just beyond the former five-second projection limit.
-            await asyncio.sleep(5.1)
+            await asyncio.sleep(0.1)
             return await super().index(cursor=cursor)
 
     store = SlowStore()

@@ -316,7 +316,6 @@ class MemoryCapability(AbstractModelContextCapability):
                 write=self.document_write,
                 toolset=self.toolset,
                 required=self.recall_required,
-                timeout=_TOOL_TIMEOUT_SECONDS,
             )
             if self.recall_required and self.document_read:
                 try:

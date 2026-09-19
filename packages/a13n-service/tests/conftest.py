@@ -228,20 +228,41 @@ def s3_service() -> Iterator[S3Service]:
         yield S3Service(endpoint, access_key, secret_key)
 
 
-@pytest.fixture(params=["memory", "redis"])
-async def redis_client(request: pytest.FixtureRequest) -> AsyncIterator[Redis]:
-    if request.param == "memory":
-        config = RedisMemoryConfig()
-    else:
-        config = RedisServerConfig(url=request.getfixturevalue("redis_url"))
+@asynccontextmanager
+async def _open_redis(config) -> AsyncGenerator[Redis]:
     async with open_redis(config) as client:
         await client.flushdb()
         yield client
         await client.flushdb()
 
 
+@pytest.fixture
+async def redis_client() -> AsyncIterator[Redis]:
+    """In-memory Redis for logic that is not backend-specific."""
+    async with _open_redis(RedisMemoryConfig()) as client:
+        yield client
+
+
+@pytest.fixture(params=["memory", "redis"])
+async def any_redis_client(request: pytest.FixtureRequest) -> AsyncIterator[Redis]:
+    """Both Redis backends, for the suites that own backend parity."""
+    if request.param == "memory":
+        config = RedisMemoryConfig()
+    else:
+        config = RedisServerConfig(url=request.getfixturevalue("redis_url"))
+    async with _open_redis(config) as client:
+        yield client
+
+
+@pytest.fixture
+async def object_store(tmp_path: Path) -> AsyncIterator[ObjectStore]:
+    """Local object store for logic that is not backend-specific."""
+    yield await LocalObjectStore.create(tmp_path / "objects")
+
+
 @pytest.fixture(params=["local", "s3"])
-async def object_store(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[ObjectStore]:
+async def any_object_store(request: pytest.FixtureRequest, tmp_path: Path) -> AsyncIterator[ObjectStore]:
+    """Both object-store backends, for the suites that own backend parity."""
     if request.param == "local":
         yield await LocalObjectStore.create(tmp_path / "objects")
         return

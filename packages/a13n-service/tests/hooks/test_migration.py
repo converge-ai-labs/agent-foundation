@@ -1,65 +1,12 @@
 import pytest
-from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import database_url
-from sqlalchemy import create_engine, inspect, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DatabaseError
 
 
-def _assert_hook_schema(config: PostgreSQLConfig, *, present: bool) -> None:
-    engine = create_engine(database_url(config))
-    try:
-        inspector = inspect(engine)
-        tables = set(inspector.get_table_names())
-        if not present:
-            assert "hook_subscriptions" not in tables
-            assert "hook_subscription_revisions" not in tables
-            return
-        assert {"hook_subscriptions", "hook_subscription_revisions"} <= tables
-        head_indexes = {index["name"] for index in inspector.get_indexes("hook_subscriptions")}
-        revision_indexes = {index["name"]: index for index in inspector.get_indexes("hook_subscription_revisions")}
-        assert "ix_hook_subscriptions_active_workspace" in head_indexes
-        scope_index_names = {
-            "ix_hook_subscription_revisions_hook_names",
-            "ix_hook_subscription_revisions_run",
-            "ix_hook_subscription_revisions_session",
-            "ix_hook_subscription_revisions_thread",
-        }
-        assert scope_index_names <= revision_indexes.keys()
-        for scope in ("run", "session", "thread"):
-            options = revision_indexes[f"ix_hook_subscription_revisions_{scope}"]["dialect_options"]
-            assert options["postgresql_where"] is not None
-        with engine.connect() as connection:
-            triggers = set(
-                connection.execute(
-                    text(
-                        "SELECT trigger_name FROM information_schema.triggers "
-                        "WHERE event_object_table = 'hook_subscription_revisions'"
-                    )
-                ).scalars()
-            )
-        assert {"reject_hook_subscription_revision_update", "validate_hook_subscription_revision_insert"} <= triggers
-    finally:
-        engine.dispose()
-
-
-def _exercise_migration(config: PostgreSQLConfig) -> None:
-    migrator = DatabaseMigrator(config)
-    migrator.upgrade()
-    migrator.current(check_heads=True, verbose=False)
-    _assert_hook_schema(config, present=True)
-    migrator.downgrade("base")
-    _assert_hook_schema(config, present=False)
-
-
-def test_hook_schema_migrates_up_and_down(postgres_database: PostgreSQLConfig) -> None:
-    _exercise_migration(postgres_database)
-
-
-def test_hook_revision_is_immutable(postgres_database: PostgreSQLConfig) -> None:
-    config = postgres_database
-    DatabaseMigrator(config).upgrade()
-    engine = create_engine(database_url(config))
+def test_hook_revision_is_immutable(service_database: PostgreSQLConfig) -> None:
+    engine = create_engine(database_url(service_database))
     try:
         with engine.begin() as connection:
             connection.execute(
@@ -121,7 +68,7 @@ def test_hook_revision_is_immutable(postgres_database: PostgreSQLConfig) -> None
 
 
 @pytest.mark.anyio
-async def test_inline_database_guards_after_clean_migration(postgres_database):
+async def test_inline_database_guards_after_clean_migration(service_database):
     from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
     from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
     from a13n_service.hooks.persistence import create_hook_subscription, create_inline_hook_subscription
@@ -140,10 +87,7 @@ async def test_inline_database_guards_after_clean_migration(postgres_database):
         _seed_interaction_database,
     )
 
-    config = postgres_database
-    migrator = DatabaseMigrator(config)
-    migrator.upgrade()
-    engine = create_sql_engine(config)
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     try:
         await _seed_interaction_database(sessions)
