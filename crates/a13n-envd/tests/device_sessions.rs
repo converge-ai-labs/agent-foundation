@@ -21,7 +21,7 @@ struct Device {
 fn device_path(path: &Path) -> String {
     let path = path.to_str().unwrap().replace('\\', "/");
     if cfg!(windows) {
-        format!("/{path}")
+        format!("/{}", path.strip_prefix("//?/").unwrap_or(&path))
     } else {
         path
     }
