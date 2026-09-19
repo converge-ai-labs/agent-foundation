@@ -16,6 +16,7 @@ export function ProviderIcon({ type }: { type: string }) {
   return LocalIcon ? (
     <LocalIcon aria-hidden className="size-5 shrink-0 text-muted-foreground" />
   ) : (
-    <BrandIcon identity={type} />
+    // The type doubles as an alias so vendor-prefixed types still find their mark.
+    <BrandIcon identity={type} alias={type} />
   );
 }

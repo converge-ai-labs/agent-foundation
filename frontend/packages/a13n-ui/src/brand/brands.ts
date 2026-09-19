@@ -124,6 +124,34 @@ const curatedBrands: Record<string, Brand> = {
     icon: "https://cdn.jsdelivr.net/gh/devicons/devicon@v2.17.0/icons/docker/docker-original.svg",
   },
   e2b: { icon: "https://e2b.dev/brand/e2b-symbol-fire-orange-s.svg" },
+  // Marks published by the vendors themselves; the registry links, never copies.
+  modal: { icon: "https://modal.com/assets/favicon.svg", hosts: ["modal.com"] },
+  daytona: {
+    icon: "https://framerusercontent.com/images/6WPclDLAHHQgPFeA2DRTW1OXVSU.png",
+    darkIcon:
+      "https://framerusercontent.com/images/cCvSUNbGejoZpWVg0tUGLSqxGC8.png",
+    hosts: ["daytona.io", "app.daytona.io"],
+  },
+  runloop: {
+    icon: "https://docs.runloop.ai/favicon.svg",
+    invertInDark: true,
+    hosts: ["runloop.ai", "platform.runloop.ai"],
+  },
+  flyio: {
+    icon: "https://fly.io/static/images/brand/brandmark.svg",
+    aliases: ["fly", "fly.io", "sprites"],
+    hosts: ["fly.io"],
+  },
+  mem0: {
+    icon: "https://framerusercontent.com/images/2ys67ADJdvcyGmQnhp8vKWSq8.svg",
+    aliases: [
+      "a13n.mem0-oss",
+      "a13n.mem0-platform",
+      "mem0-oss",
+      "mem0-platform",
+    ],
+    hosts: ["mem0.ai", "app.mem0.ai", "api.mem0.ai"],
+  },
 };
 
 export const brands = mergeBrandCatalogs(lobeBrands, curatedBrands);
