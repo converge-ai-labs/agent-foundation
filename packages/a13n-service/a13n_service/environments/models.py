@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import ClassVar
 
+from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.remote_envd.environment import decode_state
 from pydantic import JsonValue
 from sqlalchemy import (
     JSON,
@@ -225,6 +227,11 @@ class EnvironmentRecord(ResourceColumns[str], Base):
     last_error: Mapped[dict[str, JsonValue] | None] = mapped_column(JSON)
 
     def to_resource(self) -> Environment:
+        device_id = None
+        if self.ownership == "external" and self.state is not None:
+            state = EnvironmentState.model_validate(self.state)
+            if state.provider_key in {"http_envd", "websocket_envd"}:
+                device_id = decode_state(state.provider_key, state).device_id
         return Environment.model_validate(
             {
                 **self.identity(),
@@ -233,6 +240,7 @@ class EnvironmentRecord(ResourceColumns[str], Base):
                 "provider_id": self.provider_id,
                 "template_revision_id": self.template_revision_id,
                 "ownership": self.ownership,
+                "device_id": device_id,
                 "generation": self.generation,
                 "status": self.status,
                 "retention_condition": self.retention_condition,

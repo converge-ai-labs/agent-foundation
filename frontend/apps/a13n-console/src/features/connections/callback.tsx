@@ -4,7 +4,8 @@ import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../../auth/context";
 import { data } from "../../shared/api";
-import { ErrorNotice, Loading, Page } from "../../shared/feedback";
+import { ErrorNotice, Loading } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import {
   clearAuthorization,
   readAuthorization,

@@ -75,7 +75,7 @@ uv run environment-provider-example local-envd \
 
 Without `--executable`, the Host-side resolver checks `A13N_ENVD_EXECUTABLE` and then `PATH`. The example supplies that resolved path and a `TemporaryLocalEnvdRuntimeAllocator` through a fresh `LocalEnvdProviderRuntime`.
 
-Local Envd starts a private daemon generation, uses EIP for file operations, and removes the daemon runtime on `close()`. The selected workspace remains Host-owned and `dump_state()` is `None`; filesystem continuity comes from selecting the same workspace for another fresh adapter.
+The shared Host runtime lazily starts a Device. Each adapter uses EIP through its own fixed-cwd Session; adapter `close()` closes that Session only. The example explicitly closes the Host runtime afterward. The selected directory remains Host-owned and `dump_state()` is `None`; another fresh adapter can access the same files without inheriting Session handles.
 
 See [Operate `a13n-envd`](../a13n-envd/index.md) for executable installation, compatibility, and platform prerequisites.
 

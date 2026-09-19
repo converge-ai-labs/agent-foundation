@@ -1,34 +1,6 @@
-import { useSuggestedName } from "../../shared/suggested-name";
-import { FormSection, formSectionStyles } from "../../shared/form-section";
-import { CredentialEditor } from "../../shared/credential-editor";
-import { useCredentialSection } from "../../shared/use-credential-section";
-import { ConfigurationSummary } from "../../shared/configuration-summary";
-import { ResourceReference } from "../../shared/resource-reference";
-import { ProviderTypeField } from "../../shared/provider-type-field";
-import { ProviderEnabled } from "../../shared/provider-enabled";
-import {
-  useResourceEditorState,
-  useResourceRows,
-  type ResourceEditorControl,
-} from "../../shared/resource-modal";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { ProviderKeyLink } from "../../shared/provider-key-link";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
-import { ResourceIdentity } from "../../shared/collection";
-import { ScopeBadge } from "../../shared/scope-badge";
-import {
-  Button,
-  DisclosureSection,
-  FormField,
-  Input,
-  ModalFrame,
-  ReadOnlyField,
-} from "a13n-ui";
-
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { SettingsRow } from "a13n-ui";
 import { useState } from "react";
-import { PageActions } from "../../shared/page-actions";
-
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
@@ -38,14 +10,47 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
-import { SchemaFields } from "../../shared/schema-fields";
-import styles from "../../shared/shared.module.css";
-import { jsonObject, validateSettings } from "../../shared/validation";
-import { credentialMode } from "../../shared/provider-authentication";
+import { useCursor } from "../../shared/collection";
+import {
+  CatalogStep,
+  useResourceEditorState,
+  useResourceRows,
+  type ResourceEditorControl,
+} from "../../shared/dialogs";
+import { ErrorNotice, StatePill } from "../../shared/feedback";
+import { useCredentialSection } from "../../shared/use-credential-section";
+import {
+  FormActions,
+  ProviderEnabled,
+  ProviderKeyLink,
+  SchemaFields,
+  jsonObject,
+  validateSettings,
+} from "../../shared/forms";
+import {
+  AddProviderDialog,
+  CredentialRow,
+  EditProviderDialog,
+  ProviderConnectFields,
+  ProviderEditor,
+  ProviderFacts,
+  ProviderGroup,
+  ProviderName,
+  ProviderReadOnly,
+  ProviderTable,
+  credentialDescription,
+  credentialHint,
+  credentialLabel,
+  providerKeyLink,
+  providerStyles,
+} from "../providers";
 import { environmentApi, type EnvironmentScope } from "./api";
+
+type Definition = Schema["EnvironmentProviderMetadata"];
+
+/** A provider the running Service owns: readable here, changed by the operator. */
+const deploymentNote =
+  "Connection settings come from the running Service and cannot be edited here.";
 
 export function useEnvironmentTypes() {
   const client = useClient(),
@@ -66,6 +71,7 @@ function schema(value: unknown): Record<string, unknown> {
     ? Object.fromEntries(Object.entries(value))
     : {};
 }
+
 export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
   const providerTypes = useEnvironmentTypes();
   const client = useClient(),
@@ -88,198 +94,194 @@ export function EnvironmentProviders({ scope }: { scope: EnvironmentScope }) {
     scope.kind === "organization"
       ? organizationAdmin
       : can("environment_provider.manage");
+  const connectable = (providerTypes.data?.items ?? []).filter(
+    (type) => !type.deployment_managed,
+  );
+  const add =
+    manage && connectable.length ? (
+      <AddEnvironmentProvider scope={scope} definitions={connectable} />
+    ) : undefined;
+  const definitionFor = (type: string) =>
+    providerTypes.data?.items.find((entry) => entry.type === type);
   return (
-    <div className={styles.stack}>
-      <p>
-        {t(
-          "Direct Local and Docker require a single-host deployment and operator configuration.",
-        )}
-      </p>
-      <PageActions>
-        {manage &&
-          providerTypes.data?.items.some(
-            (type) => !type.deployment_managed,
-          ) && <ProviderEditor scope={scope} />}
-      </PageActions>
+    <>
       {rows.selected && (
-        <ProviderEditor
+        <EditEnvironmentProvider
           key={rows.selected.id}
           scope={
             rows.selected.workspace_id
               ? { kind: "workspace", id: rows.selected.workspace_id }
               : { kind: "organization", id: rows.selected.organization_id }
           }
-          providerId={rows.selected.id}
+          provider={rows.selected}
           {...rows.control}
         />
       )}
-      <ErrorNotice error={query.error} />
-      {query.isPending ? (
-        <Loading variant="table" columns={4} />
-      ) : query.data?.items.length ? (
-        <>
-          <ResourceTable
-            items={query.data.items}
-            canActivateRow={(item) =>
-              item.configuration_source === "deployment" ||
-              (item.workspace_id ? manage : organizationAdmin)
-            }
-            onRowActivate={rows.activate}
-            columns={[
-              {
-                label: t("Provider"),
-                tone: "primary",
-                render: (item) => (
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProviderIcon key={item.type} type={item.type} />
-                    <ResourceIdentity
-                      name={item.name}
-                      resourceId={item.id}
-                      description={
-                        item.configuration_source === "deployment"
-                          ? t("Configured by deployment")
-                          : String(
-                              providerTypes.data?.items.find(
-                                (entry) => entry.type === item.type,
-                              )?.display_name ?? item.type,
-                            )
-                      }
-                    />
-                  </div>
-                ),
-              },
-              {
-                label: t("Scope"),
-                tone: "muted",
-                render: (item) => (
-                  <ScopeBadge workspaceId={item.workspace_id} />
-                ),
-              },
-              {
-                label: t("Credentials"),
-                render: (item) =>
-                  t(
-                    credentialMode(
-                      providerTypes.data?.items.find(
-                        (entry) => entry.type === item.type,
-                      ),
-                      item.configuration,
-                    ) === "forbidden"
-                      ? "Not required"
-                      : item.credential_configured
-                        ? "Configured"
-                        : "Not configured",
-                  ),
-              },
-              {
-                label: t("Status"),
-                render: (item) => (
-                  <StateBadge state={item.enabled ? "enabled" : "disabled"} />
-                ),
-              },
-            ]}
-          />
-          <Pagination page={page} next={query.data.next_cursor} />
-        </>
-      ) : (
-        !query.error && (
-          <Empty
-            title={t("No environment providers")}
-            description={t(
-              "Add a provider before creating templates or registering external environments.",
+      <ProviderTable
+        category="environments"
+        items={query.data?.items}
+        isPending={query.isPending}
+        error={query.error}
+        page={page}
+        nextCursor={query.data?.next_cursor}
+        action={add}
+        canActivateRow={(item) =>
+          item.configuration_source === "deployment" ||
+          (item.workspace_id ? manage : organizationAdmin)
+        }
+        onRowActivate={rows.activate}
+        notice={
+          <p className={providerStyles.notice}>
+            {t(
+              "Direct Local and Docker require a single-host deployment and operator configuration.",
             )}
-          />
-        )
-      )}
-    </div>
+          </p>
+        }
+        row={(item) => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          definition:
+            item.configuration_source === "deployment"
+              ? t("Configured by deployment")
+              : (definitionFor(item.type)?.display_name ?? item.type),
+          workspaceId: item.workspace_id,
+          credentials:
+            definitionFor(item.type)?.credential_schema == null
+              ? ("not_required" as const)
+              : item.credential_configured
+                ? ("configured" as const)
+                : ("not_configured" as const),
+          state: item.enabled ? "enabled" : "disabled",
+          editLabel:
+            item.configuration_source === "deployment"
+              ? t("View details")
+              : undefined,
+        })}
+      />
+    </>
   );
 }
-function ProviderEditor({
+
+/** Catalog-first creation for the providers an operator can connect. */
+function AddEnvironmentProvider({
   scope,
-  providerId,
+  definitions,
+}: {
+  scope: EnvironmentScope;
+  definitions: Definition[];
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [generation, setGeneration] = useState(0);
+  // Closing discards the step and the draft, whoever asked for it.
+  function change(value: boolean) {
+    setOpen(value);
+    if (!value) setGeneration((current) => current + 1);
+  }
+  return (
+    <AddProviderDialog<Definition>
+      key={generation}
+      definitions={definitions}
+      open={open}
+      onOpenChange={change}
+      description={t("Choose where your environments run.")}
+      hint={(definition) => credentialHint(definition.credential_schema)}
+      connectDescription={(definition) =>
+        t(credentialDescription(definition.credential_schema), {
+          provider: definition.display_name,
+        })
+      }
+    >
+      {(definition, back) => (
+        <CatalogStep backLabel={t("All providers")} onBack={back}>
+          <ProviderForm
+            scope={scope}
+            definition={definition}
+            definitions={definitions}
+            close={() => change(false)}
+            reload={async () => {}}
+          />
+        </CatalogStep>
+      )}
+    </AddProviderDialog>
+  );
+}
+
+function EditEnvironmentProvider({
+  scope,
+  provider,
   controlledOpen,
   onClose,
   finalFocus,
 }: ResourceEditorControl & {
   scope: EnvironmentScope;
-  providerId?: string;
+  provider: Schema["EnvironmentProviderAccount"];
 }) {
   const client = useClient(),
     { t } = useTranslation(),
     [generation, setGeneration] = useState(0),
     definitions = useEnvironmentTypes();
-  const { open, setOpen, modalProps } = useResourceEditorState({
-    controlledOpen,
-    onClose,
-    finalFocus,
-  });
-
+  const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
   const query = useQuery({
     queryKey: [
       "environment-providers",
       scope.kind,
       scope.id,
       "detail",
-      providerId,
+      provider.id,
     ],
-    enabled: open && !!providerId,
+    enabled: state.open,
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/environment-providers/{resource_id}", {
-          params: { path: { resource_id: providerId! } },
+          params: { path: { resource_id: provider.id } },
           signal,
         })
         .then(representation),
   });
+  const definition = definitions.data?.items.find(
+    (item) => item.type === provider.type,
+  );
   return (
-    <ModalFrame
-      {...modalProps}
-      trigger={
-        controlledOpen === undefined ? (
-          <ResourceEditorButton
-            editing={!!providerId}
-            createLabel="Add provider"
-            editLabel="Edit"
-          />
-        ) : undefined
-      }
-      size="lg"
-      title={t(
-        providerId
-          ? query.data?.value.configuration_source === "deployment"
-            ? "Provider details"
-            : "Edit provider"
-          : "Add provider",
-      )}
+    <EditProviderDialog
+      modalProps={state.modalProps}
+      open={state.open}
+      name={query.data?.value.name ?? provider.name}
+      id={provider.id}
+      type={provider.type}
+      definition={definition?.display_name}
+      scope={provider.workspace_id ? "workspace" : "organization"}
+      readOnly={provider.configuration_source === "deployment"}
       description={
-        providerId ? undefined : t("Choose where your environments run.")
+        provider.configuration_source === "deployment"
+          ? t(deploymentNote)
+          : undefined
       }
-      closeLabel={t("Close")}
+      loading={definitions.isPending || query.isPending}
+      error={definitions.error ?? query.error}
     >
-      {open &&
-        (definitions.isPending || (providerId && query.isPending) ? (
-          <Loading variant="form" rows={4} />
-        ) : definitions.error || query.error ? (
-          <ErrorNotice error={definitions.error ?? query.error} />
-        ) : (
-          <ProviderForm
-            key={generation}
-            scope={scope}
-            initial={providerId ? query.data : undefined}
-            definitions={definitions.data?.items ?? []}
-            close={() => setOpen(false)}
-            reload={async () => {
-              await query.refetch();
-              setGeneration((value) => value + 1);
-            }}
-          />
-        ))}
-    </ModalFrame>
+      {query.data && (
+        <ProviderForm
+          key={generation}
+          scope={scope}
+          initial={query.data}
+          definitions={definitions.data?.items ?? []}
+          close={() => state.setOpen(false)}
+          reload={async () => {
+            await query.refetch();
+            setGeneration((value) => value + 1);
+          }}
+        />
+      )}
+    </EditProviderDialog>
   );
 }
+
 function ProviderForm({
   scope,
   initial,
+  definition: chosen,
   definitions,
   close,
   reload,
@@ -288,7 +290,8 @@ function ProviderForm({
   initial?: ReturnType<
     typeof representation<Schema["EnvironmentProviderAccount"]>
   >;
-  definitions: Schema["EnvironmentProviderMetadata"][];
+  definition?: Definition;
+  definitions: Definition[];
   close: () => void;
   reload: () => Promise<void>;
 }) {
@@ -296,14 +299,17 @@ function ProviderForm({
     cache = useQueryClient(),
     { t } = useTranslation(),
     [basis] = useState(initial),
-    { name, setName, suggestName } = useSuggestedName(initial?.value.name),
-    [type, setType] = useState(initial?.value.type ?? ""),
+    [name, setName] = useState(
+      initial?.value.name ?? chosen?.display_name ?? "",
+    ),
+    type = initial?.value.type ?? chosen?.type ?? "",
     [enabled, setEnabled] = useState(initial?.value.enabled ?? true),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
       initial?.value.configuration ?? {},
-    );
+    ),
+    [advancedOpen, setAdvancedOpen] = useState(false);
   const deployment = basis?.value.configuration_source === "deployment";
-  const definition = definitions.find((item) => item.type === type),
+  const definition = definitions.find((item) => item.type === type) ?? chosen,
     configSchema = schema(definition?.configuration_schema),
     section = useCredentialSection(definition, configuration, basis?.value);
   const connectivity = useQuery({
@@ -359,154 +365,116 @@ function ProviderForm({
     },
     onSuccess: done,
   });
-  return (
-    <form
-      className={formSectionStyles.form}
-      onSubmit={(event) => {
-        event.preventDefault();
-        if (!deployment) save.mutate();
-      }}
-    >
-      <FormSection>
-        {deployment ? (
-          <ReadOnlyField label={t("Name")}>
-            <span className="flex items-center gap-2">
-              {name}
-              {basis && <ResourceReference id={basis.value.id} />}
-            </span>
-          </ReadOnlyField>
-        ) : (
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Name")}
-            labelAction={basis && <ResourceReference id={basis.value.id} />}
-          >
-            <Input
-              required={true}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={128}
-            />
-          </FormField>
-        )}
-      </FormSection>
-      <FormSection
-        title={t("Connection")}
-        description={
-          deployment
-            ? t(
-                "Connection settings come from the running Service and cannot be edited here.",
-              )
-            : undefined
-        }
+  if (!basis)
+    return (
+      <form
+        className={providerStyles.connectForm}
+        onSubmit={(event) => {
+          event.preventDefault();
+          save.mutate();
+        }}
       >
-        <ProviderTypeField
-          definitions={
-            basis
-              ? definitions
-              : definitions.filter((item) => !item.deployment_managed)
+        <ProviderConnectFields
+          credentialSchema={
+            section.mode === "forbidden" ? undefined : section.schema
           }
-          value={type}
-          readOnly={!!basis}
-          onValueChange={(value) => {
-            setType(value);
-            suggestName(
-              definitions.find((item) => item.type === value)?.display_name ??
-                value,
-            );
-            setConfiguration({});
-            section.setCredential({});
-          }}
-          labelAction={
-            definition?.setup_url && (
-              <ProviderKeyLink
-                href={definition.setup_url}
-                label={definition.setup_label ?? undefined}
-              />
-            )
-          }
+          configurationSchema={configSchema}
+          credential={section.credential}
+          onCredentialChange={section.setCredential}
+          configuration={configuration}
+          onConfigurationChange={setConfiguration}
+          name={name}
+          onNameChange={setName}
+          keyLink={providerKeyLink(definition)}
+          advancedOpen={advancedOpen}
+          onAdvancedOpenChange={setAdvancedOpen}
         />
-        {basis?.value.type === "docker" && (
-          <div className={styles.stack}>
-            <p>
-              {t("Enabled: {{value}}", {
-                value: basis.value.enabled ? t("Yes") : t("No"),
-              })}
-            </p>
-            <p role="status">
-              {t("Engine: {{status}}", {
-                status: t(connectivity.data?.status ?? "unknown"),
-              })}
-            </p>
-            {connectivity.data?.error && <p>{connectivity.data.error}</p>}
-          </div>
-        )}
-        {basis && Object.keys(configuration).length > 0 && (
-          <DisclosureSection title={t("Configuration details")}>
-            <ConfigurationSummary value={configuration} schema={configSchema} />
-          </DisclosureSection>
-        )}
-        {!basis && (
-          <>
-            <SchemaFields
-              key={type}
-              schema={configSchema}
-              value={configuration}
-              onChange={setConfiguration}
-            />
-            {section.mode !== "forbidden" && (
-              <SchemaFields
-                secret
-                key={`${type}-credential`}
-                requireFields={section.requireFields}
-                schema={section.schema}
-                value={section.credential}
-                onChange={section.setCredential}
-              />
-            )}
-          </>
-        )}
-      </FormSection>
-      {basis && section.visible && (
-        <FormSection title={t("Credentials")}>
-          <CredentialEditor
-            configured={section.removable}
-            removing={section.removing}
-            onRemovingChange={section.setRemoving}
-          >
-            {section.mode !== "forbidden" && (
-              <SchemaFields
-                secret
-                schema={{ ...section.schema, required: [] }}
-                value={section.credential}
-                onChange={section.setCredential}
-              />
-            )}
-          </CredentialEditor>
-        </FormSection>
-      )}
-      {!deployment && basis && (
-        <FormSection>
-          <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
-        </FormSection>
-      )}
-      <ErrorNotice
-        error={save.error}
-        retry={basis ? () => void reload() : undefined}
-      />
-      {deployment ? (
-        <footer data-a13n-form-actions className={styles.formActions}>
-          <Button type="button" variant="outline" onClick={close}>
-            {t("Close")}
-          </Button>
-        </footer>
-      ) : (
+        <ErrorNotice error={save.error} />
         <FormActions
           pending={save.isPending}
           onCancel={close}
-          label={t(basis ? "Save changes" : "Add provider")}
+          label={t("Add provider")}
         />
-      )}
-    </form>
+      </form>
+    );
+  const engine = basis.value.type === "docker" && (
+    <SettingsRow stackOnNarrow={false} label={t("Engine")}>
+      <span className={providerStyles.fact} role="status">
+        {connectivity.data?.error && (
+          <span className={providerStyles.factValue}>
+            {connectivity.data.error}
+          </span>
+        )}
+        <StatePill state={connectivity.data?.status ?? "unknown"} />
+      </span>
+    </SettingsRow>
+  );
+  const credentials =
+    section.mode !== "required"
+      ? ("not_required" as const)
+      : basis.value.credential_configured
+        ? ("configured" as const)
+        : ("not_configured" as const);
+  if (deployment)
+    return (
+      <ProviderReadOnly
+        hideDefaults
+        enabled={basis.value.enabled}
+        credentials={credentials}
+        configuration={configuration}
+        schema={configSchema}
+        facts={engine}
+        onClose={close}
+      />
+    );
+  return (
+    <ProviderEditor
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
+      <ProviderName value={name} onChange={setName} />
+      <ProviderGroup>
+        <ProviderEnabled checked={enabled} onCheckedChange={setEnabled} />
+        {section.visible && (
+          <CredentialRow
+            label={t(credentialLabel(section.schema))}
+            configured={section.removable}
+            removing={section.removing}
+            onRemovingChange={section.setRemoving}
+            onDiscard={() => section.setCredential({})}
+          >
+            {section.mode !== "forbidden" && (
+              <SchemaFields
+                secret
+                autoFocus
+                labelAction={
+                  providerKeyLink(definition) && (
+                    <ProviderKeyLink {...providerKeyLink(definition)!} />
+                  )
+                }
+                schema={section.schema}
+                requireFields={section.requireFields}
+                value={section.credential}
+                onChange={section.setCredential}
+              />
+            )}
+          </CredentialRow>
+        )}
+        {engine}
+        <ProviderFacts
+          hideDefaults
+          configuration={configuration}
+          schema={configSchema}
+        />
+      </ProviderGroup>
+      <ErrorNotice error={save.error} retry={() => void reload()} />
+      <FormActions
+        pending={save.isPending}
+        onCancel={close}
+        label={t("Save changes")}
+      />
+    </ProviderEditor>
   );
 }

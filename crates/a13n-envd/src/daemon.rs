@@ -4,31 +4,34 @@ use std::{
     fmt,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
-        Mutex, MutexGuard, PoisonError,
-        atomic::{AtomicU64, Ordering},
+        Arc, Mutex, MutexGuard, PoisonError,
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
 };
 
 use serde::{Serialize, de::DeserializeOwned};
-use tokio::sync::{Notify, mpsc, watch};
+use tokio::sync::{
+    Notify, OwnedRwLockReadGuard, OwnedSemaphorePermit, RwLock, Semaphore, mpsc, watch,
+};
 
 use crate::{
+    capacity::DeviceCapacity,
     config::Config,
+    device_path,
     eip::{
-        self, DispatchError, DispatchStage, EIPError, EIPErrorData, EIPServerInfo, EipHandler,
-        EnvironmentDescribeParams, EnvironmentDescribeResult, EnvironmentDescriptor,
-        EnvironmentReadinessParams, EnvironmentReadinessResult, ErrorType, ExecutionFeatures,
-        InitializeParams, InitializeResult, JsonRpcErrorResponse, JsonRpcId, JsonRpcRequest,
-        JsonRpcSuccessResponse, ReceiptOutcome, ReceiptStage, RetryHint, SessionCloseParams,
-        SessionCloseResult,
+        self, DeviceDescriptor, DispatchError, DispatchStage, EIPError, EIPErrorData,
+        EIPServerInfo, EipDeviceHandler, EipSessionHandler, EnvironmentDescribeParams,
+        EnvironmentDescribeResult, EnvironmentReadinessParams, EnvironmentReadinessResult,
+        ErrorType, ExecutionFeatures, InitializeParams, InitializeResult, JsonRpcErrorResponse,
+        JsonRpcId, JsonRpcRequest, JsonRpcSuccessResponse, ReceiptOutcome, ReceiptStage, RetryHint,
+        SessionCloseParams, SessionCloseResult, SessionDescriptor,
     },
-    isolation::IsolationRuntime,
-    mount::MountRegistry,
+    filesystem::DeviceFilesystem,
     operation::{
         ActiveResponseHandoff, BeginOutcome, LedgerError, OperationInterruption, OperationLease,
         OperationLedger, OwnedOperationResult, PendingAdmissionWait, PendingOperationGuard,
-        scope_carrier_attempt,
+        ShortIdAllocator, scope_carrier_attempt,
     },
     process::{ExecutionManager, ProcessError, StartFailure},
     resource::{ResourceError, ResourceRegistry},
@@ -37,15 +40,8 @@ use crate::{
 };
 
 const MAX_STRING_REQUEST_ID_BYTES: usize = 128;
-const BASE_CAPABILITIES: [&str; 3] = [
-    "environment.describe",
-    "environment.readiness",
-    "session.close",
-];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SessionState {
-    Uninitialized,
     Initialized,
     Ready,
     NotReady,
@@ -58,6 +54,9 @@ struct SessionAdmission {
 }
 
 struct SessionAdmissionState {
+    owner: Option<u64>,
+    last_activity: Instant,
+    detached_at: Option<Instant>,
     lifecycle: SessionState,
     active_session_work: usize,
 }
@@ -66,19 +65,22 @@ struct SessionWorkGuard<'a> {
     admission: &'a SessionAdmission,
 }
 
-struct AuthoritySurface {
-    mounts: MountRegistry,
-    descriptor: EnvironmentDescriptor,
-}
-
-struct AuthoritySurfaces {
-    scoped: AuthoritySurface,
-}
-
 pub(crate) struct CarrierResponse {
     payload: Vec<u8>,
-    handoff: Option<ActiveResponseHandoff>,
-    closes_session: bool,
+    handoff: Option<ResponseHandoff>,
+}
+
+pub(crate) struct ResponseHandoff {
+    operation: Option<ActiveResponseHandoff>,
+    _history: OwnedRwLockReadGuard<()>,
+}
+
+impl ResponseHandoff {
+    pub(crate) fn complete(self) {
+        if let Some(operation) = self.operation {
+            operation.complete();
+        }
+    }
 }
 
 impl CarrierResponse {
@@ -86,27 +88,801 @@ impl CarrierResponse {
         Self {
             payload,
             handoff: None,
-            closes_session: false,
         }
     }
 
-    pub(crate) fn into_parts(self) -> (Vec<u8>, Option<ActiveResponseHandoff>, bool) {
-        (self.payload, self.handoff, self.closes_session)
+    pub(crate) fn into_parts(self) -> (Vec<u8>, Option<ResponseHandoff>) {
+        (self.payload, self.handoff)
     }
 }
 
+/// The Device owns aggregate capacity and a registry, never a current Session.
 pub(crate) struct Daemon {
-    surfaces: AuthoritySurfaces,
+    config: Config,
+    descriptor: DeviceDescriptor,
+    filesystem: Arc<DeviceFilesystem>,
+    retention_quota: RetentionQuota,
+    capacity: DeviceCapacity,
+    request_capacity: Arc<Semaphore>,
+    sessions: Mutex<BTreeMap<String, Arc<Session>>>,
+    ids: ShortIdAllocator,
+    next_carrier: AtomicU64,
+    next_attempt: AtomicU64,
+    draining: AtomicBool,
+    last_diagnostics: Mutex<Option<Instant>>,
+}
+
+pub(crate) struct Carrier {
+    id: u64,
+    stateless: bool,
+    initialized: AtomicBool,
+    closed: AtomicBool,
+    outbound: mpsc::Sender<eip::DataFrame>,
+}
+
+impl Carrier {
+    pub(crate) fn initialized(&self) -> bool {
+        self.initialized.load(Ordering::Acquire)
+    }
+    pub(crate) fn close(&self) {
+        self.closed.store(true, Ordering::Release);
+    }
+}
+
+struct DeviceRequest<'a> {
+    daemon: &'a Daemon,
+    carrier: &'a Carrier,
+}
+
+fn session_methods(config: &Config) -> Vec<String> {
+    eip::METHODS
+        .iter()
+        .filter(|method| !method.device_scoped)
+        .filter(|method| method.name != "file.commit" || cfg!(unix))
+        .filter(|method| {
+            let execution = method.name.starts_with("process.")
+                || method.name.starts_with("output.")
+                || method.name == "shell.exec";
+            (!execution || config.command.is_some())
+                && (method.name != "process.signal" || cfg!(unix))
+        })
+        .map(|method| method.name.to_owned())
+        .collect()
+}
+
+impl Daemon {
+    pub(crate) fn new(config: &Config) -> Result<Self, DaemonInitError> {
+        Self::with_generation(config, fresh_generation()?)
+    }
+
+    fn with_generation(config: &Config, generation: u64) -> Result<Self, DaemonInitError> {
+        if generation == 0 {
+            return Err(DaemonInitError::new("generation must be nonzero"));
+        }
+        let filesystem = DeviceFilesystem::new(config)
+            .map_err(|error| DaemonInitError::new(error.to_string()))?;
+        let retention_quota = RetentionQuota::new(config)
+            .map_err(|_| DaemonInitError::new("invalid retention limits"))?;
+        let mut available_methods = session_methods(config);
+        available_methods.extend(
+            eip::METHODS
+                .iter()
+                .filter(|method| method.device_scoped)
+                .filter(|method| method.name != "directory.list" || config.directory_discovery)
+                .map(|method| method.name.to_owned()),
+        );
+        available_methods.sort();
+        Ok(Self {
+            config: config.clone(),
+            filesystem,
+            retention_quota,
+            capacity: DeviceCapacity::new(&config.limits),
+            request_capacity: Arc::new(Semaphore::new(
+                config.limits.max_device_concurrent_operations as usize,
+            )),
+            descriptor: DeviceDescriptor {
+                device_id: config.device_id.clone(),
+                generation,
+                display_name: config.display_name.clone(),
+                description: config.description.clone(),
+                path_style: device_path::path_style(),
+                default_working_directory: config.default_working_directory.clone(),
+                directory_discovery: config.directory_discovery,
+                available_methods,
+                limits: config.limits.descriptor(),
+                lifecycle: eip::SessionLifecyclePolicy {
+                    idle_timeout_ms: config.session_idle_timeout.as_millis() as u64,
+                    disconnect_grace_ms: config.disconnect_grace.as_millis() as u64,
+                },
+            },
+            sessions: Mutex::new(BTreeMap::new()),
+            ids: ShortIdAllocator::for_generation(generation),
+            next_carrier: AtomicU64::new(1),
+            next_attempt: AtomicU64::new(1),
+            draining: AtomicBool::new(false),
+            last_diagnostics: Mutex::new(None),
+        })
+    }
+
+    pub(crate) fn carrier(&self, outbound: mpsc::Sender<eip::DataFrame>) -> Arc<Carrier> {
+        Arc::new(Carrier {
+            id: self.next_carrier.fetch_add(1, Ordering::Relaxed),
+            stateless: false,
+            initialized: AtomicBool::new(false),
+            closed: AtomicBool::new(false),
+            outbound,
+        })
+    }
+
+    pub(crate) fn http_carrier(&self, outbound: mpsc::Sender<eip::DataFrame>) -> Arc<Carrier> {
+        Arc::new(Carrier {
+            id: self.next_carrier.fetch_add(1, Ordering::Relaxed),
+            stateless: true,
+            initialized: AtomicBool::new(true),
+            closed: AtomicBool::new(false),
+            outbound,
+        })
+    }
+
+    pub(crate) fn busy_response(&self, payload: &str) -> Vec<u8> {
+        let request = eip::decode::<JsonRpcRequest>(payload).ok();
+        self.error_response(
+            request.as_ref().map(|request| request.id.clone()),
+            request.and_then(|request| request.eip_session),
+            protocol_error(ErrorType::Busy, "request capacity is exhausted"),
+        )
+    }
+
+    /// Reserve before spawning a carrier task. Lifecycle traffic has bounded Session-local
+    /// lanes that ordinary calls cannot consume, even when the Device is saturated.
+    pub(crate) fn admit_payload(&self, payload: &str) -> Option<Vec<OwnedSemaphorePermit>> {
+        let request = eip::decode::<JsonRpcRequest>(payload).ok();
+        let session = request
+            .as_ref()
+            .and_then(|request| request.eip_session.as_deref())
+            .and_then(|id| self.lookup(id).ok());
+        if let (Some(request), Some(session)) = (&request, &session) {
+            let lane = match request.method.as_str() {
+                "session.keepalive" => Some(&session.keepalive_capacity),
+                "session.attach" | "session.close" | "operation.cancel" | "process.kill"
+                | "process.release" | "output.release" | "file.abort_writer"
+                | "file.close_reader" => Some(&session.cleanup_capacity),
+                _ => None,
+            };
+            if let Some(lane) = lane {
+                return Some(vec![lane.clone().try_acquire_owned().ok()?]);
+            }
+        }
+        let device = self.request_capacity.clone().try_acquire_owned().ok()?;
+        let mut permits = vec![device];
+        if let Some(session) = session {
+            permits.push(session.request_capacity.clone().try_acquire_owned().ok()?);
+        }
+        Some(permits)
+    }
+
+    fn sessions(&self) -> MutexGuard<'_, BTreeMap<String, Arc<Session>>> {
+        self.sessions.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "the generated protocol error is the daemon's public error contract"
+    )]
+    fn lookup(&self, id: &str) -> Result<Arc<Session>, EIPError> {
+        self.sessions()
+            .get(id)
+            .cloned()
+            .ok_or_else(|| protocol_error(ErrorType::NotInitialized, "unknown or expired session"))
+    }
+
+    pub(crate) fn track_pending_payload(&self, payload: &str) -> Option<PendingOperationGuard> {
+        let value: serde_json::Value = serde_json::from_str(payload).ok()?;
+        let session = self.lookup(value.get("eip_session")?.as_str()?).ok()?;
+        let operation_id = value
+            .get("params")?
+            .get("context")?
+            .get("operation_id")?
+            .as_str()?;
+        Some(session.operations.track_pending(operation_id.to_owned()))
+    }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "the generated protocol error is the daemon's public error contract"
+    )]
+    fn select_session(
+        &self,
+        carrier: &Carrier,
+        request: &JsonRpcRequest,
+    ) -> Result<Arc<Session>, EIPError> {
+        let session = self.lookup(request.eip_session.as_deref().ok_or_else(|| {
+            protocol_error(ErrorType::InvalidRequest, "session selector is required")
+        })?)?;
+        {
+            let mut state = session.session.state();
+            let expired = state.last_activity.elapsed() >= self.config.session_idle_timeout
+                || state
+                    .detached_at
+                    .is_some_and(|at| at.elapsed() >= self.config.disconnect_grace);
+            if expired || state.lifecycle == SessionState::Closed {
+                return Err(protocol_error(
+                    ErrorType::NotInitialized,
+                    "session is closed or expired",
+                ));
+            }
+            if request.method == "session.attach" && state.owner.is_none() {
+                session
+                    .transfers
+                    .attach(carrier.outbound.clone())
+                    .map_err(map_transfer_error)?;
+                state.owner = Some(carrier.id);
+                state.detached_at = None;
+            }
+            if state.owner != Some(carrier.id) {
+                return Err(protocol_error(
+                    ErrorType::NotInitialized,
+                    "session is not attached to this carrier",
+                ));
+            }
+            state.last_activity = Instant::now();
+        }
+        session.preflight(&request.method)?;
+        Ok(session)
+    }
+
+    pub(crate) fn validate_data_session(
+        &self,
+        carrier: &Carrier,
+        id: &str,
+    ) -> Result<(), TransferError> {
+        let session = self.lookup(id).map_err(|_| TransferError::Protocol)?;
+        let state = session.session.state();
+        if carrier.closed.load(Ordering::Acquire)
+            || state.owner != Some(carrier.id)
+            || state.lifecycle != SessionState::Ready
+            || state.last_activity.elapsed() >= self.config.session_idle_timeout
+        {
+            Err(TransferError::Protocol)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn fail_data_session(&self, carrier: &Carrier, id: &str) {
+        if let Ok(session) = self.lookup(id) {
+            let mut state = session.session.state();
+            if state.owner == Some(carrier.id) {
+                state.lifecycle = SessionState::Closed;
+                session.closed.send_replace(true);
+                session.operations.begin_drain();
+                session.transfers.begin_session_close();
+            }
+        }
+    }
+
+    pub(crate) async fn handle_data_frame(
+        &self,
+        carrier: &Carrier,
+        frame: eip::DataFrame,
+    ) -> Result<(), TransferError> {
+        self.validate_data_session(carrier, &frame.session_id)?;
+        let session = self
+            .lookup(&frame.session_id)
+            .map_err(|_| TransferError::Protocol)?;
+        let _work = session
+            .session
+            .admit_work()
+            .ok_or(TransferError::Protocol)?;
+        session.transfers.handle_frame(frame).await
+    }
+
+    pub(crate) async fn detach(&self, carrier: &Carrier) {
+        carrier.closed.store(true, Ordering::Release);
+        let sessions: Vec<_> = self.sessions().values().cloned().collect();
+        let detached_at = Instant::now();
+        let mut detaching = tokio::task::JoinSet::new();
+        for session in sessions {
+            {
+                let mut state = session.session.state();
+                if state.owner != Some(carrier.id) {
+                    continue;
+                }
+                // All owned Sessions begin grace now, not after a sibling's cleanup.
+                state.detached_at = Some(detached_at);
+            }
+            detaching.spawn(async move {
+                let clean = tokio::time::timeout(Duration::from_secs(5), async {
+                    let _cleanup = session.cleanup.lock().await;
+                    session.transfers.detach().await;
+                })
+                .await
+                .is_ok();
+                if !clean {
+                    session.session.close();
+                }
+                // Publish detach only after the old route is removed. An attach
+                // cannot install a new sender while old cleanup can still erase it.
+                session.session.state().owner = None;
+            });
+        }
+        while detaching.join_next().await.is_some() {}
+    }
+
+    pub(crate) async fn maintenance(&self) {
+        let sessions: Vec<_> = self.sessions().values().cloned().collect();
+        let mut closing = tokio::task::JoinSet::new();
+        for session in sessions {
+            let expired = {
+                let mut state = session.session.state();
+                let expired = state.lifecycle == SessionState::Closed
+                    || state.last_activity.elapsed() >= self.config.session_idle_timeout
+                    || state
+                        .detached_at
+                        .is_some_and(|at| at.elapsed() >= self.config.disconnect_grace);
+                if expired {
+                    state.lifecycle = SessionState::Closed;
+                }
+                expired
+            };
+            if expired {
+                closing.spawn(async move {
+                    let clean = session.close(Duration::from_secs(10)).await;
+                    (session.descriptor.session_id.clone(), clean)
+                });
+            } else {
+                session.transfers.expire().await;
+                session.collect_history(false).await;
+                let filesystem = session.filesystem.clone();
+                let _ = tokio::task::spawn_blocking(move || filesystem.retry_cleanup()).await;
+            }
+        }
+        while let Some(result) = closing.join_next().await {
+            if let Ok((id, true)) = result {
+                self.sessions().remove(&id);
+            }
+        }
+        self.report_resources();
+    }
+
+    fn report_resources(&self) {
+        {
+            let mut last = self
+                .last_diagnostics
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner);
+            if last.is_some_and(|at| at.elapsed() < Duration::from_secs(30)) {
+                return;
+            }
+            *last = Some(Instant::now());
+        }
+        let sessions: Vec<_> = self.sessions().values().cloned().collect();
+        let closing = sessions
+            .iter()
+            .filter(|session| session.session.state().lifecycle == SessionState::Closed)
+            .count();
+        let (spool_bytes, spool_objects) = self.retention_quota.usage();
+        let (output_cleanup_failures, outputs_reclaimed) = self.retention_quota.diagnostics();
+        let (staged_bytes, staged_objects) = self.filesystem.staging_usage();
+        let (processes, process_records) = self.capacity.processes.available();
+        let (transfers, transfer_records) = self.capacity.transfers.available();
+        let limits = &self.config.limits;
+        let record = serde_json::json!({
+            "level": "info", "event": "a13n-envd.resource_totals",
+            "sessions": sessions.len(), "closing_sessions": closing,
+            "operation_records": limits.max_device_operation_records - self.capacity.operations.available_permits() as u64,
+            "processes": limits.max_device_processes - processes as u64,
+            "process_records": limits.max_device_process_records - process_records as u64,
+            "transfers": limits.max_device_file_transfers - transfers as u64,
+            "transfer_records": limits.max_device_file_transfer_records - transfer_records as u64,
+            "spool_bytes": spool_bytes, "spool_objects": spool_objects,
+            "staged_bytes": staged_bytes, "staged_objects": staged_objects,
+            "outputs_reclaimed": outputs_reclaimed,
+            "output_cleanup_failures": output_cleanup_failures,
+            "staging_cleanup_failures": self.filesystem.cleanup_failures(),
+        });
+        eprintln!("{record}");
+    }
+
+    pub(crate) async fn drain(&self, budget: Duration) -> bool {
+        self.draining.store(true, Ordering::Release);
+        let sessions: Vec<_> = self.sessions().values().cloned().collect();
+        let mut closing = tokio::task::JoinSet::new();
+        for session in sessions {
+            closing.spawn(async move {
+                let clean = session.close(budget).await;
+                (session.descriptor.session_id.clone(), clean)
+            });
+        }
+        let mut complete = true;
+        while let Some(result) = closing.join_next().await {
+            match result {
+                Ok((id, true)) => {
+                    self.sessions().remove(&id);
+                }
+                _ => complete = false,
+            }
+        }
+        complete
+    }
+
+    pub(crate) async fn handle_payload_for_carrier(
+        &self,
+        carrier: &Carrier,
+        payload: &str,
+    ) -> CarrierResponse {
+        let attempt = self.next_attempt.fetch_add(1, Ordering::Relaxed);
+        scope_carrier_attempt(
+            attempt,
+            Box::pin(self.handle_payload_core(carrier, payload)),
+        )
+        .await
+    }
+
+    async fn handle_payload_core(&self, carrier: &Carrier, payload: &str) -> CarrierResponse {
+        let request = match eip::decode::<JsonRpcRequest>(payload) {
+            Ok(request) => request,
+            Err(error) => {
+                let error_type = match error {
+                    eip::DecodeError::Json(error) if error.is_syntax() || error.is_eof() => {
+                        ErrorType::ParseError
+                    }
+                    _ => ErrorType::InvalidRequest,
+                };
+                return CarrierResponse::plain(self.error_response(
+                    recover_request_id(payload),
+                    None,
+                    protocol_error(error_type, error_type_message(error_type)),
+                ));
+            }
+        };
+        let selector = request.eip_session.clone();
+        let error_response = |error| {
+            CarrierResponse::plain(self.error_response(
+                Some(request.id.clone()),
+                selector.clone(),
+                error,
+            ))
+        };
+        if !valid_request_id(&request.id) {
+            return error_response(protocol_error(
+                ErrorType::InvalidRequest,
+                "invalid request ID",
+            ));
+        }
+        if carrier.closed.load(Ordering::Acquire) || self.draining.load(Ordering::Acquire) {
+            return error_response(protocol_error(
+                ErrorType::NotInitialized,
+                "carrier is closed",
+            ));
+        }
+        if request.method != "initialize" && !carrier.initialized() {
+            return error_response(protocol_error(
+                ErrorType::NotInitialized,
+                "initialize must precede Device access",
+            ));
+        }
+        let Some(method) = eip::METHODS
+            .iter()
+            .find(|method| method.name == request.method)
+        else {
+            return error_response(protocol_error(
+                ErrorType::MethodNotFound,
+                "method not found",
+            ));
+        };
+        if matches!(
+            request.method.as_str(),
+            "session.open"
+                | "process.start"
+                | "shell.exec"
+                | "file.open_reader"
+                | "file.open_writer"
+        ) {
+            let pressure = self
+                .sessions()
+                .values()
+                .any(|session| session.under_pressure());
+            if pressure {
+                // Expired owners and expired history have priority over early eviction.
+                self.maintenance().await;
+                let sessions: Vec<_> = self.sessions().values().cloned().collect();
+                for session in &sessions {
+                    if !sessions.iter().any(|candidate| candidate.under_pressure()) {
+                        break;
+                    }
+                    session.collect_history(true).await;
+                }
+            }
+        }
+        let session = if method.device_scoped {
+            if selector.is_some() {
+                return error_response(protocol_error(
+                    ErrorType::InvalidRequest,
+                    "Device methods cannot select a session",
+                ));
+            }
+            None
+        } else {
+            match self.select_session(carrier, &request) {
+                Ok(session) => Some(session),
+                Err(error) => return error_response(error),
+            }
+        };
+        let history = match &session {
+            Some(session) => Some(session.history.clone().read_owned().await),
+            None => None,
+        };
+        let params = serde_json::to_string(&request.params).expect("JSON params are serializable");
+        let result = match &session {
+            Some(session) => {
+                eip::dispatch_session(session.as_ref(), &request.method, &params).await
+            }
+            None => {
+                eip::dispatch_device(
+                    &DeviceRequest {
+                        daemon: self,
+                        carrier,
+                    },
+                    &request.method,
+                    &params,
+                )
+                .await
+            }
+        };
+        let handoff = if let Some(session) = &session {
+            if let Err(DispatchError::Method {
+                error,
+                method,
+                params,
+            }) = &result
+            {
+                session
+                    .operations
+                    .finish_dispatched_failure(method, params, error.clone());
+            }
+            match &result {
+                Ok(success) => session
+                    .operations
+                    .active_response_handoff(success.method, &success.params),
+                Err(DispatchError::Method { method, params, .. }) => {
+                    session.operations.active_response_handoff(method, params)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+        let payload = match result {
+            Ok(success) => {
+                if request.method == "session.close"
+                    && let Some(id) = &selector
+                {
+                    self.sessions().remove(id);
+                }
+                let serde_json::Value::Object(fields) = success.result else {
+                    return error_response(protocol_error(
+                        ErrorType::InternalError,
+                        "non-object method result",
+                    ));
+                };
+                let response = JsonRpcSuccessResponse {
+                    jsonrpc: "2.0".to_owned(),
+                    id: request.id.clone(),
+                    eip_session: selector.clone(),
+                    result: fields.into_iter().collect(),
+                    extensions: BTreeMap::new(),
+                };
+                match eip::encode(&response) {
+                    Ok(bytes) if bytes.len() as u64 <= self.config.limits.max_response_bytes => {
+                        bytes
+                    }
+                    _ => self.error_response(
+                        Some(request.id),
+                        selector,
+                        protocol_error(ErrorType::InternalError, "response exceeds limits"),
+                    ),
+                }
+            }
+            Err(error) => self.error_response(
+                Some(request.id),
+                selector,
+                map_dispatch_error(error, &request.method),
+            ),
+        };
+        CarrierResponse {
+            payload,
+            handoff: history.map(|history| ResponseHandoff {
+                operation: handoff,
+                _history: history,
+            }),
+        }
+    }
+
+    fn error_response(
+        &self,
+        id: Option<JsonRpcId>,
+        eip_session: Option<String>,
+        error: EIPError,
+    ) -> Vec<u8> {
+        let response = JsonRpcErrorResponse {
+            jsonrpc: "2.0".to_owned(),
+            id,
+            eip_session,
+            error,
+            extensions: BTreeMap::new(),
+        };
+        eip::encode(&response).expect("bounded protocol errors serialize")
+    }
+}
+
+impl EipDeviceHandler for DeviceRequest<'_> {
+    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult, EIPError> {
+        if !params
+            .supported_protocol_versions
+            .iter()
+            .any(|version| version == eip::EIP_PROTOCOL_VERSION)
+            || params
+                .expected_device_id
+                .as_ref()
+                .is_some_and(|id| id != &self.daemon.descriptor.device_id)
+        {
+            return Err(protocol_error(
+                ErrorType::ProtocolIncompatible,
+                "Device identity or protocol does not match",
+            ));
+        }
+        if !self.carrier.stateless && self.carrier.initialized.swap(true, Ordering::AcqRel) {
+            return Err(protocol_error(
+                ErrorType::AlreadyInitialized,
+                "carrier is already initialized",
+            ));
+        }
+        Ok(InitializeResult {
+            protocol_version: eip::EIP_PROTOCOL_VERSION.to_owned(),
+            server: EIPServerInfo {
+                name: "a13n-envd".to_owned(),
+                version: env!("CARGO_PKG_VERSION").to_owned(),
+            },
+            descriptor: self.daemon.descriptor.clone(),
+        })
+    }
+
+    async fn device_describe(
+        &self,
+        _params: eip::DeviceDescribeParams,
+    ) -> Result<eip::DeviceDescribeResult, EIPError> {
+        Ok(eip::DeviceDescribeResult {
+            descriptor: self.daemon.descriptor.clone(),
+        })
+    }
+
+    async fn directory_list(
+        &self,
+        params: eip::DirectoryListParams,
+    ) -> Result<eip::DirectoryListResult, EIPError> {
+        self.daemon
+            .check_device(&params.expected_device_id, params.expected_generation)?;
+        if !self.daemon.config.directory_discovery {
+            return Err(protocol_error(
+                ErrorType::Unsupported,
+                "directory discovery is disabled",
+            ));
+        }
+        let bytes = self.daemon.config.limits.max_response_bytes;
+        tokio::task::spawn_blocking(move || {
+            device_path::list_directory(&params.path, params.offset, params.limit, bytes)
+        })
+        .await
+        .map_err(|_| protocol_error(ErrorType::InternalError, "directory discovery failed"))?
+        .map_err(|error| map_resource_error(crate::resource::map_path_error(error)))
+    }
+
+    async fn session_open(
+        &self,
+        params: eip::SessionOpenParams,
+    ) -> Result<eip::SessionOpenResult, EIPError> {
+        self.daemon
+            .check_device(&params.expected_device_id, params.expected_generation)?;
+        if params.protocol_version != eip::EIP_PROTOCOL_VERSION {
+            return Err(protocol_error(
+                ErrorType::ProtocolIncompatible,
+                "session protocol does not match",
+            ));
+        }
+        let methods = session_methods(&self.daemon.config);
+        if params
+            .required_methods
+            .iter()
+            .any(|method| !methods.contains(method))
+        {
+            return Err(protocol_error(
+                ErrorType::Unsupported,
+                "required session method is unavailable",
+            ));
+        }
+        let path = params
+            .working_directory
+            .unwrap_or_else(|| self.daemon.config.default_working_directory.clone());
+        let cwd = tokio::task::spawn_blocking(move || {
+            device_path::from_native(&device_path::resolve_directory(&path)?)
+        })
+        .await
+        .map_err(|_| protocol_error(ErrorType::InternalError, "cwd resolution failed"))?
+        .map_err(|_| {
+            protocol_error(
+                ErrorType::NotFoundOrDenied,
+                "working directory is unavailable",
+            )
+        })?;
+        if self.daemon.sessions().len() >= self.daemon.config.limits.max_sessions {
+            self.daemon.maintenance().await;
+        }
+        let mut sessions = self.daemon.sessions();
+        if self.carrier.closed.load(Ordering::Acquire)
+            || self.daemon.draining.load(Ordering::Acquire)
+        {
+            return Err(protocol_error(
+                ErrorType::NotInitialized,
+                "carrier closed during session opening",
+            ));
+        }
+        if sessions.len() >= self.daemon.config.limits.max_sessions {
+            return Err(protocol_error(
+                ErrorType::Busy,
+                "session capacity is exhausted",
+            ));
+        }
+        let id = self.daemon.ids.next("session").map_err(map_ledger_error)?;
+        let session = Arc::new(
+            Session::new(self.daemon, self.carrier.id, id.clone(), cwd).map_err(|_| {
+                protocol_error(ErrorType::InternalError, "session initialization failed")
+            })?,
+        );
+        session
+            .transfers
+            .attach(self.carrier.outbound.clone())
+            .map_err(map_transfer_error)?;
+        let descriptor = session.descriptor.clone();
+        sessions.insert(id, session);
+        Ok(eip::SessionOpenResult { descriptor })
+    }
+}
+
+impl Daemon {
+    #[allow(
+        clippy::result_large_err,
+        reason = "the generated protocol error is the daemon's public error contract"
+    )]
+    fn check_device(&self, id: &str, generation: u64) -> Result<(), EIPError> {
+        if id != self.descriptor.device_id || generation != self.descriptor.generation {
+            Err(protocol_error(
+                ErrorType::ProtocolIncompatible,
+                "Device identity or generation does not match",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+pub(crate) struct Session {
+    descriptor: SessionDescriptor,
+    filesystem: Arc<DeviceFilesystem>,
+    cleanup: tokio::sync::Mutex<()>,
+    history: Arc<RwLock<()>>,
+    request_capacity: Arc<Semaphore>,
+    keepalive_capacity: Arc<Semaphore>,
+    cleanup_capacity: Arc<Semaphore>,
+    closed: watch::Sender<bool>,
     session: SessionAdmission,
     max_operation_duration: Duration,
+    history_ttl: Duration,
     operations: OperationLedger,
     resources: ResourceRegistry,
     retention: RetentionStore,
     execution: Option<ExecutionManager>,
     transfers: TransferRegistry,
-    closed: watch::Sender<bool>,
-    max_response_bytes: usize,
-    next_carrier_attempt: AtomicU64,
 }
 
 impl SessionAdmission {
@@ -156,263 +932,155 @@ impl Drop for SessionWorkGuard<'_> {
     }
 }
 
-fn build_descriptor(
-    config: &Config,
-    generation: u64,
-    mounts: &MountRegistry,
-    isolation: &IsolationRuntime,
-    execution: Option<&ExecutionManager>,
-) -> EnvironmentDescriptor {
-    let mut available_methods = BASE_CAPABILITIES
-        .iter()
-        .map(ToString::to_string)
-        .collect::<Vec<_>>();
-    available_methods.extend([
-        "operation.cancel".to_owned(),
-        "port.inspect".to_owned(),
-        "port.wait".to_owned(),
-        "receipt.get".to_owned(),
-    ]);
-    for (operation, methods) in [
-        ("stat", &["file.stat"][..]),
-        ("read_text", &["file.read_text"][..]),
-        (
-            "open_reader",
-            &["file.open_reader", "file.close_reader"][..],
-        ),
-        ("list", &["file.list"][..]),
-        ("find", &["file.find"][..]),
-        ("search", &["file.search"][..]),
-        ("write_text", &["file.write_text"][..]),
-        ("commit", &["file.commit"][..]),
-        (
-            "open_writer",
-            &[
-                "file.open_writer",
-                "file.commit_writer",
-                "file.abort_writer",
-            ][..],
-        ),
-        ("mkdir", &["file.mkdir"][..]),
-        ("patch_text", &["file.patch_text"][..]),
-        ("copy", &["file.copy"][..]),
-        ("move", &["file.move"][..]),
-        ("remove", &["file.remove"][..]),
-    ] {
-        if mounts.supports_anywhere(operation) {
-            available_methods.extend(methods.iter().map(|method| (*method).to_owned()));
-        }
-    }
-    let execution_available = execution.is_some() && mounts.supports_commands();
-    let execution_features = ExecutionFeatures {
-        process_count_limit: false,
-        memory_bytes_limit: false,
-        cpu_time_limit: false,
-        per_command_network_deny: execution_available
-            && isolation.supports_per_command_network_deny(),
-        signal_interrupt: execution_available && cfg!(unix),
-        signal_terminate: execution_available && cfg!(unix),
-    };
-    if execution_available {
-        available_methods.extend([
-            "output.read".to_owned(),
-            "output.release".to_owned(),
-            "shell.exec".to_owned(),
-            "process.start".to_owned(),
-            "process.inspect".to_owned(),
-            "process.write_stdin".to_owned(),
-            "process.close_stdin".to_owned(),
-            "process.wait".to_owned(),
-            "process.kill".to_owned(),
-            "process.release".to_owned(),
-        ]);
-        if execution_features.signal_interrupt || execution_features.signal_terminate {
-            available_methods.push("process.signal".to_owned());
-        }
-    }
-    available_methods.sort();
-    EnvironmentDescriptor {
-        environment_id: config.environment_id.clone(),
-        generation,
-        mounts: mounts.descriptors(),
-        shell_profiles: execution
-            .map(ExecutionManager::shell_profiles)
-            .unwrap_or_default(),
-        limits: config.limits.descriptor(),
-        isolation: isolation.posture(),
-        root_mount_id: mounts.root_mount_id().map(str::to_owned),
-        available_methods,
-        execution_features,
-    }
-}
-
-impl Daemon {
-    pub(crate) fn new(config: &Config) -> Result<Self, DaemonInitError> {
-        Self::with_generation(config, fresh_generation()?)
-    }
-
-    fn with_generation(config: &Config, generation: u64) -> Result<Self, DaemonInitError> {
-        if generation == 0 {
-            return Err(DaemonInitError::new("generation must be nonzero"));
-        }
-        let max_response_bytes = usize::try_from(config.limits.max_response_bytes)
-            .map_err(|_| DaemonInitError::new("max_response_bytes does not fit this platform"))?;
-        let max_operation_records =
-            usize::try_from(config.limits.max_operation_records).map_err(|_| {
-                DaemonInitError::new("max_operation_records does not fit this platform")
-            })?;
-        let operation_record_ttl = Duration::from_millis(config.limits.operation_record_ttl_ms);
-        let scoped_mounts = MountRegistry::initialize_scoped(config).map_err(|error| {
-            DaemonInitError::new(format!("mount initialization failed: {error}"))
-        })?;
-        let isolation = IsolationRuntime::initialize(config).map_err(|error| {
-            DaemonInitError::new(format!(
-                "execution isolation initialization failed: {error}"
-            ))
-        })?;
-        let transfers = TransferRegistry::new(config, generation)
-            .map_err(|_| DaemonInitError::new("transfer registry initialization failed"))?;
+impl Session {
+    fn new(
+        daemon: &Daemon,
+        owner: u64,
+        session_id: String,
+        working_directory: String,
+    ) -> Result<Self, DaemonInitError> {
+        let config = &daemon.config;
         let operations = OperationLedger::new(
-            config.environment_id.clone(),
-            generation,
-            max_operation_records,
-            operation_record_ttl,
+            config.device_id.clone(),
+            daemon.descriptor.generation,
+            session_id.clone(),
+            config.limits.max_operation_records as usize,
+            Duration::from_millis(config.limits.operation_record_ttl_ms),
             Duration::from_millis(config.limits.max_operation_duration_ms),
+            daemon.capacity.operations.clone(),
         );
-        let retention_quota = RetentionQuota::new(config)
-            .map_err(|_| DaemonInitError::new("retention quota initialization failed"))?;
-        let resources = ResourceRegistry::new(config, operations.clone());
-        let retention = RetentionStore::new(config, generation, retention_quota)
-            .map_err(|_| DaemonInitError::new("retention store initialization failed"))?;
-        let execution =
-            ExecutionManager::new(config, isolation.clone(), generation, retention.clone())
-                .map_err(|_| DaemonInitError::new("execution manager initialization failed"))?;
-        let scoped_descriptor = build_descriptor(
+        let retention =
+            RetentionStore::new(config, daemon.ids.clone(), daemon.retention_quota.clone())
+                .map_err(|_| DaemonInitError::new("retention initialization failed"))?;
+        let execution = ExecutionManager::new(
             config,
-            generation,
-            &scoped_mounts,
-            &isolation,
-            execution.as_ref(),
-        );
-        let surfaces = AuthoritySurfaces {
-            scoped: AuthoritySurface {
-                mounts: scoped_mounts,
-                descriptor: scoped_descriptor,
+            daemon.descriptor.generation,
+            session_id.clone(),
+            working_directory.clone(),
+            daemon.ids.clone(),
+            retention.clone(),
+            daemon.capacity.processes.clone(),
+        )
+        .map_err(|_| DaemonInitError::new("execution initialization failed"))?;
+        let transfers = TransferRegistry::new(
+            config,
+            session_id.clone(),
+            daemon.ids.clone(),
+            daemon.capacity.transfers.clone(),
+        )
+        .map_err(|_| DaemonInitError::new("transfer initialization failed"))?;
+        let descriptor = SessionDescriptor {
+            device_id: config.device_id.clone(),
+            generation: daemon.descriptor.generation,
+            session_id,
+            working_directory,
+            available_methods: session_methods(config),
+            limits: config.limits.descriptor(),
+            shell_profiles: execution
+                .as_ref()
+                .map(ExecutionManager::shell_profiles)
+                .unwrap_or_default(),
+            execution_features: ExecutionFeatures {
+                process_count_limit: false,
+                memory_bytes_limit: false,
+                cpu_time_limit: false,
+                signal_interrupt: execution.is_some() && cfg!(unix),
+                signal_terminate: execution.is_some() && cfg!(unix),
             },
+            lifecycle: daemon.descriptor.lifecycle.clone(),
         };
         let (closed, _) = watch::channel(false);
         Ok(Self {
-            surfaces,
+            closed,
+            descriptor,
+            filesystem: daemon.filesystem.for_session(),
+            cleanup: tokio::sync::Mutex::new(()),
+            history: Arc::new(RwLock::new(())),
+            request_capacity: Arc::new(Semaphore::new(
+                config.limits.max_concurrent_operations as usize,
+            )),
+            keepalive_capacity: Arc::new(Semaphore::new(1)),
+            cleanup_capacity: Arc::new(Semaphore::new(4)),
             session: SessionAdmission {
                 state: Mutex::new(SessionAdmissionState {
-                    lifecycle: SessionState::Uninitialized,
+                    owner: Some(owner),
+                    last_activity: Instant::now(),
+                    detached_at: None,
+                    lifecycle: SessionState::Initialized,
                     active_session_work: 0,
                 }),
                 idle: Notify::new(),
             },
             max_operation_duration: Duration::from_millis(config.limits.max_operation_duration_ms),
+            history_ttl: Duration::from_millis(config.limits.operation_record_ttl_ms),
+            resources: ResourceRegistry::new(config, operations.clone()),
             operations,
-            resources,
             retention,
             execution,
             transfers,
-            closed,
-            max_response_bytes,
-            next_carrier_attempt: AtomicU64::new(1),
         })
     }
 
-    pub(crate) fn subscribe_closed(&self) -> watch::Receiver<bool> {
+    fn under_pressure(&self) -> bool {
+        self.operations.under_pressure()
+            || self.transfers.under_pressure()
+            || self.retention.under_pressure()
+            || self
+                .execution
+                .as_ref()
+                .is_some_and(ExecutionManager::under_pressure)
+    }
+
+    async fn collect_history(&self, pressure: bool) {
+        let Ok(_history) = self.history.try_write() else {
+            return;
+        };
+        if self.session.state().lifecycle == SessionState::Closed {
+            return;
+        }
+        if let Some(execution) = &self.execution {
+            for (kind, selector) in execution.collect(self.history_ttl, pressure).await {
+                self.operations.release_selector(&kind, &selector);
+            }
+        }
+        for selector in self.retention.collect(self.history_ttl, pressure).await {
+            self.operations.release_selector("output", &selector);
+        }
+        self.transfers.collect(pressure);
+        self.operations.collect(pressure);
+    }
+
+    fn subscribe_closed(&self) -> watch::Receiver<bool> {
         self.closed.subscribe()
     }
 
-    pub(crate) fn track_pending_payload(&self, payload: &str) -> Option<PendingOperationGuard> {
-        let value = serde_json::from_str::<serde_json::Value>(payload).ok()?;
-        let operation_id = value
-            .get("params")?
-            .get("context")?
-            .get("operation_id")?
-            .as_str()?;
-        Some(self.operations.track_pending(operation_id.to_owned()))
-    }
-
-    pub(crate) fn has_active_file_transfers(&self) -> bool {
-        self.transfers.has_active()
-    }
-
-    pub(crate) fn begin_session(
-        &self,
-        sender: mpsc::Sender<eip::DataFrame>,
-    ) -> Result<(), DaemonInitError> {
-        let mut session = self.session.state();
-        if !matches!(
-            session.lifecycle,
-            SessionState::Uninitialized | SessionState::Closed
-        ) || session.active_session_work != 0
-        {
-            return Err(DaemonInitError::new("another EIP session is still active"));
-        }
-        self.transfers
-            .begin_session(sender)
-            .map_err(|_| DaemonInitError::new("transfer session is still active"))?;
-        session.lifecycle = SessionState::Uninitialized;
-        self.closed.send_replace(false);
-        Ok(())
-    }
-
-    pub(crate) fn session_initialized(&self) -> bool {
-        matches!(
-            self.session.state().lifecycle,
-            SessionState::Initialized | SessionState::Ready | SessionState::NotReady
-        )
-    }
-
-    pub(crate) async fn handle_data_frame(
-        &self,
-        frame: eip::DataFrame,
-    ) -> Result<(), TransferError> {
-        let _work = self.session.admit_work().ok_or(TransferError::Protocol)?;
-        self.transfers.handle_frame(frame).await
-    }
-
-    pub(crate) async fn transport_closed(&self, budget: Duration) -> bool {
+    async fn close(&self, budget: Duration) -> bool {
+        let Ok(_cleanup) = tokio::time::timeout(budget, self.cleanup.lock()).await else {
+            return false;
+        };
         self.session.close();
         self.closed.send_replace(true);
-        self.transfers.begin_session_close();
-        let admission_budget = budget / 2;
-        let admission_idle = tokio::time::timeout(admission_budget, self.session.wait_until_idle())
-            .await
-            .is_ok();
-        let transfers_closed = tokio::time::timeout(
-            budget.saturating_sub(admission_budget),
-            self.transfers.close_session(),
-        )
-        .await
-        .is_ok();
-        admission_idle && transfers_closed
-    }
-
-    pub(crate) async fn drain_processes(&self, budget: Duration) -> bool {
-        match &self.execution {
-            Some(execution) => execution.drain(budget).await,
-            None => true,
-        }
-    }
-
-    pub(crate) async fn drain_owned_operations(&self, budget: Duration) -> bool {
-        let started = Instant::now();
         self.operations.begin_drain();
-        let tasks_drained =
-            tokio::time::timeout(budget / 2, self.operations.wait_until_owned_idle())
+        self.transfers.begin_session_close();
+        // Fence and cancel first. Waiting for an active process before cancelling would deadlock close.
+        tokio::time::timeout(budget, async {
+            let execution_closed = match &self.execution {
+                Some(execution) => execution.drain(budget / 2).await,
+                None => true,
+            };
+            let transfers_closed = self.transfers.close_session().await;
+            self.operations.wait_until_owned_idle().await;
+            self.session.wait_until_idle().await;
+            self.transfers.reconcile_committing().await;
+            let outputs_closed = execution_closed && self.retention.close().await;
+            let filesystem = self.filesystem.clone();
+            let candidates_closed = tokio::task::spawn_blocking(move || filesystem.retry_cleanup())
                 .await
-                .is_ok();
-        let transfers_reconciled = tokio::time::timeout(
-            budget.saturating_sub(started.elapsed()),
-            self.transfers.reconcile_committing(),
-        )
+                .unwrap_or(false);
+            transfers_closed && outputs_closed && candidates_closed
+        })
         .await
-        .is_ok();
-        tasks_drained && transfers_reconciled
+        .unwrap_or(false)
     }
 
     #[allow(
@@ -438,222 +1106,38 @@ impl Daemon {
         }
     }
 
-    pub(crate) async fn maintenance(&self) {
-        self.transfers.expire().await;
-    }
-
-    #[cfg(test)]
-    pub(crate) async fn handle_payload(&self, payload: &str) -> Vec<u8> {
-        let response = self.handle_payload_for_carrier(payload).await;
-        let (payload, handoff, _) = response.into_parts();
-        if let Some(handoff) = handoff {
-            handoff.complete();
-        }
-        payload
-    }
-
-    pub(crate) async fn handle_payload_for_carrier(&self, payload: &str) -> CarrierResponse {
-        let attempt = self.next_carrier_attempt.fetch_add(1, Ordering::Relaxed);
-        scope_carrier_attempt(attempt, Box::pin(self.handle_payload_core(payload))).await
-    }
-
-    async fn handle_payload_core(&self, payload: &str) -> CarrierResponse {
-        let request = match eip::decode::<JsonRpcRequest>(payload) {
-            Ok(request) => request,
-            Err(error) => {
-                let request_id = match &error {
-                    eip::DecodeError::Validation(_) => recover_request_id(payload),
-                    eip::DecodeError::Json(_) => None,
-                };
-                let error_type = match error {
-                    eip::DecodeError::Json(error)
-                        if matches!(
-                            error.classify(),
-                            serde_json::error::Category::Syntax | serde_json::error::Category::Eof
-                        ) =>
-                    {
-                        ErrorType::ParseError
-                    }
-                    eip::DecodeError::Json(_) | eip::DecodeError::Validation(_) => {
-                        ErrorType::InvalidRequest
-                    }
-                };
-                self.close_if_uninitialized();
-                return CarrierResponse::plain(self.error_response(
-                    request_id,
-                    protocol_error(error_type, error_type_message(error_type)),
-                ));
-            }
-        };
-
-        if !valid_request_id(&request.id) {
-            self.close_if_uninitialized();
-            return CarrierResponse::plain(self.error_response(
-                None,
-                protocol_error(ErrorType::InvalidRequest, "invalid JSON-RPC request ID"),
-            ));
-        }
-
-        let request_id = request.id.clone();
-        if let Err(error) = self.preflight(&request.method).await {
-            return CarrierResponse::plain(self.error_response(Some(request_id), error));
-        }
-
-        let params_json = match serde_json::to_string(&request.params) {
-            Ok(params) => params,
-            Err(_) => {
-                return CarrierResponse::plain(self.error_response(
-                    Some(request_id),
-                    protocol_error(ErrorType::InternalError, "failed to encode request params"),
-                ));
-            }
-        };
-        let is_initialization = request.method == "initialize";
-        let is_session_close = request.method == "session.close";
-        let result = eip::dispatch(self, &request.method, &params_json).await;
-        let closes_session = is_session_close && result.is_ok();
-        if let Err(DispatchError::Method {
-            error,
-            method,
-            params,
-        }) = &result
-        {
-            self.operations
-                .finish_dispatched_failure(method, params, error.clone());
-        }
-        if is_initialization && result.is_err() {
-            self.close_if_uninitialized();
-        }
-
-        let handoff = match &result {
-            Ok(success) => self
-                .operations
-                .active_response_handoff(success.method, &success.params),
-            Err(DispatchError::Method { method, params, .. }) => {
-                self.operations.active_response_handoff(method, params)
-            }
-            Err(_) => None,
-        };
-        let payload = match result {
-            Ok(success) if matches!(success.result, serde_json::Value::Object(_)) => {
-                let serde_json::Value::Object(fields) = success.result else {
-                    unreachable!("guarded object result")
-                };
-                let response = JsonRpcSuccessResponse {
-                    jsonrpc: "2.0".to_owned(),
-                    id: request_id,
-                    result: fields.into_iter().collect(),
-                    extensions: BTreeMap::new(),
-                };
-                match eip::encode(&response) {
-                    Ok(encoded) if encoded.len() <= self.max_response_bytes => encoded,
-                    Ok(_) | Err(_) => self.error_response(
-                        Some(response.id),
-                        protocol_error(ErrorType::InternalError, "response encoding failed"),
-                    ),
-                }
-            }
-            Ok(_) => self.error_response(
-                Some(request_id),
-                protocol_error(
-                    ErrorType::InternalError,
-                    "method returned a non-object result",
-                ),
-            ),
-            Err(error) => {
-                self.error_response(Some(request_id), map_dispatch_error(error, &request.method))
-            }
-        };
-        CarrierResponse {
-            payload,
-            handoff,
-            closes_session,
-        }
-    }
-
-    #[allow(
-        clippy::result_large_err,
-        reason = "the generated protocol error is the daemon's public error contract"
-    )]
-    async fn preflight(&self, method: &str) -> Result<(), EIPError> {
-        let mut state = self.session.state();
-        match state.lifecycle {
-            SessionState::Uninitialized if method == "initialize" => Ok(()),
-            SessionState::Uninitialized => {
-                state.lifecycle = SessionState::Closed;
-                self.closed.send_replace(true);
-                Err(protocol_error(
-                    ErrorType::NotInitialized,
-                    "initialize must be the first request",
-                ))
-            }
-            SessionState::Initialized | SessionState::Ready | SessionState::NotReady
-                if method == "initialize" =>
-            {
-                Err(protocol_error(
-                    ErrorType::AlreadyInitialized,
-                    "session is already initialized",
-                ))
-            }
-            SessionState::Initialized | SessionState::Ready | SessionState::NotReady => {
-                if !eip::METHODS.iter().any(|known| known.name == method) {
-                    return Err(protocol_error(
-                        ErrorType::MethodNotFound,
-                        "method not found",
-                    ));
-                }
-                let surface = &self.surfaces.scoped;
-                if !surface
-                    .descriptor
-                    .available_methods
-                    .iter()
-                    .any(|advertised| advertised == method)
-                {
-                    return Err(protocol_error(
-                        ErrorType::Unsupported,
-                        "method is not available",
-                    ));
-                }
-                match state.lifecycle {
-                    SessionState::Initialized
-                        if matches!(method, "environment.readiness" | "session.close") =>
-                    {
-                        Ok(())
-                    }
-                    SessionState::Initialized => Err(protocol_error(
-                        ErrorType::NotInitialized,
-                        "session readiness is not established",
-                    )),
-                    SessionState::Ready => Ok(()),
-                    SessionState::NotReady if method == "session.close" => Ok(()),
-                    SessionState::NotReady => Err(protocol_error(
-                        ErrorType::NotInitialized,
-                        "session is not ready",
-                    )),
-                    SessionState::Uninitialized | SessionState::Closed => {
-                        unreachable!("matched initialized session state")
-                    }
-                }
-            }
-            SessionState::Closed => Err(protocol_error(
+    #[allow(clippy::result_large_err)]
+    fn preflight(&self, method: &str) -> Result<(), EIPError> {
+        let state = self.session.state();
+        if state.lifecycle == SessionState::Closed {
+            return Err(protocol_error(
                 ErrorType::NotInitialized,
                 "session is closed",
-            )),
+            ));
         }
-    }
-
-    fn close_if_uninitialized(&self) {
-        let mut state = self.session.state();
-        if state.lifecycle == SessionState::Uninitialized {
-            state.lifecycle = SessionState::Closed;
-            self.closed.send_replace(true);
+        if !self
+            .descriptor
+            .available_methods
+            .iter()
+            .any(|available| available == method)
+        {
+            return Err(protocol_error(
+                ErrorType::Unsupported,
+                "method is not available",
+            ));
         }
-    }
-
-    #[allow(clippy::result_large_err)]
-    fn effective_surface(&self) -> Result<&AuthoritySurface, EIPError> {
-        self.ensure_ready()?;
-        Ok(&self.surfaces.scoped)
+        if state.lifecycle != SessionState::Ready
+            && !matches!(
+                method,
+                "environment.readiness" | "session.attach" | "session.keepalive" | "session.close"
+            )
+        {
+            return Err(protocol_error(
+                ErrorType::NotInitialized,
+                "session readiness is not established",
+            ));
+        }
+        Ok(())
     }
 
     #[allow(clippy::result_large_err)]
@@ -730,24 +1214,9 @@ impl Daemon {
             )
         })
     }
-
-    fn error_response(&self, id: Option<JsonRpcId>, error: EIPError) -> Vec<u8> {
-        let response = JsonRpcErrorResponse {
-            jsonrpc: "2.0".to_owned(),
-            id,
-            error,
-            extensions: BTreeMap::new(),
-        };
-        match eip::encode(&response) {
-            Ok(encoded) if encoded.len() <= self.max_response_bytes => encoded,
-            Ok(_) | Err(_) => {
-                b"{\"error\":{\"code\":-32603,\"data\":{\"dispatch_stage\":\"pre_dispatch\",\"error_type\":\"internal_error\",\"retry_hint\":\"never\"},\"message\":\"response encoding failed\"},\"id\":null,\"jsonrpc\":\"2.0\"}".to_vec()
-            }
-        }
-    }
 }
 
-impl EipHandler for Daemon {
+impl EipSessionHandler for Session {
     async fn environment_readiness(
         &self,
         params: EnvironmentReadinessParams,
@@ -779,10 +1248,11 @@ impl EipHandler for Daemon {
             BeginOutcome::ReplayFailure(error) => return Err(*error),
             BeginOutcome::New(operation) => operation,
         };
-        let descriptor = &self.surfaces.scoped.descriptor;
+        let descriptor = &self.descriptor;
         let result = EnvironmentReadinessResult {
             ready,
-            environment_id: descriptor.environment_id.clone(),
+            device_id: descriptor.device_id.clone(),
+            session_id: descriptor.session_id.clone(),
             generation: descriptor.generation,
         };
         operation.finish(&result, None).map_err(map_ledger_error)?;
@@ -800,99 +1270,39 @@ impl EipHandler for Daemon {
             BeginOutcome::New(operation) => operation,
         };
         let result = EnvironmentDescribeResult {
-            descriptor: self.effective_surface()?.descriptor.clone(),
+            descriptor: self.descriptor.clone(),
         };
         operation.finish(&result, None).map_err(map_ledger_error)?;
         Ok(result)
     }
 
-    async fn initialize(&self, params: InitializeParams) -> Result<InitializeResult, EIPError> {
-        let mut state = self.session.state();
-        if state.lifecycle != SessionState::Uninitialized {
-            return Err(protocol_error(
-                ErrorType::AlreadyInitialized,
-                "session is already initialized",
-            ));
-        }
-
-        let surface = &self.surfaces.scoped;
-        let failure = if !params
-            .supported_protocol_versions
-            .iter()
-            .any(|version| version == eip::EIP_PROTOCOL_VERSION)
-        {
-            Some(protocol_error(
-                ErrorType::ProtocolIncompatible,
-                "no mutually supported EIP protocol version",
-            ))
-        } else if params.expected_environment_id != self.surfaces.scoped.descriptor.environment_id {
-            Some(protocol_error(
-                ErrorType::ProtocolIncompatible,
-                "expected Environment identity does not match",
-            ))
-        } else {
-            let descriptor = &surface.descriptor;
-            params
-                .required_methods
-                .iter()
-                .find(|required| !descriptor.available_methods.contains(required))
-                .map(|required| {
-                    protocol_error(
-                        ErrorType::ProtocolIncompatible,
-                        format!("required method is not available: {required}"),
-                    )
-                })
-        };
-
-        if let Some(error) = failure {
-            state.lifecycle = SessionState::Closed;
-            self.closed.send_replace(true);
-            return Err(error);
-        }
-
-        let descriptor = surface.descriptor.clone();
-        state.lifecycle = SessionState::Initialized;
-        Ok(InitializeResult {
-            protocol_version: eip::EIP_PROTOCOL_VERSION.to_owned(),
-            server: EIPServerInfo {
-                name: "a13n-envd".to_owned(),
-                version: env!("CARGO_PKG_VERSION").to_owned(),
-            },
-            descriptor,
+    async fn session_attach(
+        &self,
+        _params: eip::SessionAttachParams,
+    ) -> Result<eip::SessionOpenResult, EIPError> {
+        Ok(eip::SessionOpenResult {
+            descriptor: self.descriptor.clone(),
         })
+    }
+
+    async fn session_keepalive(
+        &self,
+        _params: eip::SessionKeepaliveParams,
+    ) -> Result<eip::SessionKeepaliveResult, EIPError> {
+        Ok(eip::SessionKeepaliveResult { alive: true })
     }
 
     async fn session_close(
         &self,
-        params: SessionCloseParams,
+        _params: SessionCloseParams,
     ) -> Result<SessionCloseResult, EIPError> {
-        let operation = {
-            let mut session = self.session.state();
-            if !matches!(
-                session.lifecycle,
-                SessionState::Initialized | SessionState::Ready | SessionState::NotReady
-            ) {
-                return Err(protocol_error(
-                    ErrorType::NotInitialized,
-                    "session is not initialized",
-                ));
-            }
-            let operation = self.begin_record("session.close", &params.context, &params)?;
-            session.lifecycle = SessionState::Closed;
-            operation
-        };
-        let operation = match operation {
-            BeginOutcome::Replay(value) => return self.decode_replay(value),
-            BeginOutcome::ReplayFailure(error) => return Err(*error),
-            BeginOutcome::New(operation) => operation,
-        };
-        self.closed.send_replace(true);
-        self.transfers.begin_session_close();
-        self.session.wait_until_idle().await;
-        self.transfers.close_session().await;
-        let result = SessionCloseResult { closed: true };
-        operation.finish(&result, None).map_err(map_ledger_error)?;
-        Ok(result)
+        if !self.close(Duration::from_secs(10)).await {
+            return Err(protocol_error(
+                ErrorType::InternalError,
+                "session cleanup is incomplete",
+            ));
+        }
+        Ok(SessionCloseResult { closed: true })
     }
 
     async fn file_open_reader(
@@ -912,10 +1322,10 @@ impl EipHandler for Daemon {
             BeginOutcome::ReplayFailure(error) => return Err(*error),
             BeginOutcome::New(operation) => operation,
         };
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let result = self
             .transfers
-            .open_reader(&mounts, &params)
+            .open_reader(&filesystem, &params)
             .await
             .map_err(map_transfer_error)?;
         operation.finish(&result, None).map_err(map_ledger_error)?;
@@ -958,10 +1368,10 @@ impl EipHandler for Daemon {
             BeginOutcome::ReplayFailure(error) => return Err(*error),
             BeginOutcome::New(operation) => operation,
         };
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let result = self
             .transfers
-            .open_writer(&mounts, &params)
+            .open_writer(&filesystem, &params)
             .await
             .map_err(map_transfer_error)?;
         operation.finish(&result, None).map_err(map_ledger_error)?;
@@ -1054,9 +1464,9 @@ impl EipHandler for Daemon {
             BeginOutcome::New(operation) => operation,
         };
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let call = params.clone();
-        let result = tokio::task::spawn_blocking(move || resources.stat(&mounts, &call))
+        let result = tokio::task::spawn_blocking(move || resources.stat(&filesystem, &call))
             .await
             .map_err(|_| protocol_error(ErrorType::InternalError, "resource worker failed"))?
             .map_err(map_resource_error)?;
@@ -1075,9 +1485,9 @@ impl EipHandler for Daemon {
             BeginOutcome::New(operation) => operation,
         };
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let call = params.clone();
-        let result = tokio::task::spawn_blocking(move || resources.read_text(&mounts, &call))
+        let result = tokio::task::spawn_blocking(move || resources.read_text(&filesystem, &call))
             .await
             .map_err(|_| protocol_error(ErrorType::InternalError, "resource worker failed"))?
             .map_err(map_resource_error)?;
@@ -1096,9 +1506,9 @@ impl EipHandler for Daemon {
             BeginOutcome::New(operation) => operation,
         };
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let call = params.clone();
-        let result = tokio::task::spawn_blocking(move || resources.list(&mounts, &call))
+        let result = tokio::task::spawn_blocking(move || resources.list(&filesystem, &call))
             .await
             .map_err(|_| protocol_error(ErrorType::InternalError, "resource worker failed"))?
             .map_err(map_resource_error)?;
@@ -1117,9 +1527,9 @@ impl EipHandler for Daemon {
             BeginOutcome::New(operation) => operation,
         };
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let call = params.clone();
-        let result = tokio::task::spawn_blocking(move || resources.find(&mounts, &call))
+        let result = tokio::task::spawn_blocking(move || resources.find(&filesystem, &call))
             .await
             .map_err(|_| protocol_error(ErrorType::InternalError, "resource worker failed"))?
             .map_err(map_resource_error)?;
@@ -1138,9 +1548,9 @@ impl EipHandler for Daemon {
             BeginOutcome::New(operation) => operation,
         };
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let call = params.clone();
-        let result = tokio::task::spawn_blocking(move || resources.search(&mounts, &call))
+        let result = tokio::task::spawn_blocking(move || resources.search(&filesystem, &call))
             .await
             .map_err(|_| protocol_error(ErrorType::InternalError, "resource worker failed"))?
             .map_err(map_resource_error)?;
@@ -1163,12 +1573,12 @@ impl EipHandler for Daemon {
         let (operation, receipt) = mutation_receipt(operation, "file.write_text")?;
         let operation_id = params.context.operation_id.clone();
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let owned = self
             .operations
             .spawn_owned(operation_id.clone(), async move {
                 let write =
-                    tokio::task::spawn_blocking(move || resources.write_text(&mounts, &params))
+                    tokio::task::spawn_blocking(move || resources.write_text(&filesystem, &params))
                         .await;
                 let (info, bytes_written) = match write {
                     Ok(Ok(result)) => result,
@@ -1215,12 +1625,13 @@ impl EipHandler for Daemon {
         let (operation, receipt) = mutation_receipt(operation, "file.commit")?;
         let operation_id = params.context.operation_id.clone();
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let owned = self
             .operations
             .spawn_owned(operation_id.clone(), async move {
                 let write =
-                    tokio::task::spawn_blocking(move || resources.commit(&mounts, &params)).await;
+                    tokio::task::spawn_blocking(move || resources.commit(&filesystem, &params))
+                        .await;
                 let files_written = match write {
                     Ok(Ok(result)) => result,
                     Ok(Err(error)) => {
@@ -1265,12 +1676,13 @@ impl EipHandler for Daemon {
         let (operation, receipt) = mutation_receipt(operation, "file.mkdir")?;
         let operation_id = params.context.operation_id.clone();
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let owned = self
             .operations
             .spawn_owned(operation_id.clone(), async move {
                 let mkdir =
-                    tokio::task::spawn_blocking(move || resources.mkdir(&mounts, &params)).await;
+                    tokio::task::spawn_blocking(move || resources.mkdir(&filesystem, &params))
+                        .await;
                 let (info, created_directories) = match mkdir {
                     Ok(Ok(result)) => result,
                     Ok(Err(error)) => {
@@ -1317,12 +1729,12 @@ impl EipHandler for Daemon {
         let (operation, receipt) = mutation_receipt(operation, "file.patch_text")?;
         let operation_id = params.context.operation_id.clone();
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let owned = self
             .operations
             .spawn_owned(operation_id.clone(), async move {
                 let patch =
-                    tokio::task::spawn_blocking(move || resources.patch_text(&mounts, &params))
+                    tokio::task::spawn_blocking(move || resources.patch_text(&filesystem, &params))
                         .await;
                 let (info, hunks_applied) = match patch {
                     Ok(Ok(result)) => result,
@@ -1369,12 +1781,12 @@ impl EipHandler for Daemon {
         let (operation, receipt) = mutation_receipt(operation, "file.copy")?;
         let operation_id = params.context.operation_id.clone();
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let owned = self
             .operations
             .spawn_owned(operation_id.clone(), async move {
                 let copy =
-                    tokio::task::spawn_blocking(move || resources.copy(&mounts, &params)).await;
+                    tokio::task::spawn_blocking(move || resources.copy(&filesystem, &params)).await;
                 let (destination, bytes_copied) = match copy {
                     Ok(Ok(result)) => result,
                     Ok(Err(error)) => {
@@ -1420,12 +1832,12 @@ impl EipHandler for Daemon {
         let (operation, receipt) = mutation_receipt(operation, "file.move")?;
         let operation_id = params.context.operation_id.clone();
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let owned = self
             .operations
             .spawn_owned(operation_id.clone(), async move {
                 let moved =
-                    tokio::task::spawn_blocking(move || resources.move_path(&mounts, &params))
+                    tokio::task::spawn_blocking(move || resources.move_path(&filesystem, &params))
                         .await;
                 let destination = match moved {
                     Ok(Ok(result)) => result,
@@ -1471,12 +1883,13 @@ impl EipHandler for Daemon {
         let (operation, receipt) = mutation_receipt(operation, "file.remove")?;
         let operation_id = params.context.operation_id.clone();
         let resources = self.resources.clone();
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let owned = self
             .operations
             .spawn_owned(operation_id.clone(), async move {
                 let removed =
-                    tokio::task::spawn_blocking(move || resources.remove(&mounts, &params)).await;
+                    tokio::task::spawn_blocking(move || resources.remove(&filesystem, &params))
+                        .await;
                 let removed_entries = match removed {
                     Ok(Ok(result)) => result,
                     Ok(Err(error)) => {
@@ -1698,7 +2111,7 @@ impl EipHandler for Daemon {
     ) -> Result<eip::ProcessStartResult, EIPError> {
         self.ensure_ready()?;
         let execution = self.execution_manager()?;
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let operation = self.begin_record("process.start", &params.context, &params)?;
         let operation = match operation {
             BeginOutcome::Replay(value) => return self.decode_replay(value),
@@ -1706,7 +2119,7 @@ impl EipHandler for Daemon {
             BeginOutcome::New(operation) => operation,
         };
         let started = match execution
-            .start(&mounts, &params.request, true, || {
+            .start(&filesystem, &params.request, true, || {
                 match self.operations.interruption(&params.context.operation_id) {
                     Some(OperationInterruption::Cancelled) => {
                         return Err(ProcessError::PreDispatchCancelled);
@@ -2029,11 +2442,11 @@ impl EipHandler for Daemon {
             BeginOutcome::New(operation) => operation,
         };
         let execution = self.execution_manager()?;
-        let mounts = self.effective_surface()?.mounts.clone();
+        let filesystem = self.filesystem.clone();
         let hard_deadline =
             effective_deadline(params.context.timeout_ms, self.max_operation_duration)?;
         let started = match execution
-            .start(&mounts, &params.request, true, || {
+            .start(&filesystem, &params.request, true, || {
                 match self.operations.interruption(&params.context.operation_id) {
                     Some(OperationInterruption::Cancelled) => {
                         return Err(ProcessError::PreDispatchCancelled);
@@ -2185,7 +2598,8 @@ fn mutation_pre_dispatch_failure(
     if let Ok(receipt) = operation.receipt(method, ReceiptStage::Accepted, Some(outcome)) {
         error.data.dispatch_stage = DispatchStage::PreDispatch;
         error.data.operation_id = Some(receipt.operation_id.clone());
-        error.data.environment_id = Some(receipt.environment_id.clone());
+        error.data.device_id = Some(receipt.device_id.clone());
+        error.data.session_id = Some(receipt.session_id.clone());
         error.data.generation = Some(receipt.generation);
         error.data.receipt = Some(receipt.clone());
         operation.finish_failure(receipt, error.clone());
@@ -2208,7 +2622,8 @@ fn mutation_failure(operation: OperationLease, method: &str, mut error: EIPError
             DispatchStage::Completed
         };
         error.data.operation_id = Some(receipt.operation_id.clone());
-        error.data.environment_id = Some(receipt.environment_id.clone());
+        error.data.device_id = Some(receipt.device_id.clone());
+        error.data.session_id = Some(receipt.session_id.clone());
         error.data.generation = Some(receipt.generation);
         error.data.receipt = Some(receipt.clone());
         operation.finish_failure(receipt, error.clone());
@@ -2244,7 +2659,8 @@ fn mutation_receipt_at(
     failure.data.retry_hint = RetryHint::ReconcileFirst;
     failure.data.dispatch_stage = DispatchStage::Unknown;
     failure.data.operation_id = Some(unknown_receipt.operation_id.clone());
-    failure.data.environment_id = Some(unknown_receipt.environment_id.clone());
+    failure.data.device_id = Some(unknown_receipt.device_id.clone());
+    failure.data.session_id = Some(unknown_receipt.session_id.clone());
     failure.data.generation = Some(unknown_receipt.generation);
     failure.data.receipt = Some(unknown_receipt.clone());
     operation.preserve_failure_on_drop(unknown_receipt, failure);
@@ -2694,7 +3110,8 @@ fn protocol_error(error_type: ErrorType, message: impl Into<String>) -> EIPError
             retry_hint: RetryHint::Never,
             dispatch_stage: DispatchStage::PreDispatch,
             operation_id: None,
-            environment_id: None,
+            device_id: None,
+            session_id: None,
             generation: None,
             field: None,
             handle_kind: None,
@@ -2782,9 +3199,9 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use crate::eip::FileWriterOpenParams;
     use crate::{
-        config::{Config, TrustedMountConfig},
+        config::Config,
         eip::{
-            EIPCallContext, EIPPath, EipHandler, EnvironmentDescribeParams, FileWriteMode,
+            EIPCallContext, EIPPath, EipSessionHandler, EnvironmentDescribeParams, FileWriteMode,
             FileWriteTextParams, OperationCancelParams, OperationCancelStatus,
         },
         operation::{BeginOutcome, random_selector},
@@ -2814,31 +3231,114 @@ mod tests {
         }
     }
 
+    struct Fixture {
+        device: Daemon,
+        carrier: Arc<super::Carrier>,
+        opened: std::sync::OnceLock<Arc<super::Session>>,
+        _outbound: Mutex<tokio::sync::mpsc::Receiver<crate::eip::DataFrame>>,
+    }
+
+    impl std::ops::Deref for Fixture {
+        type Target = super::Session;
+        fn deref(&self) -> &Self::Target {
+            self.opened.get().expect("explicitly opened Session")
+        }
+    }
+
+    impl Fixture {
+        fn new(config: &Config, generation: u64) -> Self {
+            let device = Daemon::with_generation(config, generation).unwrap();
+            let (sender, receiver) = tokio::sync::mpsc::channel(16);
+            let carrier = device.carrier(sender);
+            Self {
+                device,
+                carrier,
+                opened: std::sync::OnceLock::new(),
+                _outbound: Mutex::new(receiver),
+            }
+        }
+
+        fn open_params(&self, required_methods: Value) -> Value {
+            json!({"expected_device_id": self.device.descriptor.device_id,
+                "expected_generation": self.device.descriptor.generation,
+                "protocol_version": "0.1",
+                "working_directory": self.device.descriptor.default_working_directory,
+                "required_methods": required_methods})
+        }
+
+        fn scoped_payload(&self, payload: &str) -> String {
+            let mut value: Value = serde_json::from_str(payload).unwrap();
+            let method = value["method"].as_str().unwrap();
+            if !crate::eip::METHODS
+                .iter()
+                .any(|m| m.name == method && m.device_scoped)
+                && let Some(session) = self.opened.get()
+            {
+                value["eip_session"] = json!(session.descriptor.session_id);
+            }
+            value.to_string()
+        }
+
+        async fn handle_payload_for_carrier(&self, payload: &str) -> super::CarrierResponse {
+            self.device
+                .handle_payload_for_carrier(&self.carrier, &self.scoped_payload(payload))
+                .await
+        }
+
+        async fn handle_payload(&self, payload: &str) -> Vec<u8> {
+            let (bytes, handoff) = self.handle_payload_for_carrier(payload).await.into_parts();
+            if let Some(handoff) = handoff {
+                handoff.complete();
+            }
+            bytes
+        }
+
+        async fn call(&self, method: &str, params: Value) -> Value {
+            serde_json::from_slice(
+                &self
+                    .handle_payload(&request(json!(1), method, params))
+                    .await,
+            )
+            .unwrap()
+        }
+
+        fn track_pending_payload(
+            &self,
+            payload: &str,
+        ) -> Option<crate::operation::PendingOperationGuard> {
+            self.device
+                .track_pending_payload(&self.scoped_payload(payload))
+        }
+    }
+
     fn request(id: Value, method: &str, params: Value) -> String {
         json!({"jsonrpc": "2.0", "id": id, "method": method, "params": params}).to_string()
     }
 
-    fn initialize_params(required_methods: Value) -> Value {
+    fn initialize_params() -> Value {
         json!({
             "supported_protocol_versions": ["0.1"],
             "client": {"name": "test", "version": "1"},
-            "expected_environment_id": "env-test",
-            "required_methods": required_methods
+            "expected_device_id": "env-test"
         })
     }
 
-    async fn initialize_protocol(daemon: &Daemon) -> Value {
+    async fn initialize_protocol(daemon: &Fixture) -> Value {
         let bytes = daemon
-            .handle_payload(&request(
-                json!(1),
-                "initialize",
-                initialize_params(json!([])),
-            ))
+            .handle_payload(&request(json!(1), "initialize", initialize_params()))
             .await;
-        serde_json::from_slice(&bytes).expect("response is JSON")
+        let initialized: Value = serde_json::from_slice(&bytes).expect("response is JSON");
+        let opened = daemon
+            .call("session.open", daemon.open_params(json!([])))
+            .await;
+        let id = opened["result"]["descriptor"]["session_id"]
+            .as_str()
+            .expect("opened Session");
+        assert!(daemon.opened.set(daemon.device.lookup(id).unwrap()).is_ok());
+        initialized
     }
 
-    async fn readiness(daemon: &Daemon, request_id: u64, operation_id: &str) -> Value {
+    async fn readiness(daemon: &Fixture, request_id: u64, operation_id: &str) -> Value {
         let bytes = daemon
             .handle_payload(&request(
                 json!(request_id),
@@ -2854,11 +3354,43 @@ mod tests {
         serde_json::from_slice(&bytes).expect("response is JSON")
     }
 
-    async fn initialize(daemon: &Daemon) -> Value {
+    async fn initialize(daemon: &Fixture) -> Value {
         let initialized = initialize_protocol(daemon).await;
         let ready = readiness(daemon, 2, "readiness-initial").await;
         assert_eq!(ready["result"]["ready"], true);
         initialized
+    }
+
+    #[tokio::test]
+    async fn device_metadata_and_session_descriptor_are_distinct() {
+        let mut config = Config::for_test("env-test");
+        config.display_name = Some("Build Linux".into());
+        config.description = Some("Build artifacts".into());
+        let fixture = Fixture::new(&config, 7);
+        let initialized = initialize(&fixture).await;
+        assert_eq!(initialized["result"]["protocol_version"], "0.1");
+        let device = fixture.call("device.describe", json!({})).await;
+        assert_eq!(
+            device["result"]["descriptor"],
+            initialized["result"]["descriptor"]
+        );
+        assert_eq!(
+            device["result"]["descriptor"]["display_name"],
+            "Build Linux"
+        );
+        assert_eq!(
+            device["result"]["descriptor"]["description"],
+            "Build artifacts"
+        );
+        let session = fixture
+            .call(
+                "environment.describe",
+                json!({"context":{"operation_id":"describe"}}),
+            )
+            .await;
+        assert_eq!(session["result"]["descriptor"]["device_id"], "env-test");
+        assert!(session["result"]["descriptor"]["session_id"].is_string());
+        assert!(device["result"]["descriptor"].get("session_id").is_none());
     }
 
     #[test]
@@ -2871,25 +3403,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn carrier_loss_allows_a_fresh_session_in_the_same_generation() {
+    async fn carrier_loss_allows_attach_and_independent_open_in_the_same_generation() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 7).expect("daemon builds");
-        let (first_sender, _first_receiver) = tokio::sync::mpsc::channel(2);
-        daemon
-            .begin_session(first_sender)
-            .expect("first carrier begins a session");
-
-        let first = initialize(&daemon).await;
-        assert_eq!(first["result"]["descriptor"]["generation"], 7);
-        assert!(daemon.transport_closed(Duration::from_secs(1)).await);
-
-        let (second_sender, _second_receiver) = tokio::sync::mpsc::channel(2);
-        daemon
-            .begin_session(second_sender)
-            .expect("replacement carrier begins a fresh session");
-        assert!(!daemon.session_initialized());
-        let second = initialize(&daemon).await;
-        assert_eq!(second["result"]["descriptor"]["generation"], 7);
+        let fixture = Fixture::new(&config, 7);
+        initialize(&fixture).await;
+        let original = fixture.descriptor.clone();
+        fixture.device.detach(&fixture.carrier).await;
+        let (sender, _receiver) = tokio::sync::mpsc::channel(16);
+        let carrier = fixture.device.carrier(sender);
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(
+                &carrier,
+                &request(json!(1), "initialize", initialize_params()),
+            )
+            .await;
+        assert!(
+            serde_json::from_slice::<Value>(&response.payload)
+                .unwrap()
+                .get("result")
+                .is_some()
+        );
+        let mut attach: Value =
+            serde_json::from_str(&request(json!(2), "session.attach", json!({}))).unwrap();
+        attach["eip_session"] = json!(original.session_id);
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(&carrier, &attach.to_string())
+            .await;
+        let attached: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(
+            attached["result"]["descriptor"],
+            serde_json::to_value(original).unwrap()
+        );
+        let response = fixture
+            .device
+            .handle_payload_for_carrier(
+                &carrier,
+                &request(json!(3), "session.open", fixture.open_params(json!([]))),
+            )
+            .await;
+        let opened: Value = serde_json::from_slice(&response.payload).unwrap();
+        assert_eq!(opened["result"]["descriptor"]["generation"], 7);
+        assert_ne!(
+            opened["result"]["descriptor"]["session_id"],
+            attached["result"]["descriptor"]["session_id"]
+        );
     }
 
     #[test]
@@ -2904,7 +3463,7 @@ mod tests {
                     .expect("runtime builds");
                 runtime.block_on(async {
                     let config = Config::for_test("env-test");
-                    let daemon = Daemon::with_generation(&config, 7).expect("daemon builds");
+                    let daemon = Fixture::new(&config, 7);
                     let initialized = initialize(&daemon).await;
                     assert_eq!(initialized["result"]["descriptor"]["generation"], 7);
                 });
@@ -2915,67 +3474,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn initialize_describe_and_close_follow_session_lifecycle() {
+    async fn initialize_creates_no_session_and_session_close_preserves_carrier() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 7).expect("daemon builds");
-
-        let initialized = initialize(&daemon).await;
-        assert_eq!(initialized["result"]["protocol_version"], "0.1");
-        assert_eq!(initialized["result"]["descriptor"]["generation"], 7);
-        assert_eq!(
-            initialized["result"]["descriptor"]["available_methods"],
-            json!([
-                "environment.describe",
-                "environment.readiness",
-                "operation.cancel",
-                "port.inspect",
-                "port.wait",
-                "receipt.get",
-                "session.close"
-            ])
-        );
-        assert_eq!(
-            initialized["result"]["descriptor"]["execution_features"],
-            json!({
-                "process_count_limit": false,
-                "memory_bytes_limit": false,
-                "cpu_time_limit": false,
-                "per_command_network_deny": false,
-                "signal_interrupt": false,
-                "signal_terminate": false
-            })
-        );
-
-        let described: Value = serde_json::from_slice(
-            &daemon
-                .handle_payload(&request(
-                    json!(2),
-                    "environment.describe",
-                    json!({"context": {"operation_id": "describe-1"}}),
-                ))
-                .await,
-        )
-        .expect("response is JSON");
-        assert_eq!(described["result"]["descriptor"]["generation"], 7);
-
-        let closed: Value = serde_json::from_slice(
-            &daemon
-                .handle_payload(&request(
-                    json!(3),
-                    "session.close",
-                    json!({"context": {"operation_id": "close-1"}}),
-                ))
-                .await,
-        )
-        .expect("response is JSON");
+        let fixture = Fixture::new(&config, 7);
+        fixture.call("initialize", initialize_params()).await;
+        assert!(fixture.device.sessions().is_empty());
+        initialize(&fixture).await;
+        let sibling = fixture
+            .call("session.open", fixture.open_params(json!([])))
+            .await;
+        let sibling_id = sibling["result"]["descriptor"]["session_id"]
+            .as_str()
+            .unwrap();
+        let closed = fixture.call("session.close", json!({})).await;
         assert_eq!(closed["result"]["closed"], true);
-        assert!(*daemon.subscribe_closed().borrow());
+        assert!(*fixture.subscribe_closed().borrow());
+        assert!(!fixture.carrier.closed.load(Ordering::Acquire));
+        assert!(fixture.device.lookup(sibling_id).is_ok());
+        assert!(
+            fixture
+                .call("device.describe", json!({}))
+                .await
+                .get("result")
+                .is_some()
+        );
     }
 
     #[tokio::test]
     async fn readiness_gates_application_dispatch_and_reports_exact_generation() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 7).expect("daemon builds");
+        let daemon = Fixture::new(&config, 7);
 
         let initialized = initialize_protocol(&daemon).await;
         assert_eq!(initialized["result"]["descriptor"]["generation"], 7);
@@ -2993,7 +3521,7 @@ mod tests {
 
         let ready = readiness(&daemon, 3, "readiness-first").await;
         assert_eq!(ready["result"]["ready"], true);
-        assert_eq!(ready["result"]["environment_id"], "env-test");
+        assert_eq!(ready["result"]["device_id"], "env-test");
         assert_eq!(ready["result"]["generation"], 7);
 
         let later = readiness(&daemon, 4, "readiness-later").await;
@@ -3003,7 +3531,7 @@ mod tests {
     #[tokio::test]
     async fn draining_readiness_returns_false_and_still_allows_session_close() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 7).expect("daemon builds");
+        let daemon = Fixture::new(&config, 7);
         let _ = initialize_protocol(&daemon).await;
         daemon.operations.begin_drain();
 
@@ -3011,11 +3539,7 @@ mod tests {
         assert_eq!(readiness["result"]["ready"], false);
         let closed: Value = serde_json::from_slice(
             &daemon
-                .handle_payload(&request(
-                    json!(3),
-                    "session.close",
-                    json!({"context": {"operation_id": "close-not-ready"}}),
-                ))
+                .handle_payload(&request(json!(3), "session.close", json!({})))
                 .await,
         )
         .expect("response is JSON");
@@ -3029,26 +3553,18 @@ mod tests {
         let native = tree.child("native");
         fs::create_dir(&native).expect("native root");
         let mut config = Config::for_test("env-test");
-        config.mounts.push(TrustedMountConfig {
-            mount_id: "workspace".to_owned(),
-            native_root: native.clone(),
-            writable: true,
-            allow_command_execution: false,
-            max_file_bytes: 1024 * 1024,
-            allowed_operations: Vec::new(),
-        });
-        let daemon = Arc::new(Daemon::with_generation(&config, 71).expect("daemon builds"));
+        config.default_working_directory = crate::device_path::from_native(&native).unwrap();
+        let daemon = Arc::new(Fixture::new(&config, 71));
         let _ = initialize(&daemon).await;
-        EipHandler::file_open_writer(
-            daemon.as_ref(),
+        EipSessionHandler::file_open_writer(
+            daemon.opened.get().unwrap().as_ref(),
             FileWriterOpenParams {
                 context: EIPCallContext {
                     operation_id: "open-before-close".to_owned(),
                     timeout_ms: None,
                 },
                 path: EIPPath {
-                    mount_id: "workspace".to_owned(),
-                    path: "/candidate.bin".to_owned(),
+                    path: crate::device_path::from_native(&native.join("candidate.bin")).unwrap(),
                 },
                 mode: FileWriteMode::Create,
                 executable: None,
@@ -3062,16 +3578,13 @@ mod tests {
             .admit_work()
             .expect("admits work before teardown");
         let closing_daemon = Arc::clone(&daemon);
-        let closing = tokio::spawn(async move {
-            closing_daemon
-                .transport_closed(Duration::from_secs(1))
-                .await
-        });
+        let closing =
+            tokio::spawn(async move { closing_daemon.close(Duration::from_secs(1)).await });
         tokio::task::yield_now().await;
         assert!(!closing.is_finished());
         drop(in_flight);
         assert!(closing.await.expect("close waits for admitted work"));
-        assert!(!daemon.has_active_file_transfers());
+        assert!(daemon.transfers.close_session().await);
         assert_eq!(
             fs::read_dir(&native)
                 .expect("native directory")
@@ -3084,19 +3597,18 @@ mod tests {
             0
         );
 
-        let second = Arc::new(Daemon::with_generation(&config, 72).expect("daemon builds"));
+        let second = Arc::new(Fixture::new(&config, 72));
         let _ = initialize(&second).await;
-        assert!(second.transport_closed(Duration::from_secs(1)).await);
-        let rejected = EipHandler::file_write_text(
-            second.as_ref(),
+        assert!(second.close(Duration::from_secs(1)).await);
+        let rejected = EipSessionHandler::file_write_text(
+            second.opened.get().unwrap().as_ref(),
             FileWriteTextParams {
                 context: EIPCallContext {
                     operation_id: "write-after-close".to_owned(),
                     timeout_ms: None,
                 },
                 path: EIPPath {
-                    mount_id: "workspace".to_owned(),
-                    path: "/too-late.txt".to_owned(),
+                    path: crate::device_path::from_native(&native.join("too-late.txt")).unwrap(),
                 },
                 mode: FileWriteMode::Create,
                 text: "too late".to_owned(),
@@ -3115,7 +3627,7 @@ mod tests {
     #[tokio::test]
     async fn pending_operation_wait_observes_admission_deadline_and_close() {
         let config = Config::for_test("env-test");
-        let daemon = Arc::new(Daemon::with_generation(&config, 74).expect("daemon builds"));
+        let daemon = Arc::new(Fixture::new(&config, 74));
         let _ = initialize(&daemon).await;
 
         let admission_guard = daemon
@@ -3236,7 +3748,7 @@ mod tests {
     #[tokio::test]
     async fn transport_teardown_bounds_stalled_admission_handoffs() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 73).expect("daemon builds");
+        let daemon = Fixture::new(&config, 73);
         let _ = initialize(&daemon).await;
         let stalled = daemon
             .session
@@ -3244,7 +3756,7 @@ mod tests {
             .expect("admits a handoff before close");
         let closed = tokio::time::timeout(
             Duration::from_secs(1),
-            daemon.transport_closed(Duration::from_millis(20)),
+            daemon.close(Duration::from_millis(20)),
         )
         .await
         .expect("transport teardown stays bounded");
@@ -3253,29 +3765,164 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn first_non_initialize_request_fails_and_closes_session() {
-        let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 8).expect("daemon builds");
-
-        let response: Value = serde_json::from_slice(
-            &daemon
-                .handle_payload(&request(
-                    json!(1),
-                    "environment.describe",
-                    json!({"context": {"operation_id": "describe-1"}}),
-                ))
-                .await,
-        )
-        .expect("response is JSON");
-
+    async fn first_non_initialize_request_fails_before_any_session_exists() {
+        let fixture = Fixture::new(&Config::for_test("env-test"), 8);
+        let response = fixture.call("device.describe", json!({})).await;
         assert_eq!(response["error"]["code"], -32001);
-        assert!(*daemon.subscribe_closed().borrow());
+        assert!(!fixture.carrier.initialized());
+        assert!(fixture.device.sessions().is_empty());
+    }
+
+    #[tokio::test]
+    async fn pressure_reclaims_expired_owner_before_healthy_history() {
+        let tree = TempTree::new();
+        let mut config = Config::for_test("env-test");
+        config.runtime =
+            Some(crate::runtime::RuntimeState::prepare(&tree.child("runtime")).unwrap());
+        config.limits.max_output_preview_bytes = 4;
+        config.limits.max_output_bytes_per_stream = 4;
+        config.limits.max_spool_bytes = 16;
+        config.limits.max_device_spool_bytes = 16;
+        let fixture = Fixture::new(&config, 8);
+        initialize(&fixture).await;
+        let opened = fixture
+            .call("session.open", fixture.open_params(json!([])))
+            .await;
+        let abandoned = fixture
+            .device
+            .lookup(
+                opened["result"]["descriptor"]["session_id"]
+                    .as_str()
+                    .unwrap(),
+            )
+            .unwrap();
+        let (a, b) = abandoned.retention.create_live_pair().await.unwrap();
+        a.append(b"1234").await;
+        b.append(b"5678").await;
+        a.complete().await;
+        b.complete().await;
+        let (kept, empty) = fixture.retention.create_live_pair().await.unwrap();
+        kept.append(b"ok").await;
+        kept.complete().await;
+        empty.complete().await;
+        kept.detach();
+        empty.detach();
+        assert!(fixture.under_pressure());
+        abandoned.session.state().last_activity =
+            super::Instant::now() - config.session_idle_timeout;
+        let result = fixture
+            .call("session.open", fixture.open_params(json!([])))
+            .await;
+        assert!(result.get("result").is_some(), "{result}");
+        assert!(
+            fixture
+                .device
+                .lookup(&abandoned.descriptor.session_id)
+                .is_err()
+        );
+        assert!(
+            fixture
+                .retention
+                .read(
+                    &crate::eip::OutputReadParams {
+                        context: EIPCallContext {
+                            operation_id: "read-kept".into(),
+                            timeout_ms: None
+                        },
+                        reference: kept.reference().clone(),
+                        start_offset: 0,
+                        wait_ms: 0,
+                    },
+                    super::Instant::now() + Duration::from_secs(1)
+                )
+                .await
+                .is_ok()
+        );
+        assert_eq!(fixture.device.retention_quota.usage().0, 2);
+        assert!(fixture.device.drain(Duration::from_secs(1)).await);
+    }
+
+    #[tokio::test]
+    async fn lost_open_expires_and_capacity_admission_reclaims_only_expired_sessions() {
+        let mut config = Config::for_test("env-test");
+        config.limits.max_sessions = 1;
+        let fixture = Fixture::new(&config, 8);
+        fixture.call("initialize", initialize_params()).await;
+        // No requester retains this response or renews the new Session.
+        drop(
+            fixture
+                .call("session.open", fixture.open_params(json!([])))
+                .await,
+        );
+        let abandoned = fixture.device.sessions().values().next().unwrap().clone();
+        let busy = fixture
+            .call("session.open", fixture.open_params(json!([])))
+            .await;
+        assert_eq!(busy["error"]["data"]["error_type"], "busy");
+        abandoned.session.state().last_activity =
+            super::Instant::now() - config.session_idle_timeout;
+        let replacement = fixture
+            .call("session.open", fixture.open_params(json!([])))
+            .await;
+        let replacement_id = replacement["result"]["descriptor"]["session_id"]
+            .as_str()
+            .unwrap();
+        assert_ne!(replacement_id, abandoned.descriptor.session_id);
+        assert!(
+            fixture
+                .device
+                .lookup(&abandoned.descriptor.session_id)
+                .is_err()
+        );
+        assert_eq!(fixture.device.sessions().len(), 1);
+        assert!(*abandoned.subscribe_closed().borrow());
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[tokio::test]
+    async fn response_handoff_prevents_evidence_collection_until_delivery() {
+        let tree = TempTree::new();
+        let config = Config::for_test("env-test");
+        let fixture = Fixture::new(&config, 8);
+        initialize(&fixture).await;
+        let payload = request(
+            json!(3),
+            "file.write_text",
+            json!({
+                "context":{"operation_id":"held-response"},
+                "path":{"path":crate::device_path::from_native(&tree.child("held.txt")).unwrap()},
+                "mode":"create","text":"held"
+            }),
+        );
+        let (bytes, handoff) = fixture
+            .handle_payload_for_carrier(&payload)
+            .await
+            .into_parts();
+        let response: Value = serde_json::from_slice(&bytes).unwrap();
+        assert!(response.get("result").is_some(), "{response}");
+        assert!(handoff.is_some());
+        fixture.collect_history(true).await;
+        assert!(
+            fixture
+                .operations
+                .receipt_by_operation("held-response")
+                .is_some()
+        );
+        handoff.unwrap().complete();
+        fixture.collect_history(true).await;
+        assert!(
+            fixture
+                .operations
+                .receipt_by_operation("held-response")
+                .is_none()
+        );
+        assert_eq!(fs::read(tree.child("held.txt")).unwrap(), b"held");
     }
 
     #[tokio::test]
     async fn active_only_operation_ids_are_reusable_after_response_handoff() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 9).expect("daemon builds");
+        let daemon = Fixture::new(&config, 9);
         let _ = initialize(&daemon).await;
         let describe = request(
             json!(2),
@@ -3296,7 +3943,7 @@ mod tests {
     #[tokio::test]
     async fn explicit_defaults_use_typed_identity_for_active_handoff() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 91).expect("daemon builds");
+        let daemon = Fixture::new(&config, 91);
         let _ = initialize(&daemon).await;
         let payload = request(
             json!(2),
@@ -3311,7 +3958,7 @@ mod tests {
 
         for _ in 0..2 {
             let response = daemon.handle_payload_for_carrier(&payload).await;
-            let (payload, handoff, _) = response.into_parts();
+            let (payload, handoff) = response.into_parts();
             let response: Value = serde_json::from_slice(&payload).expect("response is JSON");
             assert_eq!(response["result"]["descriptor"]["generation"], 91);
             handoff
@@ -3326,7 +3973,7 @@ mod tests {
         let mut config = Config::for_test("env-test");
         config.limits.max_concurrent_operations = 1;
         config.limits.max_operation_records = 2;
-        let daemon = Daemon::with_generation(&config, 10).expect("daemon builds");
+        let daemon = Fixture::new(&config, 10);
         let _ = initialize(&daemon).await;
 
         for (request_id, suffix) in [(2, 'a'), (3, 'b')] {
@@ -3367,7 +4014,7 @@ mod tests {
         let mut config = Config::for_test("env-test");
         config.limits.max_concurrent_operations = 1;
         config.limits.max_operation_records = 1;
-        let daemon = Daemon::with_generation(&config, 10).expect("daemon builds");
+        let daemon = Fixture::new(&config, 10);
         let _ = initialize(&daemon).await;
         for (request_id, operation_id) in [(2, "first"), (3, "second"), (4, "first")] {
             let response: Value = serde_json::from_slice(
@@ -3388,7 +4035,7 @@ mod tests {
     async fn active_only_ids_do_not_wait_for_terminal_ttl() {
         let mut config = Config::for_test("env-test");
         config.limits.operation_record_ttl_ms = 1;
-        let daemon = Daemon::with_generation(&config, 11).expect("daemon builds");
+        let daemon = Fixture::new(&config, 11);
         let _ = initialize(&daemon).await;
         let describe = request(
             json!(2),
@@ -3405,15 +4052,15 @@ mod tests {
     #[tokio::test]
     async fn known_unadvertised_method_is_unsupported() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 9).expect("daemon builds");
+        let daemon = Fixture::new(&config, 9);
         let _ = initialize(&daemon).await;
 
         let response: Value = serde_json::from_slice(
             &daemon
                 .handle_payload(&request(
                     json!(2),
-                    "file.stat",
-                    json!({"context": {"operation_id": "stat-1"}, "path": {"mount_id": "workspace", "path": "/"}}),
+                    "process.inspect",
+                    json!({"context": {"operation_id": "list-1"}}),
                 ))
                 .await,
         )
@@ -3426,7 +4073,7 @@ mod tests {
     #[tokio::test]
     async fn unknown_method_is_method_not_found() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 9).expect("daemon builds");
+        let daemon = Fixture::new(&config, 9);
         let _ = initialize(&daemon).await;
 
         let response: Value = serde_json::from_slice(
@@ -3451,15 +4098,8 @@ mod tests {
         fs::create_dir(&native).expect("native root");
         fs::write(native.join("replay.txt"), "replay").expect("replay source");
         let mut config = Config::for_test("env-test");
-        config.mounts.push(TrustedMountConfig {
-            mount_id: "workspace".to_owned(),
-            native_root: native.clone(),
-            writable: false,
-            allow_command_execution: false,
-            max_file_bytes: 1024 * 1024,
-            allowed_operations: Vec::new(),
-        });
-        let daemon = Daemon::with_generation(&config, 12).expect("daemon builds");
+        config.default_working_directory = crate::device_path::from_native(&native).unwrap();
+        let daemon = Fixture::new(&config, 12);
         let _ = initialize(&daemon).await;
 
         let described: Value = serde_json::from_slice(
@@ -3480,7 +4120,7 @@ mod tests {
                     "file.stat",
                     json!({
                         "context": {"operation_id": "cross-method"},
-                        "path": {"mount_id": "workspace", "path": "/"}
+                        "path": {"path": crate::device_path::from_native(&native).unwrap()}
                     }),
                 ))
                 .await,
@@ -3491,7 +4131,7 @@ mod tests {
         let open_params = |operation_id: &str| {
             json!({
                 "context": {"operation_id": operation_id},
-                "path": {"mount_id": "workspace", "path": "/replay.txt"}
+                "path": {"path": crate::device_path::from_native(&native.join("replay.txt")).unwrap()}
             })
         };
         let opened: Value = serde_json::from_slice(
@@ -3539,15 +4179,8 @@ mod tests {
         let mut config = Config::for_test("env-test");
         config.limits.max_staged_file_objects = 1;
         config.limits.max_staged_file_bytes = 1024;
-        config.mounts.push(TrustedMountConfig {
-            mount_id: "workspace".to_owned(),
-            native_root: native.clone(),
-            writable: true,
-            allow_command_execution: false,
-            max_file_bytes: 1024,
-            allowed_operations: Vec::new(),
-        });
-        let daemon = Daemon::with_generation(&config, 73).expect("daemon builds");
+        config.default_working_directory = crate::device_path::from_native(&native).unwrap();
+        let daemon = Fixture::new(&config, 73);
         let _ = initialize(&daemon).await;
 
         let opened: Value = serde_json::from_slice(
@@ -3557,7 +4190,7 @@ mod tests {
                     "file.open_writer",
                     json!({
                         "context": {"operation_id": "quota-writer-open"},
-                        "path": {"mount_id": "workspace", "path": "/writer.bin"},
+                        "path": {"path": crate::device_path::from_native(&native.join("writer.bin")).unwrap()},
                         "mode": "create"
                     }),
                 ))
@@ -3574,7 +4207,7 @@ mod tests {
                     "file.write_text",
                     json!({
                         "context": {"operation_id": "quota-write-blocked"},
-                        "path": {"mount_id": "workspace", "path": "/inline.txt"},
+                        "path": {"path": crate::device_path::from_native(&native.join("inline.txt")).unwrap()},
                         "mode": "create",
                         "text": "blocked"
                     }),
@@ -3607,7 +4240,7 @@ mod tests {
                     "file.write_text",
                     json!({
                         "context": {"operation_id": "quota-write-after-abort"},
-                        "path": {"mount_id": "workspace", "path": "/inline.txt"},
+                        "path": {"path": crate::device_path::from_native(&native.join("inline.txt")).unwrap()},
                         "mode": "create",
                         "text": "released"
                     }),
@@ -3629,15 +4262,8 @@ mod tests {
         let native = tree.child("native");
         fs::create_dir(&native).expect("native root");
         let mut config = Config::for_test("env-test");
-        config.mounts.push(TrustedMountConfig {
-            mount_id: "workspace".to_owned(),
-            native_root: native.clone(),
-            writable: true,
-            allow_command_execution: false,
-            max_file_bytes: 1024 * 1024,
-            allowed_operations: Vec::new(),
-        });
-        let daemon = Daemon::with_generation(&config, 12).expect("daemon builds");
+        config.default_working_directory = crate::device_path::from_native(&native).unwrap();
+        let daemon = Fixture::new(&config, 12);
         let initialized = initialize(&daemon).await;
         let available_methods = initialized["result"]["descriptor"]["available_methods"]
             .as_array()
@@ -3653,7 +4279,7 @@ mod tests {
                     "file.write_text",
                     json!({
                         "context": {"operation_id": "write-e2e"},
-                        "path": {"mount_id": "workspace", "path": "/block2.txt"},
+                        "path": {"path": crate::device_path::from_native(&native.join("block2.txt")).unwrap()},
                         "mode": "create",
                         "text": "block2\n"
                     }),
@@ -3689,7 +4315,7 @@ mod tests {
                     "file.read_text",
                     json!({
                         "context": {"operation_id": "read-e2e"},
-                        "path": {"mount_id": "workspace", "path": "/block2.txt"},
+                        "path": {"path": crate::device_path::from_native(&native.join("block2.txt")).unwrap()},
                         "line_offset": 0,
                         "line_limit": 1,
                         "max_line_length": 2000
@@ -3710,7 +4336,7 @@ mod tests {
                     "file.write_text",
                     json!({
                         "context": {"operation_id": "failed-write"},
-                        "path": {"mount_id": "workspace", "path": "/missing.txt"},
+                        "path": {"path": crate::device_path::from_native(&native.join("missing.txt")).unwrap()},
                         "mode": "replace",
                         "text": "never committed"
                     }),
@@ -3744,7 +4370,7 @@ mod tests {
                     "file.write_text",
                     json!({
                         "context": {"operation_id": "failed-write"},
-                        "path": {"mount_id": "workspace", "path": "/missing.txt"},
+                        "path": {"path": crate::device_path::from_native(&native.join("missing.txt")).unwrap()},
                         "mode": "replace",
                         "text": "never committed"
                     }),
@@ -3784,7 +4410,7 @@ mod tests {
     #[tokio::test]
     async fn abandoned_waiter_does_not_end_owned_native_mutation_early() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 13).expect("daemon builds");
+        let daemon = Fixture::new(&config, 13);
         let _ = initialize(&daemon).await;
         let params = FileWriteTextParams {
             context: EIPCallContext {
@@ -3792,7 +4418,6 @@ mod tests {
                 timeout_ms: None,
             },
             path: EIPPath {
-                mount_id: "workspace".to_owned(),
                 path: "/drain.txt".to_owned(),
             },
             mode: FileWriteMode::Create,
@@ -3878,7 +4503,7 @@ mod tests {
     #[tokio::test]
     async fn mutation_registered_after_drain_is_reconciled_before_dispatch() {
         let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 14).expect("daemon builds");
+        let daemon = Fixture::new(&config, 14);
         let _ = initialize(&daemon).await;
         daemon.operations.begin_drain();
         let params = FileWriteTextParams {
@@ -3887,7 +4512,6 @@ mod tests {
                 timeout_ms: None,
             },
             path: EIPPath {
-                mount_id: "workspace".to_owned(),
                 path: "/late.txt".to_owned(),
             },
             mode: FileWriteMode::Create,
@@ -3927,26 +4551,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn failed_required_method_negotiation_is_terminal() {
-        let config = Config::for_test("env-test");
-        let daemon = Daemon::with_generation(&config, 10).expect("daemon builds");
-
-        let response: Value = serde_json::from_slice(
-            &daemon
-                .handle_payload(&request(
-                    json!(1),
-                    "initialize",
-                    initialize_params(json!(["file.stat"])),
-                ))
-                .await,
-        )
-        .expect("response is JSON");
-
-        assert_eq!(response["error"]["code"], -32003);
+    async fn failed_open_negotiation_does_not_poison_carrier_or_siblings() {
+        let fixture = Fixture::new(&Config::for_test("env-test"), 10);
+        initialize(&fixture).await;
+        let response = fixture
+            .call(
+                "session.open",
+                fixture.open_params(json!(["vendor.unknown"])),
+            )
+            .await;
+        assert_eq!(response["error"]["data"]["error_type"], "unsupported");
+        assert!(!fixture.carrier.closed.load(Ordering::Acquire));
         assert_eq!(
-            response["error"]["data"]["error_type"],
-            "protocol_incompatible"
+            readiness(&fixture, 3, "ready-after-failed-open").await["result"]["ready"],
+            true
         );
-        assert!(*daemon.subscribe_closed().borrow());
+        assert!(
+            fixture
+                .call("session.open", fixture.open_params(json!([])))
+                .await
+                .get("result")
+                .is_some()
+        );
     }
 }

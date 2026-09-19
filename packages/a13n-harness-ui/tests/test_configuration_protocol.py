@@ -83,6 +83,8 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
                 "agent_source": "global",
                 "default_model_id": "agent",
                 "environment_profile_id": "builtin",
+                "environment_bindings": "builtin",
+                "default_environment": "builtin",
                 "harness_plugin_ids": "global",
                 "environment_run_extension_ids": "global",
                 "mcp_server_ids": "agent",
@@ -94,6 +96,8 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert before["captured"] is None and before["capture_source"] == "none"
             assert before["next_run"]["provenance"]["default_model_id"] == "agent"
             assert set(before["next_run"]["provenance"].values()) == {"thread", "agent"}
+            assert before["next_run"]["provenance"]["environment_bindings"] == "thread"
+            assert before["next_run"]["provenance"]["default_environment"] == "thread"
             static = await api.get("/api/agents/agent-assistant/tool-proxy")
             assert static.status_code == 200, static.text
             assert static.json()["sources"][0]["presentation"] == "dormant"
@@ -129,13 +133,18 @@ async def test_captured_configuration_never_uses_current_source_or_previous_run(
             assert (await settled(api, first))["status"] == "completed"
             saved_first = (await api.get(prefix + "/configuration")).json()
             assert saved_first["capture_source"] == "selected_continuation" and saved_first["captured"] == captured
-            second = (await api.post(prefix + "/submit", json={"prompt": "second"})).json()["receipt_id"]
-            with fail_after(10):
-                await publishing.wait()
-            preparing = (await api.get(prefix + "/configuration")).json()
-            assert preparing["receipt_id"] == second and preparing["capture_source"] == "active_operation"
-            assert preparing["captured"] is None  # never label the previous Run as current
-            publish_release.set()
+            import asyncio
+
+            submitting = asyncio.create_task(api.post(prefix + "/submit", json={"prompt": "second"}))
+            try:
+                with fail_after(10):
+                    await publishing.wait()
+                assert not submitting.done()  # A receipt requires a complete admission capture.
+            finally:
+                publish_release.set()
+            second = (await submitting).json()["receipt_id"]
+            preparing = (await api.get(f"/api/operations/{second}/configuration")).json()
+            assert preparing["agent"]["model_id"] == "model-second"
             assert (await settled(api, second))["status"] == "completed"
             final = (await api.get(prefix + "/configuration")).json()
             assert final["captured"]["agent"]["model_id"] == "model-second"

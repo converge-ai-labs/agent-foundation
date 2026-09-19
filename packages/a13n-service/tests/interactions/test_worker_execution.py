@@ -5,7 +5,8 @@ from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from a13n_harness import EnvironmentAccess, EnvironmentMount
+from a13n_harness import EnvironmentMount
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 from a13n_harness.providers.environment.direct_local.configuration import (
     DirectLocalEnvironmentConfiguration,
     DirectLocalRootConfiguration,
@@ -217,7 +218,10 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 yield replace(
                     invocation,
                     environment=SingleHarnessEnvironment(
-                        EnvironmentMount(environment, access=EnvironmentAccess.READ_ONLY)
+                        EnvironmentMount(
+                            environment,
+                            permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
+                        )
                     ),
                 )
 

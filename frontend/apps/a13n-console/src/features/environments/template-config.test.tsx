@@ -156,12 +156,18 @@ beforeEach(() => {
   ).unmount;
 });
 
+/** Creation opens on the provider catalog; tiles replace the old select. */
 async function selectProvider(
   user: ReturnType<typeof userEvent.setup>,
   name: string,
 ) {
-  await user.click(screen.getByRole("combobox", { name: "Provider" }));
-  await user.click(await screen.findByRole("option", { name }));
+  const back = screen.queryByRole("button", {
+    name: "Choose a different provider",
+  });
+  if (back) await user.click(back);
+  await user.click(
+    await screen.findByRole("button", { name: new RegExp(`^${name}`) }),
+  );
 }
 
 it("creates an E2B template configuration from ordinary fields without a schema-version input", async () => {
@@ -201,13 +207,13 @@ it("creates an E2B template configuration from ordinary fields without a schema-
 it("retains per-provider drafts and advanced JSON while switching fields", async () => {
   const user = userEvent.setup();
   await selectProvider(user, "E2B");
-  await user.click(screen.getByRole("tab", { name: "JSON" }));
+  await user.click(screen.getByRole("button", { name: "JSON" }));
   const json = screen.getByRole("textbox", {
     name: "Template configuration (JSON)",
   });
   await user.clear(json);
   await user.paste('{"template":"custom","max_file_bytes":42}');
-  await user.click(screen.getByRole("tab", { name: "Fields" }));
+  await user.click(screen.getByRole("button", { name: "Fields" }));
   await selectProvider(user, "Local");
   expect(
     screen.queryByRole("textbox", { name: "E2B template name or ID" }),
@@ -224,7 +230,7 @@ it("retains per-provider drafts and advanced JSON while switching fields", async
       }) as HTMLInputElement
     ).value,
   ).toBe("custom");
-  await user.click(screen.getByRole("tab", { name: "JSON" }));
+  await user.click(screen.getByRole("button", { name: "JSON" }));
   expect(
     JSON.parse(
       (
@@ -240,7 +246,7 @@ it("rejects invalid advanced configuration without sending a request", async () 
   const user = userEvent.setup();
   await selectProvider(user, "E2B");
   await user.type(screen.getByRole("textbox", { name: "Name" }), "Invalid");
-  await user.click(screen.getByRole("tab", { name: "JSON" }));
+  await user.click(screen.getByRole("button", { name: "JSON" }));
   await user.clear(
     screen.getByRole("textbox", { name: "Template configuration (JSON)" }),
   );
@@ -271,7 +277,7 @@ it("resets advanced JSON drafts and their validation state", async () => {
   }) as HTMLTextAreaElement;
   expect(reset.value).toBe("{}");
   expect(reset.validity.valid).toBe(true);
-  await user.click(screen.getByRole("tab", { name: "JSON" }));
+  await user.click(screen.getByRole("button", { name: "JSON" }));
   expect(
     (
       screen.getByRole("textbox", {

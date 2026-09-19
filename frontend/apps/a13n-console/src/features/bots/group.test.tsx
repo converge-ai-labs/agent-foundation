@@ -118,7 +118,7 @@ it("keeps bot and external organization context while showing inherited configur
   expect(await screen.findByRole("heading", { name: "C1" })).toBeTruthy();
   expect(screen.getByText("Slack · T1")).toBeTruthy();
   expect(
-    screen.getByRole("region", { name: "Group connection check" }),
+    screen.getByRole("heading", { name: "Conversation access" }),
   ).toBeTruthy();
   await waitFor(() =>
     expect(state.http.GET).toHaveBeenCalledWith(
@@ -137,8 +137,10 @@ it("keeps bot and external organization context while showing inherited configur
     ).getAttribute("href"),
   ).toBe("/workspace/test/agents/default-agent");
   expect(
-    screen.getByRole("link", { name: "Support bot" }).getAttribute("href"),
-  ).toBe("/workspace/test/bots/acct_test");
+    screen
+      .getByRole("link", { name: "Bots / Support bot" })
+      .getAttribute("href"),
+  ).toBe("/workspace/test/bots/acct_test/channels");
   expect(screen.getByText("Continue an activated discussion")).toBeTruthy();
   expect(screen.getByText("Thread or topic")).toBeTruthy();
   expect(

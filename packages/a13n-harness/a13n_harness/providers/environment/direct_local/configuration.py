@@ -14,7 +14,6 @@ class DirectLocalRootConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     path: Path
-    read_only: bool = False
 
     @field_validator("path")
     @classmethod
@@ -115,8 +114,6 @@ class DirectLocalEnvironmentConfiguration(BaseModel):
         profile_ids = tuple(profile.profile_id for profile in self.shell_profiles)
         if len(profile_ids) != len(set(profile_ids)):
             raise ValueError("shell profile IDs must be unique")
-        if self.root.read_only and (self.shell_profiles or self.allowed_executables):
-            raise ValueError("read-only Direct Local roots cannot enable process execution")
         for name, value in (
             ("max_wall_time_seconds", self.max_wall_time_seconds),
             ("terminate_grace_seconds", self.terminate_grace_seconds),

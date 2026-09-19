@@ -19,7 +19,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 
 const account = {
@@ -74,7 +77,9 @@ it("requires an explicit check and submits the account version", async () => {
   setup();
   await screen.findByText("No check is available for the current credentials.");
   expect(state.http.POST).not.toHaveBeenCalled();
-  await userEvent.click(screen.getByRole("button", { name: "Check now" }));
+  await userEvent.click(
+    screen.getByRole("button", { name: "Check connection" }),
+  );
   expect(await screen.findByText("Acme workspace")).toBeTruthy();
   expect(state.http.POST).toHaveBeenCalledWith(
     "/api/v1/application-accounts/{account_id}/bot/checks",
@@ -93,7 +98,7 @@ it("does not offer provider checks to a read-only viewer", async () => {
   state.admin = false;
   setup();
   await screen.findByText("No check is available for the current credentials.");
-  expect(screen.queryByRole("button", { name: "Check now" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
   expect(state.http.POST).not.toHaveBeenCalled();
 });
 

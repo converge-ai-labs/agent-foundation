@@ -607,6 +607,18 @@
             "pattern": "^[a-z][a-z0-9-]{0,62}$",
             "title": "Name",
             "type": "string"
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "format": "eip-absolute-path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
           }
         },
         "required": [
@@ -7843,6 +7855,107 @@
         "title": "DeveloperMessage",
         "type": "object"
       },
+      "DeviceInfo": {
+        "additionalProperties": false,
+        "properties": {
+          "default_working_directory": {
+            "title": "Default Working Directory",
+            "type": "string"
+          },
+          "directory_discovery": {
+            "title": "Directory Discovery",
+            "type": "boolean"
+          },
+          "environment_id": {
+            "title": "Environment Id",
+            "type": "string"
+          },
+          "path_style": {
+            "enum": [
+              "posix",
+              "windows"
+            ],
+            "title": "Path Style",
+            "type": "string"
+          }
+        },
+        "required": [
+          "environment_id",
+          "path_style",
+          "default_working_directory",
+          "directory_discovery"
+        ],
+        "title": "DeviceInfo",
+        "type": "object"
+      },
+      "DirectoryEntry": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "path": {
+            "format": "eip-absolute-path",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path"
+        ],
+        "title": "DirectoryEntry",
+        "type": "object"
+      },
+      "DirectoryListResult": {
+        "additionalProperties": false,
+        "properties": {
+          "entries": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/DirectoryEntry"
+            },
+            "title": "Entries",
+            "type": "array"
+          },
+          "next_offset": {
+            "anyOf": [
+              {
+                "maximum": 1.8446744073709552e+19,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Offset"
+          },
+          "parent_path": {
+            "anyOf": [
+              {
+                "format": "eip-absolute-path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parent Path"
+          },
+          "path": {
+            "format": "eip-absolute-path",
+            "title": "Path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "title": "DirectoryListResult",
+        "type": "object"
+      },
       "DiscardDraftRequest": {
         "additionalProperties": false,
         "properties": {
@@ -8546,6 +8659,17 @@
             "title": "Created At",
             "type": "string"
           },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
           "generation": {
             "title": "Generation",
             "type": "integer"
@@ -8724,6 +8848,17 @@
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
           },
           "generation": {
             "title": "Generation",
@@ -9392,6 +9527,18 @@
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
             "title": "Environment Id",
             "type": "string"
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "format": "eip-absolute-path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
           }
         },
         "required": [
@@ -15060,6 +15207,20 @@
             "title": "Configuration",
             "type": "object"
           },
+          "device_id": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "pattern": "^[^\\s\\x00-\\x1f]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Device Id"
+          },
           "labels": {
             "maxProperties": 32,
             "patternProperties": {
@@ -16427,6 +16588,18 @@
               }
             ],
             "title": "Use Started At"
+          },
+          "working_directory": {
+            "anyOf": [
+              {
+                "format": "eip-absolute-path",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Working Directory"
           }
         },
         "required": [
@@ -16611,6 +16784,17 @@
               }
             ],
             "title": "Environment Id"
+          },
+          "environment_working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Working Directory"
           },
           "failure": {
             "anyOf": [
@@ -16819,6 +17003,7 @@
           "agent_revision_id",
           "effective_agent_config_digest",
           "environment_id",
+          "environment_working_directory",
           "status",
           "wait_reason",
           "input_kind",
@@ -19297,6 +19482,17 @@
             ],
             "title": "Default Environment Id"
           },
+          "default_environment_working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment Working Directory"
+          },
           "head_run_id": {
             "anyOf": [
               {
@@ -19506,6 +19702,17 @@
             ],
             "title": "Default Environment Id"
           },
+          "default_environment_working_directory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Environment Working Directory"
+          },
           "head_run_id": {
             "anyOf": [
               {
@@ -19600,6 +19807,7 @@
           "head_run_id",
           "current_run_id",
           "default_environment_id",
+          "default_environment_working_directory",
           "labels",
           "created_at",
           "updated_at"
@@ -33265,6 +33473,219 @@
           }
         ],
         "summary": "Delete Environment",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/environments/{environment_id}/device": {
+      "get": {
+        "operationId": "get_environments_environment_id_device",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeviceInfo"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Device Info",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
+    "/api/v1/environments/{environment_id}/directories": {
+      "get": {
+        "operationId": "get_environments_environment_id_directories",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "path",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 4096,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Path"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "maximum": 1000000,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "maximum": 200,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DirectoryListResult"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Device Directories",
         "tags": [
           "environments"
         ]

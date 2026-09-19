@@ -170,13 +170,13 @@ async def test_linked_child_starts_new_trace_and_retains_dispatch_link(telemetry
 async def test_preparation_failure_is_visible_without_a_harness_run(tmp_path, monkeypatch, telemetry):
     provider, exporter = telemetry
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    from a13n_harness_ui.environment_runtime import EnvironmentRunService
     from a13n_harness_ui.errors import CompositionError
-    from a13n_harness_ui.root_execution import RootRunExecutor
 
-    async def fail_preparation(self):
+    async def fail_preparation(self, composition):
         raise CompositionError("not captured", code="test_preparation_failed")
 
-    monkeypatch.setattr(RootRunExecutor, "_required_configuration", fail_preparation)
+    monkeypatch.setattr(EnvironmentRunService, "prepare", fail_preparation)
     async with open_harness_ui_app(
         settings,
         configuration_path=configuration(tmp_path),
@@ -190,7 +190,7 @@ async def test_preparation_failure_is_visible_without_a_harness_run(tmp_path, mo
     assert [span.name for span in spans] == ["harness_ui.prepare", "harness_ui.root"]
     preparation, root = spans
     assert preparation.parent.span_id == root.context.span_id
-    assert preparation.attributes["a13n.phase.step"] == "configuration"
+    assert preparation.attributes["a13n.phase.step"] == "environment"
     assert preparation.status.status_code is StatusCode.ERROR
     assert root.status.status_code is StatusCode.ERROR
     assert root.attributes["a13n.ui.operation.status"] == "failed"

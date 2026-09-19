@@ -10,6 +10,7 @@ EIP_DATA_FRAME_MAGIC: Final = b"EIPD"
 EIP_DATA_FRAME_PROFILE_VERSION: Final = 1
 EIP_DATA_FRAME_EIP_MAJOR: Final = 1
 EIP_DATA_FRAME_HEADER_BYTES: Final = 24
+EIP_TRANSFER_WINDOW_CHUNKS: Final = 8
 EIP_DATA_FRAME_MAX_HANDLE_BYTES: Final = 65535
 EIP_DATA_FRAME_MAX_PAYLOAD_BYTES: Final = 4294967295
 _HEADER = struct.Struct("!4sBBHHHQI")
@@ -22,6 +23,7 @@ class DataFrameKind(IntEnum):
     END = 4
     END_ACK = 5
     RESET = 6
+    CREDIT = 7
 
 
 class DataResetStatus(IntEnum):
@@ -41,23 +43,27 @@ class DataFrameCodecError(ValueError):
 @dataclass(frozen=True, slots=True)
 class DataFrame:
     kind: DataFrameKind
+    session_id: str
     handle: str
     offset: int = 0
     payload: bytes = b""
     reset_status: DataResetStatus | None = None
 
 
-def _validate_frame(frame: DataFrame, max_frame_bytes: int) -> tuple[bytes, int]:
+def _validate_frame(frame: DataFrame, max_frame_bytes: int) -> tuple[bytes, bytes, int]:
     if not isinstance(frame.kind, DataFrameKind):
         raise DataFrameCodecError("unknown EIP data-frame kind")
     if not isinstance(frame.handle, str) or not frame.handle:
         raise DataFrameCodecError("EIP data-frame handle must be non-empty UTF-8")
+    if not isinstance(frame.session_id, str) or not frame.session_id:
+        raise DataFrameCodecError("EIP data-frame Session must be non-empty UTF-8")
     try:
+        session = frame.session_id.encode("utf-8")
         handle = frame.handle.encode("utf-8")
     except UnicodeEncodeError as error:
         raise DataFrameCodecError("EIP data-frame handle must be non-empty UTF-8") from error
-    if len(handle) > EIP_DATA_FRAME_MAX_HANDLE_BYTES:
-        raise DataFrameCodecError("EIP data-frame handle is too long")
+    if len(session) > 2**16 - 1 or len(handle) > EIP_DATA_FRAME_MAX_HANDLE_BYTES:
+        raise DataFrameCodecError("EIP data-frame selector is too long")
     if type(frame.offset) is not int or not 0 <= frame.offset <= 2**64 - 1:
         raise DataFrameCodecError("EIP data-frame offset is outside uint64")
     if not isinstance(frame.payload, bytes):
@@ -74,61 +80,63 @@ def _validate_frame(frame: DataFrame, max_frame_bytes: int) -> tuple[bytes, int]
         status = 0
     if frame.kind is not DataFrameKind.CHUNK and frame.payload:
         raise DataFrameCodecError("payload is valid only for CHUNK")
+    if frame.kind is DataFrameKind.CHUNK and not frame.payload:
+        raise DataFrameCodecError("CHUNK payload must be non-empty")
     if frame.kind is DataFrameKind.CHUNK and frame.offset + len(frame.payload) > 2**64 - 1:
         raise DataFrameCodecError("EIP data-frame payload overflows the stream offset")
     if frame.kind in {DataFrameKind.ATTACH, DataFrameKind.ATTACHED} and frame.offset != 0:
         raise DataFrameCodecError("attachment frames must use offset zero")
-    total = EIP_DATA_FRAME_HEADER_BYTES + len(handle) + len(frame.payload)
-    if type(max_frame_bytes) is not int or max_frame_bytes < EIP_DATA_FRAME_HEADER_BYTES + 1:
+    total = EIP_DATA_FRAME_HEADER_BYTES + len(session) + len(handle) + len(frame.payload)
+    if type(max_frame_bytes) is not int or max_frame_bytes < EIP_DATA_FRAME_HEADER_BYTES + 2:
         raise DataFrameCodecError("invalid EIP data-frame ceiling")
     if total > max_frame_bytes:
         raise DataFrameCodecError("EIP data frame exceeds the configured ceiling")
-    return handle, status
+    return session, handle, status
 
 
 def encode_data_frame(frame: DataFrame, *, max_frame_bytes: int) -> bytes:
-    handle, status = _validate_frame(frame, max_frame_bytes)
+    session, handle, status = _validate_frame(frame, max_frame_bytes)
     header = _HEADER.pack(
         EIP_DATA_FRAME_MAGIC,
         EIP_DATA_FRAME_PROFILE_VERSION,
         int(frame.kind),
         status,
+        len(session),
         len(handle),
-        0,
         frame.offset,
         len(frame.payload),
     )
-    return header + handle + frame.payload
+    return header + session + handle + frame.payload
 
 
 def decode_data_frame(payload: bytes, *, max_frame_bytes: int) -> DataFrame:
     if not isinstance(payload, bytes):
         raise DataFrameCodecError("EIP data frame must be bytes")
-    if type(max_frame_bytes) is not int or max_frame_bytes < EIP_DATA_FRAME_HEADER_BYTES + 1:
+    if type(max_frame_bytes) is not int or max_frame_bytes < EIP_DATA_FRAME_HEADER_BYTES + 2:
         raise DataFrameCodecError("invalid EIP data-frame ceiling")
     if len(payload) > max_frame_bytes:
         raise DataFrameCodecError("EIP data frame exceeds the configured ceiling")
     if len(payload) < EIP_DATA_FRAME_HEADER_BYTES:
         raise DataFrameCodecError("EIP data frame is shorter than its header")
-    magic, version, kind_value, status_value, handle_length, reserved, offset, payload_length = _HEADER.unpack_from(
-        payload
+    magic, version, kind_value, status_value, session_length, handle_length, offset, payload_length = (
+        _HEADER.unpack_from(payload)
     )
     if magic != EIP_DATA_FRAME_MAGIC:
         raise DataFrameCodecError("invalid EIP data-frame magic")
     if version != EIP_DATA_FRAME_PROFILE_VERSION:
         raise DataFrameCodecError("unsupported EIP data-frame profile version")
-    if reserved != 0:
-        raise DataFrameCodecError("EIP data-frame reserved field must be zero")
-    expected = EIP_DATA_FRAME_HEADER_BYTES + handle_length + payload_length
+    expected = EIP_DATA_FRAME_HEADER_BYTES + session_length + handle_length + payload_length
     if expected != len(payload):
         raise DataFrameCodecError("EIP data-frame body length mismatch")
     try:
         kind = DataFrameKind(kind_value)
     except ValueError as error:
         raise DataFrameCodecError("unknown EIP data-frame kind") from error
-    handle_end = EIP_DATA_FRAME_HEADER_BYTES + handle_length
+    session_end = EIP_DATA_FRAME_HEADER_BYTES + session_length
+    handle_end = session_end + handle_length
     try:
-        handle = payload[EIP_DATA_FRAME_HEADER_BYTES:handle_end].decode("utf-8")
+        session_id = payload[EIP_DATA_FRAME_HEADER_BYTES:session_end].decode("utf-8")
+        handle = payload[session_end:handle_end].decode("utf-8")
     except UnicodeDecodeError as error:
         raise DataFrameCodecError("EIP data-frame handle must be non-empty UTF-8") from error
     reset_status: DataResetStatus | None = None
@@ -141,6 +149,7 @@ def decode_data_frame(payload: bytes, *, max_frame_bytes: int) -> DataFrame:
         raise DataFrameCodecError("terminal status is valid only for RESET")
     frame = DataFrame(
         kind=kind,
+        session_id=session_id,
         handle=handle,
         offset=offset,
         payload=payload[handle_end:],

@@ -3,7 +3,6 @@ import {
   Button,
   Menu,
   MenuGroup,
-  MenuGroupLabel,
   MenuItem,
   MenuPopup,
   MenuSeparator,
@@ -12,13 +11,15 @@ import {
 import {
   CaretUpDownIcon,
   SignOutIcon,
-  GearSixIcon,
+  SlidersHorizontalIcon,
+  UserIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
 import { useAuth } from "../auth/context";
 import { ErrorToast } from "../shared/feedback";
 import { UserAvatar } from "./avatar";
+import styles from "./layout.module.css";
 
 export function AccountMenu({
   onNavigate,
@@ -35,6 +36,10 @@ export function AccountMenu({
     mutationFn: auth.logout,
     onSuccess: () => navigate("/login", { replace: true }),
   });
+  const open = (path: string) => {
+    onNavigate();
+    navigate(path);
+  };
   return (
     <>
       <Menu>
@@ -72,18 +77,23 @@ export function AccountMenu({
         <MenuPopup
           align="start"
           side={compact ? "right" : "bottom"}
-          className={compact ? "min-w-48" : "w-(--anchor-width)"}
+          className={compact ? "min-w-56" : "w-(--anchor-width) min-w-56"}
         >
+          <div className={styles.account}>
+            <UserAvatar name={user.name} url={user.image_url} />
+            <span className={styles.accountCopy}>
+              <strong title={user.name}>{user.name}</strong>
+              <small title={user.email}>{user.email}</small>
+            </span>
+          </div>
           <MenuGroup>
-            <MenuGroupLabel>{user.email}</MenuGroupLabel>
-            <MenuItem
-              onClick={() => {
-                onNavigate();
-                navigate("/settings/profile?section=profile");
-              }}
-            >
-              <GearSixIcon aria-hidden="true" />
-              {t("Settings")}
+            <MenuItem onClick={() => open("/settings/profile")}>
+              <UserIcon aria-hidden="true" />
+              {t("Profile")}
+            </MenuItem>
+            <MenuItem onClick={() => open("/settings/preferences")}>
+              <SlidersHorizontalIcon aria-hidden="true" />
+              {t("Preferences")}
             </MenuItem>
             <MenuSeparator />
             <MenuItem

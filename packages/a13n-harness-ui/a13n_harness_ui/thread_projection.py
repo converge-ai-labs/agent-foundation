@@ -464,6 +464,11 @@ class ThreadProjectionService:
             activity = _ROOT_INACTIVE
             if thread.parent_thread_id is None and self._root_activity is not None:
                 activity = await self._root_activity(thread.thread_id)
+        goal = None if thread.read_model is None else thread.read_model.goal
+        if goal is not None and goal.active and activity.state is RootActivityState.inactive:
+            # An active checkpoint left by an interrupted process is not liveness.
+            pending = thread.read_model is not None and thread.read_model.deferred_requests is not None
+            goal = goal.model_copy(update={"status": "suspended" if pending else "unverified_stop"})
         return ThreadSummary(
             thread_id=thread.thread_id,
             parent_thread_id=thread.parent_thread_id,
@@ -479,6 +484,7 @@ class ThreadProjectionService:
             continuation_state="initial" if thread.continuation is None else "selected",
             root_activity=activity,
             completion=thread.completion,
+            goal=goal,
         )
 
     async def context_usage(self, thread_id: str) -> ContextUsageView:
@@ -763,6 +769,8 @@ def _configuration(value: ThreadConfiguration) -> ThreadConfigurationView:
         agent_source=AgentSourceView.from_stored(value.agent_source),
         default_model_id=value.default_model_id,
         environment_profile_id=value.environment_profile_id,
+        environment_bindings=value.environment_bindings,
+        default_environment=value.default_environment,
         harness_plugin_ids=value.harness_plugin_ids,
         environment_run_extension_ids=value.environment_run_extension_ids,
         mcp_server_ids=value.mcp_server_ids,

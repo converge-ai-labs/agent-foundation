@@ -18,12 +18,13 @@ from a13n_service.iam.resource_scope import actor_scope
 from a13n_service.interactions.access import authorize_interaction, authorize_retained_execution
 from a13n_service.interactions.errors import command_not_found, idempotency_conflict
 from a13n_service.interactions.inbox import ThreadControlSignalPublisher
-from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
+from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, assume_utc, next_updated_at, require_aware_utc, utc_now
 
 from .access import authorize_environment_resource
 from .cursors import decode_cursor, encode_cursor
+from .devices import ENVD_PROVIDER_KEYS, capture_device_target
 from .domain import Collection, ExistingEnvironmentSelection
 from .errors import EnvironmentManagementError, invalid_environment
 from .models import EnvironmentProviderRecord, EnvironmentRecord
@@ -91,7 +92,10 @@ class RunEnvironmentMountService:
             selected = await resolve_selection(
                 database,
                 workspace_id=workspace_id,
-                choice=ExistingEnvironmentSelection(environment_id=request.environment_id),
+                choice=ExistingEnvironmentSelection(
+                    environment_id=request.environment_id,
+                    working_directory=request.working_directory,
+                ),
             )
             if not isinstance(selected, EnvironmentRecord):
                 raise TypeError("An existing Environment selection must resolve to an Environment")
@@ -108,6 +112,10 @@ class RunEnvironmentMountService:
                 environment.ownership == "external" and environment.status == "deleted"
             ):
                 raise _conflict("environment_unavailable", "Environment is unavailable for mount acceptance.")
+            working_directory = request.working_directory
+            if provider.type in ENVD_PROVIDER_KEYS and working_directory is None:
+                target = await capture_device_target(database, environment, principal=actor.principal)
+                working_directory = online.working_directory(target)
             if provider.type == WEBSOCKET_PROVIDER_KEY:
                 online.require(run.organization_id, environment.id)
             previous = await database.scalar(
@@ -118,6 +126,7 @@ class RunEnvironmentMountService:
                 run_id=run_id,
                 name=request.name,
                 environment_id=environment.id,
+                working_directory=working_directory,
                 created_at=created_at,
                 accepting_principal=actor.principal,
             )
@@ -128,6 +137,7 @@ class RunEnvironmentMountService:
                     organization_id=run.organization_id,
                     workspace_id=workspace_id,
                     environment_id=environment.id,
+                    working_directory=working_directory,
                     created_at=created_at,
                     principal_type=actor.principal.principal_type.value,
                     principal_id=actor.principal.principal_id,
@@ -186,9 +196,8 @@ class RunEnvironmentMountService:
             _, workspace_id = await _load_run(database, actor, run_id, WorkspaceAction.run_read)
             scope = {"collection": "run_environment_mounts", "workspace_id": workspace_id, "run_id": run_id}
             query = (
-                select(RunEnvironmentMountRecord, RunAttemptRecord)
+                select(RunEnvironmentMountRecord, RunRecord)
                 .join(RunRecord, RunRecord.id == RunEnvironmentMountRecord.run_id)
-                .outerjoin(RunAttemptRecord, RunAttemptRecord.id == RunRecord.current_run_attempt_id)
                 .where(RunEnvironmentMountRecord.run_id == run_id)
             )
             if cursor is not None:
@@ -199,7 +208,7 @@ class RunEnvironmentMountService:
                 query = query.where(RunEnvironmentMountRecord.created_at > position)
             rows = (await database.execute(query.order_by(RunEnvironmentMountRecord.created_at).limit(limit + 1))).all()
             return Collection(
-                items=tuple(_project(row, attempt) for row, attempt in rows[:limit]),
+                items=tuple(_project(row, run) for row, run in rows[:limit]),
                 next_cursor=encode_cursor(assume_utc(rows[limit - 1][0].created_at).isoformat(), scope=scope)
                 if len(rows) > limit
                 else None,
@@ -262,17 +271,17 @@ async def _replay(
     return receipt.restore(RunEnvironmentMount) if receipt is not None else None
 
 
-def _project(row: RunEnvironmentMountRecord, attempt: RunAttemptRecord | None) -> RunEnvironmentMount:
-    current = (
-        attempt is not None
-        and row.applied_attempt_id == attempt.id
-        and row.applied_attempt_fence == attempt.attempt_number
+def _project(row: RunEnvironmentMountRecord, run: RunRecord) -> RunEnvironmentMount:
+    # Sealing clears the live Attempt pointer, not its historical observations.
+    current = row.applied_attempt_fence == run.attempts_started and (
+        run.sealed_at is not None or row.applied_attempt_id == run.current_run_attempt_id
     )
     return RunEnvironmentMount.model_validate(
         {
             "run_id": row.run_id,
             "name": row.name,
             "environment_id": row.environment_id,
+            "working_directory": row.working_directory,
             "created_at": row.created_at,
             "accepting_principal": {"principal_type": row.principal_type, "principal_id": row.principal_id},
             "use_started_at": row.use_started_at,

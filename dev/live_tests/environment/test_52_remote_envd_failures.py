@@ -1,4 +1,4 @@
-"""Remote process/output continuity and unknown outcomes across real carrier loss."""
+"""Remote Session fences and unknown outcomes across real carrier loss."""
 
 import asyncio
 import signal
@@ -7,6 +7,7 @@ import pytest
 from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
 from a13n_harness.providers.environment.models import EnvironmentError
+from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
 from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
 from .e2b_support import eventually
@@ -18,7 +19,7 @@ OUTPUT = EnvironmentOutputPolicy(max_inline_bytes=8, max_output_bytes=4096, over
 
 def command(script, *, stdin=False):
     return CommandRequest(
-        command=ShellCommand(profile_id="default", script=script), cwd="/", keep_stdin_open=stdin, output_policy=OUTPUT
+        command=ShellCommand(profile_id="default", script=script), keep_stdin_open=stdin, output_policy=OUTPUT
     )
 
 
@@ -54,18 +55,21 @@ async def finish_rebound(environment, identity):
     assert page.stdout.chunks[0].start_offset == 17
 
 
-async def test_clean_close_rebind_preserves_native_process_stdin_and_output_offsets(remote):
+async def test_rebind_is_same_session_only_and_close_preserves_sibling(remote):
     backend = remote
     original = backend.environment
     outputs = original.operations.outputs
     handle, reference = await running_process(backend)
-    await original.close()
-    assert backend.process.returncode is None
     fresh = await backend.prepare(backend.adapter())
-    assert fresh.descriptor.generation == original.descriptor.generation
+    assert fresh.descriptor.generation != original.descriptor.generation
     with pytest.raises(EnvironmentError):
         await fresh.operations.processes.inspect(handle)
-    await finish_rebound(fresh, handle.identity)
+    with pytest.raises(EnvironmentError):
+        await fresh.operations.processes.rebind(handle.identity, output_policy=OUTPUT)
+    await finish_rebound(original, handle.identity)
+    await original.close()
+    assert backend.process.returncode is None
+    assert await fresh.operations.files.read_bytes(backend.path("/file-tests/source")) == b"ORIGINAL\n"
     with pytest.raises(EnvironmentError):
         await outputs.read(reference, start_offset=0, policy=OUTPUT)
 
@@ -85,6 +89,11 @@ async def test_external_daemon_restart_fences_process_and_output_without_replayi
     except (EnvironmentError, EnvironmentProviderError):
         pass  # Abrupt loss cannot acknowledge clean EIP closure.
     await backend.launch_daemon()
+    if isinstance(backend.runtime, HttpEnvdProviderRuntime):
+        previous = backend.runtime
+        await previous.close()
+        backend.runtime = HttpEnvdProviderRuntime(previous.configuration, previous.credential)
+        backend.stack.push_async_callback(backend.runtime.close)
     fresh = await backend.prepare(backend.adapter())
     assert fresh.descriptor.generation != original.descriptor.generation
     for call in (
@@ -95,7 +104,7 @@ async def test_external_daemon_restart_fences_process_and_output_without_replayi
     ):
         with pytest.raises(EnvironmentError):
             await call()
-    assert await fresh.operations.files.read_bytes("/sentinel") == b"BEFORE_RESTART"
+    assert await fresh.operations.files.read_bytes(backend.path("/sentinel")) == b"BEFORE_RESTART"
     assert {path.name for path in backend.root.iterdir()} == {"file-tests", "sentinel"}
 
 
@@ -125,19 +134,11 @@ async def test_real_connection_loss_does_not_replay_dispatched_command(remote):
         await original.close()
     except (EnvironmentError, EnvironmentProviderError):
         pass
-    if backend.kind == "http_envd":
-        # An abandoned HTTP Session stays admitted; a fresh adapter must not steal it.
-        with pytest.raises(EnvironmentProviderError):
-            await backend.prepare(backend.adapter())
-        assert backend.process.returncode is None
-        await backend.stop_daemon()
-        await backend.launch_daemon()
+    # No daemon restart or implicit takeover is needed. Each adapter opens a
+    # new Session, and cannot adopt the abandoned Session's process identity.
+    assert backend.process.returncode is None
     fresh = await backend.prepare(backend.adapter())
-    if backend.kind == "websocket_envd":
-        assert fresh.descriptor.generation == original.descriptor.generation
-        await finish_rebound(fresh, handle.identity)
-    else:
-        assert fresh.descriptor.generation != original.descriptor.generation
-        with pytest.raises(EnvironmentError):
-            await fresh.operations.processes.rebind(handle.identity, output_policy=OUTPUT)
-    assert await fresh.operations.files.read_bytes("/effect") == b"ONCE"
+    assert fresh.descriptor.generation != original.descriptor.generation
+    with pytest.raises(EnvironmentError):
+        await fresh.operations.processes.rebind(handle.identity, output_policy=OUTPUT)
+    assert await fresh.operations.files.read_bytes(backend.path("/effect")) == b"ONCE"

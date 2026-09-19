@@ -198,7 +198,6 @@ async def test_existing_file_lease_prevents_retention_until_release(due_environm
         generation = row.generation
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=1024),
         mount_id="test",
         generation="same",

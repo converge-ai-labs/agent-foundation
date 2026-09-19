@@ -1,119 +1,126 @@
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-.header h2 {
-  margin: 0;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
 .observation {
-  container-type: inline-size;
-}
-.notice {
-  margin: 0 0 16px;
-  padding: 10px 14px;
-  background: var(--a13n-hover);
-  border-left: 2px solid var(--a13n-border);
-  border-radius: 4px;
-  font-size: 12px;
-  line-height: 1.6;
-}
-.steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  border-top: 1px solid var(--a13n-border);
-}
-.steps > li {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) 180px 100px;
-  align-items: center;
-  gap: 8px 14px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--a13n-border);
-  font-size: 13px;
-}
-.steps strong {
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-.stepIcon {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--a13n-hover);
-  color: var(--a13n-secondary);
-}
-.stepIcon svg {
-  width: 16px;
-  height: 16px;
-}
-.stepIcon[data-state="confirmed"] {
-  color: var(--success-foreground);
-}
-.stepLabel {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
+  gap: 16px;
   min-width: 0;
 }
-.stepTime {
-  font-size: 12px;
-  color: var(--a13n-secondary);
+
+/* Inline notice ---------------------------------------------------------- */
+.notice {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: var(--a13n-radius-row);
+  font-size: 12.5px;
+  line-height: 1.5;
 }
-.stepAction {
-  justify-self: end;
+.notice[data-tone="warning"] {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--a13n-text);
 }
-.stepNote {
-  grid-column: 2 / -1;
+.notice[data-tone="danger"] {
+  background: color-mix(in srgb, var(--destructive) 12%, transparent);
+  color: var(--a13n-text);
+}
+
+/* Copyable test marker --------------------------------------------------- */
+.testMessage {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.testMessageRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.testMessageRow code {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+}
+.testMessage p {
   margin: 0;
   color: var(--a13n-secondary);
   font-size: 12px;
-  line-height: 1.6;
-  overflow-wrap: anywhere;
+  line-height: 1.5;
 }
-.details {
-  margin-top: 14px;
+
+/* Vertical stage timeline ------------------------------------------------ */
+.stages {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 6px 14px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+  list-style: none;
+}
+.stages > li {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  min-width: 0;
+}
+.stages > li + li::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: -14px;
+  height: 26px;
+  width: 1px;
+  background: var(--a13n-border-soft);
+}
+.stageMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 19px;
+  height: 19px;
+  margin-top: 1px;
+  border-radius: 50%;
+  color: var(--a13n-secondary);
+  background: var(--a13n-elevated);
+}
+.stageMark[data-state="confirmed"] {
+  background: color-mix(in srgb, var(--success) 18%, transparent);
+  color: var(--success);
+}
+.stageMark[data-state="failed"] {
+  background: color-mix(in srgb, var(--destructive) 18%, transparent);
+  color: var(--destructive);
+}
+.stageCopy {
+  display: grid;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.stageCopy strong {
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.stageCopy small,
+.stageCopy p {
+  margin: 0;
   color: var(--a13n-secondary);
   font-size: 12px;
+  line-height: 1.5;
 }
-.details summary {
-  width: fit-content;
-  cursor: pointer;
+.stageCopy code {
+  font-size: 11.5px;
 }
-.details summary:focus-visible {
-  outline: 2px solid var(--a13n-accent);
-  outline-offset: 4px;
+.detail {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
 }
-.details p {
-  margin: 10px 0 0;
-  overflow-wrap: anywhere;
-}
-@container (max-width: 650px) {
-  .steps > li {
-    grid-template-columns: 28px minmax(0, 1fr) auto;
-  }
-  .stepTime {
-    grid-column: 2;
-    grid-row: 2;
-  }
-  .stepAction {
-    grid-column: 3;
-    grid-row: 1 / 3;
-  }
-  .stepNote {
-    grid-column: 2 / -1;
-  }
+.detail code {
+  font-size: 12px;
 }

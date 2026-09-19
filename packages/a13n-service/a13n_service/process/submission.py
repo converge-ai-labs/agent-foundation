@@ -4,6 +4,7 @@ from a13n_harness.providers.endpoint_policy import EndpointPolicy
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.assets.catalog import AssetCatalog
+from a13n_service.environments.devices import DeviceDiscovery
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.interactions.acceptance import RunAcceptanceService
@@ -21,6 +22,8 @@ def build_input_commands(
     invocations: AgentInvocationResolver,
     assets: AssetCatalog,
     inline_hooks: InlineHookValidator,
+    *,
+    devices: DeviceDiscovery | None = None,
 ) -> InteractionCommands:
     if shared.memory_behaviors is None:
         raise RuntimeError("Execution memory behavior composition is required")
@@ -38,6 +41,7 @@ def build_input_commands(
             lifecycle=shared.lifecycle,
             bindings=shared.memory_behaviors,
             coordination=ConnectionCoordination(shared.storage.redis),
+            devices=devices or shared.devices or DeviceDiscovery(shared.secret_protector),
         ),
         states,
         assets,

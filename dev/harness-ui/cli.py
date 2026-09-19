@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 RESOURCE_SUFFIXES = {
     "models": (".yaml",),
     "agents": (".yaml",),
+    "devices": (".yaml",),
     "extensions": (".yaml",),
     "mcp": (".yaml", ".json"),
     "projects": (".yaml",),

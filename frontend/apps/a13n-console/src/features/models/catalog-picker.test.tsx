@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
@@ -66,17 +66,12 @@ it("keeps a large catalog searchable without rendering every model at once", asy
       allowCompatible={false}
       value={null}
       onSelect={selected}
-      onPendingChange={vi.fn()}
     />,
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("combobox", { name: "Model" }));
-  expect(screen.queryByRole("option", { name: "Model 149" })).toBeNull();
-  const search = within(
-    await screen.findByRole("dialog", { name: "Model" }),
-  ).getByRole("combobox");
-  await user.type(search, "model-149");
-  await user.click(await screen.findByRole("option", { name: "Model 149" }));
+  expect(screen.queryByRole("button", { name: /Model 149/ })).toBeNull();
+  await user.type(screen.getByRole("searchbox"), "model-149");
+  await user.click(await screen.findByRole("button", { name: /Model 149/ }));
   expect(selected).toHaveBeenCalledWith(many[149]);
 });
 
@@ -88,24 +83,20 @@ it("shows only provider models until the OpenAI compatible entry is opened", asy
       allowCompatible
       value={null}
       onSelect={vi.fn()}
-      onPendingChange={vi.fn()}
     />,
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("combobox", { name: "Model" }));
-  await screen.findByRole("dialog", { name: "Model" });
-  expect(screen.queryByRole("option", { name: "Claude Opus 5" })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Claude Opus 5/ })).toBeNull();
   await user.click(
     screen.getByRole("button", { name: "Other models (compatible)…" }),
   );
   expect(
-    await screen.findByRole("option", { name: "Claude Opus 5" }),
+    await screen.findByRole("button", { name: /Claude Opus 5/ }),
   ).toBeTruthy();
 });
 
 it("requires a concrete regional variant and has no compatible entry for Bedrock", async () => {
-  const select = vi.fn(),
-    pending = vi.fn();
+  const select = vi.fn();
   render(
     <CatalogPicker
       entries={entries}
@@ -113,18 +104,14 @@ it("requires a concrete regional variant and has no compatible entry for Bedrock
       allowCompatible={false}
       value={null}
       onSelect={select}
-      onPendingChange={pending}
     />,
   );
   const user = userEvent.setup();
-  await user.click(screen.getByRole("combobox", { name: "Model" }));
-  await screen.findByRole("dialog", { name: "Model" });
   expect(
     screen.queryByRole("button", { name: "Other models (compatible)…" }),
   ).toBeNull();
-  await user.click(screen.getByRole("option", { name: "Claude Opus 5" }));
+  await user.click(screen.getByRole("button", { name: /Claude Opus 5/ }));
   expect(select).not.toHaveBeenCalled();
-  expect(pending).toHaveBeenLastCalledWith(true);
   await user.click(
     screen.getByRole("combobox", { name: "Provider model variant" }),
   );
@@ -135,5 +122,21 @@ it("requires a concrete regional variant and has no compatible entry for Bedrock
     }),
   );
   expect(select).toHaveBeenLastCalledWith(entries[1]);
-  expect(pending).toHaveBeenLastCalledWith(false);
+});
+
+it("offers a custom model when the catalog does not list one", async () => {
+  const select = vi.fn();
+  render(
+    <CatalogPicker
+      entries={entries}
+      channels={["openai"]}
+      allowCompatible={false}
+      value={null}
+      onSelect={select}
+    />,
+  );
+  await userEvent
+    .setup()
+    .click(screen.getByRole("button", { name: /Custom model/ }));
+  expect(select).toHaveBeenCalledWith(null);
 });

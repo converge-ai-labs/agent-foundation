@@ -851,6 +851,23 @@ function Conversation({
             receipt={receipt}
             busy={thread.root_activity.state !== "inactive"}
             liveTokens={showLive ? display.contextUsage?.tokens : undefined}
+            savedGoal={thread.goal}
+            onRetryGoal={
+              thread.root_activity.state === "inactive" &&
+              detail.data?.available_actions?.includes("run") &&
+              draft.submission.kind !== "pending" &&
+              draft.submission.kind !== "unknown"
+                ? (objective) => {
+                    const text = draft.doc.getText("text");
+                    text.insert(
+                      text.length,
+                      `${text.length ? "\n\n" : ""}${objective}`,
+                    );
+                    draft.mode = "goal";
+                    draft.notify();
+                  }
+                : undefined
+            }
           />
         )}
         <ModalFrame

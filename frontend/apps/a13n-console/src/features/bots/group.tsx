@@ -1,18 +1,20 @@
-import { botAccount } from "./account";
-import { Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
+import { SettingsRow, SettingsSection } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { ChatCircleDotsIcon, GitBranchIcon } from "@phosphor-icons/react";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice, Loading } from "../../shared/feedback";
+import { IconTile } from "../../shared/identity";
 import {
-  Empty,
-  ErrorNotice,
-  Loading,
-  Page,
-  StateBadge,
-} from "../../shared/feedback";
+  DetailHeader,
+  DetailLayout,
+  DetailPage,
+  Section,
+} from "../../shared/page";
 import { AgentLink } from "../agents/link";
 import { TargetEditor } from "../application-accounts/targets";
 import {
@@ -21,6 +23,9 @@ import {
   automaticPlacementHint,
   responseLabels,
 } from "../application-accounts/messaging-fields";
+import { ReceptionPill, usePlatformName } from "../integrations/platform";
+import { botAccount, type BotAccount } from "./account";
+import { useChannelNames } from "./channels";
 import { BotChecks } from "./checks";
 import { BotConversations } from "./conversations";
 import { BotGroupMemory } from "./memory";
@@ -116,63 +121,99 @@ export function BotGroupDetail() {
   function path(tab: string) {
     return `${root}${tab === "configuration" ? "" : `/${tab}`}${tab === "memory" && search.size ? `?${search}` : ""}`;
   }
+  return (
+    <ChannelDetail
+      account={account.data}
+      target={current}
+      tab={groupTab}
+      onTabChange={(value) => navigate(path(value))}
+      memoryPath={path("memory")}
+    />
+  );
+}
+
+function ChannelDetail({
+  account,
+  target,
+  tab,
+  onTabChange,
+  memoryPath,
+}: {
+  account: BotAccount;
+  target: Schema["AccountTarget"];
+  tab: string;
+  onTabChange: (value: string) => void;
+  memoryPath: string;
+}) {
+  const { t } = useTranslation(),
+    { basePath } = useWorkspace(),
+    platformName = usePlatformName();
+  const github = account.provider_key === "github";
+  const nameOf = useChannelNames(account);
+  const name = nameOf(target.external_target_id);
   const organization =
-    account.data.provider_config[
-      account.data.provider_key === "slack" ? "team_id" : "tenant_key"
+    account.provider_config?.[
+      account.provider_key === "slack" ? "team_id" : "tenant_key"
     ];
   return (
-    <Page
-      title={current.external_target_id}
-      back={`${basePath}/bots/${accountId}/channels`}
-      description={`${github ? "GitHub" : account.data.provider_key === "slack" ? "Slack" : t("Feishu")} · ${typeof organization === "string" ? organization : t("External organization")}`}
+    <DetailPage
+      back={`${basePath}/bots/${account.id}/channels`}
+      backLabel={`${t("Bots")} / ${account.name}`}
+      tab={tab}
+      onTabChange={onTabChange}
+      tabs={[
+        { value: "configuration", label: t("Configuration") },
+        { value: "conversations", label: t("Conversations") },
+        ...(github ? [] : [{ value: "memory", label: t("Memory") }]),
+      ]}
+      header={
+        <DetailHeader
+          avatar={
+            <IconTile size={44}>
+              {github ? (
+                <GitBranchIcon aria-hidden="true" size={20} />
+              ) : (
+                <ChatCircleDotsIcon aria-hidden="true" size={20} />
+              )}
+            </IconTile>
+          }
+          name={name}
+          status={<ReceptionPill enabled={!!target.receive_enabled} />}
+          resourceKey={
+            name === target.external_target_id
+              ? undefined
+              : target.external_target_id
+          }
+          description={`${platformName(account.provider_key)} · ${
+            typeof organization === "string" && organization
+              ? organization
+              : account.name
+          }`}
+        />
+      }
     >
-      <nav
-        aria-label={t("Conversation location")}
-        className={styles.groupBreadcrumb}
-      >
-        <Link to={`${basePath}/bots/${accountId}`}>{account.data.name}</Link>
-        <span aria-hidden="true">/</span>
-        <span>{current.external_target_id}</span>
-      </nav>
-      <Tabs
-        value={groupTab}
-        onValueChange={(value) => navigate(path(String(value)))}
-      >
-        <TabsList
-          className={styles.detailTabs}
-          aria-label={t("Conversation details")}
-        >
-          <TabsTab value="configuration">{t("Configuration")}</TabsTab>
-          <TabsTab value="conversations">{t("Conversations")}</TabsTab>
-          {!github && <TabsTab value="memory">{t("Memory")}</TabsTab>}
-        </TabsList>
-        <TabsPanel value="configuration">
-          {groupTab === "configuration" && (
-            <>
-              <GroupConfiguration
-                account={account.data}
-                target={current}
-                memoryPath={path("memory")}
-              />
-              <BotChecks
-                account={account.data}
-                conversationId={current.external_target_id}
-              />
-            </>
-          )}
-        </TabsPanel>
-        <TabsPanel value="conversations">
-          {groupTab === "conversations" && (
-            <BotConversations accountId={accountId} targetId={targetId} />
-          )}
-        </TabsPanel>
-        <TabsPanel value="memory">
-          {groupTab === "memory" && (
-            <BotGroupMemory account={account.data} target={current} />
-          )}
-        </TabsPanel>
-      </Tabs>
-    </Page>
+      <DetailLayout>
+        {tab === "configuration" && (
+          <>
+            <GroupConfiguration
+              account={account}
+              target={target}
+              memoryPath={memoryPath}
+            />
+            <BotChecks
+              account={account}
+              conversationId={target.external_target_id}
+            />
+          </>
+        )}
+        {tab === "conversations" && (
+          <BotConversations accountId={account.id} targetId={target.id} />
+        )}
+        {tab === "memory" && !github && (
+          <BotGroupMemory account={account} target={target} />
+        )}
+      </DetailLayout>
+    </DetailPage>
   );
 }
 
@@ -192,100 +233,80 @@ function GroupConfiguration({
       target.provider_policy ?? account.provider_policy,
     ),
     agentId = target.agent_id ?? account.default_agent_id;
+  const source = (overridden: boolean) =>
+    t(overridden ? "Conversation override" : "Account default");
   return (
-    <section className={styles.groupConfiguration}>
-      <div className={styles.memoryHeading}>
-        <div>
-          <h2>{t("Configuration")}</h2>
-          <p>
-            {t(
-              "Settings for this exact conversation. Other conversations keep their own settings.",
-            )}
-          </p>
-        </div>
-        {can("account_target.manage") && (
+    <Section
+      title={t("Configuration")}
+      description={t(
+        "Settings for this exact conversation. Other conversations keep their own settings.",
+      )}
+      actions={
+        can("account_target.manage") && (
           <TargetEditor account={account} target={target} bot />
-        )}
-      </div>
-      <dl className={styles.groupFacts}>
-        <div>
-          <dt>{t("Receive messages")}</dt>
-          <dd>
-            <StateBadge
-              state={target.receive_enabled ? "enabled" : "disabled"}
-            />
-          </dd>
-        </div>
-        <div>
-          <dt>{t("Agent")}</dt>
-          <dd>
-            {agentId ? <AgentLink agentId={agentId} /> : t("Not configured")}
-            <small>
-              {t(target.agent_id ? "Conversation override" : "Account default")}
-            </small>
-          </dd>
-        </div>
-        <div>
-          <dt>{t("When to respond")}</dt>
-          <dd>
-            {github
-              ? t(
-                  account.provider_config_version === "github_notifications_v1"
-                    ? "Notification updates"
-                    : "Selected GitHub events",
-                )
-              : policy
-                ? t(responseLabels[policy.interaction_mode])
-                : t("Platform default")}
-            <small>
-              {t(
-                target.provider_policy
-                  ? "Conversation override"
-                  : "Account default",
-              )}
-            </small>
-          </dd>
-        </div>
-        <div>
-          <dt>{t("Reply placement")}</dt>
-          <dd>
-            {github
-              ? t("Issue or PR comment")
-              : policy
-                ? t(placementLabels[policy.reply_mode])
-                : t("Platform default")}
-            {!github && policy?.reply_mode === "auto" && (
-              <small>{t(automaticPlacementHint)}</small>
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>{t("Advanced overrides")}</dt>
-          <dd>
-            {t(target.config_override ? "Configured" : "Account default")}
-          </dd>
-        </div>
+        )
+      }
+    >
+      <SettingsSection>
+        <SettingsRow label={t("Receive messages")}>
+          <ReceptionPill enabled={!!target.receive_enabled} />
+        </SettingsRow>
+        <SettingsRow label={t("Agent")} description={source(!!target.agent_id)}>
+          {agentId ? (
+            <AgentLink agentId={agentId} />
+          ) : (
+            <span className={styles.unset}>{t("Not configured")}</span>
+          )}
+        </SettingsRow>
+        <SettingsRow
+          label={t("When to respond")}
+          description={source(!!target.provider_policy)}
+        >
+          {github
+            ? t(
+                account.provider_config_version === "github_notifications_v1"
+                  ? "Notification updates"
+                  : "Selected GitHub events",
+              )
+            : policy
+              ? t(responseLabels[policy.interaction_mode])
+              : t("Platform default")}
+        </SettingsRow>
+        <SettingsRow
+          label={t("Reply placement")}
+          description={
+            !github && policy?.reply_mode === "auto"
+              ? t(automaticPlacementHint)
+              : undefined
+          }
+        >
+          {github
+            ? t("Issue or PR comment")
+            : policy
+              ? t(placementLabels[policy.reply_mode])
+              : t("Platform default")}
+        </SettingsRow>
+        <SettingsRow label={t("Advanced overrides")}>
+          {t(target.config_override ? "Configured" : "Account default")}
+        </SettingsRow>
         {!github && (
-          <div>
-            <dt>{t("Memory policy")}</dt>
-            <dd>
-              <Link to={memoryPath}>{t("View conversation memory")}</Link>
-            </dd>
-          </div>
+          <SettingsRow label={t("Memory policy")}>
+            <Link to={memoryPath}>{t("View conversation memory")}</Link>
+          </SettingsRow>
         )}
-      </dl>
+      </SettingsSection>
       {(!account.receive_enabled || account.status !== "active") && (
-        <p role="status">
+        <p className={styles.notice} data-tone="warning" role="status">
           {t(
             "Bot reception is disabled. Enabling this conversation alone will not receive messages.",
           )}
         </p>
       )}
-      <p>
+      <p className={styles.hint}>
         {t(
           "Routing changes apply to future inputs. Accepted work and active conversations retain their execution configuration.",
         )}
       </p>
-    </section>
+    </Section>
   );
 }

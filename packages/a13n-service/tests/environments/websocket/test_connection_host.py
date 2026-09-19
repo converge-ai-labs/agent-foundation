@@ -7,11 +7,11 @@ import json
 import socket
 import sys
 from contextlib import asynccontextmanager
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 import uvicorn
-from a13n_harness import EnvironmentAccess
 from a13n_harness.providers.environment.commands import ArgvCommand, CommandRequest
 from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
 from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
@@ -22,17 +22,21 @@ from a13n_service.environments.websocket.relay_client import RelayUseClient
 from a13n_service.environments.websocket.relay_file_operations import RelayFileOperations
 from a13n_service.environments.websocket.relay_processes import RelayProcessOperations, RelayShellOperations
 from a13n_service.environments.websocket.relay_protocol import RelayEnvironmentSnapshot
+from a13n_service.environments.websocket.relay_runtime import RelayResponseRuntime
 from a13n_service.environments.websocket.relay_scope import RelayUseScope
-from a13n_service.environments.websocket.relay_storage import ConnectionRelayStore, WorkerResponseMailbox
+from a13n_service.environments.websocket.relay_storage import ConnectionRelayStore, ResponseMailbox
 from a13n_service.environments.websocket.relay_waiters import RelayOperationError, RelayResponseDispatcher
 from a13n_service.environments.websocket.resources import ConnectionResources
 from a13n_service.environments.websocket.service import ClientConnectionService
+from a13n_service.environments.websocket.transport import ClientWebSocket
+from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.ids import new_object_id
 from fastapi import FastAPI, WebSocket
 from websockets.asyncio.client import connect
 from websockets.exceptions import InvalidStatus
 
 from ..conftest import actor
+from .test_worker_connections import attempt as attempt
 
 pytestmark = pytest.mark.anyio
 EXECUTABLE = str(Path(sys.executable).resolve())
@@ -40,7 +44,12 @@ POLICY = EnvironmentOutputPolicy(max_inline_bytes=32, max_output_bytes=4096, ove
 
 
 @pytest.fixture
-async def host_server(environment_service, target, relay_redis):
+def binding_directories():
+    return {}
+
+
+@pytest.fixture
+async def host_server(environment_service, target, relay_redis, binding_directories):
     service = ClientConnectionService(
         ConnectionResources(environment_service),
         ConnectionCoordination(relay_redis),
@@ -48,13 +57,11 @@ async def host_server(environment_service, target, relay_redis):
     )
     authorized = []
 
-    async def authorize(use, name):
-        authorized.append((use, name))
-        if name in {None, "workspace", "writer"}:
-            return frozenset(EnvironmentAction)
-        if name == "reader":
-            return EnvironmentAccess("read_only").permission_set().operations
-        raise EnvironmentError("No accepted mount", code="environment_forbidden")
+    async def authorize(use):
+        authorized.append(use)
+        if use.mount_name not in binding_directories:
+            raise EnvironmentError("No accepted mount", code="environment_forbidden")
+        return binding_directories[use.mount_name]
 
     host = ClientConnectionHost(service, relay_redis, authorize)
     app = FastAPI()
@@ -81,7 +88,7 @@ async def host_server(environment_service, target, relay_redis):
 
 
 @asynccontextmanager
-async def daemon(binary, directory, url, ticket, native_id, *, expected_exit=0):
+async def daemon(binary, directory, url, ticket, native_id, *, expected_exit=0, max_sessions=128):
     directory.mkdir()
     workspace, runtime = directory / "workspace", directory / "runtime"
     workspace.mkdir()
@@ -93,27 +100,9 @@ async def daemon(binary, directory, url, ticket, native_id, *, expected_exit=0):
     configuration.write_text(
         json.dumps(
             {
-                "root_mount_id": "workspace",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(workspace),
-                        "writable": True,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 8 * 1024 * 1024,
-                        "allowed_operations": [
-                            "stat",
-                            "read_text",
-                            "write_text",
-                            "open_reader",
-                            "open_writer",
-                            "list",
-                            "find",
-                            "search",
-                            "command_cwd",
-                        ],
-                    }
-                ],
+                "device_id": native_id,
+                "default_working_directory": str(workspace),
+                "limits": {"max_sessions": max_sessions},
                 "trusted_executable_roots": [str(Path(EXECUTABLE).parent)],
             }
         )
@@ -123,10 +112,8 @@ async def daemon(binary, directory, url, ticket, native_id, *, expected_exit=0):
         "--config",
         str(configuration),
         env={
-            "A13N_ENVD_ENVIRONMENT_ID": native_id,
             "A13N_ENVD_RUNTIME_DIR": str(runtime),
             "A13N_ENVD_TRANSPORT": "reverse_websocket",
-            "A13N_ENVD_EXECUTION_ISOLATION": "disabled",
             "A13N_ENVD_REVERSE_WS_URL": url,
             "A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE": str(credential),
         },
@@ -160,77 +147,109 @@ async def online(service, target, connection_id):
             await asyncio.sleep(0.02)
 
 
-async def test_named_mounts_keep_independent_policies_on_one_real_eip_session(
-    envd_binary, host_server, target, relay_redis, tmp_path
+@asynccontextmanager
+async def relay_clients(service, observed, redis, names):
+    worker = new_object_id("wrk")
+    mailbox = ResponseMailbox(redis, worker)
+    await mailbox.prepare()
+    responses = RelayResponseDispatcher(mailbox)
+    scopes, clients = [], {}
+    for name in names:
+        identity = UseIdentity(
+            observed.value.connection,
+            new_object_id("eu"),
+            "run",
+            "attempt",
+            1,
+            worker,
+            name,
+            admission_deadline_ms=observed.value.expires_at_ms,
+        )
+        grant = await service.coordination.acquire_use(identity, attempt_expires_at_ms=observed.value.now_ms + 60_000)
+        scope = RelayUseScope(
+            identity, grant, ConnectionRelayStore(redis, identity.connection), responses, check_authority=lambda: None
+        )
+        scopes.append(scope)
+        clients[name] = RelayUseClient(scope, mount_name=name)
+
+    async def renew():
+        while True:
+            await asyncio.sleep(0.3)
+            for scope in scopes:
+                if not scope.available:
+                    continue
+                from a13n_service.environments.websocket.coordination import CoordinationError
+
+                try:
+                    await scope.renew(
+                        await service.coordination.renew_use(
+                            scope.identity, attempt_expires_at_ms=observed.value.now_ms + 60_000
+                        )
+                    )
+                except CoordinationError:
+                    await scope.invalidate()
+
+    reading, renewing = asyncio.create_task(responses.run()), asyncio.create_task(renew())
+    try:
+        yield clients
+    finally:
+        renewing.cancel()
+        await asyncio.gather(renewing, return_exceptions=True)
+        for scope in scopes:
+            await scope.invalidate()
+        responses.close()
+        await reading
+
+
+async def test_named_bindings_own_distinct_sessions_directories_and_capabilities(
+    envd_binary, host_server, target, relay_redis, tmp_path, binding_directories
 ):
     _, service, url, authorized = host_server
     ticket = await service.issue_ticket(actor(), target.environment_id)
-    async with daemon(envd_binary, tmp_path / "aliases", url, ticket.ticket, target.daemon_environment_id) as (_, root):
+    async with daemon(envd_binary, tmp_path / "aliases", url, ticket.ticket, target.device_id) as (_, root):
+        data = root / "data"
+        data.mkdir()
+        binding_directories.update(reader=str(data), writer=str(root))
         observed = await online(service, target, ticket.connection_id)
-        identity = UseIdentity(
-            observed.value.connection, new_object_id("eu"), "run", "attempt", 1, new_object_id("wrk")
-        )
-        mailbox = WorkerResponseMailbox(relay_redis, identity.worker_instance_id)
-        await mailbox.prepare()
-        grant = await service.coordination.acquire_use(identity, attempt_expires_at_ms=observed.value.now_ms + 60_000)
-        responses = RelayResponseDispatcher(mailbox)
-
-        scope = RelayUseScope(
-            identity,
-            grant,
-            ConnectionRelayStore(relay_redis, identity.connection),
-            responses,
-            check_authority=lambda: None,
-        )
-
-        def mount(name):
-            client = RelayUseClient(scope, mount_name=name)
-            client.bind_mount(name)
-            return client
-
-        reader, writer, unknown = mount("reader"), mount("writer"), mount("unknown")
-        reading = asyncio.create_task(responses.run())
-        try:
+        async with relay_clients(service, observed, relay_redis, ("reader", "writer", "unknown")) as clients:
+            reader, writer, unknown = (clients[name] for name in ("reader", "writer", "unknown"))
             with pytest.raises(RelayOperationError) as rejected:
-                await reader.call("file.stat", {"path": "/"})
-            assert rejected.value.code == "environment_forbidden"
+                await reader.call("file.stat", {"path": str(root)})
+            assert rejected.value.code == "environment_unavailable"
             snapshot = RelayEnvironmentSnapshot.model_validate(await reader.call("scope.describe"))
-            assert EnvironmentAction.FILE_WRITE_TEXT not in snapshot.descriptor.permissions.operations
+            writer_snapshot = RelayEnvironmentSnapshot.model_validate(await writer.call("scope.describe"))
+            assert snapshot.descriptor.working_directory == str(data)
+            assert writer_snapshot.descriptor.working_directory == str(root)
+            assert snapshot.descriptor.generation != writer_snapshot.descriptor.generation
+            assert EnvironmentAction.FILE_WRITE_TEXT in snapshot.descriptor.permissions.operations
             with pytest.raises(RelayOperationError) as rejected:
                 await unknown.call("scope.describe")
             assert rejected.value.code == "environment_forbidden"
-            await writer.call("scope.describe")
-            await writer.call("file.write_text", {"path": "/shared", "text": "allowed", "mode": "create"})
-            assert (await reader.call("file.read_text", {"path": "/shared"}))["text"] == "allowed"
-            with pytest.raises(RelayOperationError) as rejected:
-                await reader.call("file.write_text", {"path": "/shared", "text": "denied", "mode": "replace"})
-            assert rejected.value.code == "environment_forbidden"
-            # A caller cannot attach another accepted name to a published handle scope.
-            writer.bind_mount("reader")
-            with pytest.raises(RelayOperationError) as rejected:
-                await writer.call("file.write_text", {"path": "/shared", "text": "denied", "mode": "replace"})
-            assert rejected.value.code == "environment_forbidden"
-            assert (root / "shared").read_text() == "allowed"
-            await reader.call("scope.describe")
-            assert authorized == [(identity, None), (identity, "reader"), (identity, "unknown"), (identity, "writer")]
+            shared = str(root / "shared")
+            await writer.call("file.write_text", {"path": shared, "text": "allowed", "mode": "create"})
+            # The fixed cwd is not an access root.
+            assert (await reader.call("file.read_text", {"path": shared}))["text"] == "allowed"
+            await reader.call("file.write_text", {"path": shared, "text": "updated", "mode": "replace"})
             await reader.call("scope.close")
-        finally:
-            await scope.invalidate()
-            responses.close()
-            await reading
+            assert (await writer.call("file.read_text", {"path": shared}))["text"] == "updated"
+            assert (await service.observe(target.organization_id, target.environment_id)).value.status == "online"
+            assert [use.mount_name for use in authorized] == ["reader", "writer", "unknown"]
+            await writer.call("scope.close")
+            assert (await service.observe(target.organization_id, target.environment_id)).value.status == "online"
 
 
-async def test_ready_connection_relay_uses_real_envd_and_releases_carrier(
+async def test_ready_connection_relay_streams_and_closes_only_its_session(
     envd_binary,
     host_server,
     environment_service,
     target,
     relay_redis,
     tmp_path,
+    binding_directories,
 ):
     host, service, url, authorized = host_server
     ticket = await service.issue_ticket(actor(), target.environment_id)
-    async with daemon(envd_binary, tmp_path / "daemon", url, ticket.ticket, target.daemon_environment_id) as (
+    async with daemon(envd_binary, tmp_path / "daemon", url, ticket.ticket, target.device_id) as (
         _,
         workspace,
     ):
@@ -238,23 +257,9 @@ async def test_ready_connection_relay_uses_real_envd_and_releases_carrier(
         assert not authorized
         assert (await service.resources.capture(target.organization_id, target.environment_id)).status == "running"
         assert environment_service.sessions.kw["bind"].sync_engine.pool.checkedout() == 0
-        identity = UseIdentity(
-            observed.value.connection, new_object_id("eu"), "run", "attempt", 1, new_object_id("wrk")
-        )
-        mailbox = WorkerResponseMailbox(relay_redis, identity.worker_instance_id)
-        await mailbox.prepare()
-        grant = await service.coordination.acquire_use(identity, attempt_expires_at_ms=observed.value.now_ms + 60_000)
-        responses = RelayResponseDispatcher(mailbox)
-        scope = RelayUseScope(
-            identity,
-            grant,
-            ConnectionRelayStore(relay_redis, identity.connection),
-            responses,
-            check_authority=lambda: None,
-        )
-        client = RelayUseClient(scope)
-        reader = asyncio.create_task(responses.run())
-        try:
+        binding_directories["workspace"] = str(workspace)
+        async with relay_clients(service, observed, relay_redis, ("workspace",)) as clients:
+            client = clients["workspace"]
             snapshot = RelayEnvironmentSnapshot.model_validate(await client.call("scope.describe"))
             assert "files" in snapshot.descriptor.operation_families
             client.bind_mount("mount-worker")
@@ -264,9 +269,13 @@ async def test_ready_connection_relay_uses_real_envd_and_releases_carrier(
             async def source():
                 yield content
 
-            result = await files.write_bytes_stream("/bytes", source(), mode="create")
+            result = await files.write_bytes_stream(str(workspace / "bytes"), source(), mode="create")
             assert result.bytes_written == len(content)
-            assert await files.read_bytes("/bytes") == content
+            try:
+                downloaded = await files.read_bytes(str(workspace / "bytes"))
+            except RelayOperationError as error:
+                pytest.fail(str(error.failure.model_dump()))
+            assert downloaded == content
             assert (workspace / "bytes").read_bytes() == content
             try:
                 shell = await RelayShellOperations(client).exec(
@@ -288,20 +297,12 @@ async def test_ready_connection_relay_uses_real_envd_and_releases_carrier(
             client.bind_mount("mount-other")
             with pytest.raises(RelayOperationError):
                 await RelayProcessOperations(client).inspect(started.process.handle)
-            assert authorized == [(identity, None), (identity, "workspace")]
+            assert authorized == [client.identity]
             await client.call("scope.close")
-        finally:
-            await scope.invalidate()
-            responses.close()
-            await reader
-        async with asyncio.timeout(3):
-            while (await service.observe(target.organization_id, target.environment_id)).value.status != "offline":
-                await asyncio.sleep(0.01)
+        assert (await service.observe(target.organization_id, target.environment_id)).value.status == "online"
         current = await service.resources.capture(target.organization_id, target.environment_id)
         assert current.generation == target.generation
-        async with asyncio.timeout(3):
-            while host._active:
-                await asyncio.sleep(0.01)
+        assert host._active
 
 
 async def test_takeover_replaces_ready_connection_without_changing_backing_generation(
@@ -309,12 +310,13 @@ async def test_takeover_replaces_ready_connection_without_changing_backing_gener
 ):
     _, service, url, _ = host_server
     first = await service.issue_ticket(actor(), target.environment_id)
-    async with daemon(
-        envd_binary, tmp_path / "first", url, first.ticket, target.daemon_environment_id, expected_exit=1
-    ) as (retired, _):
+    async with daemon(envd_binary, tmp_path / "first", url, first.ticket, target.device_id, expected_exit=1) as (
+        retired,
+        _,
+    ):
         old = await online(service, target, first.connection_id)
         second = await service.issue_ticket(actor(), target.environment_id)
-        async with daemon(envd_binary, tmp_path / "second", url, second.ticket, target.daemon_environment_id):
+        async with daemon(envd_binary, tmp_path / "second", url, second.ticket, target.device_id):
             new = await online(service, target, second.connection_id)
             assert old.value.connection != new.value.connection
             assert (
@@ -346,12 +348,12 @@ async def test_lost_database_commit_reply_reuses_publication_without_reinitializ
     tmp_path,
     monkeypatch,
 ):
-    from a13n_envd_client import EIPSession
+    from a13n_envd_client import EIPDeviceConnection
     from sqlalchemy.exc import DBAPIError
 
     _, service, url, _ = host_server
     original_publish = service.resources.publish
-    original_initialize = EIPSession.initialize
+    original_initialize = EIPDeviceConnection.initialize
     publications, initializations = [], []
 
     async def publish(target, status, **kwargs):
@@ -367,9 +369,9 @@ async def test_lost_database_commit_reply_reuses_publication_without_reinitializ
         return await original_initialize(*args, **kwargs)
 
     monkeypatch.setattr(service.resources, "publish", publish)
-    monkeypatch.setattr(EIPSession, "initialize", initialize)
+    monkeypatch.setattr(EIPDeviceConnection, "initialize", initialize)
     ticket = await service.issue_ticket(actor(), target.environment_id)
-    async with daemon(envd_binary, tmp_path / "daemon", url, ticket.ticket, target.daemon_environment_id):
+    async with daemon(envd_binary, tmp_path / "daemon", url, ticket.ticket, target.device_id):
         await online(service, target, ticket.connection_id)
         assert len(initializations) == 1
         assert len(publications) == 2 and publications[0] == publications[1]
@@ -409,3 +411,56 @@ async def test_drain_closes_candidate_and_rejects_new_admission(host_server, tar
             url, additional_headers={"Authorization": "Bearer " + fresh.ticket}, subprotocols=["eip.v1"]
         ):
             pytest.fail("draining owner accepted another carrier")
+
+
+@pytest.mark.parametrize("retirement", ["release", "revocation"])
+async def test_retired_sessions_release_native_capacity_without_disturbing_sibling(
+    envd_binary, host_server, target, relay_redis, tmp_path, binding_directories, attempt, monkeypatch, retirement
+):
+    _, service, url, _ = host_server
+    ticket = await service.issue_ticket(actor(), target.environment_id)
+    attempt = replace(attempt, organization_id=target.organization_id)
+    responses = RelayResponseRuntime(relay_redis, relay_redis, attempt.worker_id)
+    await responses.prepare()
+    connections = WorkerClientConnections(relay_redis, responses)
+    reading, renewing = asyncio.create_task(responses.run()), asyncio.create_task(connections.run())
+    closes = []
+    send = ClientWebSocket._send
+
+    async def record_close(carrier, message):
+        await send(carrier, message)
+        if isinstance(message, str) and json.loads(message).get("method") == "session.close":
+            closes.append(json.loads(message)["eip_session"])
+
+    monkeypatch.setattr(ClientWebSocket, "_send", record_close)
+    try:
+        async with daemon(envd_binary, tmp_path / "churn", url, ticket.ticket, target.device_id, max_sessions=2) as (
+            _,
+            root,
+        ):
+            binding_directories.update(workspace=str(root), reader=str(root))
+            await online(service, target, ticket.connection_id)
+            sibling = await connections.acquire(attempt, target.environment_id, mount_name="reader")
+            await sibling.call("scope.describe")
+            for cycle in range(6):
+                next_attempt = replace(attempt, run_id=f"run-{cycle}", run_attempt_id=f"attempt-{cycle}")
+                client = await connections.acquire(next_attempt, target.environment_id)
+                await client.call("scope.describe")
+                if retirement == "release":
+                    await connections.release(client)
+                else:
+                    await service.coordination.release_use(client.identity)
+                    async with asyncio.timeout(3):
+                        while client.available or len(closes) <= cycle:
+                            await asyncio.sleep(0.01)
+                    await connections.release(client)
+                assert len(closes) == cycle + 1, closes
+                await sibling.call("file.stat", {"path": str(root)})
+                assert (await service.observe(target.organization_id, target.environment_id)).value.status == "online"
+            await connections.release(sibling)
+            assert len(closes) == 7
+    finally:
+        await connections.close()
+        await renewing
+        await responses.close()
+        await reading

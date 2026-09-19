@@ -12,7 +12,6 @@ from ..models import (
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
-    EnvironmentMountDescriptor,
     EnvironmentOperationFamily,
     EnvironmentPermissionSet,
 )
@@ -59,15 +58,20 @@ async def open_eip_environment(
     environment_id: str,
     session_source: EIPSessionSource,
     mount_id: str,
+    device_id: str,
+    working_directory: str | None = None,
+    required_methods: frozenset[str] = frozenset(),
 ) -> AsyncGenerator[EIPEnvironmentSession]:
     """Open one provider-owned EIP session and expose semantic operation facets."""
     async with session_source.open_session(
-        expected_environment_id=environment_id,
-        required_methods=frozenset({"environment.describe", "environment.readiness", "session.close"}),
+        expected_device_id=device_id,
+        working_directory=working_directory,
+        required_methods=required_methods
+        | frozenset({"environment.describe", "environment.readiness", "session.close"}),
     ) as session:
-        if session.descriptor.environment_id != environment_id:
+        if session.descriptor.device_id != device_id:
             raise EnvironmentError(
-                "EIP session returned a different environment identity",
+                "EIP Session returned a different Device identity",
                 code="environment_stale_mount",
             )
         environment = EIPEnvironmentSession(
@@ -96,8 +100,8 @@ class EIPEnvironmentSession:
         self._session = session
         self._provider_key = provider_key
         self._environment_id = environment_id
-        self._generation = str(session.descriptor.generation)
         self._descriptor = _convert_descriptor(session.descriptor)
+        self._generation = self._descriptor.generation
         self.bind_mount(mount_id)
 
     def bind_mount(self, mount_id: str) -> None:
@@ -159,7 +163,11 @@ class EIPEnvironmentSession:
                 "EIP provider does not expose the requested operation family",
                 code="environment_unsupported",
             )
-        readiness = await invoke(self._session.readiness())
+        try:
+            readiness = await invoke(self._session.readiness())
+        except EnvironmentError:
+            self._availability = EnvironmentAvailability(status="unavailable")
+            raise
         if not readiness.ready:
             self._availability = EnvironmentAvailability(status="unavailable")
             raise EnvironmentError(
@@ -183,7 +191,7 @@ class EIPEnvironmentSession:
             raise first_error
 
 
-def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDescriptor:
+def _convert_descriptor(descriptor: eip.SessionDescriptor) -> EnvironmentDescriptor:
     methods = set(descriptor.available_methods)
     actions = {action for method in methods for action in _METHOD_ACTIONS.get(method, ())}
     if "process.inspect" in methods and "output.read" in methods:
@@ -201,7 +209,8 @@ def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDes
         families.add("outputs")
     limits = descriptor.limits
     return EnvironmentDescriptor(
-        generation=str(descriptor.generation),
+        generation=f"{descriptor.generation}:{descriptor.session_id}",
+        working_directory=descriptor.working_directory,
         operation_families=frozenset(families),
         permissions=EnvironmentPermissionSet(operations=frozenset(actions)),
         limits={
@@ -216,32 +225,13 @@ def _convert_descriptor(descriptor: eip.EnvironmentDescriptor) -> EnvironmentDes
             "max_concurrent_file_transfers": limits.max_concurrent_file_transfers,
             "max_file_transfer_bytes": limits.max_file_transfer_bytes,
         },
-        mounts=tuple(
-            EnvironmentMountDescriptor(
-                name=mount.mount_id,
-                path=mount.logical_root,
-                read_only=not mount.writable,
-            )
-            for mount in descriptor.mounts
-        ),
+        mounts=(),
     )
 
 
-def configured_descriptor(*, read_only: bool = False, shell: bool = True) -> EnvironmentDescriptor:
+def configured_descriptor() -> EnvironmentDescriptor:
     actions = {action for values in _METHOD_ACTIONS.values() for action in values}
     actions.add(EnvironmentAction.PROCESS_READ_OUTPUT)
-    if not shell:
-        actions = {action for action in actions if action.value.startswith("environment.file.")}
-    if read_only:
-        actions -= {
-            EnvironmentAction.FILE_WRITE_TEXT,
-            EnvironmentAction.FILE_PATCH_TEXT,
-            EnvironmentAction.FILE_WRITE_BYTES,
-            EnvironmentAction.FILE_MKDIR,
-            EnvironmentAction.FILE_MOVE,
-            EnvironmentAction.FILE_REMOVE,
-            EnvironmentAction.FILE_COPY_DESTINATION,
-        }
     from ..models import ENVIRONMENT_ACTION_DISPATCH
 
     return EnvironmentDescriptor(

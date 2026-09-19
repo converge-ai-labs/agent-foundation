@@ -22,7 +22,7 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import type { useAgentChoices } from "./choices";
 import type { AgentConfig } from "./configuration";
 import { MCPConnectionIcon } from "../connections/mcp-icon";
-import { EditorSection } from "./section";
+import { Section } from "../../shared/page";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
 import styles from "./agents.module.css";
 
@@ -31,14 +31,18 @@ type Selection = Connections[number];
 type Connection = Schema["Connection"];
 type CatalogTool = { name: string; description: string; unavailable?: boolean };
 
-function displayName(connection: Connection) {
+export function displayName(connection: Connection) {
   const suffix = ` · ${connection.status}`;
   return connection.name.endsWith(suffix)
     ? connection.name.slice(0, -suffix.length)
     : connection.name;
 }
 
-function ConnectionBrandIcon({ connection }: { connection: Connection }) {
+export function ConnectionBrandIcon({
+  connection,
+}: {
+  connection: Connection;
+}) {
   return (
     <span className={styles.connectionBrandIcon} aria-hidden="true">
       {connection.source.kind === "connector" ? (
@@ -84,7 +88,7 @@ export function AgentConnections({
     );
   }
   return (
-    <EditorSection
+    <Section
       title={t("Connections")}
       description={t("Connected services this agent can use.")}
     >
@@ -184,7 +188,6 @@ export function AgentConnections({
               </div>
               <Link
                 to={`${basePath}/connections`}
-                target="_blank"
                 rel="noreferrer"
                 className={styles.setupCapability}
               >
@@ -194,11 +197,11 @@ export function AgentConnections({
           </CollapsiblePanel>
         </Collapsible>
       )}
-    </EditorSection>
+    </Section>
   );
 }
 
-function ConnectionGroup({
+export function ConnectionGroup({
   connection,
   selection,
   readOnly,

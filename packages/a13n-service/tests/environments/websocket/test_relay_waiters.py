@@ -20,7 +20,7 @@ from a13n_service.environments.websocket.relay_protocol import (
     RelayTerminal,
     TransferPosition,
 )
-from a13n_service.environments.websocket.relay_storage import RelayStoreError, WorkerResponseMailbox
+from a13n_service.environments.websocket.relay_storage import RelayStoreError, ResponseMailbox
 from a13n_service.environments.websocket.relay_waiters import RelayOperationError, RelayResponseDispatcher
 from a13n_service.ids import new_object_id
 from a13n_service.storage.config import RedisMemoryConfig
@@ -28,18 +28,25 @@ from a13n_service.storage.redis import open_redis
 
 pytestmark = pytest.mark.anyio
 USE = UseIdentity(
-    ConnectionIdentity("org", "env", "connection", "epoch", "control"), "use", "run", "attempt", 1, "worker"
+    ConnectionIdentity("org", "env", "connection", "epoch", "control"),
+    "use",
+    "run",
+    "attempt",
+    1,
+    "worker",
+    "workspace",
+    admission_deadline_ms=1,
 )
 
 
 @pytest.fixture
 async def dispatcher():
     async with open_redis(RedisMemoryConfig()) as redis:
-        yield RelayResponseDispatcher(WorkerResponseMailbox(redis, "worker"), chunk_capacity=1)
+        yield RelayResponseDispatcher(ResponseMailbox(redis, "worker"), chunk_capacity=1)
 
 
 def request():
-    return RelayRequest(request_id=new_object_id("erq"), use=USE, operation="file.stat", deadline_ms=10**12)
+    return RelayRequest(request_id=new_object_id("erq"), scope=USE, operation="file.stat", deadline_ms=10**12)
 
 
 def deadline(seconds=10):
@@ -53,7 +60,7 @@ def authority():
 def chunk(message, transfer_id, sequence=0, offset=0, data=b"hello"):
     return RelayChunk(
         request_id=message.request_id,
-        use=message.use,
+        scope=message.scope,
         transfer=TransferPosition(transfer_id=transfer_id, sequence=sequence, offset=offset),
         data=base64.b64encode(data).decode(),
     )
@@ -63,7 +70,7 @@ async def test_response_can_arrive_before_publication_returns(dispatcher):
     message = request()
     with dispatcher.register(message, authority(), deadline()) as pending:
         pending.begin_publication()
-        result = RelayTerminal(request_id=message.request_id, use=USE, result={"value": 1})
+        result = RelayTerminal(request_id=message.request_id, scope=USE, result={"value": 1})
         dispatcher.accept(result)
         assert await pending.result() == result
         dispatcher.accept(result.model_copy(update={"result": "late duplicate"}))
@@ -85,7 +92,7 @@ async def test_terminal_failure_retains_only_projected_provider_diagnostics(disp
     )
     with dispatcher.register(message, authority(), deadline()) as pending:
         dispatcher.accept(
-            RelayTerminal(request_id=message.request_id, use=USE, error=RelayFailure.from_environment(error))
+            RelayTerminal(request_id=message.request_id, scope=USE, error=RelayFailure.from_environment(error))
         )
         with pytest.raises(RelayOperationError) as raised:
             await pending.result()
@@ -103,9 +110,9 @@ async def test_foreign_use_and_out_of_order_responses_never_complete_another_wai
         dispatcher.register(first, authority(), deadline()) as one,
         dispatcher.register(second, authority(), deadline()) as two,
     ):
-        result = RelayTerminal(request_id=first.request_id, use=USE, result="first")
-        dispatcher.accept(result.model_copy(update={"use": replace(USE, attempt_fence=2)}))
-        dispatcher.accept(RelayTerminal(request_id=second.request_id, use=USE, result="second"))
+        result = RelayTerminal(request_id=first.request_id, scope=USE, result="first")
+        dispatcher.accept(result.model_copy(update={"scope": replace(USE, attempt_fence=2)}))
+        dispatcher.accept(RelayTerminal(request_id=second.request_id, scope=USE, result="second"))
         assert (await two.result()).result == "second"
         waiting = asyncio.create_task(one.result())
         await asyncio.sleep(0)
@@ -136,7 +143,7 @@ async def test_renewal_extends_a_sleeping_wait_without_reviving_expired_authorit
         grant.renew(USE, deadline(1))
         await asyncio.sleep(0.05)
         assert not waiting.done()
-        dispatcher.accept(RelayTerminal(request_id=message.request_id, use=USE))
+        dispatcher.accept(RelayTerminal(request_id=message.request_id, scope=USE))
         assert (await waiting).request_id == message.request_id
 
 
@@ -147,7 +154,7 @@ async def test_use_revocation_wakes_waiter_and_late_response_cannot_revive_it(di
         waiting = asyncio.create_task(pending.result())
         await asyncio.sleep(0)
         dispatcher.fence_use(USE)
-        dispatcher.accept(RelayTerminal(request_id=message.request_id, use=USE))
+        dispatcher.accept(RelayTerminal(request_id=message.request_id, scope=USE))
         with pytest.raises(RelayOperationError) as error:
             await waiting
         assert error.value.failure.code == "environment_unavailable"
@@ -162,7 +169,7 @@ async def test_slow_transfer_fails_alone_and_does_not_block_unary_response(dispa
     ):
         dispatcher.accept(chunk(stream, transfer_id))
         dispatcher.accept(chunk(stream, transfer_id, sequence=1, offset=5))
-        dispatcher.accept(RelayTerminal(request_id=unary.request_id, use=USE, result="ready"))
+        dispatcher.accept(RelayTerminal(request_id=unary.request_id, scope=USE, result="ready"))
         assert (await fast.result()).result == "ready"
         with pytest.raises(RelayOperationError) as error:
             await slow.next_chunk()
@@ -180,7 +187,7 @@ async def test_duplicate_chunk_is_ignored_and_missing_chunk_never_becomes_eof(di
         dispatcher.accept(
             RelayTerminal(
                 request_id=message.request_id,
-                use=USE,
+                scope=USE,
                 transfer=TransferPosition(transfer_id=transfer_id, sequence=2, offset=10),
             )
         )
@@ -195,7 +202,7 @@ async def test_empty_transfer_requires_explicit_successful_terminal(dispatcher):
         dispatcher.accept(
             RelayTerminal(
                 request_id=message.request_id,
-                use=USE,
+                scope=USE,
                 transfer=TransferPosition(transfer_id=new_object_id("etr"), sequence=0, offset=0),
             )
         )
@@ -217,7 +224,7 @@ async def test_caller_cancellation_unregisters_before_late_completion(dispatcher
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-    dispatcher.accept(RelayTerminal(request_id=message.request_id, use=USE))
+    dispatcher.accept(RelayTerminal(request_id=message.request_id, scope=USE))
     assert not dispatcher._pending
 
 
@@ -276,7 +283,7 @@ async def test_upload_rejects_invalid_credit_and_premature_success(dispatcher, f
         window.sent(5)
         position = window.position
         if fault == "before_finish":
-            dispatcher.accept(RelayTerminal(request_id=message.request_id, use=USE, transfer=position))
+            dispatcher.accept(RelayTerminal(request_id=message.request_id, scope=USE, transfer=position))
         else:
             changed = {
                 "foreign_transfer": {"transfer_id": new_object_id("etr")},
@@ -284,7 +291,7 @@ async def test_upload_rejects_invalid_credit_and_premature_success(dispatcher, f
                 "out_of_order": {"sequence": 2},
             }[fault]
             dispatcher.accept(
-                RelayCredit(request_id=message.request_id, use=USE, transfer=position.model_copy(update=changed))
+                RelayCredit(request_id=message.request_id, scope=USE, transfer=position.model_copy(update=changed))
             )
         with pytest.raises(RelayOperationError) as error:
             await pending.result()
@@ -298,7 +305,7 @@ async def test_duplicate_credit_cannot_reopen_a_consumed_slot(dispatcher):
     with dispatcher.register(message, authority(), deadline(), streaming="upload") as pending:
         window = await pending.upload_slot()
         window.sent(5)
-        frame = RelayCredit(request_id=message.request_id, use=USE, transfer=window.position)
+        frame = RelayCredit(request_id=message.request_id, scope=USE, transfer=window.position)
         dispatcher.accept(frame)
         assert window.has_capacity
         window.sent(5)

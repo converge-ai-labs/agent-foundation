@@ -711,7 +711,10 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
     memory.catalog = memory.authorizer.catalog = catalog
     async with transaction(interaction_sessions) as session:
         provider = await session.get(MemoryProviderRecord, binding.provider_id)
-        provider.type, provider.configuration = "filesystem", {}
+        provider.type = "filesystem"
+        provider.configuration = {"storage": {"root": str(tmp_path / "workspace" / "memory")}}
+        # Filesystem memory forbids a credential, so the mem0 material cannot stay.
+        provider.ciphertext = provider.nonce = provider.encryption_key_id = None
     run = run.model_copy(update={"environment_id": "env_1234567890abcdef"})
     monkeypatch.setattr("a13n_service.memory.file_runtime.utc_now", lambda: NOW)
     capability = bot_memory_capability(
@@ -752,21 +755,22 @@ async def test_bot_file_memory_uses_verified_conversation_and_pinned_store(
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     provider = LOCAL_ENVD
-    config = provider.validate_environment({"workspace": {"path": str(workspace)}})
+    config = provider.validate_environment({"working_directory": str(workspace)})
     for _ in range(2):
-        environment = provider.construct(
-            environment_id=run.environment_id,
-            configuration=config,
-            state=None,
-            runtime=LocalEnvdProviderRuntime(
-                executable=Path(executable),
-                allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
-            ),
-        )
-        harness = HarnessBuilder().build(
-            AgentSpec(), model=FunctionModel(stream_function=model), output_type=str, capabilities=(capability,)
-        )
-        assert (await harness.run("Recall", environment=environment)).output_or_raise() == "done"
+        async with LocalEnvdProviderRuntime(
+            executable=Path(executable),
+            allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+        ) as runtime:
+            environment = provider.construct(
+                environment_id=run.environment_id,
+                configuration=config,
+                state=None,
+                runtime=runtime,
+            )
+            harness = HarnessBuilder().build(
+                AgentSpec(), model=FunctionModel(stream_function=model), output_type=str, capabilities=(capability,)
+            )
+            assert (await harness.run("Recall", environment=environment)).output_or_raise() == "done"
     assert captured[0].store_id == captured[1].store_id
     async with short_session(interaction_sessions) as session:
         stored = await session.get(MemoryStorageRecord, captured[0].store_id)

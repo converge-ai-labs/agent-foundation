@@ -27,7 +27,7 @@ A normal Run follows this sequence:
 5. The Host prepares eagerly, or lets the first operation prepare lazily. Harness binds the local scope, uses operations, exports cached state, and closes it.
 6. The Host persists the latest state and applies retention policy separately.
 
-`close()` releases process-local clients, sessions, daemons, temporary output, and admission owned by that adapter. It is idempotent and non-destructive. Harness never calls `destroy()`.
+`close()` releases the Session, temporary output, clients, and admission owned by that adapter. It is idempotent and non-destructive. Shared Envd Device runtimes belong to the Host and are closed separately at Host shutdown. Harness never calls `destroy()`.
 
 When retention policy selects removal, the Host constructs a different fresh adapter from the exact current state and calls `destroy()` explicitly. Successful destruction clears that adapter's cached state. A failed or unknown outcome preserves the last validated state for inspection or retry.
 

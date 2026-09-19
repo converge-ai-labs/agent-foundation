@@ -18,16 +18,14 @@ def test_remote_cli_exposes_connection_and_demo_paths() -> None:
             "http_envd",
             "--endpoint",
             "https://envd.example",
-            "--daemon-environment-id",
+            "--device-id",
             "env-a",
             "--credential-file",
             "/private/token",
         ]
     )
     assert http.endpoint == "https://envd.example"
-    websocket = parser.parse_args(
-        ["websocket_envd", "--daemon-environment-id", "env-a", "--credential-file", "/private/token"]
-    )
+    websocket = parser.parse_args(["websocket_envd", "--device-id", "env-a", "--credential-file", "/private/token"])
     assert websocket.port == 8788
     demo = parser.parse_args(["remote_envd_demo", "--transport", "websocket", "--executable", "/bin/a13n-envd"])
     assert demo.transport == "websocket"
@@ -41,5 +39,5 @@ def test_local_remote_demo(transport: Literal["http", "websocket"]) -> None:
     result = asyncio.run(run_demo(Path(configured), transport))
     assert result.provider_key == f"{transport}_envd"
     assert result.text == "hello from remote envd\n"
-    assert result.same_generation
-    assert result.state.state == {"daemon_environment_id": "env-demo-daemon"}
+    assert result.independent_sessions
+    assert result.state.state == {"device_id": "env-demo-daemon"}

@@ -2265,6 +2265,37 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/environments/{environment_id}/device`
+
+Device Info.
+
+| Parameter        | Location | Required | Type / schema | Constraints and default |
+| ---------------- | -------- | -------- | ------------- | ----------------------- |
+| `environment_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: DeviceInfo`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/environments/{environment_id}/directories`
+
+Device Directories.
+
+| Parameter        | Location | Required | Type / schema  | Constraints and default               |
+| ---------------- | -------- | -------- | -------------- | ------------------------------------- |
+| `environment_id` | path     | true     | string         | —                                     |
+| `path`           | query    | false    | string or null | —                                     |
+| `offset`         | query    | false    | integer        | minimum=0; maximum=1000000; default=0 |
+| `limit`          | query    | false    | integer        | minimum=1; maximum=200; default=100   |
+
+Responses:
+
+- **200** — Successful Response (`application/json: DirectoryListResult`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/environments/{environment_id}/labels`
 
 Get Environment Labels.

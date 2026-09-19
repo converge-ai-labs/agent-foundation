@@ -957,3 +957,55 @@ def test_external_preview_hides_environment_values_without_mutating_request(as_j
     assert "hidden-external-value" not in interaction.prompt()
     assert "TOKEN" in interaction.prompt()
     assert request.arguments == original
+
+
+def test_goal_command_preserves_multiline_objective_and_rejects_busy():
+    from a13n_harness_ui.interactive.commands import CommandRegistry
+
+    registry = CommandRegistry()
+    invocation = registry.parse('/goal Check "all" requirements\nthen verify C:\\work')
+    assert invocation.arguments == ('Check "all" requirements\nthen verify C:\\work',)
+    assert "/goal task description" in registry.help("goal")
+    assert any(name == "/goal" for name, _ in registry.completions("/go"))
+    with pytest.raises(ValueError, match="Usage"):
+        registry.parse("/goal   ")
+    with pytest.raises(ValueError, match="unavailable while working"):
+        registry.parse("/goal new task", busy=True)
+
+
+@pytest.mark.anyio
+async def test_goal_command_dispatches_typed_mode_without_rewriting_objective():
+    from unittest.mock import Mock
+
+    from a13n_harness_ui.interactive.commands import CommandRegistry
+    from prompt_toolkit.input import DummyInput
+
+    with create_app_session(input=DummyInput(), output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.backend = Mock()
+        shell.send_prompt = Mock()
+        await shell.command(CommandRegistry().parse("/goal   Check everything\nincluding tests  "))
+        shell.send_prompt.assert_called_once_with("Check everything\nincluding tests", goal=True)
+
+
+def test_goal_status_remains_visible_with_question_and_narrow_terminal():
+    from a13n_harness_ui.goal import GoalView
+    from prompt_toolkit.input import DummyInput
+    from prompt_toolkit.layout.containers import ConditionalContainer, Window
+
+    with create_app_session(input=DummyInput(), output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.status.goal = GoalView(objective="All requirements", status="suspended", iteration=2)
+        from types import SimpleNamespace
+
+        shell.question_card = SimpleNamespace(container=Window())
+        bars = [
+            item
+            for item in shell.app.layout.walk()
+            if isinstance(item, ConditionalContainer)
+            and isinstance(item.content, Window)
+            and item.content.style == "class:status-bar"
+        ]
+        assert len(bars) == 1 and bars[0].filter()
+        assert "Goal suspended 2/10" in shell.status.line(40)
+        assert len(shell.status.line(20)) <= 20

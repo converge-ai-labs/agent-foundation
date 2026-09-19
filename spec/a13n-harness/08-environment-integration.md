@@ -17,33 +17,22 @@ Each Toolset owns the mapping from its tool arguments to canonical authorization
 The public values are:
 
 ```python
-class EnvironmentAccess(StrEnum):
-    READ_ONLY = "read_only"
-    READ_WRITE = "read_write"
-    FULL = "full"
-
-
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
     environment: Environment
-    access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
+    permission_ceiling: EnvironmentPermissionSet = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
     working_directory: str | None = "/"
     mount_path: str | None = None
+    provider_root: str = "/"
 ```
 
 `EnvironmentMount` is a Run input/configuration value. It contains one already constructed adapter plus Run-local policy. It has no independent identity, lifecycle, durable serialization, or Provider discovery behavior.
 
-`EnvironmentMount.access` accepts an `EnvironmentAccess` preset or an exact `EnvironmentPermissionSet` action ceiling. Explicit permission sets are detached at construction. The presets are:
-
-- `READ_ONLY` permits provider-neutral file observation and file-copy source access;
-- `READ_WRITE` adds file mutation;
-- `FULL` permits every Agent-facing operation family offered by the Provider, including command/process behavior;
-- provider descriptors always narrow these ceilings;
-- state dump and local close remain trusted lifecycle operations and are not model-authored permissions.
-
-An exact permission set can expose a narrower combination, such as text read, text write, and remove without other file operations. Both forms are intersected with the Provider descriptor; neither can grant an operation the Provider does not offer.
+`EnvironmentMount.permission_ceiling` is an exact `EnvironmentPermissionSet` action ceiling. It defaults to every `EnvironmentAction`, so a mount offers whatever the Provider descriptor offers unless the Host narrows it. A narrower ceiling can expose any combination, such as text read, text write, and remove without other file operations; `FILE_READ_ACTIONS` is the shared constant for file actions that only observe. The ceiling is intersected with the Provider descriptor and can never grant an operation the Provider does not offer. State dump and local close remain trusted lifecycle operations and are not model-authored permissions.
 
 `working_directory` is `None` or a canonical absolute provider-local path. It contains no NUL, repeated separator, trailing separator other than `/`, or `.`/`..` segment.
+
+`provider_root` is the canonical absolute Provider path represented by the aggregate route root; it defaults to `/`. Absolute aggregate suffixes append to this path, and returned Provider paths strip it before aggregate projection. Relative paths still start from `working_directory`, independently of this mapping. A Host-path-preserving envd mount sets both `mount_path` and `provider_root` to the captured native root; a whole-Device virtual route retains `provider_root="/"`. This is file routing, not Session configuration or shell confinement.
 
 `mount_path` is an optional Host-selected root in the aggregate and model-facing path space. It does not change the Provider's root or filesystem authority. When present, it is a canonical absolute POSIX, Windows drive, or UNC path written with `/` separators; Windows matching is case-insensitive. A root contains no NUL, empty interior segment, or `.`/`..` segment and has no trailing separator except an absolute filesystem root. The Harness keeps Provider operations in their provider-local `/` namespace and translates at the aggregate boundary.
 
@@ -82,7 +71,7 @@ A hosted worker constructs Environment instances from Host-authoritative configu
 
 `create_environment_runtime(mounts=..., default_mount=..., extensions=...)` accepts the same `Environment` and `EnvironmentMount` values. A raw Environment selects full access, the Provider descriptor's working directory (default `/`), and the ordinary implicit aggregate routes. The explicit runtime retains its existing default-selection rule: `default_mount` is selected only when supplied. Run-local `mount()` and `replace()` accept these same values. Hosts with already constructed Environment objects do not implement another binding adapter to enter or close them.
 
-The advanced `EnvironmentRuntimeMount(binding=..., permission_ceiling=..., working_directory=..., mount_path=...)` input remains supported by explicit runtime construction and mutation. Its `EnvironmentProviderBinding` owns a trusted async `bind()` scope and `discard()` cleanup for a candidate that was accepted but did not enter. It supports Host-specific acquisition, authentication, or resource scopes whose lifetime begins at binding, without requiring a preconstructed `Environment`. Such binding scopes expose the same provider-neutral operations and obey the same permissions, readiness, identity, and cleanup guarantees. This is an explicit Host integration boundary, not another Provider catalog or model-facing lifecycle.
+The advanced `EnvironmentRuntimeMount(binding=..., permission_ceiling=..., working_directory=..., mount_path=..., provider_root=...)` input remains supported by explicit runtime construction and mutation. Its `EnvironmentProviderBinding` owns a trusted async `bind()` scope and `discard()` cleanup for a candidate that was accepted but did not enter. It supports Host-specific acquisition, authentication, or resource scopes whose lifetime begins at binding, without requiring a preconstructed `Environment`. Such binding scopes expose the same provider-neutral operations and obey the same permissions, readiness, identity, and cleanup guarantees. This is an explicit Host integration boundary, not another Provider catalog or model-facing lifecycle.
 
 Validation of a complete initial mount set precedes ownership transfer. The same Environment object cannot occupy two initial mounts, including through distinct `EnvironmentMount` values. Ownership transfer precedes entry and is single-use: rebuilding a mount wrapper or constructing another runtime cannot transfer an already accepted Environment again. An already entered object is rejected without closing its existing scope. If an initial set includes an already transferred candidate, cleanup owns only the newly accepted candidates; it never discards the reused candidate. Dynamic mutation validates the prospective routes before transfer, so a rejected route does not consume the fresh candidate. After transfer, entry failure closes every accepted candidate according to the aggregate cleanup contract, including objects that never entered.
 
@@ -136,7 +125,7 @@ Core immutable values include:
 - `EnvironmentSnapshot(mounts, default_mount)`;
 - `EnvironmentChange(sequence, kind, name, previous_default, current_default)`.
 
-`EnvironmentMountInfo` contains the mount name, provider key, entered descriptor, access ceiling, provider-local default working directory, and optional aggregate `mount_path`. It omits opaque mount ID and provider target identity from model context.
+`EnvironmentMountInfo` contains the mount name, provider key, entered descriptor, access ceiling, provider-local default working directory, mapped `provider_root`, and optional aggregate `mount_path`. It omits opaque mount ID and provider target identity from model context.
 
 ## Environment Run Extensions
 

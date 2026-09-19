@@ -1,14 +1,12 @@
-"""One admitted reverse carrier, from fenced handover through exclusive use."""
+"""One admitted Device carrier, from fenced handover through independent uses."""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
 from time import monotonic
 
-from a13n_envd_client import EIPSession
+from a13n_envd_client import EIPDeviceConnection
 from a13n_envd_client.websocket import AcceptedWebSocketTransport
-from a13n_harness.providers.environment.models import EnvironmentAction
 from a13n_logging import get_logger
 from anyio import move_on_after
 
@@ -16,17 +14,16 @@ from a13n_service.ids import new_object_id
 from a13n_service.storage import is_database_unavailable
 
 from ..errors import EnvironmentManagementError
-from .authority import DispatchAuthority, DispatchDenied, LeaseDeadline, UseIdentity
+from .authority import DispatchAuthority, DispatchDenied, LeaseDeadline
+from .connection_dispatch import ConnectionDispatch, UseAuthorizer
 from .coordination import ConfirmedObservation, ConnectionFailure, CoordinationError
 from .relay_consumer import RelayControlConsumer
-from .relay_dispatch import EnvironmentRelayDispatch
 from .relay_storage import ConnectionRelayStore
 from .resources import ConnectionTarget
 from .service import ClientConnectionService
 from .transport import ClientWebSocket
 
 logger = get_logger(__name__)
-type UseAuthorizer = Callable[[UseIdentity, str | None], Awaitable[frozenset[EnvironmentAction]]]
 
 
 class ClientConnectionSession:
@@ -46,8 +43,7 @@ class ClientConnectionSession:
         self._initialize_by = admission.deadline().monotonic_at
         self._authorize_use = authorize_use
         self._current = admission
-        self._changed = asyncio.Event()
-        self._use: DispatchAuthority | None = None
+        self._dispatch: ConnectionDispatch | None = None
         self._detached = False
         self._failure: ConnectionFailure = "environment_initialization_failed"
 
@@ -111,7 +107,7 @@ class ClientConnectionSession:
             async with asyncio.TaskGroup() as tasks:
                 renewer = tasks.create_task(self._renew(authority), name="client-environment-connection-renew")
                 try:
-                    await self._ready_session(target, authority)
+                    await self._ready_device(target, authority)
                 finally:
                     renewer.cancel()
         finally:
@@ -121,18 +117,17 @@ class ClientConnectionSession:
                 await self._carrier.close()
                 self._detached = True
 
-    async def _ready_session(self, target: ConnectionTarget, authority: DispatchAuthority) -> None:
+    async def _ready_device(self, target: ConnectionTarget, authority: DispatchAuthority) -> None:
         async with asyncio.timeout_at(self._initialize_by):
-            session = await EIPSession.initialize(
+            device = await EIPDeviceConnection.initialize(
                 AcceptedWebSocketTransport(self._carrier),
-                expected_environment_id=target.daemon_environment_id,
-                required_methods=tuple(sorted(target.required_methods)),
+                expected_device_id=target.device_id,
                 initialization_timeout=self._initialize_by - monotonic(),
                 request_timeout=60,
                 max_in_flight=32,
             )
         try:
-            self._carrier.require_use()
+            self._carrier.require_scope()
             async with asyncio.timeout_at(self._initialize_by):
                 await self._publish_running(target, authority)
                 await self._store.prepare()
@@ -146,26 +141,35 @@ class ClientConnectionSession:
                     "connection_id": self._connection.connection_id,
                 },
             )
-            await self._serve_use(session)
+            dispatch = ConnectionDispatch(
+                device,
+                self._carrier,
+                self._service.coordination,
+                self._authorize_use,
+                online,
+                required_methods=target.required_methods,
+                limits=self._store.limits,
+                cancel_scope=lambda identity: consumer.cancel_scope(identity),
+            )
+            consumer = RelayControlConsumer(self._store, authority, online, dispatch)
+            self._dispatch = dispatch
+            await consumer.run()
         finally:
             self._carrier.invalidate()
             with move_on_after(2, shield=True):
                 await authority.fence()
-                await session.abort()
+                if self._dispatch is not None:
+                    await self._dispatch.close()
+                await device.close()
 
     def _record(self, observation: ConfirmedObservation, authority: DispatchAuthority) -> None:
         value = observation.value
         if value.connection != self._connection or value.status == "offline":
             raise DispatchDenied("Connection authority changed")
         authority.renew(self._connection, observation.deadline())
-        if value.use is not None and observation.deadline(use=True).monotonic_at <= monotonic():
-            raise DispatchDenied("Exclusive use expired")
-        if self._use is not None:
-            if value.use is None or value.use.identity != self._use.identity:
-                raise DispatchDenied("Exclusive use was revoked")
-            self._use.renew(value.use.identity, observation.deadline(use=True))
+        if self._dispatch is not None:
+            self._dispatch.refresh(observation)
         self._current = observation
-        self._changed.set()
 
     async def _renew(self, authority: DispatchAuthority) -> None:
         try:
@@ -177,43 +181,6 @@ class ClientConnectionSession:
                     await self._store.touch()
         finally:
             self._carrier.invalidate()
-
-    async def _serve_use(self, session: EIPSession) -> None:
-        while self._current.value.use is None:
-            self._changed.clear()
-            await self._changed.wait()
-        identity = self._current.value.use.identity
-        await self._authorize_use(identity, None)
-        observed = await self._service.coordination.observe(
-            self._connection.organization_id, self._connection.environment_id
-        )
-        if (
-            observed.value.status != "online"
-            or observed.value.connection != self._connection
-            or observed.value.use is None
-            or observed.value.use.identity != identity
-        ):
-            raise DispatchDenied("Exclusive use changed during authorization")
-        use = DispatchAuthority(identity, observed.deadline(use=True))
-        self._carrier.bind_use(use)
-        self._use = use
-        logger.info(
-            "client_environment_use_admitted",
-            extra={
-                "environment_id": self._connection.environment_id,
-                "run_id": identity.run_id,
-                "run_attempt_id": identity.attempt_id,
-                "use_id": identity.use_id,
-            },
-        )
-
-        async def authorize_mount(name: str) -> frozenset[EnvironmentAction]:
-            return await self._authorize_use(identity, name)
-
-        dispatch = EnvironmentRelayDispatch(
-            session, self._connection.environment_id, authorize_mount, limits=self._store.limits
-        )
-        await RelayControlConsumer(self._store, use, observed, dispatch).run()
 
     async def _publish_running(self, initial: ConnectionTarget, authority: DispatchAuthority) -> None:
         target = initial

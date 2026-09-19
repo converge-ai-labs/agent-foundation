@@ -93,8 +93,7 @@ class NativeCommands:
     async def exec(self, request: CommandRequest) -> ShellExecResult:
         config = self.configuration
         unsupported = (
-            config.read_only
-            or request.network != "configured"
+            request.network != "configured"
             or request.initial_stdin is not None
             or request.keep_stdin_open
             or request.output_policy.overflow == "retain"

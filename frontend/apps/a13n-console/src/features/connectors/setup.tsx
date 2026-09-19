@@ -6,12 +6,12 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
-import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
+import { FormActions } from "../../shared/forms";
+import { SchemaFields, withSchemaValues } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
 import { startBrowserAuthorization } from "../connections/authorization-context";
 import styles from "../../shared/shared.module.css";
-import { jsonObject, validateSettings } from "../../shared/validation";
+import { jsonObject, validateSettings } from "../../shared/forms";
 
 type SetupTarget =
   | { connection: Schema["Connection"]; connector?: Schema["Connector"] }

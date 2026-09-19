@@ -13,6 +13,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from pathlib import Path
 
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
+from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdLaunchConfiguration
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
@@ -47,14 +48,17 @@ async def environment(kind):
             state = None
         elif kind == "local_envd":
             provider = LOCAL_ENVD
-            configuration = {"workspace": {"path": str(ROOT)}, "max_file_bytes": 4 * 1024 * 1024}
+            configuration = {"working_directory": str(ROOT)}
             runtime = LocalEnvdProviderRuntime(
                 executable=Path("/usr/local/bin/a13n-envd"),
                 allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
+                configuration=LocalEnvdLaunchConfiguration(
+                    default_working_directory=ROOT, max_file_bytes=4 * 1024 * 1024
+                ),
             )
             state = None
         else:
-            configuration = {}
+            configuration = {"working_directory": str(ROOT)}
             if kind == "http_envd":
                 provider = HTTP_ENVD
                 with socket.socket() as sock:
@@ -98,23 +102,14 @@ async def environment(kind):
             config.write_text(
                 json.dumps(
                     {
-                        "root_mount_id": "workspace",
-                        "mounts": [
-                            {
-                                "mount_id": "workspace",
-                                "native_root": str(ROOT),
-                                "writable": True,
-                                "allow_command_execution": False,
-                                "max_file_bytes": 4 * 1024 * 1024,
-                            }
-                        ],
+                        "device_id": "env-storage",
+                        "default_working_directory": str(ROOT),
+                        "limits": {"max_file_bytes": 4 * 1024 * 1024},
                     }
                 )
             )
             values = {
-                "A13N_ENVD_ENVIRONMENT_ID": "env-storage",
                 "A13N_ENVD_RUNTIME_DIR": str(directory / "runtime"),
-                "A13N_ENVD_EXECUTION_ISOLATION": "disabled",
             }
             if kind == "http_envd":
                 values.update(
@@ -161,10 +156,10 @@ async def environment(kind):
                         writer.close()
                         await writer.wait_closed()
                         break
-            state = EnvironmentState(
-                provider_key=provider.type, state_version="1", state={"daemon_environment_id": "env-storage"}
-            )
+            state = EnvironmentState(provider_key=provider.type, state_version="1", state={"device_id": "env-storage"})
 
+        if isinstance(runtime, (LocalEnvdProviderRuntime, HttpEnvdProviderRuntime)):
+            stack.push_async_callback(runtime.close)
         adapter = provider.construct(
             environment_id="env-storage",
             configuration=provider.validate_environment(configuration),
@@ -200,7 +195,8 @@ async def main(kind):
                 yield b"y" * 65536
 
         for mode in ("create", "replace", "append"):
-            path = "/new" if mode == "create" else "/destination"
+            name = "new" if mode == "create" else "destination"
+            path = f"/{name}" if kind == "direct_local" else str(ROOT / name)
             try:
                 await files.write_bytes_stream(path, payload(), mode=mode)
             except EnvironmentError as error:
@@ -219,8 +215,9 @@ async def main(kind):
             (ROOT / "probe").unlink(missing_ok=True)
         assert snapshot() == before
         (ROOT / "filler").unlink()
-        await files.write_text("/destination", "RECOVERED", mode="replace")
-        assert await files.read_bytes("/destination") == b"RECOVERED"
+        path = "/destination" if kind == "direct_local" else str(ROOT / "destination")
+        await files.write_text(path, "RECOVERED", mode="replace")
+        assert await files.read_bytes(path) == b"RECOVERED"
         assert {path.name for path in ROOT.iterdir()} == {"destination"}
     print(
         json.dumps(

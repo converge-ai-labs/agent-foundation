@@ -23,7 +23,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 
 const account = {
@@ -113,7 +116,11 @@ it("shows navigation before fetching only the selected document body", async () 
   );
   expect(await screen.findByText("Sensitive full document body")).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Add correction" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Document actions" }),
+  );
+  expect(await screen.findByRole("menuitem", { name: "Delete" })).toBeTruthy();
+  await userEvent.keyboard("{Escape}");
   expect(
     state.http.GET.mock.calls.filter(([path]) =>
       path.endsWith("/{document_id}"),

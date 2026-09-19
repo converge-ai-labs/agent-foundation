@@ -7,12 +7,6 @@ from pathlib import Path
 from typing import Literal
 
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
-from a13n_harness.providers.environment.local_envd.configuration import (
-    LocalEnvdEnvironmentConfiguration,
-    LocalEnvdNetworkMode,
-    LocalEnvdWorkspaceConfiguration,
-)
-from a13n_harness.providers.environment.local_envd.provider import validate_local_envd_runtime
 from a13n_harness.providers.environment.models import EnvironmentError
 from anyio import fail_after
 from pydantic import Field
@@ -22,6 +16,7 @@ from a13n_harness_ui.configuration.setup import SetupSelection
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
 from a13n_harness_ui.errors import HarnessUiError
 from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
+from a13n_harness_ui.sandbox import validate_sandbox_runtime
 
 
 class SetupProvider(StrictModel):
@@ -64,6 +59,8 @@ async def preflight_environment(
     project_path: Path,
     *,
     resolve_executable: Callable[[], Awaitable[Path]],
+    protected_roots: tuple[Path, ...] = (),
+    owned_probe_root: Path | None = None,
 ) -> EnvironmentReadiness:
     if profile_id == "environment-native":
         return EnvironmentReadiness(
@@ -83,12 +80,8 @@ async def preflight_environment(
     try:
         with fail_after(90):
             executable = await resolve_executable()
-            await validate_local_envd_runtime(
-                executable,
-                LocalEnvdEnvironmentConfiguration(
-                    workspace=LocalEnvdWorkspaceConfiguration(path=project_path),
-                    execution_network=LocalEnvdNetworkMode.DENY,
-                ),
+            await validate_sandbox_runtime(
+                executable, project_path, protected_roots=protected_roots, owned_probe_root=owned_probe_root
             )
         return EnvironmentReadiness(
             profile_id=profile_id,

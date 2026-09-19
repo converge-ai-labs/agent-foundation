@@ -57,7 +57,6 @@ async def allow(_):
 async def store(tmp_path):
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=1024 * 1024),
         mount_id="memory",
         generation="one",

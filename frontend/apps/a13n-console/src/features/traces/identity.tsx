@@ -39,24 +39,39 @@ const icons = {
   span: StackIcon,
 };
 
+export function isFailed(observation: Schema["Observation"]) {
+  return (
+    observation.status === "error" ||
+    ["error", "fatal", "critical"].includes(observation.level ?? "")
+  );
+}
+
+/** The kind mark alone, for identity cells that bring their own tile. */
+export function ObservationGlyph({
+  observation,
+  size = 15,
+}: {
+  observation: Pick<Schema["Observation"], "type" | "name">;
+  size?: number;
+}) {
+  const Icon = icons[observationKind(observation)];
+  return <Icon size={size} aria-hidden="true" />;
+}
+
+/** The 20px kind tile that leads a timeline row. */
 export function ObservationIcon({
   observation,
 }: {
   observation: Schema["Observation"];
 }) {
-  const kind = observationKind(observation);
-  const Icon = icons[kind];
   return (
     <span
       className={styles.observationIcon}
-      data-kind={kind}
+      data-kind={observationKind(observation)}
       aria-hidden="true"
     >
-      <Icon size={17} />
-      {(observation.status === "error" ||
-        ["error", "fatal", "critical"].includes(observation.level ?? "")) && (
-        <span className={styles.errorDot} />
-      )}
+      <ObservationGlyph observation={observation} size={12} />
+      {isFailed(observation) && <span className={styles.errorDot} />}
     </span>
   );
 }

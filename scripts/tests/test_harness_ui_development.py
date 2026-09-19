@@ -46,6 +46,12 @@ def write_source() -> Path:
         "agents/existing.yaml": (
             'schema_version: "1"\nkind: agent\nid: agent-existing\nname: Existing Agent\nmodel: model-existing\n'
         ),
+        "devices/existing.yaml": (
+            'schema_version: "1"\nkind: device\nid: device-existing\nname: Existing Device\n'
+            "device_id: native-existing\ntransport:\n  kind: http\n"
+            "  configuration:\n    endpoint: http://127.0.0.1:37437\n"
+            "authentication:\n  kind: api_key\n  env: DEVELOPMENT_DEVICE_TOKEN\n"
+        ),
         "AGENTS.md": "Keep the existing user guidance.\n",
         "data/auth.json": json.dumps({"version": 1, "keys": {"key-existing": "fictional-api-key"}}),
     }
@@ -92,6 +98,10 @@ async def test_first_launch_reuses_models_keys_and_guidance_but_not_history(
     assert loaded.candidate_error is None
     assert loaded.configuration.document.defaults.agent == "agent-existing"
     assert loaded.configuration.agents["agent-existing"].model == "model-existing"
+    assert loaded.configuration.devices["device-existing"].device_id == "native-existing"
+    assert (development.parent / "devices/existing.yaml").read_bytes() == (
+        source.parent / "devices/existing.yaml"
+    ).read_bytes()
     assert loaded.configuration.models["model-existing"].authentication.credential_ref == "key-existing"
     assert await ApiKeyStore(development.parent / "data/auth.json").load("key-existing") == "fictional-api-key"
     assert (development.parent / "AGENTS.md").read_bytes() == (source.parent / "AGENTS.md").read_bytes()
@@ -317,9 +327,7 @@ async def test_user_without_configuration_can_enter_setup_through_development_la
         status = await app.setup_status()
         assert status.needed
         assert status.diagnostic is None
-        selection = SetupSelection(
-            providers=(), default_agent="agent-default", environment_profile="environment-native"
-        )
+        selection = SetupSelection(default_agent="agent-default", environment_profile="environment-native")
         assert (await app.apply_setup(selection)).completed
         assert not (await app.setup_status()).needed
     assert not launcher.default_harness_ui_settings_path().exists()

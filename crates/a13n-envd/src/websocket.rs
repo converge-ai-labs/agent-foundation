@@ -8,7 +8,7 @@ use std::{
 use futures_util::{SinkExt, StreamExt};
 use tokio::{
     net::TcpStream,
-    sync::{Semaphore, mpsc, watch},
+    sync::{mpsc, watch},
     task::JoinSet,
     time::{MissedTickBehavior, timeout},
 };
@@ -24,9 +24,9 @@ use tokio_tungstenite::{
 
 use crate::{
     config::{Config, ReverseWebSocketConfig},
-    daemon::Daemon,
+    daemon::{Carrier, Daemon, ResponseHandoff},
+    data_dispatch::DataDispatcher,
     eip::{DataFrame, DataFrameKind, decode_data_frame, encode_data_frame},
-    operation::ActiveResponseHandoff,
     transfer::reset_status,
 };
 
@@ -45,8 +45,7 @@ type Socket = WebSocketStream<MaybeTlsStream<TcpStream>>;
 
 struct ControlResponse {
     payload: Vec<u8>,
-    handoff: Option<ActiveResponseHandoff>,
-    closes_session: bool,
+    handoff: Option<ResponseHandoff>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +64,16 @@ pub(crate) async fn serve(
     let signal_task = tokio::spawn(async move {
         let _ = shutdown_signal().await;
         shutdown_sender.send_replace(true);
+    });
+
+    let maintenance_daemon = Arc::clone(&daemon);
+    let maintenance_task = tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_millis(100));
+        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+        loop {
+            interval.tick().await;
+            maintenance_daemon.maintenance().await;
+        }
     });
 
     let mut backoff = RECONNECT_BASE;
@@ -123,10 +132,9 @@ pub(crate) async fn serve(
 
     signal_task.abort();
     let _ = signal_task.await;
-    let session_closed = daemon.transport_closed(SESSION_DRAIN_TIMEOUT).await;
-    let processes_drained = daemon.drain_processes(SESSION_DRAIN_TIMEOUT).await;
-    let operations_drained = daemon.drain_owned_operations(SESSION_DRAIN_TIMEOUT).await;
-    if !session_closed || !processes_drained || !operations_drained {
+    maintenance_task.abort();
+    let _ = maintenance_task.await;
+    if !daemon.drain(SESSION_DRAIN_TIMEOUT).await {
         return Err(io::Error::new(
             io::ErrorKind::TimedOut,
             "reverse WebSocket generation drain exceeded its deadline",
@@ -254,31 +262,26 @@ async fn serve_connection(
         .map_err(|_| ConnectionFailure::Fatal("data limit does not fit this platform"))?;
     let max_concurrency = usize::try_from(config.limits.max_concurrent_operations)
         .map_err(|_| ConnectionFailure::Fatal("operation limit does not fit this platform"))?;
-    let max_transfers = usize::try_from(config.limits.max_concurrent_file_transfers)
+    let max_transfers = usize::try_from(config.limits.max_device_file_transfers)
         .map_err(|_| ConnectionFailure::Fatal("transfer limit does not fit this platform"))?;
-    let transfer_timeout = Duration::from_millis(config.limits.max_file_transfer_duration_ms);
 
     let (control_tx, mut control_rx) = mpsc::channel::<ControlResponse>(max_concurrency);
-    let data_capacity = max_transfers.saturating_mul(2).max(2);
+    let data_capacity = max_transfers.saturating_mul(crate::eip::EIP_TRANSFER_WINDOW_CHUNKS + 2);
+
     let (data_tx, mut data_rx) = mpsc::channel::<DataFrame>(data_capacity);
     let (inbound_data_tx, mut inbound_data_rx) = mpsc::channel::<DataFrame>(data_capacity);
-    daemon
-        .begin_session(data_tx.clone())
-        .map_err(|_| ConnectionFailure::Fatal("cannot begin a fresh EIP session"))?;
+    let carrier = daemon.carrier(data_tx.clone());
 
-    let inbound_daemon = Arc::clone(&daemon);
+    let mut inbound_dispatch =
+        DataDispatcher::new(daemon.clone(), carrier.clone(), data_tx.clone(), config);
     let inbound_responses = data_tx.clone();
     let mut inbound_data_task = tokio::spawn(async move {
         while let Some(frame) = inbound_data_rx.recv().await {
-            let handled = timeout(
-                transfer_timeout,
-                inbound_daemon.handle_data_frame(frame.clone()),
-            )
-            .await;
-            match handled {
-                Ok(Ok(())) => {}
-                Ok(Err(error)) => {
+            match inbound_dispatch.enqueue(frame.clone()) {
+                Ok(()) => {}
+                Err(error) => {
                     let reset = DataFrame {
+                        session_id: frame.session_id,
                         kind: DataFrameKind::Reset,
                         handle: frame.handle,
                         offset: frame.offset,
@@ -292,18 +295,7 @@ async fn serve_connection(
                         break;
                     }
                 }
-                Err(_) => break,
             }
-        }
-    });
-
-    let maintenance_daemon = Arc::clone(&daemon);
-    let mut maintenance_task = tokio::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(100));
-        interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
-        loop {
-            interval.tick().await;
-            maintenance_daemon.maintenance().await;
         }
     });
 
@@ -319,7 +311,7 @@ async fn serve_connection(
                     &daemon,
                     inbound_data_tx,
                     &mut inbound_data_task,
-                    &mut maintenance_task,
+                    &carrier,
                     JoinSet::new(),
                 )
                 .await;
@@ -336,41 +328,50 @@ async fn serve_connection(
                 &daemon,
                 inbound_data_tx,
                 &mut inbound_data_task,
-                &mut maintenance_task,
+                &carrier,
                 JoinSet::new(),
             )
             .await;
             return Err(failure);
         }
     };
-    let response = daemon.handle_payload_for_carrier(first.as_str()).await;
-    let (payload, handoff, _) = response.into_parts();
-    if let Err(failure) = send_control(&mut socket, payload, handoff, max_response_bytes).await {
+    let response = daemon
+        .handle_payload_for_carrier(&carrier, first.as_str())
+        .await;
+    let (payload, handoff) = response.into_parts();
+    if let Err(failure) = send_control(
+        &mut socket,
+        payload,
+        handoff,
+        max_response_bytes,
+        &mut shutdown,
+    )
+    .await
+    {
         cleanup_connection(
             &mut socket,
             &daemon,
             inbound_data_tx,
             &mut inbound_data_task,
-            &mut maintenance_task,
+            &carrier,
             JoinSet::new(),
         )
         .await;
         return Err(failure);
     }
-    if !daemon.session_initialized() {
+    if !carrier.initialized() {
         cleanup_connection(
             &mut socket,
             &daemon,
             inbound_data_tx,
             &mut inbound_data_task,
-            &mut maintenance_task,
+            &carrier,
             JoinSet::new(),
         )
         .await;
         return Err(ConnectionFailure::Transient);
     }
 
-    let admission = Arc::new(Semaphore::new(max_concurrency));
     let mut requests = JoinSet::new();
     let mut ping_interval = tokio::time::interval(PING_INTERVAL);
     ping_interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
@@ -381,7 +382,10 @@ async fn serve_connection(
         if control_burst >= MAX_CONTROL_BURST {
             match data_rx.try_recv() {
                 Ok(frame) => {
-                    if send_data(&mut socket, frame, max_data_bytes).await.is_err() {
+                    if send_data(&mut socket, frame, max_data_bytes, &mut shutdown)
+                        .await
+                        .is_err()
+                    {
                         break Err(ConnectionFailure::Transient);
                     }
                     control_burst = 0;
@@ -408,7 +412,7 @@ async fn serve_connection(
             _ = pong_deadline => break Err(ConnectionFailure::Transient),
             _ = ping_interval.tick(), if expected_pong.is_none() => {
                 let nonce = random_bytes().to_vec();
-                if socket.send(Message::Ping(nonce.clone().into())).await.is_err() {
+                if send_message(&mut socket, Message::Ping(nonce.clone().into()), &mut shutdown, PONG_TIMEOUT).await.is_err() {
                     break Err(ConnectionFailure::Transient);
                 }
                 expected_pong = Some((nonce, tokio::time::Instant::now() + PONG_TIMEOUT));
@@ -417,12 +421,12 @@ async fn serve_connection(
                 let Some(response) = response else {
                     break Err(ConnectionFailure::Transient);
                 };
-                let closes_session = response.closes_session;
                 if send_control(
                     &mut socket,
                     response.payload,
                     response.handoff,
                     max_response_bytes,
+                    &mut shutdown,
                 )
                 .await
                 .is_err()
@@ -430,15 +434,12 @@ async fn serve_connection(
                     break Err(ConnectionFailure::Transient);
                 }
                 control_burst = control_burst.saturating_add(1);
-                if closes_session {
-                    break Ok(());
-                }
             }
             frame = data_rx.recv() => {
                 let Some(frame) = frame else {
                     break Err(ConnectionFailure::Transient);
                 };
-                if send_data(&mut socket, frame, max_data_bytes).await.is_err() {
+                if send_data(&mut socket, frame, max_data_bytes, &mut shutdown).await.is_err() {
                     break Err(ConnectionFailure::Transient);
                 }
                 control_burst = 0;
@@ -451,27 +452,25 @@ async fn serve_connection(
             message = socket.next() => {
                 match message {
                     Some(Ok(Message::Text(payload))) if payload.len() <= max_request_bytes => {
-                        let permit = match admission.clone().try_acquire_owned() {
-                            Ok(permit) => permit,
-                            Err(_) => {
-                                break Err(ConnectionFailure::Fatal(
-                                    "reverse WebSocket request concurrency exceeded",
-                                ));
+                        let Some(permit) = daemon.admit_payload(payload.as_str()) else {
+                            if send_control(&mut socket, daemon.busy_response(payload.as_str()), None, max_response_bytes, &mut shutdown).await.is_err() {
+                                break Err(ConnectionFailure::Transient);
                             }
+                            continue;
                         };
                         let payload = payload.to_string();
                         let pending_operation = daemon.track_pending_payload(&payload);
                         let request_daemon = Arc::clone(&daemon);
+                        let request_carrier = carrier.clone();
                         let responses = control_tx.clone();
                         requests.spawn(async move {
                             let _pending_operation = pending_operation;
-                            let response = request_daemon.handle_payload_for_carrier(&payload).await;
-                            let (payload, handoff, closes_session) = response.into_parts();
+                            let response = request_daemon.handle_payload_for_carrier(&request_carrier, &payload).await;
+                            let (payload, handoff) = response.into_parts();
                             let _ = responses
                                 .send(ControlResponse {
                                     payload,
                                     handoff,
-                                    closes_session,
                                 })
                                 .await;
                             drop(permit);
@@ -482,15 +481,19 @@ async fn serve_connection(
                             Ok(frame) => frame,
                             Err(_) => break Err(ConnectionFailure::Fatal("invalid EIP WebSocket data frame")),
                         };
-                        if !matches!(
-                            timeout(transfer_timeout, inbound_data_tx.send(frame)).await,
-                            Ok(Ok(()))
-                        ) {
-                            break Err(ConnectionFailure::Transient);
+                        if let Err(error) = inbound_data_tx.try_send(frame) {
+                            let frame = error.into_inner();
+                            daemon.fail_data_session(&carrier, &frame.session_id);
+                            let reset = DataFrame { kind: DataFrameKind::Reset, session_id: frame.session_id,
+                                handle: frame.handle, offset: frame.offset, payload: Vec::new(),
+                                reset_status: Some(reset_status(crate::transfer::TransferError::Busy)) };
+                            if send_data(&mut socket, reset, max_data_bytes, &mut shutdown).await.is_err() {
+                                break Err(ConnectionFailure::Transient);
+                            }
                         }
                     }
                     Some(Ok(Message::Ping(payload))) => {
-                        if socket.send(Message::Pong(payload)).await.is_err() {
+                        if send_message(&mut socket, Message::Pong(payload), &mut shutdown, PONG_TIMEOUT).await.is_err() {
                             break Err(ConnectionFailure::Transient);
                         }
                     }
@@ -513,7 +516,7 @@ async fn serve_connection(
         &daemon,
         inbound_data_tx,
         &mut inbound_data_task,
-        &mut maintenance_task,
+        &carrier,
         requests,
     )
     .await;
@@ -525,11 +528,10 @@ async fn cleanup_connection(
     daemon: &Daemon,
     inbound_data_tx: mpsc::Sender<DataFrame>,
     inbound_data_task: &mut tokio::task::JoinHandle<()>,
-    maintenance_task: &mut tokio::task::JoinHandle<()>,
+    carrier: &Carrier,
     mut requests: JoinSet<()>,
 ) {
-    maintenance_task.abort();
-    let _ = maintenance_task.await;
+    carrier.close();
     drop(inbound_data_tx);
     if timeout(SESSION_DRAIN_TIMEOUT, &mut *inbound_data_task)
         .await
@@ -538,7 +540,7 @@ async fn cleanup_connection(
         inbound_data_task.abort();
         let _ = inbound_data_task.await;
     }
-    let _ = daemon.transport_closed(SESSION_DRAIN_TIMEOUT).await;
+    daemon.detach(carrier).await;
     if timeout(SESSION_DRAIN_TIMEOUT, async {
         while requests.join_next().await.is_some() {}
     })
@@ -554,8 +556,9 @@ async fn cleanup_connection(
 async fn send_control(
     socket: &mut Socket,
     payload: Vec<u8>,
-    handoff: Option<ActiveResponseHandoff>,
+    handoff: Option<ResponseHandoff>,
     max_response_bytes: usize,
+    shutdown: &mut watch::Receiver<bool>,
 ) -> Result<(), ConnectionFailure> {
     if payload.len() > max_response_bytes {
         return Err(ConnectionFailure::Fatal(
@@ -564,10 +567,13 @@ async fn send_control(
     }
     let payload = String::from_utf8(payload)
         .map_err(|_| ConnectionFailure::Fatal("EIP response is not UTF-8 JSON"))?;
-    socket
-        .send(Message::Text(payload.into()))
-        .await
-        .map_err(|_| ConnectionFailure::Transient)?;
+    send_message(
+        socket,
+        Message::Text(payload.into()),
+        shutdown,
+        PONG_TIMEOUT,
+    )
+    .await?;
     if let Some(handoff) = handoff {
         handoff.complete();
     }
@@ -578,13 +584,36 @@ async fn send_data(
     socket: &mut Socket,
     frame: DataFrame,
     max_data_bytes: usize,
+    shutdown: &mut watch::Receiver<bool>,
 ) -> Result<(), ConnectionFailure> {
     let payload = encode_data_frame(&frame, max_data_bytes)
         .map_err(|_| ConnectionFailure::Fatal("invalid outbound EIP data frame"))?;
-    socket
-        .send(Message::Binary(payload.into()))
-        .await
-        .map_err(|_| ConnectionFailure::Transient)
+    send_message(
+        socket,
+        Message::Binary(payload.into()),
+        shutdown,
+        PONG_TIMEOUT,
+    )
+    .await
+}
+
+// Cancellation or timeout abandons this attachment; a partially sent message is never retried.
+async fn send_message<S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin>(
+    socket: &mut WebSocketStream<S>,
+    message: Message,
+    shutdown: &mut watch::Receiver<bool>,
+    budget: Duration,
+) -> Result<(), ConnectionFailure> {
+    if *shutdown.borrow() {
+        return Err(ConnectionFailure::Transient);
+    }
+    tokio::select! {
+        _ = shutdown.changed() => Err(ConnectionFailure::Transient),
+        result = timeout(budget, socket.send(message)) => {
+            result.map_err(|_| ConnectionFailure::Transient)?
+                .map_err(|_| ConnectionFailure::Transient)
+        }
+    }
 }
 
 fn build_tls_connector(config: &ReverseWebSocketConfig) -> io::Result<Connector> {
@@ -760,6 +789,45 @@ mod tests {
 
     use super::{RECONNECT_CAP, classify_connect_error, classify_session_error, full_jitter};
     use tokio_tungstenite::tungstenite::{Error, error::ProtocolError, http::Response};
+
+    #[tokio::test]
+    async fn stalled_socket_sends_observe_shutdown_and_deadline() {
+        use tokio::io::{AsyncReadExt, duplex};
+        use tokio_tungstenite::{
+            WebSocketStream,
+            tungstenite::{Message, protocol::Role},
+        };
+
+        for signal in [true, false] {
+            let (writer, mut reader) = duplex(1);
+            let mut socket = WebSocketStream::from_raw_socket(writer, Role::Server, None).await;
+            let (shutdown_tx, mut shutdown) = tokio::sync::watch::channel(false);
+            let sending = tokio::spawn(async move {
+                super::send_message(
+                    &mut socket,
+                    Message::Binary(vec![0; 1024].into()),
+                    &mut shutdown,
+                    if signal {
+                        Duration::from_secs(60)
+                    } else {
+                        Duration::from_millis(100)
+                    },
+                )
+                .await
+            });
+            // One observed byte proves the sender reached the full, deliberately unread buffer.
+            reader.read_u8().await.unwrap();
+            assert!(!sending.is_finished());
+            if signal {
+                shutdown_tx.send(true).unwrap();
+            }
+            let result = tokio::time::timeout(Duration::from_secs(1), sending)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(result, Err(super::ConnectionFailure::Transient));
+        }
+    }
 
     #[test]
     fn abrupt_disconnect_reconnects_but_invalid_frames_remain_fatal() {

@@ -41,7 +41,7 @@ async def add_run_with_environment(
         keys.append(run.input_object.object_key)
     await require_object_publications(database, keys)
     await database.flush()
-    run = await select_run_environment(database, run=run, workspace_id=workspace_id, intent=intent)
+    run = await select_run_environment(database, run=run, workspace_id=workspace_id, intent=intent, online=online)
     input_value = run.input if run.input_kind is RunInputKind.agent_input else None
     if run.input_kind is RunInputKind.waiting_continue and isinstance(run.input, dict):
         input_value = run.input.get("input")
@@ -89,6 +89,7 @@ async def add_run_with_environment(
     database.add(record)
     if thread is not None:
         thread.default_environment_id = run.environment_id
+        thread.default_environment_working_directory = run.environment_working_directory
     await database.flush()
     await inherit_run_mounts(database, run=run, workspace_id=workspace_id)
     return record

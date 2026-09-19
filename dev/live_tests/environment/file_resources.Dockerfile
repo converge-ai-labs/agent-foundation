@@ -3,9 +3,6 @@ ARG SANDBOX_IMAGE=a13n-sandbox:local
 FROM ${SANDBOX_IMAGE} AS daemon
 FROM ghcr.io/astral-sh/uv:python3.13-bookworm-slim AS runtime
 
-RUN apt-get update && apt-get install -y --no-install-recommends bubblewrap \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY packages/a13n-envd-client/pyproject.toml packages/a13n-envd-client/pyproject.toml
@@ -19,10 +16,11 @@ COPY packages/a13n-harness packages/a13n-harness
 COPY packages/a13n-logging packages/a13n-logging
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev --package a13n-harness
 COPY --from=daemon /usr/local/bin/a13n-envd /usr/local/bin/a13n-envd
-COPY dev/live_tests/environment/file_resource_worker.py /app/file_resource_worker.py
+COPY --chmod=0644 dev/live_tests/environment/file_resource_worker.py /app/file_resource_worker.py
 RUN groupadd --gid 10001 fixture \
     && useradd --uid 10001 --gid fixture --create-home --home-dir /home/sandbox fixture \
-    && mkdir /workspace && chown fixture:fixture /workspace
+    && mkdir /workspace && chown fixture:fixture /workspace \
+    && chmod -R a+rX /app/packages
 USER fixture
 ENV PATH="/app/.venv/bin:${PATH}" PYTHONUNBUFFERED=1
 

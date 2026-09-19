@@ -207,7 +207,7 @@ it("keeps the same draft editable after application and shows its retained recei
   await user.click(
     dialog.getByRole("button", { name: "Apply reviewed configuration" }),
   );
-  await screen.findByRole("heading", { name: "Configuration draft · v3" });
+  await screen.findByRole("heading", { name: "Draft · v3" });
   expect(screen.getByRole("button", { name: "Edit draft" })).toBeTruthy();
   expect(screen.getByText("Application status")).toBeTruthy();
   const agentLink = await screen.findByRole("link", {

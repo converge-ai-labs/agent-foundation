@@ -24,6 +24,18 @@ beforeEach(() => {
 });
 const capabilities = { supports_stop: true, supports_destroy: true };
 
+/** Lifecycle commands live in the panel's overflow menu. */
+async function lifecycle(
+  user: ReturnType<typeof userEvent.setup>,
+  name: string,
+) {
+  if (!screen.queryByRole("menuitem", { name }))
+    await user.click(
+      screen.getByRole("button", { name: "Environment actions" }),
+    );
+  await user.click(await screen.findByRole("menuitem", { name }));
+}
+
 const environment: Schema["Environment"] = {
   id: "env_test",
   name: "Research files",
@@ -83,11 +95,7 @@ it.each([
     );
     await user.click(screen.getByRole("button", { name: "Details" }));
     await screen.findByText("running");
-    await user.click(
-      screen.getByRole("button", {
-        name: action === "stop" ? "Stop target" : "Delete target",
-      }),
-    );
+    await lifecycle(user, action === "stop" ? "Stop target" : "Delete target");
     await user.click(
       screen.getByRole("button", {
         name:
@@ -152,9 +160,8 @@ it.each([
           "Externally owned: Service does not automatically stop or delete this target.",
         ),
       ).toBeTruthy();
-      expect(screen.queryByRole("button", { name: "Stop target" })).toBeNull();
       expect(
-        screen.queryByRole("button", { name: "Delete target" }),
+        screen.queryByRole("button", { name: "Environment actions" }),
       ).toBeNull();
     }
     expect(
@@ -227,7 +234,7 @@ it.each([false, true])(
     );
     await user.click(screen.getByRole("button", { name: "Details" }));
     await screen.findByText("running");
-    await user.click(screen.getByRole("button", { name: "Stop target" }));
+    await lifecycle(user, "Stop target");
     await user.click(
       screen.getByRole("button", { name: "Stop environment target" }),
     );
@@ -244,14 +251,14 @@ it.each([false, true])(
     await screen.findByText("stopped");
     await user.click(
       within(
-        screen.getByRole("dialog", { name: "Environment details" }),
+        screen.getByRole("complementary", { name: "Environment details" }),
       ).getByRole("button", { name: "Close" }),
     );
     // Another Run resumes the same target while this component stays mounted.
     status = "running";
     await user.click(screen.getByRole("button", { name: "Details" }));
     await screen.findByText("running");
-    await user.click(screen.getByRole("button", { name: "Stop target" }));
+    await lifecycle(user, "Stop target");
     await user.click(
       screen.getByRole("button", { name: "Stop environment target" }),
     );
@@ -289,19 +296,26 @@ it.each([
     const cache = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
+    const user = userEvent.setup();
     render(
       <QueryClientProvider client={cache}>
         <EnvironmentDetails environment={environment} />
       </QueryClientProvider>,
     );
-    await userEvent
-      .setup()
-      .click(screen.getByRole("button", { name: "Details" }));
+    await user.click(screen.getByRole("button", { name: "Details" }));
     await screen.findByText("Effective retention policy");
-    expect(!!screen.queryByRole("button", { name: "Stop target" })).toBe(
+    const actions = screen.queryByRole("button", {
+      name: "Environment actions",
+    });
+    expect(!!actions).toBe(supports_stop || supports_destroy);
+    if (actions) {
+      await user.click(actions);
+      await screen.findByRole("menu");
+    }
+    expect(!!screen.queryByRole("menuitem", { name: "Stop target" })).toBe(
       supports_stop,
     );
-    expect(!!screen.queryByRole("button", { name: "Delete target" })).toBe(
+    expect(!!screen.queryByRole("menuitem", { name: "Delete target" })).toBe(
       supports_destroy,
     );
     expect(

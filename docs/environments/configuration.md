@@ -18,9 +18,9 @@ The [complete generated field reference](configuration-reference.md) covers buil
 
 ## Direct Local
 
-`DirectLocalEnvironmentConfiguration` requires an absolute `root.path`; `root.read_only` defaults to false. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
+`DirectLocalEnvironmentConfiguration` requires an absolute `root.path`. The root is always writable; a reference-only mount withholds write actions through the Harness permission ceiling instead. The basic configuration is file-only: shell profiles, allowed executables, and allowed ports are empty by default.
 
-To enable one executable, follow the [complete command example](commands.md). For shell syntax, configure an absolute shell executable and profile ID, optional fixed arguments, dialect `posix` or `powershell`, and explicit login permission. Profile IDs are unique. A read-only root cannot enable process execution; PowerShell profiles cannot enable login mode.
+To enable one executable, follow the [complete command example](commands.md). For shell syntax, configure an absolute shell executable and profile ID, optional fixed arguments, dialect `posix` or `powershell`, and explicit login permission. Profile IDs are unique. PowerShell profiles cannot enable login mode.
 
 `inherit_environment` defaults to false. `allowed_environment_keys` defaults to an empty set; choose an explicit allowlist or the supported `None` meaning deliberately. Model-authored environment changes do not bypass this policy. Absolute paths and null/control-character restrictions are validated before target use.
 
@@ -28,13 +28,13 @@ Defaults are a 64 MiB file value bound, 128 concurrent processes, 24-hour maximu
 
 ## Local Envd
 
-`LocalEnvdEnvironmentConfiguration` requires an absolute `workspace.path`. It defaults to Host network mode and empty trusted executable roots/shell profiles. Enabling file access alone does not implicitly enable commands.
+`LocalEnvdEnvironmentConfiguration` selects an optional Device-absolute `working_directory` and `required_methods`. Each adapter opens an independent Session. An omitted directory uses the Device default; Hosts that persist Run selections resolve and freeze an explicit directory before accepting work. The directory is not a filesystem access root.
 
-A shell profile selects `profile_id`, absolute `executable`, fixed arguments, login permission, and a script-byte bound (1 MiB by default). `trusted_executable_roots` controls eligible executable locations. Choose `execution_network="deny"` when the platform supports and your workload needs that boundary; [Envd isolation](../a13n-envd/isolation.md) owns native prerequisites and fail-closed behavior.
+`LocalEnvdLaunchConfiguration` belongs to the Host runtime, not each adapter. It selects the native default directory, directory discovery, trusted executable roots, shell profiles, and resource limits. A shell profile selects `profile_id`, absolute `executable`, fixed arguments, login permission, and a script-byte bound (1 MiB by default). Executable roots and shell profiles default to empty. Network and filesystem isolation belong to the [outer Host boundary](../a13n-envd/isolation.md), not an Envd execution-network field.
 
-Provider defaults are 16 MiB file values, 64 KiB output previews, 1 GiB per output stream, and 64 GiB spool. Preview cannot exceed a stream bound, and spool must reserve both streams. Do not copy the standalone daemon's smaller default output quotas into a Provider tuning table.
+Launch defaults are 16 MiB file values, 64 KiB previews, 256 MiB per output stream, 1 GiB per Session spool, and 4 GiB aggregate Device spool. Preview cannot exceed a stream bound; each Session spool must reserve both streams and fit within the Device quota.
 
-Runtime selection owns daemon binary/bootstrap and process construction. Desired data contains no live child process or token. Local Envd remains a library/Harness UI Provider and is not offered by Service.
+The Host owns one shared `LocalEnvdProviderRuntime`, its binary/bootstrap and shutdown. Adapter `close()` closes only that adapter's Session. Close the runtime separately or use its async context manager. Local Envd remains a library/Harness UI Provider and is not offered by Service.
 
 ## Docker
 
@@ -56,11 +56,11 @@ E2B, Daytona, Modal, Vercel Sandbox, Fly.io Sprites, and Runloop use the same ba
 
 ### E2B
 
-`E2BEnvironmentConfiguration` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true and read-only defaults to false.
+`E2BEnvironmentConfiguration` defaults to template `base`, root `/home/user`, user `user`, and Python `/usr/bin/python3`; paths must be absolute without traversal. Internet access defaults to true.
 
 Sandbox timeout defaults to 3,600 seconds (30–86,400); request timeout defaults to 30 seconds (up to 300). Neither is a per-command execution deadline. File values default to 16 MiB, observation bytes to 1 MiB, active observations to 128, total retained output to 128 MiB, and query entries to 10,000. [Runtime limitations](providers.md#e2b-runtime) explains text-based observation and supported command control.
 
-`E2BBackendConfiguration.domain` defaults to `e2b.dev`; `E2BCredential.api_key` is a separate protected value. The Host supplies runtime credentials, maintains keepalive while retention requires it, and persists sandbox state after lifecycle outcomes. A new adapter can reconnect the exact retained sandbox; it does not reconstruct lost output or broaden access.
+`E2BConnectionConfiguration.domain` defaults to `e2b.dev`; `E2BCredential.api_key` is a separate protected value. The Host supplies runtime credentials, maintains keepalive while retention requires it, and persists sandbox state after lifecycle outcomes. A new adapter can reconnect the exact retained sandbox; it does not reconstruct lost output or broaden access.
 
 ### Daytona
 
@@ -86,7 +86,7 @@ Daytona, Sprites, and Runloop select `python3` on the guest PATH. Modal uses `/u
 
 ## Remote HTTP / WebSocket Envd
 
-Both remote Providers use `RemoteEnvdEnvironmentConfiguration(required_methods=())` as their recipe; this requests a bounded method subset, not daemon mounts or target provisioning. Required method names are normalized and deduplicated. `RemoteEnvdStateData` selects the externally owned daemon Environment identity.
+Both remote Providers use `RemoteEnvdEnvironmentConfiguration(working_directory=None, required_methods=())` as their recipe; this selects a fixed Session cwd and required method subset, not daemon mounts or target provisioning. Required method names are normalized and deduplicated. `RemoteEnvdStateData.device_id` selects the externally owned Device.
 
 HTTP backend configuration supplies `endpoint`, initialization timeout (10 seconds), request timeout (30 seconds), maximum in-flight requests (32), and explicit plaintext-private-link opt-in (false by default). The token is a separate `HttpEnvdCredential`. The remote Provider's request timeout differs from the low-level Python EIP client's default request timeout; select the boundary you are configuring.
 

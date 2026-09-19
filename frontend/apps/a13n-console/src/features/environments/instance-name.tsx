@@ -5,16 +5,22 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import styles from "../../shared/shared.module.css";
+import styles from "./environments.module.css";
 
+/**
+ * Renaming keeps the precondition it opened with: a draft survives a
+ * concurrent change until the author reloads on purpose.
+ */
 export function EnvironmentNameEditor({
   environment,
   etag,
   reload,
+  onCancel,
 }: {
   environment: Pick<Schema["Environment"], "id" | "name">;
   etag?: string;
   reload: () => Promise<void>;
+  onCancel?: () => void;
 }) {
   const client = useClient();
   const cache = useQueryClient();
@@ -45,7 +51,7 @@ export function EnvironmentNameEditor({
   });
   return (
     <form
-      className={styles.stack}
+      className={styles.rename}
       onSubmit={(event) => {
         event.preventDefault();
         save.mutate();
@@ -59,7 +65,19 @@ export function EnvironmentNameEditor({
           onChange={(event) => setName(event.target.value)}
         />
       </FormField>
-      <div className={styles.actions}>
+      <ErrorNotice error={save.error} retry={() => void reload()} />
+      <div className={styles.renameActions}>
+        {onCancel && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={onCancel}
+            disabled={save.isPending}
+          >
+            {t("Cancel")}
+          </Button>
+        )}
         <Button
           type="submit"
           size="sm"
@@ -70,7 +88,6 @@ export function EnvironmentNameEditor({
           {t("Save name")}
         </Button>
       </div>
-      <ErrorNotice error={save.error} retry={() => void reload()} />
     </form>
   );
 }

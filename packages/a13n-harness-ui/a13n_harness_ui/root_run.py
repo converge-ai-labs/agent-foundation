@@ -23,13 +23,14 @@ from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
+from a13n_harness_ui.goal import GoalView
 from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.restart import GracefulRestart
 from a13n_harness_ui.restart_models import RestartItem
-from a13n_harness_ui.root_execution import RootRunExecutor, RootRunOutcome
+from a13n_harness_ui.root_execution import RootRunAdmission, RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import ObjectRef, ThreadConfigurationMutation
 from a13n_harness_ui.surfaces import (
@@ -79,6 +80,7 @@ class _RootOperation:
     failure: FailureView | None = None
     cancel_requested: bool = False
     restart: RestartItem | None = None
+    goal: GoalView | None = None
 
 
 @dataclass(slots=True)
@@ -228,6 +230,7 @@ class RootRunCoordinator:
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
         touch: bool = False,
+        goal: GoalView | None = None,
     ) -> RootRunReceipt:
         prompt = detach_input(prompt)
         return await self._submit(
@@ -238,6 +241,7 @@ class RootRunCoordinator:
             mutation=mutation,
             model_overrides=model_overrides,
             touch=touch,
+            goal=goal,
         )
 
     async def submit_response(
@@ -281,6 +285,7 @@ class RootRunCoordinator:
         timeout: _InteractionWait | None = None,
         restart: RestartItem | None = None,
         environment_profile_id: str | None = None,
+        goal: GoalView | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -293,6 +298,7 @@ class RootRunCoordinator:
             status=RootOperationStatus.preparing,
             done=Event(),
             restart=restart,
+            goal=goal,
         )
         async with self._lock:
             if self._restart is not None:
@@ -328,6 +334,16 @@ class RootRunCoordinator:
                             "Could not update Thread navigation recency; work was not admitted.",
                             code="thread_touch_failed",
                         ) from exc
+                admission = await self._executor.capture(
+                    thread_id=thread_id,
+                    prompt=prompt,
+                    response=response,
+                    restart=restart,
+                    mutation=mutation,
+                    model_overrides=None if model_overrides is None else model_overrides.model_copy(deep=True),
+                    environment_profile_id=environment_profile_id,
+                )
+                operation.composition = admission.published.reference
                 if matching and pending is not None:
                     self._interaction_waits.pop(thread_id)
                     pending.cancelled.set()
@@ -335,15 +351,7 @@ class RootRunCoordinator:
                     self._restart.register(thread_id)
                 self._operations[receipt.receipt_id] = operation
                 self._active_by_thread[thread_id] = receipt.receipt_id
-                self._task_group.start_soon(
-                    self._run_operation,
-                    operation,
-                    prompt,
-                    response,
-                    mutation,
-                    None if model_overrides is None else model_overrides.model_copy(deep=True),
-                    environment_profile_id,
-                )
+                self._task_group.start_soon(self._run_operation, operation, admission)
         await self._publish_change(operation)
         return receipt.model_copy(deep=True)
 
@@ -467,6 +475,11 @@ class RootRunCoordinator:
         await self._request_cancel(operation)
         return RootControlResult(receipt_id=receipt_id, accepted=True)
 
+    async def _goal_changed(self, operation: _RootOperation, goal: GoalView) -> None:
+        async with self._lock:
+            operation.goal = goal
+        await self._publish_change(operation)
+
     async def _request_cancel(self, operation: _RootOperation) -> None:
         async with self._lock:
             operation.cancel_requested = True
@@ -480,21 +493,16 @@ class RootRunCoordinator:
     async def _run_operation(
         self,
         operation: _RootOperation,
-        prompt: RunInputValue | None,
-        response: ThreadDeferredResponse | None,
-        mutation: ThreadConfigurationMutation | None,
-        model_overrides: RunModelOverrides | None,
-        environment_profile_id: str | None,
+        admission: RootRunAdmission,
     ) -> None:
         with self._observation.operation(
             "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
         ) as span:
             record_input(
-                prompt if response is None else response, kind="prompt" if response is None else "deferred_response"
+                admission.prompt if admission.response is None else admission.response,
+                kind="prompt" if admission.response is None else "deferred_response",
             )
-            await self._execute_operation(
-                operation, prompt, response, mutation, model_overrides, environment_profile_id
-            )
+            await self._execute_operation(operation, admission)
             record_output(
                 operation.outcome.execution.output if operation.outcome is not None else None,
                 status=operation.status.value,
@@ -509,11 +517,7 @@ class RootRunCoordinator:
     async def _execute_operation(
         self,
         operation: _RootOperation,
-        prompt: RunInputValue | None,
-        response: ThreadDeferredResponse | None,
-        mutation: ThreadConfigurationMutation | None,
-        model_overrides: RunModelOverrides | None,
-        environment_profile_id: str | None,
+        admission: RootRunAdmission,
     ) -> None:
         scope = CancelScope()
         async with self._lock:
@@ -529,14 +533,9 @@ class RootRunCoordinator:
                     scope.cancel()
                 else:
                     outcome = await self._executor.execute(
-                        thread_id=operation.receipt.thread_id,
-                        prompt=prompt,
-                        response=response,
-                        restart=operation.restart,
-                        mutation=mutation,
-                        model_overrides=model_overrides,
-                        environment_profile_id=environment_profile_id,
-                        on_composition=lambda reference: self._captured(operation.receipt.receipt_id, reference),
+                        admission,
+                        goal=operation.goal,
+                        on_goal=lambda value: self._goal_changed(operation, value),
                         on_stream=lambda stream, input_files=None: self._running(
                             operation.receipt.receipt_id, stream, input_files
                         ),
@@ -581,6 +580,20 @@ class RootRunCoordinator:
                     projected = _outcome(outcome)
                     operation.outcome = projected
                     operation.status = _terminal_status(outcome, projected)
+                if (
+                    operation.goal is not None
+                    and operation.goal.active
+                    and operation.status
+                    in {
+                        RootOperationStatus.failed,
+                        RootOperationStatus.cancelled,
+                    }
+                ):
+                    operation.goal = operation.goal.model_copy(
+                        update={
+                            "status": "cancelled" if operation.status is RootOperationStatus.cancelled else "error",
+                        }
+                    )
                 operation.completed_at = datetime.now(UTC)
                 operation.scope = None
                 operation.stream = None
@@ -690,10 +703,6 @@ class RootRunCoordinator:
                 raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
             return operation.composition
 
-    async def _captured(self, receipt_id: str, reference: ObjectRef) -> None:
-        async with self._lock:
-            self._operations[receipt_id].composition = reference
-
     async def _running(
         self, receipt_id: str, stream: HarnessRunStream[Any], input_files: RootInputFiles | None = None
     ) -> None:
@@ -754,6 +763,7 @@ def _view(operation: _RootOperation) -> RootOperationView:
         completed_at=operation.completed_at,
         outcome=operation.outcome,
         failure=operation.failure,
+        goal=operation.goal,
         available_actions=actions,
     ).model_copy(deep=True)
 

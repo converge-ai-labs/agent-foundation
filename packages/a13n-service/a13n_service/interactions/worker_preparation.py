@@ -12,13 +12,13 @@ from a13n_harness import (
     AgentIdentityRef,
     AgentInstanceContext,
     DeferredToolResume,
-    EnvironmentAccess,
     EnvironmentMount,
     RunBindings,
     RunInputValue,
     RunPreparationContext,
 )
 from a13n_harness.capabilities import SubagentCapability, UserInteractionCapability, WebBinding
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 from a13n_harness.errors import RunError
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_harness.providers.environment.management import Environment
@@ -134,10 +134,15 @@ class WorkerAttemptPreparer:
         self._prepared_skills: dict[str | None, PreparedSkillRuntime] | None = None
 
     def _observed(
-        self, environment: Environment, access: EnvironmentAccess = EnvironmentAccess.FULL
+        self, environment: Environment, permission_ceiling: EnvironmentPermissionSet | None = None
     ) -> EnvironmentMount:
         """Live Environment observation is declared on the mount before it is bound."""
-        return observe_environment_entry(EnvironmentMount(environment, access=access), self._environment_projector)
+        mount = (
+            EnvironmentMount(environment)
+            if permission_ceiling is None
+            else EnvironmentMount(environment, permission_ceiling=permission_ceiling)
+        )
+        return observe_environment_entry(mount, self._environment_projector)
 
     async def claim_state_writer(self) -> None:
         await self._control.claim_state_writer(self._run)
@@ -228,7 +233,11 @@ class WorkerAttemptPreparer:
                 invocation = replace(
                     invocation,
                     environment=MountedHarnessEnvironments(
-                        entries={"builtin-skills": self._observed(environment, EnvironmentAccess.READ_ONLY)},
+                        entries={
+                            "builtin-skills": self._observed(
+                                environment, EnvironmentPermissionSet(operations=FILE_READ_ACTIONS)
+                            )
+                        },
                         default_environment="builtin-skills",
                     ),
                 )

@@ -83,6 +83,25 @@ class EnvironmentAction(StrEnum):
     STATE_RESTORE = "environment.state.restore"
 
 
+FILE_ACTIONS: frozenset[EnvironmentAction] = frozenset(
+    action for action in EnvironmentAction if action.value.startswith("environment.file.")
+)
+"""Every action in the `environment.file.*` family."""
+
+FILE_READ_ACTIONS: frozenset[EnvironmentAction] = frozenset(
+    {
+        EnvironmentAction.FILE_STAT,
+        EnvironmentAction.FILE_READ_TEXT,
+        EnvironmentAction.FILE_READ_BYTES,
+        EnvironmentAction.FILE_LIST,
+        EnvironmentAction.FILE_QUERY,
+        EnvironmentAction.FILE_SEARCH_TEXT,
+        EnvironmentAction.FILE_COPY_SOURCE,
+    }
+)
+"""File actions that only observe; the remaining `FILE_ACTIONS` mutate the filesystem."""
+
+
 @dataclass(frozen=True, slots=True)
 class EnvironmentActionDispatch:
     family: EnvironmentOperationFamily
@@ -172,7 +191,6 @@ class EnvironmentMountDescriptor(BaseModel):
 
     name: str
     path: str
-    read_only: bool
 
     @field_validator("name")
     @classmethod
@@ -246,6 +264,7 @@ class EnvironmentMountInfo(BaseModel):
     permission_ceiling: EnvironmentPermissionSet
     default_working_directory: str | None
     mount_path: str | None = None
+    provider_root: str = "/"
 
     @field_validator("name")
     @classmethod

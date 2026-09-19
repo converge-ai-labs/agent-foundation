@@ -14,8 +14,6 @@ from .models import EnvironmentError, EnvironmentOperationReceipt
 class FileConfiguration(Protocol):
     @property
     def max_file_bytes(self) -> int: ...
-    @property
-    def read_only(self) -> bool: ...
 
 
 class FileCommands(Protocol):

@@ -133,7 +133,7 @@ class FileTransferExecution:
                         self._entry,
                         RelayChunk(
                             request_id=self._request.request_id,
-                            use=self._request.use,
+                            scope=self._request.scope,
                             transfer=position,
                             data=base64.b64encode(chunk).decode(),
                         ),
@@ -159,6 +159,6 @@ class FileTransferExecution:
             await self._store.credit(
                 self._request,
                 self._entry,
-                RelayCredit(request_id=self._request.request_id, use=self._request.use, transfer=position),
+                RelayCredit(request_id=self._request.request_id, scope=self._request.scope, transfer=position),
             )
             self.position = position

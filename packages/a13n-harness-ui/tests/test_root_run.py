@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.root_run import RootRunCoordinator
+from a13n_harness_ui.storage import ObjectKind, ObjectRef
 from a13n_harness_ui.surfaces import (
     ExternalToolResult,
     RootActivityState,
@@ -16,11 +18,25 @@ from anyio import CancelScope, Event, fail_after, sleep, sleep_forever
 pytestmark = pytest.mark.anyio
 
 
+async def capture(**kwargs):
+    return SimpleNamespace(
+        prompt=kwargs["prompt"],
+        response=kwargs["response"],
+        published=SimpleNamespace(
+            reference=ObjectRef(
+                object_kind=ObjectKind.run_composition, object_schema_version="1", logical_digest="a" * 64
+            )
+        ),
+    )
+
+
 class _PreparingExecutor:
+    capture = staticmethod(capture)
+
     def __init__(self) -> None:
         self.started = Event()
 
-    async def execute(self, **kwargs: object) -> None:
+    async def execute(self, admission, **kwargs: object) -> None:
         del kwargs
         self.started.set()
         await sleep_forever()
@@ -37,11 +53,13 @@ class _Stream:
 
 
 class _RunningExecutor:
+    capture = staticmethod(capture)
+
     def __init__(self) -> None:
         self.started = Event()
         self.stream = _Stream()
 
-    async def execute(self, **kwargs: object) -> None:
+    async def execute(self, admission, **kwargs: object) -> None:
         on_stream = cast(Any, kwargs["on_stream"])
         await on_stream(self.stream)
         self.started.set()
@@ -49,12 +67,14 @@ class _RunningExecutor:
 
 
 class _ResponseExecutor:
+    capture = staticmethod(capture)
+
     def __init__(self) -> None:
         self.started = Event()
         self.response: ThreadDeferredResponse | None = None
 
-    async def execute(self, **kwargs: object) -> None:
-        self.response = cast(ThreadDeferredResponse, kwargs["response"])
+    async def execute(self, admission, **kwargs: object) -> None:
+        self.response = admission.response
         self.started.set()
         await sleep_forever()
 
@@ -98,7 +118,7 @@ async def test_shutdown_cancellation_during_error_reporting_still_settles_receip
     monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
     executor = _PreparingExecutor()
 
-    async def failing_execute(**kwargs):
+    async def failing_execute(admission, **kwargs):
         executor.started.set()
         try:
             await sleep_forever()

@@ -24,7 +24,6 @@ class WorkspaceEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     root: Path
-    read_only: bool = True
 
     @field_validator("root")
     @classmethod
@@ -44,9 +43,7 @@ class WorkspaceEnvironment(DirectLocalEnvironment):
 
 
 def _direct_configuration(configuration: WorkspaceEnvironmentConfiguration) -> DirectLocalEnvironmentConfiguration:
-    return DirectLocalEnvironmentConfiguration(
-        root=DirectLocalRootConfiguration(path=configuration.root, read_only=configuration.read_only)
-    )
+    return DirectLocalEnvironmentConfiguration(root=DirectLocalRootConfiguration(path=configuration.root))
 
 
 def _describe(configuration: WorkspaceEnvironmentConfiguration) -> EnvironmentDescriptor:

@@ -9,14 +9,14 @@ from time import monotonic
 import pytest
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
-from a13n_harness.providers.environment.models import EnvironmentState
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_service.environments.domain import CreateProviderRequest, RegisterEnvironmentRequest
 from a13n_service.environments.websocket.authority import ConnectionIdentity, DispatchAuthority, UseIdentity
 from a13n_service.environments.websocket.coordination import ConfirmedObservation, ConnectionObservation, UseGrant
 from a13n_service.environments.websocket.relay_client import RelayUseClient
 from a13n_service.environments.websocket.relay_consumer import RelayControlConsumer
 from a13n_service.environments.websocket.relay_scope import RelayUseScope
-from a13n_service.environments.websocket.relay_storage import ConnectionRelayStore, WorkerResponseMailbox
+from a13n_service.environments.websocket.relay_storage import ConnectionRelayStore, ResponseMailbox
 from a13n_service.environments.websocket.relay_waiters import RelayResponseDispatcher
 from a13n_service.environments.websocket.resources import ConnectionResources
 from a13n_service.storage.config import RedisServerConfig
@@ -54,9 +54,7 @@ async def target(environment_service):
         request=RegisterEnvironmentRequest(
             provider_id=provider.id,
             configuration={},
-            state=EnvironmentState(
-                provider_key="websocket_envd", state_version="1", state={"daemon_environment_id": "local-computer"}
-            ),
+            device_id="local-computer",
         ),
     )
     return await ConnectionResources(environment_service).authorized(actor(), environment.id, manage=True)
@@ -75,13 +73,13 @@ async def relay_redis(redis_url):
 
 
 CONNECTION = ConnectionIdentity("org", "env", "connection", "epoch", "control")
-USE = UseIdentity(CONNECTION, "use", "run", "attempt", 1, "worker")
+USE = UseIdentity(CONNECTION, "use", "run", "attempt", 1, "worker", "workspace", admission_deadline_ms=1)
 
 
 @pytest.fixture
 async def control_relay(relay_redis):
     owner = ConnectionRelayStore(relay_redis, CONNECTION)
-    mailbox = WorkerResponseMailbox(relay_redis, USE.worker_instance_id)
+    mailbox = ResponseMailbox(relay_redis, USE.worker_instance_id)
     await mailbox.prepare()
     await owner.prepare()
     started = monotonic()
@@ -96,7 +94,7 @@ async def control_relay(relay_redis):
             expires_at_ms=now + 5000,
             barrier_ms=0,
             retiring=None,
-            use=UseGrant(identity=USE, expires_at_ms=now + 5000),
+            uses={USE.use_id: UseGrant(identity=USE, expires_at_ms=now + 5000)},
             error=None,
         ),
         started,
@@ -109,12 +107,26 @@ async def control_relay(relay_redis):
 
     @asynccontextmanager
     async def serving(dispatch, *, concurrency=32):
-        authority = DispatchAuthority(USE, observed.deadline(use=True))
+        authority = DispatchAuthority(CONNECTION, observed.deadline())
+
+        @asynccontextmanager
+        async def operation(request):
+            if request.scope != USE:
+                raise EnvironmentError("The test binding is not admitted", code="environment_forbidden")
+            if request.operation in {"scope.close", "operation.cancel"}:
+
+                async def noop():
+                    return None
+
+                yield noop
+            else:
+                yield dispatch.prepare(request)
+
         consumer = RelayControlConsumer(
             owner,
             authority,
             observed,
-            dispatch,
+            operation,
             concurrency=concurrency,
         )
         task = asyncio.create_task(consumer.run())

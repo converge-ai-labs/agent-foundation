@@ -20,6 +20,7 @@ from ..errors import (
 )
 from ..management import Environment, EnvironmentProviderConfiguration
 from ..models import (
+    FILE_ACTIONS,
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -148,7 +149,7 @@ class DirectLocalEnvironment(Environment):
 
         root = await asyncio.to_thread(_resolve_shared_root, self._configuration.root.path)
         policy = self._configuration.model_dump(mode="json")
-        policy["root"] = {"path": str(root), "read_only": self._configuration.root.read_only}
+        policy["root"] = {"path": str(root)}
         for field in ("allowed_executables", "allowed_environment_keys", "allowed_ports"):
             if policy[field] is not None:
                 policy[field] = sorted(policy[field])
@@ -158,7 +159,6 @@ class DirectLocalEnvironment(Environment):
         generation = f"generation-{uuid4().hex[:16]}"
         files = LocalFileOperator(
             root=root,
-            read_only=self._configuration.root.read_only,
             policy=_DirectLocalFilePolicy(max_value_bytes=self._configuration.max_value_bytes),
             mount_id=mount_id,
             generation=generation,
@@ -317,22 +317,11 @@ def _descriptor(
     configuration: DirectLocalEnvironmentConfiguration, generation: str, *, backing_identity: str | None = None
 ) -> EnvironmentDescriptor:
     process_enabled = bool(configuration.allowed_executables or configuration.shell_profiles)
-    read_actions = {
-        EnvironmentAction.FILE_STAT,
-        EnvironmentAction.FILE_READ_TEXT,
-        EnvironmentAction.FILE_READ_BYTES,
-        EnvironmentAction.FILE_LIST,
-        EnvironmentAction.FILE_QUERY,
-        EnvironmentAction.FILE_SEARCH_TEXT,
-        EnvironmentAction.FILE_COPY_SOURCE,
-    }
-    file_actions = {action for action in EnvironmentAction if action.value.startswith("environment.file.")}
-    permissions = set(read_actions if configuration.root.read_only else file_actions)
+    permissions = set(FILE_ACTIONS)
     families: set[EnvironmentOperationFamily] = {"files"}
     if process_enabled:
         permissions.add(EnvironmentAction.SHELL_EXEC)
         families.add("shell")
-    if process_enabled:
         permissions.update(
             action
             for action in EnvironmentAction
@@ -356,5 +345,5 @@ def _descriptor(
         operation_families=frozenset(families),
         permissions=EnvironmentPermissionSet(operations=frozenset(permissions)),
         limits=limits,
-        mounts=(EnvironmentMountDescriptor(name="root", path="/", read_only=configuration.root.read_only),),
+        mounts=(EnvironmentMountDescriptor(name="root", path="/"),),
     )

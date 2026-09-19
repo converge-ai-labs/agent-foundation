@@ -19,7 +19,10 @@ from a13n_harness.providers.environment.e2b.configuration import (
     E2BCredential,
     E2BEnvironmentConfiguration,
 )
-from a13n_harness.providers.environment.local_envd.configuration import LocalEnvdEnvironmentConfiguration
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdEnvironmentConfiguration,
+    LocalEnvdLaunchConfiguration,
+)
 from a13n_harness.providers.environment.management import HostLocalProviderConfiguration
 from a13n_harness.providers.environment.modal.provider import (
     ModalConnectionConfiguration,
@@ -206,6 +209,7 @@ This document excludes non-Native boundaries: operational probes, schema/documen
 ENVIRONMENT_CONFIGURATION_MODELS = (
     DirectLocalEnvironmentConfiguration,
     LocalEnvdEnvironmentConfiguration,
+    LocalEnvdLaunchConfiguration,
     DockerEnvironmentConfiguration,
     E2BEnvironmentConfiguration,
     DaytonaEnvironmentConfiguration,

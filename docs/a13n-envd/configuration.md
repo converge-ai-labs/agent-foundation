@@ -1,76 +1,49 @@
 # Daemon configuration and transports
 
-This is the standalone Envd configuration, not Harness UI YAML or an `EnvironmentProviderSpec`. Use it when operating a daemon directly. For normal Harness integration, let the Local Envd Provider construct its trusted bootstrap.
+This is standalone Envd configuration, not Harness UI YAML or an `EnvironmentProviderSpec`. The Host owns deployment, account selection, any outer sandbox, credentials and the daemon lifetime. An adapter configuration selects only a working directory and required methods.
 
 ## Configuration layers
 
-| Layer                    | Holds                                                                 | Does not hold                                      |
-| ------------------------ | --------------------------------------------------------------------- | -------------------------------------------------- |
-| Daemon JSON (`--config`) | Mounts, operation permissions, execution policy, shell profiles       | Agent definitions or model settings                |
-| Bootstrap environment    | Environment identity, private runtime, carrier, credential-file paths | Credential bytes or a product-user session         |
-| EIP initialized session  | Negotiated methods and current operation correlation                  | Multi-tenant partitions or durable Agent execution |
+| Layer                    | Holds                                                                                   |
+| ------------------------ | --------------------------------------------------------------------------------------- |
+| Daemon JSON (`--config`) | Device metadata, default cwd, directory discovery, command profiles and resource limits |
+| Bootstrap environment    | Device identity, private runtime, carrier and credential-file paths                     |
+| Device connection        | Negotiated protocol and shared carrier                                                  |
+| EIP Session              | Fixed cwd and independent operations, processes, output, transfers and evidence         |
 
 ## Minimal standalone configuration
 
-The default carrier is stdio. A standalone process needs a stable Environment identity and an absolute private runtime parent:
+The default carrier is stdio. Supply an absolute private runtime directory:
 
 ```bash
-export A13N_ENVD_ENVIRONMENT_ID=provider-owned-environment-id
 export A13N_ENVD_RUNTIME_DIR=/absolute/path/to/private-runtime
+export A13N_ENVD_DEVICE_ID=device-my-machine
 a13n-envd --config /absolute/path/to/a13n-envd.json
 ```
 
-The Provider creates and protects the runtime parent before launch. `a13n-envd` creates one unpredictable generation-private child. In stdio mode, stdin and stdout are reserved for framed EIP traffic; diagnostics use stderr.
-
-A minimal workspace configuration is:
+The Host creates and protects the runtime parent. Envd creates an unpredictable generation-private child and takes an exclusive runtime lock. Stdin and stdout are reserved for framed EIP traffic; diagnostics use stderr.
 
 ```json
 {
-  "root_mount_id": "workspace",
-  "execution": {
-    "isolation": "required",
-    "network": "deny",
-    "extra_read_only_paths": []
-  },
-  "mounts": [
-    {
-      "mount_id": "workspace",
-      "native_root": "/absolute/path/to/workspace",
-      "writable": true,
-      "allow_command_execution": false,
-      "max_file_bytes": 104857600
-    }
-  ]
+  "default_working_directory": "/absolute/path/to/workspace",
+  "directory_discovery": true,
+  "limits": {
+    "max_file_bytes": 104857600
+  }
 }
 ```
 
-Native mount roots must already exist. With one mount, `root_mount_id` is inferred; with multiple mounts, configure it explicitly. Roots must not overlap or alias.
+The working directory must exist. If omitted, the daemon captures its startup cwd. It is **not an access root**: file paths address the whole filesystem available to the daemon account and outer sandbox. Directory discovery is a bounded, one-level read that works before any Session exists.
 
-**Omitting `allowed_operations` or setting it to `[]` selects the default operation set, not deny-all.** Only a non-empty list replaces the defaults. Read-only mounts remove write operations even if listed. For a file-only mount, set `allow_command_execution: false` explicitly; its standalone default is `true`.
+Explicit Device IDs can come from `--device-id`, JSON `device_id`, or `A13N_ENVD_DEVICE_ID`. Without an explicit ID, an installation state directory retains the generated identity across restart. `--default-working-directory`, `--name` and `--description` override JSON metadata. Set directory discovery through JSON or `A13N_ENVD_DIRECTORY_DISCOVERY`. EIP paths use `/C:/...` and `/UNC/server/share/...` on Windows; daemon bootstrap paths use native OS spelling.
 
 ## Enable commands
 
-A command-enabled mount needs `command_cwd`. Executables come only from fixed trusted search roots or an explicitly eligible mounted executable source. Optional shell profiles are trusted configuration:
+Configure trusted executable search roots and optionally fixed shell profiles:
 
 ```json
 {
-  "mounts": [
-    {
-      "mount_id": "workspace",
-      "native_root": "/absolute/path/to/workspace",
-      "writable": false,
-      "allow_command_execution": true,
-      "max_file_bytes": 104857600,
-      "allowed_operations": [
-        "stat",
-        "read_text",
-        "open_reader",
-        "list",
-        "command_cwd",
-        "executable_source"
-      ]
-    }
-  ],
+  "default_working_directory": "/absolute/path/to/workspace",
   "trusted_executable_roots": ["/usr/local/bin", "/usr/bin", "/bin"],
   "shell_profiles": [
     {
@@ -87,89 +60,60 @@ A command-enabled mount needs `command_cwd`. Executables come only from fixed tr
 }
 ```
 
-Child environments are rebuilt from a finite compatibility allowlist. `PATH`, `HOME`, and temporary-directory values are replaced; daemon control state, `A13N_ENVD_*`, ambient credentials, and dynamic-loader variables are removed.
+No command methods are advertised when both executable roots and shell profiles are empty. Executable roots and profiles are trusted launch configuration, not a Session sandbox. Filesystem, account and network restrictions must surround the entire daemon. See [outer security and troubleshooting](isolation.md).
+
+Child environments are built from the daemon's supported inherited values plus explicit command inputs. Daemon control variables are not command configuration. Inspect advertised execution features instead of assuming platform support for signals, limits or executable bits.
 
 ## Carrier profiles
 
-| Profile             | Required bootstrap                                                                          | Intended use                                                 |
-| ------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| `stdio`             | Parent-supplied process pipes                                                               | Local Provider-owned daemon                                  |
-| `http`              | Bind address, protected credential file, and native TLS or explicit trusted plaintext scope | Host-dialed dedicated EIP listener                           |
-| `reverse_websocket` | Outbound URL and protected credential file                                                  | Provider accepts an authenticated outbound daemon connection |
+| Profile             | Bootstrap                                                                        | Use                                         |
+| ------------------- | -------------------------------------------------------------------------------- | ------------------------------------------- |
+| `stdio`             | Parent-supplied process pipes                                                    | Host-owned local daemon                     |
+| `http`              | Bind address, protected credential file, TLS or explicit trusted plaintext scope | Host-dialed Device                          |
+| `reverse_websocket` | Outbound URL and protected credential file                                       | Device dials an authenticated Host listener |
 
-Select a profile with `A13N_ENVD_TRANSPORT`.
+Select the profile with `A13N_ENVD_TRANSPORT`.
 
-HTTP requires `A13N_ENVD_HTTP_BIND`, `A13N_ENVD_HTTP_CREDENTIAL_FILE`, and either paired TLS certificate/key files or `A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback|provider_private_link`. It exposes only authenticated `/eip/control` and `/eip/transfer` routes.
+HTTP requires `A13N_ENVD_HTTP_BIND`, `A13N_ENVD_HTTP_CREDENTIAL_FILE`, and either paired TLS certificate/key files or `A13N_ENVD_HTTP_PLAINTEXT_SCOPE=loopback|provider_private_link`. It exposes authenticated `/eip/control` and `/eip/transfer` routes. Session selection is explicit; neither a TCP connection nor an HTTP pool owns a Session.
 
-Reverse WebSocket requires `A13N_ENVD_REVERSE_WS_URL` and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`. An optional CA file adds deployment trust for `wss`. The daemon dials outward; it does not expose an inbound WebSocket listener.
+Reverse WebSocket requires `A13N_ENVD_REVERSE_WS_URL` and `A13N_ENVD_REVERSE_WS_CREDENTIAL_FILE`. `A13N_ENVD_REVERSE_WS_CA_FILE` adds deployment trust for `wss`. The daemon does not expose an inbound WebSocket listener.
 
-Credential files contain short-lived Provider-owned bearer tokens. Tokens do not belong in argv, ordinary environment variables, endpoint URLs, descriptors, logs, traces, or EIP payloads.
+Credentials belong in protected files, not argv, endpoint URLs, descriptors, logs or portable Environment state. A credential authorizes Device access, not a tenant-isolated Session.
 
 ## Lifecycle and ownership
 
-One daemon is one authority-bearing generation for one Environment identity. It admits at most one active initialized EIP session. Another user, mutually untrusted workload, or concurrent independent session needs another daemon, private runtime, and Provider adapter.
+One daemon generation serves a Device with multiple independent Sessions. Initializing a carrier opens no Session. `session.open` captures a working directory and starts one resource scope; `session.close` closes only that scope. Session-local keepalive renews only its owner. Device discovery does not keep abandoned Sessions alive.
 
-The daemon does not own Harness runs or durable workflow lifecycle. It also exposes no generic HTTP server, browser endpoint, health endpoint, readiness endpoint, or inbound WebSocket. Providers establish readiness through EIP initialization and readiness while observing process or carrier failure.
+A lost framed carrier detaches its Sessions for bounded disconnect grace. An existing owner may explicitly attach the same Session in the same generation. Attachment never replays commands or resumes transfers. Expired Sessions require fresh scopes and old resource references remain invalid.
+
+The Host closes its Device connections during shutdown and terminates a daemon only when it owns that daemon's lifecycle. Workspace files are not deleted by Session close. Native processes and private output/staging storage are reclaimed under bounded cleanup; failure is reported rather than treated as successful reclamation.
 
 ## Check before admitting work
 
 ```bash
 a13n-envd --version
-env -u A13N_ENVD_EXECUTABLE a13n-envd isolation probe \
-  --config /absolute/path/to/a13n-envd.json --json
 ```
 
-Use the ordinary daemon account and production-equivalent execution settings. The probe validates the execution posture and can start bounded local subprocesses and create temporary files; it is not a complete mount/runtime/carrier dry-run. `--json` is required. The daemon has no general `validate` subcommand.
+Match the exact daemon and Python client release. `A13N_ENVD_EXECUTABLE` belongs to Python Host executable selection; remove it from the daemon child environment. Unknown `A13N_ENVD_*` variables and unknown JSON fields are rejected.
 
-`A13N_ENVD_EXECUTABLE` belongs to Python Host executable selection, not daemon bootstrap. Remove it when launching the daemon directly; unknown `A13N_ENVD_*` variables are rejected. The `env -u` form above is POSIX; on PowerShell, remove that variable from the child launch environment instead.
-
-Inspect exact available methods after EIP initialization; a command-disabled mount must not be assumed to expose shell execution. See [isolation and troubleshooting](isolation.md) for platform prerequisites.
+Device initialization verifies identity and protocol. Session readiness checks the selected scope. There is no `isolation probe` or per-command isolation mode: test the Host's outer boundary through that deployment's own launcher and checks.
 
 ## Standalone field reference
 
-These are **daemon JSON defaults**, not the defaults of Python's Local Envd Provider. The latter supplies its own bounded configuration. Unknown JSON fields are rejected; the config path must be an absolute regular file, not a symlink.
+| Root field                                   | Default or meaning                                                 |
+| -------------------------------------------- | ------------------------------------------------------------------ |
+| `device_id`                                  | Explicit stable identity, otherwise installation identity          |
+| `installation_state_directory`               | Persistent identity storage when no explicit Device ID is supplied |
+| `name`, `description`                        | Optional display metadata                                          |
+| `default_working_directory`                  | Startup cwd if unset                                               |
+| `directory_discovery`                        | `true`                                                             |
+| `idle_timeout_ms`                            | Session idle lifetime                                              |
+| `disconnect_grace_ms`                        | Detached Session attachment grace                                  |
+| `trusted_executable_roots`, `shell_profiles` | Empty; command methods disabled                                    |
+| `limits`                                     | Device aggregates and per-Session limits                           |
 
-| Root field                           | Default / requirement                                                   |
-| ------------------------------------ | ----------------------------------------------------------------------- |
-| `root_mount_id`                      | Unset; inferred for one mount, required for multiple mounts             |
-| `mounts`                             | `[]`                                                                    |
-| `trusted_executable_roots`           | `[]`; absolute existing directories                                     |
-| `shell_profiles`                     | `[]`                                                                    |
-| `execution.isolation`                | `required`; `disabled` requires a deliberate outer containment boundary |
-| `execution.network`                  | `host`; set `deny` explicitly for required network isolation            |
-| `execution.extra_read_only_paths`    | `[]`; absolute existing directories                                     |
-| `limits.max_output_preview_bytes`    | `2097152` (2 MiB)                                                       |
-| `limits.max_output_bytes_per_stream` | `268435456` (256 MiB)                                                   |
-| `limits.max_spool_bytes`             | `1073741824` (1 GiB)                                                    |
-
-All three output limits must be positive; preview cannot exceed a single-stream limit and spool must be at least twice the single-stream limit. Other internal daemon limits are not accepted JSON fields.
-
-### Mount fields
-
-| Field                     | Default / requirement                                                            |
-| ------------------------- | -------------------------------------------------------------------------------- |
-| `mount_id`                | Required unique 1–128 character ASCII identifier: letters, digits, `.`, `-`, `_` |
-| `native_root`             | Required absolute existing directory                                             |
-| `writable`                | Required boolean                                                                 |
-| `max_file_bytes`          | Required positive integer                                                        |
-| `allow_command_execution` | `true`                                                                           |
-| `allowed_operations`      | `[]`, meaning default operations rather than none                                |
-
-The default set includes reads, metadata, listing, find/search, `command_cwd`, and `executable_source`. Writable mounts additionally permit file mutations. Command use still requires a command-enabled mount, configured executable policy, and a usable isolation posture.
+Important default limits include 128 Sessions, 256 Device concurrent operations, 128 concurrent operations per Session, 4 GiB Device spool capacity, 1 GiB Session spool capacity, 256 MiB output per stream and 2 MiB previews. Configured Session capacities cannot exceed Device aggregates. Output preview cannot exceed stream capacity; spool must reserve both streams.
 
 ### Shell-profile fields
 
-Required fields are `profile_id`, `display_name`, `native_executable`, `executable_search_roots`, and positive `max_script_bytes`. The executable must be an absolute existing regular file; search roots must contain at least one directory.
-
-`fixed_arguments` defaults to `[]`, `safe_base_environment` to `{}`, and `allow_login_mode` to `false`. Profiles are trusted launch configuration, not model-supplied shell names. No command policy is created when both the top-level executable roots and shell profiles are empty.
-
-### Execution environment overrides
-
-| Variable                                             | Meaning                                               |
-| ---------------------------------------------------- | ----------------------------------------------------- |
-| `A13N_ENVD_EXECUTION_ISOLATION`                      | `required` or `disabled`; overrides JSON              |
-| `A13N_ENVD_EXECUTION_NETWORK`                        | `host` or `deny`; overrides JSON                      |
-| `A13N_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS`          | JSON string array, not a PATH-separated string        |
-| `A13N_ENVD_EXECUTION_UID`, `A13N_ENVD_EXECUTION_GID` | Paired positive integers for Linux required isolation |
-
-Explicit disabled isolation accepts only host networking and no extra read-only paths. A successful disabled probe reports unavailable containment; it does not verify the outer sandbox for you.
+Required fields are `profile_id`, `display_name`, `native_executable`, `executable_search_roots` and positive `max_script_bytes`. Executables and search roots are existing absolute native paths. `fixed_arguments` defaults to `[]`, `safe_base_environment` to `{}` and `allow_login_mode` to `false`.

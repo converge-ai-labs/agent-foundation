@@ -1,32 +1,60 @@
 import { useTranslation } from "react-i18next";
+import { useNavigate, useParams } from "react-router";
+import { useQueryClient } from "@tanstack/react-query";
 import { useAccess, useWorkspace } from "../../layout/workspace";
-import { Empty, Page } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { Page } from "../../shared/page";
 import { EnvironmentTemplates } from "../environments/templates";
 import { ProvidersPage } from "../providers/page";
 import { Models } from "../models/page";
-import { ServiceAccounts } from "./accounts";
+import { ServiceAccountDetail, ServiceAccounts } from "./accounts";
 import { Audit } from "./audit";
 import { Invitations } from "./invitations";
 import { ApiKeys } from "./keys";
 import { SettingsLayout } from "./layout";
 import { Members } from "./members";
 import { Profile } from "./profile";
-import { Workspaces } from "./workspaces";
+import { DeleteWorkspace, Workspaces } from "./workspaces";
+
 export function WorkspaceSettings() {
-  const { workspace, can } = useWorkspace();
+  const { workspace, can, basePath } = useWorkspace();
+  const { organizationAdmin } = useAccess();
+  const { accountId } = useParams();
+  const navigate = useNavigate();
+  const cache = useQueryClient();
   const scope = { kind: "workspace", id: workspace.id } as const;
   return (
     <SettingsLayout
       scope="workspace"
+      section={accountId ? "service-accounts" : undefined}
+      heading={!accountId}
       content={{
-        profile: (
-          <Profile target={scope} editable={can("role_binding.manage")} />
+        general: (
+          <Profile
+            target={scope}
+            editable={can("role_binding.manage")}
+            danger={
+              organizationAdmin && (
+                <DeleteWorkspace
+                  workspace={workspace}
+                  onSuccess={() => {
+                    void cache.invalidateQueries();
+                    void navigate("/", { replace: true });
+                  }}
+                />
+              )
+            }
+          />
         ),
         members: <Members scope={scope} />,
         invitations: <Invitations scope={scope} />,
-        "personal-keys": <ApiKeys />,
+        "api-keys": <ApiKeys />,
         "member-keys": <ApiKeys memberKeys />,
-        accounts: <ServiceAccounts />,
+        "service-accounts": accountId ? (
+          <ServiceAccountDetail key={accountId} accountId={accountId} />
+        ) : (
+          <ServiceAccounts key={basePath} />
+        ),
         audit: <Audit scope={scope} />,
         providers: <ProvidersPage scope={scope} />,
       }}
@@ -52,7 +80,7 @@ export function OrganizationSettings() {
     <SettingsLayout
       scope="organization"
       content={{
-        profile: <Profile target={scope} />,
+        general: <Profile target={scope} />,
         members: <Members scope={scope} />,
         invitations: <Invitations scope={scope} />,
         models: <Models scope={scope} />,

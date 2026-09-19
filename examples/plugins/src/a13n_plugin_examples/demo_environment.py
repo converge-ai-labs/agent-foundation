@@ -11,11 +11,11 @@ from typing import Literal
 
 from a13n_harness import (
     AgentSpec,
-    EnvironmentAccess,
     EnvironmentMount,
     HarnessBuilder,
     RunPreparationContext,
 )
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.plugins import load_provider_plugins
@@ -40,10 +40,7 @@ class EnvironmentDemoResult:
 
 def _configuration(provider: EnvironmentProviderDefinition, root: Path):
     return provider.validate_environment(
-        {
-            "root": str(root),
-            "read_only": True,
-        },
+        {"root": str(root)},
     )
 
 
@@ -90,11 +87,12 @@ async def _run_environment_demo(
         output_type=str,
         model=FunctionModel(stream_function=stream_model),
     )
+    read_only = EnvironmentPermissionSet(operations=FILE_READ_ACTIONS)
     result = await executable.run(
         input_factory=read_workspaces,
         environments={
-            "source": EnvironmentMount(source, access=EnvironmentAccess.READ_ONLY),
-            "docs": EnvironmentMount(docs, access=EnvironmentAccess.READ_ONLY),
+            "source": EnvironmentMount(source, permission_ceiling=read_only),
+            "docs": EnvironmentMount(docs, permission_ceiling=read_only),
         },
         default_environment="source",
     )

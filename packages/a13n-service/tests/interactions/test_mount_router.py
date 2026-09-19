@@ -60,7 +60,11 @@ async def test_mount_http_receipt_replay_conflict_and_ordered_pagination(mount_a
     client, _, _, path, environment_id = mount_api
     # An online fixture must survive the original connection lease.
     await sleep(DEFAULT_LIMITS.lease_ms / 1000 + 0.1)
-    first = {"name": "computer", "environment_id": environment_id}
+    first = {
+        "name": "computer",
+        "environment_id": environment_id,
+        "working_directory": "/projects/computer",
+    }
     response = await client.post(path, json=first, headers={"Idempotency-Key": "first"})
     assert response.status_code == 201, response.text
     receipt = response.json()
@@ -88,7 +92,11 @@ async def test_mount_http_receipt_replay_conflict_and_ordered_pagination(mount_a
 
 async def test_mount_http_rejects_invalid_inputs_before_acceptance(mount_api):
     client, _, _, path, environment_id = mount_api
-    valid = {"name": "computer", "environment_id": environment_id}
+    valid = {
+        "name": "computer",
+        "environment_id": environment_id,
+        "working_directory": "/projects/computer",
+    }
     missing_key = await client.post(path, json=valid)
     assert missing_key.status_code == 400
     for changes in ({"name": "workspace"}, {"name": "../escape"}, {"access": "admin"}, {"native_path": "/tmp"}):
@@ -116,7 +124,11 @@ async def test_mount_http_conceals_resources_from_unauthorized_principal(mount_a
     assert response.status_code == 404, response.text
     response = await client.post(
         path,
-        json={"name": "computer", "environment_id": environment_id},
+        json={
+            "name": "computer",
+            "environment_id": environment_id,
+            "working_directory": "/projects/computer",
+        },
         headers={"Idempotency-Key": "unauthorized"},
     )
     assert response.status_code == 404, response.text
@@ -127,7 +139,11 @@ async def test_mount_http_drain_keeps_history_readable(mount_api):
     runtime.status.draining = True
     response = await client.post(
         path,
-        json={"name": "computer", "environment_id": environment_id},
+        json={
+            "name": "computer",
+            "environment_id": environment_id,
+            "working_directory": "/projects/computer",
+        },
         headers={"Idempotency-Key": "draining"},
     )
     assert response.status_code == 503, response.text

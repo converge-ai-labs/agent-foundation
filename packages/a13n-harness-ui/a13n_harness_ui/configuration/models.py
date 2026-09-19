@@ -11,6 +11,11 @@ from typing import Annotated, Literal, Self, get_args, get_origin
 from urllib.parse import unquote_plus, urlsplit
 
 from a13n_harness.capabilities import ToolProxyConfig
+from a13n_harness.providers.environment.remote_envd.configuration import (
+    HttpEnvdConnectionConfiguration,
+    RemoteEnvdStateData,
+    WebSocketEnvdConnectionConfiguration,
+)
 from a13n_harness.spec import HarnessModelCharacteristics
 from a13n_harness.tools.tool_proxy import validate_group
 from pydantic import (
@@ -25,6 +30,11 @@ from pydantic import (
 )
 
 from a13n_harness_ui.content_plugins import InstalledContentPlugin
+from a13n_harness_ui.environment_bindings import (
+    EnvironmentBindingSelection,
+    validate_binding_aliases,
+    validate_environment_selection,
+)
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.settings import DEFAULT_MAX_OBJECT_BYTES, ObjectSizeLimit
 from a13n_harness_ui.subagents import BuiltinSubagentName
@@ -204,6 +214,7 @@ class HarnessUiDocument(ConfigurationModel):
     security: SecurityConfiguration = Field(default_factory=SecurityConfiguration)
     subagents: SubagentsConfiguration = Field(default_factory=SubagentsConfiguration)
     webui: WebUiConfiguration = Field(default_factory=WebUiConfiguration)
+    max_goal_iterations: int = 10
 
 
 class EnvironmentVariableSource(StrictModel):
@@ -275,6 +286,37 @@ class ModelResource(ConfigurationModel):
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
         _require_id_prefix(self.id, "model-")
+        return self
+
+
+class HttpDeviceTransport(StrictModel):
+    kind: Literal["http"]
+    configuration: HttpEnvdConnectionConfiguration
+
+
+class WebSocketDeviceTransport(StrictModel):
+    kind: Literal["websocket"]
+    configuration: WebSocketEnvdConnectionConfiguration = Field(default_factory=WebSocketEnvdConnectionConfiguration)
+
+
+type DeviceTransport = Annotated[HttpDeviceTransport | WebSocketDeviceTransport, Field(discriminator="kind")]
+
+
+class DeviceResource(StrictModel):
+    """Credential references and connection recipe, never live Session state."""
+
+    schema_version: Literal["1"]
+    kind: Literal["device"]
+    id: ResourceId
+    name: str = Field(min_length=1, max_length=256)
+    device_id: str = Field(min_length=1, max_length=128)
+    transport: DeviceTransport
+    authentication: ApiKeyAuthentication
+
+    @model_validator(mode="after")
+    def _valid_resource(self) -> Self:
+        _require_id_prefix(self.id, "device-")
+        RemoteEnvdStateData(device_id=self.device_id)
         return self
 
 
@@ -538,6 +580,12 @@ class ProjectDefaults(ConfigurationModel):
 
     agent: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
     environment_profile: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = Field(
+        default=None, max_length=64, exclude_if=lambda value: value is None
+    )
+    default_environment: str | None = Field(
+        default=None, min_length=1, max_length=63, exclude_if=lambda value: value is None
+    )
     harness_plugins: tuple[ResourceId, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
     environment_run_extensions: tuple[ResourceId, ...] | None = Field(
         default=None, exclude_if=lambda value: value is None
@@ -553,9 +601,14 @@ class ProjectDefaults(ConfigurationModel):
 
     @model_validator(mode="after")
     def _valid_selections(self) -> Self:
-        for name, value in self.model_dump(include=set(type(self).model_fields)).items():
-            if isinstance(value, tuple) and len(value) != len(set(value)):
+        for name, values in (
+            ("harness_plugins", self.harness_plugins),
+            ("environment_run_extensions", self.environment_run_extensions),
+            ("mcp_servers", self.mcp_servers),
+        ):
+            if values is not None and len(values) != len(set(values)):
                 raise ValueError(f"Project defaults.{name} must be unique and ordered")
+        validate_binding_aliases(self.environment_bindings or ())
         return self
 
 
@@ -565,7 +618,7 @@ class ProjectResource(ConfigurationModel):
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     position: int = Field(default=0)
-    roots: tuple[ProjectRoot, ...] = Field(min_length=1, max_length=64)
+    roots: tuple[ProjectRoot, ...] = Field(default=(), max_length=64)
     defaults: ProjectDefaults = Field(default_factory=ProjectDefaults, exclude_if=lambda value: not value.model_dump())
 
     @model_validator(mode="after")
@@ -574,6 +627,11 @@ class ProjectResource(ConfigurationModel):
         paths = tuple(item.path for item in self.roots)
         if len(paths) != len(set(paths)):
             raise ValueError("Project roots must be unique and ordered")
+        if not paths and not self.defaults.environment_bindings:
+            raise ValueError("A Project requires local roots or Device Environment bindings")
+        validate_environment_selection(
+            self.defaults.environment_bindings or (), self.defaults.default_environment, local_root_count=len(paths)
+        )
         return self
 
 
@@ -640,6 +698,7 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
     agents: dict[ResourceId, AgentResource] = Field(default_factory=dict)
     subagents: dict[ResourceId, CanonicalSubagent] = Field(default_factory=dict)
     projects: dict[ResourceId, ProjectResource] = Field(default_factory=dict)
+    devices: dict[ResourceId, DeviceResource] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _validate_graph(self) -> Self:
@@ -666,6 +725,8 @@ class LoadedHarnessUiConfiguration(ConfigurationModel):
 
         for project in self.projects.values():
             selected = project.defaults
+            for binding in selected.environment_bindings or ():
+                _require_reference(binding.device_id, self.devices, f"{project.id}.defaults.environment_bindings")
             _require_reference(selected.agent, self.agents, f"{project.id}.defaults.agent")
             if (
                 selected.environment_profile is not None

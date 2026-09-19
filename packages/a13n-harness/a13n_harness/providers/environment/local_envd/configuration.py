@@ -1,32 +1,15 @@
 from __future__ import annotations
 
-import unicodedata
-from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from ..remote_envd.configuration import RemoteEnvdEnvironmentConfiguration
+
 _MIB = 1024 * 1024
 _GIB = 1024 * _MIB
 _MAX_RESPONSE_BYTES = 16 * _MIB
-
-
-class LocalEnvdNetworkMode(StrEnum):
-    HOST = "host"
-    DENY = "deny"
-
-
-class LocalEnvdWorkspaceConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    path: Path
-    read_only: bool = False
-
-    @field_validator("path")
-    @classmethod
-    def _absolute_path(cls, value: Path) -> Path:
-        return _absolute_os_path(value, label="Local Envd workspace")
 
 
 class LocalEnvdShellProfile(BaseModel):
@@ -62,25 +45,29 @@ class LocalEnvdShellProfile(BaseModel):
         return value
 
 
-class LocalEnvdEnvironmentConfiguration(BaseModel):
-    model_config = ConfigDict(
-        frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["workspace", "execution_network"]}
-    )
+class LocalEnvdEnvironmentConfiguration(RemoteEnvdEnvironmentConfiguration):
+    """One fixed-cwd Session selection; never a daemon launch policy."""
 
-    workspace: LocalEnvdWorkspaceConfiguration
-    execution_network: LocalEnvdNetworkMode = LocalEnvdNetworkMode.HOST
+
+class LocalEnvdLaunchConfiguration(BaseModel):
+    """Host-selected daemon recipe, shared by every Session on this runtime."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    default_working_directory: Path | None = None
+    directory_discovery: bool = True
     trusted_executable_roots: tuple[Path, ...] = ()
     shell_profiles: tuple[LocalEnvdShellProfile, ...] = ()
     max_file_bytes: Annotated[int, Field(gt=0)] = 16 * _MIB
     max_output_preview_bytes: Annotated[int, Field(gt=0, le=_MAX_RESPONSE_BYTES)] = 64 * 1024
-    max_output_bytes_per_stream: Annotated[int, Field(gt=0)] = _GIB
-    max_spool_bytes: Annotated[int, Field(gt=0)] = 64 * _GIB
+    max_output_bytes_per_stream: Annotated[int, Field(gt=0)] = 256 * _MIB
+    max_spool_bytes: Annotated[int, Field(gt=0)] = _GIB
+    max_device_spool_bytes: Annotated[int, Field(gt=0)] = 4 * _GIB
 
+    @field_validator("default_working_directory")
     @classmethod
-    def _valid_environment_id(cls, value: str) -> str:
-        if value != value.strip() or any(unicodedata.category(character) == "Cc" for character in value):
-            raise ValueError("environment_id must be trimmed and contain no control characters")
-        return value
+    def _default_directory(cls, value: Path | None) -> Path | None:
+        return None if value is None else _absolute_os_path(value, label="default working directory")
 
     @field_validator("trusted_executable_roots")
     @classmethod
@@ -96,6 +83,8 @@ class LocalEnvdEnvironmentConfiguration(BaseModel):
             raise ValueError("trusted executable roots must be unique")
         if self.max_output_preview_bytes > self.max_output_bytes_per_stream:
             raise ValueError("max_output_preview_bytes must not exceed max_output_bytes_per_stream")
+        if self.max_spool_bytes > self.max_device_spool_bytes:
+            raise ValueError("Session spool capacity must not exceed Device capacity")
         if self.max_spool_bytes < self.max_output_bytes_per_stream * 2:
             raise ValueError("max_spool_bytes must reserve both output streams")
         return self

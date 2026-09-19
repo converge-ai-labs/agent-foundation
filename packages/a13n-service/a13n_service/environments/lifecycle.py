@@ -13,6 +13,7 @@ from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.errors import EnvironmentProviderError, EnvironmentProviderOutcomeCertainty
 from a13n_harness.providers.environment.management import Environment as OperationEnvironment
 from a13n_harness.providers.environment.models import EnvironmentError, EnvironmentState
+from a13n_harness.providers.environment.remote_envd.http import HttpEnvdProviderRuntime
 from a13n_logging import exception_details, get_logger
 from anyio import fail_after
 from sqlalchemy import select
@@ -33,7 +34,7 @@ from a13n_service.storage import is_database_unavailable, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .capacity import DEFAULT_CAPACITY_LIMITS, CapacityLimits
-from .configuration import load_configuration
+from .configuration import execution_configuration, load_configuration
 from .domain import EnvironmentConfiguration, EnvironmentStatus, JsonObject, TemplateConfiguration, retention_action
 from .errors import is_target_identity_conflict
 from .identity import target_identity as scoped_target_identity
@@ -121,6 +122,7 @@ class EnvironmentLifecycle:
         self.timeout_seconds = timeout_seconds
         self.clock = clock
         self.capacity = capacity
+        self._http_runtimes: dict[OperationEnvironment, HttpEnvdProviderRuntime] = {}
 
     @property
     def lease_duration(self) -> timedelta:
@@ -150,7 +152,9 @@ class EnvironmentLifecycle:
                     raise EnvironmentOperationBusy("The preceding Environment operation must be reconciled first")
             await self.capacity.admit(session, row)
             mark_run_environment_use(binding, row, now)
-            configuration = await load_configuration(session, row)
+            configuration = execution_configuration(
+                provider.type, await load_configuration(session, row), binding.working_directory
+            )
             return self._claim(row, provider, configuration, "prepare", now, attempt=attempt)
 
     def _claim(
@@ -224,15 +228,47 @@ class EnvironmentLifecycle:
     async def construct(self, operation: LifecycleOperation) -> OperationEnvironment:
         provider = self.catalog.require(operation.provider_type)
         raw = operation.credential.decrypt(self.protector) if operation.credential.ciphertext is not None else None
-        return await provider.create(
-            instance_configuration(operation.provider_type, operation.environment_id, operation.configuration),
-            configuration=operation.provider_configuration,
-            credential=json.loads(raw) if raw is not None else None,
-            environment_id=operation.environment_id,
-            operation_id=operation.operation_id,
-            allow_create=isinstance(operation.configuration, TemplateConfiguration),
-            state=operation.state,
+        connection = provider.configuration_model.model_validate(operation.provider_configuration)
+        credential = provider.parse_credential(connection, json.loads(raw) if raw is not None else None)
+        managed = isinstance(operation.configuration, TemplateConfiguration)
+        # The Host owns the runtime it creates, so a Device connection closes with its adapter.
+        runtime = (
+            None
+            if provider.runtime_factory is None
+            else await provider.runtime_factory(
+                configuration=connection,
+                credential=credential,
+                operation_id=operation.operation_id,
+                allow_create=managed,
+            )
         )
+        try:
+            environment = await provider.create(
+                instance_configuration(operation.provider_type, operation.environment_id, operation.configuration),
+                configuration=connection,
+                credential=credential,
+                environment_id=operation.environment_id,
+                operation_id=operation.operation_id,
+                allow_create=managed,
+                state=operation.state,
+                runtime=runtime,
+            )
+        except BaseException:
+            if isinstance(runtime, HttpEnvdProviderRuntime):
+                await runtime.close()
+            raise
+        if isinstance(runtime, HttpEnvdProviderRuntime):
+            self._http_runtimes[environment] = runtime
+        return environment
+
+    async def close_environment(self, environment: OperationEnvironment) -> None:
+        """Release this Host's adapter and its private HTTP Device connection."""
+        runtime = self._http_runtimes.pop(environment, None)
+        try:
+            await environment.close()
+        finally:
+            if runtime is not None:
+                await runtime.close()
 
     async def execute(
         self, operation: LifecycleOperation, *, recovering: OperationEnvironment | None = None
@@ -303,7 +339,7 @@ class EnvironmentLifecycle:
             if environment is not None:
                 try:
                     with fail_after(10, shield=True):
-                        await environment.close()
+                        await self.close_environment(environment)
                 except BaseException as cleanup_error:
                     error.add_note(f"Environment cleanup also failed: {cleanup_error!r}")
             raise
@@ -574,7 +610,7 @@ class EnvironmentLifecycle:
         operation = await self.acquire_maintenance(environment_id, cutoff=cutoff)
         if operation is not None:
             result = await self.execute(operation)
-            await result.environment.close()
+            await self.close_environment(result.environment)
 
 
 def abandoned_action(action: str | None) -> Action:

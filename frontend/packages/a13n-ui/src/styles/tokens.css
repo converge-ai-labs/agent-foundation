@@ -5,6 +5,9 @@
   --a13n-text-body: 14px;
   --a13n-leading: 1.6;
   --a13n-radius-lg: 12px;
+  --a13n-radius-group: 12px;
+  --a13n-radius-row: 10px;
+  --a13n-radius-tile: 8px;
 }
 :root {
   --a13n-canvas: var(--background);
@@ -41,4 +44,6 @@
   --a13n-danger: var(--destructive-foreground);
   --a13n-shadow: 0 8px 28px #0001;
   --a13n-shadow-subtle: 0 1px 2px #0001;
+  --a13n-warning: var(--warning);
+  --a13n-info: var(--info);
 }

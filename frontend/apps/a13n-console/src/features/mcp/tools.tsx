@@ -1,10 +1,9 @@
-import { CaretDownIcon } from "@phosphor-icons/react";
+import { CaretDownIcon, WrenchIcon } from "@phosphor-icons/react";
 import {
   Button,
   Collapsible,
   CollapsibleTrigger,
   CollapsiblePanel,
-  FormField,
   Input,
 } from "a13n-ui";
 
@@ -14,7 +13,10 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
-import { Empty, ErrorNotice } from "../../shared/feedback";
+import { Empty } from "../../shared/collection";
+import { ErrorNotice } from "../../shared/feedback";
+import { JsonView } from "../../shared/forms";
+import styles from "./mcp.module.css";
 
 export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
   const { t } = useTranslation(),
@@ -37,61 +39,45 @@ export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
         .includes(search.toLocaleLowerCase()),
     ) ?? [];
   return (
-    <div className="grid gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <p className="text-sm leading-relaxed text-muted-foreground">
-          {t("Browse the tools available from this server.")}
-        </p>
+    <div className={styles.tools}>
+      <div className={styles.toolsHeader}>
+        <p>{t("Browse the tools available from this server.")}</p>
         <Button
-          className="shrink-0"
           size="sm"
           variant="outline"
           loading={discovery.isPending}
           onClick={() => discovery.mutate()}
           type="button"
         >
-          {t(discovery.data ? "Refresh tools" : "Discover tools")}
+          {t("Discover tools")}
         </Button>
       </div>
       <ErrorNotice error={discovery.error} />
       {discovery.data && (
         <>
-          <FormField
-            className="min-w-0 w-full"
-            label={t("Search tools")}
-            hideLabel={true}
-          >
-            <Input
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setLimit(30);
-              }}
-              placeholder={t("Search tools")}
-              type="search"
-            />
-          </FormField>
-          <div className="divide-y divide-border/60">
+          <Input
+            type="search"
+            size="sm"
+            aria-label={t("Search tools")}
+            placeholder={t("Search tools")}
+            value={search}
+            onChange={(event) => {
+              setSearch(event.target.value);
+              setLimit(30);
+            }}
+          />
+          <div className={styles.toolList}>
             {tools.slice(0, limit).map((tool) => (
               <Collapsible key={tool.name}>
-                <CollapsibleTrigger className="group flex w-full items-start gap-4 rounded-sm px-1 py-4 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40">
-                  <span className="grid min-w-0 flex-1 gap-1.5">
-                    <span className="break-words text-sm font-medium leading-5">
-                      {tool.name}
-                    </span>
-                    {tool.description && (
-                      <span className="text-sm leading-5 text-muted-foreground">
-                        {tool.description}
-                      </span>
-                    )}
+                <CollapsibleTrigger className={styles.toolRow}>
+                  <span className={styles.toolCopy}>
+                    <strong>{tool.name}</strong>
+                    {tool.description && <small>{tool.description}</small>}
                   </span>
-                  <CaretDownIcon
-                    aria-hidden
-                    className="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform group-aria-expanded:rotate-180"
-                  />
+                  <CaretDownIcon aria-hidden size={14} />
                 </CollapsibleTrigger>
                 <CollapsiblePanel>
-                  <div className="grid gap-3 px-1 pb-4">
+                  <div className={styles.toolDetail}>
                     <ToolSchema
                       title={t("Input schema")}
                       value={tool.input_schema}
@@ -117,6 +103,7 @@ export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
           {tools.length > limit && (
             <Button
               variant="outline"
+              size="sm"
               onClick={() => setLimit((value) => value + 30)}
               type="button"
             >
@@ -125,6 +112,7 @@ export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
           )}
           {!tools.length && (
             <Empty
+              icon={<WrenchIcon aria-hidden="true" />}
               title={t("No tools found")}
               description={t(
                 "Try another search or check the server's authorization.",
@@ -139,11 +127,9 @@ export function MCPTools({ connection }: { connection: Schema["Connection"] }) {
 
 function ToolSchema({ title, value }: { title: string; value: unknown }) {
   return (
-    <section className="text-xs">
-      <h4 className="font-medium text-muted-foreground">{title}</h4>
-      <pre className="mt-2 max-h-48 overflow-auto rounded-md bg-muted/40 p-3 text-xs leading-relaxed">
-        {JSON.stringify(value, null, 2)}
-      </pre>
+    <section className={styles.toolSchema}>
+      <h4>{title}</h4>
+      <JsonView value={value} />
     </section>
   );
 }

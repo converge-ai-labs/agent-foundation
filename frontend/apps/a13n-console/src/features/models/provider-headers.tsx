@@ -1,10 +1,10 @@
 import type { Schema } from "../../shared/api";
-import type { HeaderDraft } from "../../shared/header-fields";
+import type { HeaderDraft } from "../../shared/forms";
 export {
   HeaderFields as ProviderHeaders,
   serializeHeaders,
   type HeaderDraft,
-} from "../../shared/header-fields";
+} from "../../shared/forms";
 
 export function initialHeaders(
   provider?: Schema["ModelProvider"],

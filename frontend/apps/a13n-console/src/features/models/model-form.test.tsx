@@ -8,7 +8,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { ModelForm } from "./model-form";
+import { ModelEditor } from "./model-editor";
 
 const state = vi.hoisted(() => ({
   GET: vi.fn(),
@@ -70,10 +70,7 @@ const definition = {
     properties: { base_url: { type: "string" }, auth_mode: { type: "string" } },
   },
 };
-function mount(
-  providerId?: string,
-  resource?: Parameters<typeof ModelForm>[0]["resource"],
-) {
+function mount(providerId?: string) {
   render(
     <QueryClientProvider
       client={
@@ -82,12 +79,11 @@ function mount(
         })
       }
     >
-      <ModelForm
+      <ModelEditor
         scope={{ kind: "workspace", id: "ws_test" }}
         providerId={providerId}
-        resource={resource}
-        close={state.close}
-        reload={async () => {}}
+        controlledOpen
+        onClose={state.close}
       />
     </QueryClientProvider>,
   );
@@ -154,6 +150,9 @@ beforeEach(() => {
       disconnect() {}
     },
   );
+  HTMLElement.prototype.hasPointerCapture = () => false;
+  HTMLElement.prototype.setPointerCapture = () => {};
+  HTMLElement.prototype.releasePointerCapture = () => {};
   HTMLElement.prototype.scrollIntoView = () => {};
 });
 afterEach(() => {
@@ -165,6 +164,7 @@ afterEach(() => {
 it("creates a manual model with JSON-only request settings", async () => {
   mount("mp_test");
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /Custom model/ }));
   await user.type(
     await screen.findByLabelText("Upstream model"),
     "company-smart",
@@ -173,7 +173,7 @@ it("creates a manual model with JSON-only request settings", async () => {
   await user.type(screen.getByLabelText("Model key"), "smart");
   expect(screen.queryByLabelText("Thinking effort")).toBeNull();
   expect(screen.queryByLabelText("Max output tokens")).toBeNull();
-  await user.click(screen.getByRole("button", { name: "Request settings" }));
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
   fireEvent.change(screen.getByLabelText("Settings JSON"), {
     target: { value: '{"thinking":"high","max_tokens":4096}' },
   });
@@ -198,13 +198,14 @@ it("creates a manual model with JSON-only request settings", async () => {
 it("rejects request settings that do not match the selected API", async () => {
   mount("mp_test");
   const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: /Custom model/ }));
   await user.type(
     await screen.findByLabelText("Upstream model"),
     "company-smart",
   );
   await user.type(screen.getByLabelText("Name"), "Smart");
   await user.type(screen.getByLabelText("Model key"), "smart");
-  await user.click(screen.getByRole("button", { name: "Request settings" }));
+  await user.click(screen.getByRole("button", { name: "Advanced" }));
   fireEvent.change(screen.getByLabelText("Settings JSON"), {
     target: { value: '{"max_tokens":"many"}' },
   });
@@ -218,9 +219,8 @@ it("rejects request settings that do not match the selected API", async () => {
 it("keeps the catalog identity when the gateway upstream ID is edited", async () => {
   mount("mp_test");
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("combobox", { name: "Model" }));
-  await user.click(await screen.findByRole("option", { name: /GPT-5.5/ }));
-  await user.clear(screen.getByLabelText("Upstream model"));
+  await user.click(await screen.findByRole("button", { name: /GPT-5.5/ }));
+  await user.clear(await screen.findByLabelText("Upstream model"));
   await user.type(screen.getByLabelText("Upstream model"), "company-smart");
   await user.click(screen.getByRole("button", { name: "Add model" }));
   await waitFor(() =>
@@ -243,13 +243,11 @@ it("keeps the catalog identity when the gateway upstream ID is edited", async ()
 it("applies a newly selected model immediately, including its catalog values", async () => {
   mount("mp_test");
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("combobox", { name: "Model" }));
-  await user.click(await screen.findByRole("option", { name: /GPT-5.5/ }));
-  await waitFor(() =>
-    expect(screen.queryByRole("dialog", { name: "Model" })).toBeNull(),
+  await user.click(await screen.findByRole("button", { name: /GPT-5.5/ }));
+  await user.click(
+    await screen.findByRole("button", { name: "Choose a model" }),
   );
-  await user.click(screen.getByRole("combobox", { name: "Model" }));
-  await user.click(await screen.findByRole("option", { name: /GPT-5.6/ }));
+  await user.click(await screen.findByRole("button", { name: /GPT-5.6/ }));
   expect(screen.queryByText("Apply catalog values")).toBeNull();
   expect(
     (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
@@ -277,12 +275,10 @@ it("applies a newly selected model immediately, including its catalog values", a
 it("uses the official model price for an OpenAI-compatible connection", async () => {
   mount("mp_test");
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("combobox", { name: "Model" }));
-  await user.keyboard("{ArrowDown}");
   await user.click(
-    screen.getByRole("button", { name: "Other models (compatible)…" }),
+    await screen.findByRole("button", { name: "Other models (compatible)…" }),
   );
-  await user.click(await screen.findByRole("option", { name: "MiniMax-M3" }));
+  await user.click(await screen.findByRole("button", { name: /MiniMax-M3/ }));
   expect(
     (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
   ).toBe("");
@@ -339,8 +335,7 @@ it("falls back to the official price when the selected channel has none", async 
   }));
   mount("mp_test");
   const user = userEvent.setup();
-  await user.click(await screen.findByRole("combobox", { name: "Model" }));
-  await user.click(await screen.findByRole("option", { name: "MiniMax-M3" }));
+  await user.click(await screen.findByRole("button", { name: /MiniMax-M3/ }));
   await user.click(screen.getByRole("button", { name: "Add model" }));
   await waitFor(() =>
     expect(state.POST).toHaveBeenCalledWith(

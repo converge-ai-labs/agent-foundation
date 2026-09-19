@@ -78,7 +78,7 @@ afterEach(() => {
 it("restores category and scope, then switches domains without losing workspace context", async () => {
   const user = userEvent.setup();
   mount();
-  await screen.findByText("No Web Providers yet");
+  await screen.findByText("No web providers yet");
   expect(state.GET).toHaveBeenCalledWith(
     "/api/v1/workspaces/{workspace}/web-providers",
     expect.objectContaining({
@@ -86,7 +86,7 @@ it("restores category and scope, then switches domains without losing workspace 
     }),
   );
   await user.click(screen.getByRole("tab", { name: "Connector" }));
-  await screen.findByText("No connector providers");
+  await screen.findByText("No connector providers yet");
   expect(screen.getByRole("status").textContent).toContain(
     "section=providers&category=connectors",
   );
@@ -95,7 +95,7 @@ it("restores category and scope, then switches domains without losing workspace 
 it("allows an organization administrator to manage providers without a workspace", async () => {
   state.hasWorkspace = false;
   mount("section=providers&category=web", "organization");
-  await screen.findByText("No Web Providers yet");
+  await screen.findByText("No web providers yet");
   expect(screen.getByRole("button", { name: "Add provider" })).toBeTruthy();
   expect(
     state.GET.mock.calls.every(([path]) => !path.includes("/workspaces/")),
@@ -112,6 +112,6 @@ it("shows workspace providers without offering mutations to a read-only member",
   state.organizationAdmin = false;
   state.manage = false;
   mount();
-  await screen.findByText("No Web Providers yet");
+  await screen.findByText("No web providers yet");
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
 });

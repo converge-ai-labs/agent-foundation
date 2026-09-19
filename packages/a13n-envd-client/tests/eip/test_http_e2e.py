@@ -7,11 +7,13 @@ import socket
 from pathlib import Path
 
 import pytest
-from a13n_envd_client import EIPSession, EIPTransportError, HttpTransport
+from a13n_envd_client import EIPDeviceConnection, EIPTransportError, HttpTransport
 from a13n_envd_client.eip.v1 import EIPPath, FileWriteMode
 
+from .test_stdio_e2e import device_path
+
 _TOKEN = "test-http-attachment-token"
-_ENVIRONMENT_ID = "env-http-e2e"
+_DEVICE_ID = "env-http-e2e"
 
 
 def a13n_envd_binary() -> Path:
@@ -53,31 +55,14 @@ async def start_daemon(tmp_path: Path, port: int) -> tuple[asyncio.subprocess.Pr
     credential = tmp_path / "attachment-token"
     credential.write_text(f"{_TOKEN}\n")
     config = tmp_path / "a13n-envd.json"
-    config.write_text(
-        json.dumps(
-            {
-                "root_mount_id": "workspace",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(workspace),
-                        "writable": True,
-                        "allow_command_execution": False,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": ["open_reader", "open_writer"],
-                    }
-                ],
-            }
-        )
-    )
+    config.write_text(json.dumps({"default_working_directory": str(workspace)}))
     environment = {
-        "A13N_ENVD_ENVIRONMENT_ID": _ENVIRONMENT_ID,
+        "A13N_ENVD_DEVICE_ID": _DEVICE_ID,
         "A13N_ENVD_TRANSPORT": "http",
         "A13N_ENVD_HTTP_BIND": f"127.0.0.1:{port}",
         "A13N_ENVD_HTTP_CREDENTIAL_FILE": str(credential),
         "A13N_ENVD_HTTP_PLAINTEXT_SCOPE": "loopback",
         "A13N_ENVD_RUNTIME_DIR": str(runtime),
-        "A13N_ENVD_EXECUTION_ISOLATION": "disabled",
         "LANG": os.environ.get("LANG", "C.UTF-8"),
     }
     process = await asyncio.create_subprocess_exec(
@@ -109,20 +94,18 @@ def test_real_daemon_http_auth_transfers_and_sequential_sessions(tmp_path: Path)
         endpoint = f"http://127.0.0.1:{port}"
         try:
             with pytest.raises(EIPTransportError, match="status 401"):
-                await EIPSession.initialize(
+                await EIPDeviceConnection.initialize(
                     HttpTransport(endpoint, "wrong-token", request_timeout=5),
-                    expected_environment_id=_ENVIRONMENT_ID,
+                    expected_device_id=_DEVICE_ID,
                     request_timeout=5,
                 )
 
-            first = await EIPSession.initialize(
-                HttpTransport(endpoint, _TOKEN, request_timeout=5),
-                expected_environment_id=_ENVIRONMENT_ID,
-                required_methods=("file.open_reader", "file.open_writer"),
-                request_timeout=5,
+            first_device = await EIPDeviceConnection.initialize(
+                HttpTransport(endpoint, _TOKEN, request_timeout=5), expected_device_id=_DEVICE_ID, request_timeout=5
             )
+            first = await first_device.open_session(required_methods=("file.open_reader", "file.open_writer"))
             generation = first.generation
-            path = EIPPath(mount_id="workspace", path="/binary.dat")
+            path = EIPPath(path=device_path(workspace / "binary.dat"))
             payload = bytes(range(256)) * 16
             async with first.open_writer(path, mode=FileWriteMode.CREATE) as writer:
                 await writer.write(payload[:777])
@@ -137,14 +120,15 @@ def test_real_daemon_http_auth_transfers_and_sequential_sessions(tmp_path: Path)
                     downloaded.extend(chunk)
             assert bytes(downloaded) == payload
             await first.close()
+            await first_device.close()
 
-            second = await EIPSession.initialize(
-                HttpTransport(endpoint, _TOKEN, request_timeout=5),
-                expected_environment_id=_ENVIRONMENT_ID,
-                request_timeout=5,
+            second_device = await EIPDeviceConnection.initialize(
+                HttpTransport(endpoint, _TOKEN, request_timeout=5), expected_device_id=_DEVICE_ID, request_timeout=5
             )
+            second = await second_device.open_session(required_methods=())
             assert second.generation == generation
             await second.close()
+            await second_device.close()
         finally:
             stderr = await stop_daemon(process)
         assert _TOKEN.encode() not in stderr

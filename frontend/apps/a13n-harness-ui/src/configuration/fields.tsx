@@ -1,5 +1,6 @@
 import { AddModelButton } from "./models";
 import {
+  Button,
   ChoiceField,
   FormField,
   SettingsRow,
@@ -17,6 +18,11 @@ import { SelectionField } from "./selection";
 import { ModelFields } from "./model-editor";
 import { AgentFields } from "./agent-fields";
 import { ProjectFolders } from "./project-folders";
+import { DeviceFields } from "./device-fields";
+import {
+  EnvironmentBindings,
+  type EnvironmentBinding,
+} from "./environment-bindings";
 
 export function ResourceFields({
   source,
@@ -46,7 +52,28 @@ export function ResourceFields({
   const set = (path: string[], value: unknown) =>
     onChange(updateDocument(source, path, value));
   const kind = text(["kind"]);
-  const rawRoots = document.toJS().roots;
+  const raw = document.toJS();
+  const rawBindings = raw.defaults?.environment_bindings;
+  const bindings: EnvironmentBinding[] = Array.isArray(rawBindings)
+    ? rawBindings
+    : [];
+  const setEnvironments = (
+    next: EnvironmentBinding[] | undefined,
+    defaultEnvironment: string | null,
+  ) => {
+    let updated = updateDocument(
+      source,
+      ["defaults", "environment_bindings"],
+      next,
+    );
+    updated = updateDocument(
+      updated,
+      ["defaults", "default_environment"],
+      defaultEnvironment ?? undefined,
+    );
+    onChange(updated);
+  };
+  const rawRoots = raw.roots ?? [];
   const roots: { path: string }[] | null =
     Array.isArray(rawRoots) &&
     rawRoots.every((root) => root && typeof root.path === "string")
@@ -196,6 +223,9 @@ export function ResourceFields({
           <AgentFields source={source} onChange={onChange} />
         </>
       )}
+      {kind === "device" && (
+        <DeviceFields source={source} onChange={onChange} />
+      )}
       {kind === "project" && (
         <>
           <SettingsSection title="Project folders">
@@ -203,6 +233,7 @@ export function ResourceFields({
               {roots ? (
                 <ProjectFolders
                   roots={roots}
+                  allowEmpty={bindings.length > 0}
                   onChange={(value) => set(["roots"], value)}
                 />
               ) : (
@@ -219,11 +250,68 @@ export function ResourceFields({
           >
             {scalar("Default agent", ["defaults", "agent"], agentOptions)}
             {scalar(
-              "Default environment",
+              "Local environment profile",
               ["defaults", "environment_profile"],
               environmentOptions,
             )}
             {referenceLists(["defaults"])}
+          </SettingsSection>
+          <SettingsSection
+            title="Working environments"
+            description="Project defaults are copied into new conversations. Applying them to an existing Thread changes only specified selections."
+          >
+            <div className={styles.fieldGroup}>
+              <p className="mb-3 text-sm text-muted-foreground">
+                {rawBindings == null
+                  ? "Device environments are unspecified: new conversations add none; applying Project defaults keeps the Thread's selection."
+                  : bindings.length
+                    ? "This selection replaces the Thread's added environments when Project defaults are applied."
+                    : "Explicitly empty: applying Project defaults removes the Thread's added environments."}
+              </p>
+              <EnvironmentBindings
+                bindings={bindings}
+                localRoots={roots?.map((root) => root.path) ?? []}
+                defaultEnvironment={
+                  text(["defaults", "default_environment"]) || null
+                }
+                allowUnsetDefault
+                allowEmpty={!!roots?.length}
+                onChange={(next, defaultEnvironment) => {
+                  // Editing only the default must not turn an unspecified collection into an empty override.
+                  setEnvironments(
+                    next === bindings && rawBindings == null ? undefined : next,
+                    defaultEnvironment,
+                  );
+                }}
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                {rawBindings == null && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() =>
+                      setEnvironments(
+                        [],
+                        text(["defaults", "default_environment"]) || null,
+                      )
+                    }
+                  >
+                    Explicitly select no added environments
+                  </Button>
+                )}
+                {(rawBindings != null ||
+                  text(["defaults", "default_environment"])) && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    disabled={!roots?.length}
+                    onClick={() => setEnvironments(undefined, null)}
+                  >
+                    Leave Thread environments and default unchanged
+                  </Button>
+                )}
+              </div>
+            </div>
           </SettingsSection>
         </>
       )}
@@ -273,7 +361,7 @@ export function ResourceFields({
             >
               {scalar("Default agent", ["defaults", "agent"], agentOptions)}
               {scalar(
-                "Default environment",
+                "Local environment profile",
                 ["defaults", "environment_profile"],
                 environmentOptions,
               )}

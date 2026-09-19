@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, FormField, Input } from "a13n-ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router";
@@ -7,14 +7,16 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, representation, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
+import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
 import { useIdempotency } from "../../shared/idempotency";
-import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/image-picker";
+import { DetailHeader, DetailPage, Section } from "../../shared/page";
 import { AgentAvatar } from "./avatar";
 import { initialConfig } from "./configuration";
-import { AgentForm } from "./form";
+import { AgentEditor } from "./editor";
+import editorStyles from "./editor/editor.module.css";
 import { changeAgentImage } from "./images";
-import styles from "./agents.module.css";
 
+/** Creation reuses the configuration editor with no published version yet. */
 export function CreateAgent() {
   const { t } = useTranslation(),
     client = useClient(),
@@ -22,6 +24,8 @@ export function CreateAgent() {
     cache = useQueryClient(),
     navigate = useNavigate(),
     idempotency = useIdempotency();
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>();
   const [fileError, setFileError] = useState<Error>();
@@ -78,7 +82,7 @@ export function CreateAgent() {
       else finish(resource.value);
     },
   });
-  const picker = (name: string) => (
+  const picker = (label: string) => (
     <ImagePicker
       hasImage={!!file}
       editable
@@ -98,7 +102,7 @@ export function CreateAgent() {
       }}
     >
       <AgentAvatar
-        name={name}
+        name={label}
         id={created?.value.id}
         url={preview}
         className="size-16 rounded-xl text-2xl"
@@ -107,47 +111,88 @@ export function CreateAgent() {
   );
   if (created)
     return (
-      <div className={styles.editorPage}>
-        <h1>{created.value.name}</h1>
-        <p className="my-4 text-muted-foreground">
-          {t("Agent created. Finish uploading its avatar.")}
-        </p>
-        {picker(created.value.name)}
-        {upload.isPending && (
-          <p role="status" className="mt-4">
-            {t("Saving…")}
-          </p>
-        )}
-        <ErrorNotice error={upload.error ?? fileError} />
-        <div className="mt-6 flex gap-3">
-          <Button
-            disabled={upload.isPending}
-            onClick={() => upload.mutate(created)}
-          >
-            {t("Retry upload")}
-          </Button>
-          <Button
-            variant="ghost"
-            disabled={upload.isPending}
-            onClick={() => finish(created.value)}
-          >
-            {t("Continue without avatar")}
-          </Button>
-        </div>
-      </div>
+      <DetailPage
+        back={`${basePath}/agents`}
+        backLabel={t("Agents")}
+        header={
+          <DetailHeader
+            name={created.value.name}
+            description={t("Agent created. Finish uploading its avatar.")}
+          />
+        }
+      >
+        <Section title={t("Avatar")}>
+          {picker(created.value.name)}
+          {upload.isPending && <p role="status">{t("Saving…")}</p>}
+          <ErrorNotice error={upload.error ?? fileError} />
+          <div className="flex gap-3">
+            <Button
+              disabled={upload.isPending}
+              onClick={() => upload.mutate(created)}
+            >
+              {t("Retry upload")}
+            </Button>
+            <Button
+              variant="ghost"
+              disabled={upload.isPending}
+              onClick={() => finish(created.value)}
+            >
+              {t("Continue without avatar")}
+            </Button>
+          </div>
+        </Section>
+      </DetailPage>
     );
   return (
-    <AgentForm
+    <DetailPage
       back={`${basePath}/agents`}
-      initial={initialConfig("")}
-      creating
-      imageUrl={preview}
-      imagePicker={picker}
-      pending={create.isPending || upload.isPending || !!created}
-      error={create.error ?? fileError}
-      submit={(config, name, description) =>
-        create.mutate({ config, name, description: description || null })
+      backLabel={t("Agents")}
+      header={
+        <DetailHeader
+          name={t("Create agent")}
+          description={t("Start with clear instructions and the right model.")}
+        />
       }
-    />
+    >
+      <AgentEditor
+        initial={initialConfig("")}
+        pending={create.isPending || upload.isPending || !!created}
+        error={create.error ?? fileError}
+        saveLabel={t("Create agent")}
+        saveDisabled={!name.trim()}
+        discard={() => navigate(`${basePath}/agents`)}
+        identity={
+          <Section
+            title={t("Identity")}
+            description={t("How this agent appears across the console.")}
+          >
+            <div className={editorStyles.identityGrid}>
+              {picker(name)}
+              <div className={editorStyles.identityFields}>
+                <FormField label={t("Agent name")}>
+                  <Input
+                    required
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    maxLength={128}
+                  />
+                </FormField>
+                <FormField label={t("Description")}>
+                  <Input
+                    value={description}
+                    onChange={(event) => setDescription(event.target.value)}
+                    maxLength={4096}
+                  />
+                </FormField>
+              </div>
+            </div>
+          </Section>
+        }
+        submit={(config) => {
+          if (!config.protocol.public_name) config.protocol.public_name = name;
+          create.mutate({ config, name, description: description || null });
+        }}
+      />
+    </DetailPage>
   );
 }

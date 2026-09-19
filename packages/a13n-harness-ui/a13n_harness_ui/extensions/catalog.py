@@ -570,6 +570,14 @@ def _construct_skills_capability(
         )
     sources.extend(
         FileSkillSource(
+            f"a13n-harness-ui:device:{alias}",
+            (_join_mount_path(root, ".agents/skills"),),
+            required=False,
+        )
+        for alias, root in path_layout.device_working_directories
+    )
+    sources.extend(
+        FileSkillSource(
             f"a13n-harness-ui:explicit:{index}",
             (root,),
             required=True,

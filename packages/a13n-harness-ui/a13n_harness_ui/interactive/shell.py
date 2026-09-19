@@ -221,7 +221,7 @@ class CliShell:
                         Window(FormattedTextControl(self._toolbar), height=1, style="class:status-bar"),
                         filter=Condition(
                             lambda: (
-                                self.question_card is None
+                                (self.question_card is None or self.status.goal is not None)
                                 and self.status.show_status
                                 and self.app.output.get_size().rows >= 8
                             )
@@ -465,6 +465,11 @@ class CliShell:
             except Exception:
                 # Failed inspection must not take down an active conversation.
                 total = None
+            try:
+                await backend.refresh_goal()
+            except Exception:
+                # Independent inspections must not erase each other's results.
+                pass
         if backend is self.backend and (backend is None or backend.thread_id == thread_id):
             self._activity_thread = thread_id
             self._subagent_total = total
@@ -1541,7 +1546,7 @@ class CliShell:
         if anchor is not None:
             self._clipboard_task = asyncio.create_task(self.acquire_images(anchor=anchor))
 
-    def send_prompt(self, text: str) -> None:
+    def send_prompt(self, text: str, *, goal: bool = False) -> None:
         assert self.backend is not None
         if self.busy:
             draft = self._submitted_draft or Document(text, len(text))
@@ -1579,6 +1584,7 @@ class CliShell:
             flush=self.flush,
             admitted=admitted,
             skill_references=self.registry.skill_references(prompt.text),
+            mode="goal" if goal else "normal",
         )
 
         async def send() -> str:
@@ -1730,7 +1736,12 @@ class CliShell:
     async def command(self, invocation: Invocation) -> None:
         name = invocation.command.name
         argument = invocation.arguments[0] if invocation.arguments else None
-        if name == "ps":
+        if name == "goal":
+            if self.backend is None:
+                self.emit("Goal is unavailable while preparing.")
+            elif argument is not None:
+                self.send_prompt(argument.strip(), goal=True)
+        elif name == "ps":
             self.emit(self.renderer.process_details(), kind="processes")
         elif name == "subagents":
             if self.backend is None:

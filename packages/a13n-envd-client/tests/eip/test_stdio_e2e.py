@@ -12,8 +12,9 @@ from pathlib import Path
 
 import pytest
 from a13n_envd_client import (
+    EIPDeviceConnection,
     EIPMethodError,
-    EIPSession,
+    EIPSessionStateError,
     EIPTransportClosedError,
     RequestCoordinator,
     StdioTransport,
@@ -21,9 +22,9 @@ from a13n_envd_client import (
 from a13n_envd_client.eip.v1 import (
     ArgvCommand,
     CommandEnvironment,
-    CommandNetwork,
     CommandRequest,
     DesiredPortStatus,
+    DeviceDescribeParams,
     EIPCallContext,
     EIPClient,
     EIPClientInfo,
@@ -31,7 +32,6 @@ from a13n_envd_client.eip.v1 import (
     EncodedBytes,
     EnvironmentDescribeParams,
     EnvironmentDescribeResult,
-    EnvironmentReadinessParams,
     ErrorType,
     ExecutableName,
     FileFindParams,
@@ -65,7 +65,6 @@ from a13n_envd_client.eip.v1 import (
     ReceiptGetParams,
     RequestedProcessSignal,
     SearchMode,
-    SessionCloseParams,
     ShellExecParams,
 )
 
@@ -81,29 +80,18 @@ def a13n_envd_binary() -> Path:
     return binary
 
 
-def assert_disabled_isolation_warning(stderr: bytes) -> None:
-    records = [json.loads(line) for line in stderr.splitlines() if line.startswith(b"{")]
-    assert any(record.get("event") == "a13n-envd.execution_isolation.disabled" for record in records)
-
-
 async def start_daemon(
     binary: Path,
-    environment_id: str = "env-e2e",
+    device_id: str = "env-e2e",
     config_path: Path | None = None,
     runtime_dir: Path | None = None,
-    execution_isolation: str | None = "disabled",
-    execution_network: str = "host",
-    execution_extra_read_only_paths: tuple[Path, ...] = (),
+    startup_arguments: tuple[str, ...] = (),
 ) -> asyncio.subprocess.Process:
-    arguments = [str(binary)]
+    arguments = [str(binary), *startup_arguments]
     if config_path is not None:
         arguments.extend(("--config", str(config_path)))
     environment = {
-        "A13N_ENVD_ENVIRONMENT_ID": environment_id,
-        "A13N_ENVD_EXECUTION_NETWORK": execution_network,
-        "A13N_ENVD_EXECUTION_EXTRA_READ_ONLY_PATHS": json.dumps(
-            [str(path) for path in execution_extra_read_only_paths]
-        ),
+        "A13N_ENVD_DEVICE_ID": device_id,
         "LANG": os.environ.get("LANG", "C.UTF-8"),
         "HTTP_PROXY": "http://proxy.invalid:8080",
     }
@@ -111,8 +99,6 @@ async def start_daemon(
         # Windows process startup requires its trusted system directory even
         # when the rest of the test environment is intentionally isolated.
         environment["SYSTEMROOT"] = os.environ["SYSTEMROOT"]
-    if execution_isolation is not None:
-        environment["A13N_ENVD_EXECUTION_ISOLATION"] = execution_isolation
     owned_runtime = runtime_dir is None
     if runtime_dir is None:
         runtime_dir = Path(tempfile.mkdtemp(prefix="a13n-envd-e2e-"))
@@ -151,35 +137,24 @@ async def wait_for_exit(process: asyncio.subprocess.Process, expected_code: int 
         cleanup_owned_runtime(process)
 
 
+def device_path(path: Path) -> str:
+    value = path.as_posix()
+    if os.name == "nt":
+        return "/UNC/" + value[2:] if value.startswith("//") else "/" + value
+    return value
+
+
 async def initialize_direct(process: asyncio.subprocess.Process) -> tuple[RequestCoordinator, EIPClient]:
-    transport = StdioTransport.from_process(process)
-    requester = RequestCoordinator(transport, request_timeout=2)
+    requester = RequestCoordinator(StdioTransport.from_process(process), request_timeout=2)
     client = EIPClient(requester)
     result = await client.initialize(
         InitializeParams(
             supported_protocol_versions=("0.1",),
             client=EIPClientInfo(name="e2e", version="1"),
-            expected_environment_id="env-e2e",
+            expected_device_id="env-e2e",
         )
     )
-    requester.configure_limits(
-        max_in_flight=result.descriptor.limits.max_concurrent_operations,
-        max_request_bytes=result.descriptor.limits.max_request_bytes,
-        max_response_bytes=result.descriptor.limits.max_response_bytes,
-        max_transfer_frame_bytes=result.descriptor.limits.max_transfer_frame_bytes,
-        max_concurrent_file_transfers=result.descriptor.limits.max_concurrent_file_transfers,
-    )
-    readiness = await client.environment_readiness(
-        EnvironmentReadinessParams(
-            context=EIPCallContext(
-                operation_id="readiness-e2e",
-                timeout_ms=2_000,
-            )
-        )
-    )
-    assert readiness.ready
-    assert readiness.environment_id == result.descriptor.environment_id
-    assert readiness.generation == result.descriptor.generation
+    requester.configure_limits(result.descriptor.limits)
     return requester, client
 
 
@@ -187,23 +162,12 @@ def test_real_daemon_session_round_trip_and_fresh_generations() -> None:
     async def one_run() -> int:
         process = await start_daemon(a13n_envd_binary())
         transport = StdioTransport.from_process(process)
-        session = await EIPSession.initialize(
-            transport,
-            expected_environment_id="env-e2e",
-            required_methods=("environment.describe", "session.close"),
-        )
+        device = await EIPDeviceConnection.initialize(transport, expected_device_id="env-e2e")
+        session = await device.open_session(required_methods=("environment.describe", "session.close"))
         descriptor = await session.describe()
-        assert descriptor.environment_id == "env-e2e"
-        assert descriptor.root_mount_id is None
-        assert descriptor.available_methods == (
-            "environment.describe",
-            "environment.readiness",
-            "operation.cancel",
-            "port.inspect",
-            "port.wait",
-            "receipt.get",
-            "session.close",
-        )
+        assert descriptor.device_id == "env-e2e"
+        assert "file.stat" in descriptor.available_methods
+        assert "session.keepalive" in descriptor.available_methods
 
         concurrent = await asyncio.gather(*(session.describe() for _ in range(8)))
         assert all(item.generation == descriptor.generation for item in concurrent)
@@ -256,7 +220,8 @@ def test_real_daemon_session_round_trip_and_fresh_generations() -> None:
             await waiting
         assert cancellation_error.value.error.code == -32041
         await session.close()
-        assert_disabled_isolation_warning(await wait_for_exit(process))
+        await device.close()
+        await wait_for_exit(process)
         return descriptor.generation
 
     async def scenario() -> None:
@@ -267,465 +232,21 @@ def test_real_daemon_session_round_trip_and_fresh_generations() -> None:
     asyncio.run(scenario())
 
 
-def test_real_daemon_reuses_one_stdio_carrier_for_sequential_sessions() -> None:
-    async def scenario() -> None:
+def test_real_daemon_one_device_opens_sequential_independent_sessions() -> None:
+    async def scenario():
         process = await start_daemon(a13n_envd_binary())
-        transport = StdioTransport.from_process(process)
-        generations: list[int] = []
-        for _ in range(2):
-            session = await EIPSession.initialize(
-                transport,
-                expected_environment_id="env-e2e",
-                required_methods=("environment.describe", "session.close"),
-                reuse_transport=True,
-            )
-            generations.append(session.generation)
-            await session.describe()
-            await session.close()
-            assert process.returncode is None
-
-        assert generations[0] == generations[1]
-        await transport.close()
-        assert_disabled_isolation_warning(await wait_for_exit(process))
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.skipif(os.name != "posix", reason="command execution test requires POSIX")
-def test_configured_mount_defines_file_and_command_surface(tmp_path: Path) -> None:
-    runtime = tmp_path / "runtime"
-    workspace = tmp_path / "workspace"
-    runtime.mkdir()
-    workspace.mkdir()
-    source = workspace / "server-source.txt"
-    source.write_text("server-visible\n")
-    python = Path(sys.executable).resolve()
-    config_path = tmp_path / "a13n-envd.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "root_mount_id": "workspace",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(workspace),
-                        "writable": False,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": [
-                            "stat",
-                            "read_text",
-                            "open_reader",
-                            "list",
-                            "command_cwd",
-                            "executable_source",
-                        ],
-                    }
-                ],
-                "trusted_executable_roots": [str(python.parent)],
-            }
+        device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(process), expected_device_id="env-e2e"
         )
-    )
-
-    async def scenario() -> None:
-        daemon = await start_daemon(
-            a13n_envd_binary(),
-            config_path=config_path,
-            runtime_dir=runtime,
-        )
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(daemon),
-            expected_environment_id="env-e2e",
-            required_methods=("file.read_text", "shell.exec"),
-        )
-        descriptor = session.descriptor
-        assert descriptor.root_mount_id == "workspace"
-        assert tuple(mount.mount_id for mount in descriptor.mounts) == ("workspace",)
-
-        source_path = EIPPath(mount_id="workspace", path="/server-source.txt")
-        observed = await session.client.file_read_text(
-            FileReadTextParams(
-                context=EIPCallContext(operation_id="configured-read-e2e"),
-                path=source_path,
-                line_offset=0,
-                line_limit=1,
-                max_line_length=2_000,
-            )
-        )
-        assert observed.text == "server-visible\n"
-
-        foreground = await session.client.shell_exec(
-            ShellExecParams(
-                context=EIPCallContext(operation_id="configured-shell-e2e"),
-                request=CommandRequest(
-                    command=ArgvCommand(
-                        kind="argv",
-                        executable_spec=ExecutableName(kind="name", name=python.name),
-                        arguments=("-c", "print('configured-command')"),
-                    ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
-                ),
-            )
-        )
-        assert foreground.status.cleanup.value == "complete"
-        assert base64.b64decode(foreground.output.stdout.preview.data + "===") == b"configured-command\n"
-        await session.close()
-        assert_disabled_isolation_warning(await wait_for_exit(daemon))
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.skipif(sys.platform != "darwin", reason="Seatbelt test requires macOS")
-def test_required_macos_isolation_is_default_and_contains_commands(tmp_path: Path) -> None:
-    runtime = tmp_path / "runtime"
-    workspace = tmp_path / "workspace"
-    runtime.mkdir()
-    workspace.mkdir()
-    source = workspace / "source.txt"
-    source.write_text("visible\n")
-    extra = tmp_path.with_name(f"{tmp_path.name}-extra-runtime")
-    extra.mkdir()
-    extra_source = extra / "extra.txt"
-    extra_source.write_text("extra-visible\n")
-    config_directory = tmp_path / "envd-config"
-    config_directory.mkdir()
-    ordinary_config_sibling = config_directory / "ordinary.txt"
-    ordinary_config_sibling.write_text("ordinary-visible\n")
-    config_path = config_directory / "a13n-envd.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "root_mount_id": "workspace",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(tmp_path),
-                        "writable": True,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": [
-                            "stat",
-                            "read_text",
-                            "open_reader",
-                            "list",
-                            "command_cwd",
-                        ],
-                    }
-                ],
-                "trusted_executable_roots": ["/bin", "/usr/bin"],
-            }
-        )
-    )
-
-    async def scenario() -> None:
-        daemon = await start_daemon(
-            a13n_envd_binary(),
-            config_path=config_path,
-            runtime_dir=runtime,
-            execution_isolation=None,
-            execution_network="host",
-            execution_extra_read_only_paths=(extra,),
-        )
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(daemon),
-            expected_environment_id="env-e2e",
-            required_methods=("shell.exec",),
-        )
-        descriptor = session.descriptor
-        assert descriptor.isolation.mode.value == "required"
-        assert descriptor.isolation.backend.value == "macos_seatbelt"
-        assert descriptor.isolation.filesystem_containment is True
-        assert descriptor.isolation.process_containment is True
-        assert descriptor.isolation.network_containment is False
-        assert descriptor.execution_features.per_command_network_deny is True
-
-        listener = await asyncio.start_server(lambda _reader, writer: writer.close(), "127.0.0.1", 0)
-        port = listener.sockets[0].getsockname()[1]
-        script = """
-set -eu
-cat source.txt
-cat "$2"
-cat "$1/ordinary.txt"
-printf changed > "$1/ordinary.txt"
-printf writable > writable.txt
-if printf denied > "$2"; then exit 93; fi
-if mv "$1" "$4"; then exit 95; fi
-if cat "$1/a13n-envd.json" >/dev/null 2>&1; then exit 91; fi
-if /bin/sh -c 'cat "$1/a13n-envd.json" >/dev/null 2>&1' child "$1"; then exit 92; fi
-if /usr/bin/nc -z -w 1 127.0.0.1 "$3"; then exit 94; fi
-exit 37
-"""
-        result = await session.client.shell_exec(
-            ShellExecParams(
-                context=EIPCallContext(operation_id="macos-seatbelt-e2e"),
-                request=CommandRequest(
-                    command=ArgvCommand(
-                        kind="argv",
-                        executable_spec=ExecutableName(kind="name", name="sh"),
-                        arguments=(
-                            "-c",
-                            script,
-                            "envd-test",
-                            str(config_directory),
-                            str(extra_source),
-                            str(port),
-                            str(tmp_path / "moved-config"),
-                        ),
-                    ),
-                    cwd=EIPPath(mount_id="workspace", path="/workspace"),
-                    network=CommandNetwork.DENY,
-                ),
-            )
-        )
-        listener.close()
-        await listener.wait_closed()
-        assert result.status.exit_code == 37
-        assert result.status.cleanup.value == "complete"
-        assert source.read_text() == "visible\n"
-        assert (workspace / "writable.txt").read_text() == "writable"
-        assert config_path.is_file()
-        assert ordinary_config_sibling.read_text() == "changed"
-        assert (
-            base64.b64decode(result.output.stdout.preview.data + "===") == b"visible\nextra-visible\nordinary-visible\n"
-        )
-        await session.close()
-        stderr = await wait_for_exit(daemon)
-        assert b"a13n-envd.execution_isolation.disabled" not in stderr
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.skipif(sys.platform != "linux", reason="bubblewrap test requires Linux")
-def test_required_linux_isolation_is_default_and_contains_commands(tmp_path: Path) -> None:
-    runtime = tmp_path / "runtime"
-    workspace = tmp_path / "workspace"
-    runtime.mkdir()
-    workspace.mkdir()
-    source = workspace / "source.txt"
-    source.write_text("visible\n")
-    extra = tmp_path.with_name(f"{tmp_path.name}-extra-runtime")
-    extra.mkdir()
-    extra_source = extra / "extra.txt"
-    extra_source.write_text("extra-visible\n")
-    unrelated = tmp_path.with_name(f"{tmp_path.name}-unrelated")
-    unrelated.mkdir()
-    unrelated_source = unrelated / "host-only.txt"
-    unrelated_source.write_text("host-only\n")
-    config_directory = tmp_path / "envd-config"
-    config_directory.mkdir()
-    ordinary_config_sibling = config_directory / "ordinary.txt"
-    ordinary_config_sibling.write_text("ordinary-visible\n")
-    config_path = config_directory / "a13n-envd.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "root_mount_id": "workspace",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(tmp_path),
-                        "writable": True,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": [
-                            "stat",
-                            "read_text",
-                            "open_reader",
-                            "list",
-                            "command_cwd",
-                        ],
-                    }
-                ],
-                "trusted_executable_roots": ["/usr/bin", "/bin"],
-            }
-        )
-    )
-
-    async def scenario() -> None:
-        daemon = await start_daemon(
-            a13n_envd_binary(),
-            config_path=config_path,
-            runtime_dir=runtime,
-            execution_isolation=None,
-            execution_network="host",
-            execution_extra_read_only_paths=(extra,),
-        )
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(daemon),
-            expected_environment_id="env-e2e",
-            required_methods=("shell.exec",),
-            request_timeout=10,
-        )
-        descriptor = session.descriptor
-        assert descriptor.isolation.mode.value == "required"
-        assert descriptor.isolation.backend.value == "linux_bubblewrap"
-        assert descriptor.isolation.filesystem_containment is True
-        assert descriptor.isolation.process_containment is True
-        assert descriptor.isolation.network_containment is False
-        assert descriptor.isolation.cleanup_guarantee.value == "namespace_complete"
-        assert descriptor.execution_features.per_command_network_deny is True
-
-        listener = await asyncio.start_server(lambda _reader, writer: writer.close(), "127.0.0.1", 0)
-        port = listener.sockets[0].getsockname()[1]
-        escaped_marker = workspace / "escaped-marker"
-        script = """
-set -eu
-cat source.txt
-cat "$2"
-cat "$1/ordinary.txt"
-printf changed > "$1/ordinary.txt"
-printf writable > writable.txt
-if printf denied > "$2"; then exit 93; fi
-if mv "$1" "$5"; then exit 95; fi
-if cat "$1/a13n-envd.json" >/dev/null 2>&1; then exit 91; fi
-if /bin/sh -c 'cat "$1/a13n-envd.json" >/dev/null 2>&1' child "$1"; then exit 92; fi
-if cat "$3" >/dev/null 2>&1; then exit 96; fi
-if env | grep -q '^A13N_ENVD_'; then exit 97; fi
-for runtime_file in /etc/passwd /etc/group /etc/localtime /etc/resolv.conf; do
-    if [ ! -r "$runtime_file" ]; then exit 99; fi
-done
-if [ "$(awk '/^NoNewPrivs:/{print $2}' /proc/self/status)" != 1; then exit 98; fi
-if exec 3<>"/dev/tcp/127.0.0.1/$4"; then exit 94; fi
-for iteration in $(seq 1 64); do
-    /bin/sh -c '/bin/sh -c "exit 0" >/dev/null 2>&1 & exit 0'
-done
-sleep 1
-for process_status in /proc/[0-9]*/status; do
-    if grep -q '^State:.*Z' "$process_status"; then exit 100; fi
-done
-setsid /bin/sh -c 'sleep 2; printf escaped > "$1"' child "$6" &
-exit 37
-"""
-        result = await session.client.shell_exec(
-            ShellExecParams(
-                context=EIPCallContext(operation_id="linux-bubblewrap-e2e"),
-                request=CommandRequest(
-                    command=ArgvCommand(
-                        kind="argv",
-                        executable_spec=ExecutableName(kind="name", name="bash"),
-                        arguments=(
-                            "-c",
-                            script,
-                            "envd-test",
-                            str(config_directory),
-                            str(extra_source),
-                            str(unrelated_source),
-                            str(port),
-                            str(tmp_path / "moved-config"),
-                            str(escaped_marker),
-                        ),
-                    ),
-                    cwd=EIPPath(mount_id="workspace", path="/workspace"),
-                    network=CommandNetwork.DENY,
-                ),
-            )
-        )
-        listener.close()
-        await listener.wait_closed()
-        assert result.status.exit_code == 37
-        assert result.status.cleanup.value == "complete"
-        assert source.read_text() == "visible\n"
-        assert (workspace / "writable.txt").read_text() == "writable"
-        assert config_path.is_file()
-        assert ordinary_config_sibling.read_text() == "changed"
-        assert unrelated_source.read_text() == "host-only\n"
-        assert (
-            base64.b64decode(result.output.stdout.preview.data + "===") == b"visible\nextra-visible\nordinary-visible\n"
-        )
-        await asyncio.sleep(2.25)
-        assert not escaped_marker.exists()
-
-        crashed = await session.client.shell_exec(
-            ShellExecParams(
-                context=EIPCallContext(operation_id="linux-native-signal-e2e"),
-                request=CommandRequest(
-                    command=ArgvCommand(
-                        kind="argv",
-                        executable_spec=ExecutableName(kind="name", name="sh"),
-                        arguments=("-c", "kill -SEGV $$"),
-                    ),
-                    cwd=EIPPath(mount_id="workspace", path="/workspace"),
-                ),
-            )
-        )
-        assert crashed.status.phase.value == "signaled"
-        assert crashed.status.termination_reason.value == "signal"
-        assert crashed.status.exit_code is None
-        assert crashed.status.signal is None
-        assert crashed.status.cleanup.value == "complete"
-
-        await session.close()
-        stderr = await wait_for_exit(daemon)
-        assert b"a13n-envd.execution_isolation.disabled" not in stderr
-
-    try:
-        asyncio.run(scenario())
-    finally:
-        unrelated_source.unlink(missing_ok=True)
-        unrelated.rmdir()
-        extra_source.unlink(missing_ok=True)
-        extra.rmdir()
-
-
-def test_mount_ancestor_of_private_runtime_subtracts_protected_state(tmp_path: Path) -> None:
-    runtime = tmp_path / "runtime"
-    runtime.mkdir()
-    visible = tmp_path / "visible.txt"
-    visible.write_text("visible")
-    python = Path(sys.executable).resolve()
-    config_path = tmp_path / "a13n-envd.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "mounts": [
-                    {
-                        "mount_id": "broad",
-                        "native_root": str(tmp_path),
-                        "writable": False,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                    }
-                ],
-                "trusted_executable_roots": [str(python.parent)],
-            }
-        )
-    )
-
-    async def scenario() -> None:
-        process = await start_daemon(
-            a13n_envd_binary(),
-            config_path=config_path,
-            runtime_dir=runtime,
-        )
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(process),
-            expected_environment_id="env-e2e",
-            required_methods=("file.list", "file.stat"),
-        )
-        listed = await session.client.file_list(
-            FileListParams(
-                context=EIPCallContext(operation_id="broad-list-e2e"),
-                path=EIPPath(mount_id="broad", path="/"),
-                offset=0,
-                max_results=10,
-                include_hidden=True,
-            )
-        )
-        assert tuple(entry.relative_path for entry in listed.entries) == (
-            "a13n-envd.json",
-            "visible.txt",
-        )
-        with pytest.raises(EIPMethodError) as denied:
-            await session.client.file_stat(
-                FileStatParams(
-                    context=EIPCallContext(operation_id="protected-stat-e2e"),
-                    path=EIPPath(mount_id="broad", path="/runtime"),
-                    follow_symlinks=False,
-                )
-            )
-        assert denied.value.error.data.error_type is ErrorType.DENIED
-        await session.close()
-        assert_disabled_isolation_warning(await wait_for_exit(process))
+        descriptors = []
+        async with device:
+            for _ in range(2):
+                async with await device.open_session() as session:
+                    descriptors.append(await session.describe())
+                assert process.returncode is None
+        assert descriptors[0].generation == descriptors[1].generation
+        assert descriptors[0].session_id != descriptors[1].session_id
+        await wait_for_exit(process)
 
     asyncio.run(scenario())
 
@@ -738,24 +259,7 @@ def test_process_handles_are_fenced_across_daemon_generations(tmp_path: Path) ->
     python = Path(sys.executable).resolve()
     config_path = tmp_path / "a13n-envd.json"
     config_path.write_text(
-        json.dumps(
-            {
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(native),
-                        "writable": False,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": [
-                            "command_cwd",
-                            "executable_source",
-                        ],
-                    }
-                ],
-                "trusted_executable_roots": [str(python.parent)],
-            }
-        )
+        json.dumps({"default_working_directory": str(native), "trusted_executable_roots": [str(python.parent)]})
     )
     request = CommandRequest(
         command=ArgvCommand(
@@ -763,7 +267,7 @@ def test_process_handles_are_fenced_across_daemon_generations(tmp_path: Path) ->
             executable_spec=ExecutableName(kind="name", name=python.name),
             arguments=("-c", "import time; time.sleep(30)"),
         ),
-        cwd=EIPPath(mount_id="workspace", path="/"),
+        cwd=EIPPath(path=device_path(native)),
     )
 
     async def scenario() -> None:
@@ -772,12 +276,10 @@ def test_process_handles_are_fenced_across_daemon_generations(tmp_path: Path) ->
             config_path=config_path,
             runtime_dir=runtime,
         )
-        first_session = await EIPSession.initialize(
-            StdioTransport.from_process(first_daemon),
-            expected_environment_id="env-e2e",
-            required_methods=("process.start",),
-            request_timeout=5,
+        first_device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(first_daemon), expected_device_id="env-e2e", request_timeout=5
         )
+        first_session = await first_device.open_session(required_methods=("process.start",))
         first = await first_session.client.process_start(
             ProcessStartParams(
                 context=EIPCallContext(
@@ -788,19 +290,18 @@ def test_process_handles_are_fenced_across_daemon_generations(tmp_path: Path) ->
         )
         old_handle = first.process.handle
         await first_session.close()
-        assert_disabled_isolation_warning(await wait_for_exit(first_daemon))
+        await first_device.close()
+        await wait_for_exit(first_daemon)
 
         second_daemon = await start_daemon(
             a13n_envd_binary(),
             config_path=config_path,
             runtime_dir=runtime,
         )
-        second_session = await EIPSession.initialize(
-            StdioTransport.from_process(second_daemon),
-            expected_environment_id="env-e2e",
-            required_methods=("process.start",),
-            request_timeout=5,
+        second_device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(second_daemon), expected_device_id="env-e2e", request_timeout=5
         )
+        second_session = await second_device.open_session(required_methods=("process.start",))
         second = await second_session.client.process_start(
             ProcessStartParams(
                 context=EIPCallContext(
@@ -837,7 +338,8 @@ def test_process_handles_are_fenced_across_daemon_generations(tmp_path: Path) ->
             )
         )
         await second_session.close()
-        assert_disabled_isolation_warning(await wait_for_exit(second_daemon))
+        await second_device.close()
+        await wait_for_exit(second_daemon)
 
     asyncio.run(scenario())
 
@@ -852,23 +354,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
     config_path.write_text(
         json.dumps(
             {
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(native),
-                        "writable": False,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": [
-                            "stat",
-                            "read_text",
-                            "open_reader",
-                            "list",
-                            "command_cwd",
-                            "executable_source",
-                        ],
-                    }
-                ],
+                "default_working_directory": str(native),
                 "trusted_executable_roots": [str(python.parent)],
                 "limits": {
                     "max_output_preview_bytes": 4,
@@ -885,12 +371,10 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
             config_path=config_path,
             runtime_dir=runtime,
         )
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(process),
-            expected_environment_id="env-e2e",
-            required_methods=("shell.exec", "process.start", "output.read"),
-            request_timeout=5,
+        device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(process), expected_device_id="env-e2e", request_timeout=5
         )
+        session = await device.open_session(required_methods=("shell.exec", "process.start", "output.read"))
         request = CommandRequest(
             command=ArgvCommand(
                 kind="argv",
@@ -904,7 +388,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                     "+os.environ.get('LANG','').encode()); sys.stdout.flush()",
                 ),
             ),
-            cwd=EIPPath(mount_id="workspace", path="/"),
+            cwd=EIPPath(path=device_path(native)),
             environment=CommandEnvironment(set={"BLOCK3_TEST": "works"}),
             keep_stdin_open=True,
         )
@@ -1020,7 +504,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                         executable_spec=ExecutableName(kind="name", name=python.name),
                         arguments=("-c", "print('foreground')"),
                     ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
+                    cwd=EIPPath(path=device_path(native)),
                 ),
             )
         )
@@ -1050,7 +534,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                         executable_spec=ExecutableName(kind="name", name=python.name),
                         arguments=("-c", "print('retained-foreground')"),
                     ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
+                    cwd=EIPPath(path=device_path(native)),
                 ),
             )
         )
@@ -1089,7 +573,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                                     "import sys; sys.stdout.buffer.write(b'x' * 256); sys.stdout.flush()",
                                 ),
                             ),
-                            cwd=EIPPath(mount_id="workspace", path="/"),
+                            cwd=EIPPath(path=device_path(native)),
                         ),
                     )
                 )
@@ -1124,7 +608,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                             "import time; time.sleep(0.2); print('ready', flush=True); time.sleep(30)",
                         ),
                     ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
+                    cwd=EIPPath(path=device_path(native)),
                 ),
             )
         )
@@ -1185,7 +669,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                             "import sys; sys.stdin.buffer.read(); print('closed')",
                         ),
                     ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
+                    cwd=EIPPath(path=device_path(native)),
                     keep_stdin_open=True,
                 ),
             )
@@ -1232,7 +716,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                             "import os,time; os.read(0,1); os.close(0); time.sleep(0.25)",
                         ),
                     ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
+                    cwd=EIPPath(path=device_path(native)),
                     keep_stdin_open=True,
                 ),
             )
@@ -1288,7 +772,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                         executable_spec=ExecutableName(kind="name", name=python.name),
                         arguments=("-c", "import time; time.sleep(30)"),
                     ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
+                    cwd=EIPPath(path=device_path(native)),
                 ),
             )
         )
@@ -1344,7 +828,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                             executable_spec=ExecutableName(kind="name", name=python.name),
                             arguments=("-c", "import time; time.sleep(30)"),
                         ),
-                        cwd=EIPPath(mount_id="workspace", path="/"),
+                        cwd=EIPPath(path=device_path(native)),
                         initial_stdin=EncodedBytes(
                             encoding="base64",
                             data=base64.b64encode(b"x" * 300_000).decode().rstrip("="),
@@ -1378,7 +862,7 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                             executable_spec=ExecutableName(kind="name", name=python.name),
                             arguments=("-c", "import time; time.sleep(30)"),
                         ),
-                        cwd=EIPPath(mount_id="workspace", path="/"),
+                        cwd=EIPPath(path=device_path(native)),
                     ),
                 )
             )
@@ -1407,12 +891,13 @@ def test_configured_daemon_command_process_and_output_plane(tmp_path: Path) -> N
                         executable_spec=ExecutableName(kind="name", name=python.name),
                         arguments=("-c", "import time; time.sleep(30)"),
                     ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
+                    cwd=EIPPath(path=device_path(native)),
                 ),
             )
         )
         await session.close()
-        assert_disabled_isolation_warning(await wait_for_exit(process))
+        await device.close()
+        await wait_for_exit(process)
 
     asyncio.run(scenario())
 
@@ -1421,27 +906,14 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
     native = tmp_path / "native"
     native.mkdir()
     config_path = tmp_path / "a13n-envd.json"
-    config_path.write_text(
-        json.dumps(
-            {
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(native),
-                        "writable": True,
-                        "allow_command_execution": False,
-                        "max_file_bytes": 1024 * 1024,
-                    }
-                ]
-            }
-        )
-    )
+    config_path.write_text(json.dumps({"default_working_directory": str(native)}))
 
     async def scenario() -> None:
         process = await start_daemon(a13n_envd_binary(), config_path=config_path)
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(process),
-            expected_environment_id="env-e2e",
+        device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(process), expected_device_id="env-e2e", request_timeout=5
+        )
+        session = await device.open_session(
             required_methods=(
                 "file.open_reader",
                 "file.close_reader",
@@ -1454,11 +926,10 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
                 "file.find",
                 "file.search",
                 "receipt.get",
-            ),
-            request_timeout=5,
+            )
         )
-        assert session.descriptor.mounts[0].mount_id == "workspace"
-        file_path = EIPPath(mount_id="workspace", path="/binary.dat")
+        assert session.descriptor.working_directory == device_path(native)
+        file_path = EIPPath(path=device_path(native / "binary.dat"))
         payload = bytes(range(256)) * 8
         async with session.open_writer(file_path, mode=FileWriteMode.CREATE) as writer:
             await writer.write(payload[:777])
@@ -1474,7 +945,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         assert bytes(downloaded) == payload
         assert reader.completion.digest.algorithm == "sha256"
 
-        text_path = EIPPath(mount_id="workspace", path="/notes.txt")
+        text_path = EIPPath(path=device_path(native / "notes.txt"))
         write_params = FileWriteTextParams(
             context=EIPCallContext(
                 operation_id="write-text-e2e",
@@ -1519,7 +990,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
 
         missing_a = FileStatParams(
             context=EIPCallContext(operation_id="stat-failure-e2e"),
-            path=EIPPath(mount_id="workspace", path="/missing-a"),
+            path=EIPPath(path=device_path(native / "missing-a")),
         )
         with pytest.raises(EIPMethodError) as first_failure:
             await session.client.file_stat(missing_a)
@@ -1528,7 +999,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
             await session.client.file_stat(
                 FileStatParams(
                     context=EIPCallContext(operation_id="stat-failure-e2e"),
-                    path=EIPPath(mount_id="workspace", path="/missing-b"),
+                    path=EIPPath(path=device_path(native / "missing-b")),
                 )
             )
         assert second_failure.value.error.data.error_type is ErrorType.NOT_FOUND_OR_DENIED
@@ -1539,7 +1010,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         listed = await session.client.file_list(
             FileListParams(
                 context=EIPCallContext(operation_id="list-e2e"),
-                path=EIPPath(mount_id="workspace", path="/"),
+                path=EIPPath(path=device_path(native)),
             )
         )
         assert [entry.relative_path for entry in listed.entries] == ["binary.dat", "notes.txt"]
@@ -1548,7 +1019,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         found = await session.client.file_find(
             FileFindParams(
                 context=EIPCallContext(operation_id="find-e2e"),
-                root=EIPPath(mount_id="workspace", path="/"),
+                root=EIPPath(path=device_path(native)),
                 pattern="*.txt",
                 kinds=(FileKind.FILE,),
             )
@@ -1559,7 +1030,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         searched = await session.client.file_search(
             FileSearchParams(
                 context=EIPCallContext(operation_id="search-e2e"),
-                root=EIPPath(mount_id="workspace", path="/"),
+                root=EIPPath(path=device_path(native)),
                 query="beta",
                 mode=SearchMode.LITERAL,
                 max_line_length=2_000,
@@ -1578,7 +1049,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         filtered_find = await session.client.file_find(
             FileFindParams(
                 context=EIPCallContext(operation_id="filtered-find-e2e"),
-                root=EIPPath(mount_id="workspace", path="/"),
+                root=EIPPath(path=device_path(native)),
                 pattern="*.py",
                 kinds=(FileKind.FILE,),
                 respect_git_ignore=True,
@@ -1588,7 +1059,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         filtered_search = await session.client.file_search(
             FileSearchParams(
                 context=EIPCallContext(operation_id="filtered-search-e2e"),
-                root=EIPPath(mount_id="workspace", path="/"),
+                root=EIPPath(path=device_path(native)),
                 query="needle",
                 mode=SearchMode.LITERAL,
                 include_pattern="**/*.py",
@@ -1602,7 +1073,7 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         )
         assert len(filtered_search.matches) == 1
         filtered_match = filtered_search.matches[0]
-        assert filtered_match.path == EIPPath(mount_id="workspace", path="/src/match.py")
+        assert filtered_match.path == EIPPath(path=device_path(native / "src/match.py"))
         assert filtered_match.line_number == 2
         assert filtered_match.preview == "needle one"
         assert filtered_match.context == "before\nneedle one\nafter\n"
@@ -1617,33 +1088,21 @@ def test_configured_daemon_resource_and_transfer_plane(tmp_path: Path) -> None:
         )
         assert receipt.receipt.operation_id == written.receipt.operation_id
         await session.close()
-        assert_disabled_isolation_warning(await wait_for_exit(process))
+        await device.close()
+        await wait_for_exit(process)
 
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize(
-    ("expected_environment_id", "required_methods"),
-    [
-        ("wrong-environment", ()),
-        ("env-e2e", ("file.stat",)),
-    ],
-)
-def test_initialization_negotiation_failure_is_typed_and_terminal(
-    expected_environment_id: str,
-    required_methods: tuple[str, ...],
-) -> None:
-    async def scenario() -> None:
+def test_initialization_identity_failure_is_typed_and_terminal() -> None:
+    async def scenario():
         process = await start_daemon(a13n_envd_binary())
-        transport = StdioTransport.from_process(process)
-        with pytest.raises(EIPMethodError) as captured:
-            await EIPSession.initialize(
-                transport,
-                expected_environment_id=expected_environment_id,
-                required_methods=required_methods,
+        with pytest.raises(EIPMethodError) as failure:
+            await EIPDeviceConnection.initialize(
+                StdioTransport.from_process(process), expected_device_id="wrong-device"
             )
-        assert captured.value.error.code == -32003
-        assert_disabled_isolation_warning(await wait_for_exit(process))
+        assert failure.value.error.code == -32003
+        await wait_for_exit(process)
 
     asyncio.run(scenario())
 
@@ -1658,7 +1117,7 @@ def test_incompatible_protocol_version_is_typed_and_terminal() -> None:
                 InitializeParams(
                     supported_protocol_versions=("2.0",),
                     client=EIPClientInfo(name="e2e", version="1"),
-                    expected_environment_id="env-e2e",
+                    expected_device_id="env-e2e",
                 )
             )
         assert captured.value.error.code == -32003
@@ -1674,9 +1133,7 @@ def test_preinitialize_and_repeated_initialize_errors() -> None:
         requester = RequestCoordinator(StdioTransport.from_process(process), request_timeout=2)
         client = EIPClient(requester)
         with pytest.raises(EIPMethodError) as captured:
-            await client.environment_describe(
-                EnvironmentDescribeParams(context=EIPCallContext(operation_id="before-init"))
-            )
+            await client.device_describe(DeviceDescribeParams())
         assert captured.value.error.code == -32001
         await requester.close()
         await wait_for_exit(process)
@@ -1689,11 +1146,10 @@ def test_preinitialize_and_repeated_initialize_errors() -> None:
                 InitializeParams(
                     supported_protocol_versions=("0.1",),
                     client=EIPClientInfo(name="e2e", version="1"),
-                    expected_environment_id="env-e2e",
+                    expected_device_id="env-e2e",
                 )
             )
         assert captured.value.error.code == -32002
-        await client.session_close(SessionCloseParams(context=EIPCallContext(operation_id="close-after-repeat")))
         await requester.close()
         await wait_for_exit(process)
 
@@ -1711,16 +1167,7 @@ def test_large_dual_stream_spool_lock_and_crash_restart(tmp_path: Path) -> None:
     config_path.write_text(
         json.dumps(
             {
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(native),
-                        "writable": False,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": ["command_cwd", "executable_source"],
-                    }
-                ],
+                "default_working_directory": str(native),
                 "trusted_executable_roots": [str(python.parent)],
                 "limits": {
                     "max_output_preview_bytes": 32,
@@ -1737,12 +1184,10 @@ def test_large_dual_stream_spool_lock_and_crash_restart(tmp_path: Path) -> None:
             config_path=config_path,
             runtime_dir=runtime,
         )
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(process),
-            expected_environment_id="env-e2e",
-            required_methods=("shell.exec", "output.read"),
-            request_timeout=5,
+        device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(process), expected_device_id="env-e2e", request_timeout=5
         )
+        session = await device.open_session(required_methods=("shell.exec", "output.read"))
         generation = session.generation
         stdout_expected = bytes(range(256)) * 256
         stderr_expected = bytes(range(255, -1, -1)) * 256
@@ -1760,7 +1205,7 @@ def test_large_dual_stream_spool_lock_and_crash_restart(tmp_path: Path) -> None:
                             "sys.stderr.buffer.write(bytes(range(255,-1,-1))*256)",
                         ),
                     ),
-                    cwd=EIPPath(mount_id="workspace", path="/"),
+                    cwd=EIPPath(path=device_path(native)),
                 ),
             )
         )
@@ -1799,6 +1244,7 @@ def test_large_dual_stream_spool_lock_and_crash_restart(tmp_path: Path) -> None:
         process.kill()
         await process.wait()
         await session.abort()
+        await device.close()
         stale_generations = [path for path in runtime.iterdir() if path.name.startswith("generation-")]
         assert len(stale_generations) == 1
 
@@ -1807,12 +1253,10 @@ def test_large_dual_stream_spool_lock_and_crash_restart(tmp_path: Path) -> None:
             config_path=config_path,
             runtime_dir=runtime,
         )
-        replacement_session = await EIPSession.initialize(
-            StdioTransport.from_process(replacement),
-            expected_environment_id="env-e2e",
-            required_methods=("output.read",),
-            request_timeout=5,
+        replacement_device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(replacement), expected_device_id="env-e2e", request_timeout=5
         )
+        replacement_session = await replacement_device.open_session(required_methods=("output.read",))
         assert replacement_session.generation != generation
         fresh_generations = [path for path in runtime.iterdir() if path.name.startswith("generation-")]
         assert len(fresh_generations) == 1
@@ -1830,7 +1274,8 @@ def test_large_dual_stream_spool_lock_and_crash_restart(tmp_path: Path) -> None:
             ErrorType.NOT_FOUND_OR_DENIED,
         }
         await replacement_session.close()
-        assert_disabled_isolation_warning(await wait_for_exit(replacement))
+        await replacement_device.close()
+        await wait_for_exit(replacement)
 
     asyncio.run(scenario())
 
@@ -1838,7 +1283,10 @@ def test_large_dual_stream_spool_lock_and_crash_restart(tmp_path: Path) -> None:
 def test_unknown_method_is_rejected_as_unavailable() -> None:
     async def scenario() -> None:
         process = await start_daemon(a13n_envd_binary())
-        requester, client = await initialize_direct(process)
+        device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(process), expected_device_id="env-e2e"
+        )
+        session = await device.open_session()
         unknown = MethodSpec(
             name="future.unknown",
             kind="request_response",
@@ -1849,14 +1297,13 @@ def test_unknown_method_is_rejected_as_unavailable() -> None:
             result_type=EnvironmentDescribeResult,
         )
         with pytest.raises(EIPMethodError) as captured:
-            await requester.request(
+            await session._requester.request(
                 unknown,
-                EnvironmentDescribeParams(context=EIPCallContext(operation_id="unknown")),
+                EnvironmentDescribeParams(context=EIPCallContext(operation_id="unknown-method")),
             )
         assert captured.value.error.code == -32601
         assert captured.value.error.data.error_type is ErrorType.METHOD_NOT_FOUND
-        await client.session_close(SessionCloseParams(context=EIPCallContext(operation_id="close-after-unknown")))
-        await requester.close()
+        await device.close()
         await wait_for_exit(process)
 
     asyncio.run(scenario())
@@ -1865,15 +1312,18 @@ def test_unknown_method_is_rejected_as_unavailable() -> None:
 def test_daemon_exit_maps_to_transport_closed() -> None:
     async def scenario() -> None:
         process = await start_daemon(a13n_envd_binary())
-        session = await EIPSession.initialize(
-            StdioTransport.from_process(process),
-            expected_environment_id="env-e2e",
+        device = await EIPDeviceConnection.initialize(
+            StdioTransport.from_process(process), expected_device_id="env-e2e"
         )
+        session = await device.open_session(required_methods=())
         process.terminate()
         await wait_for_exit(process)
-        with pytest.raises(EIPTransportClosedError):
+        with pytest.raises((EIPTransportClosedError, EIPSessionStateError)) as failure:
             await session.describe()
+        if isinstance(failure.value, EIPSessionStateError):
+            assert isinstance(failure.value.__cause__, EIPTransportClosedError)
         await session.abort()
+        await device.close()
 
     asyncio.run(scenario())
 
@@ -1932,7 +1382,7 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
                     "params": {
                         "supported_protocol_versions": ["0.1"],
                         "client": {"name": "backpressure", "version": "1"},
-                        "expected_environment_id": "env-e2e",
+                        "expected_device_id": "env-e2e",
                     },
                 },
                 separators=(",", ":"),
@@ -1955,8 +1405,8 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
                         {
                             "jsonrpc": "2.0",
                             "id": next_id,
-                            "method": "environment.describe",
-                            "params": {"context": {"operation_id": f"backpressure-{next_id}"}},
+                            "method": "device.describe",
+                            "params": {},
                         },
                         separators=(",", ":"),
                     ).encode()
@@ -1996,23 +1446,7 @@ def test_sigterm_remains_bounded_when_stdout_is_backpressured() -> None:
         assert returncode == 1
         assert process.stderr is not None
         stderr = await process.stderr.read()
-        assert_disabled_isolation_warning(stderr)
-        assert b"drain exceeded its shutdown deadline" in stderr
-
-    asyncio.run(scenario())
-
-
-@pytest.mark.skipif(
-    sys.platform in {"darwin", "linux"},
-    reason="required isolation is implemented on macOS and Linux",
-)
-def test_required_isolation_default_fails_closed_on_unsupported_platform() -> None:
-    async def scenario() -> None:
-        process = await start_daemon(a13n_envd_binary(), execution_isolation=None)
-        stderr = await wait_for_exit(process, expected_code=1)
-        assert b"required execution isolation is not implemented for this platform" in stderr
-        assert process.stdout is not None
-        assert await process.stdout.read() == b""
+        assert b"response drain timed out" in stderr
 
     asyncio.run(scenario())
 
@@ -2022,13 +1456,13 @@ def test_parent_eof_before_initialization_and_sigterm_after_readiness_exit_clean
         process = await start_daemon(a13n_envd_binary())
         assert process.stdin is not None
         process.stdin.close()
-        assert_disabled_isolation_warning(await wait_for_exit(process))
+        await wait_for_exit(process)
 
     async def sigterm() -> None:
         process = await start_daemon(a13n_envd_binary())
         requester, _ = await initialize_direct(process)
         process.terminate()
-        assert_disabled_isolation_warning(await wait_for_exit(process))
+        await wait_for_exit(process)
         await requester.close()
 
     asyncio.run(eof())

@@ -35,7 +35,6 @@ RUN test "$BUILD_VERSION" = dev || test "$(a13n-envd --version)" = "a13n-envd $B
 
 USER sandbox
 WORKDIR /workspace
-ENV A13N_ENVD_EXECUTION_ISOLATION=disabled \
-    A13N_ENVD_RUNTIME_DIR=/home/sandbox/.local/state/a13n-envd
+ENV A13N_ENVD_RUNTIME_DIR=/home/sandbox/.local/state/a13n-envd
 ENTRYPOINT ["tini", "--"]
 CMD ["a13n-envd"]

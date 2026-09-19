@@ -1,17 +1,39 @@
-import { ArrowClockwiseIcon, PlusIcon } from "@phosphor-icons/react";
+import {
+  ArrowClockwiseIcon,
+  PlusIcon,
+  SlidersHorizontalIcon,
+} from "@phosphor-icons/react";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { Badge, Button, DisclosureSection, FormField, Input } from "a13n-ui";
+import {
+  Button,
+  FormField,
+  Input,
+  MenuItem,
+  Popover,
+  PopoverPopup,
+  PopoverTrigger,
+  StatusPill,
+} from "a13n-ui";
 import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { ResourceTable } from "../../shared/collection";
-import { ResourceReference } from "../../shared/resource-reference";
-import { Empty, ErrorNotice, Loading } from "../../shared/feedback";
+import {
+  CollectionFooter,
+  Empty,
+  Pagination,
+  ResourceTable,
+  Toolbar,
+} from "../../shared/collection";
+import { CopyableId } from "../../shared/identity";
+import { ErrorNotice, Loading } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 import { memoryApi, memoryKey, type MemoryTarget } from "./api";
 import { MemoryRecordEditor } from "./record-editor";
+import styles from "./memory.module.css";
 
 const pageSize = 20;
+/** A local step through the loaded window, never an opaque backend cursor. */
+const localStep = "local";
 
 export function MemoryContents({
   target,
@@ -25,10 +47,10 @@ export function MemoryContents({
   const api = memoryApi(client, target),
     key = memoryKey(target);
   const [query, setQuery] = useState("");
+  const [semantic, setSemantic] = useState(true);
   const [limit, setLimit] = useState(20);
   const [threshold, setThreshold] = useState("");
   const [search, setSearch] = useState<Schema["MemorySearch"] | null>(null);
-  const [advanced, setAdvanced] = useState(false);
   const [page, setPage] = useState(0);
   const [editor, setEditor] = useState<{ id?: string } | null>(null);
   const finalFocus = useRef<HTMLElement | null>(null);
@@ -54,7 +76,7 @@ export function MemoryContents({
     refetchOnWindowFocus: false,
     retry: false,
   });
-  const records = search
+  const loaded = search
     ? (results.data?.items ?? [])
     : [
         ...new Map(
@@ -63,12 +85,31 @@ export function MemoryContents({
             .map((item) => [item.id, item]) ?? [],
         ).values(),
       ];
-  const pageCount = Math.max(1, Math.ceil(records.length / pageSize));
-  const currentPage = Math.min(page, pageCount - 1);
+  // Without the semantic backend the query filters what this window holds.
+  const filter = !semantic && !search ? query.trim().toLocaleLowerCase() : "";
+  const records = filter
+    ? loaded.filter((item) => item.memory.toLocaleLowerCase().includes(filter))
+    : loaded;
+  const currentPage = Math.min(
+    page,
+    Math.max(0, Math.ceil(records.length / pageSize) - 1),
+  );
   const last = list.data?.pages.at(-1);
   const bounded = list.data?.pages.some((part) => part.pagination == null);
   const active = search ? results : list;
   const readOnly = !!access.error || !access.data?.can_write;
+  const moreLoaded = (currentPage + 1) * pageSize < records.length;
+  const nextCursor =
+    search || filter ? null : (last?.pagination?.next_cursor ?? null);
+  const pager = {
+    cursor: undefined as string | undefined,
+    next: (step: string) => {
+      setPage(currentPage + 1);
+      if (step !== localStep) void list.fetchNextPage();
+    },
+    previous: currentPage > 0 ? () => setPage(currentPage - 1) : undefined,
+    reset: () => setPage(0),
+  };
   function open(id?: string, element?: HTMLElement) {
     finalFocus.current = element ?? null;
     setEditor({ id });
@@ -85,81 +126,155 @@ export function MemoryContents({
       <ErrorNotice error={access.error} retry={() => void access.refetch()} />
     );
   return (
-    <section
-      className="flex min-w-0 flex-col gap-4"
-      aria-label={t("Memory records")}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-base font-medium">{t("Memory records")}</h2>
-          {readOnly && <Badge variant="secondary">{t("Read only")}</Badge>}
-        </div>
-        <div className="flex gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={active.isFetching}
-            onClick={() => {
-              void access.refetch();
-              void active.refetch();
-            }}
-          >
-            <ArrowClockwiseIcon aria-hidden="true" />
-            {t("Refresh")}
-          </Button>
-          {!readOnly && (
+    <section className={styles.records} aria-label={t("Memory records")}>
+      <Toolbar
+        trailing={
+          <>
+            {readOnly && (
+              <StatusPill variant="neutral">{t("Read only")}</StatusPill>
+            )}
             <Button
-              size="sm"
-              onClick={(event) => open(undefined, event.currentTarget)}
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t("Refresh")}
+              title={t("Refresh")}
+              disabled={active.isFetching}
+              onClick={() => {
+                void access.refetch();
+                void active.refetch();
+              }}
             >
-              <PlusIcon aria-hidden="true" />
-              {t("Add memory")}
+              <ArrowClockwiseIcon size={14} aria-hidden="true" />
             </Button>
-          )}
-        </div>
-      </div>
-      <form
-        className="flex flex-col gap-3"
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (query.trim()) {
+            {!readOnly && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={(event) => open(undefined, event.currentTarget)}
+              >
+                <PlusIcon aria-hidden="true" />
+                {t("Add memory")}
+              </Button>
+            )}
+          </>
+        }
+      >
+        <form
+          className={styles.searchForm}
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!semantic || !query.trim()) return;
             const next = {
               query,
-              limit,
+              limit: Math.min(100, Math.max(1, Math.round(limit) || 1)),
               threshold: threshold === "" ? null : Number(threshold),
             };
             setSearch(next);
             setPage(0);
             if (JSON.stringify(search) === JSON.stringify(next))
               void results.refetch();
-          }
-        }}
-      >
-        <div className="flex flex-wrap items-end gap-2">
+          }}
+        >
           <FormField
-            className="min-w-0 flex-1 sm:max-w-sm"
-            label={t("Semantic search")}
+            className={styles.searchInput}
+            label={t("Search memories")}
             hideLabel
           >
             <Input
               type="search"
+              size="sm"
               maxLength={16000}
-              placeholder={t("Search memories by meaning…")}
+              placeholder={
+                semantic
+                  ? t("Search memories by meaning…")
+                  : t("Filter loaded records…")
+              }
               value={query}
-              onChange={(event) => setQuery(event.target.value)}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                setPage(0);
+              }}
             />
           </FormField>
           <Button
-            type="submit"
-            variant="outline"
-            disabled={!query.trim() || results.isFetching}
+            type="button"
+            size="sm"
+            variant={semantic ? "secondary" : "outline"}
+            aria-pressed={semantic}
+            title={t(
+              "Rank records by meaning in the backend instead of filtering the loaded window.",
+            )}
+            onClick={() => {
+              setSemantic(!semantic);
+              setSearch(null);
+              setPage(0);
+            }}
           >
-            {t("Search")}
+            {t("Semantic")}
           </Button>
+          {semantic && (
+            <>
+              <Button
+                type="submit"
+                size="sm"
+                variant="outline"
+                disabled={!query.trim() || results.isFetching}
+              >
+                {t("Search")}
+              </Button>
+              <Popover>
+                <PopoverTrigger
+                  render={
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t("Search options")}
+                      title={t("Search options")}
+                    />
+                  }
+                >
+                  <SlidersHorizontalIcon size={14} aria-hidden="true" />
+                </PopoverTrigger>
+                <PopoverPopup align="start">
+                  <div className={styles.options}>
+                    <FormField label={t("Result limit")}>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        step={1}
+                        value={limit}
+                        onChange={(event) =>
+                          setLimit(Number(event.target.value))
+                        }
+                      />
+                    </FormField>
+                    <FormField
+                      label={t("Similarity threshold")}
+                      description={t(
+                        "Optional, from 0 to 1. Leave empty to use the backend default.",
+                      )}
+                    >
+                      <Input
+                        type="number"
+                        min={0}
+                        max={1}
+                        step="any"
+                        value={threshold}
+                        onChange={(event) => setThreshold(event.target.value)}
+                      />
+                    </FormField>
+                  </div>
+                </PopoverPopup>
+              </Popover>
+            </>
+          )}
           {search && (
             <Button
               type="button"
+              size="sm"
               variant="ghost"
               onClick={() => {
                 setSearch(null);
@@ -170,47 +285,10 @@ export function MemoryContents({
               {t("Back to list")}
             </Button>
           )}
-        </div>
-        <DisclosureSection
-          title={t("Search options")}
-          open={advanced}
-          onOpenChange={setAdvanced}
-        >
-          <div
-            className="grid gap-4 sm:grid-cols-2"
-            onInvalidCapture={() => setAdvanced(true)}
-          >
-            <FormField label={t("Result limit")}>
-              <Input
-                type="number"
-                required
-                min={1}
-                max={100}
-                step={1}
-                value={limit}
-                onChange={(event) => setLimit(Number(event.target.value))}
-              />
-            </FormField>
-            <FormField
-              label={t("Similarity threshold")}
-              description={t(
-                "Optional, from 0 to 1. Leave empty to use the backend default.",
-              )}
-            >
-              <Input
-                type="number"
-                min={0}
-                max={1}
-                step="any"
-                value={threshold}
-                onChange={(event) => setThreshold(event.target.value)}
-              />
-            </FormField>
-          </div>
-        </DisclosureSection>
-      </form>
+        </form>
+      </Toolbar>
       {search && (
-        <p className="break-words text-sm text-muted-foreground">
+        <p className={styles.note}>
           {t(
             "Search results for “{{query}}”. These are ranked matches, not the full collection.",
             { query: search.query },
@@ -223,55 +301,45 @@ export function MemoryContents({
         <Loading variant="table" rows={4} />
       ) : active.data ? (
         <>
-          <div
-            className="flex flex-wrap justify-between gap-2 text-sm text-muted-foreground"
-            aria-live="polite"
-          >
-            <span>
-              {t("{{count}} records loaded", { count: records.length })}
-            </span>
-            {!search && (
-              <span>
-                {t(
-                  bounded
-                    ? "Bounded list · not a total count"
-                    : last?.pagination?.next_cursor
-                      ? "More records available"
-                      : "End of this traversal",
-                )}
-              </span>
-            )}
-          </div>
           {!records.length ? (
             <Empty
-              title={t(search ? "No matching memories" : "No memories loaded")}
+              title={t(
+                filter
+                  ? "No loaded records match"
+                  : search
+                    ? "No matching memories"
+                    : "No memories loaded",
+              )}
               description={t(
-                search
-                  ? "Try another query or lower the similarity threshold."
-                  : bounded
-                    ? "The backend returned a bounded result. This does not prove the collection is empty."
-                    : "No records were returned for this provider and subject.",
+                filter
+                  ? "This filters only the records already loaded here. Use Semantic to search the whole collection."
+                  : search
+                    ? "Try another query or lower the similarity threshold."
+                    : bounded
+                      ? "The backend returned a bounded result. This does not prove the collection is empty."
+                      : "No records were returned for this provider and subject.",
               )}
             />
           ) : (
             <ResourceTable
+              className={styles.recordsTable}
               items={records.slice(
                 currentPage * pageSize,
                 (currentPage + 1) * pageSize,
               )}
               caption={t("Memory records")}
               onRowActivate={(item, element) => open(item.id, element)}
+              rowMenu={(item) => (
+                <MenuItem onClick={() => open(item.id)}>
+                  {t(readOnly ? "View" : "Edit")}
+                </MenuItem>
+              )}
               columns={[
                 {
                   label: t("Memory"),
                   tone: "primary",
                   render: (item) => (
-                    <div className="flex min-w-0 max-w-3xl items-start gap-2">
-                      <p className="line-clamp-3 min-w-0 whitespace-pre-wrap break-words">
-                        {item.memory}
-                      </p>
-                      <ResourceReference id={item.id} />
-                    </div>
+                    <p className={styles.excerpt}>{item.memory}</p>
                   ),
                 },
                 ...(search
@@ -289,59 +357,44 @@ export function MemoryContents({
                     ]
                   : []),
                 {
-                  label: t("Actions"),
+                  label: t("Reference"),
+                  tone: "muted",
                   align: "right",
-                  render: (item) => (
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={(event) => open(item.id, event.currentTarget)}
-                    >
-                      {t(readOnly ? "View" : "Edit")}
-                    </Button>
-                  ),
+                  render: (item) => <CopyableId value={item.id} />,
                 },
               ]}
             />
           )}
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {pageCount > 1 && (
-              <>
-                <span className="mr-auto text-sm text-muted-foreground">
-                  {t("Page {{page}} of {{pages}} loaded", {
-                    page: currentPage + 1,
-                    pages: pageCount,
-                  })}
+          <CollectionFooter
+            count={
+              <span className={styles.count} aria-live="polite">
+                <span>
+                  {filter
+                    ? t("{{count}} of {{total}} loaded records match", {
+                        count: records.length,
+                        total: loaded.length,
+                      })
+                    : t("{{count}} records loaded", { count: records.length })}
                 </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={currentPage === 0}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  {t("Previous")}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={currentPage + 1 >= pageCount}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  {t("Next")}
-                </Button>
-              </>
-            )}
-            {!search && list.hasNextPage && (
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={list.isFetching}
-                onClick={() => void list.fetchNextPage()}
-              >
-                {t(list.isFetchingNextPage ? "Loading…" : "Load more records")}
-              </Button>
-            )}
-          </div>
+                {!search && (
+                  <span className={styles.footnote}>
+                    {t(
+                      bounded
+                        ? "Bounded list · not a total count"
+                        : nextCursor
+                          ? "More records available"
+                          : "End of this traversal",
+                    )}
+                  </span>
+                )}
+              </span>
+            }
+          >
+            <Pagination
+              page={pager}
+              next={moreLoaded ? localStep : nextCursor}
+            />
+          </CollectionFooter>
         </>
       ) : null}
       {editor && (

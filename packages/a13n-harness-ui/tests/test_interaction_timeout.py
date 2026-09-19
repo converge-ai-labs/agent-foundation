@@ -18,6 +18,8 @@ from pydantic_ai import DeferredToolRequests
 from pydantic_ai.messages import ToolCallPart
 from pydantic_ai.usage import RunUsage
 
+from .test_root_run import capture
+
 pytestmark = pytest.mark.anyio
 THREAD = "thread_timeout"
 CONTINUATION = "1" * 64
@@ -87,11 +89,13 @@ async def test_timeout_denies_complete_mixed_batch_once_without_a_viewer(monkeyp
     seen = []
     timer_started, expire, timer_finished = Event(), Event(), Event()
 
-    async def execute(**kwargs):
-        seen.append(kwargs["response"])
-        return suspended_outcome() if kwargs["response"] is None else completed_outcome()
+    async def execute(admission, **kwargs):
+        seen.append(admission.response)
+        return suspended_outcome() if admission.response is None else completed_outcome()
 
-    coordinator = RootRunCoordinator(cast(Any, SimpleNamespace(execute=execute)), interaction_timeouts=True)
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=capture, execute=execute)), interaction_timeouts=True
+    )
     original_expire = coordinator._expire_interaction
 
     async def controlled_expiry(thread_id, pending):
@@ -131,15 +135,17 @@ async def test_human_and_timeout_share_exact_admission_fence(monkeypatch, human_
     entered, finish = Event(), Event()
     responses = []
 
-    async def execute(**kwargs):
-        if kwargs["response"] is None:
+    async def execute(admission, **kwargs):
+        if admission.response is None:
             return suspended_outcome()
-        responses.append(kwargs["response"])
+        responses.append(admission.response)
         entered.set()
         await finish.wait()
         return completed_outcome()
 
-    coordinator = RootRunCoordinator(cast(Any, SimpleNamespace(execute=execute)), interaction_timeouts=True)
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=capture, execute=execute)), interaction_timeouts=True
+    )
     await coordinator.start()
     try:
         receipt = await coordinator.submit_prompt(thread_id=THREAD, prompt="ask")
@@ -169,14 +175,16 @@ async def test_human_and_timeout_share_exact_admission_fence(monkeypatch, human_
 async def test_disarming_wait_wakes_timer_without_resubmission(action):
     responses = []
 
-    async def execute(**kwargs):
-        if kwargs["response"] is None:
+    async def execute(admission, **kwargs):
+        if admission.response is None:
             return suspended_outcome()
-        responses.append(kwargs["response"])
+        responses.append(admission.response)
         # Preparation failure does not authorize an automatic retry.
         raise RunCoordinationError("Invalid response", code="thread_deferred_response_incomplete")
 
-    coordinator = RootRunCoordinator(cast(Any, SimpleNamespace(execute=execute)), interaction_timeouts=True)
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=capture, execute=execute)), interaction_timeouts=True
+    )
     await coordinator.start()
     try:
         receipt = await coordinator.submit_prompt(thread_id=THREAD, prompt="ask")
@@ -201,10 +209,12 @@ async def test_disarming_wait_wakes_timer_without_resubmission(action):
 
 @pytest.mark.parametrize("enabled,selected", [(False, True), (True, False)])
 async def test_no_deadline_for_cli_or_unsaved_suspension(enabled, selected):
-    async def execute(**kwargs):
+    async def execute(admission, **kwargs):
         return suspended_outcome(selected=selected)
 
-    coordinator = RootRunCoordinator(cast(Any, SimpleNamespace(execute=execute)), interaction_timeouts=enabled)
+    coordinator = RootRunCoordinator(
+        cast(Any, SimpleNamespace(capture=capture, execute=execute)), interaction_timeouts=enabled
+    )
     await coordinator.start()
     try:
         receipt = await coordinator.submit_prompt(thread_id=THREAD, prompt="ask")

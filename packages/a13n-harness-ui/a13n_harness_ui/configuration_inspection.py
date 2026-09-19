@@ -9,6 +9,7 @@ from pydantic import Field
 from a13n_harness_ui.composition import ResolvedRunComposition
 from a13n_harness_ui.configuration.models import AgentToolProxy, SidekickConfiguration
 from a13n_harness_ui.configuration.views import AgentToolProxyView
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection
 from a13n_harness_ui.model_fast import FastState, fast_state
 from a13n_harness_ui.model_thinking import summarize_thinking
 from a13n_harness_ui.surfaces import SurfaceModel, ThreadConfigurationResolution
@@ -37,6 +38,8 @@ class CapturedConfiguration(SurfaceModel):
     environment_profile_id: str
     environment_provider: str
     environment_adapter: str
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] = ()
+    default_environment: str | None = None
     environment_run_extension_ids: tuple[str, ...]
     tools: tuple[str, ...] | None
     tool_proxy: AgentToolProxy | None
@@ -81,6 +84,8 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
         environment_profile_id=value.environment_profile.profile_id,
         environment_provider=value.environment_profile.provider_key,
         environment_adapter=value.environment_profile.adapter_key,
+        environment_bindings=tuple(item.selection for item in value.environment_bindings),
+        default_environment=value.default_environment,
         environment_run_extension_ids=tuple(item.extension_id for item in value.environment_run_extensions),
         tools=root.tools,
         tool_proxy=root.tool_proxy,

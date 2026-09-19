@@ -96,7 +96,7 @@ def test_stdio_receive_demultiplexes_interleaved_control_and_data_frames() -> No
     async def scenario() -> None:
         reader = asyncio.StreamReader()
         writer = CapturingWriter()
-        data = DataFrame(kind=DataFrameKind.CHUNK, handle="reader-one", offset=2, payload=b"abc")
+        data = DataFrame(session_id="ses-test", kind=DataFrameKind.CHUNK, handle="reader-one", offset=2, payload=b"abc")
         encoded = encode_data_frame(data, max_frame_bytes=1024)
         reader.feed_data(outer_frame("application/json; charset=utf-8", b"{}"))
         reader.feed_data(outer_frame("application/vnd.a13n.eip-data", encoded))
@@ -121,7 +121,7 @@ def test_stdio_send_encodes_binary_frames_under_one_outer_frame() -> None:
             cast(asyncio.StreamWriter, writer),
             max_transfer_frame_bytes=1024,
         )
-        frame = DataFrame(kind=DataFrameKind.CHUNK, handle="writer-one", payload=b"payload")
+        frame = DataFrame(session_id="ses-test", kind=DataFrameKind.CHUNK, handle="writer-one", payload=b"payload")
         await transport.send(frame)
 
         header, payload = bytes(writer.buffer).split(b"\r\n\r\n", 1)

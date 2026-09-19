@@ -99,7 +99,7 @@ class NativeProjectAdapter(EnvironmentProjectAdapter):
         _require_provider(provider, DIRECT_LOCAL)
         shell = _host_shell()
         value: dict[str, JsonValue] = {
-            "root": {"path": str(root), "read_only": False},
+            "root": {"path": str(root)},
             "shell_profiles": (
                 []
                 if shell is None
@@ -150,28 +150,7 @@ class LocalEnvdProjectAdapter(EnvironmentProjectAdapter):
         runtime: object | None,
     ) -> Environment:
         _require_provider(provider, LOCAL_ENVD)
-        shell = _host_shell()
-        value: dict[str, JsonValue] = {
-            "workspace": {"path": str(root), "read_only": False},
-            "execution_network": "deny",
-            "trusted_executable_roots": [] if shell is None else [str(shell.parent)],
-            "shell_profiles": (
-                []
-                if shell is None
-                else [
-                    {
-                        "profile_id": "default",
-                        "executable": str(shell),
-                        "fixed_arguments": (
-                            ["-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-Command"]
-                            if sys.platform == "win32"
-                            else ["-c"]
-                        ),
-                        "allow_login": sys.platform != "win32",
-                    }
-                ]
-            ),
-        }
+        value: dict[str, JsonValue] = {"working_directory": root.as_posix()}
         configuration = provider.validate_environment(value)
         return provider.construct(
             configuration=configuration, environment_id=_environment_id(self.key, root), state=state, runtime=runtime

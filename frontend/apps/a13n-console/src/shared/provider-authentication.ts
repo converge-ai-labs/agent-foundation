@@ -1,5 +1,5 @@
 import type { Schema } from "./api";
-import { withSchemaValues } from "./schema-fields";
+import { withSchemaValues } from "./forms/schema-fields";
 
 export function credentialMode(
   definition:

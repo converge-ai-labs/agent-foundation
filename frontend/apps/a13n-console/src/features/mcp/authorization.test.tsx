@@ -23,7 +23,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 afterEach(() => {
   cleanup();
@@ -103,7 +106,6 @@ it("uses the saved app and refreshed version for reconnect after authorization f
     <QueryClientProvider client={cache}>
       <ConnectionDetails
         connectionId={initial.id}
-        controlledOpen
         onClose={vi.fn()}
         onCleanup={vi.fn()}
       />
@@ -131,7 +133,7 @@ it("uses the saved app and refreshed version for reconnect after authorization f
       "/workspace/test",
     ),
   );
-  await user.click(screen.getByRole("button", { name: "Retry verification" }));
+  await user.click(screen.getByRole("button", { name: "Check connection" }));
   await waitFor(() =>
     expect(
       http.POST.mock.calls.find(([path]) => path.endsWith("check"))?.[1].body,

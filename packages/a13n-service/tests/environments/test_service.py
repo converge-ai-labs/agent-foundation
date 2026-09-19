@@ -432,7 +432,7 @@ async def test_child_sharing_and_dedicated_provider_contract(
             retention={"idle": {"stop_after": None, "delete_after": None}},
         ),
     )
-    parent = Mock(environment_id="env_parent1234567890")
+    parent = Mock(environment_id="env_parent1234567890", environment_working_directory=None)
     policy = ChildEnvironmentPolicy(mode="dedicated", template_revision_id=template.current_revision_id)
     async with short_session(environment_sessions) as session:
         shared = await child_environment_choice(session, parent=parent, policy=ChildEnvironmentPolicy())

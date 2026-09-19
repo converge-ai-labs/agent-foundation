@@ -13,19 +13,19 @@ from a13n_service.environments.websocket.relay_scope import RelayUseScope
 from a13n_service.environments.websocket.relay_storage import (
     ConnectionRelayStore,
     RelayStoreError,
-    WorkerResponseMailbox,
+    ResponseMailbox,
 )
 from a13n_service.environments.websocket.relay_waiters import RelayOperationError, RelayResponseDispatcher
 
 pytestmark = pytest.mark.anyio
 CONNECTION = ConnectionIdentity("org", "env", "connection", "epoch", "control")
-USE = UseIdentity(CONNECTION, "use", "run", "attempt", 1, "worker")
+USE = UseIdentity(CONNECTION, "use", "run", "attempt", 1, "worker", "workspace", admission_deadline_ms=1)
 
 
 @pytest.fixture
 async def relay(relay_redis):
     owner = ConnectionRelayStore(relay_redis, CONNECTION)
-    mailbox = WorkerResponseMailbox(relay_redis, USE.worker_instance_id)
+    mailbox = ResponseMailbox(relay_redis, USE.worker_instance_id)
     await mailbox.prepare()
     await owner.prepare()
     started = monotonic()
@@ -40,7 +40,7 @@ async def relay(relay_redis):
             expires_at_ms=now + 5000,
             barrier_ms=0,
             retiring=None,
-            use=UseGrant(identity=USE, expires_at_ms=now + 5000),
+            uses={USE.use_id: UseGrant(identity=USE, expires_at_ms=now + 5000)},
             error=None,
         ),
         started,
@@ -64,7 +64,7 @@ async def reply_once(owner):
     entry, request = rows[0]
     assert (await owner.start(request, entry)).phase == "started"
     await owner.complete(
-        request, entry, RelayTerminal(request_id=request.request_id, use=request.use, result=request.payload)
+        request, entry, RelayTerminal(request_id=request.request_id, scope=request.scope, result=request.payload)
     )
     return request
 
@@ -141,7 +141,7 @@ async def test_cancellation_and_early_stream_exit_send_bounded_control_request(r
                 if message.operation == "operation.cancel":
                     assert original is not None
                     assert message.payload == {"request_id": original.request_id}
-                    await owner.complete(message, entry, RelayTerminal(request_id=message.request_id, use=USE))
+                    await owner.complete(message, entry, RelayTerminal(request_id=message.request_id, scope=USE))
                     return
                 original = message
                 started.set()
@@ -182,7 +182,7 @@ async def test_takeover_observation_cannot_reuse_retained_old_use(relay):
             expires_at_ms=now + 5000,
             barrier_ms=now + 5000,
             retiring=None,
-            use=UseGrant(identity=USE, expires_at_ms=now + 5000),
+            uses={USE.use_id: UseGrant(identity=USE, expires_at_ms=now + 5000)},
             error=None,
         ),
         monotonic(),
@@ -198,8 +198,26 @@ async def test_takeover_observation_cannot_reuse_retained_old_use(relay):
 
 
 async def test_fencing_one_mount_preserves_other_waiters_and_shared_authority(relay):
-    client, _, responses = relay
-    other = RelayUseClient(client._scope, mount_name="other")
+    client, owner, responses = relay
+    identity = replace(USE, use_id="other-use", mount_name="other")
+    now = client._scope.server_ms
+    observed = ConfirmedObservation(
+        ConnectionObservation(
+            code="ok",
+            now_ms=now,
+            status="online",
+            connection=CONNECTION,
+            expires_at_ms=now + 5000,
+            barrier_ms=0,
+            retiring=None,
+            uses={identity.use_id: UseGrant(identity=identity, expires_at_ms=now + 5000)},
+            error=None,
+        ),
+        monotonic(),
+        0.005,
+    )
+    scope = RelayUseScope(identity, observed, owner, responses, check_authority=lambda: None)
+    other = RelayUseClient(scope, mount_name="other")
     async with client.request("file.stat", {"path": "/first"}) as first:
         async with other.request("file.stat", {"path": "/second"}) as second:
             client.fence()
@@ -207,7 +225,9 @@ async def test_fencing_one_mount_preserves_other_waiters_and_shared_authority(re
                 await first.result()
             assert rejected.value.code == "environment_unavailable"
             assert other.available and client._scope.available
-            responses.accept(RelayTerminal(request_id=second.request.request_id, use=USE, result="second-result"))
+            responses.accept(
+                RelayTerminal(request_id=second.request.request_id, scope=identity, result="second-result")
+            )
             assert (await second.result()).result == "second-result"
 
 
@@ -219,7 +239,7 @@ async def test_upload_input_cannot_cross_mount_clients_even_with_the_same_use(re
     ) as pending:
         frame = RelayChunk(
             request_id=pending.request.request_id,
-            use=USE,
+            scope=USE,
             transfer=TransferPosition(transfer_id="etr_transfer717171717171", sequence=0, offset=0),
             data="eA==",
         )

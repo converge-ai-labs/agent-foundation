@@ -7,20 +7,27 @@ import "a13n-envd/eip/v1/common.proto";
 import "a13n-envd/eip/v1/options.proto";
 
 message EIPPath {
-  string mount_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  string path = 1 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+}
+
+message DirectoryListParams {
+  string expected_device_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
+  uint64 expected_generation = 2 [(eip_field).minimum = 1];
+  string path = 3 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+  optional uint64 offset = 4 [(eip_field).default_uint = 0];
+  uint64 limit = 5 [(eip_field).minimum = 1];
+}
+
+message DirectoryEntry {
+  string name = 1;
   string path = 2 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
 }
 
-message MountDescriptor {
-  reserved 6;
-  reserved "supports_file_revision";
-
-  string mount_id = 1 [(eip_field).string_format = EIP_STRING_FORMAT_IDENTIFIER];
-  string logical_root = 2 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
-  bool writable = 3;
-  optional bool case_sensitive = 4;
-  bool supports_atomic_replace = 5;
-  uint64 max_file_bytes = 7;
+message DirectoryListResult {
+  string path = 1 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+  optional string parent_path = 2 [(eip_field).string_format = EIP_STRING_FORMAT_PATH];
+  repeated DirectoryEntry entries = 3;
+  optional uint64 next_offset = 4;
 }
 
 enum FileKind {

@@ -4,6 +4,8 @@ from __future__ import annotations
 from typing import Protocol
 
 from .methods import (
+    DEVICE_DESCRIBE,
+    DIRECTORY_LIST,
     ENVIRONMENT_DESCRIBE,
     ENVIRONMENT_READINESS,
     FILE_ABORT_WRITER,
@@ -38,11 +40,18 @@ from .methods import (
     PROCESS_WAIT,
     PROCESS_WRITE_STDIN,
     RECEIPT_GET,
+    SESSION_ATTACH,
     SESSION_CLOSE,
+    SESSION_KEEPALIVE,
+    SESSION_OPEN,
     SHELL_EXEC,
     MethodSpec,
 )
 from .models import (
+    DeviceDescribeParams,
+    DeviceDescribeResult,
+    DirectoryListParams,
+    DirectoryListResult,
     EnvironmentDescribeParams,
     EnvironmentDescribeResult,
     EnvironmentReadinessParams,
@@ -111,8 +120,13 @@ from .models import (
     ProcessWriteStdinResult,
     ReceiptGetParams,
     ReceiptGetResult,
+    SessionAttachParams,
     SessionCloseParams,
     SessionCloseResult,
+    SessionKeepaliveParams,
+    SessionKeepaliveResult,
+    SessionOpenParams,
+    SessionOpenResult,
     ShellExecParams,
     ShellExecResult,
 )
@@ -125,6 +139,12 @@ class EIPRequester(Protocol):
 class EIPClient:
     def __init__(self, requester: EIPRequester) -> None:
         self._requester = requester
+
+    async def device_describe(self, params: DeviceDescribeParams) -> DeviceDescribeResult:
+        return await self._requester.request(DEVICE_DESCRIBE, params)
+
+    async def directory_list(self, params: DirectoryListParams) -> DirectoryListResult:
+        return await self._requester.request(DIRECTORY_LIST, params)
 
     async def environment_describe(self, params: EnvironmentDescribeParams) -> EnvironmentDescribeResult:
         return await self._requester.request(ENVIRONMENT_DESCRIBE, params)
@@ -228,8 +248,17 @@ class EIPClient:
     async def receipt_get(self, params: ReceiptGetParams) -> ReceiptGetResult:
         return await self._requester.request(RECEIPT_GET, params)
 
+    async def session_attach(self, params: SessionAttachParams) -> SessionOpenResult:
+        return await self._requester.request(SESSION_ATTACH, params)
+
     async def session_close(self, params: SessionCloseParams) -> SessionCloseResult:
         return await self._requester.request(SESSION_CLOSE, params)
+
+    async def session_keepalive(self, params: SessionKeepaliveParams) -> SessionKeepaliveResult:
+        return await self._requester.request(SESSION_KEEPALIVE, params)
+
+    async def session_open(self, params: SessionOpenParams) -> SessionOpenResult:
+        return await self._requester.request(SESSION_OPEN, params)
 
     async def shell_exec(self, params: ShellExecParams) -> ShellExecResult:
         return await self._requester.request(SHELL_EXEC, params)

@@ -30,7 +30,7 @@ async def stores(tmp_path, request):
     workspace = tmp_path / "workspace"
     workspace.mkdir()
     provider = LOCAL_ENVD
-    configuration = provider.validate_environment({"workspace": {"path": str(workspace)}})
+    configuration = provider.validate_environment({"working_directory": str(workspace)})
     async with AsyncExitStack() as stack:
         stores = []
         for i in range(2):
@@ -40,20 +40,22 @@ async def stores(tmp_path, request):
 
                 files = LocalFileOperator(
                     root=workspace,
-                    read_only=False,
                     policy=_DirectLocalFilePolicy(max_value_bytes=1024 * 1024),
                     mount_id="memory",
                     generation="one",
                 )
             else:
+                runtime = await stack.enter_async_context(
+                    LocalEnvdProviderRuntime(
+                        executable=Path(executable),
+                        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
+                    )
+                )
                 environment = provider.construct(
                     environment_id=f"memory-test-{i}",
                     configuration=configuration,
                     state=None,
-                    runtime=LocalEnvdProviderRuntime(
-                        executable=Path(executable),
-                        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
-                    ),
+                    runtime=runtime,
                 )
                 stack.push_async_callback(environment.close)
                 await environment.enter(mount_id="memory")
@@ -62,7 +64,7 @@ async def stores(tmp_path, request):
             assert files is not None
             store = FilesystemMemoryStore(
                 files=files,
-                root="/memory",
+                root=str(workspace / "memory") if request.param == "envd" else "/memory",
                 scope="thread:test",
                 store_id="mstore_test",
                 principal="user_test",
@@ -130,7 +132,7 @@ async def test_native_commit_cannot_follow_link_outside_corpus(stores, tmp_path)
     workspace = tmp_path / "workspace"
     outside = workspace / "outside"
     outside.mkdir()
-    corpus = workspace / store.subject_root.removeprefix("/")
+    corpus = workspace / store.subject_root.removeprefix(str(workspace)).lstrip("/")
     (corpus / "link").symlink_to(outside, target_is_directory=True)
     target = store.subject_root + "/link/head"
     with pytest.raises(EnvironmentError) as rejected:

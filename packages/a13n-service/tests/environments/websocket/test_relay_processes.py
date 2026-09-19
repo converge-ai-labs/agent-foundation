@@ -142,7 +142,7 @@ def test_command_authorization_precedes_process_execution(operations):
         dispatch.prepare(
             RelayRequest(
                 request_id=new_object_id("erq"),
-                use=USE,
+                scope=USE,
                 deadline_ms=1,
                 operation="process.kill",
                 payload={

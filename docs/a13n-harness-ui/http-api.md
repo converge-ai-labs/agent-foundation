@@ -33,6 +33,50 @@ Authentication and Host/Origin validation apply at the listener boundary. Use a 
 
 Use `environment-native` for Full Control, `environment-sandbox` for Sandbox, or a profile ID from `GET /api/selectors`. Omission or null uses the Thread's saved default. An explicit choice affects this Run without updating the Thread configuration or version. A returned receipt acknowledges admission, not successful environment preparation: inspect the operation for unavailable profiles or runtime failures. Neither case silently falls back to Full Control. Steering rejects this field. Deferred responses retain the suspended continuation's captured Environment profile; a later ordinary submit without an override uses the saved default again.
 
+## Device connections and working environments
+
+A Device resource describes a reusable connection, not a Run or a filesystem root. Create it through `PUT /api/configuration/sources/devices/build.yaml`; see [Device YAML](environments-and-projects.md#add-device-working-environments). Device credentials are separate from the browser listener key.
+
+| Route                                      | Behavior                                                                                           |
+| ------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `GET /api/devices`                         | Configured IDs, names, and carrier kinds; no connection attempt                                    |
+| `GET /api/devices/{device_id}`             | Check availability and read path style, default working directory, and directory-discovery support |
+| `GET /api/devices/{device_id}/directories` | Browse one directory level without opening a Run Session                                           |
+| `WS /api/devices/{device_id}/connect`      | Native daemon reverse attachment, not a browser interactive channel                                |
+
+Directory queries accept `path`, `offset` (0–1,000,000), and `limit` (1–200, default 100). Omitted `path` uses the Device's default working directory; use returned `next_offset` for another page. Paths are Device-absolute EIP paths, not browser or listener-native paths. Availability and discovery are separate: an online Device may disable discovery, and an unreadable directory does not make it offline. Metadata and browsing do not create Threads or execution Sessions. These routes do not depend on native computer sharing.
+
+The daemon's reverse connection negotiates `eip.v1` and sends its Device bearer credential in the HTTP upgrade request. It does not use browser first-frame authentication. Do not send credentials in query parameters.
+
+Thread creation defaults and configuration patches accept `environment_bindings` and `default_environment` independently of `environment_profile_id`:
+
+```json
+{
+  "project_id": null,
+  "environment_bindings": [
+    {"device_id": "device-build", "alias": "build", "working_directory": "/work/repository"}
+  ],
+  "default_environment": "build"
+}
+```
+
+Use this body directly for configuration preview, or under `defaults` when creating a Thread. A known absolute directory can be saved while its Device is offline. Each Run captures its selections and prepares fresh execution-owned Sessions; a configured connection is not proof that execution will succeed. `default_environment` chooses relative-path and omitted-cwd routing; it is not a confinement boundary. Native Files, Changes, and Terminal routes continue to operate on the listener Host, not the selected Device.
+
+### Forget offline configuration and repair selections
+
+`DELETE /api/configuration/sources/devices/build.yaml` forgets the local connection resource without contacting the Device or deleting remote files. The same source deletion API removes custom Environment profiles. Built-in profiles are not removable source files. First remove references from current Project/global defaults through ordinary source updates; otherwise candidate configuration validation rejects the deletion.
+
+Existing Thread selections and historical captures are not cascade-edited. Inspect `/api/threads/{thread_id}/configuration`, then explicitly PATCH the next selections with the current `expected_version`. For example, remove a missing Device and replace its default together:
+
+```json
+{
+  "expected_version": 1,
+  "patch": {"environment_bindings": [], "default_environment": "thread-files"}
+}
+```
+
+For a Thread with local Project roots, `workspace` is another valid replacement. Omitting the replacement while removing its selected default fails rather than silently redirecting future tools. Forgetting configuration or repairing next selections does not rewrite an active capture, saved Run, transcript, or continuation.
+
 ## Conversation input navigation
 
 `GET /api/threads/{thread_id}/inputs` returns a continuation-bound, paginated directory of ordinary input turns, excluding steering and hidden system input. Each turn carries its stable input identity, bounded preview, input position, exclusive end position, and an optional recorded final-response position. `limit` is 1–100; follow `next_cursor` to read the directory without transferring tool output.
@@ -342,7 +386,7 @@ curl --fail-with-body "$HUI_URL/api/threads/preview" \
 
 This request body is `NewThreadDefaults` directly, whereas Thread creation nests it under `defaults`. The preview resolves the exact Agent, Environment, Plugin, Run Extension, and MCP selections from current configuration; creation resolves again rather than reserving that preview. Null Project suppresses the global Project default. Project defaults are shown by `/api/projects`; existing Thread selections are shown in Thread detail.
 
-`PATCH /api/threads/{thread_id}/configuration` accepts `expected_version` and `patch`. Supported patch fields are `project_id`, `agent_id`, `environment_profile_id`, `harness_plugin_ids`, `environment_run_extension_ids`, and `mcp_server_ids`. Omission preserves the saved value, `project_id: null` clears the Project, and an empty list selects none. Changing Agent does not implicitly replace other saved axes. These root-Thread commands do not modify child Threads or an already captured Run.
+`PATCH /api/threads/{thread_id}/configuration` accepts `expected_version` and `patch`. Supported patch fields are `project_id`, `agent_id`, `environment_profile_id`, `environment_bindings`, `default_environment`, `harness_plugin_ids`, `environment_run_extension_ids`, and `mcp_server_ids`. Omission preserves the saved value, `project_id: null` clears the Project, and an empty list selects none. Changing Agent does not implicitly replace other saved axes. These root-Thread commands do not modify child Threads or an already captured Run.
 
 To apply the selected Project's configured defaults:
 

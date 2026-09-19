@@ -108,10 +108,11 @@ Successful destruction clears the adapter's state. An incompatible target or unk
 
 ## Use several Environments
 
-Pass `environments=` to name several already constructed adapters. `EnvironmentMount` adds one Run-local access ceiling and working directory:
+Pass `environments=` to name several already constructed adapters. `EnvironmentMount` adds one Run-local permission ceiling and working directory:
 
 ```python
-from a13n_harness import EnvironmentAccess, EnvironmentMount
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
+from a13n_harness import EnvironmentMount
 
 result = await executable.run(
     "Read the source data and write the build output",
@@ -119,7 +120,7 @@ result = await executable.run(
         "build": build_environment,
         "data": EnvironmentMount(
             data_environment,
-            access=EnvironmentAccess.READ_ONLY,
+            permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
         ),
     },
     default_environment="build",
@@ -141,24 +142,22 @@ Initial setup is atomic. Harness validates the complete input before entry and p
 
 ## Restrict a mount
 
-`EnvironmentMount` adds a user-facing access level and default working directory to one source:
+`EnvironmentMount` adds a permission ceiling and default working directory to one source:
 
 ```python
-from a13n_harness import (
-    EnvironmentAccess,
-    EnvironmentMount,
-)
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
+from a13n_harness import EnvironmentMount
 
 read_only_docs = EnvironmentMount(
     docs_resource,
-    access=EnvironmentAccess.READ_ONLY,
+    permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
     working_directory="/reference",
 )
 ```
 
-Access defaults to `EnvironmentAccess.FULL`. `READ_ONLY` exposes file reads, `READ_WRITE` exposes all file operations, and `FULL` exposes every Agent-facing Environment capability offered by the Provider, including command and process operations when supported. Provider capabilities always narrow the selected level. `FULL` does not grant Host administration, bypass a sandbox, or override operating-system security.
+`permission_ceiling` is an exact `EnvironmentPermissionSet`. It defaults to every `EnvironmentAction`, so a mount exposes every Agent-facing Environment capability the Provider offers, including command and process operations when supported. `FILE_READ_ACTIONS` and `FILE_ACTIONS` are the shared constants for file observation and for the complete `environment.file.*` family. Provider capabilities always narrow the ceiling. The default ceiling does not grant Host administration, bypass a sandbox, or override operating-system security.
 
-Exact action sets remain an internal advanced runtime and Provider enforcement seam rather than ordinary `EnvironmentMount` configuration. `working_directory` must be `None` or a canonical absolute provider path without `.` or `..` segments.
+`working_directory` must be `None` or a canonical absolute provider path without `.` or `..` segments.
 
 ## Expose tools to the model
 
@@ -187,11 +186,11 @@ Authorization applies to the requested operation and arguments, not a reserved b
 
 After execution starts, compound file work stays on its selected scope. Document conversion retains that scope from source read through output publication, and downloads retain it while fetching and writing. Replacing a mount does not move an in-flight operation to another backend. Exact process handles, generation validation, Provider draining, and the prohibition on automatically replaying unknown outcomes remain unchanged.
 
-The tool surface follows the effective actions of current mounts. With the standard access presets:
+The tool surface follows the effective actions of current mounts:
 
-- `read_only` exposes `view`, `ls`, `glob`, and `grep`;
-- `read_write` adds `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, and `delete`;
-- `full` adds `shell_exec` when a Provider offers shell execution, and independently adds `shell_info`, `shell_wait`, `shell_input`, and `shell_signal` according to their actions.
+- `FILE_READ_ACTIONS` exposes `view`, `ls`, `glob`, and `grep`;
+- `FILE_ACTIONS` adds `write`, `edit`, `multi_edit`, `mkdir`, `move`, `copy`, and `delete`;
+- the default ceiling adds `shell_exec` when a Provider offers shell execution, and independently adds `shell_info`, `shell_wait`, `shell_input`, and `shell_signal` according to their actions.
 
 Partial-capability Providers expose only usable tools: list, query, and text-search independently enable `ls`, `glob`, and `grep`; text-write can expose write/create-edit tools without read permission. Text `view` needs text-read, while media `view` needs stat plus byte-read on the same mount. Existing edits need byte-read plus text-write. Writing directly under a selected mount root does not require mkdir, including explicit roots without a default mount. Nested writes require mkdir when the tool creates the parent. Copy uses copy-source and copy-destination permissions, including across mounts. Actual arguments are checked again at execution.
 
@@ -276,7 +275,7 @@ High-level Environment arguments and an explicitly supplied advanced runtime are
 - a fresh Direct Local Environment validates and uses it for one Run;
 - `dump_state()` returns `None` because the target is deterministic and stateless;
 - `close()` and `destroy()` never delete the directory;
-- `read_only` constrains provider operations but is not an operating-system sandbox against an allowed child process.
+- the Provider root is always writable; a permission ceiling constrains Environment operations but is not an operating-system sandbox against an allowed child process.
 
 Use Local Envd or Docker when untrusted code needs an isolated execution boundary. Both still require fresh adapters per independent Run; Local Envd owns only its current private daemon generation, while Docker can re-enter the exact container represented by state.
 

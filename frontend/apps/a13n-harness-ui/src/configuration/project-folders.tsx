@@ -16,9 +16,11 @@ import styles from "./project-folders.module.css";
 
 export function ProjectFolders({
   roots,
+  allowEmpty = false,
   onChange,
 }: {
   roots: { path: string }[];
+  allowEmpty?: boolean;
   onChange: (roots: { path: string }[]) => void;
 }) {
   const status = useStatus();
@@ -30,7 +32,8 @@ export function ProjectFolders({
     <div className={styles.folders}>
       <p className={styles.hint}>
         Existing absolute directories on the server or container, not this
-        browser's computer. The first folder is the default working directory.
+        browser's computer. The first folder is the local workspace. A Project
+        with Device environments may have no local folders.
       </p>
       {roots.map((root, index) => (
         <div key={index} className={styles.folder}>
@@ -60,7 +63,7 @@ export function ProjectFolders({
               type="button"
               variant="ghost"
               size="icon"
-              disabled={roots.length <= 1}
+              disabled={!allowEmpty && roots.length <= 1}
               aria-label={`Remove directory ${index + 1}`}
               onClick={() => {
                 setBrowsing(null);

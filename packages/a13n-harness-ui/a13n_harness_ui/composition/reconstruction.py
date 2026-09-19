@@ -200,6 +200,10 @@ class AgentReconstructor:
             path_layout = EnvironmentPathLayout.resolve(
                 canonical_host_paths=environment_adapter.preserves_host_paths,
                 project_roots=composition.project_roots,
+                device_bindings=tuple(
+                    (item.selection.alias, item.selection.working_directory)
+                    for item in composition.environment_bindings
+                ),
                 user_skills_root=self._user_skills_root,
                 content_plugins=tuple(
                     (item.plugin_id, item.path, item.skills_path) for item in composition.content_plugins

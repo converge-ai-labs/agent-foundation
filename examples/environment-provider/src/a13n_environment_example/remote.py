@@ -26,23 +26,34 @@ from websockets.typing import Subprotocol
 class RemoteExampleResult:
     provider_key: str
     text: str
-    same_generation: bool
+    independent_sessions: bool
     state: EnvironmentState
 
 
-async def use_remote[R](
+async def use_remote[R: HttpEnvdProviderRuntime | WebSocketEnvdProviderRuntime](
     provider: EnvironmentProviderDefinition[Any, Any, RemoteEnvdEnvironmentConfiguration, R],
     runtime: R,
     *,
-    daemon_environment_id: str,
+    device_id: str,
 ) -> RemoteExampleResult:
     """Two independent Runs share files, not their process-local Environment adapter."""
     state = EnvironmentState(
         provider_key=provider.type,
         state_version="1",
-        state={"daemon_environment_id": daemon_environment_id},
+        state={"device_id": device_id},
     )
-    configuration = RemoteEnvdEnvironmentConfiguration(required_methods=("file.read_text", "file.write_text"))
+    if isinstance(runtime, HttpEnvdProviderRuntime):
+        device = await runtime.describe(expected_device_id=device_id)
+    else:
+        device = await runtime.connections.describe(
+            expected_device_id=device_id, timeout=runtime.configuration.connection_timeout
+        )
+    # Discovery opens no Session. Capture an explicit Device cwd for both Runs.
+    cwd = device.default_working_directory
+    path = f"{cwd.rstrip('/')}/provider-example.txt"
+    configuration = RemoteEnvdEnvironmentConfiguration(
+        working_directory=cwd, required_methods=("file.read_text", "file.write_text")
+    )
     generations: list[str] = []
     text = ""
     for index in range(2):
@@ -58,26 +69,26 @@ async def use_remote[R](
             files = environment.operations.files
             assert files is not None
             if index == 0:
-                await files.write_text("/provider-example.txt", "hello from remote envd\n", mode="upsert")
-            text = (await files.read_text("/provider-example.txt")).text
+                await files.write_text(path, "hello from remote envd\n", mode="upsert")
+            text = (await files.read_text(path)).text
             generations.append(environment.descriptor.generation)
         finally:
             current = environment.dump_state()
             assert current is not None
             state = current  # Persist this under your Host's authority, not in the Provider.
             await environment.close()  # Does not stop the remote daemon.
-    return RemoteExampleResult(provider.type, text, generations[0] == generations[1], state)
+    return RemoteExampleResult(provider.type, text, generations[0] != generations[1], state)
 
 
-async def run_http(endpoint: str, token: SecretStr, daemon_environment_id: str) -> RemoteExampleResult:
-    runtime = HttpEnvdProviderRuntime(
+async def run_http(endpoint: str, token: SecretStr, device_id: str) -> RemoteExampleResult:
+    async with HttpEnvdProviderRuntime(
         configuration=HttpEnvdConnectionConfiguration(endpoint=endpoint),
         credential=HttpEnvdCredential(token=token),
-    )
-    return await use_remote(HTTP_ENVD, runtime, daemon_environment_id=daemon_environment_id)
+    ) as runtime:
+        return await use_remote(HTTP_ENVD, runtime, device_id=device_id)
 
 
-async def run_websocket(*, token: SecretStr, daemon_environment_id: str, port: int = 8788) -> RemoteExampleResult:
+async def run_websocket(*, token: SecretStr, device_id: str, port: int = 8788) -> RemoteExampleResult:
     """This listener is example Host code, NOT a library-owned service.
 
     A production Host substitutes its own authentication, routing and lifespan.
@@ -92,7 +103,7 @@ async def run_websocket(*, token: SecretStr, daemon_environment_id: str, port: i
 
         async def handler(connection: ServerConnection) -> None:
             # Identity is selected by trusted Host authentication, not an EIP claim.
-            await connections.attach(daemon_environment_id, connection)
+            await connections.attach(device_id, connection)
 
         async with serve(
             handler,
@@ -106,4 +117,4 @@ async def run_websocket(*, token: SecretStr, daemon_environment_id: str, port: i
             runtime = WebSocketEnvdProviderRuntime(
                 connections, WebSocketEnvdConnectionConfiguration(connection_timeout=60)
             )
-            return await use_remote(WEBSOCKET_ENVD, runtime, daemon_environment_id=daemon_environment_id)
+            return await use_remote(WEBSOCKET_ENVD, runtime, device_id=device_id)

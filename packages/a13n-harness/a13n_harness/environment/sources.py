@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator, Callable, Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from enum import StrEnum
 
 from a13n_harness.identity import AgentInstanceContext
 from a13n_harness.providers.environment.management import Environment
@@ -19,36 +18,7 @@ from .providers import (
     EnvironmentRuntimeMount,
 )
 
-
-class EnvironmentAccess(StrEnum):
-    """User-facing access level for one Environment mount."""
-
-    READ_ONLY = "read_only"
-    READ_WRITE = "read_write"
-    FULL = "full"
-
-    def permission_set(self) -> EnvironmentPermissionSet:
-        if self is EnvironmentAccess.FULL:
-            operations = frozenset(EnvironmentAction)
-        elif self is EnvironmentAccess.READ_WRITE:
-            operations = _READ_WRITE_ACTIONS
-        else:
-            operations = _READ_ONLY_ACTIONS
-        return EnvironmentPermissionSet(operations=operations)
-
-
-_READ_ONLY_ACTIONS = frozenset(
-    {
-        EnvironmentAction.FILE_STAT,
-        EnvironmentAction.FILE_READ_TEXT,
-        EnvironmentAction.FILE_READ_BYTES,
-        EnvironmentAction.FILE_LIST,
-        EnvironmentAction.FILE_QUERY,
-        EnvironmentAction.FILE_SEARCH_TEXT,
-        EnvironmentAction.FILE_COPY_SOURCE,
-    }
-)
-_READ_WRITE_ACTIONS = frozenset(action for action in EnvironmentAction if action.value.startswith("environment.file."))
+_EVERY_ACTION = EnvironmentPermissionSet(operations=frozenset(EnvironmentAction))
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,30 +31,26 @@ class EnvironmentScope:
 
 @dataclass(frozen=True, slots=True)
 class EnvironmentMount:
-    """One already constructed Environment plus Run-local access and path policy."""
+    """One already constructed Environment plus Run-local permission and path policy."""
 
     environment: Environment
-    access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
+    permission_ceiling: EnvironmentPermissionSet = _EVERY_ACTION
     working_directory: str | None = None
     mount_path: str | None = None
+    provider_root: str = "/"
     observer: Callable[[str, EnvironmentScope, BaseException | None], None] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.environment, Environment):
             raise TypeError("EnvironmentMount environment must be an Environment")
-        if not isinstance(self.access, EnvironmentAccess | EnvironmentPermissionSet):
-            raise TypeError("EnvironmentMount access must be an EnvironmentAccess or EnvironmentPermissionSet")
-        if isinstance(self.access, EnvironmentPermissionSet):
-            object.__setattr__(self, "access", self.access.model_copy(deep=True))
+        if not isinstance(self.permission_ceiling, EnvironmentPermissionSet):
+            raise TypeError("EnvironmentMount permission_ceiling must be an EnvironmentPermissionSet")
         if self.working_directory is None:
             object.__setattr__(self, "working_directory", self.environment.descriptor.working_directory)
         validate_working_directory(self.working_directory)
+        validate_working_directory(self.provider_root)
         if self.mount_path is not None:
             parse_mount_path(self.mount_path)
-
-    @property
-    def permissions(self) -> EnvironmentPermissionSet:
-        return self.access.permission_set() if isinstance(self.access, EnvironmentAccess) else self.access
 
 
 type EnvironmentEntry = Environment | EnvironmentMount
@@ -192,9 +158,10 @@ def _normalize_runtime_mount(entry: EnvironmentEntry | EnvironmentRuntimeMount) 
     mount = _normalize_entry(entry)
     return EnvironmentRuntimeMount(
         binding=_EnvironmentAdapterBinding(mount),
-        permission_ceiling=mount.permissions,
+        permission_ceiling=mount.permission_ceiling,
         working_directory=mount.working_directory,
         mount_path=mount.mount_path,
+        provider_root=mount.provider_root,
     )
 
 

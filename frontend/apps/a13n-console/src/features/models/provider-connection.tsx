@@ -6,7 +6,7 @@ import {
   Input,
 } from "a13n-ui";
 import { useTranslation } from "react-i18next";
-import { SchemaFields, withSchemaValues } from "../../shared/schema-fields";
+import { SchemaFields, withSchemaValues } from "../../shared/forms";
 import { ProviderHeaders, type HeaderDraft } from "./provider-headers";
 
 const advancedFields = new Set([

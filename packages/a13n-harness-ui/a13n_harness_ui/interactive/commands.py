@@ -55,6 +55,14 @@ COMMANDS = (
     Command("attach", "Attach a file or image to the current draft.", "path", minimum=1, maximum=1, busy=True),
     Command("paste-image", "Read clipboard images explicitly.", busy=True),
     Command("recover", "Restore an unsent prompt."),
+    Command(
+        "goal",
+        "Work toward a goal with completion audits and bounded continuations.",
+        "task description",
+        minimum=1,
+        maximum=1,
+        raw_tail=True,
+    ),
     Command("status", "Show model, context, environment, and subscription usage.", busy=True),
     Command("ps", "Inspect observed background processes and their last reported status.", busy=True),
     Command(

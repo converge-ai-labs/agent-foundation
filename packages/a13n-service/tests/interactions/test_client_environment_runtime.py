@@ -20,6 +20,8 @@ from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.environments.websocket.admission import OnlineAdmission
 from a13n_service.environments.websocket.connection_host import ClientConnectionHost
 from a13n_service.environments.websocket.coordination import ConnectionCoordination
+from a13n_service.environments.websocket.device_reads import DeviceReadClient
+from a13n_service.environments.websocket.relay_runtime import RelayResponseRuntime
 from a13n_service.environments.websocket.resources import ConnectionResources
 from a13n_service.environments.websocket.service import ClientConnectionService
 from a13n_service.environments.websocket.use_authorization import ClientUseAuthorization
@@ -36,9 +38,10 @@ from tests.environments.websocket.conftest import relay_redis as relay_redis
 from tests.environments.websocket.test_connection_host import EXECUTABLE, POLICY, daemon, online
 from tests.hooks.support import hook_actor
 
-from .test_attempt_execution import _authority
+from .test_attempt_execution import _accept_root, _authority
 from .test_websocket_use_authorization import admitted_use as admitted_use
 from .test_websocket_use_authorization import client_environment as client_environment
+from .test_websocket_use_authorization import client_working_directory as client_working_directory
 from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
@@ -93,13 +96,17 @@ async def client_runtime(admitted_use, native_client, interaction_sessions, rela
     attempt = await prepare_permissions(interaction_sessions, case.run, _authority(case.claim))
     lifecycle = EnvironmentLifecycle(interaction_sessions, case.service.catalog, case.service.protector)
     async with open_redis(RedisServerConfig(url=redis_url, max_connections=1)) as reader:
-        connections = WorkerClientConnections(relay_redis, reader, attempt.worker_id)
-        await connections.prepare()
-        receiving = asyncio.create_task(connections.run())
+        responses = RelayResponseRuntime(relay_redis, reader, attempt.worker_id)
+        await responses.prepare()
+        connections = WorkerClientConnections(relay_redis, responses)
+        receiving = asyncio.create_task(responses.run())
+        renewing = asyncio.create_task(connections.run())
         try:
             yield lifecycle, connections, attempt, workspace, service, target
         finally:
             await connections.close()
+            await renewing
+            await responses.close()
             await receiving
 
 
@@ -120,8 +127,8 @@ async def test_worker_facets_renew_without_database_io_and_fence_lost_attempt(cl
     try:
         files, shell = environment.operations.files, environment.operations.shell
         assert files is not None and shell is not None
-        await files.write_text("/worker.txt", "from Worker", mode="create")
-        assert (await files.read_text("/worker.txt")).text == "from Worker"
+        await files.write_text(str(workspace / "worker.txt"), "from Worker", mode="create")
+        assert (await files.read_text(str(workspace / "worker.txt"))).text == "from Worker"
         operation = asyncio.create_task(
             shell.exec(
                 CommandRequest(
@@ -142,7 +149,7 @@ async def test_worker_facets_renew_without_database_io_and_fence_lost_attempt(cl
         attempt.lease.invalidate()
         assert environment.availability.status == "unavailable"
         with pytest.raises(EnvironmentError) as denied:
-            await files.write_text("/after-fence.txt", "forbidden", mode="create")
+            await files.write_text(str(workspace / "after-fence.txt"), "forbidden", mode="create")
         assert denied.value.code == "environment_unavailable"
         assert not (workspace / "after-fence.txt").exists()
     finally:
@@ -154,9 +161,7 @@ async def test_worker_facets_renew_without_database_io_and_fence_lost_attempt(cl
         assert run.environment_use_started_at is not None
         assert resource.generation == target.generation
         assert resource.operation_id is None
-    async with asyncio.timeout(3):
-        while (await service.observe(target.organization_id, target.environment_id)).value.status != "offline":
-            await asyncio.sleep(0.01)
+    assert (await service.observe(target.organization_id, target.environment_id)).value.status == "online"
 
 
 @pytest.mark.parametrize("admitted_use", [False, True], indirect=True)
@@ -172,7 +177,9 @@ async def test_accepted_addition_prepares_with_its_own_retained_use(client_runti
         actor=hook_actor(),
         run_id=attempt.run_id,
         idempotency_key="live-writer",
-        request=AddEnvironmentMountRequest(name="writer", environment_id=target.environment_id),
+        request=AddEnvironmentMountRequest(
+            name="writer", environment_id=target.environment_id, working_directory=str(workspace)
+        ),
     )
     mount = (await RunMountObservations(interaction_sessions).snapshot(attempt))[0]
     addition = await prepare_run_environment(lifecycle, attempt, mount=mount, client_connections=connections)
@@ -181,17 +188,17 @@ async def test_accepted_addition_prepares_with_its_own_retained_use(client_runti
     await addition.ensure_ready(frozenset({"files"}))
     files = addition.operations.files
     assert files is not None
-    await files.write_text("/from-addition.txt", "shared target", mode="create")
+    await files.write_text(str(workspace / "from-addition.txt"), "shared target", mode="create")
     assert (workspace / "from-addition.txt").read_text() == "shared target"
     if primary is not None:
-        assert primary._client.identity == addition._client.identity
+        assert primary._client.identity != addition._client.identity
         assert EnvironmentAction.FILE_WRITE_TEXT in primary.descriptor.permissions.operations
-        await primary.operations.files.write_text("/from-addition.txt", "shared target", mode="replace")
+        await primary.operations.files.write_text(str(workspace / "from-addition.txt"), "shared target", mode="replace")
         assert (workspace / "from-addition.txt").read_text() == "shared target"
     await addition.close()
     if primary is not None:
         await primary.ensure_ready(frozenset({"files"}))
-        assert (await primary.operations.files.read_text("/from-addition.txt")).text == "shared target"
+        assert (await primary.operations.files.read_text(str(workspace / "from-addition.txt"))).text == "shared target"
         await primary.close()
     async with short_session(interaction_sessions) as session:
         run = await session.get(RunRecord, attempt.run_id)
@@ -216,7 +223,7 @@ async def test_client_takeover_recovers_fresh_use_without_reviving_old_operation
     await environment.ensure_ready(frozenset({"files"}))
     old_files = environment.operations.files
     assert old_files is not None
-    await old_files.write_text("/before.txt", "old connection", mode="create")
+    await old_files.write_text(str(old_workspace / "before.txt"), "old connection", mode="create")
     old_identity = environment._client.identity
     generation = environment.backing_generation
     ticket = await service.issue_ticket(hook_actor(), target.environment_id)
@@ -236,16 +243,62 @@ async def test_client_takeover_recovers_fresh_use_without_reviving_old_operation
             assert environment._client.identity != old_identity
             assert environment._client.identity.connection.connection_id == ticket.connection_id
             with pytest.raises(EnvironmentError) as stale:
-                await old_files.write_text("/stale.txt", "forbidden", mode="create")
+                await old_files.write_text(str(old_workspace / "stale.txt"), "forbidden", mode="create")
             assert stale.value.code == "environment_unavailable"
             await environment.ensure_ready(frozenset({"files"}))
             files = environment.operations.files
             assert files is not None and files is not old_files
-            await files.write_text("/after.txt", "fresh connection", mode="create")
-            assert (new_workspace / "after.txt").read_text() == "fresh connection"
+            await files.write_text(str(old_workspace / "after.txt"), "fresh connection", mode="create")
+            assert (old_workspace / "after.txt").read_text() == "fresh connection"
             assert (old_workspace / "before.txt").read_text() == "old connection"
-            assert not (old_workspace / "after.txt").exists()
+            assert not (new_workspace / "after.txt").exists()
+            # Recovery uses the Run's captured directory, not the new Device default.
+            assert environment.descriptor.working_directory == str(old_workspace)
             assert not (old_workspace / "stale.txt").exists()
             assert not (new_workspace / "stale.txt").exists()
     finally:
         await environment.close()
+
+
+async def test_native_default_directory_is_captured_without_session_or_sql_during_discovery(
+    native_client,
+    client_environment,
+    interaction_sessions,
+    interaction_object_store,
+    relay_redis,
+    redis_url,
+    monkeypatch,
+):
+    service, target, workspace, _ = native_client
+    environment_service, _, environment = client_environment
+    async with open_redis(RedisServerConfig(url=redis_url, max_connections=1)) as reader:
+        responses = RelayResponseRuntime(relay_redis, reader, "accepting-origin")
+        await responses.prepare()
+        environment_service.devices.relay = DeviceReadClient(relay_redis, responses)
+        describe = environment_service.devices.describe
+        observed = []
+
+        async def capture(device):
+            assert interaction_sessions.kw["bind"].sync_engine.pool.checkedout() == 0
+            observed.append(device)
+            return await describe(device)
+
+        monkeypatch.setattr(environment_service.devices, "describe", capture)
+        reading = asyncio.create_task(responses.run())
+        try:
+            _, run, _ = await _accept_root(
+                interaction_sessions,
+                interaction_object_store,
+                environment_id=environment.id,
+                coordination=service.coordination,
+                devices=environment_service.devices,
+            )
+            assert len(observed) == 1
+            async with short_session(interaction_sessions) as database:
+                stored = await database.get(RunRecord, run.id)
+                assert stored.environment_working_directory == str(workspace)
+            connection = await service.observe(target.organization_id, target.environment_id)
+            assert connection.value.status == "online" and not connection.value.uses
+        finally:
+            await responses.close()
+            await reading

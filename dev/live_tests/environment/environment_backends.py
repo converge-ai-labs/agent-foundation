@@ -63,7 +63,12 @@ class BackendTarget:
     async def allocate(self, *, preparation="on_run"):
         journey = self.backend.journey
         if self.backend.kind in REMOTE:
-            body = {"provider_id": self.provider["id"], "configuration": {}, "state": self.state}
+            assert self.state is not None
+            body = {
+                "provider_id": self.provider["id"],
+                "configuration": {},
+                "device_id": self.state["state"]["device_id"],
+            }
         else:
             template = await self.template(preparation=preparation)
             body = {"template_id": template["id"]}
@@ -121,7 +126,7 @@ class EnvironmentBackend:
                 state = {
                     "provider_key": self.kind,
                     "state_version": "1",
-                    "state": {"daemon_environment_id": native_id},
+                    "state": {"device_id": native_id},
                 }
             provider = await self.journey.post(self.journey.base + "/environment-providers", provider_body)
             template_config = {
@@ -172,27 +177,10 @@ class EnvironmentBackend:
         private_json(
             configuration,
             {
-                "root_mount_id": "workspace",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(root),
-                        "writable": True,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": [
-                            "stat",
-                            "read_text",
-                            "write_text",
-                            "open_reader",
-                            "open_writer",
-                            "list",
-                            "find",
-                            "search",
-                            "command_cwd",
-                        ],
-                    }
-                ],
+                "device_id": native_id,
+                "default_working_directory": str(root),
+                "trusted_executable_roots": ["/bin", "/usr/bin"],
+                "limits": {"max_file_bytes": 1024 * 1024},
                 "shell_profiles": [
                     {
                         "profile_id": "default",
@@ -209,11 +197,7 @@ class EnvironmentBackend:
         )
         environment = {
             **self.lab.environment,
-            "A13N_ENVD_ENVIRONMENT_ID": native_id,
             "A13N_ENVD_RUNTIME_DIR": str(runtime),
-            # These daemons represent externally operated targets; local_envd
-            # separately exercises its mandatory native isolation unchanged.
-            "A13N_ENVD_EXECUTION_ISOLATION": "disabled",
         }
         # This selects the test executable; it is not a daemon configuration field.
         environment.pop("A13N_ENVD_TEST_BINARY", None)

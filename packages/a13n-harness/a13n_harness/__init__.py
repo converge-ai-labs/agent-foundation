@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from a13n_harness.context import AgentContext, RunBindings
     from a13n_harness.environment import (
         Environment,
-        EnvironmentAccess,
         EnvironmentEntry,
         EnvironmentMount,
     )
@@ -73,7 +72,6 @@ _EXPORTS = {
     ),
     "a13n_harness.environment": (
         "Environment",
-        "EnvironmentAccess",
         "EnvironmentEntry",
         "EnvironmentMount",
     ),

@@ -6,6 +6,7 @@ export type ResourceKind =
   | "project"
   | "harness_plugin"
   | "environment_profile"
+  | "device"
   | "environment_run_extension"
   | "mcp_server"
   | "subagent";
@@ -16,6 +17,7 @@ export const resourceKinds: {
   prefix: string;
 }[] = [
   { value: "model", label: "Model", directory: "models", prefix: "model" },
+  { value: "device", label: "Device", directory: "devices", prefix: "device" },
   { value: "agent", label: "Agent", directory: "agents", prefix: "agent" },
   {
     value: "project",
@@ -54,6 +56,11 @@ export function template(kind: ResourceKind, id: string): string {
     return `---\nname: ${id.replace(/^subagent-/, "")}\nid: ${id}\ndescription: Describe when to delegate to this subagent.\n---\n\nWrite the subagent instructions here.\n`;
   const fields: Record<Exclude<ResourceKind, "subagent">, object> = {
     model: {},
+    device: {
+      device_id: "",
+      transport: { kind: "http", configuration: { endpoint: "" } },
+      authentication: { kind: "api_key", env: "A13N_DEVICE_TOKEN" },
+    },
     agent: { model: null, instructions: "", capabilities: [], subagents: [] },
     project: { roots: [{ path: "" }], defaults: {} },
     harness_plugin: { plugin_key: "", configuration: {} },

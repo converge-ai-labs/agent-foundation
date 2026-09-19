@@ -18,6 +18,7 @@ from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.models import EnvironmentRecord, EnvironmentTemplateRevisionRecord
 from a13n_service.environments.runtime import prepare_run_environment
 from a13n_service.environments.service import EnvironmentService
+from a13n_service.environments.websocket.admission import OnlineEvidence
 from a13n_service.interactions.control_domain import ThreadRunSubmissionIntent
 from a13n_service.interactions.environment_selection import (
     EnvironmentDefault,
@@ -133,21 +134,30 @@ async def test_switching_defaults_does_not_retarget_retry_or_reuse_template_allo
         thread.default_environment_id = other.id
         later = first.model_copy(update={"id": "run_second1234567890", "environment_id": None})
         selected = await select_run_environment(
-            session, run=later, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.thread
+            session, online=OnlineEvidence({}), run=later, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.thread
         )
         assert selected.environment_id == other.id != first.environment_id
         retry = later.model_copy(update={"retry_of_run_id": first.id})
         selected = await select_run_environment(
-            session, run=retry, workspace_id=WORKSPACE_ID, intent=RetainedRunEnvironment(first.id, first.thread_id)
+            session,
+            online=OnlineEvidence({}),
+            run=retry,
+            workspace_id=WORKSPACE_ID,
+            intent=RetainedRunEnvironment(first.id, first.thread_id),
         )
         assert selected.environment_id == first.environment_id
         assert (
             await select_run_environment(
-                session, run=later, workspace_id=WORKSPACE_ID, intent=ExplicitEnvironment(None)
+                session,
+                online=OnlineEvidence({}),
+                run=later,
+                workspace_id=WORKSPACE_ID,
+                intent=ExplicitEnvironment(None),
             )
         ).environment_id is None
         new = await select_run_environment(
             session,
+            online=OnlineEvidence({}),
             run=later,
             workspace_id=WORKSPACE_ID,
             intent=ExplicitEnvironment(NewEnvironmentSelection(template_id=template.id)),
@@ -155,6 +165,7 @@ async def test_switching_defaults_does_not_retarget_retry_or_reuse_template_allo
         assert new.environment_id not in {first.environment_id, other.id}
         reused = await select_run_environment(
             session,
+            online=OnlineEvidence({}),
             run=later,
             workspace_id=WORKSPACE_ID,
             intent=ExplicitEnvironment(ExistingEnvironmentSelection(environment_id=first.environment_id)),
@@ -201,7 +212,11 @@ async def test_historical_agent_choice_uses_current_template_revision_after_defa
             update={"id": "run_history12345678", "environment_id": None}
         )
         selected = await select_run_environment(
-            session, run=historical_run, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.agent
+            session,
+            online=OnlineEvidence({}),
+            run=historical_run,
+            workspace_id=WORKSPACE_ID,
+            intent=EnvironmentDefault.agent,
         )
         allocated = await session.get(EnvironmentRecord, selected.environment_id)
         assert allocated.template_revision_id == updated_template.id
@@ -211,7 +226,11 @@ async def test_historical_agent_choice_uses_current_template_revision_after_defa
         default_run = historical_run.model_copy(update={"agent_revision_id": replacement.id})
         assert (
             await select_run_environment(
-                session, run=default_run, workspace_id=WORKSPACE_ID, intent=EnvironmentDefault.agent
+                session,
+                online=OnlineEvidence({}),
+                run=default_run,
+                workspace_id=WORKSPACE_ID,
+                intent=EnvironmentDefault.agent,
             )
         ).environment_id is None
 

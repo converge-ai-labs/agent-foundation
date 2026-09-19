@@ -1,9 +1,16 @@
+import {
+  CheckIcon,
+  ChatCircleDotsIcon,
+  GitBranchIcon,
+} from "@phosphor-icons/react";
 import { Button, FormField, Input } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
+import { DirectoryEmpty, DirectoryList } from "../../shared/dialogs";
+import { DirectoryRow } from "../../shared/dialogs";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import styles from "./connect.module.css";
 
@@ -100,29 +107,35 @@ export function ConversationPicker({
                     disabled={disabled}
                   />
                 </FormField>
-                <ul className={styles.candidates}>
+                <DirectoryList>
                   {items?.map((item) => (
-                    <li key={item.id}>
-                      <Button
-                        type="button"
-                        variant={value === item.id ? "secondary" : "ghost"}
-                        disabled={disabled}
-                        aria-pressed={value === item.id}
-                        onClick={() => onChange(item.id)}
-                      >
-                        <span>{item.name}</span>
-                        <code>{item.id}</code>
-                      </Button>
-                    </li>
+                    <DirectoryRow
+                      key={item.id}
+                      icon={
+                        account.provider_key === "github" ? (
+                          <GitBranchIcon aria-hidden="true" size={18} />
+                        ) : (
+                          <ChatCircleDotsIcon aria-hidden="true" size={18} />
+                        )
+                      }
+                      name={item.name}
+                      detail={item.id}
+                      meta={
+                        value === item.id ? (
+                          <CheckIcon aria-hidden="true" size={14} />
+                        ) : undefined
+                      }
+                      onClick={() => onChange(item.id)}
+                    />
                   ))}
-                </ul>
-                {items?.length === 0 && (
-                  <p>
-                    {t(
-                      "No matching conversations on this page. You can still enter an ID above.",
-                    )}
-                  </p>
-                )}
+                  {items?.length === 0 && (
+                    <DirectoryEmpty>
+                      {t(
+                        "No matching conversations on this page. You can still enter an ID above.",
+                      )}
+                    </DirectoryEmpty>
+                  )}
+                </DirectoryList>
               </>
             )
           )}

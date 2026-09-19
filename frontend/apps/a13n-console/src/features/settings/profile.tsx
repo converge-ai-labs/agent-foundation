@@ -1,19 +1,18 @@
-import { Button, Input } from "a13n-ui";
-
-import { SettingsRow, SettingsSection } from "a13n-ui";
+import { Input, SettingsRow, SettingsSection } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useId, useState, type FormEvent } from "react";
+import { useId, useState, type FormEvent, type ReactNode } from "react";
 
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router";
-import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/image-picker";
-import { ResourceKeyField } from "../../shared/resource-key";
+import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/forms";
+import { ResourceKeyField } from "../../shared/identity";
 import { useClient, type IdentityData } from "../../auth/context";
 import { UserAvatar } from "../../layout/avatar";
 import { representation, type Schema } from "../../shared/api";
-import { CopyableId } from "../../shared/copy";
+import { CopyableId } from "../../shared/identity";
 import { ErrorNotice, Loading } from "../../shared/feedback";
+import { SaveBar } from "../../shared/page";
 import styles from "./settings.module.css";
 
 type ProfileRepresentation = {
@@ -26,9 +25,12 @@ export type ProfileTarget =
 export function Profile({
   target,
   editable = true,
+  danger,
 }: {
   target: ProfileTarget;
   editable?: boolean;
+  /** Irreversible actions for this resource, shown in their own group. */
+  danger?: ReactNode;
 }) {
   const client = useClient();
   const [generation, setGeneration] = useState(0);
@@ -69,6 +71,7 @@ export function Profile({
       resource={query.data}
       target={target}
       editable={editable}
+      danger={danger}
       reload={async () => {
         await query.refetch();
         setGeneration((value) => value + 1);
@@ -80,11 +83,13 @@ function ProfileForm({
   resource,
   target,
   editable,
+  danger,
   reload,
 }: {
   resource: ProfileRepresentation;
   target: ProfileTarget;
   editable: boolean;
+  danger?: ReactNode;
   reload: () => Promise<void>;
 }) {
   const { t } = useTranslation(),
@@ -233,6 +238,8 @@ function ProfileForm({
   });
   const nameId = useId();
   const pending = save.isPending || image.isPending;
+  const keyChanged = "key" in current.value && key !== current.value.key;
+  const dirty = name !== current.value.name || keyChanged;
   const nameLabel = t(
     target.kind === "personal"
       ? "Display name"
@@ -242,7 +249,7 @@ function ProfileForm({
   );
   return (
     <form
-      className={styles.profile}
+      className={styles.sections}
       onSubmit={(event: FormEvent) => {
         event.preventDefault();
         save.mutate();
@@ -309,31 +316,38 @@ function ProfileForm({
         error={save.error ?? image.error}
         retry={() => void reload()}
       />
-      {editable &&
-        (name !== current.value.name ||
-          ("key" in current.value && key !== current.value.key)) && (
-          <div className={styles.saveRow}>
-            <Button
-              variant="outline"
-              disabled={pending}
-              onClick={() => {
-                setName(current.value.name);
-                if ("key" in current.value) setKey(current.value.key);
-              }}
-              type="button"
-            >
-              {t("Cancel")}
-            </Button>
-            <Button
-              type="submit"
-              variant="default"
-              disabled={pending || !name.trim()}
-              loading={save.isPending}
-            >
-              {t("Save changes")}
-            </Button>
-          </div>
-        )}
+      {danger && (
+        <SettingsSection
+          title={t("Danger zone")}
+          description={t("These actions cannot be undone.")}
+        >
+          <SettingsRow
+            label={t("Delete this workspace")}
+            description={t(
+              "Agents, sessions, and credentials in this workspace are removed.",
+            )}
+          >
+            {danger}
+          </SettingsRow>
+        </SettingsSection>
+      )}
+      {editable && dirty && (
+        <SaveBar
+          title={t("Unsaved changes")}
+          consequence={
+            keyChanged
+              ? t("Saving changes this page's address.")
+              : t("Saving updates the name everyone sees.")
+          }
+          onDiscard={() => {
+            setName(current.value.name);
+            if ("key" in current.value) setKey(current.value.key);
+          }}
+          saveLabel={t("Save changes")}
+          pending={save.isPending}
+          disabled={pending || !name.trim()}
+        />
+      )}
     </form>
   );
 }

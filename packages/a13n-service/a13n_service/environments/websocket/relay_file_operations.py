@@ -68,7 +68,7 @@ class RelayFileOperations:
                     pending,
                     RelayCredit(
                         request_id=pending.request.request_id,
-                        use=pending.request.use,
+                        scope=pending.request.scope,
                         transfer=TransferPosition(
                             transfer_id=chunk.position.transfer_id,
                             sequence=chunk.position.sequence + 1,
@@ -94,7 +94,7 @@ class RelayFileOperations:
                         pending,
                         RelayChunk(
                             request_id=pending.request.request_id,
-                            use=pending.request.use,
+                            scope=pending.request.scope,
                             transfer=window.sent(len(chunk)),
                             data=base64.b64encode(chunk).decode(),
                         ),
@@ -103,7 +103,7 @@ class RelayFileOperations:
                 pending,
                 RelayFinish(
                     request_id=pending.request.request_id,
-                    use=pending.request.use,
+                    scope=pending.request.scope,
                     transfer=pending.finish_upload(),
                 ),
             )

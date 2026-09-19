@@ -16,6 +16,7 @@ from ..errors import EnvironmentProviderOutcomeCertainty as Certainty
 from ..management import Environment
 from ..models import (
     ENVIRONMENT_ACTION_DISPATCH,
+    FILE_ACTIONS,
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
@@ -35,19 +36,7 @@ from .errors import failure
 def descriptor(
     config: CommandConfiguration, identity: str | None = None, *, incarnation: str | None = None
 ) -> EnvironmentDescriptor:
-    actions = {action for action in EnvironmentAction if action.value.startswith("environment.file.")}
-    if config.read_only:
-        actions &= {
-            EnvironmentAction.FILE_STAT,
-            EnvironmentAction.FILE_READ_TEXT,
-            EnvironmentAction.FILE_READ_BYTES,
-            EnvironmentAction.FILE_LIST,
-            EnvironmentAction.FILE_QUERY,
-            EnvironmentAction.FILE_SEARCH_TEXT,
-            EnvironmentAction.FILE_COPY_SOURCE,
-        }
-    else:
-        actions.add(EnvironmentAction.SHELL_EXEC)
+    actions = FILE_ACTIONS | {EnvironmentAction.SHELL_EXEC}
     generation = (
         "generation-" + hashlib.sha256((incarnation or identity).encode()).hexdigest()[:24]
         if identity
@@ -58,7 +47,7 @@ def descriptor(
         backing_identity=identity,
         operation_families=frozenset(ENVIRONMENT_ACTION_DISPATCH[a].family for a in actions),
         permissions=EnvironmentPermissionSet(operations=frozenset(actions)),
-        mounts=(EnvironmentMountDescriptor(name="root", path="/", read_only=config.read_only),),
+        mounts=(EnvironmentMountDescriptor(name="root", path="/"),),
         limits={"max_value_bytes": config.max_file_bytes, "max_output_bytes": config.max_output_bytes},
     )
 
@@ -136,7 +125,7 @@ class NativeEnvironment[C: CommandConfiguration, S: TargetState](Environment):
         self.commands = NativeCommands(execute, self.config, self.descriptor.generation, mount_id)
         files = GuestFiles(self.commands)
         await files.stat("/")
-        self._operations = EnvironmentOperations(files=files, shell=None if self.config.read_only else self.commands)
+        self._operations = EnvironmentOperations(files=files, shell=self.commands)
         self._availability = EnvironmentAvailability(
             status="available", ready_families=self.descriptor.operation_families
         )

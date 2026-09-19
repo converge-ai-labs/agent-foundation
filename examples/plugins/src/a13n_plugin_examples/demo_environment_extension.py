@@ -62,10 +62,7 @@ async def _run_extension_demo(
     from a13n_plugin_examples.environment import WORKSPACE_ENVIRONMENT as provider
 
     configuration = provider.validate_environment(
-        {
-            "root": str(workspace_root),
-            "read_only": False,
-        },
+        {"root": str(workspace_root)},
     )
     environment = provider.construct(
         environment_id="extension-workspace",
@@ -98,7 +95,7 @@ async def _run_extension_demo(
         mounts={
             "workspace": EnvironmentMount(
                 environment=environment,
-                access=EnvironmentPermissionSet(
+                permission_ceiling=EnvironmentPermissionSet(
                     operations=frozenset(
                         {
                             EnvironmentAction.FILE_READ_TEXT,

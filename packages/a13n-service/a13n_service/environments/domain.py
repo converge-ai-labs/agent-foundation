@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from enum import StrEnum
 from typing import Annotated, Literal, get_args
 
+from a13n_envd_client.eip.v1.models import AbsoluteEIPPath
 from a13n_harness.providers.environment.definition import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import (
@@ -134,6 +135,7 @@ class Environment(DomainModel):
     provider_id: ObjectId
     template_revision_id: ObjectId | None
     ownership: Literal["managed", "external"]
+    device_id: str | None = None
     generation: int
     status: EnvironmentStatus
     retention_condition: Literal["active", "idle"]
@@ -150,6 +152,7 @@ class EnvironmentDetail(Environment):
 
 class ExistingEnvironmentSelection(DomainModel):
     environment_id: ObjectId
+    working_directory: AbsoluteEIPPath | None = None
 
 
 class NewEnvironmentSelection(DomainModel):
@@ -208,6 +211,9 @@ class RegisterEnvironmentRequest(EnvironmentConfiguration):
     provider_id: ObjectId
     name: EnvironmentName | None = None
     state: EnvironmentState | None = None
+    device_id: Annotated[str, StringConstraints(min_length=1, max_length=128, pattern=r"^[^\s\x00-\x1f]+$")] | None = (
+        None
+    )
     labels: Labels = Field(default_factory=dict)
 
 

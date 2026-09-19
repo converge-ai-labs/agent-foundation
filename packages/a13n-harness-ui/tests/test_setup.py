@@ -418,16 +418,17 @@ async def test_sandbox_preflight_uses_production_denied_network_and_does_not_dow
     async def resolve() -> Path:
         return tmp_path / "envd"
 
-    async def probe(executable, configuration):
-        observed.append((executable, configuration.execution_network.value))
+    async def probe(executable, project_path, *, protected_roots, owned_probe_root):
+        assert protected_roots == () and owned_probe_root is None
+        observed.append((executable, project_path))
         raise EnvironmentError("probe failed", code="provider_unavailable")
 
     monkeypatch.setattr(setup, "local_sandbox_supported", lambda: True)
-    monkeypatch.setattr(setup, "validate_local_envd_runtime", probe)
+    monkeypatch.setattr(setup, "validate_sandbox_runtime", probe)
     result = await setup.preflight_environment("environment-sandbox", tmp_path, resolve_executable=resolve)
     assert not result.ready
     assert result.profile_id == "environment-sandbox"
-    assert observed == [(tmp_path / "envd", "deny")]
+    assert observed == [(tmp_path / "envd", tmp_path)]
     assert any("Full Control" in instruction for instruction in result.instructions)
 
 
@@ -562,7 +563,7 @@ async def test_supported_sandbox_readiness_requires_production_probe(
     resolve = AsyncMock(return_value=executable)
     probe = AsyncMock(side_effect=OSError("required execution isolation is not implemented for this platform"))
     monkeypatch.setattr(setup, "local_sandbox_supported", lambda: True)
-    monkeypatch.setattr(setup, "validate_local_envd_runtime", probe)
+    monkeypatch.setattr(setup, "validate_sandbox_runtime", probe)
     result = await setup.preflight_environment("environment-sandbox", tmp_path, resolve_executable=resolve)
     resolve.assert_awaited_once()
     probe.assert_awaited_once()
@@ -838,7 +839,7 @@ async def test_changed_api_key_model_gets_new_resource_without_rewriting_shared_
 
 
 @pytest.mark.anyio
-async def test_windows_sandbox_shell_recipe_stays_in_eip_configuration(
+async def test_sandbox_adapter_selects_only_the_session_directory(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from dataclasses import replace
@@ -851,8 +852,6 @@ async def test_windows_sandbox_shell_recipe_stays_in_eip_configuration(
     create = Mock()
     # Definitions are immutable: observe construction through a replaced definition.
     provider = replace(LOCAL_ENVD, construct=create)
-    monkeypatch.setattr(adapters.sys, "platform", "win32")
-    monkeypatch.setattr(adapters, "_host_shell", lambda: tmp_path / "pwsh.exe")
     profile = ResolvedEnvironmentProfile(
         profile_id="environment-sandbox",
         behavior_digest="a" * 64,
@@ -863,10 +862,8 @@ async def test_windows_sandbox_shell_recipe_stays_in_eip_configuration(
         profile=profile, root=tmp_path, state=None, provider=provider, runtime=None
     )
     configuration = create.call_args.kwargs["configuration"]
-    shell = configuration.shell_profiles[0]
-    assert shell.fixed_arguments == ("-NoLogo", "-NoProfile", "-NonInteractive", "-OutputFormat", "Text", "-Command")
-    assert not shell.allow_login
-    assert configuration.execution_network.value == "deny"
+    assert configuration.working_directory == tmp_path.as_posix()
+    assert set(configuration.model_dump()) == {"working_directory", "required_methods"}
 
 
 @pytest.mark.anyio

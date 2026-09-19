@@ -30,6 +30,7 @@ from a13n_service.environments.capacity import CapacityLimits
 from a13n_service.environments.image_jobs import DockerConnectivityProbe, DockerImageTestWorker
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.maintenance import EnvironmentMaintenanceLoop
+from a13n_service.environments.websocket.worker_connections import WorkerClientConnections
 from a13n_service.gateway.agui_replay import HostedAguiReplayStore
 from a13n_service.gateway.hosted_agui import HostedAguiTerminalProjector
 from a13n_service.hooks import InlineHookValidator
@@ -51,7 +52,6 @@ from a13n_service.run_stream.display_consumer import DisplayConsumerPolicy, RunD
 from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
 
-from .client_environments import build_worker_client_connections
 from .connectivity_clients import build_mcp_clients, connectivity_http_timeout
 
 
@@ -74,8 +74,11 @@ async def build_worker_runtime(
     """Construct the components owned by a Worker-capable role."""
 
     selected_provider_catalogs = provider_catalogs or load_provider_catalogs(())
-    worker_id = new_object_id("wrk")
-    client_connections = await build_worker_client_connections(settings, shared, environment_catalog, stack, worker_id)
+    responses = shared.relay_responses
+    worker_id = responses.instance_id if responses is not None else new_object_id("wrk")
+    client_connections = WorkerClientConnections(shared.storage.redis, responses) if responses is not None else None
+    if client_connections is not None:
+        stack.push_async_callback(client_connections.close)
 
     environments = EnvironmentLifecycle(
         shared.storage.sessions,
@@ -295,7 +298,7 @@ async def build_worker_runtime(
     if client_connections is not None:
         background_tasks.append(
             BackgroundTask(
-                "Client Environment responses and use leases",
+                "Client Environment use leases",
                 client_connections.run,
                 client_connections.is_closed,
                 client_connections.close,

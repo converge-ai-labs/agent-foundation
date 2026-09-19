@@ -23,7 +23,6 @@ from a13n_envd_client.eip.v1 import (
 )
 from a13n_envd_client.eip.v1.models import (
     CommandEnvironment,
-    CommandNetwork,
     ContentDigest,
     EIPCallContext,
     EIPError,
@@ -62,9 +61,10 @@ def valid_eip_limits() -> dict[str, int]:
         "max_operation_duration_ms": 1,
         "max_output_preview_bytes": 1,
         "max_output_bytes_per_stream": 1,
-        "max_transfer_frame_bytes": 25,
+        "max_transfer_frame_bytes": 26,
         "max_concurrent_file_transfers": 1,
         "max_file_transfer_bytes": 1,
+        "max_file_bytes": 1,
     }
 
 
@@ -89,15 +89,23 @@ MODEL_TYPES: dict[str, type[BaseModel]] = {
 def test_generated_surface_covers_eip_v1() -> None:
     assert EIP_PROTOCOL_VERSION == "0.1"
     assert EIP_PROTO_PACKAGE == "a13n.agent_envd.eip.v1"
-    assert len(METHODS) == 36
+    assert len(METHODS) == 41
     assert len(set(METHODS)) == len(METHODS)
     assert all(method.kind == "request_response" for method in METHODS.values())
     assert all(method.name == name for name, method in METHODS.items())
     assert all(method.introduced == "0.1" for method in METHODS.values())
     assert EIP_ERROR_CODES[ErrorType.INTEGRITY_MISMATCH] == -32061
-    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 19
+    assert sum(method.replay_class == "active_only" for method in METHODS.values()) == 18
     assert sum(method.replay_class == "terminal_evidence" for method in METHODS.values()) == 16
-    assert [method.name for method in METHODS.values() if method.replay_class == "ledger_external"] == ["initialize"]
+    assert {method.name for method in METHODS.values() if method.replay_class == "ledger_external"} == {
+        "initialize",
+        "device.describe",
+        "directory.list",
+        "session.open",
+        "session.attach",
+        "session.keepalive",
+        "session.close",
+    }
     transfer_methods = [method for method in METHODS.values() if method.transfer_action is not None]
     assert len(transfer_methods) == 5
     assert all(method.transfer_direction is not None for method in transfer_methods)
@@ -106,7 +114,7 @@ def test_generated_surface_covers_eip_v1() -> None:
 def test_shared_golden_values_round_trip_canonically() -> None:
     fixture = json.loads(GOLDEN_PATH.read_text(encoding="utf-8"))
     initialize = next(case for case in fixture["cases"] if case["type"] == "InitializeParams")
-    assert initialize["value"]["supported_protocol_versions"] == [EIP_PROTOCOL_VERSION]
+    assert initialize["value"]["supported_protocol_versions"] == ["0.1"]
     for case in fixture["cases"]:
         model_type = MODEL_TYPES[case["type"]]
         encoded_fixture = json.dumps(case["value"], separators=(",", ":"), sort_keys=True)
@@ -121,6 +129,7 @@ def test_generated_data_frame_codec_matches_shared_golden_frames() -> None:
     for case in fixture["cases"]:
         frame = DataFrame(
             kind=DataFrameKind[case["kind"].upper()],
+            session_id=case["session_id"],
             handle=case["handle"],
             offset=case["offset"],
             payload=bytes.fromhex(case["payload_hex"]),
@@ -133,7 +142,7 @@ def test_generated_data_frame_codec_matches_shared_golden_frames() -> None:
 
 def test_generated_data_frame_codec_rejects_structural_violations() -> None:
     valid = encode_data_frame(
-        DataFrame(kind=DataFrameKind.ATTACH, handle="reader-1"),
+        DataFrame(session_id="ses-test", kind=DataFrameKind.ATTACH, handle="reader-1"),
         max_frame_bytes=1024,
     )
     for index, value in ((0, ord("X")), (4, 2), (5, 99), (10, 1), (7, 1)):
@@ -149,10 +158,10 @@ def test_generated_data_frame_codec_rejects_structural_violations() -> None:
         decode_data_frame(valid, max_frame_bytes=len(valid) - 1)
 
     invalid_frames = (
-        DataFrame(kind=DataFrameKind.END, handle="reader-1", offset=1, payload=b"x"),
-        DataFrame(kind=DataFrameKind.RESET, handle="reader-1", offset=1),
-        DataFrame(kind=DataFrameKind.ATTACH, handle=""),
-        DataFrame(kind=DataFrameKind.CHUNK, handle="reader-1", offset=2**64 - 1, payload=b"x"),
+        DataFrame(session_id="ses-test", kind=DataFrameKind.END, handle="reader-1", offset=1, payload=b"x"),
+        DataFrame(session_id="ses-test", kind=DataFrameKind.RESET, handle="reader-1", offset=1),
+        DataFrame(session_id="ses-test", kind=DataFrameKind.ATTACH, handle=""),
+        DataFrame(session_id="ses-test", kind=DataFrameKind.CHUNK, handle="reader-1", offset=2**64 - 1, payload=b"x"),
     )
     for frame in invalid_frames:
         with pytest.raises(ValueError):
@@ -176,16 +185,14 @@ def test_explicit_wire_defaults_are_applied_but_omitted_canonically() -> None:
                     "executable_spec": {"kind": "name", "name": "true"},
                     "arguments": [],
                 },
-                "cwd": {"mount_id": "workspace", "path": "/repo"},
+                "cwd": {"path": "/repo"},
                 "environment": {"set": {}, "unset": []},
-                "network": "configured",
                 "limits": {},
                 "keep_stdin_open": False,
             },
         }
     )
 
-    assert params.request.network is CommandNetwork.CONFIGURED
     assert params.request.environment.set == {}
     assert params.request.environment.unset == ()
     assert params.request.limits.wall_time_ms is None
@@ -194,7 +201,6 @@ def test_explicit_wire_defaults_are_applied_but_omitted_canonically() -> None:
         "executable_spec": {"kind": "name", "name": "true"},
         "kind": "argv",
     }
-    assert "network" not in encoded_request
     assert "environment" not in encoded_request
     assert "limits" not in encoded_request
     assert "keep_stdin_open" not in encoded_request
@@ -269,13 +275,13 @@ def test_jsonrpc_envelope_ignores_extensions_but_reserves_eip_namespace() -> Non
 
 
 def test_decoder_rejects_duplicate_and_unknown_authority_fields() -> None:
-    payload = '{"context":{"operation_id":"one","operation_id":"two"},"path":{"mount_id":"workspace","path":"/repo"}}'
+    payload = '{"context":{"operation_id":"one","operation_id":"two"},"path":{"path":"/repo"}}'
     with pytest.raises(ValueError, match="duplicate JSON field"):
         decode_model(payload, FileStatParams)
 
     with pytest.raises(ValidationError, match="extra_forbidden"):
         decode_model(
-            '{"context":{"operation_id":"one","principal":"caller"},"path":{"mount_id":"workspace","path":"/repo"}}',
+            '{"context":{"operation_id":"one","principal":"caller"},"path":{"path":"/repo"}}',
             FileStatParams,
         )
 
@@ -334,9 +340,7 @@ def test_operation_ids_are_bounded_consistently() -> None:
 
 def test_eip_profile_rejects_noncanonical_paths_and_base64() -> None:
     with pytest.raises(ValidationError):
-        FileStatParams.model_validate(
-            {"context": {"operation_id": "op"}, "path": {"mount_id": "workspace", "path": "/repo/../secret"}}
-        )
+        FileStatParams.model_validate({"context": {"operation_id": "op"}, "path": {"path": "/repo/../secret"}})
     with pytest.raises(ValidationError):
         EncodedBytes(encoding="base64", data="aGVsbG8=")
     with pytest.raises(ValidationError):

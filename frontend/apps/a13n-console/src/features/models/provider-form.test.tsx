@@ -287,6 +287,7 @@ it("renders a custom conditional credential with nested secrets and a numeric va
   const user = userEvent.setup();
   await user.click(screen.getByRole("combobox", { name: "Access" }));
   await user.click(await screen.findByRole("option", { name: "private" }));
+  await user.click(screen.getByRole("button", { name: "Replace" }));
   expect(screen.getByLabelText("Token").getAttribute("type")).toBe("password");
   expect(screen.getByLabelText("Revision").getAttribute("type")).toBe("number");
   await user.type(screen.getByLabelText("Token"), "nested-secret");
@@ -300,8 +301,10 @@ it("renders a custom conditional credential with nested secrets and a numeric va
   });
 });
 
-it("renders definition-owned custom help and hides unsupported connection probes", () => {
-  mountCustom();
+it("renders definition-owned custom help and hides unsupported connection probes", async () => {
+  mountCustom({ access: "private" });
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Replace" }));
   expect(
     screen
       .getByRole("link", { name: "Configure Acme access" })
@@ -309,9 +312,9 @@ it("renders definition-owned custom help and hides unsupported connection probes
   ).toBe("https://docs.example.com/model-setup");
   expect(screen.queryByRole("button", { name: "Check connection" })).toBeNull();
 });
-it("offers a probe only for a definition with the operation and permits absent help", () => {
+it("offers a probe only for a definition with the operation and permits absent help", async () => {
   mountCustom(
-    {},
+    { access: "private" },
     {
       ...customDefinition,
       supports_connection_probe: true,
@@ -319,6 +322,8 @@ it("offers a probe only for a definition with the operation and permits absent h
       setup_label: null,
     },
   );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Replace" }));
   expect(
     screen.queryByRole("link", { name: "Configure Acme access" }),
   ).toBeNull();

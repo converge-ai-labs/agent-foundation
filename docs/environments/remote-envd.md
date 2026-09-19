@@ -13,10 +13,10 @@ cargo build --locked --package a13n-envd
 cd examples/environment-provider
 uv sync --locked
 
-uv run environment-provider-example remote-envd-demo \
+uv run environment-provider-example remote_envd_demo \
   --transport http --executable ../../target/debug/a13n-envd
 
-uv run environment-provider-example remote-envd-demo \
+uv run environment-provider-example remote_envd_demo \
   --transport websocket --executable ../../target/debug/a13n-envd
 ```
 
@@ -26,17 +26,17 @@ Expected results include:
 
 ```text
 re-entry read: hello from remote envd
-same daemon generation: True
+independent Sessions: True
 provider close preserved remote daemon and workspace
 ```
 
-The demo permits only text file operations, disables command execution, uses loopback and a temporary protected credential. It is a learning setup, not a production sandbox configuration.
+The demo leaves command execution disabled, uses loopback and a temporary credential, and writes under its temporary Device cwd. It is a learning setup, not a production sandbox configuration.
 
 Read the small, copyable [Host integration](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/src/a13n_environment_example/remote.py) separately from the [local demo scaffolding](https://github.com/converge-ai-labs/agent-foundation/blob/main/examples/environment-provider/src/a13n_environment_example/remote_demo.py). Your production application normally needs the former, not the latter.
 
 ## Connect to an existing HTTP daemon
 
-The operator supplies an HTTP(S) origin, the configured `A13N_ENVD_ENVIRONMENT_ID`, and a credential through a protected channel. The origin has no `/eip/control` suffix: the client constructs EIP resource paths.
+The operator supplies an HTTP(S) origin, the configured `A13N_ENVD_DEVICE_ID`, and a credential through a protected channel. The origin has no `/eip/control` suffix: the client constructs EIP resource paths.
 
 ```python
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
@@ -46,10 +46,10 @@ from a13n_harness.providers.environment.models import EnvironmentState
 state = EnvironmentState(
     provider_key=http_envd.type,
     state_version="1",
-    state={"daemon_environment_id": "env-remote-machine"},
+    state={"device_id": "env-remote-machine"},
 )
 environment = await http_envd.create(
-    {},
+    {"working_directory": "/work/project"},
     configuration={"endpoint": "https://envd.example.com"},
     credential={"token": token_from_your_secret_store},
     environment_id="env-my-project",  # Your Host's logical identity.
@@ -63,18 +63,18 @@ result = await executable.run("Inspect the workspace", environment=environment)
 
 `allow_create=False` is required: both remote Providers declare `supports_managed=False` and refuse a managed creation before any external call.
 
-Without Harness, use `enter()`, `ensure_ready()` and `EnvironmentOperations` as shown in `remote.py`. Construction and `enter()` are inert; preparation connects. Always close the adapter in `finally`.
+Without Harness, use `enter()`, `ensure_ready()` and `EnvironmentOperations` as shown in `remote.py`. Construction and `enter()` are inert; preparation connects. Always close the adapter in `finally` and close the shared HTTP runtime during Host shutdown. One runtime can serve many independent adapters.
 
 The example CLI can connect to an existing daemon too:
 
 ```bash
 uv run environment-provider-example http_envd \
   --endpoint https://envd.example.com \
-  --daemon-environment-id env-remote-machine \
+  --device-id env-remote-machine \
   --credential-file /private/envd-token
 ```
 
-This writes `/provider-example.txt` and reads it again after reconnecting. Your daemon must permit `file.write_text` and `file.read_text`. Never supply a credential in a URL or command-line argument.
+This writes `provider-example.txt` under the selected Device cwd and reads it through a fresh Session. Your daemon must permit `file.write_text` and `file.read_text`. Never supply a credential in a URL or command-line argument.
 
 Public network endpoints require verified HTTPS. HTTP is accepted on loopback; a trusted provider-private link needs an explicit `allow_plaintext_private_link=True`. The runtime also accepts an SSL context or CA file through `verify`; disabling TLS verification is rejected.
 
@@ -87,11 +87,11 @@ After authenticating the upgrade and selecting the expected native identity in y
 ```python
 async def authenticated_envd_handler(connection):
     # Resolve this from your authenticated registration, not untrusted EIP input.
-    native_id = trusted_registration.daemon_environment_id
+    native_id = trusted_registration.device_id
     await connections.attach(native_id, connection)
 ```
 
-Await `attach()` for the handler's entire lifetime. The SDK immediately initializes EIP and checks readiness, even before a Run exists. Do not queue an uninitialized connection until the next Run: envd has a finite initialization deadline.
+Await `attach()` for the handler's entire lifetime. The SDK immediately performs the Device handshake with zero Sessions, even before a Run exists. Do not queue an uninitialized connection until the next Run: envd has a finite initialization deadline.
 
 To use one of those connections:
 
@@ -105,12 +105,12 @@ from a13n_harness.providers.environment.remote_envd.websocket import WebSocketEn
 
 (websocket_envd,) = select_builtin_environment_providers(("websocket_envd",))
 environment = await websocket_envd.create(
-    {},
+    {"working_directory": "/work/project"},
     environment_id="env-my-project",
     state=EnvironmentState(
         provider_key=websocket_envd.type,
         state_version="1",
-        state={"daemon_environment_id": "env-remote-machine"},
+        state={"device_id": "env-remote-machine"},
     ),
     allow_create=False,
     runtime=WebSocketEnvdProviderRuntime(
@@ -122,7 +122,7 @@ environment = await websocket_envd.create(
 
 The Host supplies the connection SDK directly as the runtime collaborator, because it owns the accepted connections. An unwired WebSocket Provider stays inert and fails explicitly.
 
-Close `connections` during Host shutdown, or use `async with WebSocketEnvdConnections() as connections`. Each instance has a finite connection capacity, rejects duplicate active daemon connections, and lends one Session exclusively to one Environment. A waiting acquisition has a finite timeout. A concurrent lease fails busy rather than mixing independent Runs.
+Close `connections` during Host shutdown, or use `async with WebSocketEnvdConnections() as connections`. Each instance has a finite connection capacity, rejects duplicate active daemon connections, and shares one Device connection across independent adapter-owned Sessions. A waiting acquisition has a finite timeout. Run completion or cancellation does not close that shared connection.
 
 ### Framework integration
 
@@ -140,8 +140,8 @@ The runnable `run_websocket()` example includes a small loopback Host listener, 
 
 ```bash
 # Start the example Host first; it waits up to 60 seconds for the daemon.
-uv run environment-provider-example websocket-envd \
-  --port 8788 --daemon-environment-id env-remote-machine \
+uv run environment-provider-example websocket_envd \
+  --port 8788 --device-id env-remote-machine \
   --credential-file /private/envd-token
 ```
 
@@ -151,10 +151,10 @@ Configure the daemon to use `reverse_websocket`, the matching credential file, n
 
 - The Host's logical Environment ID and envd's native ID may differ. Initialization validates the native ID; operation references belong to the logical Environment and current generation.
 - Persist only the Provider state envelope. It contains no credential, endpoint, connection, Session or daemon generation.
-- One daemon admits one active initialized EIP Session. You can manage many daemons; you cannot independently attach many Runs to one daemon at once. Schedule conflicting use in your Host. EIP Sessions are not tenant isolation boundaries.
-- Closing an adapter cleans its owned operation resources and its connection, not remote infrastructure. File continuity survives; restarting the daemon invalidates old process/output handles.
-- A lost HTTP client may leave its server Session admitted until daemon idle expiry or operator recovery. Reattachment fails while it is busy. The Provider does not steal that Session or restart the daemon.
-- WebSocket loss requires a new reverse connection and Session. SDK shutdown and waiting cancellation do not provision or destroy targets.
+- One Device admits multiple independent Sessions. Each fresh adapter opens its own Session with the captured cwd and owns its resources. Sessions are not tenant isolation boundaries.
+- Closing an adapter closes its Session, not remote infrastructure or a borrowed connection. Both HTTP and WebSocket Device connections remain Host-owned. File continuity survives; restarting the daemon invalidates native handles.
+- Device info and bounded directory listing require no adapter or Session. Resolve an omitted cwd from Device info before immutable Run acceptance.
+- A lost framed carrier detaches Sessions for disconnect grace. An existing owner can explicitly attach the exact same Session in the same generation; no operation or transfer is replayed. A fresh adapter always opens a new Session.
 - Never replay a possibly dispatched command or mutation merely because the connection dropped. A failed preparation requires a fresh adapter for the next attempt.
 
 The WebSocket SDK is process-local. If the listener and executing worker live in different processes, your Host must route execution to the connection owner or provide an explicit integration. No automatic relay, distributed registry or global connection pool is implied.

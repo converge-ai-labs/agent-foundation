@@ -25,7 +25,7 @@ from a13n_service.environments.websocket.relay_protocol import (
 from a13n_service.environments.websocket.relay_storage import (
     ConnectionRelayStore,
     RelayStoreError,
-    WorkerResponseMailbox,
+    ResponseMailbox,
 )
 from a13n_service.environments.websocket.relay_waiters import RelayResponseDispatcher
 from a13n_service.ids import new_object_id
@@ -36,7 +36,7 @@ from redis.exceptions import TimeoutError as RedisTimeoutError
 
 pytestmark = pytest.mark.anyio
 CONNECTION = ConnectionIdentity("org_test", "env_test", "connection", "epoch", "control")
-USE = UseIdentity(CONNECTION, "use", "run", "attempt", 2**60 + 1, "worker")
+USE = UseIdentity(CONNECTION, "use", "run", "attempt", 2**60 + 1, "worker", "workspace", admission_deadline_ms=1)
 
 
 async def test_startup_probe_verifies_real_backend_and_cleans_its_keys(relay_redis):
@@ -57,12 +57,12 @@ async def test_blocking_reader_cannot_exhaust_request_publication_pool(relay_red
         await commands.client_setname("relay-publication")
         await reader.client_setname("relay-reader")
         owner = ConnectionRelayStore(commands, CONNECTION, reader=reader)
-        await WorkerResponseMailbox(commands, USE.worker_instance_id).prepare()
+        await ResponseMailbox(commands, USE.worker_instance_id).prepare()
         await owner.prepare()
         seconds, micros = await commands.time()
         request = RelayRequest(
             request_id=new_object_id("erq"),
-            use=USE,
+            scope=USE,
             operation="file.stat",
             deadline_ms=seconds * 1000 + micros // 1000 + 10_000,
         )
@@ -86,18 +86,18 @@ def test_terminal_has_one_outcome_and_envelopes_reject_unknown_versions():
     with pytest.raises(ValueError, match="both a result and an error"):
         RelayTerminal(
             request_id=new_object_id("erq"),
-            use=USE,
+            scope=USE,
             result="success",
             error=RelayFailure(code="environment_unknown_outcome", certainty="unknown"),
         )
     with pytest.raises(ValueError):
-        RelayRequest(version=2, request_id=new_object_id("erq"), use=USE, operation="file.stat", deadline_ms=1)
+        RelayRequest(version=2, request_id=new_object_id("erq"), scope=USE, operation="file.stat", deadline_ms=1)
 
 
 @pytest.fixture
 async def stores(relay_redis):
     owner = ConnectionRelayStore(relay_redis, CONNECTION)
-    worker = WorkerResponseMailbox(relay_redis, USE.worker_instance_id)
+    worker = ResponseMailbox(relay_redis, USE.worker_instance_id)
     await worker.prepare()
     await owner.prepare()
     return owner, worker
@@ -108,7 +108,7 @@ async def request_message(relay_redis):
     seconds, micros = await relay_redis.time()
     return RelayRequest(
         request_id=new_object_id("erq"),
-        use=USE,
+        scope=USE,
         operation="file.read_text",
         deadline_ms=seconds * 1000 + micros // 1000 + 50_000,
         payload={"path": "/workspace/file"},
@@ -123,7 +123,7 @@ async def pending(owner, request):
 
 
 def terminal(request, **values):
-    return RelayTerminal(request_id=request.request_id, use=request.use, result={"text": "hello"}, **values)
+    return RelayTerminal(request_id=request.request_id, scope=request.scope, result={"text": "hello"}, **values)
 
 
 async def test_terminal_response_evidence_and_ack_are_atomic(stores, request_message, relay_redis):
@@ -255,7 +255,7 @@ async def test_queued_request_requires_known_pre_dispatch_rejection(stores, requ
     assert error.value.code == "request_not_started"
     rejected = RelayTerminal(
         request_id=request_message.request_id,
-        use=USE,
+        scope=USE,
         error=RelayFailure(code="environment_forbidden", certainty="not_dispatched"),
     )
     assert (await owner.complete(request_message, entry, rejected)).terminal() == rejected
@@ -268,7 +268,7 @@ async def test_chunk_order_and_terminal_offset_are_enforced(stores, request_mess
     transfer_id = new_object_id("etr")
     frame = RelayChunk(
         request_id=request_message.request_id,
-        use=USE,
+        scope=USE,
         transfer=TransferPosition(transfer_id=transfer_id, sequence=0, offset=0),
         data=base64.b64encode(b"hello").decode(),
     )
@@ -295,8 +295,8 @@ async def test_full_bigint_attempt_fence_survives_stream_roundtrip(stores, reque
     owner, _ = stores
     await owner.append(request_message)
     decoded = (await owner.read())[0][1]
-    assert decoded.use.attempt_fence == 2**60 + 1
-    other = request_message.model_copy(update={"use": replace(USE, attempt_fence=2**60 + 2)})
+    assert decoded.scope.attempt_fence == 2**60 + 1
+    other = request_message.model_copy(update={"scope": replace(USE, attempt_fence=2**60 + 2)})
     with pytest.raises(RelayStoreError) as error:
         await owner.append(other)
     assert error.value.code == "request_conflict"
@@ -305,13 +305,13 @@ async def test_full_bigint_attempt_fence_survives_stream_roundtrip(stores, reque
 async def test_response_capacity_reserves_room_for_terminal_frames(relay_redis, request_message):
     limits = RelayLimits(response_frames=2, terminal_reserve=1)
     owner = ConnectionRelayStore(relay_redis, CONNECTION, limits=limits)
-    worker = WorkerResponseMailbox(relay_redis, USE.worker_instance_id, limits=limits)
+    worker = ResponseMailbox(relay_redis, USE.worker_instance_id, limits=limits)
     await worker.prepare()
     await owner.prepare()
     entry = await pending(owner, request_message)
     await owner.start(request_message, entry)
     transfer = TransferPosition(transfer_id=new_object_id("etr"), sequence=0, offset=0)
-    frame = RelayChunk(request_id=request_message.request_id, use=USE, transfer=transfer, data="aA==")
+    frame = RelayChunk(request_id=request_message.request_id, scope=USE, transfer=transfer, data="aA==")
     await owner.chunk(request_message, entry, frame)
     with pytest.raises(RelayStoreError) as error:
         await owner.chunk(
@@ -331,7 +331,7 @@ async def test_response_capacity_reserves_room_for_terminal_frames(relay_redis, 
 async def test_full_operation_ledger_keeps_independent_cancellation_capacity(relay_redis, request_message):
     limits = RelayLimits(retained_requests=17)
     owner = ConnectionRelayStore(relay_redis, CONNECTION, limits=limits)
-    worker = WorkerResponseMailbox(relay_redis, USE.worker_instance_id, limits=limits)
+    worker = ResponseMailbox(relay_redis, USE.worker_instance_id, limits=limits)
     await worker.prepare()
     await owner.prepare()
     await owner.append(request_message)
@@ -352,7 +352,7 @@ async def test_full_operation_ledger_keeps_independent_cancellation_capacity(rel
 async def test_expired_evidence_is_pruned_and_expired_append_is_never_replayed(relay_redis, request_message):
     limits = RelayLimits(evidence_ms=1)
     owner = ConnectionRelayStore(relay_redis, CONNECTION, limits=limits)
-    worker = WorkerResponseMailbox(relay_redis, USE.worker_instance_id, limits=limits)
+    worker = ResponseMailbox(relay_redis, USE.worker_instance_id, limits=limits)
     await worker.prepare()
     await owner.prepare()
     seconds, micros = await relay_redis.time()
@@ -377,7 +377,7 @@ async def test_foreign_connection_and_wrong_consumer_cannot_start_dispatch(store
         await owner.start(request_message, entry)
     assert error.value.code == "request_not_owned"
     foreign = request_message.model_copy(
-        update={"use": replace(USE, connection=replace(CONNECTION, connection_epoch="new"))}
+        update={"scope": replace(USE, connection=replace(CONNECTION, connection_epoch="new"))}
     )
     with pytest.raises(RelayStoreError) as error:
         await owner.append(foreign)
@@ -430,7 +430,7 @@ async def test_upload_input_window_ack_and_finish_preserve_one_terminal(stores, 
     frames = [
         RelayChunk(
             request_id=request.request_id,
-            use=request.use,
+            scope=request.scope,
             data="eA==",
             transfer=TransferPosition(transfer_id=transfer_id, sequence=i, offset=i),
         )
@@ -452,14 +452,14 @@ async def test_upload_input_window_ack_and_finish_preserve_one_terminal(stores, 
     await owner.send_input(request, frames[8])
     for i in range(9):
         position = TransferPosition(transfer_id=transfer_id, sequence=i + 1, offset=i + 1)
-        credit = RelayCredit(request_id=request.request_id, use=request.use, transfer=position)
+        credit = RelayCredit(request_id=request.request_id, scope=request.scope, transfer=position)
         await owner.credit(request, entry, credit)
         await owner.credit(request, entry, credit)
-    result = RelayTerminal(request_id=request.request_id, use=request.use, transfer=position)
+    result = RelayTerminal(request_id=request.request_id, scope=request.scope, transfer=position)
     with pytest.raises(RelayStoreError) as error:
         await owner.complete(request, entry, result)
     assert error.value.code == "transfer_conflict"
-    finish = RelayFinish(request_id=request.request_id, use=request.use, transfer=position)
+    finish = RelayFinish(request_id=request.request_id, scope=request.scope, transfer=position)
     await owner.send_input(request, finish)
     for input_entry, delivery in rows[1:] + await owner.read():
         await owner.acknowledge_input(input_entry, delivery)
@@ -481,7 +481,7 @@ async def test_pruning_parent_also_removes_unconsumed_inputs(stores, request_mes
         request,
         RelayChunk(
             request_id=request.request_id,
-            use=request.use,
+            scope=request.scope,
             data="eA==",
             transfer=TransferPosition(transfer_id=transfer_id, sequence=0, offset=0),
         ),

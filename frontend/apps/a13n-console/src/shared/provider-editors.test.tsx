@@ -133,11 +133,11 @@ it.each(cases)(
     const { connector, type, listPath, detailPath } = setup(kind, surface);
     await screen.findByText("Existing provider");
     await user.click(screen.getByRole("button", { name: "Add provider" }));
-    await user.click(screen.getByRole("combobox", { name: "Provider type" }));
+    // Every category starts creation from the provider catalog.
     expect(screen.queryByPlaceholderText("Search providers…")).toBeNull();
     await user.click(
-      await screen.findByRole("option", {
-        name: connector ? "Composio" : type,
+      await screen.findByRole("button", {
+        name: new RegExp(connector ? "Composio" : type),
       }),
     );
     const nameField = screen.getByRole("textbox", {
@@ -180,12 +180,11 @@ it.each(cases)(
     );
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     await user.click(screen.getByRole("button", { name: "Add provider" }));
-    expect(
-      (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
-    ).toBe("");
-    expect(
-      screen.getByRole("combobox", { name: "Provider type" }).textContent,
-    ).toContain("Select provider type");
+    // The catalog comes back, so the previous draft cannot leak forward.
+    expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
+    await screen.findByRole("button", {
+      name: new RegExp(connector ? "Composio" : type),
+    });
   },
 );
 
@@ -195,18 +194,24 @@ it.each(cases)(
     const user = userEvent.setup();
     const { connector, detailPath, provider } = setup(kind, surface);
     await screen.findByText("Existing provider");
-    expect(screen.queryByRole("columnheader", { name: "Actions" })).toBeNull();
+    // Every provider surface carries the shared row overflow menu.
+    expect(screen.getByRole("columnheader", { name: "Actions" })).toBeTruthy();
     const row = screen.getByRole("row", { name: /Existing provider/ });
     row.focus();
     await user.keyboard("{Enter}");
     const name = await screen.findByRole("textbox", { name: "Name" });
     expect((name as HTMLInputElement).value).toBe(provider.name);
+    // The dialog title names the provider, so its type is the description.
     expect(
       screen.queryByRole("combobox", { name: "Provider type" }),
     ).toBeNull();
-    expect(
-      screen.getByRole("group", { name: "Provider type" }).textContent,
-    ).toContain(connector ? "Composio" : provider.type);
+    expect(screen.queryByRole("group", { name: "Provider type" })).toBeNull();
+    expect(screen.getByRole("dialog").textContent).toContain(
+      connector ? "Composio" : provider.type,
+    );
+    // The saved secret is stated in one row rather than offered as an input.
+    expect(screen.queryByLabelText("api_key")).toBeNull();
+    expect(screen.getByText("Saved")).toBeTruthy();
     expect(http.GET).toHaveBeenCalledWith(detailPath, expect.anything());
     await user.clear(name);
     await user.type(name, "Renamed provider");
@@ -247,6 +252,7 @@ it("saves connector name, credentials and enabled state in one atomic update", a
   const name = await screen.findByRole("textbox", { name: "Name" });
   await user.clear(name);
   await user.type(name, "Renamed");
+  await user.click(screen.getByRole("button", { name: "Replace" }));
   await user.type(screen.getByLabelText("api_key"), "new-project");
   await user.click(screen.getByRole("switch", { name: "Enabled" }));
   expect(http.POST).not.toHaveBeenCalled();
@@ -275,11 +281,15 @@ it("shows deployment providers read-only without a manual creation action", asyn
   await screen.findByText("Existing provider");
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();
   await user.click(screen.getByText("Existing provider"));
-  await screen.findByRole("group", {
-    name: "Name",
-  });
-  expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull();
-  expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
+  // A deployment-managed provider is stated, never edited: no inputs, one way out.
+  const dialog = await screen.findByRole("dialog");
+  expect(dialog.textContent).toContain("Existing provider");
+  expect(screen.queryByRole("textbox")).toBeNull();
+  expect(screen.queryByRole("switch")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
+  expect(dialog.querySelector("[data-a13n-form-actions]")?.textContent).toBe(
+    "Close",
+  );
   expect(http.PATCH).not.toHaveBeenCalled();
 });
 
@@ -304,8 +314,7 @@ it("preserves structured Connector credentials and setup help", async () => {
   });
   await screen.findByText("Existing provider");
   await user.click(screen.getByRole("button", { name: "Add provider" }));
-  await user.click(screen.getByRole("combobox", { name: "Provider type" }));
-  await user.click(await screen.findByRole("option", { name: "Composio" }));
+  await user.click(await screen.findByRole("button", { name: /Composio/ }));
   expect(
     screen
       .getByRole("link", { name: "Create Connector credentials" })

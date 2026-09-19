@@ -30,7 +30,7 @@ it("copies and downloads the same complete saved configuration shown in raw prev
   };
   render(<ExportAgent agent={agent} config={config} version={3} />);
   await user.click(screen.getByRole("button", { name: "Export agent" }));
-  await user.click(screen.getByRole("tab", { name: "Raw" }));
+  await user.click(screen.getByRole("button", { name: "Raw" }));
   const yaml = screen.getByLabelText("Agent YAML").textContent!;
   expect(parseAgentFile(yaml)).toEqual({
     schema_version: 1,

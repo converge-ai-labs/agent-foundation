@@ -25,6 +25,8 @@ from a13n_harness.providers.environment.models import (
     DEFAULT_ENVIRONMENT_CLEANUP_TIMEOUT_SECONDS,
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_DISPATCH,
+    FILE_ACTIONS,
+    FILE_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentChange,
@@ -201,17 +203,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 "operations": cast(JsonValue, operations),
                 "availability": availability,
                 "ready": cast(JsonValue, ready),
-                "read_only": not any(
-                    action.value.startswith(("environment.file.write", "environment.file.patch"))
-                    or action.value
-                    in {
-                        "environment.file.mkdir",
-                        "environment.file.move",
-                        "environment.file.remove",
-                        "environment.file.copy_destination",
-                    }
-                    for action in mount.permission_ceiling.operations
-                ),
+                "read_only": not mount.permission_ceiling.operations & (FILE_ACTIONS - FILE_READ_ACTIONS),
             }
             if reason is not None:
                 projected["reason"] = reason
@@ -527,6 +519,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
             permission_ceiling=mount.permission_ceiling.model_copy(deep=True),
             default_working_directory=mount.working_directory,
             mount_path=mount.mount_path,
+            provider_root=mount.provider_root,
             candidate=candidate,
         )
         mount_id = _new_mount_id()
@@ -648,7 +641,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 )
             return _ResolvedPath(
                 entered=selected,
-                provider_path=provider_path_from_suffix(suffix),
+                provider_path=provider_path_from_suffix(suffix, selected.public.provider_root),
                 mount_path=mount_path,
             )
 
@@ -809,7 +802,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                     "The scoped file path selects another mount.",
                     code="environment_selection_invalid",
                 )
-            provider_path = provider_path_from_suffix(suffix)
+            provider_path = provider_path_from_suffix(suffix, entered.public.provider_root)
         else:
             base = entered.public.default_working_directory or "/"
             if not base.startswith("/") or any(segment in {".", ".."} for segment in base.split("/")):
@@ -872,7 +865,7 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 code="environment_provider_failure",
             )
         try:
-            return mount_path_from_provider_path(mount_path, provider_path)
+            return mount_path_from_provider_path(mount_path, provider_path, entered.public.provider_root)
         except ValueError as exc:
             raise EnvironmentError(
                 "Provider returned an invalid file path.",
@@ -899,7 +892,9 @@ class CompositeBoundEnvironment(BoundEnvironment):
                 selected=selected,
                 backend=entered.operations.files,
                 validate_result=lambda value: _validate_provider_artifacts(entered, value),
-                virtualize_path=lambda provider_path: _virtualize_path(root, provider_path),
+                virtualize_path=lambda provider_path: _virtualize_path(
+                    root, provider_path, entered.public.provider_root
+                ),
             )
 
     def _assert_open(self) -> None:
@@ -1663,6 +1658,7 @@ def _validate_entered(
         permission_ceiling=effective,
         default_working_directory=requested.default_working_directory,
         mount_path=requested.mount_path,
+        provider_root=requested.provider_root,
     )
     return _EnteredMount(
         mount_id=mount_id,
@@ -1925,9 +1921,9 @@ def _normalize_environment_run_extensions(
     return tuple(captured)
 
 
-def _virtualize_path(root: str, provider_path: str) -> str:
+def _virtualize_path(root: str, provider_path: str, provider_root: str) -> str:
     try:
-        return mount_path_from_provider_path(root, provider_path)
+        return mount_path_from_provider_path(root, provider_path, provider_root)
     except ValueError as exc:
         raise EnvironmentError(
             "Provider returned an invalid file path.",
@@ -1950,6 +1946,7 @@ def create_environment_runtime(
                 permission_ceiling=mount.permission_ceiling.model_copy(deep=True),
                 default_working_directory=mount.working_directory,
                 mount_path=mount.mount_path,
+                provider_root=mount.provider_root,
                 candidate=mount.binding,
             )
             for name, mount in normalized.items()

@@ -14,7 +14,6 @@ from a13n_harness import (
     AgentInstanceContext,
     AgentSpec,
     DeferredToolResume,
-    EnvironmentAccess,
     EnvironmentMount,
     HarnessBuilder,
     HarnessEvent,
@@ -35,6 +34,7 @@ from a13n_harness.providers.environment.direct_local.configuration import (
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL, DirectLocalEnvironment
 from a13n_harness.providers.environment.management import Environment
 from a13n_harness.providers.environment.models import (
+    FILE_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentError,
     EnvironmentPermissionSet,
@@ -295,7 +295,10 @@ async def test_runtime_wires_factory_environment_model_and_fresh_bindings(
             environment=MountedHarnessEnvironments(
                 entries={
                     "source": observe_environment_entry(
-                        EnvironmentMount(environment, access=EnvironmentAccess.READ_ONLY), projector
+                        EnvironmentMount(
+                            environment, permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS)
+                        ),
+                        projector,
                     )
                 },
                 default_environment="source",
@@ -603,25 +606,15 @@ async def test_environment_preparation_failure_emits_only_safe_live_projection(
     assert "provider-private-body" not in str(projector.environment_events)
 
 
-@pytest.mark.parametrize(
-    "access",
-    [
-        EnvironmentAccess.READ_ONLY,
-        EnvironmentAccess.READ_WRITE,
-        EnvironmentAccess.FULL,
-        EnvironmentPermissionSet(
-            operations=frozenset(
-                {EnvironmentAction.FILE_READ_TEXT, EnvironmentAction.FILE_WRITE_TEXT, EnvironmentAction.PORT_INSPECT}
-            )
-        ),
-    ],
-    ids=["read-only", "read-write", "full", "exact-permissions"],
-)
-async def test_environment_observations_preserve_access_and_effective_permissions(
+async def test_environment_observations_preserve_ceiling_and_effective_permissions(
     interaction_object_store,
     tmp_path: Path,
-    access: EnvironmentAccess | EnvironmentPermissionSet,
 ) -> None:
+    ceiling = EnvironmentPermissionSet(
+        operations=frozenset(
+            {EnvironmentAction.FILE_READ_TEXT, EnvironmentAction.FILE_WRITE_TEXT, EnvironmentAction.PORT_INSPECT}
+        )
+    )
     instance = _instance()
     state = await _stored_state(interaction_object_store, initial_state())
     environment = _environment(tmp_path / "observed", "observed-workspace")
@@ -649,7 +642,7 @@ async def test_environment_observations_preserve_access_and_effective_permission
             ),
             input=MaterializedHarnessInput(read_input),
             collaborators=HarnessCollaborators(instance=instance),
-            environment=SingleHarnessEnvironment(EnvironmentMount(environment, access=access)),
+            environment=SingleHarnessEnvironment(EnvironmentMount(environment, permission_ceiling=ceiling)),
         ),
         preparation=_preparation(),
     )
@@ -661,16 +654,15 @@ async def test_environment_observations_preserve_access_and_effective_permission
         "environment.adapter.closed",
     )
     started, ready, closed = projector.environment_events
-    assert started.payload["access"] == (
-        access.value
-        if isinstance(access, EnvironmentAccess)
-        else {"operations": ["environment.file.read_text", "environment.file.write_text", "environment.port.inspect"]}
-    )
+    assert started.payload["permission_ceiling"] == [
+        "environment.file.read_text",
+        "environment.file.write_text",
+        "environment.port.inspect",
+    ]
     assert ready.payload["permissions"] == effective_permissions
     assert ready.payload["ready_families"] == ["files"]
     assert ready.payload["availability"] == "available"
-    if isinstance(access, EnvironmentPermissionSet):
-        assert ready.payload["permissions"] == ["environment.file.read_text", "environment.file.write_text"]
+    assert ready.payload["permissions"] == ["environment.file.read_text", "environment.file.write_text"]
     assert closed.payload["status"] == "closed"
     assert not environment.is_entered
     assert str(tmp_path) not in str(projector.environment_events)

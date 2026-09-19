@@ -22,7 +22,6 @@ pytestmark = pytest.mark.anyio
 def files(tmp_path):
     return LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=_DirectLocalFilePolicy(max_value_bytes=4096),
         mount_id="mount",
         generation="generation",
@@ -105,7 +104,7 @@ async def test_foreign_attempt_cannot_execute_on_current_use(relay, monkeypatch,
         append = owner.append
 
         async def forged(message):
-            return await append(message.model_copy(update={"use": replace(USE, attempt_fence=2)}))
+            return await append(message.model_copy(update={"scope": replace(USE, attempt_fence=2)}))
 
         monkeypatch.setattr(owner, "append", forged)
         # The forged response cannot satisfy the original caller's exact tuple.
@@ -147,10 +146,10 @@ async def test_saturated_operations_leave_cancellation_capacity(relay):
             assert error.value.code == "environment_cancelled"
 
 
-async def test_scope_close_publishes_terminal_before_ending_consumer(relay):
+async def test_scope_close_publishes_terminal_without_ending_device_consumer(relay):
     async with relay() as (client, owner, _, task):
         assert await client.call("scope.close") is None
-        await task
+        assert not task.done()
         assert await owner.read(pending=True) == ()
 
 

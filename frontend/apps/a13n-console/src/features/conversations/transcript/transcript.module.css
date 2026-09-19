@@ -1,0 +1,565 @@
+/* Column ----------------------------------------------------------------- */
+.run {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  min-height: 100%;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 8px 24px 0;
+}
+.transcript {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
+  align-content: start;
+  padding-bottom: 16px;
+}
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+/* Run separator ---------------------------------------------------------- */
+.separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding-top: 8px;
+}
+.rule {
+  flex: 1;
+  height: 1px;
+  background: var(--a13n-border-soft);
+}
+.separatorLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.separatorLink {
+  flex: none;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  text-decoration: none;
+}
+.separatorLink:hover {
+  color: var(--a13n-text);
+  text-decoration: underline;
+}
+.earlierRuns {
+  display: flex;
+  justify-content: center;
+}
+
+/* User message ----------------------------------------------------------- */
+.userTurn {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+  min-width: 0;
+}
+.userCaption {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.userMessage {
+  max-width: 80%;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: 16px 16px 6px 16px;
+  background: var(--a13n-surface);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.prose {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.resolutions {
+  display: grid;
+  gap: 10px;
+  font-size: 13px;
+}
+.attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow-subtle);
+  color: var(--a13n-secondary);
+}
+.attachmentCopy {
+  display: grid;
+  min-width: 0;
+}
+.attachmentCopy strong {
+  overflow: hidden;
+  color: var(--a13n-text);
+  font-size: 12px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attachmentCopy small {
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Agent answer ----------------------------------------------------------- */
+.agentTurn {
+  min-width: 0;
+}
+.agentHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+.agentHeading strong {
+  font-weight: 500;
+}
+.agentAvatar {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  border-radius: 6px;
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow-subtle);
+  color: var(--a13n-text);
+  font-size: 10px;
+}
+.agentContent {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding-left: 28px;
+}
+.agentMessage {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.65;
+}
+.messageActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+.agentMessage:hover .messageActions,
+.agentMessage:focus-within .messageActions {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .messageActions {
+    opacity: 1;
+  }
+}
+
+/* Execution rows --------------------------------------------------------- */
+.executionGroup {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.executionRow {
+  min-width: 0;
+}
+.executionTrigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--a13n-radius-row);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.executionTrigger:hover {
+  background: var(--a13n-hover);
+}
+.executionTrigger:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
+}
+.caret {
+  flex: none;
+  color: var(--a13n-secondary);
+  transition: transform 120ms ease;
+}
+.caret[data-expanded] {
+  transform: rotate(90deg);
+}
+.executionIcon {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  border-radius: 8px;
+  background: var(--a13n-elevated);
+  box-shadow: var(--a13n-shadow-subtle);
+  color: var(--a13n-secondary);
+}
+.executionName {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.executionSummary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.executionState {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-left: auto;
+  color: var(--a13n-secondary);
+}
+.executionBody {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 10px 12px 40px;
+}
+.executionBody h4 {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.executionBody pre {
+  background: var(--a13n-elevated);
+  max-height: 320px;
+}
+.reasoningProse {
+  color: var(--a13n-secondary);
+  font-size: 13px;
+  line-height: 1.65;
+}
+.executionNote {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+}
+.workingRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 2px 4px;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+}
+.workingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: pulse 1.8s ease-in-out infinite;
+}
+.spinning {
+  animation: spin 1.5s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .spinning,
+  .workingDot,
+  .caret {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Failure and structured output ------------------------------------------ */
+.failure {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: var(--a13n-radius-group);
+  background: color-mix(in srgb, var(--a13n-danger) 7%, var(--a13n-canvas));
+}
+.failureHeading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--a13n-danger);
+}
+.failure h3 {
+  margin: 0;
+  color: var(--a13n-text);
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.failure p {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.failureActions {
+  display: flex;
+  gap: 8px;
+  padding-top: 2px;
+}
+.structuredOutput,
+.inlineDisclosure {
+  min-width: 0;
+}
+
+/* Pending requests ------------------------------------------------------- */
+.pending {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 16px;
+  border-radius: var(--a13n-radius-group);
+  background: var(--a13n-surface);
+}
+.pending h3 {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 500;
+}
+.pending > p {
+  margin: 0 0 6px;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.pendingForm,
+.pendingFields {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.pendingAction {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-elevated);
+}
+.pendingIdentity {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.pendingIdentity strong {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.pendingIdentity small {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.approvalChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.approvalDetails {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-surface);
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
+.approvalDetails dt {
+  color: var(--a13n-secondary);
+}
+.approvalDetails dd {
+  margin: 0;
+}
+.pendingSwitch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+.pendingFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.continuation {
+  display: grid;
+  gap: 16px;
+}
+
+/* Queue ------------------------------------------------------------------ */
+.queue {
+  min-width: 0;
+}
+.queueBody {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.queueToolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.queueNote {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.queueItem {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: var(--a13n-radius-row);
+  background: var(--a13n-elevated);
+}
+.queueItem header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.queueActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.queueLink {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  justify-self: start;
+}
+
+/* Dock ------------------------------------------------------------------- */
+.dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding: 10px 0 12px;
+  background: linear-gradient(
+    to top,
+    var(--a13n-canvas) 72%,
+    color-mix(in srgb, var(--a13n-canvas) 0%, transparent)
+  );
+}
+.readOnly {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stopButton:hover {
+  background: color-mix(in srgb, var(--a13n-danger) 12%, transparent);
+  color: var(--a13n-danger);
+}
+.jumpToLatest {
+  justify-self: center;
+  z-index: 3;
+  background: var(--a13n-elevated);
+  border-color: transparent;
+  box-shadow: var(--a13n-shadow);
+}
+
+@media (max-width: 680px) {
+  .run {
+    padding-inline: 14px;
+  }
+  .userMessage {
+    max-width: 92%;
+  }
+  .agentContent {
+    padding-left: 0;
+  }
+  .executionName {
+    max-width: 60%;
+  }
+  .executionSummary {
+    display: none;
+  }
+  .executionBody {
+    padding-left: 18px;
+  }
+}

@@ -1,15 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { credentialMode } from "../../shared/provider-authentication";
 import {
   allPages,
   data,
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
-import { memoryProviderApi } from "./providers-api";
+import { credentialMode } from "../../shared/provider-authentication";
+import { memoryProviderApi, type MemoryProviderScope } from "./providers-api";
 
+/**
+ * A provider can serve content only while it is enabled and its declared
+ * authentication is satisfied; a Provider that forbids credentials needs none.
+ */
 export function eligibleMemoryProvider(
   provider: Schema["MemoryProvider"],
   definitions: Schema["MemoryProviderMetadata"][],
@@ -50,19 +54,31 @@ export function useMemoryProviders() {
   return { providers, visible };
 }
 
-export function useMemoryProviderDefinitions() {
+/** The installed Memory definitions one scope can select from. */
+export function useMemoryProviderDefinitions(
+  scope: MemoryProviderScope,
+  enabled = true,
+) {
   const client = useClient();
-  const { workspace, can } = useWorkspace();
-  const canRead = can("memory_provider.read");
   return useQuery({
-    queryKey: ["memory-provider-types", "workspace", workspace.id],
-    enabled: canRead,
+    queryKey: ["memory-provider-types", scope.kind, scope.id],
+    enabled,
     queryFn: ({ signal }) =>
       client.http
         .GET("/api/v1/memory-provider-types", {
           signal,
-          headers: workspaceHeaders(workspace.id),
+          headers:
+            scope.kind === "workspace" ? workspaceHeaders(scope.id) : undefined,
         })
         .then(data),
   });
+}
+
+/** The workspace catalog every agent-facing Memory selector reads. */
+export function useWorkspaceMemoryProviderDefinitions() {
+  const { workspace, can } = useWorkspace();
+  return useMemoryProviderDefinitions(
+    { kind: "workspace", id: workspace.id },
+    can("memory_provider.read"),
+  );
 }

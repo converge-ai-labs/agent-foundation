@@ -1,31 +1,20 @@
-import {
-  useResourceEditorState,
-  useResourceRows,
-} from "../../shared/resource-modal";
-import { ResourceEditorButton } from "../../shared/resource-editor-button";
-import { ResourceIdentity } from "../../shared/collection";
-import { ScopeBadge } from "../../shared/scope-badge";
 import { useQuery } from "@tanstack/react-query";
-import { ModalFrame } from "a13n-ui";
 import { useState } from "react";
-import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import type { Schema } from "../../shared/api";
-import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
-import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { PageActions } from "../../shared/page-actions";
-import styles from "../../shared/shared.module.css";
-import { modelApi, type ModelScope } from "./api";
 import { credentialMode } from "../../shared/provider-authentication";
-import { ProviderForm } from "./provider-form";
-import { ProviderIcon } from "../../shared/provider-icon";
+import { useCursor } from "../../shared/collection";
+import { useResourceEditorState, useResourceRows } from "../../shared/dialogs";
+import { EditProviderDialog, ProviderTable } from "../providers";
+import { AddProvider } from "./add-provider";
+import { modelApi, type ModelScope } from "./api";
 import { useModelProviderDefinitions } from "./provider-definitions";
+import { ProviderForm } from "./provider-form";
 
 export function Providers({ scope }: { scope: ModelScope }) {
   const client = useClient(),
-    { t } = useTranslation(),
-    { can, organization, organizationAdmin } = useAccess(),
+    { organization, organizationAdmin, can } = useAccess(),
     page = useCursor();
   const rows = useResourceRows<Schema["ModelProvider"]>();
   const { selected } = rows;
@@ -37,162 +26,116 @@ export function Providers({ scope }: { scope: ModelScope }) {
   const definitions = useModelProviderDefinitions();
   const manage =
     scope.kind === "organization" ? organizationAdmin : can("models.manage");
+  const add = manage ? <AddProvider scope={scope} /> : undefined;
   return (
-    <div className={styles.stack}>
-      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+    <>
       {selected && (
-        <ProviderEditor
+        <EditProvider
           key={selected.id}
           scope={
             selected.workspace_id
               ? { kind: "workspace", id: selected.workspace_id }
               : { kind: "organization", id: organization.id }
           }
-          providerId={selected.id}
+          provider={selected}
           {...rows.control}
         />
       )}
-      {query.isPending ? (
-        <Loading variant="table" columns={4} />
-      ) : query.error ? (
-        <ErrorNotice error={query.error} />
-      ) : query.data?.items.length ? (
-        <>
-          <ResourceTable
-            items={query.data.items}
-            canActivateRow={(item) =>
-              item.workspace_id ? manage : organizationAdmin
-            }
-            onRowActivate={rows.activate}
-            columns={[
-              {
-                label: t("Provider"),
-                tone: "primary",
-                render: (item) => (
-                  <div className="flex min-w-0 items-center gap-3">
-                    <ProviderIcon key={item.type} type={item.type} />
-                    <ResourceIdentity
-                      name={item.name}
-                      description={item.type}
-                      resourceId={item.id}
-                    />
-                  </div>
-                ),
-              },
-              {
-                label: t("Scope"),
-                tone: "muted",
-                render: (item) => (
-                  <ScopeBadge workspaceId={item.workspace_id} />
-                ),
-              },
-              {
-                label: t("Credentials"),
-                render: (item) =>
-                  t(
-                    credentialMode(
-                      definitions.data?.items.find(
-                        (definition) => definition.type === item.type,
-                      ),
-                      item.configuration,
-                    ) !== "required"
-                      ? "No credentials required"
-                      : item.credential_configured
-                        ? "Configured"
-                        : "Not configured",
-                  ),
-              },
-              {
-                label: t("Status"),
-                render: (item) => (
-                  <StateBadge state={item.enabled ? "enabled" : "disabled"} />
-                ),
-              },
-            ]}
-          />
-          <Pagination page={page} next={query.data.next_cursor} />
-        </>
-      ) : (
-        <Empty
-          title={t("Connect your first provider")}
-          description={t(
-            "Add an account or endpoint, then choose the models your agents can use.",
-          )}
-        />
-      )}
-    </div>
+      <ProviderTable
+        category="models"
+        items={query.data?.items}
+        isPending={query.isPending}
+        error={query.error}
+        page={page}
+        nextCursor={query.data?.next_cursor}
+        action={add}
+        canActivateRow={(item) =>
+          item.workspace_id ? manage : organizationAdmin
+        }
+        onRowActivate={rows.activate}
+        row={(item) => ({
+          id: item.id,
+          name: item.name,
+          type: item.type,
+          definition: definitions.data?.items.find(
+            (definition) => definition.type === item.type,
+          )?.display_name,
+          workspaceId: item.workspace_id,
+          credentials:
+            credentialMode(
+              definitions.data?.items.find(
+                (definition) => definition.type === item.type,
+              ),
+              item.configuration,
+            ) !== "required"
+              ? "not_required"
+              : item.credential_configured
+                ? "configured"
+                : "not_configured",
+          state: item.enabled ? "enabled" : "disabled",
+        })}
+      />
+    </>
   );
 }
 
-export function ProviderEditor({
+/** Editing an existing provider; creation goes through {@link AddProvider}. */
+export function EditProvider({
   scope,
-  providerId,
+  provider,
   controlledOpen,
   onClose,
   finalFocus,
 }: {
   scope: ModelScope;
-  providerId?: string;
+  provider: Schema["ModelProvider"];
   controlledOpen?: boolean;
   onClose?: () => void;
   finalFocus?: React.RefObject<HTMLElement | null>;
 }) {
   const client = useClient(),
-    { t } = useTranslation(),
     [generation, setGeneration] = useState(0);
-  const { open, setOpen, modalProps } = useResourceEditorState({
-    controlledOpen,
-    onClose,
-    finalFocus,
-  });
-
+  const state = useResourceEditorState({ controlledOpen, onClose, finalFocus });
   const api = modelApi(client, scope);
   const definitions = useModelProviderDefinitions();
   const resource = useQuery({
-    queryKey: ["model-provider", scope.kind, scope.id, providerId],
-    enabled: open && !!providerId,
-    queryFn: ({ signal }) => api.provider(providerId!, signal),
+    queryKey: ["model-provider", scope.kind, scope.id, provider.id],
+    enabled: state.open,
+    queryFn: ({ signal }) => api.provider(provider.id, signal),
   });
   return (
-    <ModalFrame
-      {...modalProps}
-      trigger={
-        controlledOpen === undefined ? (
-          <ResourceEditorButton
-            editing={!!providerId}
-            createLabel="Add provider"
-            editLabel="Edit"
-          />
-        ) : undefined
+    <EditProviderDialog
+      modalProps={state.modalProps}
+      open={state.open}
+      name={resource.data?.value.name ?? provider.name}
+      id={provider.id}
+      type={provider.type}
+      definition={
+        definitions.data?.items.find((item) => item.type === provider.type)
+          ?.display_name
       }
-      size="lg"
-      title={t(providerId ? "Edit provider" : "Add provider")}
-      description={
-        providerId ? undefined : t("Connect a model service to add its models.")
+      scope={scope.kind}
+      loading={definitions.isPending || resource.isPending}
+      error={
+        (!definitions.data && definitions.error) ||
+        (!resource.data && resource.error)
+          ? (definitions.error ?? resource.error)
+          : undefined
       }
-      closeLabel={t("Close")}
     >
-      {open &&
-        (definitions.isPending || (providerId && resource.isPending) ? (
-          <Loading variant="form" rows={4} />
-        ) : (!definitions.data && definitions.error) ||
-          (!resource.data && resource.error) ? (
-          <ErrorNotice error={definitions.error ?? resource.error} />
-        ) : (
-          definitions.data && (
-            <ProviderForm
-              key={generation}
-              reload={async () => {
-                const result = await resource.refetch();
-                if (!result.error) setGeneration((value) => value + 1);
-              }}
-              scope={scope}
-              resource={providerId ? resource.data : undefined}
-              definitions={definitions.data.items}
-              close={() => setOpen(false)}
-            />
-          )
-        ))}
-    </ModalFrame>
+      {definitions.data && resource.data && (
+        <ProviderForm
+          key={generation}
+          reload={async () => {
+            const result = await resource.refetch();
+            if (!result.error) setGeneration((value) => value + 1);
+          }}
+          scope={scope}
+          resource={resource.data}
+          definitions={definitions.data.items}
+          close={() => state.setOpen(false)}
+        />
+      )}
+    </EditProviderDialog>
   );
 }

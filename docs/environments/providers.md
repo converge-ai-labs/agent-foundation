@@ -67,14 +67,14 @@ There are two operation routes: **Native** uses the host OS or vendor APIs direc
 | Native | `vercel`         | Cloud sandbox                            | Named persistent sandbox with native sessions               |
 | Native | `sprites`        | Cloud sandbox                            | Persistent disk and automatic sleep/wake                    |
 | Native | `runloop`        | Cloud sandbox                            | Devbox suspend/resume and idle keepalive                    |
-| Envd   | `local_envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Envd   | `local_envd`     | CLI and local Agents                     | Shared Host Device; adapter close ends its Session          |
 | Native | `docker`         | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
 | Envd   | `http_envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
 | Envd   | `websocket_envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 Direct Local shares the Host account. Docker uses native Engine operations; all six cloud providers use native vendor transports. None requires Envd. Local and remote Envd Providers use EIP for Agent operations.
 
-Multi-tenant authorization and container allocation remain Host responsibilities. One daemon admits one active Session; Sessions are not tenant partitions. To work with multiple remote environments, register separate daemon identities and coordinate their use.
+Multi-tenant authorization and container allocation remain Host responsibilities. One Device supports concurrent independent Sessions; Sessions are not tenant partitions. Hosts share the Device connection and select a fixed cwd for each adapter, closing the shared runtime only at Host shutdown.
 
 Start with the [built-in examples](examples.md) or [run both remote transports locally](remote-envd.md). HTTP/WebSocket Providers require external state, declare `supports_managed=False`, and do not provision or destroy infrastructure. The WebSocket SDK receives authenticated connections from your Host; it never opens a listener.
 
@@ -95,7 +95,7 @@ runtime = LocalEnvdProviderRuntime(
 )
 ```
 
-`resolve_a13n_envd_executable()` checks an explicit argument, then `A13N_ENVD_EXECUTABLE`, then `a13n-envd` or `a13n-envd.exe` on `PATH`. The library does not load `.env`, install a native binary, or silently fall back to Direct Local. Entry validates exact daemon/client compatibility and the required native-isolation probe.
+`resolve_a13n_envd_executable()` checks an explicit argument, then `A13N_ENVD_EXECUTABLE`, then `a13n-envd` or `a13n-envd.exe` on `PATH`. The library does not load `.env`, install a native binary, or silently fall back to Direct Local. First Device acquisition validates exact daemon/client compatibility. The runtime launches one shared Device lazily; every adapter opens its own Session. Close adapters after use and call `await runtime.close()` at Host shutdown. There is no native-isolation probe: containment belongs to the Host's account, container, or sandbox.
 
 Run the real provider path with `make local-envd-test`, or follow the [Local Envd example](examples.md#local-envd).
 
@@ -134,7 +134,7 @@ E2B (`e2b`), Daytona (`daytona`), Modal (`modal`), Vercel Sandbox (`vercel`), Fl
 
 Use the organization/workspace owning the supplied credentials; these fields describe backend namespaces, not permission grants. Credentials are never part of a template or reconnect state. All six cloud types are enabled in the default Service catalog; deployments can restrict `environments.provider_builtins`.
 
-Daytona, Modal, Vercel, Sprites, and Runloop recipes accept `root`, `python`, `shell`, `read_only`, and bounded request/file/output settings. `python` names an executable on the guest PATH or an absolute guest path; it never discovers a Host executable. Custom images and snapshots must include Linux, Python 3 with the standard library, and the selected shell. The root maps file paths such as `/notes.txt` into that guest directory; shell execution retains the authority of the native guest user. The default Modal image uses `/usr/local/bin/python3`; Vercel defaults to `/vercel/sandbox` as its root. Those five providers do not advertise process handles, ports, retained output, interactive stdin, per-command network denial, or resource limits other than wall time. Unsupported requests fail before command execution.
+Daytona, Modal, Vercel, Sprites, and Runloop recipes accept `root`, `python`, `shell`, and bounded request/file/output settings. `python` names an executable on the guest PATH or an absolute guest path; it never discovers a Host executable. Custom images and snapshots must include Linux, Python 3 with the standard library, and the selected shell. The root maps file paths such as `/notes.txt` into that guest directory; shell execution retains the authority of the native guest user. The default Modal image uses `/usr/local/bin/python3`; Vercel defaults to `/vercel/sandbox` as its root. Those five providers do not advertise process handles, ports, retained output, interactive stdin, per-command network denial, or resource limits other than wall time. Unsupported requests fail before command execution.
 
 ### Reconnection and lifecycle
 

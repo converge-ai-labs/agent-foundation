@@ -1530,6 +1530,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/environments/{environment_id}/device": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Device Info */
+    get: operations["get_environments_environment_id_device"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/environments/{environment_id}/directories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Device Directories */
+    get: operations["get_environments_environment_id_directories"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/environments/{environment_id}/labels": {
     parameters: {
       query?: never;
@@ -4552,6 +4586,8 @@ export interface components {
       environment_id: string;
       /** Name */
       name: string;
+      /** Working Directory */
+      working_directory?: string | null;
     };
     /** Agent */
     Agent: {
@@ -6864,6 +6900,47 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** DeviceInfo */
+    DeviceInfo: {
+      /** Default Working Directory */
+      default_working_directory: string;
+      /** Directory Discovery */
+      directory_discovery: boolean;
+      /** Environment Id */
+      environment_id: string;
+      /**
+       * Path Style
+       * @enum {string}
+       */
+      path_style: "posix" | "windows";
+    };
+    /** DirectoryEntry */
+    DirectoryEntry: {
+      /** Name */
+      name: string;
+      /**
+       * Path
+       * Format: eip-absolute-path
+       */
+      path: string;
+    };
+    /** DirectoryListResult */
+    DirectoryListResult: {
+      /**
+       * Entries
+       * @default []
+       */
+      entries?: components["schemas"]["DirectoryEntry"][];
+      /** Next Offset */
+      next_offset?: number | null;
+      /** Parent Path */
+      parent_path?: string | null;
+      /**
+       * Path
+       * Format: eip-absolute-path
+       */
+      path: string;
+    };
     /** DiscardDraftRequest */
     DiscardDraftRequest: {
       /** Expected Version */
@@ -7127,6 +7204,8 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
+      /** Device Id */
+      device_id?: string | null;
       /** Generation */
       generation: number;
       /** Id */
@@ -7198,6 +7277,8 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
+      /** Device Id */
+      device_id?: string | null;
       /** Generation */
       generation: number;
       /** Id */
@@ -7443,6 +7524,8 @@ export interface components {
     ExistingEnvironmentSelection: {
       /** Environment Id */
       environment_id: string;
+      /** Working Directory */
+      working_directory?: string | null;
     };
     /** ExpectedVersion */
     ExpectedVersion: {
@@ -9399,6 +9482,8 @@ export interface components {
       configuration: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+      /** Device Id */
+      device_id?: string | null;
       /** Labels */
       labels?: {
         [key: string]: string;
@@ -9831,6 +9916,8 @@ export interface components {
       run_id: string;
       /** Use Started At */
       use_started_at?: string | null;
+      /** Working Directory */
+      working_directory?: string | null;
     };
     /** RunLineage */
     RunLineage: {
@@ -9893,6 +9980,8 @@ export interface components {
       effective_agent_config_digest: string;
       /** Environment Id */
       environment_id: string | null;
+      /** Environment Working Directory */
+      environment_working_directory: string | null;
       failure: components["schemas"]["JsonValue"] | null;
       /** Id */
       id: string;
@@ -10766,6 +10855,8 @@ export interface components {
       current_run_id?: string | null;
       /** Default Environment Id */
       default_environment_id?: string | null;
+      /** Default Environment Working Directory */
+      default_environment_working_directory?: string | null;
       /** Head Run Id */
       head_run_id?: string | null;
       /** Id */
@@ -10826,6 +10917,8 @@ export interface components {
       current_run_id: string | null;
       /** Default Environment Id */
       default_environment_id: string | null;
+      /** Default Environment Working Directory */
+      default_environment_working_directory: string | null;
       /** Head Run Id */
       head_run_id: string | null;
       /** Id */
@@ -16813,6 +16906,98 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["EnvironmentCommand"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_environments_environment_id_device: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DeviceInfo"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_environments_environment_id_directories: {
+    parameters: {
+      query?: {
+        path?: string | null;
+        offset?: number;
+        limit?: number;
+      };
+      header?: never;
+      path: {
+        environment_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DirectoryListResult"];
         };
       };
       /** @description Invalid request. */

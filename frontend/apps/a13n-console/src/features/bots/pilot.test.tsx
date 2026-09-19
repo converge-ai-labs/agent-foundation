@@ -20,7 +20,10 @@ vi.mock("../../layout/workspace", () => ({
   }),
 }));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) => key,
+    i18n: { resolvedLanguage: "en" },
+  }),
 }));
 const account = {
   id: "acct_test",
@@ -173,7 +176,7 @@ it("requires an explicit activation and sends the reviewed target and account ve
     />,
   );
   const button = await screen.findByRole("button", {
-    name: "Verify and enable reception",
+    name: "Enable reception",
   });
   expect(state.http.POST).not.toHaveBeenCalled();
   await userEvent.click(button);
@@ -208,13 +211,11 @@ it("keeps the form after a failed live check and does not claim activation", asy
     />,
   );
   await userEvent.click(
-    await screen.findByRole("button", { name: "Verify and enable reception" }),
+    await screen.findByRole("button", { name: "Enable reception" }),
   );
   await screen.findByText("The bot is not a member of this conversation.");
   expect(success).not.toHaveBeenCalled();
-  expect(
-    screen.getByRole("button", { name: "Verify and enable reception" }),
-  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Enable reception" })).toBeTruthy();
 });
 
 it("does not enable multiple configured conversations as a single pilot", async () => {
@@ -241,9 +242,7 @@ it("does not enable multiple configured conversations as a single pilot", async 
   await screen.findByText(
     "Configure exactly one pilot conversation that inherits its account settings.",
   );
-  expect(
-    screen.queryByRole("button", { name: "Verify and enable reception" }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "Enable reception" })).toBeNull();
   expect(state.http.POST).not.toHaveBeenCalled();
 });
 
@@ -266,12 +265,12 @@ it("does not silently adopt a refreshed account version while the user edits", a
   }
   state.http.POST.mockRejectedValue(new Error("The account version changed."));
   setup(<Parent />);
-  await screen.findByRole("button", { name: "Verify and enable reception" });
+  await screen.findByRole("button", { name: "Enable reception" });
   await userEvent.click(
     screen.getByRole("button", { name: "Refresh account" }),
   );
   await userEvent.click(
-    screen.getByRole("button", { name: "Verify and enable reception" }),
+    screen.getByRole("button", { name: "Enable reception" }),
   );
   await screen.findByText("The account version changed.");
   expect(state.http.POST.mock.calls[0][1].body.expected_version).toBe(4);

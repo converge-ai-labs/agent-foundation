@@ -118,11 +118,9 @@ Direct Local restrictions apply through the current Environment mount. They do n
 
 ## Use Local Envd
 
-Local Envd launches one compatible `a13n-envd` generation for a Host-selected workspace. The Host supplies the executable and private-runtime allocator when constructing the adapter:
+The Host owns a shared Local Envd runtime and its lazily launched Device. Each fresh adapter opens an independent Session with a fixed Device working directory:
 
 ```python
-from pathlib import Path
-
 from a13n_harness.providers.environment.builtins import select_builtin_environment_providers
 from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
@@ -131,27 +129,26 @@ from a13n_harness.providers.environment.local_envd.runtime import (
 )
 
 (local_envd,) = select_builtin_environment_providers(("local_envd",))
-environment = await local_envd.create(
-    {
-        "workspace": {"path": str(Path("./workspace").resolve())},
-        "execution_network": "deny",
-    },
-    environment_id="workspace",
-    runtime=LocalEnvdProviderRuntime(
-        executable=resolve_a13n_envd_executable(),
-        allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
-    ),
-)
-
-result = await executable.run(
-    "Inspect the sandboxed workspace",
-    environment=environment,
-)
+async with LocalEnvdProviderRuntime(
+    executable=resolve_a13n_envd_executable(),
+    allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(),
+) as runtime:
+    environment = await local_envd.create(
+        {"working_directory": "/absolute/path/to/workspace"},
+        environment_id="workspace",
+        runtime=runtime,
+    )
+    result = await executable.run(
+        "Inspect the working directory",
+        environment=environment,
+    )
+    # Harness closes this adapter's Session. The Host can use another adapter
+    # on the same runtime; leaving this context closes the shared Device.
 ```
 
 Executable resolution checks an explicit argument, `A13N_ENVD_EXECUTABLE`, then `a13n-envd` on `PATH`. The client and Provider packages do not install or download the native binary.
 
-Local Envd validates exact daemon/client compatibility and the required isolation probe. It does not fall back to Direct Local or silently disable isolation. Read the [`a13n-envd` guide](../a13n-envd/index.md) for installation and platform prerequisites.
+Local Envd validates exact daemon/client compatibility and never falls back to Direct Local. Envd paths address the Device filesystem; a fixed cwd is not containment. Host-managed accounts, containers, or sandboxes own filesystem and network isolation. Read the [`a13n-envd` guide](../a13n-envd/index.md) for setup and security boundaries.
 
 ## Re-enter and retain a target
 
@@ -194,7 +191,8 @@ A suspended or failed Run still closes its adapter non-destructively. Harness ne
 Pass multiple fresh adapters with explicit Run-local policy:
 
 ```python
-from a13n_harness import EnvironmentAccess, EnvironmentMount
+from a13n_harness import EnvironmentMount
+from a13n_harness.environment import FILE_READ_ACTIONS, EnvironmentPermissionSet
 
 result = await executable.run(
     "Read the source data and write the build output",
@@ -202,7 +200,7 @@ result = await executable.run(
         "build": build_environment,
         "data": EnvironmentMount(
             data_environment,
-            access=EnvironmentAccess.READ_ONLY,
+            permission_ceiling=EnvironmentPermissionSet(operations=FILE_READ_ACTIONS),
         ),
     },
     default_environment="build",
@@ -215,7 +213,7 @@ Harness validates the complete mount set before entry. If one adapter fails, it 
 
 ## Select only required operations
 
-`EnvironmentMount` narrows Provider capability with `READ_ONLY`, `READ_WRITE`, or `FULL` access. `DynamicEnvironmentConfiguration` controls which stable Environment Toolsets the model can see. Keep shell, background-process, retained-output, and port operations absent unless the Agent definition requires them.
+`EnvironmentMount` narrows Provider capability with an exact `permission_ceiling`; `FILE_READ_ACTIONS` and `FILE_ACTIONS` are the shared action sets. `DynamicEnvironmentConfiguration` controls which stable Environment Toolsets the model can see. Keep shell, background-process, retained-output, and port operations absent unless the Agent definition requires them.
 
 The [Harness Environment guide](../a13n-harness/environments.md) covers complete Capability configuration, deterministic routing, state export, portable process references, and advanced Host runtimes.
 

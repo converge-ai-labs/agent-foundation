@@ -5,26 +5,33 @@ import {
   DisclosureSection,
   FormField,
   Input,
+  SettingsRow,
+  SettingsSection,
   Switch,
 } from "a13n-ui";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { allPages, type Schema } from "../../shared/api";
+import { CatalogStep } from "../../shared/dialogs";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions, TextAreaField } from "../../shared/form";
-import { jsonObject, validateSettings } from "../../shared/validation";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { ManageProvidersLink } from "../providers/manage-link";
-import styles from "../../shared/shared.module.css";
+import {
+  FormActions,
+  TextAreaField,
+  jsonObject,
+  validateSettings,
+} from "../../shared/forms";
+import { IconTile } from "../../shared/identity";
+import sharedStyles from "../../shared/shared.module.css";
+import { ConnectionTest, ManageProvidersLink } from "../providers";
 import { modelApi, type ModelScope } from "./api";
-import { ConnectionTest } from "./connection-test";
-import { ModelInformation } from "./model-information";
 import { CatalogPicker, catalogRefKey } from "./catalog-picker";
-import { ProviderSetup } from "./provider-setup";
-import { useModelProviderDefinitions } from "./provider-definitions";
+import { ModelIcon } from "./model-icon";
+import { ModelInformation } from "./model-information";
 import { suggestedKey } from "./model-options";
-import modelStyles from "./models.module.css";
+import { ModelPricing } from "./model-pricing";
+import { useModelProviderDefinitions } from "./provider-definitions";
+import styles from "./models.module.css";
 
 type Draft = {
   name: string;
@@ -37,19 +44,26 @@ type Draft = {
   enabled: boolean;
 };
 
-export function ModelForm({
+export type ModelDraft = ReturnType<typeof useModelDraft>;
+
+/**
+ * Everything a saved model needs, whether it is being added through the steps
+ * of the add dialog or edited in one pass.
+ */
+export function useModelDraft({
   scope,
   resource,
   providerId,
+  active = true,
   close,
-  reload,
   onSaved,
 }: {
   scope: ModelScope;
   resource?: { value: Schema["Model"]; etag?: string };
   providerId?: string;
+  /** Closed dialogs keep their draft without fetching providers or the catalog. */
+  active?: boolean;
   close: () => void;
-  reload: () => Promise<void>;
   onSaved?: (model: Schema["Model"]) => void;
 }) {
   const { t } = useTranslation(),
@@ -60,7 +74,6 @@ export function ModelForm({
   const [provider, setProvider] = useState(
     original?.value.provider_id ?? providerId ?? "",
   );
-  const [choosingProvider, setChoosingProvider] = useState(!provider);
   const [draft, setDraft] = useState<Draft>(() => ({
     name: original?.value.name ?? "",
     key: original?.value.key ?? "",
@@ -81,12 +94,14 @@ export function ModelForm({
   );
   const providers = useQuery({
     queryKey: ["model-provider-choices", scope.kind, scope.id],
+    enabled: active,
     queryFn: ({ signal }) =>
       allPages((cursor) => api.providers(signal, cursor)),
   });
   const definitions = useModelProviderDefinitions();
   const catalog = useQuery({
     queryKey: ["model-catalog", scope.kind, scope.id],
+    enabled: active,
     queryFn: ({ signal }) => api.catalog(signal),
   });
   const selectedProvider = providers.data?.find((item) => item.id === provider);
@@ -98,12 +113,10 @@ export function ModelForm({
     selectedProvider?.configuration ?? {},
   ).some(([key, value]) => key.endsWith("base_url") && !!value);
   const channels = definition?.catalog_providers ?? [];
-  const [pendingVariant, setPendingVariant] = useState(false);
-  const catalogValue = draft.catalog_ref
-    ? catalogRefKey(draft.catalog_ref)
-    : "custom";
   const selectedEntry = catalog.data?.items?.find(
-    (item) => catalogRefKey(item.ref) === catalogValue,
+    (item) =>
+      draft.catalog_ref &&
+      catalogRefKey(item.ref) === catalogRefKey(draft.catalog_ref),
   );
   const dirty =
     JSON.stringify(draft) !== JSON.stringify(initial) ||
@@ -111,7 +124,12 @@ export function ModelForm({
   function change<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
-  function applyCatalog(item: Schema["CatalogModel"]) {
+  /** Catalog values seed the draft; anything the reader typed wins. */
+  function chooseCatalog(item: Schema["CatalogModel"] | null) {
+    if (!item) {
+      change("catalog_ref", null);
+      return;
+    }
     const official = catalog.data?.items?.find(
       (entry) =>
         entry.identity === item.identity &&
@@ -135,12 +153,29 @@ export function ModelForm({
       },
     }));
   }
-  function chooseCatalog(item: Schema["CatalogModel"] | null) {
-    if (!item) {
-      change("catalog_ref", null);
-      return;
-    }
-    applyCatalog(item);
+  function chooseProvider(id: string, preferredApi = "") {
+    setProvider(id);
+    setSettingsJson("{}");
+    setDraft((current) => ({
+      ...current,
+      catalog_ref: null,
+      upstream_model: "",
+      model_api: preferredApi,
+      declarations: {},
+    }));
+  }
+  function acceptProvider(
+    item: Schema["ModelProvider"],
+    preferredApi?: string,
+  ) {
+    cache.setQueryData<Schema["ModelProvider"][]>(
+      ["model-provider-choices", scope.kind, scope.id],
+      (items) => [
+        ...(items ?? []).filter((value) => value.id !== item.id),
+        item,
+      ],
+    );
+    chooseProvider(item.id, preferredApi);
   }
   const save = useMutation({
     mutationFn: async () => {
@@ -176,126 +211,124 @@ export function ModelForm({
       close();
     },
   });
-  function chooseProvider(id: string, preferredApi = "") {
-    setProvider(id);
-    setPendingVariant(false);
-    setSettingsJson("{}");
-    setDraft((current) => ({
-      ...current,
-      catalog_ref: null,
-      upstream_model: "",
-      model_api: preferredApi,
-      declarations: {},
-    }));
-    setChoosingProvider(false);
-  }
-  if (choosingProvider)
+  return {
+    api,
+    close,
+    original,
+    provider,
+    providers,
+    definitions,
+    definition,
+    selectedProvider,
+    catalog,
+    channels,
+    callingApi,
+    customEndpoint,
+    selectedEntry,
+    draft,
+    change,
+    chooseCatalog,
+    chooseProvider,
+    acceptProvider,
+    settingsJson,
+    setSettingsJson,
+    settingsExpanded,
+    setSettingsExpanded,
+    dirty,
+    save,
+    incomplete:
+      !draft.upstream_model.trim() ||
+      !draft.name.trim() ||
+      !draft.key.trim() ||
+      !callingApi,
+  };
+}
+
+/** Why the catalog may be incomplete, said once beside the model list. */
+export function CatalogNotice({ model }: { model: ModelDraft }) {
+  const { t } = useTranslation();
+  const { catalog } = model;
+  if (catalog.error || catalog.data?.status === "unavailable")
     return (
-      <ProviderSetup
-        scope={scope}
-        providers={providers.data}
-        definitions={definitions.data?.items}
-        value={provider}
-        error={providers.error ?? definitions.error}
-        onCancel={close}
-        onSelect={chooseProvider}
-        onCreated={(item, preferredApi) => {
-          cache.setQueryData<Schema["ModelProvider"][]>(
-            ["model-provider-choices", scope.kind, scope.id],
-            (items) => [
-              ...(items ?? []).filter((value) => value.id !== item.id),
-              item,
-            ],
-          );
-          chooseProvider(item.id, preferredApi);
-        }}
-      />
+      <p className={styles.stepNote}>
+        {t("Catalog unavailable. Enter a model ID to continue.")}
+      </p>
     );
+  if (catalog.data?.status === "stale")
+    return (
+      <p className={styles.stepNote}>
+        {t("Showing the last available model catalog.")}
+      </p>
+    );
+  return null;
+}
+
+/** The model this draft points at, and the two fields that address it. */
+export function ModelSelection({
+  model,
+  onChange,
+  actions,
+}: {
+  model: ModelDraft;
+  onChange?: () => void;
+  /** Quiet links that belong with the connection, not under the fields. */
+  actions?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const { draft, selectedEntry, definition, channels } = model;
+  const compatible =
+    !!selectedEntry && !channels.includes(selectedEntry.ref.provider);
   return (
-    <form
-      className={modelStyles.modelForm}
-      onSubmit={(event) => {
-        event.preventDefault();
-        save.mutate();
-      }}
-    >
-      <section className={modelStyles.connectionFields}>
-        <div className={modelStyles.connectionSummary}>
-          {selectedProvider && <ProviderIcon type={selectedProvider.type} />}
-          <div>
-            <strong>{selectedProvider?.name ?? t("Loading…")}</strong>
-            <span>
-              {String(
-                selectedProvider?.configuration.base_url ??
-                  selectedProvider?.type ??
-                  "",
-              )}
-            </span>
-          </div>
-          {!original && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setChoosingProvider(true)}
-            >
-              {t("Change")}
-            </Button>
-          )}
-        </div>
-        {typeof selectedProvider?.configuration.session_affinity_header ===
-          "string" && (
-          <p className={styles.muted}>
-            {t("Session affinity header")}:{" "}
-            {selectedProvider.configuration.session_affinity_header}
-          </p>
-        )}
-        {original && selectedProvider && (
-          <ManageProvidersLink
-            category="models"
-            scope={selectedProvider.workspace_id ? "workspace" : "organization"}
+    <div className={sharedStyles.stack}>
+      <div className={styles.chosenRow}>
+        <IconTile size={36} tone="elevated">
+          <ModelIcon
+            upstream={draft.upstream_model}
+            catalogRef={draft.catalog_ref}
+            provider={model.selectedProvider?.type}
+            size={20}
           />
+        </IconTile>
+        <span className={styles.chosenCopy}>
+          <strong>
+            {selectedEntry?.name || draft.upstream_model || t("Custom model")}
+          </strong>
+          <small>
+            {selectedEntry?.identity ??
+              model.selectedProvider?.name ??
+              t("Custom model")}
+          </small>
+        </span>
+        {onChange && (
+          <Button type="button" variant="outline" size="sm" onClick={onChange}>
+            {t("Change")}
+          </Button>
         )}
-        <FormField label={t("Model")}>
-          <CatalogPicker
-            key={provider}
-            entries={catalog.data?.items ?? []}
-            channels={channels}
-            allowCompatible={selectedProvider?.type === "openai"}
-            value={draft.catalog_ref}
-            onSelect={chooseCatalog}
-            onPendingChange={setPendingVariant}
+        {actions}
+      </div>
+      <div className={sharedStyles.twoColumns}>
+        <FormField
+          label={t("Upstream model")}
+          description={t(
+            compatible
+              ? "Requires an OpenAI-compatible endpoint serving this model. Enter its upstream model ID."
+              : "Sent to the provider. Change this for gateway aliases or deployment IDs.",
+          )}
+        >
+          <Input
+            required
+            maxLength={256}
+            value={draft.upstream_model}
+            onChange={(event) =>
+              model.change("upstream_model", event.target.value)
+            }
           />
         </FormField>
-        {(catalog.error || catalog.data?.status === "unavailable") && (
-          <p className={styles.muted}>
-            {t("Catalog unavailable. Enter a model ID to continue.")}
-          </p>
-        )}
-        {catalog.data?.status === "stale" && (
-          <p className={styles.muted}>
-            {t("Showing the last available model catalog.")}
-          </p>
-        )}
-        <div className={styles.twoColumns}>
-          <FormField
-            label={t("Upstream model")}
-            description={t(
-              selectedEntry && !channels.includes(selectedEntry.ref.provider)
-                ? "Requires an OpenAI-compatible endpoint serving this model. Enter its upstream model ID."
-                : "Sent to the provider. Change this for gateway aliases or deployment IDs.",
-            )}
-          >
-            <Input
-              required
-              maxLength={256}
-              value={draft.upstream_model}
-              onChange={(event) => change("upstream_model", event.target.value)}
-            />
-          </FormField>
+        {(definition?.supported_model_apis.length ?? 0) > 1 && (
           <ChoiceField
             label={t("API")}
-            value={callingApi}
-            onValueChange={(value) => change("model_api", value)}
+            value={model.callingApi}
+            onValueChange={(value) => model.change("model_api", value)}
             options={
               definition?.supported_model_apis.map((value) => ({
                 value,
@@ -303,24 +336,26 @@ export function ModelForm({
               })) ?? []
             }
           />
-        </div>
-        {original && (
-          <ConnectionTest
-            compact
-            action={() => api.testModel(original.value.id)}
-            dirty={dirty || save.isPending}
-            description="May consume quota or incur cost."
-          />
         )}
-      </section>
-      <section className={modelStyles.identityFields}>
-        <div className={styles.twoColumns}>
+      </div>
+    </div>
+  );
+}
+
+/** Name, description, declared capabilities, prices, and request defaults. */
+export function ModelFields({ model }: { model: ModelDraft }) {
+  const { t } = useTranslation();
+  const { draft, selectedEntry, original } = model;
+  return (
+    <>
+      <section className={styles.identityFields}>
+        <div className={sharedStyles.twoColumns}>
           <FormField label={t("Name")}>
             <Input
               required
               maxLength={128}
               value={draft.name}
-              onChange={(event) => change("name", event.target.value)}
+              onChange={(event) => model.change("name", event.target.value)}
             />
           </FormField>
           <FormField label={t("Model key")} readOnly={!!original}>
@@ -328,7 +363,7 @@ export function ModelForm({
               required
               maxLength={128}
               value={draft.key}
-              onChange={(event) => change("key", event.target.value)}
+              onChange={(event) => model.change("key", event.target.value)}
             />
           </FormField>
         </div>
@@ -337,67 +372,160 @@ export function ModelForm({
             maxLength={2048}
             value={draft.description}
             placeholder={t("Optional")}
-            onChange={(event) => change("description", event.target.value)}
+            onChange={(event) =>
+              model.change("description", event.target.value)
+            }
           />
         </FormField>
       </section>
       <ModelInformation
         value={draft.declarations}
-        onChange={(value) => change("declarations", value)}
+        onChange={(value) => model.change("declarations", value)}
       />
+      <ModelPricing
+        value={draft.declarations.pricing ?? null}
+        onChange={(pricing) =>
+          model.change("declarations", { ...draft.declarations, pricing })
+        }
+      />
+      {selectedEntry?.pricing_warning && (
+        <p className={styles.stepNote}>{t(selectedEntry.pricing_warning)}</p>
+      )}
+      {selectedEntry &&
+        draft.declarations.pricing &&
+        (model.customEndpoint ||
+          !model.channels.includes(selectedEntry.ref.provider)) && (
+          <p className={styles.stepNote}>
+            {t(
+              "Catalog prices are references from the model provider. Your gateway may charge differently.",
+            )}
+          </p>
+        )}
       <DisclosureSection
-        title={t("Request settings")}
-        summary={settingsJson.trim() !== "{}" ? t("Configured") : undefined}
-        open={settingsExpanded}
-        onOpenChange={setSettingsExpanded}
+        title={t("Advanced")}
+        summary={
+          model.settingsJson.trim() !== "{}" ? t("Configured") : undefined
+        }
+        open={model.settingsExpanded}
+        onOpenChange={model.setSettingsExpanded}
       >
         <TextAreaField
           label={t("Settings JSON")}
           hint={t(
             "Model request defaults. Agent and Run settings can override them.",
           )}
-          value={settingsJson}
-          onChange={setSettingsJson}
+          value={model.settingsJson}
+          onChange={model.setSettingsJson}
           code
           rows={6}
         />
       </DisclosureSection>
-      {selectedEntry?.pricing_warning && (
-        <p className={styles.muted}>{t(selectedEntry.pricing_warning)}</p>
-      )}
-      {selectedEntry &&
-        draft.declarations.pricing &&
-        (customEndpoint || !channels.includes(selectedEntry.ref.provider)) && (
-          <p className={styles.muted}>
-            {t(
-              "Catalog prices are references from the model provider. Your gateway may charge differently.",
-            )}
-          </p>
-        )}
-      <div className={modelStyles.modelStatus}>
+    </>
+  );
+}
+
+/** Availability and the connection check, grouped on one surface. */
+export function ModelStatus({ model }: { model: ModelDraft }) {
+  const { t } = useTranslation();
+  return (
+    <SettingsSection>
+      <SettingsRow
+        controlId="model-enabled"
+        label={t("Enabled")}
+        description={t("Agents can select this model.")}
+      >
         <Switch
           id="model-enabled"
-          checked={draft.enabled}
-          onCheckedChange={(value) => change("enabled", value)}
+          checked={model.draft.enabled}
+          onCheckedChange={(value) => model.change("enabled", value)}
         />
-        <label htmlFor="model-enabled">{t("Enabled")}</label>
-      </div>
+      </SettingsRow>
+      {model.original && (
+        <ConnectionTest
+          action={() => model.api.testModel(model.original!.value.id)}
+          dirty={model.dirty || model.save.isPending}
+          description="May consume quota or incur cost."
+        />
+      )}
+    </SettingsSection>
+  );
+}
+
+/** One-pass editor for a model that already exists. */
+export function EditModelForm({
+  scope,
+  resource,
+  close,
+  reload,
+  onSaved,
+}: {
+  scope: ModelScope;
+  resource?: { value: Schema["Model"]; etag?: string };
+  close: () => void;
+  reload: () => Promise<void>;
+  onSaved?: (model: Schema["Model"]) => void;
+}) {
+  const { t } = useTranslation();
+  const model = useModelDraft({ scope, resource, close, onSaved });
+  const [changing, setChanging] = useState(false);
+  if (changing)
+    return (
+      <CatalogStep
+        backLabel={t("Back to details")}
+        onBack={() => setChanging(false)}
+      >
+        <CatalogNotice model={model} />
+        <CatalogPicker
+          entries={model.catalog.data?.items ?? []}
+          channels={model.channels}
+          allowCompatible={model.selectedProvider?.type === "openai"}
+          providerName={model.definition?.display_name}
+          value={model.draft.catalog_ref}
+          onSelect={(entry) => {
+            model.chooseCatalog(entry);
+            setChanging(false);
+          }}
+        />
+      </CatalogStep>
+    );
+  return (
+    <form
+      className={styles.modelForm}
+      onSubmit={(event) => {
+        event.preventDefault();
+        model.save.mutate();
+      }}
+    >
+      <ModelSelection
+        model={model}
+        onChange={() => setChanging(true)}
+        actions={
+          model.selectedProvider && (
+            <ManageProvidersLink
+              variant="ghost"
+              category="models"
+              scope={
+                model.selectedProvider.workspace_id
+                  ? "workspace"
+                  : "organization"
+              }
+            />
+          )
+        }
+      />
+      <ModelStatus model={model} />
+      <ModelFields model={model} />
       <ErrorNotice
-        error={save.error ?? definitions.error ?? providers.error}
-        retry={original ? () => void reload() : undefined}
+        error={
+          model.save.error ?? model.definitions.error ?? model.providers.error
+        }
+        retry={() => void reload()}
       />
       <FormActions
         onCancel={close}
-        pending={save.isPending}
-        disabled={
-          pendingVariant ||
-          !draft.upstream_model.trim() ||
-          !draft.name.trim() ||
-          !draft.key.trim() ||
-          !callingApi ||
-          (!!original && !dirty)
-        }
-        label={t(original ? "Save changes" : "Add model")}
+        pending={model.save.isPending}
+        disabled={model.incomplete || !model.dirty}
+        label={t("Save changes")}
       />
     </form>
   );

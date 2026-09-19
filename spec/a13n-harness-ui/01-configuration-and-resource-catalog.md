@@ -179,6 +179,10 @@ Grouping semantics and immutable Run capture belong to [Agent composition](02-ag
 
 [Setup and Environment Readiness](06-setup-and-environment-readiness.md) owns the explicit guided initialization shared by surfaces. It uses this same source tree, complete candidate validation, and last-write-wins publication. It creates no alternate settings store and never rewrites an existing installation merely because a new template is available.
 
+## Goal Iteration Policy
+
+Root YAML `max_goal_iterations` is an integer with default `10`. It limits additional self-check continuations after the initial response for [Goal submissions](05-runtime-subagents-and-surfaces.md#goal-execution). Values at or below zero disable automatic Goal follow-ups, not ordinary execution. Admission captures the effective value in Goal state; later configuration edits do not change an active, deferred, or gracefully restarted Goal's budget. This setting does not alter native request/tool/usage limits and is not a sticky Thread selection.
+
 ## Global Defaults
 
 The App first resolves the new Thread's optional Project from explicit creation input or the global Project default; explicit null suppresses that default. The selected Project contributes its [creation configuration](04-projects-threads-and-environments.md#project-creation-configuration) automatically for omitted creation axes. It does not become a live inheritance layer for existing Threads. The App resolves each supported creation axis in this order:

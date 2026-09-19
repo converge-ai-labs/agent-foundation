@@ -24,6 +24,8 @@ const options = [
   },
 ] as const;
 
+const labels = { allow: "Allow", ask: "Ask", deny: "Deny" } as const;
+
 export function ToolPermissions({
   name,
   label,
@@ -56,7 +58,7 @@ export function ToolPermissions({
                   type="button"
                   disabled={readOnly}
                   className={styles.toolsetPermission}
-                  aria-label={t(permission)}
+                  aria-label={t(labels[permission])}
                   aria-pressed={
                     (value === "inherit" ? "allow" : (value ?? "allow")) ===
                     permission
@@ -65,9 +67,14 @@ export function ToolPermissions({
                 />
               }
             >
-              <Icon size={17} aria-hidden="true" />
+              <Icon size={15} aria-hidden="true" />
             </TooltipTrigger>
-            <TooltipPopup>{t(description)}</TooltipPopup>
+            <TooltipPopup>
+              <span className={styles.toolsetPermissionTip}>
+                <strong>{t(labels[permission])}</strong>
+                {t(description)}
+              </span>
+            </TooltipPopup>
           </Tooltip>
         ))}
     </div>

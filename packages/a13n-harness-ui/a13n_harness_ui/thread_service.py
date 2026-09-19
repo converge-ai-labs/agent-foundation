@@ -10,6 +10,7 @@ from a13n_harness import HarnessState
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, ProjectDefaults, canonical_digest
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import FULL_CONTROL_PROFILE_ID, built_in_environment_profile
 from a13n_harness_ui.errors import ThreadError
 from a13n_harness_ui.storage import (
@@ -41,9 +42,19 @@ class RootThreadDefaults:
     agent_id: str | None = None
     default_model_id: str | None = None
     environment_profile_id: str | None = None
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] | None = None
+    default_environment: str | None = None
     harness_plugin_ids: tuple[str, ...] | None = None
     environment_run_extension_ids: tuple[str, ...] | None = None
     mcp_server_ids: tuple[str, ...] | None = None
+
+    def __post_init__(self) -> None:
+        if self.environment_bindings is not None:
+            object.__setattr__(
+                self,
+                "environment_bindings",
+                tuple(EnvironmentBindingSelection.model_validate(item) for item in self.environment_bindings),
+            )
 
 
 class ThreadService:
@@ -181,6 +192,8 @@ def project_defaults_patch(defaults: ProjectDefaults) -> ProjectDefaultsPatch:
         values["agent_source"] = AgentResourceSource(id=defaults.agent)
     for name, value in (
         ("environment_profile_id", defaults.environment_profile),
+        ("environment_bindings", defaults.environment_bindings),
+        ("default_environment", defaults.default_environment),
         ("harness_plugin_ids", defaults.harness_plugins),
         ("environment_run_extension_ids", defaults.environment_run_extensions),
         ("mcp_server_ids", defaults.mcp_servers),
@@ -218,6 +231,12 @@ def resolve_thread_configuration_details(
         (global_defaults.environment_profile, "global"),
         (FULL_CONTROL_PROFILE_ID, "builtin"),
     )
+    bindings, bindings_origin = _first_selection(
+        (requested.environment_bindings, "explicit"), (project.environment_bindings, "project"), ((), "builtin")
+    )
+    default_environment, default_origin = _first_selection(
+        (requested.default_environment, "explicit"), (project.default_environment, "project"), (None, "builtin")
+    )
     plugins, plugins_origin = _first_selection(
         (requested.harness_plugin_ids, "explicit"),
         (project.harness_plugins, "project"),
@@ -242,6 +261,8 @@ def resolve_thread_configuration_details(
         agent_source=AgentResourceSource(id=agent_id),
         default_model_id=requested.default_model_id,
         environment_profile_id=environment,
+        environment_bindings=bindings or (),
+        default_environment=default_environment,
         harness_plugin_ids=plugins,
         environment_run_extension_ids=extensions,
         mcp_server_ids=mcp,
@@ -254,6 +275,8 @@ def resolve_thread_configuration_details(
             agent_source=agent_origin,
             default_model_id="explicit" if requested.default_model_id is not None else "agent",
             environment_profile_id=environment_origin,
+            environment_bindings=bindings_origin,
+            default_environment=default_origin,
             harness_plugin_ids=plugins_origin,
             environment_run_extension_ids=extensions_origin,
             mcp_server_ids=mcp_origin,
@@ -283,6 +306,18 @@ def _validate_configuration(
             raise ThreadError("A Markdown child follows its parent Model.", code="thread_model_invalid")
         if value.default_model_id not in source.models:
             raise ThreadError("The selected Thread Model is unavailable.", code="thread_model_missing")
+    for binding in value.environment_bindings:
+        if binding.device_id not in source.devices:
+            raise ThreadError("The selected Device is unavailable.", code="thread_device_missing")
+    project = source.projects.get(value.project_id or "")
+    try:
+        validate_environment_selection(
+            value.environment_bindings,
+            value.default_environment,
+            local_root_count=0 if project is None else len(project.roots),
+        )
+    except ValueError as error:
+        raise ThreadError(str(error), code="thread_environment_invalid") from error
     resources = source.agents if value.agent_source.kind == "agent" else source.subagents
     if value.agent_source.id not in resources:
         raise ThreadError("The selected Agent source is unavailable.", code="thread_agent_missing")

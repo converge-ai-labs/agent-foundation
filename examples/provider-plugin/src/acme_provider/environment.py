@@ -26,7 +26,6 @@ class WorkspaceConnection(BaseModel):
 class WorkspaceConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     directory: str = Field(default="projects", pattern=r"^[a-z][a-z0-9_-]{0,31}$")
-    read_only: bool = False
 
 
 @dataclass(frozen=True)
@@ -40,9 +39,7 @@ class Workspace(DirectLocalEnvironment):
         self.workspace = runtime.root / configuration.directory / environment_id
         self.allow_create = runtime.allow_create
         super().__init__(
-            DirectLocalEnvironmentConfiguration.model_validate(
-                {"root": {"path": self.workspace, "read_only": configuration.read_only}}
-            ),
+            DirectLocalEnvironmentConfiguration.model_validate({"root": {"path": self.workspace}}),
             environment_id=environment_id,
         )
 
@@ -80,10 +77,9 @@ def construct(
 
 
 def describe(configuration: WorkspaceConfiguration) -> EnvironmentDescriptor:
+    del configuration
     return DIRECT_LOCAL.describe_environment(
-        DirectLocalEnvironmentConfiguration.model_validate(
-            {"root": {"path": "/", "read_only": configuration.read_only}}
-        )
+        DirectLocalEnvironmentConfiguration.model_validate({"root": {"path": "/"}})
     )
 
 

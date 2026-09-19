@@ -66,7 +66,8 @@ def _construct(
         environment_id=environment_id,
         state=state,
         session_context=runtime.connections.open_session(
-            expected_environment_id=data.daemon_environment_id,
+            expected_device_id=data.device_id,
+            working_directory=configuration.working_directory,
             required_methods=REQUIRED_METHODS | frozenset(configuration.required_methods),
             timeout=runtime.configuration.connection_timeout,
         ),

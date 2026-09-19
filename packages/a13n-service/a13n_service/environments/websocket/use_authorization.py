@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from a13n_harness.providers.environment.models import EnvironmentAction, EnvironmentError
+from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.providers.environment.remote_envd.connections import WEBSOCKET_PROVIDER_KEY
 from sqlalchemy import literal, or_, select, union_all
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -22,7 +22,7 @@ class ClientUseAuthorization:
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
 
-    async def __call__(self, use: UseIdentity, mount_name: str | None = None) -> frozenset[EnvironmentAction]:
+    async def __call__(self, use: UseIdentity) -> str:
         # Selection, fence and target eligibility must share one database
         # observation, not six independently timed row reads.
         bindings = union_all(
@@ -30,15 +30,22 @@ class ClientUseAuthorization:
                 RunRecord.id.label("run_id"),
                 literal("workspace").label("name"),
                 RunRecord.environment_id.label("environment_id"),
+                RunRecord.environment_working_directory.label("working_directory"),
             ).where(RunRecord.environment_id.is_not(None)),
             select(
                 RunEnvironmentMountRecord.run_id,
                 RunEnvironmentMountRecord.name,
                 RunEnvironmentMountRecord.environment_id,
+                RunEnvironmentMountRecord.working_directory,
             ),
         ).subquery()
         query = (
-            select(RunRecord, EnvironmentRecord, RunAttemptRecord.lease_expires_at)
+            select(
+                RunRecord,
+                EnvironmentRecord,
+                RunAttemptRecord.lease_expires_at,
+                bindings.c.working_directory,
+            )
             .join(RunAttemptRecord, RunRecord.current_run_attempt_id == RunAttemptRecord.id)
             .join(ThreadRecord, RunRecord.thread_id == ThreadRecord.id)
             .join(SessionRecord, RunRecord.session_id == SessionRecord.id)
@@ -47,6 +54,7 @@ class ClientUseAuthorization:
             .join(EnvironmentProviderRecord, EnvironmentRecord.provider_id == EnvironmentProviderRecord.id)
             .where(
                 RunRecord.id == use.run_id,
+                bindings.c.name == use.mount_name,
                 RunRecord.organization_id == use.connection.organization_id,
                 RunRecord.status == "running",
                 ThreadRecord.current_run_id == RunRecord.id,
@@ -68,11 +76,6 @@ class ClientUseAuthorization:
                 ),
             )
         )
-        if mount_name is not None:
-            query = query.where(bindings.c.name == mount_name)
-        # Before binding the carrier, any accepted association proves eligibility.
-        # Each mount is independently authorized before use.
-        query = query.limit(1)
         try:
             async with short_session(self._sessions) as session:
                 selected = (await session.execute(query)).one_or_none()
@@ -80,7 +83,11 @@ class ClientUseAuthorization:
                     raise EnvironmentError(
                         "The Attempt has no current accepted Environment use", code="environment_forbidden"
                     )
-                run, environment, expires_at = selected
+                run, environment, expires_at, working_directory = selected
+                if working_directory is None:
+                    raise EnvironmentError(
+                        "The binding has no accepted working directory", code="environment_forbidden"
+                    )
                 await authorize_persisted_agent_principal_actions(
                     session,
                     principal=run.to_resource().authority_principal,
@@ -93,7 +100,7 @@ class ClientUseAuthorization:
                     raise EnvironmentError(
                         "The Attempt lease expired during use admission", code="environment_forbidden"
                     )
-                return frozenset(EnvironmentAction)
+                return working_directory
         except AuthorizationError as error:
             raise EnvironmentError("The Run Principal cannot use this mount", code="environment_forbidden") from error
         except Exception as error:

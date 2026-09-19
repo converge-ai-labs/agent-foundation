@@ -136,8 +136,8 @@ def build_data_frame_artifact(profile: DataFrameProfile) -> dict[str, object]:
         ("profile_version", profile.version_bytes),
         ("frame_kind", profile.kind_bytes),
         ("terminal_status", profile.status_bytes),
+        ("session_byte_length", profile.session_length_bytes),
         ("handle_byte_length", profile.handle_length_bytes),
-        ("reserved", profile.reserved_bytes),
         ("stream_offset", profile.stream_offset_bytes),
         ("payload_byte_length", profile.payload_length_bytes),
     ):
@@ -149,6 +149,7 @@ def build_data_frame_artifact(profile: DataFrameProfile) -> dict[str, object]:
         "magic_ascii": profile.magic.decode("ascii"),
         "profile_version": profile.profile_version,
         "header_bytes": profile.header_bytes,
+        "transfer_window_chunks": profile.transfer_window_chunks,
         "byte_order": "network",
         "fields": fields,
         "kinds": profile.kinds,

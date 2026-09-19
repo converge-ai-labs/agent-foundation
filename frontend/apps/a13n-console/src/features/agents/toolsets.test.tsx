@@ -138,7 +138,7 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
   });
   expect(
     within(fetchPermissions)
-      .getByRole("button", { name: "allow" })
+      .getByRole("button", { name: "Allow" })
       .getAttribute("aria-pressed"),
   ).toBe("true");
   expect(
@@ -153,7 +153,7 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
     ),
   ).toBeTruthy();
   await user.hover(
-    within(fetchPermissions).getByRole("button", { name: "allow" }),
+    within(fetchPermissions).getByRole("button", { name: "Allow" }),
   );
   expect(
     await screen.findByText("Run without asking for approval."),
@@ -163,10 +163,10 @@ it("keeps disabled child settings, edits permissions, and validates the candidat
   const permissions = screen.getByRole("group", { name: "search permission" });
   expect(
     within(permissions)
-      .getByRole("button", { name: "ask" })
+      .getByRole("button", { name: "Ask" })
       .getAttribute("aria-pressed"),
   ).toBe("true");
-  await user.click(within(permissions).getByRole("button", { name: "allow" }));
+  await user.click(within(permissions).getByRole("button", { name: "Allow" }));
   expect(draft().web.tools.search.config.max_results).toBe(7);
   expect(draft().web.tools.search.permission).toBe("allow");
   await user.click(screen.getByRole("checkbox", { name: "Enable Web tools" }));

@@ -28,9 +28,10 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness.environment import (
+    FILE_ACTIONS,
+    FILE_READ_ACTIONS,
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
-    EnvironmentAccess,
     EnvironmentAction,
     EnvironmentError,
     EnvironmentPath,
@@ -443,15 +444,15 @@ async def test_mount_changes_refresh_the_environment_tool_surface_between_model_
 
 
 @pytest.mark.parametrize(
-    ("access", "expected_tools"),
+    ("operations", "expected_tools"),
     (
-        (EnvironmentAccess.READ_ONLY, {"view", "ls", "glob", "grep"}),
+        (FILE_READ_ACTIONS, {"view", "ls", "glob", "grep"}),
         (
-            EnvironmentAccess.READ_WRITE,
+            FILE_ACTIONS,
             {"view", "write", "edit", "multi_edit", "mkdir", "move", "copy", "delete", "ls", "glob", "grep"},
         ),
         (
-            EnvironmentAccess.FULL,
+            frozenset(EnvironmentAction),
             {
                 "view",
                 "write",
@@ -470,9 +471,9 @@ async def test_mount_changes_refresh_the_environment_tool_surface_between_model_
         ),
     ),
 )
-async def test_environment_access_projects_the_corresponding_tool_surface(
+async def test_permission_ceiling_projects_the_corresponding_tool_surface(
     tmp_path: Path,
-    access: EnvironmentAccess,
+    operations: frozenset[EnvironmentAction],
     expected_tools: set[str],
 ) -> None:
     observed_tools: set[str] = set()
@@ -493,7 +494,7 @@ async def test_environment_access_projects_the_corresponding_tool_surface(
         bindings=RunBindings.embedded(
             environment=_local_binding(
                 tmp_path,
-                operations=access.permission_set().operations,
+                operations=operations,
                 process_output=True,
             ),
         ),
@@ -556,8 +557,8 @@ async def test_mixed_mount_shell_does_not_hide_file_mutations_on_another_mount(t
             environment=_two_local_bindings(
                 tmp_path / "workspace",
                 tmp_path / "shared",
-                first_operations=EnvironmentAccess.READ_WRITE.permission_set().operations,
-                second_operations=EnvironmentAccess.FULL.permission_set().operations,
+                first_operations=FILE_ACTIONS,
+                second_operations=frozenset(EnvironmentAction),
                 second_process_output=True,
             ),
         ),
@@ -815,7 +816,7 @@ async def test_file_mutation_tools_execute_without_shell(tmp_path: Path) -> None
         bindings=RunBindings.embedded(
             environment=_local_binding(
                 tmp_path,
-                operations=EnvironmentAccess.READ_WRITE.permission_set().operations,
+                operations=FILE_ACTIONS,
             ),
             capabilities=(_policy(),),
         ),
@@ -972,7 +973,7 @@ async def test_file_change_event_keeps_only_confirmed_partial_batch_items(tmp_pa
         bindings=RunBindings.embedded(
             environment=_local_binding(
                 tmp_path,
-                operations=EnvironmentAccess.READ_WRITE.permission_set().operations,
+                operations=FILE_ACTIONS,
             ),
             capabilities=(_policy(),),
         ),
@@ -1032,7 +1033,7 @@ async def test_mixed_invalid_file_batch_fails_before_any_mutation(tmp_path: Path
         bindings=RunBindings.embedded(
             environment=_local_binding(
                 tmp_path,
-                operations=EnvironmentAccess.READ_WRITE.permission_set().operations,
+                operations=FILE_ACTIONS,
             ),
             capabilities=(_policy(),),
         ),
@@ -2403,7 +2404,6 @@ async def test_text_view_batches_obey_actual_page_budget(tmp_path: Path, provide
     (tmp_path / "text").write_text(content, encoding="utf-8", newline="")
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=True,
         policy=DirectLocalFilePolicy(max_value_bytes=provider_budget),
         mount_id="workspace",
         generation="test",
@@ -2793,7 +2793,6 @@ async def test_direct_local_move_preserves_nonempty_directory_on_rejected_replac
     (destination / "old.txt").write_text("old")
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
@@ -2813,7 +2812,6 @@ async def test_dynamic_file_operations_accept_non_virtual_file_operator(tmp_path
     source.write_bytes(b"provider-neutral\n")
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
@@ -2979,7 +2977,6 @@ async def test_shell_toolset_exposes_exact_run_owned_process_surface(tmp_path: P
 async def test_file_toolset_creates_nested_parents_and_returns_stable_missing_error(tmp_path: Path) -> None:
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
@@ -3053,7 +3050,6 @@ def test_file_failure_hints_preserve_specific_diagnostics_without_raw_provider_d
 async def test_file_toolset_rechecks_authorization_between_compound_operations(tmp_path: Path) -> None:
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
@@ -3154,7 +3150,6 @@ async def test_file_toolset_serializes_concurrent_exact_edits(tmp_path: Path) ->
     target.write_text("first\nsecond\n")
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
@@ -3175,7 +3170,6 @@ async def test_file_toolset_serializes_concurrent_exact_edits(tmp_path: Path) ->
 async def test_direct_local_create_is_exclusive_under_concurrency(tmp_path: Path) -> None:
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",
@@ -3204,7 +3198,6 @@ async def test_large_exact_edit_transformation_runs_off_event_loop(
     target.write_text("before\n")
     files = LocalFileOperator(
         root=tmp_path,
-        read_only=False,
         policy=DirectLocalFilePolicy(max_value_bytes=16 * 1024 * 1024),
         mount_id="mount-1",
         generation="generation-1",

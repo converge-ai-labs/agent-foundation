@@ -1,36 +1,76 @@
-import { useEffect, useState } from "react";
+import { DotsThreeOutlineVerticalIcon } from "@phosphor-icons/react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Button, Menu, MenuItem, MenuPopup, MenuTrigger } from "a13n-ui";
+import { useEffect, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, ReadOnlyField, ModalFrame } from "a13n-ui";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
-import { ResourceIdentity } from "../../shared/collection";
-import { CopyableId } from "../../shared/copy";
+import { Confirm } from "../../shared/dialogs";
 import {
   ErrorNotice,
   ErrorToast,
   Loading,
-  StateBadge,
+  StatePill,
   Timestamp,
 } from "../../shared/feedback";
-import { Confirm } from "../../shared/form";
+import { CopyableId, ProviderIcon } from "../../shared/identity";
 import { useIdempotency } from "../../shared/idempotency";
-import { ProviderIcon } from "../../shared/provider-icon";
-import styles from "../../shared/shared.module.css";
+import { Panel } from "../../shared/page";
 import { environmentQuery } from "./api";
+import styles from "./environments.module.css";
 import { EnvironmentNameEditor } from "./instance-name";
 
+/**
+ * Standalone entry point: a "Details" button that opens the same inspector.
+ * Collections open the panel directly from the row instead.
+ */
 export function EnvironmentDetails({
   environment,
 }: {
   environment: Schema["Environment"];
 }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button
+        size="sm"
+        variant="outline"
+        type="button"
+        onClick={() => setOpen(true)}
+      >
+        {t("Details")}
+      </Button>
+      {open && (
+        <EnvironmentPanel
+          environment={environment}
+          open
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * The inspector for one environment: what it is, how it is retained, and the
+ * two lifecycle commands a target may support.
+ */
+export function EnvironmentPanel({
+  environment,
+  open,
+  onClose,
+}: {
+  environment: Schema["Environment"];
+  open: boolean;
+  onClose: () => void;
+}) {
   const client = useClient(),
     cache = useQueryClient(),
     { workspace, can } = useWorkspace(),
     { t } = useTranslation(),
-    [open, setOpen] = useState(false),
+    [renaming, setRenaming] = useState(false),
     [nameEditorKey, setNameEditorKey] = useState(0),
     [commandId, setCommandId] = useState<string>(),
     key = useIdempotency();
@@ -93,130 +133,175 @@ export function EnvironmentDetails({
     key.reset();
     setCommandId(receipt.id);
   }
+  const value = detail.data?.value;
+  const lifecycle =
+    can("environment.manage") &&
+    (value?.supports_stop || value?.supports_destroy);
   return (
-    <ModalFrame
-      onOpenChange={setOpen}
-      trigger={
-        <Button size="sm" variant="outline" type="button">
-          {t("Details")}
-        </Button>
-      }
-      size={"md"}
-      title={t("Environment details")}
-      closeLabel={t("Close")}
+    <Panel
       open={open}
-    >
-      <div className={styles.stack}>
-        <ErrorNotice error={detail.error} />
-        <ErrorToast error={command.error} />
-        {detail.isPending ? (
-          <Loading variant="form" rows={5} />
-        ) : (
-          detail.data && (
-            <>
-              <ResourceIdentity
-                name={detail.data.value.name}
-                resourceId={detail.data.value.id}
-              />
-              {can("environment.manage") && (
-                <EnvironmentNameEditor
-                  key={nameEditorKey}
-                  environment={detail.data.value}
-                  etag={detail.data?.etag}
-                  reload={async () => {
-                    const result = await detail.refetch();
-                    if (result.isSuccess)
-                      setNameEditorKey((value) => value + 1);
-                  }}
+      onClose={onClose}
+      label={t("Environment details")}
+      defaultWidth={420}
+      title={
+        <span className={styles.panelTitle}>
+          <strong title={value?.name ?? environment.name}>
+            {value?.name ?? environment.name}
+          </strong>
+          {value && <StatePill state={value.status} />}
+        </span>
+      }
+      actions={
+        lifecycle && (
+          <Menu>
+            <MenuTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  type="button"
+                  aria-label={t("Environment actions")}
+                  title={t("Environment actions")}
                 />
-              )}
-              <div className={styles.twoColumns}>
-                <ReadOnlyField label={t("Status")}>
-                  <StateBadge state={detail.data.value.status} />
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Activity")}>
-                  <StateBadge state={detail.data.value.retention_condition} />
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Activity since")}>
-                  <Timestamp value={detail.data.value.condition_since} />
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Generation")}>
-                  {detail.data.value.generation}
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Updated")}>
-                  <Timestamp value={detail.data.value.updated_at} />
-                </ReadOnlyField>
-              </div>
-              <RetentionDetails environment={detail.data.value} />
-              <div className={`${styles.stack} border-t border-border pt-4`}>
-                <ReadOnlyField label={t("Ownership")}>
-                  {t(
-                    detail.data.value.ownership === "managed"
-                      ? "Managed"
-                      : "External",
-                  )}
-                </ReadOnlyField>
-                <ReadOnlyField label={t("Provider")}>
-                  {provider.data ? (
-                    <ResourceIdentity
-                      name={provider.data.name}
-                      resourceId={provider.data.id}
-                      icon={<ProviderIcon type={provider.data.type} />}
-                    />
-                  ) : (
-                    <CopyableId value={detail.data.value.provider_id} />
-                  )}
-                </ReadOnlyField>
-                {detail.data.value.template_revision_id && (
-                  <ReadOnlyField label={t("Template revision")}>
-                    <CopyableId
-                      value={detail.data.value.template_revision_id}
-                    />
-                  </ReadOnlyField>
-                )}
-              </div>
-            </>
-          )
-        )}
-        {command.data && (
-          <div role="status">
-            <strong>{t("Lifecycle command")}</strong>{" "}
-            <StateBadge state={command.data.status} />
-            <small>{command.data.id}</small>
-          </div>
-        )}
-        {can("environment.manage") &&
-          (detail.data?.value.supports_stop ||
-            detail.data?.value.supports_destroy) && (
-            <div className={`${styles.actions} border-t border-border pt-4`}>
-              {detail.data.value.supports_stop && (
+              }
+            >
+              <DotsThreeOutlineVerticalIcon size={14} weight="fill" />
+            </MenuTrigger>
+            <MenuPopup align="end">
+              {value?.supports_stop && (
                 <Confirm
                   subject={environment.id}
                   title={t("Stop environment target")}
                   description={t(
                     "This stops the target when it has no active users. A later run can resume it.",
                   )}
-                  trigger={t("Stop target")}
+                  triggerElement={
+                    <MenuItem closeOnClick={false}>{t("Stop target")}</MenuItem>
+                  }
                   action={() => act("stop")}
                 />
               )}
-              {detail.data.value.supports_destroy && (
+              {value?.supports_destroy && (
                 <Confirm
                   subject={environment.id}
                   title={t("Delete environment target")}
                   description={t(
                     "Files and processes on the target will be lost. The next use automatically creates a fresh target from the frozen template revision; old files are not restored. Environment identity and history are retained.",
                   )}
-                  trigger={t("Delete target")}
                   danger
-                  triggerVariant="outline"
+                  triggerElement={
+                    <MenuItem closeOnClick={false} variant="destructive">
+                      {t("Delete target")}
+                    </MenuItem>
+                  }
                   action={() => act("delete")}
                 />
               )}
-            </div>
-          )}
+            </MenuPopup>
+          </Menu>
+        )
+      }
+    >
+      <div className={styles.panelBody}>
+        <ErrorNotice error={detail.error} />
+        <ErrorToast error={command.error} />
+        {detail.isPending ? (
+          <Loading variant="form" rows={5} />
+        ) : (
+          value && (
+            <>
+              <section className={styles.factGroup}>
+                <h3>{t("Environment")}</h3>
+                <dl className={styles.facts}>
+                  <Fact label={t("Name")}>
+                    <span>{value.name}</span>
+                    {can("environment.manage") && !renaming && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setRenaming(true)}
+                      >
+                        {t("Rename")}
+                      </Button>
+                    )}
+                  </Fact>
+                  <Fact label={t("Activity")}>
+                    <StatePill state={value.retention_condition} />
+                  </Fact>
+                  <Fact label={t("Activity since")}>
+                    <Timestamp value={value.condition_since} />
+                  </Fact>
+                  <Fact label={t("Generation")}>{value.generation}</Fact>
+                  <Fact label={t("Updated")}>
+                    <Timestamp value={value.updated_at} />
+                  </Fact>
+                </dl>
+                {renaming && can("environment.manage") && (
+                  <EnvironmentNameEditor
+                    key={nameEditorKey}
+                    environment={value}
+                    etag={detail.data?.etag}
+                    onCancel={() => setRenaming(false)}
+                    reload={async () => {
+                      const result = await detail.refetch();
+                      if (result.isSuccess)
+                        setNameEditorKey((current) => current + 1);
+                    }}
+                  />
+                )}
+              </section>
+              <section className={styles.factGroup}>
+                <h3>{t("Source")}</h3>
+                <dl className={styles.facts}>
+                  <Fact label={t("Ownership")}>
+                    {t(value.ownership === "managed" ? "Managed" : "External")}
+                  </Fact>
+                  <Fact label={t("Provider")}>
+                    {provider.data ? (
+                      <>
+                        <ProviderIcon type={provider.data.type} />
+                        <span>{provider.data.name}</span>
+                      </>
+                    ) : (
+                      <CopyableId value={value.provider_id} />
+                    )}
+                  </Fact>
+                  {value.template_revision_id && (
+                    <Fact label={t("Template revision")}>
+                      <CopyableId value={value.template_revision_id} />
+                    </Fact>
+                  )}
+                </dl>
+              </section>
+              <RetentionDetails environment={value} />
+            </>
+          )
+        )}
+        {command.data && (
+          <section className={styles.factGroup} role="status">
+            <h3>{t("Lifecycle command")}</h3>
+            <dl className={styles.facts}>
+              <Fact label={t("Status")}>
+                <StatePill state={command.data.status} />
+              </Fact>
+              <Fact label={t("Command")}>
+                <CopyableId value={command.data.id} />
+              </Fact>
+            </dl>
+          </section>
+        )}
       </div>
-    </ModalFrame>
+    </Panel>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className={styles.fact}>
+      <dt>{label}</dt>
+      <dd>{children}</dd>
+    </div>
   );
 }
 
@@ -228,29 +313,24 @@ function RetentionDetails({
   const { t, i18n } = useTranslation();
   const policy = environment.retention;
   return (
-    <section className={`${styles.stack} border-t border-border pt-4`}>
+    <section className={styles.factGroup}>
       <h3>{t("Effective retention policy")}</h3>
       {policy === null ? (
-        <p>
+        <p className={styles.panelNote}>
           {t(
             "Externally owned: Service does not automatically stop or delete this target.",
           )}
         </p>
       ) : (
         <>
-          <p>
-            {t(
-              "Frozen at allocation. Later template changes do not affect this environment.",
-            )}
-          </p>
-          <div className={styles.twoColumns}>
+          <dl className={styles.facts}>
             {(
               [
                 [t("Stop after idle"), policy.idle.stop_after],
                 [t("Delete after idle"), policy.idle.delete_after],
               ] as const
             ).map(([label, seconds]) => (
-              <ReadOnlyField key={label} label={label}>
+              <Fact key={label} label={label}>
                 {seconds === null
                   ? t("Disabled")
                   : t("{{seconds}} seconds", {
@@ -258,19 +338,26 @@ function RetentionDetails({
                         i18n.resolvedLanguage,
                       ).format(seconds),
                     })}
-              </ReadOnlyField>
+              </Fact>
             ))}
+          </dl>
+          <div className={styles.panelNotes}>
+            <p className={styles.panelNote}>
+              {t(
+                "Frozen at allocation. Later template changes do not affect this environment.",
+              )}
+            </p>
+            <p className={styles.panelNote}>
+              {t(
+                "Idle time starts when no runs actively use this environment. Stopping does not reset the deletion timer.",
+              )}
+            </p>
+            <p className={styles.panelNote}>
+              {t(
+                "After target deletion, the next use creates a fresh target from the frozen template revision. Old files are not restored.",
+              )}
+            </p>
           </div>
-          <p>
-            {t(
-              "Idle time starts when no runs actively use this environment. Stopping does not reset the deletion timer.",
-            )}
-          </p>
-          <p>
-            {t(
-              "After target deletion, the next use creates a fresh target from the frozen template revision. Old files are not restored.",
-            )}
-          </p>
         </>
       )}
     </section>

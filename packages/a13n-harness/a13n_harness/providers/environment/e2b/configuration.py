@@ -74,7 +74,6 @@ class E2BEnvironmentConfiguration(BaseModel):
     timeout_seconds: int = Field(default=3600, ge=30, le=86_400, title="Sandbox timeout (seconds)")
     request_timeout_seconds: float = Field(default=30, gt=0, le=300, allow_inf_nan=False)
     allow_internet_access: bool = Field(default=True, title="Allow internet access")
-    read_only: bool = False
     max_file_bytes: int = Field(default=16 * 1024 * 1024, gt=0, le=1024 * 1024 * 1024)
     max_observation_bytes: int = Field(default=1024 * 1024, gt=0, le=16 * 1024 * 1024)
     max_active_observations: int = Field(default=128, gt=0, le=1024)

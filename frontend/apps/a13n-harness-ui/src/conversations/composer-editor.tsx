@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { EditorView, keymap } from "@codemirror/view";
+import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { Compartment, Prec } from "@codemirror/state";
 import {
   autocompletion,
@@ -33,6 +33,7 @@ export function ComposerEditor({
   local = false,
   loadSkills,
   skillContext,
+  placeholderText = "Describe a task…",
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -44,6 +45,7 @@ export function ComposerEditor({
   local?: boolean;
   loadSkills?: LoadSkills;
   skillContext?: string;
+  placeholderText?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const attributes = useRef(new Compartment());
@@ -55,14 +57,16 @@ export function ComposerEditor({
     ? "Private to this tab until you send. Files upload on Send. Reloading discards this draft. Enter to send; Shift+Enter for a new line."
     : "Shared with this conversation. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
   const contentAttributes = useMemo(
-    () =>
+    () => [
+      placeholder(placeholderText),
       EditorView.contentAttributes.of({
         "aria-label": "Shared prompt",
         "aria-multiline": "true",
         "aria-description": description,
         role: "textbox",
       }),
-    [description],
+    ],
+    [description, placeholderText],
   );
   const initialAttributes = useRef(contentAttributes);
   const send = useRef(submit);
@@ -183,7 +187,7 @@ export function ComposerEditor({
             backgroundColor: "transparent",
             color: "var(--a13n-text)",
             fontSize: "var(--composer-font-size, 14px)",
-            height: "var(--composer-editor-height, 88px)",
+            minHeight: "var(--composer-content-height, 64px)",
           },
           ".cm-content": {
             fontFamily: "inherit",
@@ -192,10 +196,12 @@ export function ComposerEditor({
             lineHeight: "1.6",
           },
           ".cm-scroller": {
-            height: "100%",
+            maxHeight:
+              "max(64px, min(280px, calc(var(--visible-height, 100dvh) * 0.35), calc(var(--visible-height, 100dvh) - 300px)))",
             overflow: "auto",
             fontFamily: "inherit",
           },
+          ".cm-placeholder": { color: "var(--a13n-secondary)" },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
           "&.cm-focused": { outline: "none" },
           ".cm-ySelectionCaret": {
@@ -226,6 +232,7 @@ export function ComposerEditor({
         }),
       ],
     });
+    view.scrollDOM.classList.add("a13n-scrollbar");
     currentView.current = view;
     if (editor) editor.current = view;
     window.addEventListener("blur", clearCursor);

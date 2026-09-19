@@ -266,6 +266,7 @@ class EnvironmentRuntimeMount:
     permission_ceiling: EnvironmentPermissionSet
     working_directory: str | None = "/"
     mount_path: str | None = None
+    provider_root: str = "/"
 
     def __post_init__(self) -> None:
         if not isinstance(self.binding, EnvironmentProviderBinding):
@@ -273,6 +274,7 @@ class EnvironmentRuntimeMount:
         if not isinstance(self.permission_ceiling, EnvironmentPermissionSet):
             raise TypeError("permission_ceiling must be an EnvironmentPermissionSet")
         validate_working_directory(self.working_directory)
+        validate_working_directory(self.provider_root)
         if self.mount_path is not None:
             parse_mount_path(self.mount_path)
 

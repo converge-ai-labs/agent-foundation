@@ -45,6 +45,8 @@ from a13n_harness.providers.environment.models import (
     DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS,
     ENVIRONMENT_ACTION_CATALOG_VERSION,
     ENVIRONMENT_ACTION_DISPATCH,
+    FILE_ACTIONS,
+    FILE_READ_ACTIONS,
     EnvironmentAction,
     EnvironmentActionDispatch,
     EnvironmentAvailability,
@@ -90,7 +92,7 @@ from .extensions import (
     EnvironmentRunExtensionContext,
 )
 from .providers import FileScopeSelection
-from .sources import EnvironmentAccess, EnvironmentEntry, EnvironmentMount
+from .sources import EnvironmentEntry, EnvironmentMount
 from .virtual_files import VirtualFileOperator
 
 if TYPE_CHECKING:
@@ -118,6 +120,8 @@ __all__ = [
     "ENVIRONMENT_ACTION_CATALOG_VERSION",
     "ENVIRONMENT_ACTION_DISPATCH",
     "ENVIRONMENT_RUN_EXTENSION_ENTRY_POINT_GROUP",
+    "FILE_ACTIONS",
+    "FILE_READ_ACTIONS",
     "ArgvCommand",
     "BoundOutputCursor",
     "BoundOutputReference",
@@ -128,7 +132,6 @@ __all__ = [
     "DynamicEnvironmentCapability",
     "DynamicEnvironmentConfiguration",
     "Environment",
-    "EnvironmentAccess",
     "EnvironmentAction",
     "EnvironmentActionDispatch",
     "EnvironmentAvailability",

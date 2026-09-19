@@ -1,4 +1,4 @@
-import { Button, ChoiceField } from "a13n-ui";
+import { Button, ChoiceField, SearchPicker } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -16,6 +16,7 @@ import {
 import { ConversationPicker } from "./conversation-picker";
 import { GitHubPolicyFields } from "./github-policy";
 import { BotChecks } from "./checks";
+import { Step } from "./wizard";
 import styles from "./connect.module.css";
 
 export function BotPilot({
@@ -163,40 +164,59 @@ export function BotPilot({
     account.status !== "active"
   )
     return (
-      <section>
-        <h2>{t("Review existing reception settings")}</h2>
-        <p>
-          {t(
-            "This account is already receiving messages or uses broader routing. Review its existing configuration before starting a single-conversation pilot.",
-          )}
-        </p>
-        <Link to={`${basePath}/bots/${account.id}/settings`}>
-          {t("Review reception settings")}
-        </Link>
-        <p>
-          <Button variant="outline" onClick={onBack}>
-            {t("Back")}
+      <Step
+        title={t("Review existing reception settings")}
+        description={t(
+          "This account is already receiving messages or uses broader routing. Review its existing configuration before starting a single-conversation pilot.",
+        )}
+        onBack={onBack}
+        primary={
+          <Button
+            render={<Link to={`${basePath}/bots/${account.id}/settings`} />}
+          >
+            {t("Review reception settings")}
           </Button>
-        </p>
-      </section>
+        }
+      >
+        <></>
+      </Step>
     );
   return (
-    <section>
-      <h2>
-        {t(
-          github ? "Choose a pilot repository" : "Choose a pilot conversation",
-        )}
-      </h2>
-      <p>
-        {t(
-          github
-            ? "Select one repository accessible to this GitHub identity. Reception stays off until you verify and enable it."
-            : "Invite the bot to one pilot channel or group. Reception stays off until you explicitly verify and enable it below.",
-        )}
-      </p>
+    <Step
+      title={t(
+        github ? "Choose a pilot repository" : "Choose a pilot conversation",
+      )}
+      description={t(
+        github
+          ? "Select one repository accessible to this GitHub identity. Reception stays off until you verify and enable it."
+          : "Invite the bot to one pilot channel or group. Reception stays off until you explicitly verify and enable it below.",
+      )}
+      onBack={onBack}
+      backDisabled={activate.isPending}
+      primary={
+        target && eligible ? (
+          <Button
+            type="submit"
+            form="bot-pilot"
+            loading={activate.isPending}
+            disabled={
+              !agentId ||
+              !executionId ||
+              !!targets.error ||
+              targets.isFetching ||
+              activate.isPending ||
+              !!options.agents.error ||
+              !!options.accounts.error
+            }
+          >
+            {t("Enable reception")}
+          </Button>
+        ) : undefined
+      }
+    >
       <ErrorNotice error={targets.error} retry={() => void targets.refetch()} />
       {targetChanged && (
-        <p role="status">
+        <p className={styles.hint} role="status">
           {t(
             "The pilot configuration changed. Reload to review the current account and conversation before enabling reception.",
           )}
@@ -224,7 +244,7 @@ export function BotPilot({
             retry={() => void targets.refetch()}
           />
           {existingSelection && (
-            <p>
+            <p className={styles.hint}>
               {t(
                 "This conversation is already configured. Review its existing reception setting instead of creating it again.",
               )}
@@ -244,7 +264,7 @@ export function BotPilot({
         </form>
       )}
       {!targets.error && enabled.length > 0 && !eligible && (
-        <p role="status">
+        <p className={styles.hint} role="status">
           {t(
             "Configure exactly one pilot conversation that inherits its account settings.",
           )}{" "}
@@ -255,7 +275,7 @@ export function BotPilot({
       )}
       {target && eligible && (
         <>
-          <p>
+          <p className={styles.hint}>
             {t("Pilot conversation")}: <code>{target.external_target_id}</code>
           </p>
           <BotChecks
@@ -263,49 +283,57 @@ export function BotPilot({
             conversationId={target.external_target_id}
           />
           <form
+            id="bot-pilot"
             className={styles.pilotForm}
             onSubmit={(event) => {
               event.preventDefault();
               activate.mutate();
             }}
           >
-            <h2>{t("Agent and reception")}</h2>
             <ErrorNotice
               error={options.agents.error ?? options.accounts.error}
             />
-            <ChoiceField
+            <SearchPicker
               label={t("Default agent")}
               placeholder={t("Select agent")}
+              emptyMessage={t("No matches")}
               value={agentId}
               onValueChange={setAgentId}
-              required
               disabled={activate.isPending}
-              options={
-                options.agents.data?.map((agent) => ({
-                  value: agent.id,
-                  label: agent.name,
-                })) ?? []
+              groups={[
+                {
+                  label: t("Agents"),
+                  options:
+                    options.agents.data?.map((agent) => ({
+                      value: agent.id,
+                      label: agent.name,
+                      description: agent.description ?? undefined,
+                    })) ?? [],
+                },
+              ]}
+              footer={
+                <Link to={`${basePath}/agents`}>{t("Manage agents")}</Link>
               }
             />
-            <p>
-              <Link to={`${basePath}/agents`} target="_blank" rel="noreferrer">
-                {t("Open agents in a new tab")}
-              </Link>
-            </p>
-            <ChoiceField
+            <SearchPicker
               label={t("Execution service account")}
               placeholder={t("Select service account")}
+              emptyMessage={t("No matches")}
               value={executionId}
               onValueChange={setExecutionId}
-              required
               disabled={activate.isPending}
-              options={
-                options.accounts.data
-                  ?.filter((item) => item.status === "active")
-                  .map((item) => ({ value: item.id, label: item.name })) ?? []
-              }
+              groups={[
+                {
+                  label: t("Service accounts"),
+                  options:
+                    options.accounts.data
+                      ?.filter((item) => item.status === "active")
+                      .map((item) => ({ value: item.id, label: item.name })) ??
+                    [],
+                },
+              ]}
             />
-            <p>
+            <p className={styles.hint}>
               {t(
                 "The execution service account determines what incoming messages may do. It does not use your browser login or the sender's permissions.",
               )}
@@ -353,7 +381,7 @@ export function BotPilot({
                   ]}
                 />
                 {reply !== "thread" && (
-                  <p>
+                  <p className={styles.hint}>
                     {t(
                       reply === "main"
                         ? "Replies in the main conversation may be visible beyond the original discussion."
@@ -363,43 +391,15 @@ export function BotPilot({
                 )}
               </>
             )}
-            <p>
+            <p className={styles.hint}>
               {t(
                 "Enabling reception rechecks the app and pilot membership. Future matching messages can invoke the selected agent and consume model usage.",
               )}
             </p>
             <ErrorNotice error={activate.error} retry={() => void reload()} />
-            <div className={styles.actions}>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={activate.isPending}
-                onClick={onBack}
-              >
-                {t("Back")}
-              </Button>
-              <Button
-                type="submit"
-                disabled={
-                  !agentId ||
-                  !executionId ||
-                  !!targets.error ||
-                  targets.isFetching ||
-                  activate.isPending ||
-                  !!options.agents.error ||
-                  !!options.accounts.error
-                }
-              >
-                {t(
-                  activate.isPending
-                    ? "Verifying and enabling…"
-                    : "Verify and enable reception",
-                )}
-              </Button>
-            </div>
           </form>
         </>
       )}
-    </section>
+    </Step>
   );
 }

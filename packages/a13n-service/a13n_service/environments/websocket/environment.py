@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 
 from a13n_harness.providers.environment.management import Environment
 from a13n_harness.providers.environment.models import (
-    EnvironmentAction,
     EnvironmentAvailability,
     EnvironmentDescriptor,
     EnvironmentError,
@@ -84,9 +83,7 @@ class ClientRunEnvironment(Environment):
         with observe_phase("a13n.service.environment.prepare"):
             await self._close()
             target = await self._resources.admit(self._attempt, self.environment_id, mount_name=self._mount_name)
-            client = await self._connections.acquire(
-                self._attempt, self.environment_id, frozenset(EnvironmentAction), mount_name=self._mount_name
-            )
+            client = await self._connections.acquire(self._attempt, self.environment_id, mount_name=self._mount_name)
             self._client = client
             if self.is_entered:
                 client.bind_mount(mount_id)

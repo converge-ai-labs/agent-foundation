@@ -1,31 +1,45 @@
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { PlugIcon } from "@phosphor-icons/react";
 import { BrandIcon, Button } from "a13n-ui";
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
-import { ResourceIdentity, ResourceTable } from "../../shared/collection";
 import {
   Empty,
+  ResourceIdentity,
+  ResourceTable,
+} from "../../shared/collection";
+import {
   ErrorNotice,
   Loading,
-  Page,
-  StateBadge,
+  StatePill,
+  Timestamp,
 } from "../../shared/feedback";
+import { Page } from "../../shared/page";
 import { ConnectionDetails } from "./editor";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
 import { NewConnection } from "./new";
 import { MCPConnectionIcon } from "./mcp-icon";
+import styles from "./connections.module.css";
+
+/** A remote endpoint reads better as its host than as a full URL. */
+function endpointHost(url: string) {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
 
 export function ConnectionsPage() {
   const client = useClient(),
     { workspace, can } = useWorkspace(),
     { t } = useTranslation();
   const [search, setSearch] = useSearchParams();
-  const finalFocus = useRef<HTMLElement | null>(null);
   const [cleanup, setCleanup] = useState<Schema["ConnectionCleanupReceipt"]>();
   const connections = useInfiniteQuery({
     queryKey: ["connections", workspace.id, "list"],
@@ -66,6 +80,9 @@ export function ConnectionsPage() {
       },
       { replace: true },
     );
+  const create = can("connection.manage") && (
+    <NewConnection onConnected={select} />
+  );
   return (
     <Page
       title={t("Connections")}
@@ -73,35 +90,37 @@ export function ConnectionsPage() {
       actions={
         <>
           <ManageProvidersLink category="connectors" scope="workspace" />
-          {can("connection.manage") && <NewConnection onConnected={select} />}
+          {create}
         </>
       }
     >
       {cleanup && (
-        <div role="status">
-          <h3>
-            {t(
-              cleanup.local_status === "deleted"
-                ? "Connection deleted"
-                : "Connection revoked",
-            )}
-          </h3>
-          <p>
-            {t(
-              {
-                not_required:
-                  "Local access is disabled. No external authorization needed cleanup.",
-                succeeded:
-                  "Local access is disabled and external authorization was removed.",
-                failed:
-                  "Local access is disabled, but external cleanup failed. Remove the authorization with your provider.",
-                unknown:
-                  "Local access is disabled. External cleanup could not be confirmed; check with your provider.",
-              }[cleanup.remote_status],
-            )}
-          </p>
+        <div className={styles.cleanup} role="status">
+          <div>
+            <h3>
+              {t(
+                cleanup.local_status === "deleted"
+                  ? "Connection deleted"
+                  : "Connection revoked",
+              )}
+            </h3>
+            <p>
+              {t(
+                {
+                  not_required:
+                    "Local access is disabled. No external authorization needed cleanup.",
+                  succeeded:
+                    "Local access is disabled and external authorization was removed.",
+                  failed:
+                    "Local access is disabled, but external cleanup failed. Remove the authorization with your provider.",
+                  unknown:
+                    "Local access is disabled. External cleanup could not be confirmed; check with your provider.",
+                }[cleanup.remote_status],
+              )}
+            </p>
+          </div>
           <Button
-            variant="outline"
+            variant="ghost"
             size="sm"
             onClick={() => setCleanup(undefined)}
           >
@@ -115,10 +134,8 @@ export function ConnectionsPage() {
       ) : rows.length ? (
         <ResourceTable
           items={rows}
-          onRowActivate={(row, element) => {
-            finalFocus.current = element;
-            select(row.id);
-          }}
+          caption={t("Connections")}
+          onRowActivate={(row) => select(row.id)}
           columns={[
             {
               label: t("Connection"),
@@ -130,7 +147,7 @@ export function ConnectionsPage() {
                   description={
                     row.source.kind === "connector"
                       ? row.source.connector_key
-                      : row.source.endpoint_url
+                      : endpointHost(row.source.endpoint_url)
                   }
                   icon={
                     row.source.kind === "connector" ? (
@@ -155,17 +172,26 @@ export function ConnectionsPage() {
             },
             {
               label: t("Status"),
-              render: (connection) => <StateBadge state={connection.status} />,
+              render: (connection) => <StatePill state={connection.status} />,
+            },
+            {
+              label: t("Updated"),
+              tone: "muted",
+              render: (connection) => (
+                <Timestamp value={connection.updated_at} relative />
+              ),
             },
           ]}
         />
       ) : (
         !connections.error && (
           <Empty
+            icon={<PlugIcon aria-hidden="true" />}
             title={t("No connections yet")}
             description={t(
               "Choose a service to connect your first account or MCP server.",
             )}
+            action={create}
           />
         )
       )}
@@ -182,8 +208,6 @@ export function ConnectionsPage() {
         <ConnectionDetails
           key={focused}
           connectionId={focused}
-          finalFocus={finalFocus}
-          controlledOpen
           onClose={() => select()}
           onCleanup={setCleanup}
         />

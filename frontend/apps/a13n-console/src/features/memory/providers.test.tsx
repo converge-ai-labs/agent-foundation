@@ -6,9 +6,10 @@ import {
   QueryClientProvider,
   focusManager,
 } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router";
 import { ApiError } from "../../service-client";
 import { useState } from "react";
-import { MemoryProviderEditor } from "./editor";
+import { AddMemoryProvider, MemoryProviderEditor } from "./editor";
 import { MemoryProviders } from "./providers";
 import { MemoryPresets } from "./presets";
 import type { Schema } from "../../shared/api";
@@ -29,6 +30,7 @@ vi.mock("../../layout/workspace", () => ({
     can: (action: string) =>
       ["memory_provider.read", "memory_provider.manage"].includes(action),
     organizationAdmin: false,
+    workspace: { id: "ws_test", key: "research" },
   }),
 }));
 vi.mock("react-i18next", () => ({
@@ -89,7 +91,11 @@ function setup(child: React.ReactNode) {
       mutations: { retry: false },
     },
   });
-  render(<QueryClientProvider client={cache}>{child}</QueryClientProvider>);
+  render(
+    <MemoryRouter>
+      <QueryClientProvider client={cache}>{child}</QueryClientProvider>
+    </MemoryRouter>,
+  );
   return cache;
 }
 beforeEach(() => {
@@ -108,8 +114,11 @@ beforeEach(() => {
 });
 it("creates an installed custom backend from its schemas and clears credentials on dismissal", async () => {
   const user = userEvent.setup(),
-    cache = setup(<MemoryProviderEditor scope={scope} />);
+    cache = setup(<AddMemoryProvider scope={scope} />);
   await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(
+    await screen.findByRole("button", { name: /Custom memory/ }),
+  );
   await user.type(
     await screen.findByRole("textbox", { name: "Server URL" }),
     "https://memory.example",
@@ -137,6 +146,9 @@ it("creates an installed custom backend from its schemas and clears credentials 
   ).not.toContain("private-token");
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(
+    await screen.findByRole("button", { name: /Custom memory/ }),
+  );
   expect(await screen.findByLabelText("Access token")).toHaveProperty(
     "value",
     "",
@@ -144,8 +156,14 @@ it("creates an installed custom backend from its schemas and clears credentials 
 });
 it("keeps the target immutable and preserves credentials on rename with the exact ETag", async () => {
   const user = userEvent.setup();
-  setup(<MemoryProviderEditor scope={scope} providerId={provider.id} />);
-  await user.click(screen.getByRole("button", { name: "Edit" }));
+  setup(
+    <MemoryProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),
     " renamed",
@@ -162,11 +180,17 @@ it("keeps the target immutable and preserves credentials on rename with the exac
 });
 it("retains the draft across a stale ETag and explicitly reloads the version", async () => {
   const user = userEvent.setup();
-  setup(<MemoryProviderEditor scope={scope} providerId={provider.id} />);
+  setup(
+    <MemoryProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
   http.PATCH.mockRejectedValueOnce(
     new ApiError(412, "precondition_failed", "Changed", {}, "req_test"),
   );
-  await user.click(screen.getByRole("button", { name: "Edit" }));
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),
     " draft",
@@ -188,21 +212,28 @@ it("retains the draft across a stale ETag and explicitly reloads the version", a
   });
 });
 it("renders inherited providers read-only without editable secrets", async () => {
-  const user = userEvent.setup();
   setup(
-    <MemoryProviderEditor scope={scope} providerId={provider.id} readOnly />,
+    <MemoryProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      readOnly
+      controlledOpen
+      onClose={() => {}}
+    />,
   );
-  await user.click(screen.getByRole("button", { name: "Edit" }));
-  await screen.findByText("Team memory");
+  await screen.findAllByText("Team memory");
   expect(screen.queryByRole("textbox")).toBeNull();
   expect(screen.queryByLabelText("Access token")).toBeNull();
   expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
 });
 it("never repeats an uncertain provider create before explicit reconciliation", async () => {
   const user = userEvent.setup();
-  setup(<MemoryProviderEditor scope={scope} />);
+  setup(<AddMemoryProvider scope={scope} />);
   http.POST.mockRejectedValue(new TypeError("Network unavailable"));
   await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(
+    await screen.findByRole("button", { name: /Custom memory/ }),
+  );
   await user.type(
     await screen.findByRole("textbox", { name: "Server URL" }),
     "https://memory.example",
@@ -250,8 +281,8 @@ it("preserves all memory options when switching providers and refreshes choices 
       ),
     ).toHaveLength(1),
   );
-  const link = screen.getByRole("link", { name: "Manage memory providers" });
-  expect(link.getAttribute("target")).toBe("_blank");
+  const link = screen.getByRole("link", { name: "Manage providers" });
+  expect(link.getAttribute("target")).toBeNull();
   expect(link.getAttribute("href")).toBe(
     "/workspace/research/settings?section=providers&category=memory",
   );
@@ -310,7 +341,7 @@ it("links to the saved Agent provider even when the selection draft changes", as
   expect(link.getAttribute("href")).toBe(
     "/workspace/research/memories?scope=agent&provider=memprov_old&subject=agt_stable",
   );
-  expect(link.getAttribute("target")).toBe("_blank");
+  expect(link.getAttribute("target")).toBeNull();
 });
 
 const structuredDefinition = {
@@ -323,6 +354,8 @@ const structuredDefinition = {
   },
   configuration_schema: {
     type: "object",
+    // Access gates the credential, so the connect step must ask for it.
+    required: ["access"],
     properties: {
       access: {
         type: "string",
@@ -350,14 +383,21 @@ it("renders custom help, choice defaults, nested secrets and numeric credentials
   http.GET.mockResolvedValue(response({ items: [structuredDefinition] }));
   setup(<MemoryProviderEditor scope={scope} />);
   await user.click(screen.getByRole("button", { name: "Add provider" }));
+  await user.click(
+    await screen.findByRole("button", { name: /Custom memory/ }),
+  );
+  // Public access forbids a credential, so no secret and no key link are asked for.
+  expect(screen.queryByLabelText("Token")).toBeNull();
+  expect(
+    screen.queryByRole("link", { name: "Configure custom memory" }),
+  ).toBeNull();
+  await user.click(screen.getByRole("combobox", { name: "Access" }));
+  await user.click(await screen.findByRole("option", { name: "private" }));
   expect(
     (
       await screen.findByRole("link", { name: "Configure custom memory" })
     ).getAttribute("href"),
   ).toBe(structuredDefinition.setup_url);
-  expect(screen.queryByLabelText("Token")).toBeNull();
-  await user.click(screen.getByRole("combobox", { name: "Access" }));
-  await user.click(await screen.findByRole("option", { name: "private" }));
   expect(screen.getByLabelText("Token").getAttribute("type")).toBe("password");
   await user.type(screen.getByLabelText("Token"), "nested-secret");
   await user.clear(screen.getByLabelText("Revision"));
@@ -371,8 +411,14 @@ it("renders custom help, choice defaults, nested secrets and numeric credentials
 });
 it("allows explicit removal even when the definition requires credentials", async () => {
   const user = userEvent.setup();
-  setup(<MemoryProviderEditor scope={scope} providerId={provider.id} />);
-  await user.click(screen.getByRole("button", { name: "Edit" }));
+  setup(
+    <MemoryProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
   await user.click(await screen.findByRole("button", { name: "Remove" }));
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(http.PATCH).toHaveBeenCalledOnce());
@@ -384,8 +430,14 @@ it("retains saved credentials when renaming an account whose definition is unava
   http.GET.mockImplementation(async (path: string) =>
     response(path.endsWith("memory-provider-types") ? { items: [] } : provider),
   );
-  setup(<MemoryProviderEditor scope={scope} providerId={provider.id} />);
-  await user.click(screen.getByRole("button", { name: "Edit" }));
+  setup(
+    <MemoryProviderEditor
+      scope={scope}
+      providerId={provider.id}
+      controlledOpen
+      onClose={() => {}}
+    />,
+  );
   await user.type(
     await screen.findByRole("textbox", { name: "Name" }),
     " renamed",
@@ -414,15 +466,7 @@ it("adds independent file memory while preserving a legacy Mem0 selection", asyn
       />
     );
   }
-  render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <Draft />
-    </QueryClientProvider>,
-  );
+  setup(<Draft />);
   await user.click(screen.getByRole("switch", { name: "Project memory" }));
   const selection = change.mock.lastCall?.[0];
   expect(selection.entries).toHaveLength(2);
@@ -440,7 +484,10 @@ it("adds independent file memory while preserving a legacy Mem0 selection", asyn
   });
   expect(screen.queryByLabelText("Memory directory")).toBeNull();
   await user.click(
-    screen.getByRole("button", { name: "Project memory settings" }),
+    within(screen.getByRole("region", { name: "Project memory" })).getByRole(
+      "button",
+      { name: "Storage and recall" },
+    ),
   );
   expect(
     (screen.getByLabelText("Memory directory") as HTMLInputElement).value,
@@ -526,9 +573,9 @@ it("keeps file memory usable without Mem0 and directs personal setup to provider
   ).toBe(true);
   expect(
     screen
-      .getByRole("link", { name: "Manage memory providers" })
+      .getByRole("link", { name: "Manage providers" })
       .getAttribute("target"),
-  ).toBe("_blank");
+  ).toBeNull();
   await user.click(screen.getByRole("switch", { name: "Project memory" }));
   expect(change.mock.lastCall?.[0].entries).toHaveLength(1);
   expect(change.mock.lastCall?.[0].entries[0].mode).toBe("documents");
@@ -630,9 +677,7 @@ it("keeps each preset's detailed settings local and edits only that entry", asyn
     screen.getByRole("region", { name: "Project memory" }),
   );
   await user.click(
-    personalRegion.getByRole("button", {
-      name: "Personal preference settings",
-    }),
+    personalRegion.getByRole("button", { name: "Recall settings" }),
   );
   expect(
     personalRegion.getByRole("spinbutton", { name: "Recall limit" }),
@@ -642,7 +687,7 @@ it("keeps each preset's detailed settings local and edits only that entry", asyn
   ).toHaveProperty("value", "0");
   expect(personalRegion.queryByLabelText("Memory directory")).toBeNull();
   await user.click(
-    projectRegion.getByRole("button", { name: "Project memory settings" }),
+    projectRegion.getByRole("button", { name: "Storage and recall" }),
   );
   const directory = projectRegion.getByLabelText("Memory directory");
   await user.clear(directory);

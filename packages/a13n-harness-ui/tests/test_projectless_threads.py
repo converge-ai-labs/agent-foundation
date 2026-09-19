@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 from a13n_harness import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.capabilities import SkillsCapability
-from a13n_harness.environment import EnvironmentAction, EnvironmentError
+from a13n_harness.environment import FILE_ACTIONS, EnvironmentError
 from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 from a13n_harness_ui.app import open_harness_ui_app
@@ -114,9 +114,7 @@ async def test_scratch_cwd_and_selected_configuration_file_mount(tmp_path: Path,
             assert plan.default_environment == ("workspace" if with_project else "thread-files")
             assert ("workspace" in plan.environments) is with_project
             config_mount = next(mount for mount in plan._mounts if mount.alias == "configuration")
-            assert config_mount.permission_ceiling.operations == frozenset(
-                action for action in EnvironmentAction if action.value.startswith("environment.file.")
-            )
+            assert config_mount.permission_ceiling.operations == FILE_ACTIONS
             async with plan.runtime.bind(
                 thread_id=thread.thread_id,
                 run_id="run-projectless",
@@ -265,7 +263,7 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
             )
         ).value
 
-        async def runtime(_provider):
+        async def runtime(_roots, **kwargs):
             return LocalEnvdProviderRuntime(
                 executable=tmp_path / "envd",
                 allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=tmp_path),
@@ -274,10 +272,10 @@ async def test_projectless_sandbox_setup_requires_preflight_and_execution_does_n
         prepared = []
 
         async def unavailable(environment, **scope):
-            prepared.append(environment._configuration.workspace.path)
+            prepared.append(Path(environment._configuration.working_directory))
             raise RuntimeError("Sandbox unavailable")
 
-        monkeypatch.setattr(executor._environments._reconstructor, "_runtime_collaborator", runtime)
+        monkeypatch.setattr(executor._environments._reconstructor, "sandbox_runtime", runtime)
         monkeypatch.setattr(LocalEnvdEnvironment, "_prepare", unavailable)
         with pytest.raises(RuntimeError, match="Sandbox unavailable"):
             await executor._environments.prepare(composition)

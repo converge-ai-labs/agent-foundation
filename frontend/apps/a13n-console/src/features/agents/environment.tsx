@@ -5,7 +5,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { EditorSection } from "./section";
+import { Section } from "../../shared/page";
 
 export function AgentEnvironment({
   value,
@@ -35,7 +35,7 @@ export function AgentEnvironment({
       ),
   });
   return (
-    <EditorSection
+    <Section
       title={t("Default environment")}
       description={t("Used for new sessions.")}
     >
@@ -62,6 +62,6 @@ export function AgentEnvironment({
         error={templates.error}
         retry={() => void templates.refetch()}
       />
-    </EditorSection>
+    </Section>
   );
 }

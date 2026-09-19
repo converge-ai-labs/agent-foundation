@@ -31,6 +31,7 @@ from a13n_harness_ui.configuration import (
     canonical_digest,
 )
 from a13n_harness_ui.configuration.models import CapabilitySelection, MarkdownSubagentSelection, SidekickConfiguration
+from a13n_harness_ui.environment_bindings import EnvironmentBindingSelection, validate_environment_selection
 from a13n_harness_ui.environment_profiles import (
     FULL_CONTROL_PROFILE_ID,
     built_in_environment_profile,
@@ -46,6 +47,7 @@ from .models import (
     ResolvedAgentNode,
     ResolvedCapabilityRecipe,
     ResolvedContentPlugin,
+    ResolvedEnvironmentBinding,
     ResolvedEnvironmentProfile,
     ResolvedMcpRecipe,
     ResolvedModelRecipe,
@@ -83,6 +85,8 @@ class ThreadCompositionSelection:
     environment_run_extension_ids: tuple[str, ...]
     mcp_server_ids: tuple[str, ...]
     default_model_id: str | None = None
+    environment_bindings: tuple[EnvironmentBindingSelection, ...] = ()
+    default_environment: str | None = None
 
 
 class AgentCompositionResolver:
@@ -227,6 +231,11 @@ class AgentCompositionResolver:
             ),
             root=root,
             environment_profile=environment,
+            environment_bindings=tuple(
+                ResolvedEnvironmentBinding(selection=item, device=source.devices[item.device_id].model_copy(deep=True))
+                for item in selection.environment_bindings
+            ),
+            default_environment=selection.default_environment,
             environment_run_extensions=run_extensions,
             dependencies=tuple(sorted(unique.values(), key=lambda item: (item.kind, item.key))),
         )
@@ -248,6 +257,16 @@ class AgentCompositionResolver:
             and selection.environment_profile_id not in source.environment_profiles
         ):
             raise CompositionError("The Thread Environment profile is unavailable.", code="environment_profile_missing")
+        _require_ids(tuple(item.device_id for item in selection.environment_bindings), source.devices, "Device")
+        project = source.projects.get(selection.project_id or "")
+        try:
+            validate_environment_selection(
+                selection.environment_bindings,
+                selection.default_environment,
+                local_root_count=0 if project is None else len(project.roots),
+            )
+        except ValueError as error:
+            raise CompositionError(str(error), code="environment_selection_invalid") from error
         _require_ids(selection.harness_plugin_ids, source.harness_plugins, "Harness Plugin")
         _require_ids(selection.environment_run_extension_ids, source.environment_run_extensions, "Run Extension")
         _require_ids(selection.mcp_server_ids, source.mcp_servers, "MCP server")

@@ -1,20 +1,20 @@
 # Operate sessions and retained output
 
-Envd owns one Environment generation and one initialized EIP session at a time. Operators manage daemon/process/bootstrap lifetime; EIP clients manage operation and transfer completion. Neither a live socket nor a retained output preview is a durable Agent checkpoint.
+Envd owns one Device generation with multiple independent Sessions. Operators manage daemon/process/bootstrap lifetime; each EIP Session owns its operations, processes, transfers, and retained output. Neither a live socket nor a retained output preview is a durable Agent checkpoint.
 
 ## Establish readiness
 
-1. Create the protected runtime parent and configure exact mounts, execution policy, and carrier.
-2. Start the daemon and perform EIP initialization within its admission window.
-3. Inspect the returned descriptor and negotiated methods.
-4. Request the required readiness before dispatching work.
-5. Keep session/generation identity with operation evidence, not in an unrelated global process map.
+1. Create the private runtime parent and configure Device identity, default working directory, executable policy, limits, and carrier.
+2. Start the daemon and initialize a Device connection; initialization creates no Session.
+3. Inspect the Device descriptor and optionally browse directories without opening a Session.
+4. Open a fresh Session with a fixed Device working directory and required methods, then establish readiness before dispatching work.
+5. Keep Device generation and Session identity with operation evidence, not in an unrelated global process map.
 
-The current internal initialization window is 30 seconds and the admitted session idle TTL is 30 minutes. These are operational policy constants, not additional accepted JSON configuration fields or promises for every release. HTTP can close an idle admitted session; reconnecting a carrier is not proof of a new operation's authority.
+The admitted Session idle TTL defaults to 30 minutes. Keepalive, disconnect grace, and exact same-Session attachment follow the advertised lifecycle. Reconnecting a carrier does not create or recover an operation's authority.
 
-Only one active initialized session is admitted. If another session is busy after an abandoned connection, reconcile or wait for its lifecycle rather than forcing a parallel owner into the same daemon. Another mutually untrusted workload needs its own daemon/runtime boundary.
+Session admission and aggregate Device quotas bound concurrency. Closing one Session cleans up only its resources and preserves its siblings. A fixed working directory is not a filesystem security boundary: Sessions can access other Device paths allowed by the daemon account. Mutually untrusted workloads need separate outer account, container, or sandbox boundaries.
 
-Use the [Python EIP client](python-client.md) for initialized sessions, exact method tables, transport defaults, timeout handling, and descriptor narrowing. The client and daemon can have different timeout defaults.
+Use the [Python EIP client](python-client.md) for Device ownership, scoped Sessions, exact method tables, timeout handling, and descriptor narrowing. The client and daemon can have different timeout defaults.
 
 ## Plan output capacity before launch
 
@@ -24,13 +24,14 @@ Standalone output defaults are:
 | ------------------------- | ------- |
 | Inline preview            | 2 MiB   |
 | Each stdout/stderr stream | 256 MiB |
-| Shared spool              | 1 GiB   |
+| Each Session spool        | 1 GiB   |
+| Aggregate Device spool    | 4 GiB   |
 
 Before launching a command, the daemon reserves capacity for **both streams**. With these defaults, a live pair reserves 512 MiB; two such pairs can exhaust the 1 GiB spool before additional charges. Retained records can reduce available capacity further. A small preview does not reduce this reservation.
 
 A busy response can therefore indicate output-reservation pressure, not a CPU or network failure. A finite output cap is not a request to evict other retained records. Increase quota deliberately, release no-longer-needed observations, or reduce the configured per-stream reservation while maintaining `spool >= 2 * per_stream` and `preview <= per_stream`.
 
-Python Local Envd and Docker Providers supply different defaults. Configure their [Provider fields](../environments/configuration.md) when they own bootstrap rather than editing the standalone daemon table.
+Python Local Envd supplies its own preview and file-value defaults through Host launch configuration; Docker uses a separate native runtime. Configure the owning [runtime fields](../environments/configuration.md) rather than treating Session selection as daemon bootstrap.
 
 ## Preview, retained bytes, and completion
 
@@ -58,12 +59,12 @@ Graceful client/session close and Provider process cleanup follow their respecti
 
 | Symptom                                  | Check                                                                                  |
 | ---------------------------------------- | -------------------------------------------------------------------------------------- |
-| Initialization/session admission busy    | Existing session owner, admission lifecycle, abandoned carrier, and idle expiry        |
-| Required method absent                   | Descriptor narrowing, mount permissions, command eligibility, and isolation readiness  |
+| Initialization/session admission busy    | Device Session capacity, aggregate quotas, pending cleanup, and idle expiry            |
+| Required method absent                   | Required-method selection, daemon account permissions, and executable policy           |
 | Busy / quota error before command launch | Per-stream pair reservation and retained spool charges                                 |
 | Partial preview                          | Returned reference/range and producer/completion evidence                              |
-| Isolation failure                        | Run the bounded [isolation probe](isolation.md) under the ordinary daemon account      |
+| Filesystem or command access denied      | Daemon account permissions and the Host's [outer security boundary](isolation.md)      |
 | Unknown command/write outcome            | Original operation receipt and replay/reconciliation class; do not retry as new intent |
 | Remote target unavailable                | Provider/backend access and exact saved target identity, not another mount's fallback  |
 
-The daemon has no general health, browser, or arbitrary HTTP endpoint. HTTP EIP exposes its authenticated control/transfer routes; readiness is an EIP operation. Keep diagnostics off stdio protocol stdout. [Configuration](configuration.md) owns carrier/bootstrap fields and [isolation](isolation.md) owns platform prerequisites.
+The daemon has no general health, browser, or arbitrary HTTP endpoint. HTTP EIP exposes its authenticated control/transfer routes; readiness is an EIP operation. Keep diagnostics off stdio protocol stdout. [Configuration](configuration.md) owns carrier/bootstrap fields and [security boundaries](isolation.md) explains Host-owned isolation.

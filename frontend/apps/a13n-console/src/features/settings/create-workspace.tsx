@@ -10,7 +10,7 @@ import { useClient } from "../../auth/context";
 import { workspacePath } from "../../shared/paths";
 import { data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
+import { FormActions } from "../../shared/forms";
 import styles from "../../shared/shared.module.css";
 
 export function CreateWorkspace({

@@ -6,8 +6,10 @@ import os
 import signal
 
 import pytest
+from a13n_envd_client import EIPDeviceConnection
 from a13n_harness.providers.environment.commands import CommandRequest, ShellCommand
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.local_envd.runtime import LocalEnvdProviderRuntime
 from a13n_harness.providers.environment.models import EnvironmentError
 from a13n_harness.providers.environment.retention import EnvironmentOutputPolicy
 
@@ -29,7 +31,6 @@ def live_opt_in(request):
 def request(script, *, stdin=False):
     return CommandRequest(
         command=ShellCommand(profile_id="default", script=script),
-        cwd="/",
         keep_stdin_open=stdin,
         output_policy=OUTPUT,
     )
@@ -65,7 +66,7 @@ async def test_inert_entry_unused_close_and_concurrent_prepare_once(tmp_path, mo
         await asyncio.gather(*(environment.prepare() for _ in range(5)))
         await environment.prepare()
         assert calls == [1]
-        assert await environment.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
+        assert await environment.operations.files.read_bytes(backend.path("/file-tests/source")) == b"ORIGINAL\n"
         logger.info("Inert entry and concurrent preparation verified backend=%s native_calls=1", kind)
 
 
@@ -93,7 +94,7 @@ async def test_replacing_local_root_changes_backing_identity(tmp_path, kind):
         fresh = await backend.prepare(backend.adapter())
         assert fresh.descriptor.backing_identity != original.backing_identity
         assert fresh.descriptor.generation != original.generation
-        assert await fresh.operations.files.read_bytes("/replacement") == b"NEW_ROOT"
+        assert await fresh.operations.files.read_bytes(backend.path("/replacement")) == b"NEW_ROOT"
         assert (tmp_path / "old-root/file-tests/source").read_bytes() == b"ORIGINAL\n"
 
 
@@ -113,13 +114,15 @@ async def test_local_close_terminates_process_tree_and_fences_output(tmp_path, k
         await eventually(lambda: asyncio.to_thread((backend.root / "child.pid").exists), bool, "Child started")
         pids = [int((backend.root / name).read_text()) for name in ("owner.pid", "child.pid")]
         assert all(alive(pid) for pid in pids)
-        daemon = environment._process if kind == "local_envd" else None
+        daemon = (
+            (await backend.runtime.acquire_device())._requester._transport.process if kind == "local_envd" else None
+        )
         await environment.close()
         await eventually(
             lambda: asyncio.to_thread(lambda: all(not alive(pid) for pid in pids)), bool, "Owned tree exited"
         )
         if daemon is not None:
-            assert daemon.returncode is not None
+            assert daemon.returncode is None
         for operation in (
             lambda: processes.inspect(started.process.handle),
             lambda: outputs.read(reference, start_offset=0, policy=OUTPUT),
@@ -131,7 +134,7 @@ async def test_local_close_terminates_process_tree_and_fences_output(tmp_path, k
             await fresh.operations.processes.inspect(started.process.handle)
         with pytest.raises(EnvironmentError):
             await fresh.operations.outputs.read(reference, start_offset=0, policy=OUTPUT)
-        assert await fresh.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
+        assert await fresh.operations.files.read_bytes(backend.path("/file-tests/source")) == b"ORIGINAL\n"
         logger.info("Local close removed owned PIDs and fenced process/output handles backend=%s", kind)
 
 
@@ -139,20 +142,19 @@ async def test_local_close_terminates_process_tree_and_fences_output(tmp_path, k
 async def test_local_envd_failure_after_launch_cleans_private_generation(tmp_path, monkeypatch, cancel):
     async with FileBackend("local_envd", tmp_path).open(prepare=False) as backend:
         environment = backend.environment
-        native = environment._launch_private_generation
+        native = EIPDeviceConnection.initialize
         launched, release = asyncio.Event(), asyncio.Event()
         evidence = {}
         before = set(tmp_path.iterdir())
 
-        async def launch():
-            await native()
-            evidence["process"] = environment._process
+        async def initialize(cls, transport, **arguments):
+            evidence["process"] = transport.process
             launched.set()
             if cancel:
                 await release.wait()
             raise RuntimeError("Injected failure after real daemon launch")
 
-        monkeypatch.setattr(environment, "_launch_private_generation", launch)
+        monkeypatch.setattr(EIPDeviceConnection, "initialize", classmethod(initialize))
         task = asyncio.create_task(backend.prepare(environment))
         await asyncio.wait_for(launched.wait(), 20)
         if cancel:
@@ -163,8 +165,9 @@ async def test_local_envd_failure_after_launch_cleans_private_generation(tmp_pat
         assert set(tmp_path.iterdir()) == before
         assert environment.operations.files is None and environment.dump_state() is None
         await environment.close()
+        monkeypatch.setattr(EIPDeviceConnection, "initialize", native)
         fresh = await backend.prepare(backend.adapter())
-        assert await fresh.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
+        assert await fresh.operations.files.read_bytes(backend.path("/file-tests/source")) == b"ORIGINAL\n"
 
 
 @pytest.mark.parametrize("active", [False, True], ids=["idle", "active-process-tree"])
@@ -173,7 +176,7 @@ async def test_local_envd_daemon_death_fences_old_scope_and_allows_fresh_generat
         environment = backend.environment
         generation = environment.descriptor.generation
         files = environment.operations.files
-        process = environment._process
+        process = (await backend.runtime.acquire_device())._requester._transport.process
         pids, handle, reference = [], None, None
         if active:
             processes, outputs = environment.operations.processes, environment.operations.outputs
@@ -193,14 +196,17 @@ async def test_local_envd_daemon_death_fences_old_scope_and_allows_fresh_generat
             assert reference is not None
             pids = [int((backend.root / name).read_text()) for name in ("owner.pid", "child.pid")]
             assert all(alive(pid) for pid in pids)
-        os.kill(process.pid, signal.SIGKILL)
+        # Active trees are drained by graceful daemon shutdown. Abrupt death
+        # does not promise account-wide process discovery or orphan cleanup.
+        os.kill(process.pid, signal.SIGTERM if active else signal.SIGKILL)
         await asyncio.wait_for(process.wait(), 10)
         with pytest.raises(EnvironmentError):
-            await files.read_bytes("/file-tests/source")
-        with pytest.raises(EnvironmentProviderError) as caught:
+            await files.read_bytes(backend.path("/file-tests/source"))
+        with pytest.raises(EnvironmentProviderError) as failure:
             await environment.close()
-        assert caught.value.code == "provider_cleanup_failed"
-        assert not list(tmp_path.glob("a13n-local_envd-*"))
+        assert failure.value.code == "provider_session_close_failed"
+        await backend.runtime.close()
+        assert not list(tmp_path.glob("a13n-local-envd-*"))
         try:
             await eventually(
                 lambda: asyncio.to_thread(lambda: all(not alive(pid) for pid in pids)),
@@ -212,11 +218,19 @@ async def test_local_envd_daemon_death_fences_old_scope_and_allows_fresh_generat
             for pid in pids:
                 if alive(pid):
                     os.kill(pid, signal.SIGKILL)
+        # A failed Device is not silently relaunched under an existing owner.
+        runtime = LocalEnvdProviderRuntime(
+            executable=backend.runtime.executable,
+            allocate_private_runtime=backend.runtime.allocate_private_runtime,
+            configuration=backend.runtime.configuration,
+        )
+        backend.runtime = runtime
+        backend.stack.push_async_callback(runtime.close)
         fresh = await backend.prepare(backend.adapter())
         assert fresh.descriptor.generation != generation
-        assert await fresh.operations.files.read_bytes("/file-tests/source") == b"ORIGINAL\n"
+        assert await fresh.operations.files.read_bytes(backend.path("/file-tests/source")) == b"ORIGINAL\n"
         with pytest.raises(EnvironmentError):
-            await files.read_bytes("/file-tests/source")
+            await files.read_bytes(backend.path("/file-tests/source"))
         if active:
             for call in (
                 lambda: processes.inspect(handle),

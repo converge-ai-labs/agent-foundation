@@ -13,6 +13,10 @@ from uuid import uuid4
 import anyio
 from a13n_harness.providers.environment.direct_local.provider import DIRECT_LOCAL
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.local_envd.configuration import (
+    LocalEnvdLaunchConfiguration,
+    LocalEnvdShellProfile,
+)
 from a13n_harness.providers.environment.local_envd.provider import LOCAL_ENVD
 from a13n_harness.providers.environment.local_envd.runtime import (
     LocalEnvdProviderRuntime,
@@ -51,13 +55,14 @@ def snapshot(root):
 
 
 class FileBackend:
-    def __init__(self, kind, directory, *, read_only=False, commands=False, network_faults=False):
-        self.kind, self.directory, self.read_only = kind, directory, read_only
+    def __init__(self, kind, directory, *, commands=False, network_faults=False):
+        self.kind, self.directory = kind, directory
         self.commands = commands
         self.network_faults = network_faults
         self.proxy = None
         self.identity = "env-" + uuid4().hex
         self.root = directory / "workspace"
+        self.base = self.path("/file-tests")
         self.outside = str(directory / "outside")
         self.process = None
         self.adapters = []
@@ -75,19 +80,31 @@ class FileBackend:
         (base / "source").write_text("ORIGINAL\n")
         (base / "source").chmod(0o666)
         async with AsyncExitStack() as stack:
+            self.stack = stack
             if self.kind == "direct_local":
                 self.provider = DIRECT_LOCAL
-                configuration = {"root": {"path": str(self.root), "read_only": self.read_only}}
+                configuration = {"root": {"path": str(self.root)}}
                 self.runtime = None
             elif self.kind == "local_envd":
                 self.provider = LOCAL_ENVD
-                configuration = {"workspace": {"path": str(self.root), "read_only": self.read_only}}
+                configuration = {"working_directory": str(self.root)}
                 self.runtime = LocalEnvdProviderRuntime(
                     executable=self.binary(),
                     allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=self.directory),
+                    configuration=LocalEnvdLaunchConfiguration(
+                        default_working_directory=self.root,
+                        trusted_executable_roots=(Path("/bin"), Path("/usr/bin")) if self.commands else (),
+                        shell_profiles=(
+                            LocalEnvdShellProfile(
+                                profile_id="default", executable=Path("/bin/bash"), fixed_arguments=("-c",)
+                            ),
+                        )
+                        if self.commands
+                        else (),
+                    ),
                 )
             else:
-                configuration = {}
+                configuration = {"working_directory": str(self.root)}
                 token = secrets.token_urlsafe(24)
                 if self.kind == "http_envd":
                     self.provider = HTTP_ENVD
@@ -138,15 +155,15 @@ class FileBackend:
                 self.state = EnvironmentState(
                     provider_key=self.provider.type,
                     state_version="1",
-                    state={"daemon_environment_id": self.identity},
+                    state={"device_id": self.identity},
                 )
                 await self.start_daemon(origin, token, stack)
-            if self.commands and self.kind in {"direct_local", "local_envd"}:
+            if isinstance(self.runtime, (LocalEnvdProviderRuntime, HttpEnvdProviderRuntime)):
+                stack.push_async_callback(self.runtime.close)
+            if self.commands and self.kind == "direct_local":
                 configuration["shell_profiles"] = [
                     {"profile_id": "default", "executable": "/bin/bash", "fixed_arguments": ["-c"]}
                 ]
-                if self.kind != "direct_local":
-                    configuration["trusted_executable_roots"] = ["/bin", "/usr/bin"]
             self.configuration = self.provider.validate_environment(configuration)
             try:
                 self.environment = self.adapter()
@@ -165,6 +182,9 @@ class FileBackend:
                             errors.append(error)
                     if errors:
                         raise ExceptionGroup("File fixture cleanup failed", errors)
+
+    def path(self, relative):
+        return relative if self.kind == "direct_local" else str(self.root / relative.lstrip("/"))
 
     @staticmethod
     def binary():
@@ -194,16 +214,10 @@ class FileBackend:
         private_json(
             config,
             {
-                "root_mount_id": "workspace",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(self.root),
-                        "writable": not self.read_only,
-                        "allow_command_execution": self.commands,
-                        "max_file_bytes": 1024 * 1024,
-                    }
-                ],
+                "device_id": self.identity,
+                "default_working_directory": str(self.root),
+                "trusted_executable_roots": ["/bin", "/usr/bin"] if self.commands else [],
+                "limits": {"max_file_bytes": 1024 * 1024},
                 "shell_profiles": [
                     {
                         "profile_id": "default",
@@ -224,9 +238,7 @@ class FileBackend:
         credential.write_text(token)
         credential.chmod(0o600)
         environment = {
-            "A13N_ENVD_ENVIRONMENT_ID": self.identity,
             "A13N_ENVD_RUNTIME_DIR": str(runtime),
-            "A13N_ENVD_EXECUTION_ISOLATION": "disabled",
         }
         if self.kind == "http_envd":
             environment.update(

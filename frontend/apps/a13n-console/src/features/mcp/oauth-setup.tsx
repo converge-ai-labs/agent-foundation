@@ -1,15 +1,15 @@
 import { requireCompletedAuthorization } from "../connections/authorization-context";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, DisclosureSection } from "a13n-ui";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { AuthorizationLink } from "../../shared/authorization-link";
-import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ErrorNotice, Loading, StatePill } from "../../shared/feedback";
 import { useIdempotency } from "../../shared/idempotency";
-import styles from "../../shared/shared.module.css";
+import styles from "./mcp.module.css";
 import { startBrowserAuthorization } from "../connections/authorization-context";
 import { MCPOAuthClientEditor } from "./oauth-client";
 
@@ -131,33 +131,39 @@ export function MCPOAuthSetup({
   }, [autoStart, connection, needsVerification, setup.data]);
   if (needsVerification)
     return (
-      <div className={styles.stack}>
+      <div className={styles.authorization}>
+        <div className={styles.authorizationState}>
+          <StatePill state={connection.status} />
+          <span>{t("Authorization is configured but not yet verified.")}</span>
+        </div>
         <Button
           type="button"
           loading={verify.isPending}
           disabled={connection.status === "disabled"}
           onClick={() => verify.mutate(connection)}
         >
-          {t("Retry verification")}
+          {t("Check connection")}
         </Button>
         <ErrorNotice error={verify.error} />
       </div>
     );
-  if (setup.isPending) return <Loading />;
+  if (setup.isPending) return <Loading variant="list" rows={2} />;
   if (setup.error)
     return (
       <ErrorNotice error={setup.error} retry={() => void setup.refetch()} />
     );
-  if (editing || needsClientSetup) {
-    if (discovery.isPending) return <Loading />;
-    if (discovery.error)
-      return (
-        <ErrorNotice
-          error={discovery.error}
-          retry={() => void discovery.refetch()}
-        />
-      );
-    return (
+  const pending =
+    authorize.isPending || authenticate.isPending || verify.isPending;
+  const error = authorize.error ?? authenticate.error ?? verify.error;
+  const clientEditor = discovery.isPending ? (
+    <Loading variant="list" rows={2} />
+  ) : discovery.error ? (
+    <ErrorNotice
+      error={discovery.error}
+      retry={() => void discovery.refetch()}
+    />
+  ) : (
+    discovery.data && (
       <MCPOAuthClientEditor
         connection={connection}
         configuration={setup.data.client ?? null}
@@ -170,51 +176,56 @@ export function MCPOAuthSetup({
           else authorize.mutate(updated);
         }}
       />
-    );
-  }
-  const pending =
-    authorize.isPending || authenticate.isPending || verify.isPending;
-  const error = authorize.error ?? authenticate.error ?? verify.error;
+    )
+  );
   return (
-    <div className={styles.stack}>
+    <div className={styles.authorization}>
       {authorize.data ? (
         <AuthorizationLink
           sameTab
           url={authorize.data.next_action?.url}
           expiresAt={authorize.data.expires_at}
         />
-      ) : connection.status === "ready" ? (
-        <p className={styles.muted}>
-          {t("This connection is authorized and verified.")}
-        </p>
-      ) : null}
-      {!authorize.data && (
-        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
-          <Button
-            type="button"
-            variant="ghost"
-            disabled={pending}
-            onClick={() => setEditing(true)}
+      ) : (
+        <>
+          <div className={styles.authorizationState}>
+            <StatePill state={connection.status} />
+            <span>
+              {t(
+                connection.status === "ready"
+                  ? "This connection is authorized and verified."
+                  : needsClientSetup
+                    ? "This server needs your own OAuth application."
+                    : "Authorize this server to let agents call its tools.",
+              )}
+            </span>
+          </div>
+          <div className={styles.authorizationActions}>
+            <Button
+              type="button"
+              variant={connection.status === "ready" ? "outline" : "default"}
+              loading={pending}
+              disabled={connection.status === "disabled"}
+              onClick={() => connect(connection)}
+            >
+              {t(
+                connection.status === "ready" ||
+                  connection.status === "action_required"
+                  ? "Reauthorize"
+                  : action?.type === "authenticate_client_credentials"
+                    ? "Connect"
+                    : "Continue authorization",
+              )}
+            </Button>
+          </div>
+          <DisclosureSection
+            title={t("Use your own OAuth app")}
+            open={editing || needsClientSetup}
+            onOpenChange={(value) => setEditing(value)}
           >
-            {t("Use your own OAuth app")}
-          </Button>
-          <Button
-            type="button"
-            variant={connection.status === "ready" ? "outline" : "default"}
-            loading={pending}
-            disabled={connection.status === "disabled"}
-            onClick={() => connect(connection)}
-          >
-            {t(
-              connection.status === "ready" ||
-                connection.status === "action_required"
-                ? "Reauthorize"
-                : action?.type === "authenticate_client_credentials"
-                  ? "Connect"
-                  : "Continue authorization",
-            )}
-          </Button>
-        </div>
+            {clientEditor}
+          </DisclosureSection>
+        </>
       )}
       <ErrorNotice error={error} retry={() => void setup.refetch()} />
     </div>

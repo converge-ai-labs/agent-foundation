@@ -70,7 +70,6 @@ async def search_files(request, tmp_path):
             {
                 "configuration": {
                     "root": str(tmp_path),
-                    "read_only": False,
                     "max_query_entries": 1000,
                     "max_file_bytes": 16384,
                 },
@@ -339,7 +338,7 @@ def test_guest_queries_page_without_metadata_for_all_matches_and_batches_ignore(
         tmp_path,
         tmp_path,
         {"pattern": "*.py", "max_results": 1, "ignore_mode": "git"},
-        {"read_only": False, "max_query_entries": 100},
+        {"max_query_entries": 100},
     )
     assert result["has_more"] and len(result["entries"]) == 1
     assert len(metadata_calls) == 2

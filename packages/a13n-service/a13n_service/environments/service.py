@@ -5,10 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import cast
 
+from a13n_envd_client.eip.v1 import DirectoryListResult
 from a13n_harness.providers.catalog import ProviderCatalog
 from a13n_harness.providers.environment import EnvironmentProviderDefinition
 from a13n_harness.providers.environment.docker.configuration import DockerEnvironmentConfiguration
 from a13n_harness.providers.environment.errors import EnvironmentProviderError
+from a13n_harness.providers.environment.models import EnvironmentState
 from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy import select
@@ -32,6 +34,7 @@ from a13n_service.temporal import next_updated_at, utc_now
 from .access import authorize_environment_resource, authorize_environment_workspace, environment_actor_scope
 from .configuration import load_configuration
 from .cursors import decode_cursor, encode_cursor
+from .devices import ENVD_PROVIDER_KEYS, DeviceDiscovery, DeviceInfo, DeviceTarget, capture_device_target
 from .domain import (
     Collection,
     CreateEnvironmentRequest,
@@ -93,12 +96,50 @@ class EnvironmentService:
         *,
         deployment_provider_types: frozenset[str] = frozenset(),
         redis: Redis | None = None,
+        devices: DeviceDiscovery | None = None,
     ) -> None:
         self.sessions = sessions
         self.catalog = catalog
         self.protector = protector
         self.deployment_provider_types = deployment_provider_types
         self.redis = redis
+        self.devices = devices or DeviceDiscovery(protector)
+
+    async def _device_target(self, actor: AuthenticatedActor, environment_id: str) -> DeviceTarget:
+        async with short_session(self.sessions) as session:
+            row = await session.get(EnvironmentRecord, environment_id)
+            if row is None:
+                raise environment_not_found()
+            await authorize_environment_resource(
+                session,
+                actor=actor,
+                organization_id=row.organization_id,
+                workspace_id=row.workspace_id,
+                action=WorkspaceAction.environment_use,
+            )
+            return await capture_device_target(session, row, principal=actor.principal)
+
+    async def device_info(self, *, actor: AuthenticatedActor, environment_id: str) -> DeviceInfo:
+        target = await self._device_target(actor, environment_id)
+        descriptor = await self.devices.describe(target)
+        return DeviceInfo(
+            environment_id=environment_id,
+            path_style=descriptor.path_style.value,
+            default_working_directory=descriptor.default_working_directory,
+            directory_discovery=descriptor.directory_discovery,
+        )
+
+    async def device_directories(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        environment_id: str,
+        path: str | None = None,
+        offset: int = 0,
+        limit: int = 100,
+    ) -> DirectoryListResult:
+        target = await self._device_target(actor, environment_id)
+        return await self.devices.directories(target, path=path, offset=offset, limit=limit)
 
     async def provider_types(
         self, actor: AuthenticatedActor
@@ -568,10 +609,21 @@ class EnvironmentService:
             configuration = implementation.validate_environment(request.configuration)
         except (ValidationError, EnvironmentProviderError) as error:
             raise invalid_environment("Environment registration configuration is invalid") from error
-        if request.state is not None and request.state.provider_key != provider.type:
+        state = request.state
+        if provider.type in ENVD_PROVIDER_KEYS:
+            if request.device_id is None or state is not None:
+                raise invalid_environment("Envd registration requires device_id and does not accept Provider state")
+            if request.configuration.get("working_directory") is not None:
+                raise invalid_environment("Select the Device working directory when accepting an execution binding")
+            state = EnvironmentState(
+                provider_key=provider.type, state_version="1", state={"device_id": request.device_id}
+            )
+        elif request.device_id is not None:
+            raise invalid_environment("Native Providers do not accept a Device identity")
+        if state is not None and state.provider_key != provider.type:
             raise invalid_environment("Target state belongs to another Provider type")
         try:
-            target_identity = implementation.target_identity(configuration=configuration, state=request.state)
+            target_identity = implementation.target_identity(configuration=configuration, state=state)
         except (ValueError, EnvironmentProviderError) as error:
             raise invalid_environment("Environment registration state is invalid") from error
         target_identity = scoped_target_identity(implementation, provider.configuration, target_identity)
@@ -585,7 +637,7 @@ class EnvironmentService:
             provider_id=provider.id,
             ownership="external",
             external_configuration={"configuration": request.configuration},
-            state=request.state.model_dump(mode="json") if request.state else None,
+            state=state.model_dump(mode="json") if state else None,
             target_identity=target_identity,
             generation=1,
             status="unavailable",

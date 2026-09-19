@@ -136,14 +136,6 @@
       "title": "CommandLimits",
       "type": "object"
     },
-    "CommandNetwork": {
-      "enum": [
-        "configured",
-        "deny"
-      ],
-      "title": "CommandNetwork",
-      "type": "string"
-    },
     "CommandRequest": {
       "additionalProperties": false,
       "properties": {
@@ -151,7 +143,15 @@
           "$ref": "#/$defs/CommandSpec"
         },
         "cwd": {
-          "$ref": "#/$defs/EIPPath"
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EIPPath"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "environment": {
           "$ref": "#/$defs/CommandEnvironment"
@@ -174,15 +174,10 @@
         },
         "limits": {
           "$ref": "#/$defs/CommandLimits"
-        },
-        "network": {
-          "$ref": "#/$defs/CommandNetwork",
-          "default": "configured"
         }
       },
       "required": [
-        "command",
-        "cwd"
+        "command"
       ],
       "title": "CommandRequest",
       "type": "object"
@@ -232,6 +227,216 @@
       ],
       "title": "DesiredPortStatus",
       "type": "string"
+    },
+    "DeviceDescribeParams": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "DeviceDescribeParams",
+      "type": "object"
+    },
+    "DeviceDescribeResult": {
+      "additionalProperties": false,
+      "properties": {
+        "descriptor": {
+          "$ref": "#/$defs/DeviceDescriptor"
+        }
+      },
+      "required": [
+        "descriptor"
+      ],
+      "title": "DeviceDescribeResult",
+      "type": "object"
+    },
+    "DeviceDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "available_methods": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Available Methods",
+          "type": "array"
+        },
+        "default_working_directory": {
+          "format": "eip-absolute-path",
+          "title": "Default Working Directory",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "device_id": {
+          "minLength": 1,
+          "title": "Device Id",
+          "type": "string"
+        },
+        "directory_discovery": {
+          "title": "Directory Discovery",
+          "type": "boolean"
+        },
+        "display_name": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Display Name"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/SessionLifecyclePolicy"
+        },
+        "limits": {
+          "$ref": "#/$defs/EIPLimits"
+        },
+        "path_style": {
+          "$ref": "#/$defs/PathStyle"
+        }
+      },
+      "required": [
+        "device_id",
+        "generation",
+        "path_style",
+        "default_working_directory",
+        "directory_discovery",
+        "limits",
+        "lifecycle"
+      ],
+      "title": "DeviceDescriptor",
+      "type": "object"
+    },
+    "DirectoryEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "path": {
+          "format": "eip-absolute-path",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "path"
+      ],
+      "title": "DirectoryEntry",
+      "type": "object"
+    },
+    "DirectoryListParams": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_device_id": {
+          "minLength": 1,
+          "title": "Expected Device Id",
+          "type": "string"
+        },
+        "expected_generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Expected Generation",
+          "type": "integer"
+        },
+        "limit": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Limit",
+          "type": "integer"
+        },
+        "offset": {
+          "default": 0,
+          "maximum": 18446744073709551615,
+          "minimum": 0,
+          "title": "Offset",
+          "type": "integer"
+        },
+        "path": {
+          "format": "eip-absolute-path",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "expected_device_id",
+        "expected_generation",
+        "path",
+        "limit"
+      ],
+      "title": "DirectoryListParams",
+      "type": "object"
+    },
+    "DirectoryListResult": {
+      "additionalProperties": false,
+      "properties": {
+        "entries": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/DirectoryEntry"
+          },
+          "title": "Entries",
+          "type": "array"
+        },
+        "next_offset": {
+          "anyOf": [
+            {
+              "maximum": 18446744073709551615,
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Next Offset"
+        },
+        "parent_path": {
+          "anyOf": [
+            {
+              "format": "eip-absolute-path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Parent Path"
+        },
+        "path": {
+          "format": "eip-absolute-path",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path"
+      ],
+      "title": "DirectoryListResult",
+      "type": "object"
     },
     "DispatchStage": {
       "enum": [
@@ -321,6 +526,19 @@
     "EIPErrorData": {
       "additionalProperties": false,
       "properties": {
+        "device_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Device Id"
+        },
         "dispatch_stage": {
           "$ref": "#/$defs/DispatchStage"
         },
@@ -351,19 +569,6 @@
           ],
           "default": null,
           "title": "Emitted Items"
-        },
-        "environment_id": {
-          "anyOf": [
-            {
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Environment Id"
         },
         "error_type": {
           "$ref": "#/$defs/ErrorType"
@@ -492,6 +697,19 @@
           ],
           "default": null,
           "title": "Safe Detail"
+        },
+        "session_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Id"
         }
       },
       "required": [
@@ -515,6 +733,12 @@
           "maximum": 18446744073709551615,
           "minimum": 1,
           "title": "Max Concurrent Operations",
+          "type": "integer"
+        },
+        "max_file_bytes": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Max File Bytes",
           "type": "integer"
         },
         "max_file_transfer_bytes": {
@@ -561,7 +785,7 @@
         },
         "max_transfer_frame_bytes": {
           "maximum": 18446744073709551615,
-          "minimum": 25,
+          "minimum": 26,
           "title": "Max Transfer Frame Bytes",
           "type": "integer"
         }
@@ -576,7 +800,8 @@
         "max_output_bytes_per_stream",
         "max_transfer_frame_bytes",
         "max_concurrent_file_transfers",
-        "max_file_transfer_bytes"
+        "max_file_transfer_bytes",
+        "max_file_bytes"
       ],
       "title": "EIPLimits",
       "type": "object"
@@ -584,11 +809,6 @@
     "EIPPath": {
       "additionalProperties": false,
       "properties": {
-        "mount_id": {
-          "minLength": 1,
-          "title": "Mount Id",
-          "type": "string"
-        },
         "path": {
           "format": "eip-absolute-path",
           "title": "Path",
@@ -596,7 +816,6 @@
         }
       },
       "required": [
-        "mount_id",
         "path"
       ],
       "title": "EIPPath",
@@ -660,84 +879,13 @@
       "additionalProperties": false,
       "properties": {
         "descriptor": {
-          "$ref": "#/$defs/EnvironmentDescriptor"
+          "$ref": "#/$defs/SessionDescriptor"
         }
       },
       "required": [
         "descriptor"
       ],
       "title": "EnvironmentDescribeResult",
-      "type": "object"
-    },
-    "EnvironmentDescriptor": {
-      "additionalProperties": false,
-      "properties": {
-        "available_methods": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "title": "Available Methods",
-          "type": "array"
-        },
-        "environment_id": {
-          "minLength": 1,
-          "title": "Environment Id",
-          "type": "string"
-        },
-        "execution_features": {
-          "$ref": "#/$defs/ExecutionFeatures"
-        },
-        "generation": {
-          "maximum": 18446744073709551615,
-          "minimum": 1,
-          "title": "Generation",
-          "type": "integer"
-        },
-        "isolation": {
-          "$ref": "#/$defs/IsolationPosture"
-        },
-        "limits": {
-          "$ref": "#/$defs/EIPLimits"
-        },
-        "mounts": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/MountDescriptor"
-          },
-          "title": "Mounts",
-          "type": "array"
-        },
-        "root_mount_id": {
-          "anyOf": [
-            {
-              "minLength": 1,
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Root Mount Id"
-        },
-        "shell_profiles": {
-          "default": [],
-          "items": {
-            "$ref": "#/$defs/ShellProfileDescriptor"
-          },
-          "title": "Shell Profiles",
-          "type": "array"
-        }
-      },
-      "required": [
-        "environment_id",
-        "generation",
-        "limits",
-        "isolation",
-        "execution_features"
-      ],
-      "title": "EnvironmentDescriptor",
       "type": "object"
     },
     "EnvironmentReadinessParams": {
@@ -756,9 +904,9 @@
     "EnvironmentReadinessResult": {
       "additionalProperties": false,
       "properties": {
-        "environment_id": {
+        "device_id": {
           "minLength": 1,
-          "title": "Environment Id",
+          "title": "Device Id",
           "type": "string"
         },
         "generation": {
@@ -770,12 +918,18 @@
         "ready": {
           "title": "Ready",
           "type": "boolean"
+        },
+        "session_id": {
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
         }
       },
       "required": [
         "ready",
-        "environment_id",
-        "generation"
+        "device_id",
+        "generation",
+        "session_id"
       ],
       "title": "EnvironmentReadinessResult",
       "type": "object"
@@ -879,10 +1033,6 @@
           "title": "Memory Bytes Limit",
           "type": "boolean"
         },
-        "per_command_network_deny": {
-          "title": "Per Command Network Deny",
-          "type": "boolean"
-        },
         "process_count_limit": {
           "title": "Process Count Limit",
           "type": "boolean"
@@ -900,7 +1050,6 @@
         "process_count_limit",
         "memory_bytes_limit",
         "cpu_time_limit",
-        "per_command_network_deny",
         "signal_interrupt",
         "signal_terminate"
       ],
@@ -2225,18 +2374,18 @@
         "client": {
           "$ref": "#/$defs/EIPClientInfo"
         },
-        "expected_environment_id": {
-          "minLength": 1,
-          "title": "Expected Environment Id",
-          "type": "string"
-        },
-        "required_methods": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "title": "Required Methods",
-          "type": "array"
+        "expected_device_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Device Id"
         },
         "supported_protocol_versions": {
           "items": {
@@ -2249,8 +2398,7 @@
       },
       "required": [
         "supported_protocol_versions",
-        "client",
-        "expected_environment_id"
+        "client"
       ],
       "title": "InitializeParams",
       "type": "object"
@@ -2259,7 +2407,7 @@
       "additionalProperties": false,
       "properties": {
         "descriptor": {
-          "$ref": "#/$defs/EnvironmentDescriptor"
+          "$ref": "#/$defs/DeviceDescriptor"
         },
         "protocol_version": {
           "pattern": "^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$",
@@ -2276,132 +2424,6 @@
         "descriptor"
       ],
       "title": "InitializeResult",
-      "type": "object"
-    },
-    "IsolationBackend": {
-      "enum": [
-        "linux_bubblewrap",
-        "macos_seatbelt",
-        "outer_host",
-        "windows_appcontainer"
-      ],
-      "title": "IsolationBackend",
-      "type": "string"
-    },
-    "IsolationCleanupGuarantee": {
-      "enum": [
-        "namespace_complete",
-        "residual_confined_possible",
-        "outer_host",
-        "job_complete"
-      ],
-      "title": "IsolationCleanupGuarantee",
-      "type": "string"
-    },
-    "IsolationMode": {
-      "enum": [
-        "required",
-        "disabled"
-      ],
-      "title": "IsolationMode",
-      "type": "string"
-    },
-    "IsolationNetworkPolicy": {
-      "enum": [
-        "host",
-        "deny"
-      ],
-      "title": "IsolationNetworkPolicy",
-      "type": "string"
-    },
-    "IsolationPosture": {
-      "additionalProperties": false,
-      "properties": {
-        "backend": {
-          "$ref": "#/$defs/IsolationBackend"
-        },
-        "cleanup_guarantee": {
-          "$ref": "#/$defs/IsolationCleanupGuarantee"
-        },
-        "filesystem_containment": {
-          "title": "Filesystem Containment",
-          "type": "boolean"
-        },
-        "mode": {
-          "$ref": "#/$defs/IsolationMode"
-        },
-        "network_containment": {
-          "title": "Network Containment",
-          "type": "boolean"
-        },
-        "network_policy": {
-          "$ref": "#/$defs/IsolationNetworkPolicy"
-        },
-        "process_containment": {
-          "title": "Process Containment",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "mode",
-        "backend",
-        "filesystem_containment",
-        "process_containment",
-        "network_containment",
-        "network_policy",
-        "cleanup_guarantee"
-      ],
-      "title": "IsolationPosture",
-      "type": "object"
-    },
-    "MountDescriptor": {
-      "additionalProperties": false,
-      "properties": {
-        "case_sensitive": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Case Sensitive"
-        },
-        "logical_root": {
-          "format": "eip-absolute-path",
-          "title": "Logical Root",
-          "type": "string"
-        },
-        "max_file_bytes": {
-          "maximum": 18446744073709551615,
-          "minimum": 0,
-          "title": "Max File Bytes",
-          "type": "integer"
-        },
-        "mount_id": {
-          "minLength": 1,
-          "title": "Mount Id",
-          "type": "string"
-        },
-        "supports_atomic_replace": {
-          "title": "Supports Atomic Replace",
-          "type": "boolean"
-        },
-        "writable": {
-          "title": "Writable",
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "mount_id",
-        "logical_root",
-        "writable",
-        "supports_atomic_replace",
-        "max_file_bytes"
-      ],
-      "title": "MountDescriptor",
       "type": "object"
     },
     "OperationCancelParams": {
@@ -2450,9 +2472,9 @@
     "OperationReceipt": {
       "additionalProperties": false,
       "properties": {
-        "environment_id": {
+        "device_id": {
           "minLength": 1,
-          "title": "Environment Id",
+          "title": "Device Id",
           "type": "string"
         },
         "generation": {
@@ -2492,6 +2514,11 @@
           "title": "Request Digest",
           "type": "string"
         },
+        "session_id": {
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
         "stage": {
           "$ref": "#/$defs/ReceiptStage"
         }
@@ -2499,7 +2526,8 @@
       "required": [
         "operation_id",
         "method",
-        "environment_id",
+        "device_id",
+        "session_id",
         "generation",
         "request_digest",
         "stage",
@@ -2650,6 +2678,14 @@
       ],
       "title": "OutputReleaseResult",
       "type": "object"
+    },
+    "PathStyle": {
+      "enum": [
+        "posix",
+        "windows"
+      ],
+      "title": "PathStyle",
+      "type": "string"
     },
     "PortAddress": {
       "enum": [
@@ -2836,9 +2872,9 @@
     "ProcessInfo": {
       "additionalProperties": false,
       "properties": {
-        "environment_id": {
+        "device_id": {
           "minLength": 1,
-          "title": "Environment Id",
+          "title": "Device Id",
           "type": "string"
         },
         "generation": {
@@ -2853,6 +2889,11 @@
         "output": {
           "$ref": "#/$defs/ProcessOutput"
         },
+        "session_id": {
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
         "status": {
           "$ref": "#/$defs/ProcessStatus"
         },
@@ -2863,7 +2904,8 @@
       },
       "required": [
         "handle",
-        "environment_id",
+        "device_id",
+        "session_id",
         "generation",
         "status",
         "stdin_open",
@@ -3341,16 +3383,15 @@
       "title": "SearchMode",
       "type": "string"
     },
+    "SessionAttachParams": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "SessionAttachParams",
+      "type": "object"
+    },
     "SessionCloseParams": {
       "additionalProperties": false,
-      "properties": {
-        "context": {
-          "$ref": "#/$defs/EIPCallContext"
-        }
-      },
-      "required": [
-        "context"
-      ],
+      "properties": {},
       "title": "SessionCloseParams",
       "type": "object"
     },
@@ -3367,6 +3408,174 @@
         "closed"
       ],
       "title": "SessionCloseResult",
+      "type": "object"
+    },
+    "SessionDescriptor": {
+      "additionalProperties": false,
+      "properties": {
+        "available_methods": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Available Methods",
+          "type": "array"
+        },
+        "device_id": {
+          "minLength": 1,
+          "title": "Device Id",
+          "type": "string"
+        },
+        "execution_features": {
+          "$ref": "#/$defs/ExecutionFeatures"
+        },
+        "generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Generation",
+          "type": "integer"
+        },
+        "lifecycle": {
+          "$ref": "#/$defs/SessionLifecyclePolicy"
+        },
+        "limits": {
+          "$ref": "#/$defs/EIPLimits"
+        },
+        "session_id": {
+          "minLength": 1,
+          "title": "Session Id",
+          "type": "string"
+        },
+        "shell_profiles": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ShellProfileDescriptor"
+          },
+          "title": "Shell Profiles",
+          "type": "array"
+        },
+        "working_directory": {
+          "format": "eip-absolute-path",
+          "title": "Working Directory",
+          "type": "string"
+        }
+      },
+      "required": [
+        "device_id",
+        "generation",
+        "session_id",
+        "working_directory",
+        "limits",
+        "execution_features",
+        "lifecycle"
+      ],
+      "title": "SessionDescriptor",
+      "type": "object"
+    },
+    "SessionKeepaliveParams": {
+      "additionalProperties": false,
+      "properties": {},
+      "title": "SessionKeepaliveParams",
+      "type": "object"
+    },
+    "SessionKeepaliveResult": {
+      "additionalProperties": false,
+      "properties": {
+        "alive": {
+          "const": true,
+          "title": "Alive",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "alive"
+      ],
+      "title": "SessionKeepaliveResult",
+      "type": "object"
+    },
+    "SessionLifecyclePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "disconnect_grace_ms": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Disconnect Grace Ms",
+          "type": "integer"
+        },
+        "idle_timeout_ms": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Idle Timeout Ms",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "idle_timeout_ms",
+        "disconnect_grace_ms"
+      ],
+      "title": "SessionLifecyclePolicy",
+      "type": "object"
+    },
+    "SessionOpenParams": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_device_id": {
+          "minLength": 1,
+          "title": "Expected Device Id",
+          "type": "string"
+        },
+        "expected_generation": {
+          "maximum": 18446744073709551615,
+          "minimum": 1,
+          "title": "Expected Generation",
+          "type": "integer"
+        },
+        "protocol_version": {
+          "pattern": "^(?:0\\.[1-9][0-9]*|[1-9][0-9]*\\.[0-9]+)$",
+          "title": "Protocol Version",
+          "type": "string"
+        },
+        "required_methods": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "title": "Required Methods",
+          "type": "array"
+        },
+        "working_directory": {
+          "anyOf": [
+            {
+              "format": "eip-absolute-path",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Working Directory"
+        }
+      },
+      "required": [
+        "expected_device_id",
+        "expected_generation",
+        "protocol_version"
+      ],
+      "title": "SessionOpenParams",
+      "type": "object"
+    },
+    "SessionOpenResult": {
+      "additionalProperties": false,
+      "properties": {
+        "descriptor": {
+          "$ref": "#/$defs/SessionDescriptor"
+        }
+      },
+      "required": [
+        "descriptor"
+      ],
+      "title": "SessionOpenResult",
       "type": "object"
     },
     "ShellCommand": {

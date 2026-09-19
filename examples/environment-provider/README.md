@@ -41,7 +41,7 @@ uv run environment-provider-example remote_envd_demo \
   --transport websocket --executable ../../target/debug/a13n-envd
 ```
 
-Both write a file, close the adapter and read it through a fresh adapter with the same daemon generation. The output confirms that Provider close preserves the remote daemon/workspace. Demo operator code then removes its own temporary resources. The demo enables text files only, not command execution.
+Both write a file, close its Session, and read it through a fresh adapter with a different Session on the same Device. The output confirms that Provider close preserves the remote daemon/workspace. Demo operator code then removes its own temporary resources. The demo configures no command executables or shell profiles; file operations use Device-absolute paths.
 
 **Start reading [`remote.py`](src/a13n_environment_example/remote.py).** `run_http()` shows the minimal connection setup. `run_websocket()` shows a Host-owned authenticated listener calling `connections.attach()`; the SDK does not open a listener. `use_remote()` demonstrates the common Provider/Environment lifecycle without infrastructure details. [`remote_demo.py`](src/a13n_environment_example/remote_demo.py) is separate local operator scaffolding, not something the remote Provider needs in production.
 
@@ -50,7 +50,7 @@ To use an existing HTTP daemon instead:
 ```bash
 uv run environment-provider-example http_envd \
   --endpoint https://envd.example.com \
-  --daemon-environment-id env-remote-machine \
+  --device-id device-remote-machine \
   --credential-file /private/envd-token
 ```
 
@@ -58,13 +58,13 @@ For reverse WebSocket, start the example Host first and point your daemon at `ws
 
 ```bash
 uv run environment-provider-example websocket_envd \
-  --daemon-environment-id env-remote-machine \
+  --device-id device-remote-machine \
   --credential-file /private/envd-token
 ```
 
-The external daemon must permit `file.read_text` and `file.write_text`; these examples write `/provider-example.txt`. Token contents never appear in URLs or command-line arguments. The standalone listener binds loopback and waits up to 60 seconds; your production Host supplies its own TLS, authentication, routing and lifespan. Other frameworks adapt the public `WebSocketConnection` message protocol.
+The external daemon must permit `file.read_text` and `file.write_text`; these examples resolve the Device default working directory and write `provider-example.txt` there. Token contents never appear in URLs or command-line arguments. The standalone listener binds loopback and waits up to 60 seconds; your production Host supplies its own TLS, authentication, routing and lifespan. Other frameworks adapt the public `WebSocketConnection` message protocol.
 
-See the [remote guide](../../docs/environments/remote-envd.md) for identities, deployment boundaries and recovery. In particular, one daemon has one active Session, and an abandoned HTTP Session is not automatically taken over.
+See the [remote guide](../../docs/environments/remote-envd.md) for identities, deployment boundaries and recovery. One Device supports multiple independent Sessions. Opening a new Session does not take over an abandoned Session or recover its process handles.
 
 ## Run Direct Local
 
@@ -88,16 +88,16 @@ Direct Local shares the embedding Host account. Its operation policy is not an o
 
 ## Run Local Envd
 
-Local Envd starts one private `a13n-envd` generation for the fresh adapter and exposes the Host-owned workspace through EIP:
+The Host's Local Envd runtime starts one shared Device lazily; the fresh adapter opens a fixed-cwd Session over EIP:
 
 ```bash
 uv run environment-provider-example local_envd \
   --executable /absolute/path/to/a13n-envd
 ```
 
-If `--executable` is omitted, resolution checks `A13N_ENVD_EXECUTABLE` and then `PATH`. Use `--workspace` to select another directory. The example requests denied execution networking, closes the private daemon and runtime data, and preserves the workspace.
+If `--executable` is omitted, resolution checks `A13N_ENVD_EXECUTABLE` and then `PATH`. Use `--workspace` to select another directory. The example closes the adapter's Session, then explicitly closes the Host runtime and its daemon. The selected directory remains intact.
 
-The executable and `a13n-envd-client` must have compatible release versions, and the current platform must pass the native-isolation probe. See the [`a13n-envd` guide](../../docs/a13n-envd/index.md) for build and platform prerequisites.
+The executable and `a13n-envd-client` must have identical release versions. Envd shares its daemon account's authority; the working directory is not containment. See the [`a13n-envd` guide](../../docs/a13n-envd/index.md) for build and platform prerequisites.
 
 ## Run Docker
 

@@ -65,6 +65,7 @@ class EIPTransferError(EIPClientError):
 class EIPTransferTransportError(EIPTransferError):
     """One HTTP exchange failed a known transfer without an acknowledged offset."""
 
-    def __init__(self, message: str, *, handle: str) -> None:
+    def __init__(self, message: str, *, session_id: str, handle: str) -> None:
         super().__init__(message)
+        self.session_id = session_id
         self.handle = handle

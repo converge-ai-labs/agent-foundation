@@ -14,13 +14,13 @@ Python 3.13 or later is required. The Python client and native daemon publish at
 
 ## Connect to an existing HTTP daemon
 
-This complete example requires a running daemon, its expected Environment identity, and a Host-issued credential. It does not provision infrastructure or test account access offline.
+This complete example requires a running daemon, its expected Device identity, and a Host-issued credential. It does not provision infrastructure or test account access offline.
 
 ```python
 import asyncio
 import os
 
-from a13n_envd_client import EIPSession, HttpTransport
+from a13n_envd_client import EIPDeviceConnection, HttpTransport
 
 
 async def main() -> None:
@@ -28,22 +28,25 @@ async def main() -> None:
         endpoint=os.environ["ENVD_ENDPOINT"],
         credential=os.environ["ENVD_CREDENTIAL"],
     )
-    session = await EIPSession.initialize(
-        transport,
-        expected_environment_id=os.environ["ENVD_ENVIRONMENT_ID"],
-        required_methods=("environment.describe", "session.close"),
+    device = await EIPDeviceConnection.initialize(
+        transport, expected_device_id=os.environ["ENVD_DEVICE_ID"],
     )
-    async with session:
-        descriptor = await session.describe()
-        print(descriptor.environment_id, descriptor.generation)
-        print(descriptor.available_methods)
+    async with device:
+        info = await device.describe()  # Discovery does not open a Session.
+        print(info.device_id, info.default_working_directory)
+        async with await device.open_session(
+            working_directory=info.default_working_directory,
+            required_methods=("file.read_text",),
+        ) as session:
+            print(session.session_id, session.descriptor.working_directory)
+
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-The endpoint is the daemon base URL, not `/eip/control`. Initialization includes the first readiness check and closes the transport on failure. Context exit requests a clean EIP session close and releases the transport. No workspace or externally hosted daemon is destroyed.
+The endpoint is the daemon base URL, not `/eip/control`. Device initialization negotiates the protocol and verifies identity without opening a Session. `open_session()` creates an independent fixed-cwd scope and checks readiness. Session context exit closes only that Session. Device context exit closes its Sessions and physical transport, not the external daemon or workspace.
 
 ## Choose a transport
 
@@ -69,44 +72,32 @@ The transport does not follow redirects or inherit proxy/environment HTTP settin
 
 A custom `WebSocketConnection` supplies `subprotocol`, async `send`, `recv`, `close`, and `wait_closed`. The Host validates the credential before handing over the connection. Framework adapters translate disconnects to `EOFError` or `OSError`; `wait_closed` must not compete with the transport's `recv` loop.
 
-## Initialize and maintain a session
+## Device and Session ownership
 
-`EIPSession.initialize()` accepts:
+`EIPDeviceConnection.initialize()` accepts the transport, `expected_device_id`, optional client name/version, `initialization_timeout=10.0`, `request_timeout=None`, and `max_in_flight=32` per Session. Use `expected_device_id=None` only during explicit first-contact registration, then retain and verify the returned identity.
 
-| Argument                  | Default              | Meaning                                                                     |
-| ------------------------- | -------------------- | --------------------------------------------------------------------------- |
-| `transport`               | Required             | Fresh EIP carrier                                                           |
-| `expected_environment_id` | Required             | Exact trusted target identity, verified against the daemon                  |
-| `required_methods`        | `()`                 | Required method names; `environment.readiness` is always added              |
-| `client_name`             | `"a13n-envd-client"` | Client descriptor name                                                      |
-| `client_version`          | `None`               | Installed distribution version, with source fallback                        |
-| `initialization_timeout`  | `10.0` seconds       | Positive finite enclosing deadline for initialization and initial readiness |
-| `request_timeout`         | `None`               | Coordinator response allowance; see timeout semantics below                 |
-| `max_in_flight`           | `32`                 | Positive concurrency ceiling, narrowed to the descriptor                    |
-| `reuse_transport`         | `False`              | Trusted stdio-only reuse after a clean session close                        |
+A Device provides:
 
-Initialization validates the offered protocol version, target identity, required methods, descriptor topology/features, and initial readiness. Before admission it allows one in-flight operation; after negotiation it applies the effective concurrency and byte limits.
+- `descriptor` and `describe()`: cached or freshly observed Device information, including path style, default working directory and directory-discovery availability.
+- `list_directories(DirectoryListParams(...))`: bounded one-level directory listing with exact expected Device ID and generation, absolute path, offset and limit. It opens no Session.
+- `open_session(working_directory=None, required_methods=(), readiness_timeout=10.0)`: a new independent Session. Omitted cwd selects the Device default. Required methods assert compatibility, not permissions.
+- `attach_session(descriptor)`: explicit attachment to the exact existing Session in the same Device generation during disconnect grace. It never replays operations or resumes transfers.
+- `close()`: close locally owned Sessions and then the physical connection.
 
-The public session surface is:
+Each Session has a fixed `session_id`, generation and working directory. It owns its generated `client`, file transfers, commands, output and receipt namespace. Independent Sessions may run concurrently on any carrier. Operation IDs may be reused across different Sessions without sharing evidence.
 
-- `client`: the generated `EIPClient`, available only while open.
-- `descriptor`, `generation`: latest cached descriptor and generation.
-- `describe()`: refresh the descriptor. Methods and limits may narrow; identity, generation, topology, shell profiles, execution posture/features, or widening cannot silently change within a session.
-- `readiness(timeout=10.0)`: fresh bounded readiness. Failure, invalid correlation, or not-ready terminates the session; false readiness is not a reusable healthy connection.
-- `open_reader()`, `open_writer()`, `open_output()`: bounded high-level transfer/observation helpers.
-- `close()`: clean close; repeated successful close is harmless. A previously aborted or terminal session cannot claim it closed cleanly.
-- `abort()`: close the carrier without claiming the outcome of in-flight work.
+`EIPSession` provides `describe()`, `readiness(timeout=10.0)`, `open_reader()`, `open_writer()`, `open_output()`, `close()` and `abort()`. The client maintains Session-local keepalive while open. Session close or abort never closes a sibling Session or borrowed carrier. `abort()` makes a bounded best-effort Session close without claiming the outcome of ambiguous work.
 
-A session async context manager closes on exit. If body execution already failed, close errors do not replace that original exception. `reuse_transport=True` detaches the coordinator after a clean close instead of closing the trusted stdio carrier; no other transport supports reuse.
+Session descriptor refresh may narrow methods and limits; identity, generation and fixed cwd cannot change. A not-ready response or Session-local protocol failure fences that Session. Carrier corruption or loss terminates all local scopes on that connection. Keep the Device owner alive for every borrowing adapter's complete lifetime.
 
 ## Read and write binary files
 
-EIP paths contain a mount ID and an absolute **mount-relative** path. They are not Harness aggregate paths or unrestricted native Host paths:
+EIP paths are absolute paths in the **Device filesystem namespace**, not mount-relative or Harness aggregate paths. A working directory is a default, not an access boundary. POSIX paths use `/work/report.txt`; Windows paths use `/C:/work/report.txt` or `/UNC/server/share/report.txt`:
 
 ```python
 from a13n_envd_client.eip.v1 import EIPPath
 
-path = EIPPath(mount_id="workspace", path="/report.txt")
+path = EIPPath(path="/work/report.txt")
 
 async with session.open_writer(path, mode="upsert") as writer:
     await writer.write(b"Hello from EIP\n")
@@ -118,7 +109,7 @@ async with session.open_reader(path) as reader:
     completion = reader.completion
 ```
 
-These fragments require the appropriate advertised methods and writable mount. Use an incremental decoder for arbitrary text streams: chunk boundaries need not coincide with UTF-8 character boundaries. For large transfers, forward bytes to a bounded application sink instead of accumulating all data in memory.
+These fragments require the appropriate advertised methods and operating-system write access. Use an incremental decoder for arbitrary text streams: chunk boundaries need not coincide with UTF-8 character boundaries. For large transfers, forward bytes to a bounded application sink instead of accumulating all data in memory.
 
 ### Reader
 
@@ -146,11 +137,11 @@ while not reader.eof:
 
 `output_reference` and `consume_bytes` are application-owned in this fragment. `EIPOutputPage` contains `start_offset`, `next_offset`, `data`, `output`, and `eof`. Reader properties expose `reference`, `offset`, latest `output`, and `eof`. Async iteration yields non-empty byte chunks, waiting in one-second pages until EOF.
 
-The reader validates contiguous offsets, exact reference, monotonic counters and completion, immutable preview prefixes, and terminal byte counts. Invalid evidence closes the coordinator for a protocol error. EOF means the producer completed and the retained end was reached; it does not mean every produced byte was retained. Inspect `OutputInfo.content_complete` and the produced/retained counters before claiming complete output.
+The reader validates contiguous offsets, exact reference, monotonic counters and completion, immutable preview prefixes, and terminal byte counts. Invalid evidence fences its owning Session for a protocol error. EOF means the producer completed and the retained end was reached; it does not mean every produced byte was retained. Inspect `OutputInfo.content_complete` and the produced/retained counters before claiming complete output.
 
 ## Timeouts, cancellation, and receipts
 
-`RequestCoordinator` correlates bounded request IDs, limits in-flight work, routes binary frames, and surfaces typed errors. It is an advanced transport-integration primitive; normal callers use a session and its generated client.
+`RequestCoordinator` owns the single Device reader and bounded correlation/admission. `SessionRequester` scopes operation calls and binary transfers. Sent abandoned requests retain correlation and capacity until a response or terminal carrier event; a cancelled caller does not cancel a shared stdio write. It is an advanced transport-integration primitive; normal callers use a session and its generated client.
 
 `EIPCallContext` requires an operation ID of 1–128 characters and optionally a positive uint64 `timeout_ms`. The operation ID is distinct from the JSON-RPC request ID. Supply a stable operation ID when the method's receipt/replay semantics require reconciliation.
 
@@ -182,6 +173,8 @@ Availability remains the initialized descriptor's decision. A generated method e
 
 | EIP method              | Python method           | Parameters                   | Result                       | Replay class        |
 | ----------------------- | ----------------------- | ---------------------------- | ---------------------------- | ------------------- |
+| `device.describe`       | `device_describe`       | `DeviceDescribeParams`       | `DeviceDescribeResult`       | `ledger_external`   |
+| `directory.list`        | `directory_list`        | `DirectoryListParams`        | `DirectoryListResult`        | `ledger_external`   |
 | `environment.describe`  | `environment_describe`  | `EnvironmentDescribeParams`  | `EnvironmentDescribeResult`  | `active_only`       |
 | `environment.readiness` | `environment_readiness` | `EnvironmentReadinessParams` | `EnvironmentReadinessResult` | `active_only`       |
 | `file.abort_writer`     | `file_abort_writer`     | `FileWriterAbortParams`      | `FileWriterAbortResult`      | `active_only`       |
@@ -216,7 +209,10 @@ Availability remains the initialized descriptor's decision. A generated method e
 | `process.wait`          | `process_wait`          | `ProcessWaitParams`          | `ProcessWaitResult`          | `active_only`       |
 | `process.write_stdin`   | `process_write_stdin`   | `ProcessWriteStdinParams`    | `ProcessWriteStdinResult`    | `terminal_evidence` |
 | `receipt.get`           | `receipt_get`           | `ReceiptGetParams`           | `ReceiptGetResult`           | `active_only`       |
-| `session.close`         | `session_close`         | `SessionCloseParams`         | `SessionCloseResult`         | `active_only`       |
+| `session.attach`        | `session_attach`        | `SessionAttachParams`        | `SessionOpenResult`          | `ledger_external`   |
+| `session.close`         | `session_close`         | `SessionCloseParams`         | `SessionCloseResult`         | `ledger_external`   |
+| `session.keepalive`     | `session_keepalive`     | `SessionKeepaliveParams`     | `SessionKeepaliveResult`     | `ledger_external`   |
+| `session.open`          | `session_open`          | `SessionOpenParams`          | `SessionOpenResult`          | `ledger_external`   |
 | `shell.exec`            | `shell_exec`            | `ShellExecParams`            | `ShellExecResult`            | `terminal_evidence` |
 
 Inspect the exact versioned fields and validation constraints when building requests:
@@ -237,4 +233,4 @@ The [EIP contract](https://github.com/converge-ai-labs/agent-foundation/tree/mai
 uv run --locked pytest packages/a13n-envd-client/tests
 ```
 
-The client suite covers framing, sessions, errors, transfers, and output with protocol fixtures. Actual OS isolation and daemon availability need the separate Envd integration checks. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#recommended-harness-path); for application tools, use [Environment operations](../environments/operations.md).
+The client suite covers framing, sessions, errors, transfers, and output with protocol fixtures. Native process cleanup and daemon availability need the separate Envd integration checks. The Host, not envd, establishes any outer sandbox. For Host-owned process launch/runtime bootstrap, use [Local Envd](index.md#recommended-harness-path); for application tools, use [Environment operations](../environments/operations.md).

@@ -3,7 +3,7 @@ use std::{
     io::{Read, Seek, SeekFrom},
     sync::{
         Arc, Mutex as StdMutex, PoisonError,
-        atomic::{AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicUsize, Ordering},
     },
     time::{Duration, Instant},
 };
@@ -15,13 +15,14 @@ use tokio::{
 };
 
 use crate::{
+    capacity::{ResourceCapacity, ResourcePermit},
     eip::{
         ContentDigest, DataFrame, DataFrameKind, DataResetStatus, EIPPath, FileInfo, FileKind,
         FileReadCompletion, FileReaderCloseResult, FileReaderHandle, FileReaderOpenParams,
         FileReaderOpenResult, FileWriteMode, FileWriterAbortStatus, FileWriterCommitParams,
         FileWriterHandle, FileWriterOpenParams, FileWriterOpenResult,
     },
-    mount::{Mount, MountPathError, MountRegistry, StagedCandidate},
+    filesystem::{DeviceFilesystem, PathError, StagedCandidate},
     operation::{LedgerError, OperationInterruption, OperationLedger, ShortIdAllocator},
 };
 
@@ -31,12 +32,14 @@ pub(crate) struct TransferRegistry {
 }
 
 struct TransferInner {
+    session_id: String,
     state: StdMutex<TransferState>,
     outbound: StdMutex<Option<mpsc::Sender<DataFrame>>>,
     max_frame_bytes: usize,
     max_transfer_bytes: u64,
     max_records: usize,
     max_active: usize,
+    capacity: ResourceCapacity,
     terminal_ttl: Duration,
     idle_ttl: Duration,
     max_duration: Duration,
@@ -57,10 +60,12 @@ struct TransferState {
 
 struct ProducerGuard {
     inner: Arc<TransferInner>,
+    producing: Arc<AtomicBool>,
 }
 
 impl Drop for ProducerGuard {
     fn drop(&mut self) {
+        self.producing.store(false, Ordering::Release);
         if self.inner.active_producers.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.inner.producers_idle.notify_waiters();
         }
@@ -69,6 +74,7 @@ impl Drop for ProducerGuard {
 
 struct TransferReservation {
     registry: TransferRegistry,
+    capacity: Option<ResourcePermit>,
     active: bool,
 }
 
@@ -79,12 +85,16 @@ enum TransferRecord {
 }
 
 struct ReaderRecord {
+    capacity: Option<ResourcePermit>,
+    producing: Arc<AtomicBool>,
     handle: String,
     file: Option<std::fs::File>,
     start_offset: u64,
     max_bytes: u64,
     phase: ReaderPhase,
     produced: u64,
+    outstanding: VecDeque<u64>,
+    credit_changed: Arc<Notify>,
     digest: Option<ContentDigest>,
     expires_at: chrono::DateTime<chrono::Utc>,
     last_progress: Instant,
@@ -102,6 +112,7 @@ enum ReaderPhase {
 }
 
 struct WriterRecord {
+    capacity: Option<ResourcePermit>,
     handle: String,
     path: EIPPath,
     mode: FileWriteMode,
@@ -198,10 +209,14 @@ pub(crate) fn reset_status(error: TransferError) -> DataResetStatus {
 impl TransferRegistry {
     pub(crate) fn new(
         config: &crate::config::Config,
-        generation: u64,
+        session_id: String,
+        selector_ids: ShortIdAllocator,
+        capacity: ResourceCapacity,
     ) -> Result<Self, TransferError> {
         Ok(Self {
             inner: Arc::new(TransferInner {
+                session_id,
+                capacity,
                 state: StdMutex::new(TransferState::default()),
                 outbound: StdMutex::new(None),
                 max_frame_bytes: usize::try_from(config.limits.max_transfer_frame_bytes)
@@ -217,7 +232,7 @@ impl TransferRegistry {
                 max_operation_duration: Duration::from_millis(
                     config.limits.max_operation_duration_ms,
                 ),
-                selector_ids: ShortIdAllocator::for_generation(generation),
+                selector_ids,
                 active_producers: AtomicUsize::new(0),
                 producers_idle: Notify::new(),
             }),
@@ -232,10 +247,7 @@ impl TransferRegistry {
             .session_closed = true;
     }
 
-    pub(crate) fn begin_session(
-        &self,
-        sender: mpsc::Sender<DataFrame>,
-    ) -> Result<(), TransferError> {
+    pub(crate) fn attach(&self, sender: mpsc::Sender<DataFrame>) -> Result<(), TransferError> {
         let mut state = self
             .inner
             .state
@@ -256,18 +268,15 @@ impl TransferRegistry {
 
     pub(crate) async fn open_reader(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileReaderOpenParams,
     ) -> Result<FileReaderOpenResult, TransferError> {
         self.expire().await;
         let reservation = self.reserve_record()?;
-        let mount = mounts
-            .get(&params.path.mount_id)
-            .ok_or(TransferError::Denied)?;
-        if !mount.allows("open_reader") {
-            return Err(TransferError::Denied);
-        }
-        let opened = mount.open_regular(&params.path).map_err(map_mount_error)?;
+        let filesystem = Arc::clone(filesystem);
+        let opened = filesystem
+            .open_regular(&params.path)
+            .map_err(map_path_error)?;
         let info = file_info(&params.path, &opened.metadata);
         let start_offset = params.byte_range.as_ref().map_or(0, |range| range.offset);
         let available = opened.metadata.len().saturating_sub(start_offset);
@@ -289,12 +298,16 @@ impl TransferRegistry {
             .map_err(map_ledger_error)?;
         let (cancellation, _) = watch::channel(false);
         let record = Arc::new(Mutex::new(ReaderRecord {
+            capacity: None,
+            producing: Arc::new(AtomicBool::new(false)),
             handle: handle.clone(),
             file: Some(opened.file),
             start_offset,
             max_bytes,
             phase: ReaderPhase::Open,
             produced: 0,
+            outstanding: VecDeque::new(),
+            credit_changed: Arc::new(Notify::new()),
             digest: None,
             expires_at,
             last_progress: Instant::now(),
@@ -346,20 +359,17 @@ impl TransferRegistry {
 
     pub(crate) async fn open_writer(
         &self,
-        mounts: &MountRegistry,
+        filesystem: &Arc<DeviceFilesystem>,
         params: &FileWriterOpenParams,
     ) -> Result<FileWriterOpenResult, TransferError> {
         self.expire().await;
         let reservation = self.reserve_record()?;
-        let mount = match mounts.get(&params.path.mount_id) {
-            Some(mount) if mount.writable && mount.allows("open_writer") => mount,
-            _ => return Err(TransferError::Denied),
-        };
-        let destination = observe_destination(&mount, &params.path)?;
+        let filesystem = Arc::clone(filesystem);
+        let destination = observe_destination(&filesystem, &params.path)?;
         validate_open_mode(params.mode, destination.as_ref())?;
-        let mut candidate = mount
+        let mut candidate = filesystem
             .create_candidate(&params.path)
-            .map_err(map_mount_error)?;
+            .map_err(map_path_error)?;
         if params.executable.is_none()
             && let Some(metadata) = &destination
         {
@@ -368,11 +378,13 @@ impl TransferRegistry {
         let mut prefix_bytes = 0_u64;
         let mut prefix_digest = None;
         if params.mode == FileWriteMode::Append {
-            let opened = mount.open_regular(&params.path).map_err(map_mount_error)?;
+            let opened = filesystem
+                .open_regular(&params.path)
+                .map_err(map_path_error)?;
             prefix_bytes = opened.metadata.len();
             candidate
                 .reserve_bytes(prefix_bytes)
-                .map_err(map_mount_error)?;
+                .map_err(map_path_error)?;
             let mut source = tokio::fs::File::from_std(opened.file).take(prefix_bytes);
             let destination = candidate
                 .file
@@ -422,7 +434,7 @@ impl TransferRegistry {
             }
             prefix_digest = Some(digest);
         }
-        let max_transfer_bytes = mount.max_file_bytes.saturating_sub(prefix_bytes);
+        let max_transfer_bytes = filesystem.max_file_bytes.saturating_sub(prefix_bytes);
         let writer_file = candidate
             .file
             .try_clone()
@@ -435,6 +447,7 @@ impl TransferRegistry {
             .next("writer")
             .map_err(map_ledger_error)?;
         let record = Arc::new(Mutex::new(WriterRecord {
+            capacity: None,
             handle: handle.clone(),
             path: params.path.clone(),
             mode: params.mode,
@@ -553,6 +566,9 @@ impl TransferRegistry {
     }
 
     pub(crate) async fn handle_frame(&self, frame: DataFrame) -> Result<(), TransferError> {
+        if frame.session_id != self.inner.session_id {
+            return Err(TransferError::Protocol);
+        }
         let record = self.record(&frame.handle)?;
         let result = match record.clone() {
             TransferRecord::Reader(reader) => self.handle_reader_frame(reader, frame).await,
@@ -588,7 +604,11 @@ impl TransferRegistry {
         }
     }
 
-    pub(crate) async fn close_session(&self) {
+    pub(crate) async fn detach(&self) {
+        self.close_session().await;
+    }
+
+    pub(crate) async fn close_session(&self) -> bool {
         let records = {
             let mut state = self
                 .inner
@@ -599,6 +619,7 @@ impl TransferRegistry {
             state.records.values().cloned().collect::<Vec<_>>()
         };
         let mut operation_owned = BTreeSet::new();
+        let mut cleanup_failed = BTreeSet::new();
         for record in records {
             match record {
                 TransferRecord::Reader(reader) => {
@@ -617,7 +638,9 @@ impl TransferRegistry {
                         WriterPhase::Committed | WriterPhase::UnknownOutcome
                     ) {
                         writer.phase = WriterPhase::Aborted;
-                        let _ = self.discard_writer_candidate(&mut writer);
+                        if self.discard_writer_candidate(&mut writer).is_err() {
+                            cleanup_failed.insert(writer.handle.clone());
+                        }
                     }
                 }
             }
@@ -628,14 +651,17 @@ impl TransferRegistry {
                 .state
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            state
-                .records
-                .retain(|handle, _| operation_owned.contains(handle));
+            state.records.retain(|handle, _| {
+                operation_owned.contains(handle) || cleanup_failed.contains(handle)
+            });
             state.detached_handles.extend(operation_owned);
-            let retained = state.records.keys().cloned().collect::<BTreeSet<_>>();
             state
-                .terminal_order
-                .retain(|(handle, _)| retained.contains(handle));
+                .detached_handles
+                .extend(cleanup_failed.iter().cloned());
+            let retained = state.records.keys().cloned().collect::<BTreeSet<_>>();
+            state.terminal_order.retain(|(handle, _)| {
+                retained.contains(handle) && !cleanup_failed.contains(handle)
+            });
         }
         self.inner
             .outbound
@@ -643,6 +669,7 @@ impl TransferRegistry {
             .unwrap_or_else(PoisonError::into_inner)
             .take();
         self.wait_for_producers().await;
+        cleanup_failed.is_empty()
     }
 
     async fn handle_reader_frame(
@@ -665,8 +692,10 @@ impl TransferRegistry {
                 reader.last_progress = Instant::now();
                 let handle = reader.handle.clone();
                 let mut cancellation = reader.cancellation.subscribe();
+                let producer = self.track_producer(reader.producing.clone());
                 drop(reader);
                 self.send(DataFrame {
+                    session_id: self.inner.session_id.clone(),
                     kind: DataFrameKind::Attached,
                     handle: handle.clone(),
                     offset: 0,
@@ -675,13 +704,29 @@ impl TransferRegistry {
                 })
                 .await?;
                 let registry = self.clone();
-                let producer = self.track_producer();
                 tokio::spawn(async move {
                     let _producer = producer;
                     registry
                         .produce_reader(record, file, handle, &mut cancellation)
                         .await;
                 });
+                Ok(())
+            }
+            DataFrameKind::Credit => {
+                let mut reader = record.lock().await;
+                // Credit already in flight when RESET/close wins cannot revive
+                // the transfer and must not produce a second terminal frame.
+                if matches!(reader.phase, ReaderPhase::Reset | ReaderPhase::Closed) {
+                    return Ok(());
+                }
+                if reader.phase != ReaderPhase::Streaming
+                    || !reader.outstanding.contains(&frame.offset)
+                {
+                    return Err(TransferError::Protocol);
+                }
+                while reader.outstanding.pop_front() != Some(frame.offset) {}
+                reader.last_progress = Instant::now();
+                reader.credit_changed.notify_one();
                 Ok(())
             }
             DataFrameKind::EndAck => Err(TransferError::Protocol),
@@ -697,6 +742,7 @@ impl TransferRegistry {
                 drop(reader);
                 self.mark_terminal(&handle);
                 self.send(DataFrame {
+                    session_id: self.inner.session_id.clone(),
                     kind: DataFrameKind::Reset,
                     handle,
                     offset,
@@ -729,12 +775,23 @@ impl TransferRegistry {
         let payload_limit = self
             .inner
             .max_frame_bytes
-            .saturating_sub(crate::eip::EIP_DATA_FRAME_HEADER_BYTES + handle.len())
+            .saturating_sub(
+                crate::eip::EIP_DATA_FRAME_HEADER_BYTES
+                    + handle.len()
+                    + self.inner.session_id.len(),
+            )
             .max(1);
         let mut buffer = vec![0_u8; payload_limit.min(64 * 1024)];
         let mut offset = 0_u64;
         let mut hasher = Sha256::new();
         while offset < max_bytes {
+            if let Err(error) = self.wait_reader_credit(&record, cancellation, false).await {
+                if !self.session_closed() {
+                    self.reset_reader(&record, &handle, reset_status(error))
+                        .await;
+                }
+                return;
+            }
             let remaining = usize::try_from((max_bytes - offset).min(buffer.len() as u64))
                 .unwrap_or(buffer.len());
             let read = match file.read(&mut buffer[..remaining]).await {
@@ -746,7 +803,13 @@ impl TransferRegistry {
                 }
                 Ok(read) => read,
             };
+            // Reserve before publication: credit may return before send completes.
+            {
+                let mut reader = record.lock().await;
+                reader.outstanding.push_back(offset + read as u64);
+            }
             let frame = DataFrame {
+                session_id: self.inner.session_id.clone(),
                 kind: DataFrameKind::Chunk,
                 handle: handle.clone(),
                 offset,
@@ -775,6 +838,13 @@ impl TransferRegistry {
             reader.produced = offset;
             reader.last_progress = Instant::now();
         }
+        if let Err(error) = self.wait_reader_credit(&record, cancellation, true).await {
+            if !self.session_closed() {
+                self.reset_reader(&record, &handle, reset_status(error))
+                    .await;
+            }
+            return;
+        }
         {
             let mut reader = record.lock().await;
             reader.digest = Some(ContentDigest {
@@ -785,6 +855,7 @@ impl TransferRegistry {
             reader.last_progress = Instant::now();
         }
         let end = DataFrame {
+            session_id: self.inner.session_id.clone(),
             kind: DataFrameKind::End,
             handle: handle.clone(),
             offset,
@@ -807,6 +878,50 @@ impl TransferRegistry {
         }
     }
 
+    async fn wait_reader_credit(
+        &self,
+        record: &Arc<Mutex<ReaderRecord>>,
+        cancellation: &mut watch::Receiver<bool>,
+        drained: bool,
+    ) -> Result<(), TransferError> {
+        loop {
+            let reader = record.lock().await;
+            if *cancellation.borrow() || reader.phase != ReaderPhase::Streaming {
+                return Err(TransferError::Cancelled);
+            }
+            if expired(reader.expires_at, reader.last_progress, self.inner.idle_ttl) {
+                return Err(TransferError::Expired);
+            }
+            let blocked = if drained {
+                !reader.outstanding.is_empty()
+            } else {
+                reader.outstanding.len() >= crate::eip::EIP_TRANSFER_WINDOW_CHUNKS
+            };
+            if !blocked {
+                return Ok(());
+            }
+            let changed = reader.credit_changed.clone();
+            let remaining = (reader.expires_at - chrono::Utc::now())
+                .to_std()
+                .unwrap_or_default()
+                .min(
+                    self.inner
+                        .idle_ttl
+                        .saturating_sub(reader.last_progress.elapsed()),
+                );
+            drop(reader);
+            tokio::select! {
+                biased;
+                _ = cancellation.changed() => return Err(TransferError::Cancelled),
+                result = tokio::time::timeout(remaining, changed.notified()) => {
+                    if result.is_err() {
+                        return Err(TransferError::Timeout);
+                    }
+                }
+            }
+        }
+    }
+
     async fn reset_reader(
         &self,
         record: &Arc<Mutex<ReaderRecord>>,
@@ -815,11 +930,15 @@ impl TransferRegistry {
     ) {
         let offset = {
             let mut reader = record.lock().await;
+            if matches!(reader.phase, ReaderPhase::Reset | ReaderPhase::Closed) {
+                return;
+            }
             reader.phase = ReaderPhase::Reset;
             reader.produced
         };
         let _ = self
             .send(DataFrame {
+                session_id: self.inner.session_id.clone(),
                 kind: DataFrameKind::Reset,
                 handle: handle.to_owned(),
                 offset,
@@ -857,6 +976,7 @@ impl TransferRegistry {
                 let handle = writer.handle.clone();
                 drop(writer);
                 self.send(DataFrame {
+                    session_id: self.inner.session_id.clone(),
                     kind: DataFrameKind::Attached,
                     handle,
                     offset: 0,
@@ -881,7 +1001,7 @@ impl TransferRegistry {
                     .as_mut()
                     .ok_or(TransferError::Internal)?
                     .reserve_bytes(frame.payload.len() as u64)
-                    .map_err(map_mount_error)?;
+                    .map_err(map_path_error)?;
                 let Some(file) = writer.file.as_mut() else {
                     return Err(TransferError::Internal);
                 };
@@ -892,7 +1012,17 @@ impl TransferRegistry {
                 writer.hasher.update(&frame.payload);
                 writer.transferred = next;
                 writer.last_progress = Instant::now();
-                Ok(())
+                let handle = writer.handle.clone();
+                drop(writer);
+                self.send(DataFrame {
+                    session_id: self.inner.session_id.clone(),
+                    kind: DataFrameKind::Credit,
+                    handle,
+                    offset: next,
+                    payload: Vec::new(),
+                    reset_status: None,
+                })
+                .await
             }
             DataFrameKind::End
                 if writer.phase == WriterPhase::Receiving && frame.offset == writer.transferred =>
@@ -913,6 +1043,7 @@ impl TransferRegistry {
                 let offset = writer.transferred;
                 drop(writer);
                 self.send(DataFrame {
+                    session_id: self.inner.session_id.clone(),
                     kind: DataFrameKind::EndAck,
                     handle,
                     offset,
@@ -930,6 +1061,7 @@ impl TransferRegistry {
                 drop(writer);
                 self.mark_terminal(&handle);
                 self.send(DataFrame {
+                    session_id: self.inner.session_id.clone(),
                     kind: DataFrameKind::Reset,
                     handle,
                     offset,
@@ -942,10 +1074,12 @@ impl TransferRegistry {
         }
     }
 
-    fn track_producer(&self) -> ProducerGuard {
+    fn track_producer(&self, producing: Arc<AtomicBool>) -> ProducerGuard {
+        producing.store(true, Ordering::Release);
         self.inner.active_producers.fetch_add(1, Ordering::AcqRel);
         ProducerGuard {
             inner: Arc::clone(&self.inner),
+            producing,
         }
     }
 
@@ -1027,14 +1161,16 @@ impl TransferRegistry {
             match record {
                 TransferRecord::Reader(reader) => {
                     let terminal = {
-                        let mut reader = reader.lock().await;
-                        if matches!(reader.phase, ReaderPhase::Closed | ReaderPhase::Reset)
-                            || !expired(
-                                reader.expires_at,
-                                reader.last_progress,
-                                self.inner.idle_ttl,
-                            )
-                        {
+                        let Ok(mut reader) = reader.try_lock() else {
+                            continue;
+                        };
+                        if matches!(reader.phase, ReaderPhase::Closed | ReaderPhase::Reset) {
+                            Some(reader.handle.clone())
+                        } else if !expired(
+                            reader.expires_at,
+                            reader.last_progress,
+                            self.inner.idle_ttl,
+                        ) {
                             None
                         } else {
                             reader.cancellation.send_replace(true);
@@ -1048,18 +1184,24 @@ impl TransferRegistry {
                 }
                 TransferRecord::Writer(writer) => {
                     let terminal = {
-                        let mut writer = writer.lock().await;
-                        if matches!(
+                        let Ok(mut writer) = writer.try_lock() else {
+                            continue;
+                        };
+                        if writer.phase == WriterPhase::Aborted {
+                            let _ = self.discard_writer_candidate(&mut writer);
+                            Some(writer.handle.clone())
+                        } else if matches!(
                             writer.phase,
-                            WriterPhase::Committing
-                                | WriterPhase::Committed
-                                | WriterPhase::UnknownOutcome
-                                | WriterPhase::Aborted
-                        ) || !expired(
-                            writer.expires_at,
-                            writer.last_progress,
-                            self.inner.idle_ttl,
+                            WriterPhase::Committed | WriterPhase::UnknownOutcome
                         ) {
+                            Some(writer.handle.clone())
+                        } else if writer.phase == WriterPhase::Committing
+                            || !expired(
+                                writer.expires_at,
+                                writer.last_progress,
+                                self.inner.idle_ttl,
+                            )
+                        {
                             None
                         } else {
                             writer.phase = WriterPhase::Aborted;
@@ -1075,13 +1217,43 @@ impl TransferRegistry {
         }
     }
 
+    pub(crate) fn under_pressure(&self) -> bool {
+        let state = self
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.records.len().saturating_add(state.reservations) >= self.inner.max_records
+            || self.inner.capacity.under_pressure()
+    }
+
+    /// Only the Session's exclusive history gate may remove terminal selectors.
+    pub(crate) fn collect(&self, pressure: bool) {
+        let mut state = self
+            .inner
+            .state
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        state.prune(Instant::now(), self.inner.terminal_ttl);
+        if pressure {
+            while state.records.len().saturating_add(state.reservations) >= self.inner.max_records
+                || self.inner.capacity.under_pressure()
+            {
+                if !state.reclaim_terminal() {
+                    break;
+                }
+            }
+        }
+    }
+
     fn discard_writer_candidate(&self, writer: &mut WriterRecord) -> Result<(), TransferError> {
         writer.file.take();
-        if let Some(candidate) = writer.candidate.take() {
+        if let Some(candidate) = writer.candidate.as_mut() {
             candidate
                 .delete()
                 .map_err(|_| TransferError::CleanupFailed)?;
         }
+        writer.candidate.take();
         Ok(())
     }
 
@@ -1112,13 +1284,11 @@ impl TransferRegistry {
     }
 
     fn reserve_record(&self) -> Result<TransferReservation, TransferError> {
-        let now = Instant::now();
         let mut state = self
             .inner
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        state.prune(now, self.inner.terminal_ttl);
         if state.session_closed {
             return Err(TransferError::SessionClosed);
         }
@@ -1131,23 +1301,23 @@ impl TransferRegistry {
         if active >= self.inner.max_active {
             return Err(TransferError::Busy);
         }
-        while state.records.len().saturating_add(state.reservations) >= self.inner.max_records {
-            if !state.reclaim_terminal() {
-                return Err(TransferError::Busy);
-            }
+        if state.records.len().saturating_add(state.reservations) >= self.inner.max_records {
+            return Err(TransferError::Busy);
         }
+        let capacity = self.inner.capacity.reserve().ok_or(TransferError::Busy)?;
         state.reservations = state
             .reservations
             .checked_add(1)
             .ok_or(TransferError::Internal)?;
         Ok(TransferReservation {
             registry: self.clone(),
+            capacity: Some(capacity),
             active: true,
         })
     }
 
     fn record(&self, handle: &str) -> Result<TransferRecord, TransferError> {
-        let state = self
+        let mut state = self
             .inner
             .state
             .lock()
@@ -1155,20 +1325,22 @@ impl TransferRegistry {
         if state.detached_handles.contains(handle) {
             return Err(TransferError::InvalidHandle);
         }
-        state
+        let record = state
             .records
             .get(handle)
             .cloned()
-            .ok_or(TransferError::InvalidHandle)
-    }
-
-    pub(crate) fn has_active(&self) -> bool {
-        let state = self
-            .inner
-            .state
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner);
-        state.records.len() > state.terminal_order.len() || state.reservations > 0
+            .ok_or(TransferError::InvalidHandle)?;
+        if let Some(index) = state
+            .terminal_order
+            .iter()
+            .position(|(terminal, _)| terminal == handle)
+        {
+            state.terminal_order.remove(index);
+            state
+                .terminal_order
+                .push_back((handle.to_owned(), Instant::now()));
+        }
+        Ok(record)
     }
 
     fn mark_terminal(&self, handle: &str) {
@@ -1177,7 +1349,29 @@ impl TransferRegistry {
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if state.records.contains_key(handle)
+        let reclaimable = match state.records.get(handle) {
+            Some(TransferRecord::Writer(writer)) => writer.try_lock().is_ok_and(|mut writer| {
+                let terminal = writer.candidate.is_none()
+                    && matches!(
+                        writer.phase,
+                        WriterPhase::Committed | WriterPhase::UnknownOutcome | WriterPhase::Aborted
+                    );
+                if terminal && let Some(capacity) = &mut writer.capacity {
+                    capacity.active.take();
+                }
+                terminal
+            }),
+            Some(TransferRecord::Reader(reader)) => reader.try_lock().is_ok_and(|mut reader| {
+                let terminal = matches!(reader.phase, ReaderPhase::Closed | ReaderPhase::Reset)
+                    && !reader.producing.load(Ordering::Acquire);
+                if terminal && let Some(capacity) = &mut reader.capacity {
+                    capacity.active.take();
+                }
+                terminal
+            }),
+            None => false,
+        };
+        if reclaimable
             && !state
                 .terminal_order
                 .iter()
@@ -1192,6 +1386,20 @@ impl TransferRegistry {
 
 impl TransferReservation {
     fn insert(mut self, handle: String, record: TransferRecord) -> Result<(), TransferError> {
+        match &record {
+            TransferRecord::Reader(reader) => {
+                reader
+                    .try_lock()
+                    .map_err(|_| TransferError::Internal)?
+                    .capacity = self.capacity.take()
+            }
+            TransferRecord::Writer(writer) => {
+                writer
+                    .try_lock()
+                    .map_err(|_| TransferError::Internal)?
+                    .capacity = self.capacity.take()
+            }
+        }
         let mut state = self
             .registry
             .inner
@@ -1314,18 +1522,18 @@ impl WriterCommit {
             return Err(TransferError::IntegrityMismatch);
         }
         check_operation(operations, operation_id)?;
-        let mount = Arc::clone(self.candidate.mount());
-        let current = observe_destination(&mount, &self.path)?;
+        let filesystem = Arc::clone(self.candidate.filesystem());
+        let current = observe_destination(&filesystem, &self.path)?;
         validate_commit_mode(self.mode, current.as_ref())?;
         check_operation(operations, operation_id)?;
         let replace = match self.mode {
             FileWriteMode::Create => false,
             FileWriteMode::Replace | FileWriteMode::Append | FileWriteMode::Upsert => true,
         };
-        mount
+        filesystem
             .publish_candidate(&mut self.candidate, &self.path, replace)
-            .map_err(map_mount_error)?;
-        let opened = mount
+            .map_err(map_path_error)?;
+        let opened = filesystem
             .open_regular(&self.path)
             .map_err(|_| TransferError::UnknownOutcome)?;
         Ok(WriterCommitOutput {
@@ -1337,27 +1545,46 @@ impl WriterCommit {
 }
 
 impl TransferState {
+    fn unobserved(&self, handle: &str) -> bool {
+        match self.records.get(handle) {
+            Some(TransferRecord::Reader(reader)) => Arc::strong_count(reader) == 1,
+            Some(TransferRecord::Writer(writer)) => Arc::strong_count(writer) == 1,
+            None => false,
+        }
+    }
+
     fn prune(&mut self, now: Instant, ttl: Duration) {
-        while self
+        let expired: Vec<_> = self
             .terminal_order
-            .front()
-            .is_some_and(|(_, completed)| now.duration_since(*completed) >= ttl)
-        {
-            if let Some((handle, _)) = self.terminal_order.pop_front() {
-                self.records.remove(&handle);
-                self.detached_handles.remove(&handle);
-            }
+            .iter()
+            .filter(|(handle, access)| {
+                now.duration_since(*access) >= ttl && self.unobserved(handle)
+            })
+            .map(|(handle, _)| handle.clone())
+            .collect();
+        for handle in expired {
+            self.records.remove(&handle);
+            self.detached_handles.remove(&handle);
+            self.terminal_order
+                .retain(|(terminal, _)| terminal != &handle);
         }
     }
 
     fn reclaim_terminal(&mut self) -> bool {
-        while let Some((handle, _)) = self.terminal_order.pop_front() {
-            self.detached_handles.remove(&handle);
-            if self.records.remove(&handle).is_some() {
-                return true;
-            }
-        }
-        false
+        let Some(index) = self
+            .terminal_order
+            .iter()
+            .position(|(handle, _)| self.unobserved(handle))
+        else {
+            return false;
+        };
+        let (handle, _) = self
+            .terminal_order
+            .remove(index)
+            .expect("selected terminal record");
+        self.detached_handles.remove(&handle);
+        self.records.remove(&handle);
+        true
     }
 }
 
@@ -1419,17 +1646,17 @@ fn validate_commit_mode(
 }
 
 fn observe_destination(
-    mount: &Arc<Mount>,
+    filesystem: &Arc<DeviceFilesystem>,
     path: &EIPPath,
 ) -> Result<Option<std::fs::Metadata>, TransferError> {
-    match mount.metadata(path, false) {
-        Ok(metadata) if metadata.is_symlink() => return Err(TransferError::Denied),
+    match filesystem.metadata(path, false) {
+        Ok(metadata) if metadata.file_type().is_symlink() => return Err(TransferError::Denied),
         Ok(metadata) if !metadata.is_file() => return Err(TransferError::Denied),
         Ok(_) => {}
-        Err(MountPathError::NotFound) => return Ok(None),
-        Err(error) => return Err(map_mount_error(error)),
+        Err(PathError::NotFound) => return Ok(None),
+        Err(error) => return Err(map_path_error(error)),
     }
-    let opened = mount.open_regular(path).map_err(map_mount_error)?;
+    let opened = filesystem.open_regular(path).map_err(map_path_error)?;
     Ok(Some(opened.metadata))
 }
 
@@ -1515,17 +1742,17 @@ fn expired(
     absolute <= chrono::Utc::now() || last_progress.elapsed() >= idle_ttl
 }
 
-fn map_mount_error(error: MountPathError) -> TransferError {
+fn map_path_error(error: PathError) -> TransferError {
     match error {
-        MountPathError::Invalid => TransferError::Protocol,
-        MountPathError::Denied | MountPathError::NotRegular => TransferError::Denied,
-        MountPathError::NotFound => TransferError::NotFound,
-        MountPathError::AlreadyExists => TransferError::Conflict,
-        MountPathError::Quota => TransferError::Quota,
-        MountPathError::Unsupported => TransferError::Unsupported,
-        MountPathError::UnknownOutcome => TransferError::UnknownOutcome,
-        MountPathError::Io => TransferError::Source,
-        MountPathError::Internal => TransferError::Internal,
+        PathError::Invalid => TransferError::Protocol,
+        PathError::Denied | PathError::NotRegular => TransferError::Denied,
+        PathError::NotFound => TransferError::NotFound,
+        PathError::AlreadyExists => TransferError::Conflict,
+        PathError::Quota => TransferError::Quota,
+        PathError::Unsupported => TransferError::Unsupported,
+        PathError::UnknownOutcome => TransferError::UnknownOutcome,
+        PathError::Io => TransferError::Source,
+        PathError::Internal => TransferError::Internal,
     }
 }
 
@@ -1544,18 +1771,16 @@ mod tests {
     use tokio::sync::mpsc;
 
     use crate::{
-        config::{Config, TrustedMountConfig},
+        config::Config,
         eip::{
-            DataFrame, DataFrameKind, EIPCallContext, EIPPath, FileByteRange, FileReaderOpenParams,
+            DataFrame, DataFrameKind, DataResetStatus, EIPCallContext, EIPPath, FileByteRange,
+            FileReaderOpenParams, FileWriteMode, FileWriterOpenParams,
         },
-        mount::MountRegistry,
+        filesystem::DeviceFilesystem,
         operation::random_selector,
     };
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    use crate::{
-        eip::{FileWriteMode, FileWriterCommitParams, FileWriterOpenParams},
-        operation::OperationLedger,
-    };
+    use crate::{eip::FileWriterCommitParams, operation::OperationLedger};
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     use super::{ContentDigest, FileWriterAbortStatus, TransferRecord, WriterPhase};
@@ -1590,10 +1815,12 @@ mod tests {
         }
     }
 
-    fn path(value: &str) -> EIPPath {
+    fn path(tree: &TempTree, value: &str) -> EIPPath {
         EIPPath {
-            mount_id: "workspace".to_owned(),
-            path: value.to_owned(),
+            path: crate::device_path::from_native(
+                &tree.child("native").join(value.trim_start_matches('/')),
+            )
+            .unwrap(),
         }
     }
 
@@ -1611,12 +1838,11 @@ mod tests {
     }
 
     fn setup(
-        writable: bool,
         idle_ttl_ms: u64,
     ) -> (
         TempTree,
         Config,
-        MountRegistry,
+        std::sync::Arc<DeviceFilesystem>,
         TransferRegistry,
         mpsc::Receiver<DataFrame>,
     ) {
@@ -1627,57 +1853,50 @@ mod tests {
         config.limits.max_staged_file_objects = 1;
         config.limits.max_concurrent_file_transfers = 1;
         config.limits.file_transfer_idle_ttl_ms = idle_ttl_ms;
-        config.mounts.push(TrustedMountConfig {
-            mount_id: "workspace".to_owned(),
-            native_root,
-            writable,
-            allow_command_execution: false,
-            max_file_bytes: 1024 * 1024,
-            allowed_operations: if writable {
-                vec!["open_reader".to_owned(), "open_writer".to_owned()]
-            } else {
-                vec!["open_reader".to_owned()]
-            },
-        });
-        let mounts = MountRegistry::initialize_scoped(&config).expect("initializes mount registry");
-        let transfers = TransferRegistry::new(&config, 1).expect("initializes transfer registry");
+        config.limits.max_file_bytes = 1024 * 1024;
+        let filesystem = DeviceFilesystem::new(&config).expect("filesystem");
+        let transfers = TransferRegistry::new(
+            &config,
+            "session-test".to_owned(),
+            crate::operation::ShortIdAllocator::for_generation(1),
+            crate::capacity::DeviceCapacity::new(&config.limits).transfers,
+        )
+        .expect("initializes transfer registry");
         let (sender, receiver) = mpsc::channel(16);
-        transfers
-            .begin_session(sender)
-            .expect("begins transfer session");
-        (tree, config, mounts, transfers, receiver)
+        transfers.attach(sender).expect("begins transfer session");
+        (tree, config, filesystem, transfers, receiver)
     }
 
     #[tokio::test]
     async fn transfer_reservation_is_atomic_and_rolls_back_on_drop() {
-        let (_tree, _config, _mounts, transfers, _outbound) = setup(false, 60_000);
+        let (_tree, _config, _filesystem, transfers, _outbound) = setup(60_000);
         let reservation = transfers.reserve_record().expect("reserves transfer slot");
-        assert!(transfers.has_active());
+        assert_eq!(transfers.inner.state.lock().unwrap().reservations, 1);
         assert!(matches!(
             transfers.reserve_record(),
             Err(TransferError::Busy)
         ));
 
         drop(reservation);
-        assert!(!transfers.has_active());
+        assert_eq!(transfers.inner.state.lock().unwrap().reservations, 0);
         let replacement = transfers
             .reserve_record()
             .expect("released reservation admits later work");
         drop(replacement);
-        assert!(!transfers.has_active());
+        assert_eq!(transfers.inner.state.lock().unwrap().reservations, 0);
     }
 
     #[tokio::test]
     async fn reader_close_is_the_only_terminal_acceptance_action() {
-        let (tree, _config, mounts, transfers, mut outbound) = setup(false, 60_000);
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
         let content = b"reader-content";
         fs::write(tree.child("native/source.bin"), content).expect("writes source");
         let opened = transfers
             .open_reader(
-                &mounts,
+                &filesystem,
                 &FileReaderOpenParams {
                     context: context("open-reader"),
-                    path: path("/source.bin"),
+                    path: path(&tree, "/source.bin"),
                     byte_range: None,
                     transfer_timeout_ms: None,
                 },
@@ -1687,6 +1906,7 @@ mod tests {
 
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Attach,
                 handle: opened.reader.0.clone(),
                 offset: 0,
@@ -1706,6 +1926,17 @@ mod tests {
                 DataFrameKind::Chunk => {
                     assert_eq!(frame.offset, received.len() as u64);
                     received.extend(frame.payload);
+                    transfers
+                        .handle_frame(DataFrame {
+                            session_id: "session-test".to_owned(),
+                            kind: DataFrameKind::Credit,
+                            handle: opened.reader.0.clone(),
+                            offset: received.len() as u64,
+                            payload: Vec::new(),
+                            reset_status: None,
+                        })
+                        .await
+                        .expect("credits consumed chunk");
                 }
                 DataFrameKind::End => {
                     assert_eq!(frame.offset, received.len() as u64);
@@ -1728,16 +1959,125 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reader_window_bounds_production_and_rejects_unsent_credit() {
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
+        fs::write(tree.child("native/window.bin"), vec![b'x'; 1024 * 1024]).unwrap();
+        let opened = transfers
+            .open_reader(
+                &filesystem,
+                &FileReaderOpenParams {
+                    context: context("window-reader"),
+                    path: path(&tree, "/window.bin"),
+                    byte_range: None,
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .unwrap();
+        let mut frame = DataFrame {
+            session_id: "session-test".to_owned(),
+            kind: DataFrameKind::Attach,
+            handle: opened.reader.0,
+            offset: 0,
+            payload: Vec::new(),
+            reset_status: None,
+        };
+        transfers.handle_frame(frame.clone()).await.unwrap();
+        assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Attached);
+        let mut offset = 0;
+        for _ in 0..crate::eip::EIP_TRANSFER_WINDOW_CHUNKS {
+            let chunk = outbound.recv().await.unwrap();
+            assert_eq!(chunk.kind, DataFrameKind::Chunk);
+            assert_eq!(chunk.offset, offset);
+            offset += chunk.payload.len() as u64;
+        }
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), outbound.recv())
+                .await
+                .is_err()
+        );
+        frame.kind = DataFrameKind::Credit;
+        frame.offset = offset;
+        transfers.handle_frame(frame.clone()).await.unwrap();
+        assert_eq!(outbound.recv().await.unwrap().offset, offset);
+        frame.offset = u64::MAX;
+        assert_eq!(
+            transfers.handle_frame(frame).await,
+            Err(TransferError::Protocol)
+        );
+        tokio::time::timeout(Duration::from_secs(1), transfers.close_session())
+            .await
+            .unwrap();
+        assert_eq!(transfers.inner.active_producers.load(Ordering::Acquire), 0);
+    }
+
+    #[tokio::test]
+    async fn reader_waiting_for_credit_expires_without_collection() {
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(50);
+        fs::write(tree.child("native/window.bin"), vec![b'x'; 1024 * 1024]).unwrap();
+        let opened = transfers
+            .open_reader(
+                &filesystem,
+                &FileReaderOpenParams {
+                    context: context("expiring-reader"),
+                    path: path(&tree, "/window.bin"),
+                    byte_range: None,
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .unwrap();
+        transfers
+            .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
+                kind: DataFrameKind::Attach,
+                handle: opened.reader.0.clone(),
+                offset: 0,
+                payload: Vec::new(),
+                reset_status: None,
+            })
+            .await
+            .unwrap();
+        assert_eq!(outbound.recv().await.unwrap().kind, DataFrameKind::Attached);
+        let mut offset = 0;
+        for _ in 0..crate::eip::EIP_TRANSFER_WINDOW_CHUNKS {
+            let chunk = outbound.recv().await.unwrap();
+            assert_eq!(chunk.kind, DataFrameKind::Chunk);
+            offset += chunk.payload.len() as u64;
+        }
+        let reset = tokio::time::timeout(Duration::from_secs(1), outbound.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(reset.kind, DataFrameKind::Reset);
+        assert_eq!(reset.reset_status, Some(DataResetStatus::Expired));
+        // A delayed cumulative credit cannot revive the producer or emit another RESET.
+        transfers
+            .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
+                kind: DataFrameKind::Credit,
+                handle: opened.reader.0,
+                offset,
+                payload: Vec::new(),
+                reset_status: None,
+            })
+            .await
+            .unwrap();
+        assert!(outbound.try_recv().is_err());
+        transfers.close_session().await;
+    }
+
+    #[tokio::test]
     async fn session_close_waits_for_detached_reader_producers() {
-        let (tree, _config, mounts, transfers, mut outbound) = setup(false, 60_000);
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
         fs::write(tree.child("native/source.bin"), vec![b'x'; 1024 * 1024])
             .expect("writes a source that fills the outbound queue");
         let opened = transfers
             .open_reader(
-                &mounts,
+                &filesystem,
                 &FileReaderOpenParams {
                     context: context("open-reader-for-close"),
-                    path: path("/source.bin"),
+                    path: path(&tree, "/source.bin"),
                     byte_range: None,
                     transfer_timeout_ms: None,
                 },
@@ -1746,6 +2086,7 @@ mod tests {
             .expect("opens reader");
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Attach,
                 handle: opened.reader.0,
                 offset: 0,
@@ -1770,19 +2111,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reader_accepts_bounded_ranges_from_files_larger_than_mount_mutation_limit() {
-        let (tree, _config, mounts, transfers, _outbound) = setup(false, 60_000);
+    async fn reader_accepts_bounded_ranges_from_files_larger_than_mutation_limit() {
+        let (tree, _config, filesystem, transfers, _outbound) = setup(60_000);
         let source = fs::File::create(tree.child("native/large.bin")).expect("large source");
         source
             .set_len(2 * 1024 * 1024)
-            .expect("extends source beyond the mount mutation limit");
+            .expect("extends source beyond the mutation limit");
 
         let opened = transfers
             .open_reader(
-                &mounts,
+                &filesystem,
                 &FileReaderOpenParams {
                     context: context("open-large-range"),
-                    path: path("/large.bin"),
+                    path: path(&tree, "/large.bin"),
                     byte_range: Some(FileByteRange {
                         offset: 1024 * 1024,
                         length: Some(16),
@@ -1797,15 +2138,15 @@ mod tests {
 
     #[tokio::test]
     async fn reader_treats_eof_before_requested_length_as_success() {
-        let (tree, _config, mounts, transfers, mut outbound) = setup(false, 60_000);
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
         let source = tree.child("native/source.bin");
         fs::write(&source, b"abcdefgh").expect("writes source");
         let opened = transfers
             .open_reader(
-                &mounts,
+                &filesystem,
                 &FileReaderOpenParams {
                     context: context("open-short-reader"),
-                    path: path("/source.bin"),
+                    path: path(&tree, "/source.bin"),
                     byte_range: Some(FileByteRange {
                         offset: 0,
                         length: Some(8),
@@ -1819,6 +2160,7 @@ mod tests {
 
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Attach,
                 handle: opened.reader.0.clone(),
                 offset: 0,
@@ -1835,7 +2177,20 @@ mod tests {
         loop {
             let frame = outbound.recv().await.expect("reader frame");
             match frame.kind {
-                DataFrameKind::Chunk => received.extend(frame.payload),
+                DataFrameKind::Chunk => {
+                    received.extend(frame.payload);
+                    transfers
+                        .handle_frame(DataFrame {
+                            session_id: "session-test".to_owned(),
+                            kind: DataFrameKind::Credit,
+                            handle: opened.reader.0.clone(),
+                            offset: received.len() as u64,
+                            payload: Vec::new(),
+                            reset_status: None,
+                        })
+                        .await
+                        .expect("credits consumed chunk");
+                }
                 DataFrameKind::End => break,
                 other => panic!("unexpected reader frame: {other:?}"),
             }
@@ -1856,30 +2211,27 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn writer_commit_is_atomic_and_reset_releases_staging_quota() {
-        let (tree, _config, mounts, transfers, mut outbound) = setup(true, 60_000);
-        let missing_mount = transfers
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
+        let missing_parent = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
-                    context: context("missing-mount"),
-                    path: EIPPath {
-                        mount_id: "missing".to_owned(),
-                        path: "/denied.bin".to_owned(),
-                    },
+                    context: context("missing-parent"),
+                    path: path(&tree, "/missing-parent/denied.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,
                 },
             )
             .await;
-        assert_eq!(missing_mount, Err(TransferError::Denied));
+        assert_eq!(missing_parent, Err(TransferError::NotFound));
 
         let opened = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("open-writer"),
-                    path: path("/target.bin"),
+                    path: path(&tree, "/target.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,
@@ -1889,6 +2241,7 @@ mod tests {
             .expect("opens writer after denied open released quota");
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Attach,
                 handle: opened.writer.0.clone(),
                 offset: 0,
@@ -1904,6 +2257,7 @@ mod tests {
         let content = b"writer-content";
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Chunk,
                 handle: opened.writer.0.clone(),
                 offset: 0,
@@ -1914,6 +2268,7 @@ mod tests {
             .expect("uploads chunk");
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::End,
                 handle: opened.writer.0.clone(),
                 offset: content.len() as u64,
@@ -1922,6 +2277,10 @@ mod tests {
             })
             .await
             .expect("seals writer");
+        assert_eq!(
+            outbound.recv().await.expect("chunk credit").kind,
+            DataFrameKind::Credit
+        );
         assert_eq!(
             outbound.recv().await.expect("end ack").kind,
             DataFrameKind::EndAck
@@ -1933,9 +2292,11 @@ mod tests {
         let operations = OperationLedger::new(
             "env-test".to_owned(),
             7,
+            "session-test".to_owned(),
             16,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let writer = opened.writer;
         let commit = transfers
@@ -1949,6 +2310,7 @@ mod tests {
             .expect("prepares commit");
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Reset,
                 handle: writer.0.clone(),
                 offset: content.len() as u64,
@@ -1980,10 +2342,10 @@ mod tests {
 
         let reset = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("reset-writer"),
-                    path: path("/reset.bin"),
+                    path: path(&tree, "/reset.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,
@@ -1993,6 +2355,7 @@ mod tests {
             .expect("opens writer after commit released quota");
         let protocol_error = transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Chunk,
                 handle: reset.writer.0.clone(),
                 offset: 0,
@@ -2008,6 +2371,7 @@ mod tests {
         ] {
             transfers
                 .handle_frame(DataFrame {
+                    session_id: "session-test".to_owned(),
                     kind,
                     handle: reset.writer.0.clone(),
                     offset: 0,
@@ -2031,10 +2395,10 @@ mod tests {
         );
         let after_reset = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("after-reset"),
-                    path: path("/after-reset.bin"),
+                    path: path(&tree, "/after-reset.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,
@@ -2044,6 +2408,7 @@ mod tests {
             .expect("opens writer after reset released quota");
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Reset,
                 handle: after_reset.writer.0.clone(),
                 offset: 0,
@@ -2067,13 +2432,13 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn session_close_retains_commit_record_until_native_owner_finishes() {
-        let (tree, _config, mounts, transfers, _outbound) = setup(true, 60_000);
+        let (tree, _config, filesystem, transfers, _outbound) = setup(60_000);
         let opened = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("close-during-commit-open"),
-                    path: path("/close-during-commit.bin"),
+                    path: path(&tree, "/close-during-commit.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,
@@ -2107,9 +2472,16 @@ mod tests {
             .await
             .expect("hands candidate to commit owner");
         transfers.close_session().await;
-        assert!(transfers.has_active());
-        transfers.reconcile_committing().await;
-        assert!(!transfers.has_active());
+        assert!(
+            transfers
+                .inner
+                .state
+                .lock()
+                .unwrap()
+                .records
+                .contains_key(&opened.writer.0)
+        );
+        assert!(record.lock().await.phase == WriterPhase::Committing);
         assert_eq!(
             transfers.abort_writer(&opened.writer).await,
             Err(TransferError::InvalidHandle),
@@ -2119,15 +2491,18 @@ mod tests {
         let operations = OperationLedger::new(
             "env-test".to_owned(),
             7,
+            "session-test".to_owned(),
             16,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         commit
             .execute(operations, "close-during-commit".to_owned())
             .await
             .expect("native commit finishes after session close");
-        assert!(!transfers.has_active());
+        assert!(transfers.close_session().await);
+        assert!(transfers.inner.state.lock().unwrap().records.is_empty());
         assert_eq!(
             fs::read(tree.child("native/close-during-commit.bin")).expect("reads committed file"),
             b""
@@ -2135,10 +2510,10 @@ mod tests {
         assert_eq!(
             transfers
                 .open_writer(
-                    &mounts,
+                    &filesystem,
                     &FileWriterOpenParams {
                         context: context("late-open"),
-                        path: path("/late-open.bin"),
+                        path: path(&tree, "/late-open.bin"),
                         mode: FileWriteMode::Create,
                         executable: None,
                         transfer_timeout_ms: None,
@@ -2152,13 +2527,13 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn session_close_wins_candidate_handoff_when_it_locks_the_writer_first() {
-        let (tree, _config, mounts, transfers, _outbound) = setup(true, 60_000);
+        let (tree, _config, filesystem, transfers, _outbound) = setup(60_000);
         let opened = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("close-wins-open"),
-                    path: path("/close-wins.bin"),
+                    path: path(&tree, "/close-wins.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,
@@ -2208,7 +2583,7 @@ mod tests {
             preparing.await.expect("prepare task finishes"),
             Err(TransferError::WrongState)
         ));
-        assert!(!transfers.has_active());
+        assert!(transfers.inner.state.lock().unwrap().records.is_empty());
         assert!(!tree.child("native/close-wins.bin").exists());
         assert_eq!(
             fs::read_dir(tree.child("native"))
@@ -2226,15 +2601,15 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn append_commit_rehashes_the_staged_prefix() {
-        let (tree, _config, mounts, transfers, mut outbound) = setup(true, 60_000);
+        let (tree, _config, filesystem, transfers, mut outbound) = setup(60_000);
         let target = tree.child("native/append.bin");
         fs::write(&target, b"prefix").expect("writes append target");
         let opened = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("append-open"),
-                    path: path("/append.bin"),
+                    path: path(&tree, "/append.bin"),
                     mode: FileWriteMode::Append,
                     executable: None,
                     transfer_timeout_ms: None,
@@ -2244,6 +2619,7 @@ mod tests {
             .expect("opens append writer");
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Attach,
                 handle: opened.writer.0.clone(),
                 offset: 0,
@@ -2259,6 +2635,7 @@ mod tests {
         let suffix = b"-suffix";
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::Chunk,
                 handle: opened.writer.0.clone(),
                 offset: 0,
@@ -2269,6 +2646,7 @@ mod tests {
             .expect("uploads append suffix");
         transfers
             .handle_frame(DataFrame {
+                session_id: "session-test".to_owned(),
                 kind: DataFrameKind::End,
                 handle: opened.writer.0.clone(),
                 offset: suffix.len() as u64,
@@ -2277,6 +2655,10 @@ mod tests {
             })
             .await
             .expect("seals append writer");
+        assert_eq!(
+            outbound.recv().await.expect("chunk credit").kind,
+            DataFrameKind::Credit
+        );
         assert_eq!(
             outbound.recv().await.expect("end ack").kind,
             DataFrameKind::EndAck
@@ -2312,9 +2694,11 @@ mod tests {
         let operations = OperationLedger::new(
             "env-test".to_owned(),
             7,
+            "session-test".to_owned(),
             16,
             std::time::Duration::from_secs(60),
             std::time::Duration::from_secs(60),
+            std::sync::Arc::new(tokio::sync::Semaphore::new(4096)),
         );
         let result = transfers
             .prepare_commit(&FileWriterCommitParams {
@@ -2332,15 +2716,91 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn terminal_history_access_refreshes_retention_and_observers_delay_collection() {
+        let (tree, _config, filesystem, transfers, _outbound) = setup(60_000);
+        let opened = transfers
+            .open_writer(
+                &filesystem,
+                &FileWriterOpenParams {
+                    context: context("terminal-history"),
+                    path: path(&tree, "/history.bin"),
+                    mode: FileWriteMode::Create,
+                    executable: None,
+                    transfer_timeout_ms: None,
+                },
+            )
+            .await
+            .unwrap();
+        transfers.abort_writer(&opened.writer).await.unwrap();
+        // A future sentinel proves access replaces the recorded timestamp without
+        // subtracting a full retention period from a freshly booted Windows clock.
+        let sentinel = std::time::Instant::now() + transfers.inner.terminal_ttl;
+        transfers
+            .inner
+            .state
+            .lock()
+            .unwrap()
+            .terminal_order
+            .front_mut()
+            .unwrap()
+            .1 = sentinel;
+        let observer = transfers.record(&opened.writer.0).unwrap();
+        assert!(
+            transfers
+                .inner
+                .state
+                .lock()
+                .unwrap()
+                .terminal_order
+                .front()
+                .unwrap()
+                .1
+                < sentinel
+        );
+        transfers.collect(false);
+        assert!(
+            transfers
+                .inner
+                .state
+                .lock()
+                .unwrap()
+                .records
+                .contains_key(&opened.writer.0)
+        );
+        let collect_expired = || {
+            transfers.inner.state.lock().unwrap().prune(
+                std::time::Instant::now() + transfers.inner.terminal_ttl,
+                transfers.inner.terminal_ttl,
+            );
+        };
+        collect_expired();
+        assert!(
+            transfers
+                .inner
+                .state
+                .lock()
+                .unwrap()
+                .records
+                .contains_key(&opened.writer.0)
+        );
+        drop(observer);
+        collect_expired();
+        assert!(matches!(
+            transfers.record(&opened.writer.0),
+            Err(TransferError::InvalidHandle)
+        ));
+    }
+
+    #[tokio::test]
     async fn expired_reader_complete_close_becomes_terminal() {
-        let (tree, _config, mounts, transfers, _outbound) = setup(false, 1);
+        let (tree, _config, filesystem, transfers, _outbound) = setup(1);
         fs::write(tree.child("native/expired.bin"), b"expired").expect("writes reader source");
         let opened = transfers
             .open_reader(
-                &mounts,
+                &filesystem,
                 &FileReaderOpenParams {
                     context: context("expiring-reader"),
-                    path: path("/expired.bin"),
+                    path: path(&tree, "/expired.bin"),
                     byte_range: None,
                     transfer_timeout_ms: None,
                 },
@@ -2361,13 +2821,13 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn abort_reports_candidate_cleanup_failure() {
-        let (tree, _config, mounts, transfers, _outbound) = setup(true, 60_000);
+        let (tree, _config, filesystem, transfers, _outbound) = setup(60_000);
         let opened = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("cleanup-failure-open"),
-                    path: path("/cleanup-failure.bin"),
+                    path: path(&tree, "/cleanup-failure.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,
@@ -2404,13 +2864,13 @@ mod tests {
     #[cfg(any(target_os = "linux", target_os = "macos"))]
     #[tokio::test]
     async fn expired_writer_cleanup_returns_candidate_capacity() {
-        let (tree, _config, mounts, transfers, _outbound) = setup(true, 1);
+        let (tree, _config, filesystem, transfers, _outbound) = setup(1);
         let first = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("expiring-writer"),
-                    path: path("/first.bin"),
+                    path: path(&tree, "/first.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,
@@ -2421,10 +2881,10 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         let second = transfers
             .open_writer(
-                &mounts,
+                &filesystem,
                 &FileWriterOpenParams {
                     context: context("replacement-writer"),
-                    path: path("/second.bin"),
+                    path: path(&tree, "/second.bin"),
                     mode: FileWriteMode::Create,
                     executable: None,
                     transfer_timeout_ms: None,

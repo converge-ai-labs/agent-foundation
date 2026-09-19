@@ -663,7 +663,21 @@ class HandoffCapability(AbstractModelContextCapability):
                 operation_id=_require_operation_id(state),
             ),
         )
+        await ctx.emit(ContextRestoredEvent(source="summarize", operation_id=_require_operation_id(state)))
         return replacement
+
+
+@dataclass(kw_only=True)
+class ContextRestoredEvent(CapabilityEvent, namespace="a13n.context", name="restored", dispatch="immediate"):
+    """History replacement completed; listeners settle before the next request checkpoint.
+
+    Unlike observation events, this execution-time notification is immediately
+    dispatched. Consumers may update their own state before the replaced history
+    is submitted. It carries no summary content and cannot veto the replacement.
+    """
+
+    source: Literal["summarize", "compact"]
+    operation_id: str
 
 
 @dataclass(kw_only=True)
@@ -804,7 +818,9 @@ class CompactionCapability(AbstractCapability[AgentContext]):
             ),
         )
         await ctx.emit(CompactionSummaryEvent(operation_id=operation_id, summary=summary))
-        return _replace_messages(request_context, messages)
+        replacement = _replace_messages(request_context, messages)
+        await ctx.emit(ContextRestoredEvent(source="compact", operation_id=operation_id))
+        return replacement
 
 
 async def _compact_with_same_agent(

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { Schema } from "./api";
 import { credentialMode, providerSchema } from "./provider-authentication";
-import { withSchemaValues } from "./schema-fields";
+import { withSchemaValues } from "./forms/schema-fields";
 
 type CredentialDefinition = {
   authentication: Schema["Authentication"];

@@ -3,13 +3,15 @@ from __future__ import annotations
 import asyncio
 import ssl
 from abc import ABC, abstractmethod
-from collections.abc import AsyncGenerator, Callable, Coroutine
+from collections.abc import AsyncGenerator
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from typing import Any
 
 from a13n_envd_client import (
     AcceptedWebSocketTransport,
+    EIPDeviceConnection,
     EIPSession,
+    EIPSessionStateError,
+    EIPTransport,
     HttpTransport,
     StdioTransport,
     WebSocketConnection,
@@ -17,136 +19,72 @@ from a13n_envd_client import (
 
 
 class EIPSessionSource(ABC):
-    """Single-use source for one freshly initialized and readiness-confirmed EIP Session."""
+    """Single-use source for one independent, readiness-confirmed Session."""
 
     def __init__(self) -> None:
         self._claimed = False
-        self._discard_task: asyncio.Task[None] | None = None
 
     @abstractmethod
     def open_session(
         self,
         *,
-        expected_environment_id: str,
+        expected_device_id: str,
         required_methods: frozenset[str],
+        working_directory: str | None = None,
     ) -> AbstractAsyncContextManager[EIPSession]: ...
 
     @abstractmethod
     async def discard(self) -> None:
-        """Release an unentered carrier source exactly once."""
+        """Release an unentered source, not a borrowed Device connection."""
 
     def _claim(self) -> None:
         if self._claimed:
-            raise RuntimeError("EIP session source is single-use")
+            raise RuntimeError("EIP Session source is single-use")
         self._claimed = True
 
-    async def _discard_once(
+
+class DeviceEIPSessionSource(EIPSessionSource):
+    """Borrow a Host-owned Device connection; own only the newly opened Session."""
+
+    def __init__(self, device: EIPDeviceConnection) -> None:
+        super().__init__()
+        self._device = device
+
+    @asynccontextmanager
+    async def open_session(
         self,
-        cleanup: Callable[[], Coroutine[Any, Any, None]],
-    ) -> None:
-        if self._discard_task is None:
-            if self._claimed:
-                return
-            self._claimed = True
-            self._discard_task = asyncio.create_task(cleanup(), name="eip-session-source-discard")
-        await asyncio.shield(self._discard_task)
+        *,
+        expected_device_id: str,
+        required_methods: frozenset[str],
+        working_directory: str | None = None,
+    ) -> AsyncGenerator[EIPSession]:
+        self._claim()
+        if self._device.descriptor.device_id != expected_device_id:
+            raise EIPSessionStateError("Session source belongs to another Device")
+        session = await self._device.open_session(
+            working_directory=working_directory,
+            required_methods=tuple(sorted(required_methods)),
+        )
+        async with session:
+            yield session
+
+    async def discard(self) -> None:
+        self._claimed = True
 
 
-class StdioEIPCarrier:
-    """Adapter-owned trusted stdio carrier that issues one exclusive lease at a time."""
+class _OwnedTransportSessionSource(EIPSessionSource):
+    """Standalone source: explicitly owns both its Device connection and Session."""
 
     def __init__(
         self,
-        process: asyncio.subprocess.Process,
+        transport: EIPTransport,
         *,
-        max_request_bytes: int = 1024 * 1024,
-        max_response_bytes: int = 1024 * 1024,
-        max_transfer_frame_bytes: int = 1024 * 1024,
-    ) -> None:
-        if not isinstance(process, asyncio.subprocess.Process):
-            raise TypeError("stdio EIP carrier requires an asyncio subprocess")
-        if process.stdin is None or process.stdout is None:
-            raise ValueError("stdio EIP process must have stdin and stdout pipes")
-        self._process = process
-        self._transport = StdioTransport.from_process(
-            process,
-            max_request_bytes=max_request_bytes,
-            max_response_bytes=max_response_bytes,
-            max_transfer_frame_bytes=max_transfer_frame_bytes,
-        )
-        self._leased = False
-        self._fatal = False
-        self._close_task: asyncio.Task[None] | None = None
-
-    @property
-    def process(self) -> asyncio.subprocess.Process:
-        return self._process
-
-    @property
-    def is_available(self) -> bool:
-        return not self._leased and not self._fatal and self._close_task is None and self._process.returncode is None
-
-    def lease(
-        self,
-        *,
-        initialization_timeout: float = 10.0,
-        request_timeout: float | None = None,
-        max_in_flight: int = 32,
-    ) -> StdioEIPSessionSource:
-        if not self.is_available:
-            raise RuntimeError("stdio EIP carrier is not available")
-        self._leased = True
-        return StdioEIPSessionSource(
-            self,
-            initialization_timeout=initialization_timeout,
-            request_timeout=request_timeout,
-            max_in_flight=max_in_flight,
-        )
-
-    async def close(self) -> None:
-        self._fatal = True
-        if self._close_task is None:
-            self._close_task = asyncio.create_task(self._transport.close(), name="eip-stdio-carrier-close")
-        await asyncio.shield(self._close_task)
-
-    async def _release(self) -> None:
-        if not self._leased:
-            raise RuntimeError("stdio EIP carrier lease is not active")
-        if self._fatal or self._close_task is not None or self._process.returncode is not None:
-            await self.close()
-            raise RuntimeError("stdio EIP carrier became unavailable")
-        self._leased = False
-
-    async def _fence(self) -> None:
-        self._fatal = True
-        self._leased = False
-        await self.close()
-
-
-class StdioEIPSessionSource(EIPSessionSource):
-    def __init__(
-        self,
-        carrier: asyncio.subprocess.Process | StdioEIPCarrier,
-        *,
-        initialization_timeout: float = 10.0,
-        request_timeout: float | None = None,
-        max_in_flight: int = 32,
+        initialization_timeout: float,
+        request_timeout: float | None,
+        max_in_flight: int,
     ) -> None:
         super().__init__()
-        if isinstance(carrier, StdioEIPCarrier):
-            if not carrier._leased:
-                raise ValueError("stdio EIP carrier must issue its own lease")
-            self._carrier = carrier
-            self._process = carrier.process
-            self._reusable = True
-        elif isinstance(carrier, asyncio.subprocess.Process):
-            if carrier.stdin is None or carrier.stdout is None:
-                raise ValueError("stdio EIP process must have stdin and stdout pipes")
-            self._carrier = None
-            self._process = carrier
-            self._reusable = False
-        else:
-            raise TypeError("stdio EIP source requires a subprocess or carrier lease")
+        self._transport = transport
         self._initialization_timeout = initialization_timeout
         self._request_timeout = request_timeout
         self._max_in_flight = max_in_flight
@@ -155,60 +93,52 @@ class StdioEIPSessionSource(EIPSessionSource):
     async def open_session(
         self,
         *,
-        expected_environment_id: str,
+        expected_device_id: str,
         required_methods: frozenset[str],
+        working_directory: str | None = None,
     ) -> AsyncGenerator[EIPSession]:
         self._claim()
-        transport = (
-            self._carrier._transport if self._carrier is not None else StdioTransport.from_process(self._process)
+        device = await EIPDeviceConnection.initialize(
+            self._transport,
+            expected_device_id=expected_device_id,
+            initialization_timeout=self._initialization_timeout,
+            request_timeout=self._request_timeout,
+            max_in_flight=self._max_in_flight,
         )
-        try:
-            session = await _initialize(
-                transport,
-                expected_environment_id=expected_environment_id,
+        async with device:
+            async with DeviceEIPSessionSource(device).open_session(
+                expected_device_id=expected_device_id,
                 required_methods=required_methods,
-                initialization_timeout=self._initialization_timeout,
-                request_timeout=self._request_timeout,
-                max_in_flight=self._max_in_flight,
-                reuse_transport=self._reusable,
-            )
-        except BaseException:
-            if self._carrier is not None:
-                await self._carrier._fence()
-            raise
-        try:
-            yield session
-        except BaseException:
-            try:
-                await session.close()
-            except BaseException:
-                if self._carrier is not None:
-                    await self._carrier._fence()
-            else:
-                if self._carrier is not None:
-                    await self._carrier._release()
-            raise
-        else:
-            try:
-                await session.close()
-            except BaseException:
-                if self._carrier is not None:
-                    await self._carrier._fence()
-                raise
-            if self._carrier is not None:
-                await self._carrier._release()
+                working_directory=working_directory,
+            ) as session:
+                yield session
 
     async def discard(self) -> None:
-        async def cleanup() -> None:
-            if self._carrier is not None:
-                await self._carrier._release()
-            else:
-                await StdioTransport.from_process(self._process).close()
-
-        await self._discard_once(cleanup)
+        if not self._claimed:
+            self._claimed = True
+            await self._transport.close()
 
 
-class HttpEIPSessionSource(EIPSessionSource):
+class StdioEIPSessionSource(_OwnedTransportSessionSource):
+    """Standalone process-pipe source; shared runtimes use DeviceEIPSessionSource."""
+
+    def __init__(
+        self,
+        process: asyncio.subprocess.Process,
+        *,
+        initialization_timeout: float = 10.0,
+        request_timeout: float | None = None,
+        max_in_flight: int = 32,
+    ) -> None:
+        super().__init__(
+            StdioTransport.from_process(process),
+            initialization_timeout=initialization_timeout,
+            request_timeout=request_timeout,
+            max_in_flight=max_in_flight,
+        )
+
+
+class HttpEIPSessionSource(_OwnedTransportSessionSource):
     def __init__(
         self,
         endpoint: str,
@@ -220,49 +150,23 @@ class HttpEIPSessionSource(EIPSessionSource):
         max_in_flight: int = 32,
         allow_plaintext_private_link: bool = False,
     ) -> None:
-        super().__init__()
-        self._endpoint = endpoint
-        self._credential = credential
-        self._verify = verify
-        self._initialization_timeout = initialization_timeout
-        self._request_timeout = request_timeout
-        self._max_in_flight = max_in_flight
-        self._allow_plaintext_private_link = allow_plaintext_private_link
-
-    @asynccontextmanager
-    async def open_session(
-        self,
-        *,
-        expected_environment_id: str,
-        required_methods: frozenset[str],
-    ) -> AsyncGenerator[EIPSession]:
-        self._claim()
-        transport = HttpTransport(
-            self._endpoint,
-            self._credential,
-            verify=self._verify,
-            request_timeout=self._request_timeout or 30.0,
-            allow_plaintext_private_link=self._allow_plaintext_private_link,
+        super().__init__(
+            HttpTransport(
+                endpoint,
+                credential,
+                verify=verify,
+                request_timeout=request_timeout or 30.0,
+                allow_plaintext_private_link=allow_plaintext_private_link,
+            ),
+            initialization_timeout=initialization_timeout,
+            request_timeout=request_timeout,
+            max_in_flight=max_in_flight,
         )
-        session = await _initialize(
-            transport,
-            expected_environment_id=expected_environment_id,
-            required_methods=required_methods,
-            initialization_timeout=self._initialization_timeout,
-            request_timeout=self._request_timeout,
-            max_in_flight=self._max_in_flight,
-        )
-        async with session:
-            yield session
-
-    async def discard(self) -> None:
-        async def clear_credential() -> None:
-            self._credential = ""
-
-        await self._discard_once(clear_credential)
 
 
-class AcceptedWebSocketEIPSessionSource(EIPSessionSource):
+class AcceptedWebSocketEIPSessionSource(_OwnedTransportSessionSource):
+    """Standalone accepted connection; shared listeners use DeviceEIPSessionSource."""
+
     def __init__(
         self,
         connection: WebSocketConnection,
@@ -271,56 +175,9 @@ class AcceptedWebSocketEIPSessionSource(EIPSessionSource):
         request_timeout: float | None = None,
         max_in_flight: int = 32,
     ) -> None:
-        super().__init__()
-        self._connection = connection
-        self._initialization_timeout = initialization_timeout
-        self._request_timeout = request_timeout
-        self._max_in_flight = max_in_flight
-
-    @asynccontextmanager
-    async def open_session(
-        self,
-        *,
-        expected_environment_id: str,
-        required_methods: frozenset[str],
-    ) -> AsyncGenerator[EIPSession]:
-        self._claim()
-        transport = AcceptedWebSocketTransport(self._connection)
-        session = await _initialize(
-            transport,
-            expected_environment_id=expected_environment_id,
-            required_methods=required_methods,
-            initialization_timeout=self._initialization_timeout,
-            request_timeout=self._request_timeout,
-            max_in_flight=self._max_in_flight,
-        )
-        async with session:
-            yield session
-
-    async def discard(self) -> None:
-        await self._discard_once(lambda: AcceptedWebSocketTransport(self._connection).close())
-
-
-async def _initialize(
-    transport,
-    *,
-    expected_environment_id: str,
-    required_methods: frozenset[str],
-    initialization_timeout: float,
-    request_timeout: float | None,
-    max_in_flight: int,
-    reuse_transport: bool = False,
-) -> EIPSession:
-    try:
-        return await EIPSession.initialize(
-            transport,
-            expected_environment_id=expected_environment_id,
-            required_methods=tuple(sorted(required_methods)),
+        super().__init__(
+            AcceptedWebSocketTransport(connection),
             initialization_timeout=initialization_timeout,
             request_timeout=request_timeout,
             max_in_flight=max_in_flight,
-            reuse_transport=reuse_transport,
         )
-    except BaseException:
-        await transport.close()
-        raise

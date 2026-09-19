@@ -11,7 +11,7 @@ from contextlib import suppress
 from pathlib import Path
 
 import pytest
-from a13n_envd_client import EIPSession, EIPTransportClosedError, StdioTransport
+from a13n_envd_client import EIPDeviceConnection, EIPTransportClosedError, StdioTransport
 from a13n_envd_client.eip.v1 import (
     ArgvCommand,
     CommandEnvironment,
@@ -26,7 +26,7 @@ from a13n_envd_client.eip.v1 import (
     ProcessWaitParams,
 )
 
-from .test_stdio_e2e import a13n_envd_binary, start_daemon, wait_for_exit
+from .test_stdio_e2e import a13n_envd_binary, device_path, start_daemon, wait_for_exit
 
 pytestmark = pytest.mark.skipif(sys.platform != "win32", reason="native Windows Job lifecycle")
 
@@ -61,21 +61,7 @@ def test_windows_eip_job_lifecycle(tmp_path: Path, finish: str) -> None:
     marker = workspace / "processes.json"
     config = tmp_path / "a13n-envd.json"
     config.write_text(
-        json.dumps(
-            {
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "native_root": str(workspace),
-                        "writable": True,
-                        "allow_command_execution": True,
-                        "max_file_bytes": 1024 * 1024,
-                        "allowed_operations": ["stat", "read_text", "write_text", "command_cwd", "executable_source"],
-                    }
-                ],
-                "trusted_executable_roots": [str(python.parent)],
-            }
-        )
+        json.dumps({"default_working_directory": str(workspace), "trusted_executable_roots": [str(python.parent)]})
     )
     if finish == "breakaway":
         script = "\n".join(
@@ -112,11 +98,11 @@ def test_windows_eip_job_lifecycle(tmp_path: Path, finish: str) -> None:
     async def scenario() -> None:
         daemon = await start_daemon(a13n_envd_binary(), config_path=config, runtime_dir=runtime)
         try:
-            session = await EIPSession.initialize(
-                StdioTransport.from_process(daemon),
-                expected_environment_id="env-e2e",
-                required_methods=("process.start", "process.kill", "process.wait"),
-                request_timeout=15,
+            session_device = await EIPDeviceConnection.initialize(
+                StdioTransport.from_process(daemon), expected_device_id="env-e2e", request_timeout=15
+            )
+            session = await session_device.open_session(
+                required_methods=("process.start", "process.kill", "process.wait")
             )
         except EIPTransportClosedError:
             # Preserve startup diagnostics instead of reporting only pipe EOF.
@@ -128,7 +114,7 @@ def test_windows_eip_job_lifecycle(tmp_path: Path, finish: str) -> None:
                 command=ArgvCommand(
                     kind="argv", executable_spec=ExecutableName(kind="name", name=python.name), arguments=("-c", script)
                 ),
-                cwd=EIPPath(mount_id="workspace", path="/"),
+                cwd=EIPPath(path=device_path(workspace)),
                 environment=CommandEnvironment(set={"SYSTEMROOT": os.environ.get("SYSTEMROOT", "C:\\Windows")}),
                 limits=CommandLimits(wall_time_ms=3000 if finish == "timeout" else 30_000),
             )
@@ -176,6 +162,7 @@ def test_windows_eip_job_lifecycle(tmp_path: Path, finish: str) -> None:
         finally:
             with suppress(Exception):
                 await session.close()
+                await session_device.close()
             if daemon.returncode is None:
                 await wait_for_exit(daemon)
 

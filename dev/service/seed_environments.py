@@ -47,10 +47,10 @@ async def local_workspace(client: Client, base: str, provider_id: str, root: Pat
 async def environments(client: Client, base: str, catalog: dict, settings: Settings) -> dict:
     provider = await local_provider(client, base)
     scenarios = {}
-    for name, read_only in (
-        ("Read-only reference files", True),
-        ("Writable draft files", False),
-        ("Archived template_config", False),
+    for name, shell in (
+        ("Reference files", False),
+        ("Writable draft files", True),
+        ("Archived template_config", True),
     ):
         root = settings.filesystem.root / name.lower().replace(" ", "-")
         template_config = {
@@ -58,8 +58,8 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
             "preparation": "on_run",
             "retention": {"idle": {"stop_after": None, "delete_after": None}},
             "configuration": {
-                "root": {"path": str(root), "read_only": read_only},
-                "shell_profiles": [] if read_only else [{"profile_id": "default", "executable": "/bin/sh"}],
+                "root": {"path": str(root)},
+                "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh"}] if shell else [],
             },
         }
         template = await client.request(
@@ -79,8 +79,8 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
         directory = root / "environments" / instance["id"]
         directory.mkdir(parents=True, mode=0o700, exist_ok=True)
         (directory / "README.md").write_text("# Fictional local workspace\nNo customer content.\n")
-        scenarios["environment_" + ("reference" if read_only else "draft")] = instance["id"]
-        if name == "Read-only reference files":
+        scenarios["environment_" + ("draft" if shell else "reference")] = instance["id"]
+        if name == "Reference files":
             await client.request(
                 "POST",
                 f"/api/v1/environment-templates/{template['id']}/revisions",

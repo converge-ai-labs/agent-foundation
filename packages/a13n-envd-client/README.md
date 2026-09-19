@@ -6,8 +6,9 @@ Use this package when implementing an Environment Provider or a trusted EIP inte
 
 ## Public surface
 
-- Generated EIP 0.1 models, codecs, method metadata, and typed `EIPClient` operations for all 35 protocol methods in `a13n_envd_client.eip.v1`.
-- `EIPSession`: identity/protocol/descriptor validation, initialization and readiness, monotonic descriptor refresh, clean close, abort, and transfer helpers.
+- Generated EIP 0.1 models, codecs, method metadata, and typed `EIPClient` operations for every protocol method in `a13n_envd_client.eip.v1`.
+- `EIPDeviceConnection`: Device initialization, descriptor and directory discovery, independent Session acquisition, and physical transport ownership.
+- `EIPSession`: fixed-cwd execution scope, readiness, keepalive, monotonic descriptor refresh, clean close, abort, and transfer helpers.
 - `StdioTransport`, `HttpTransport`, and `AcceptedWebSocketTransport` over trusted Host-provided pipes, an authenticated HTTP(S) endpoint, or an already-authenticated reverse-WebSocket connection.
 - `EIPFileReader` and `EIPFileWriter`: bounded binary transfer, integrity evidence, explicit commit, and staged-writer abort.
 - `EIPOutputReader` and `EIPOutputPage`: contiguous retained-output paging and producer/completeness evidence.
@@ -22,7 +23,7 @@ The package does not install or launch Envd, allocate its required private runti
 import asyncio
 import os
 
-from a13n_envd_client import EIPSession, HttpTransport
+from a13n_envd_client import EIPDeviceConnection, HttpTransport
 
 
 async def main() -> None:
@@ -30,21 +31,21 @@ async def main() -> None:
         endpoint=os.environ["ENVD_ENDPOINT"],
         credential=os.environ["ENVD_CREDENTIAL"],
     )
-    session = await EIPSession.initialize(
+    device = await EIPDeviceConnection.initialize(
         transport,
-        expected_environment_id=os.environ["ENVD_ENVIRONMENT_ID"],
-        required_methods=("environment.describe", "session.close"),
+        expected_device_id=os.environ["ENVD_DEVICE_ID"],
     )
-    async with session:
-        descriptor = await session.describe()
-        print(descriptor.generation)
+    async with device:
+        async with await device.open_session() as session:
+            descriptor = await session.describe()
+            print(descriptor.device_id, descriptor.generation, descriptor.session_id)
 
 
 if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-This example requires an existing configured daemon and its credential. The endpoint is its base URL. Initialization performs the initial readiness check; closing the client does not destroy the external workspace or daemon.
+This example requires an existing configured daemon and its credential. The endpoint is its base URL. Initialization creates no Session. `open_session()` establishes readiness; closing a Session preserves its siblings. The Device owner separately closes the carrier, without destroying the external workspace or daemon.
 
 The [Python EIP client guide](../../docs/a13n-envd/python-client.md) covers every transport/session option, all error classes, explicit writer commit, output paging, timeout semantics, and the complete generated method reference. The [Envd operator guide](../../docs/a13n-envd/configuration.md) owns standalone bootstrap, including `A13N_ENVD_RUNTIME_DIR`.
 
