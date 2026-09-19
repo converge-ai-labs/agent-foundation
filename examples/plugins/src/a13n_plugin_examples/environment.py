@@ -31,7 +31,6 @@ class WorkspaceEnvironmentConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     root: Path
-    read_only: bool = True
 
     @field_validator("root")
     @classmethod
@@ -86,9 +85,7 @@ class WorkspaceEnvironmentProvider(EnvironmentProvider):
 
 
 def _direct_configuration(configuration: WorkspaceEnvironmentConfiguration) -> DirectLocalProviderConfiguration:
-    return DirectLocalProviderConfiguration(
-        root=DirectLocalRootConfiguration(path=configuration.root, read_only=configuration.read_only)
-    )
+    return DirectLocalProviderConfiguration(root=DirectLocalRootConfiguration(path=configuration.root))
 
 
 class WorkspaceEnvironment(DirectLocalEnvironment):

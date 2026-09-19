@@ -64,10 +64,7 @@ async def _run_extension_demo(
     provider = WorkspaceEnvironmentProvider()
     configuration = provider.validate_configuration(
         schema_version="1",
-        value={
-            "root": str(workspace_root),
-            "read_only": False,
-        },
+        value={"root": str(workspace_root)},
     )
     environment = provider.create_environment(
         environment_id="extension-workspace",
@@ -99,7 +96,7 @@ async def _run_extension_demo(
         mounts={
             "workspace": EnvironmentMount(
                 environment=environment,
-                access=EnvironmentPermissionSet(
+                permission_ceiling=EnvironmentPermissionSet(
                     operations=frozenset(
                         {
                             EnvironmentAction.FILE_READ_TEXT,

@@ -10,13 +10,14 @@ from tempfile import TemporaryDirectory
 from typing import Literal
 
 from a13n_environment import (
+    FILE_READ_ACTIONS,
+    EnvironmentPermissionSet,
     EnvironmentProvider,
     EnvironmentProviderCatalog,
     build_environment_provider_catalog,
 )
 from a13n_harness import (
     AgentSpec,
-    EnvironmentAccess,
     EnvironmentMount,
     HarnessBuilder,
     RunPreparationContext,
@@ -42,10 +43,7 @@ class EnvironmentDemoResult:
 def _configuration(provider: EnvironmentProvider, root: Path):
     return provider.validate_configuration(
         schema_version="1",
-        value={
-            "root": str(root),
-            "read_only": True,
-        },
+        value={"root": str(root)},
     )
 
 
@@ -92,11 +90,12 @@ async def _run_environment_demo(
         output_type=str,
         model=FunctionModel(stream_function=stream_model),
     )
+    read_only = EnvironmentPermissionSet(operations=FILE_READ_ACTIONS)
     result = await executable.run(
         input_factory=read_workspaces,
         environments={
-            "source": EnvironmentMount(source, access=EnvironmentAccess.READ_ONLY),
-            "docs": EnvironmentMount(docs, access=EnvironmentAccess.READ_ONLY),
+            "source": EnvironmentMount(source, permission_ceiling=read_only),
+            "docs": EnvironmentMount(docs, permission_ceiling=read_only),
         },
         default_environment="source",
     )
