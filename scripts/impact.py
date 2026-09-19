@@ -121,7 +121,8 @@ def select(impact: ImpactMap, files: Iterable[str]) -> Selection:
     result = Selection()
     wanted = {path for path in files if path.endswith(".py")}
     result.unmapped = {path for path in wanted if path not in impact.funcmaps}
-    changed = {p: k for p, k in diff.changed_lines(impact.commit, cwd=str(REPOSITORY_ROOT)).items() if p in wanted}
+    mapped = wanted - result.unmapped
+    changed = {p: k for p, k in diff.changed_lines(impact.commit, cwd=str(REPOSITORY_ROOT)).items() if p in mapped}
     for path in list(changed):
         old = resolve._git_show(impact.commit, path, str(REPOSITORY_ROOT))
         if old is not None and not semantic.is_semantic_change(old, (REPOSITORY_ROOT / path).read_text("utf-8")):

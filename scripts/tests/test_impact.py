@@ -35,6 +35,7 @@ def test_other():
     assert models.other() == 2
 """
 MODELS = "packages/a13n-core/a13n_core/models.py"
+UNMEASURED = "packages/a13n-core/a13n_core/unmeasured.py"
 TEST_FILE = "packages/a13n-core/tests/test_models.py"
 PACKAGE = "a13n-core"
 
@@ -46,9 +47,9 @@ def _git(root: Path, *args: str) -> str:
 @pytest.fixture
 def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A committed miniature repository with a recorded map: two mapped tests, two unrelated ones."""
-    for relative, content in {MODELS: SOURCE, TEST_FILE: TESTS}.items():
+    for relative, content in {MODELS: SOURCE, UNMEASURED: "X = 1\n", TEST_FILE: TESTS}.items():
         path = tmp_path / relative
-        path.parent.mkdir(parents=True)
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(content)
     _git(tmp_path, "init", "-q")
     _git(tmp_path, "-c", "user.name=t", "-c", "user.email=t@example.com", "add", ".")
@@ -131,9 +132,10 @@ def test_cosmetic_change_and_unmapped_file_are_reported(repo: Path) -> None:
     (repo / MODELS).write_text(SOURCE.replace('"""Models."""', '"""Domain models."""'))
     selection = _select(repo)
     assert selection.tests == set() and selection.cosmetic == {MODELS}
-    new = repo / "packages/a13n-core/a13n_core/extra.py"
-    new.write_text("X = 1\n")
-    assert _select(repo, "packages/a13n-core/a13n_core/extra.py").unmapped == {"packages/a13n-core/a13n_core/extra.py"}
+    (repo / UNMEASURED).write_text("X = 2\n")  # tracked, changed, but no test ever executed it
+    (repo / MODELS).write_text(SOURCE.replace("    return LIMIT", "    return LIMIT + 0"))
+    selection = _select(repo, MODELS, UNMEASURED)
+    assert selection.unmapped == {UNMEASURED} and selection.tests == {f"{TEST_FILE}::test_value"}
 
 
 def test_large_selections_widen_to_the_package_suite(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
