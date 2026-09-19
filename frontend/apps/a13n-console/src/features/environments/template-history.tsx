@@ -1,7 +1,5 @@
 import { ClockCounterClockwiseIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
-import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
@@ -13,36 +11,29 @@ import {
   Pagination,
   useCursor,
 } from "../../shared/collection";
-import { CatalogStep } from "../../shared/dialogs";
-import {
-  ErrorNotice,
-  Loading,
-  StatePill,
-  Timestamp,
-} from "../../shared/feedback";
+import { Confirm } from "../../shared/dialogs";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import styles from "./environments.module.css";
-import { type EnvironmentScope } from "./api";
-import { TemplateConfig } from "./template-config";
 
 /**
- * Every published revision of one template. Restoring opens the old
- * configuration as a draft; publishing it creates a new revision on top.
+ * Every published revision of one template. Any of them can become the
+ * default that new environments use unless a revision is pinned.
  */
 export function TemplateHistory({
   template,
-  scope,
+  etag,
   editable,
-  close,
+  reload,
 }: {
   template: Schema["EnvironmentTemplate"];
-  scope: EnvironmentScope;
+  etag?: string;
   editable: boolean;
-  close: () => void;
+  reload: () => Promise<void>;
 }) {
   const client = useClient(),
     { t } = useTranslation(),
-    page = useCursor(),
-    [restore, setRestore] = useState<Schema["EnvironmentTemplateRevision"]>();
+    cache = useQueryClient(),
+    page = useCursor();
   const query = useQuery({
     queryKey: ["environment-template-history", template.id, page.cursor],
     queryFn: ({ signal }) =>
@@ -56,28 +47,6 @@ export function TemplateHistory({
         })
         .then(data),
   });
-  if (restore)
-    return (
-      <CatalogStep
-        backLabel={t("Back to versions")}
-        onBack={() => setRestore(undefined)}
-      >
-        <p className={styles.revisionNote}>
-          {t(
-            "Publishing this draft restores version {{version}} as the current revision.",
-            {
-              version: restore.version,
-            },
-          )}
-        </p>
-        <TemplateConfig
-          scope={scope}
-          template={template}
-          revision={restore}
-          close={close}
-        />
-      </CatalogStep>
-    );
   return (
     <div className={styles.versions}>
       <ErrorNotice error={query.error} />
@@ -88,40 +57,74 @@ export function TemplateHistory({
           <>
             {query.data.items.length ? (
               <ListRows>
-                {query.data.items.map((item) => {
-                  const current = item.id === template.current_revision_id;
-                  return (
-                    <ListRow
-                      key={item.id}
-                      icon={
-                        <ClockCounterClockwiseIcon
-                          aria-hidden="true"
-                          className="size-4 text-muted-foreground"
-                        />
-                      }
-                      name={t("Version {{version}}", { version: item.version })}
-                      secondary={<Timestamp value={item.created_at} />}
-                      actions={
-                        <span className={styles.versionMeta}>
-                          {current ? (
-                            <StatePill state="active" label={t("Current")} />
-                          ) : (
-                            editable && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => setRestore(item)}
-                                type="button"
-                              >
-                                {t("Restore as new revision")}
-                              </Button>
-                            )
-                          )}
-                        </span>
-                      }
-                    />
-                  );
-                })}
+                {query.data.items.map((item) => (
+                  <ListRow
+                    key={item.id}
+                    icon={
+                      <ClockCounterClockwiseIcon
+                        aria-hidden="true"
+                        className="size-4 text-muted-foreground"
+                      />
+                    }
+                    name={t("Version {{version}}", { version: item.version })}
+                    secondary={<Timestamp value={item.created_at} />}
+                    actions={
+                      <span className={styles.versionMeta}>
+                        {item.id === template.default_revision_id ? (
+                          <span className="text-xs text-muted-foreground">
+                            {t("Default version")}
+                          </span>
+                        ) : (
+                          editable && (
+                            <Confirm
+                              subject={`${template.name} · v${item.version}`}
+                              triggerVariant="ghost"
+                              title={t("Set as default")}
+                              description={t(
+                                "Future runs will use this version unless another version is selected.",
+                              )}
+                              trigger={t("Set as default")}
+                              action={async () => {
+                                if (!etag)
+                                  throw new Error(
+                                    t(
+                                      "Version information is unavailable. Reload this page.",
+                                    ),
+                                  );
+                                await client.http
+                                  .POST(
+                                    "/api/v1/environment-templates/{template_id}/revisions/{revision_id}/default",
+                                    {
+                                      params: {
+                                        path: {
+                                          template_id: template.id,
+                                          revision_id: item.id,
+                                        },
+                                        header: { "If-Match": etag },
+                                      },
+                                    },
+                                  )
+                                  .then(data);
+                                await Promise.all(
+                                  [
+                                    "environment-templates",
+                                    "environment-template-history",
+                                    "environment-revision",
+                                  ].map((key) =>
+                                    cache.invalidateQueries({
+                                      queryKey: [key],
+                                    }),
+                                  ),
+                                );
+                                await reload();
+                              }}
+                            />
+                          )
+                        )}
+                      </span>
+                    }
+                  />
+                ))}
               </ListRows>
             ) : (
               <ListRowsEmpty>{t("No revisions yet")}</ListRowsEmpty>

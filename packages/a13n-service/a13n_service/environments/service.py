@@ -382,7 +382,7 @@ class EnvironmentService:
                     description=request.description,
                     labels=request.labels,
                     version=1,
-                    current_revision_id=new_object_id("envrev"),
+                    default_revision_id=new_object_id("envrev"),
                     created_at=now,
                     updated_at=now,
                 )
@@ -449,7 +449,7 @@ class EnvironmentService:
         row: EnvironmentTemplateRecord, template_config: TemplateConfiguration, now: datetime
     ) -> EnvironmentTemplateRevisionRecord:
         return EnvironmentTemplateRevisionRecord(
-            id=row.current_revision_id,
+            id=row.default_revision_id,
             template_id=row.id,
             organization_id=row.organization_id,
             workspace_id=row.workspace_id,
@@ -474,15 +474,40 @@ class EnvironmentService:
             await self.validate_template_config(
                 session, actor=actor, workspace_id=row.workspace_id, template_config=template_config
             )
-            current = await session.get(EnvironmentTemplateRevisionRecord, row.current_revision_id)
+            current = await session.get(EnvironmentTemplateRevisionRecord, row.default_revision_id)
             if current is not None and current.template_config == template_config.model_dump(mode="json"):
                 return current.to_resource()
             row.version += 1
-            row.current_revision_id = new_object_id("envrev")
+            row.default_revision_id = new_object_id("envrev")
             row.updated_at = utc_now()
             revision = self._revision(row, template_config, row.updated_at)
             session.add(revision)
             return revision.to_resource()
+
+    async def set_default_revision(
+        self, *, actor: AuthenticatedActor, template_id: str, revision_id: str, if_match: str
+    ) -> EnvironmentTemplate:
+        async with transaction(self.sessions) as session:
+            row = await self._template(session, actor, template_id, manage=True, lock=True)
+            self._match(row.id, row.updated_at, if_match)
+            if row.archived_at is not None:
+                raise EnvironmentManagementError(
+                    "environment_template_conflict", "Template is archived.", category=ErrorCategory.conflict
+                )
+            revision = await session.get(EnvironmentTemplateRevisionRecord, revision_id)
+            if revision is None or revision.template_id != row.id:
+                raise environment_not_found()
+            if revision.id == row.default_revision_id:
+                return row.to_resource()
+            await self.validate_template_config(
+                session,
+                actor=actor,
+                workspace_id=row.workspace_id,
+                template_config=TemplateConfiguration.model_validate(revision.template_config),
+            )
+            row.default_revision_id = revision.id
+            row.updated_at = utc_now()
+            return row.to_resource()
 
     async def update_template(
         self, *, actor: AuthenticatedActor, template_id: str, request: UpdateTemplateRequest, if_match: str

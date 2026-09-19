@@ -31,6 +31,7 @@ it("searches the server by name or key from the first page and links by key", as
     name,
     key,
     version: 1,
+    default_version: 1,
     source_kind: "github",
     updated_at: "2026-09-09T00:00:00Z",
   });

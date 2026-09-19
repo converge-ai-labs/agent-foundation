@@ -121,7 +121,7 @@ def _add_skill(
             key=package.manifest.skill_name,
             name=name,
             version=1,
-            current_revision_id=revision_id,
+            default_revision_id=revision_id,
             created_by_type="user",
             created_by_id=BUILDER_ID,
             updated_by_type="user",

@@ -188,7 +188,7 @@ async def resource_query(
             columns = (record.id, record.name, record.kind, record.status, record.version)
         case "skill":
             record = SkillRecord
-            columns = (record.id, record.name, record.key, record.version, record.current_revision_id)
+            columns = (record.id, record.name, record.key, record.version, record.default_revision_id)
         case "secret":
             record = SecretRecord
             columns = (
@@ -201,7 +201,7 @@ async def resource_query(
             )
         case "environment_template":
             record = EnvironmentTemplateRecord
-            columns = (record.id, record.name, record.version, record.current_revision_id, record.archived_at)
+            columns = (record.id, record.name, record.version, record.default_revision_id, record.archived_at)
         case "environment_provider":
             record = EnvironmentProviderRecord
             columns = (record.id, record.name, record.type, record.enabled)
@@ -268,7 +268,7 @@ def project(kind: ResourceKind, row) -> ConfigurationResource:
             )
         case "skill":
             return ConfigurationResource(
-                **common, key=row["key"], version=row["version"], revision_id=row["current_revision_id"]
+                **common, key=row["key"], version=row["version"], revision_id=row["default_revision_id"]
             )
         case "secret":
             return ConfigurationResource(
@@ -278,7 +278,7 @@ def project(kind: ResourceKind, row) -> ConfigurationResource:
             return ConfigurationResource(
                 **{**common, "available": row["archived_at"] is None},
                 version=row["version"],
-                revision_id=row["current_revision_id"],
+                revision_id=row["default_revision_id"],
             )
         case "environment_provider":
             return ConfigurationResource(**{**common, "available": row["enabled"]}, type=row["type"])

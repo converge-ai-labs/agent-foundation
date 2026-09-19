@@ -129,11 +129,11 @@ class SkillCatalogService:
             )
             source = SkillRevisionRecord.imported_from["kind"].as_string()
             query = (
-                select(SkillRecord, source)
+                select(SkillRecord, SkillRevisionRecord.version, source)
                 .join(
                     SkillRevisionRecord,
                     and_(
-                        SkillRevisionRecord.id == SkillRecord.current_revision_id,
+                        SkillRevisionRecord.id == SkillRecord.default_revision_id,
                         SkillRevisionRecord.skill_id == SkillRecord.id,
                         SkillRevisionRecord.workspace_id == SkillRecord.workspace_id,
                         SkillRevisionRecord.organization_id == SkillRecord.organization_id,
@@ -176,7 +176,8 @@ class SkillCatalogService:
                 )
             return SkillCollection(
                 items=tuple(
-                    SkillListItem(**record.to_resource().model_dump(), source_kind=kind) for record, kind in page
+                    SkillListItem(**record.to_resource().model_dump(), default_version=version, source_kind=kind)
+                    for record, version, kind in page
                 ),
                 next_cursor=next_cursor,
             )
@@ -439,6 +440,87 @@ class SkillCatalogService:
                     action="skill.update",
                     now=now,
                     details={"changed_fields": changed_fields},
+                )
+            )
+            await session.flush()
+            return locked.to_resource()
+
+    async def set_default_revision(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        skill_id: str,
+        revision_id: str,
+        if_match: str,
+    ) -> Skill:
+        workspace_id = actor.workspace_id
+        try:
+            return await self._set_default_revision(
+                actor=actor,
+                workspace_id=workspace_id,
+                skill_id=skill_id,
+                revision_id=revision_id,
+                if_match=if_match,
+            )
+        except Exception as error:
+            await self._audit_failure(
+                error,
+                actor=actor,
+                workspace_id=workspace_id,
+                skill_id=skill_id,
+                action="skill.default_revision.set",
+            )
+            raise
+
+    async def _set_default_revision(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        skill_id: str,
+        revision_id: str,
+        if_match: str,
+    ) -> Skill:
+        now = self._clock()
+        async with transaction(self._sessions) as session:
+            workspace = await authorize_skill_workspace(
+                session,
+                actor=actor,
+                workspace_id=workspace_id,
+                action=WorkspaceAction.skill_revision_publish,
+                concealed_code="skill_not_found",
+            )
+            locked = await lock_active_skill(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace_id,
+                skill_id=skill_id,
+            )
+            _require_etag(locked, if_match)
+            selected = await require_revision(
+                session,
+                organization_id=workspace.organization_id,
+                workspace_id=workspace_id,
+                revision_id=revision_id,
+            )
+            if selected.skill_id != locked.id:
+                raise skill_not_found()
+            previous_id = locked.default_revision_id
+            if previous_id == selected.id:
+                return locked.to_resource()
+            locked.default_revision_id = selected.id
+            locked.updated_by_type = actor.principal.principal_type.value
+            locked.updated_by_id = actor.principal.principal_id
+            locked.updated_at = next_updated_at(locked.updated_at, now)
+            session.add(
+                skill_audit_record(
+                    actor=actor,
+                    organization_id=workspace.organization_id,
+                    workspace_id=workspace_id,
+                    skill_id=skill_id,
+                    action="skill.default_revision.set",
+                    now=now,
+                    details={"previous_revision_id": previous_id, "selected_revision_id": selected.id},
                 )
             )
             await session.flush()

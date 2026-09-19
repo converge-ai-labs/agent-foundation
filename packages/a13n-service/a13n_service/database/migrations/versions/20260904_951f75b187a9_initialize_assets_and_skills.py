@@ -118,7 +118,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=256), nullable=False),
         sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column("current_revision_id", sa.String(length=72), nullable=False),
+        sa.Column("default_revision_id", sa.String(length=72), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
         sa.Column("created_by_id", sa.String(length=72), nullable=False),
         sa.Column("updated_by_type", sa.String(length=32), nullable=False),

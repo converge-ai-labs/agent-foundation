@@ -188,6 +188,17 @@ async def create_revision(
     return await _service(request).create_revision(actor=actor, template_id=template_id, request=body)
 
 
+@router.post("/environment-templates/{template_id}/revisions/{revision_id}/default")
+async def set_default_revision(
+    request: Request, response: Response, actor: Actor, template_id: str, revision_id: str, if_match: IfMatch
+) -> EnvironmentTemplate:
+    resource = await _service(request).set_default_revision(
+        actor=actor, template_id=template_id, revision_id=revision_id, if_match=if_match
+    )
+    response.headers["ETag"] = resource_etag(resource.id, resource.updated_at)
+    return resource
+
+
 @router.get("/environment-templates/{template_id}/revisions")
 async def list_revisions(
     request: Request, actor: Actor, template_id: str, limit: Limit = 50, cursor: str | None = None

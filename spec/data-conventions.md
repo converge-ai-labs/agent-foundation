@@ -86,19 +86,19 @@ Compact model-facing references such as `process-1`, `task-2`, or a scoped subag
 
 ## Resource Revisions and Concurrency
 
-A revisioned Foundation resource has one stable object ID, one positive integer `version` beginning at `1`, and one `current_revision_id`. Its immutable Revision carries the same resource ID and version.
+A revisioned Foundation resource has one stable object ID, one positive integer `version` beginning at `1`, and one `default_revision_id`. Its immutable Revision carries the same resource ID and version. The default is the Revision that an unpinned selection resolves; it is not necessarily the highest version.
 
 - Creation atomically commits the resource head and Revision `1`.
-- A material content change appends one complete immutable Revision, increments `version` once, and selects that Revision as current in the same transaction.
-- A canonical semantic no-op returns the current Revision and changes neither `version` nor the representation tag.
-- Restoring historical content copies it into a new later Revision; moving the current pointer backward is not rollback.
+- A material content change appends one complete immutable Revision numbered `version + 1`, increments `version` once, and selects that Revision as the default in the same transaction, even when the default was an older Revision.
+- A canonical semantic no-op returns the default Revision and changes neither `version` nor the representation tag.
+- Selecting a retained Revision as the default repoints the head under its strong `ETag`; it appends no Revision and never changes `version`.
 - `(resource_id, version)` is unique, positive, monotonically increasing, and never reused.
 - Durable work records an exact Revision ID or a complete owner-defined snapshot. It never resolves an unqualified `latest` during execution or recovery.
 - Absence is represented explicitly rather than by version `0`.
 
-Revision content contains every value whose change must affect durable selection, reconstruction, or historical interpretation. The resource head contains stable identity, user-facing metadata, administrative availability, archival or deletion facts, audit actors, timestamps, `version`, and `current_revision_id`; it does not duplicate mutable Revision content. A metadata-only mutation does not create a Revision or increment `version`.
+Revision content contains every value whose change must affect durable selection, reconstruction, or historical interpretation. The resource head contains stable identity, user-facing metadata, administrative availability, archival or deletion facts, audit actors, timestamps, `version`, and `default_revision_id`; it does not duplicate mutable Revision content. A metadata-only mutation does not create a Revision or increment `version`.
 
-Revision publication uses `expected_version` against the resource head. Metadata-only and intentionally non-revisioned resource mutations use a strong representation `ETag` and `If-Match`. The tag is concurrency evidence rather than an addressable version or revision. Idempotent replay is resolved before either precondition is evaluated.
+Revision publication uses `expected_version` against the resource head. Default selection, metadata-only, and intentionally non-revisioned resource mutations use a strong representation `ETag` and `If-Match`. The tag is concurrency evidence rather than an addressable version or revision. Idempotent replay is resolved before either precondition is evaluated.
 
 Foundation models use `version` for their primary version axis and do not expose a parallel `revision_number` or another generic scalar counter for the same fact. A model with multiple independent version axes qualifies the secondary names just enough to distinguish them. Mutable representations that do not need an addressable or domain-significant version use a strong ETag. Database migrations, protocols, artifacts, packages, and external systems retain their owner-defined compatibility or release semantics.
 

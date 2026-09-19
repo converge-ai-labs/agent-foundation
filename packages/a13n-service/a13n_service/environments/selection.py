@@ -47,7 +47,9 @@ async def resolve_selection(
         selected = await session.scalar(
             select(EnvironmentTemplateRevisionRecord).where(
                 EnvironmentTemplateRevisionRecord.template_id == template.id,
-                EnvironmentTemplateRevisionRecord.version == (choice.version or template.version),
+                EnvironmentTemplateRevisionRecord.version == choice.version
+                if choice.version is not None
+                else EnvironmentTemplateRevisionRecord.id == template.default_revision_id,
             )
         )
     else:

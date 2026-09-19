@@ -167,13 +167,21 @@ async def resources(client: Client, base: str, model_url: str, settings: Setting
         skills.append(skill["skill"]["id"])
         skill_keys.append(skill["skill"]["key"])
     upload = await upload_skill(client, base, 1, version=2)
-    await client.request(
+    published = await client.request(
         "POST",
         f"/api/v1/skills/{skills[0]}/revisions",
         expected=201,
         json={"expected_version": 1, "source": {"kind": "zip_upload", "upload_id": upload["upload_id"]}},
     )
     scenarios["skill_multiple_revisions"] = skills[0]
+    # Keep an older Revision as the default so the pointer visibly differs from the highest version.
+    head = await client.http.get(f"/api/v1/skills/{skills[0]}")
+    previous_revision_id = published["skill"]["default_revision_id"]
+    await client.request(
+        "POST",
+        f"/api/v1/skills/{skills[0]}/revisions/{previous_revision_id}/default",
+        headers={"If-Match": head.headers["etag"]},
+    )
     for index in range(56):
         name = AGENT_NAMES[index % len(AGENT_NAMES)] + (f" · {index + 1}" if index >= len(AGENT_NAMES) else "")
         config = agent_config(name, skills=[{"skill_key": skill_keys[index], "version": 1}] if index % 4 != 3 else [])

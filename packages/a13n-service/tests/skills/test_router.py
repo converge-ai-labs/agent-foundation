@@ -174,7 +174,7 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     assert skill["key"] == "deploy-helper"
 
     listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills")
-    assert listed.json() == {"items": [{**skill, "source_kind": "zip"}], "next_cursor": None}
+    assert listed.json() == {"items": [{**skill, "default_version": 1, "source_kind": "zip"}], "next_cursor": None}
     assert (await api_client.get(f"/api/v1/skills/{skill['id']}")).json() == skill
     keyed = await api_client.get(f"/api/v1/workspaces/default/skills/{skill['key']}")
     assert keyed.status_code == 200
@@ -183,7 +183,7 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     assert (await api_client.get(f"/api/v1/workspaces/default/skills/{skill['id']}")).status_code == 404
     for query in ("deploy", "DEPLOY-HELPER"):
         searched = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills", params={"q": query})
-        assert searched.json()["items"] == [{**skill, "source_kind": "zip"}]
+        assert searched.json()["items"] == [{**skill, "default_version": 1, "source_kind": "zip"}]
     assert (await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills", params={"q": "missing"})).json()[
         "items"
     ] == []
@@ -209,7 +209,7 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
         headers={"Idempotency-Key": "revision-http-same"},
     )
     assert same.status_code == 200
-    assert same.json()["outcome"] == "already_current"
+    assert same.json()["outcome"] == "already_default"
 
     patched = await api_client.patch(
         f"/api/v1/skills/{skill['id']}",
@@ -224,6 +224,59 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     assert (await api_client.get(f"/api/v1/workspaces/default/skills/{skill['key']}")).status_code == 404
     assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}")).status_code == 404
     assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}/content")).status_code == 404
+
+
+@pytest.mark.anyio
+async def test_set_default_revision_http_contract(api_client: httpx2.AsyncClient) -> None:
+    upload = await stage(api_client, key="default-upload", content=archive())
+    created = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/skills",
+        json={"source": {"kind": "zip_upload", "upload_id": upload["upload_id"]}},
+        headers={"Idempotency-Key": "default-create"},
+    )
+    assert created.status_code == 201
+    skill_id = created.json()["skill"]["id"]
+    first_revision_id = created.json()["revision"]["id"]
+    second_upload = await stage(api_client, key="default-second-upload", content=archive(body="# Second"))
+    second = await api_client.post(
+        f"/api/v1/skills/{skill_id}/revisions",
+        json={"expected_version": 1, "source": {"kind": "zip_upload", "upload_id": second_upload["upload_id"]}},
+        headers={"Idempotency-Key": "default-second"},
+    )
+    assert second.status_code == 201
+    head = await api_client.get(f"/api/v1/skills/{skill_id}")
+    assert head.json()["default_revision_id"] == second.json()["revision"]["id"]
+    path = f"/api/v1/skills/{skill_id}/revisions/{first_revision_id}/default"
+
+    missing = await api_client.post(path)
+    assert missing.status_code == 400
+    assert missing.json()["error"]["code"] == "invalid_request"
+    unknown = await api_client.post(
+        f"/api/v1/skills/{skill_id}/revisions/skr_0000000000000000/default",
+        headers={"If-Match": head.headers["etag"]},
+    )
+    assert unknown.status_code == 404
+    assert unknown.json()["error"]["code"] == "skill_not_found"
+
+    restored = await api_client.post(path, headers={"If-Match": head.headers["etag"]})
+    assert restored.status_code == 200
+    assert restored.json()["default_revision_id"] == first_revision_id
+    assert restored.json()["version"] == 2
+    assert restored.headers["etag"] != head.headers["etag"]
+    current = await api_client.get(f"/api/v1/skills/{skill_id}")
+    assert current.json() == restored.json()
+    assert current.headers["etag"] == restored.headers["etag"]
+
+    stale = await api_client.post(path, headers={"If-Match": head.headers["etag"]})
+    assert stale.status_code == 412
+    assert stale.json()["error"]["code"] == "precondition_failed"
+    same = await api_client.post(path, headers={"If-Match": restored.headers["etag"]})
+    assert same.status_code == 200
+    assert same.json() == restored.json()
+    assert same.headers["etag"] == restored.headers["etag"]
+
+    listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills")
+    assert [(item["version"], item["default_version"]) for item in listed.json()["items"]] == [(2, 1)]
 
 
 @pytest.mark.anyio
@@ -290,5 +343,5 @@ async def test_skill_labels_http_contract(api_client):
     skill = created.json()["skill"]
     assert skill["labels"] == {"initial": "yes"}
     await assert_labels_http_contract(
-        api_client, f"/api/v1/skills/{skill['id']}", collection, immutable_fields=["version", "current_revision_id"]
+        api_client, f"/api/v1/skills/{skill['id']}", collection, immutable_fields=["version", "default_revision_id"]
     )

@@ -158,7 +158,7 @@ async def test_web_environment_and_connector_import_reuses_resources(tmp_path: P
                 kind = route.rsplit("/", 1)[-1]
                 item = {**deepcopy(data), "id": f"id-{self.creates}", "workspace_id": "workspace-1", "version": 1}
                 if kind == "environment-templates":
-                    item["current_revision_id"] = "revision-1"
+                    item["default_revision_id"] = "revision-1"
                     self.revisions["revision-1"] = data
                 self.items[kind].append(item)
                 return item

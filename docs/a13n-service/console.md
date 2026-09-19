@@ -31,7 +31,7 @@ The following routes are relative to `/workspace/:workspaceKey`:
 | A specific Run       | `sessions/:sessionId/threads/:threadId/runs/:runId`       | Output, waiting feedback, control actions, execution detail                 |
 | Models               | `models`                                                  | Models and configured Providers                                             |
 | Search               | `settings?section=providers&category=search`              | Provider accounts, tests, and references                                    |
-| Skills               | `skills`, `skills/:skillId`                               | Uploads, resources, and immutable revisions                                 |
+| Skills               | `skills`, `skills/:skillId`                               | Uploads, resources, immutable revisions, and default selection              |
 | Environments         | `environments`, `environments/instances`                  | Templates, Provider configuration, actual runtime targets                   |
 | Application Accounts | `application-accounts`, `application-accounts/:accountId` | Provider reception and object-specific routing                              |
 | Connections          | `connections`                                             | Connected accounts and remote MCP servers; unified search and authorization |

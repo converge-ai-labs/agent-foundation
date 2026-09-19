@@ -124,7 +124,9 @@ export function SkillsPage() {
               {
                 label: t("Version"),
                 render: (skill) => (
-                  <span className={styles.version}>v{skill.version}</span>
+                  <span className={styles.version}>
+                    v{skill.default_version}
+                  </span>
                 ),
               },
               {

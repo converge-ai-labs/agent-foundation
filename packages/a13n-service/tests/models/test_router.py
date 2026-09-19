@@ -183,7 +183,7 @@ async def test_model_http_lifecycle_has_no_revision_or_default_api(api_client: h
     model = created.json()
     assert model["key"] == "support/main"
     assert model["provider_id"] == provider["id"]
-    assert "version" not in model and "current_revision_id" not in model
+    assert "version" not in model and "default_revision_id" not in model
     assert "default_model_api" not in model
     model_url = f"/api/v1/workspaces/{WORKSPACE_ID}/models/{model['id']}"
 

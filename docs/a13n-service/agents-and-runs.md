@@ -63,7 +63,7 @@ To reuse it, open **Agents → Create agent → Import from YAML** in the destin
 
 The file contains dependency references, not the Models, Skill packages, Connections, or credentials themselves. Import those resources separately when needed. Matching a key or version in another Workspace does not guarantee identical contents or behavior. Service still validates configuration and authority, and plugin availability and Secret access retain their runtime checks.
 
-Import always creates a new Agent. It does not restore its original ID, URL key, avatar, labels, or version history. The default Environment template choice is part of the imported `AgentConfig` and resolves the current template revision when a new Environment is allocated. The format is specific to Service `AgentConfig`; Harness UI YAML uses a different schema. Managed credentials are never fetched by export, while authored instructions and configuration text are preserved.
+Import always creates a new Agent. It does not restore its original ID, URL key, avatar, labels, or version history. The default Environment template choice is part of the imported `AgentConfig` and resolves the template's default revision when a new Environment is allocated. The format is specific to Service `AgentConfig`; Harness UI YAML uses a different schema. Managed credentials are never fetched by export, while authored instructions and configuration text are preserved.
 
 ## Configure tool permissions and a reviewer
 

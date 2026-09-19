@@ -56,7 +56,7 @@ async def test_template_allocation_is_inert_and_revision_is_frozen(environment_s
         actor=actor(), workspace_id=WORKSPACE_ID, request=selection, idempotency_key="allocate"
     )
     assert environment.status == "unprepared" and environment.generation == 0
-    assert environment.template_revision_id == template.current_revision_id
+    assert environment.template_revision_id == template.default_revision_id
     assert not root.exists()
     assert (
         await environment_service.create_environment(
@@ -78,7 +78,7 @@ async def test_template_allocation_is_inert_and_revision_is_frozen(environment_s
     assert revision.version == 2
     async with short_session(environment_sessions) as session:
         stored = await session.get(EnvironmentRecord, environment.id)
-        assert stored.template_revision_id == template.current_revision_id != revision.id
+        assert stored.template_revision_id == template.default_revision_id != revision.id
         assert stored.state is None and stored.operation_id is None
     later = await environment_service.create_environment(
         actor=actor(), workspace_id=WORKSPACE_ID, request=selection, idempotency_key="later"
@@ -433,7 +433,7 @@ async def test_child_sharing_and_dedicated_provider_contract(
         ),
     )
     parent = Mock(environment_id="env_parent1234567890", environment_working_directory=None)
-    policy = ChildEnvironmentPolicy(mode="dedicated", template_revision_id=template.current_revision_id)
+    policy = ChildEnvironmentPolicy(mode="dedicated", template_revision_id=template.default_revision_id)
     async with short_session(environment_sessions) as session:
         shared = await child_environment_choice(session, parent=parent, policy=ChildEnvironmentPolicy())
         assert shared.environment_id == parent.environment_id
@@ -443,13 +443,13 @@ async def test_child_sharing_and_dedicated_provider_contract(
         if provider_type == "direct_local":
             with pytest.raises(EnvironmentManagementError, match="dedicated"):
                 await authorize_template(
-                    session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.current_revision_id
+                    session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.default_revision_id
                 )
             with pytest.raises(EnvironmentManagementError, match="dedicated"):
                 await child_environment_choice(session, parent=parent, policy=policy)
         else:
             await authorize_template(
-                session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.current_revision_id
+                session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.default_revision_id
             )
             dedicated = await child_environment_choice(session, parent=parent, policy=policy)
             assert dedicated == NewEnvironmentSelection(template_id=template.id, version=1)

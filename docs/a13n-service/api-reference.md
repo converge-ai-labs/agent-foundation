@@ -2203,6 +2203,22 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `POST /api/v1/environment-templates/{template_id}/revisions/{revision_id}/default`
+
+Set Default Revision.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `template_id` | path     | true     | string        | —                          |
+| `revision_id` | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: EnvironmentTemplate`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `PATCH /api/v1/environments/{environment_id}`
 
 Update Environment.
@@ -5396,6 +5412,22 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: SkillPublicationReceipt`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/skills/{skill_id}/revisions/{skill_revision_id}/default`
+
+Set Default Skill Revision.
+
+| Parameter           | Location | Required | Type / schema | Constraints and default    |
+| ------------------- | -------- | -------- | ------------- | -------------------------- |
+| `skill_id`          | path     | true     | string        | —                          |
+| `skill_revision_id` | path     | true     | string        | —                          |
+| `If-Match`          | header   | true     | string        | minLength=1; maxLength=256 |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Skill`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

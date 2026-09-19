@@ -288,6 +288,25 @@ async def update_skill(
     return skill
 
 
+@router.post("/skills/{skill_id}/revisions/{skill_revision_id}/default", response_model=Skill)
+async def set_default_skill_revision(
+    request: Request,
+    response: Response,
+    actor: Actor,
+    skill_id: str,
+    skill_revision_id: str,
+    if_match: IfMatch,
+) -> Skill:
+    skill = await _catalog(request).set_default_revision(
+        actor=actor,
+        skill_id=skill_id,
+        revision_id=skill_revision_id,
+        if_match=if_match,
+    )
+    response.headers["ETag"] = resource_etag(skill.id, skill.updated_at)
+    return skill
+
+
 @router.delete("/skills/{skill_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_skill(
     request: Request,

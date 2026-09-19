@@ -9241,10 +9241,10 @@
             "title": "Created At",
             "type": "string"
           },
-          "current_revision_id": {
+          "default_revision_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Current Revision Id",
+            "title": "Default Revision Id",
             "type": "string"
           },
           "description": {
@@ -9321,7 +9321,7 @@
           "name",
           "description",
           "version",
-          "current_revision_id",
+          "default_revision_id",
           "archived_at",
           "created_at",
           "updated_at"
@@ -17861,10 +17861,10 @@
           "created_by": {
             "$ref": "#/components/schemas/PrincipalRef"
           },
-          "current_revision_id": {
+          "default_revision_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Current Revision Id",
+            "title": "Default Revision Id",
             "type": "string"
           },
           "deleted_at": {
@@ -17944,7 +17944,7 @@
           "key",
           "name",
           "version",
-          "current_revision_id",
+          "default_revision_id",
           "created_at",
           "created_by",
           "updated_at",
@@ -18058,11 +18058,16 @@
           "created_by": {
             "$ref": "#/components/schemas/PrincipalRef"
           },
-          "current_revision_id": {
+          "default_revision_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Current Revision Id",
+            "title": "Default Revision Id",
             "type": "string"
+          },
+          "default_version": {
+            "minimum": 1.0,
+            "title": "Default Version",
+            "type": "integer"
           },
           "deleted_at": {
             "anyOf": [
@@ -18149,12 +18154,13 @@
           "key",
           "name",
           "version",
-          "current_revision_id",
+          "default_revision_id",
           "created_at",
           "created_by",
           "updated_at",
           "updated_by",
           "deleted_at",
+          "default_version",
           "source_kind"
         ],
         "title": "SkillListItem",
@@ -18254,7 +18260,7 @@
           "outcome": {
             "enum": [
               "published",
-              "already_current"
+              "already_default"
             ],
             "title": "Outcome",
             "type": "string"
@@ -33103,6 +33109,111 @@
         ]
       }
     },
+    "/api/v1/environment-templates/{template_id}/revisions/{revision_id}/default": {
+      "post": {
+        "operationId": "post_environment_templates_template_id_revisions_revision_id_default",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "revision_id",
+            "required": true,
+            "schema": {
+              "title": "Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EnvironmentTemplate"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Set Default Revision",
+        "tags": [
+          "environments"
+        ]
+      }
+    },
     "/api/v1/environments/{environment_id}": {
       "patch": {
         "operationId": "patch_environments_environment_id",
@@ -44515,6 +44626,111 @@
           }
         ],
         "summary": "Create Skill Revision",
+        "tags": [
+          "skill-management"
+        ]
+      }
+    },
+    "/api/v1/skills/{skill_id}/revisions/{skill_revision_id}/default": {
+      "post": {
+        "operationId": "post_skills_skill_id_revisions_skill_revision_id_default",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "skill_revision_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Revision Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Skill"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Set Default Skill Revision",
         "tags": [
           "skill-management"
         ]

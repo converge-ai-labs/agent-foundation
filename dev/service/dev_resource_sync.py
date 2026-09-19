@@ -246,7 +246,7 @@ async def _sync_environments(
             )
         else:
             revision = await client.request(
-                "GET", f"/api/v1/environment-template-revisions/{template['current_revision_id']}"
+                "GET", f"/api/v1/environment-template-revisions/{template['default_revision_id']}"
             )
             if any(revision[field] != value for field, value in desired.items()):
                 await client.request(

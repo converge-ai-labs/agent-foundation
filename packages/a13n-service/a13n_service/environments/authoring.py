@@ -40,7 +40,7 @@ async def authorize_template(
         if revision_id
         else query.where(
             EnvironmentTemplateRecord.id == template_id,
-            EnvironmentTemplateRevisionRecord.id == EnvironmentTemplateRecord.current_revision_id,
+            EnvironmentTemplateRevisionRecord.id == EnvironmentTemplateRecord.default_revision_id,
         )
     )
     revision = await session.scalar(query)

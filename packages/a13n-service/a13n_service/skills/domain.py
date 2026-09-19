@@ -150,7 +150,7 @@ class Skill(BaseModel):
     name: str
     labels: Labels = Field(default_factory=dict)
     version: int = Field(ge=1)
-    current_revision_id: ObjectId
+    default_revision_id: ObjectId
     created_at: datetime
     created_by: PrincipalRef
     updated_at: datetime
@@ -188,10 +188,11 @@ class SkillPublicationReceipt(BaseModel):
 
     skill: Skill
     revision: SkillRevision
-    outcome: Literal["published", "already_current"]
+    outcome: Literal["published", "already_default"]
 
 
 class SkillListItem(Skill):
+    default_version: int = Field(ge=1)
     source_kind: Literal["zip", "github"]
 
 

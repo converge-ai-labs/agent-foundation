@@ -68,7 +68,7 @@ class SkillRecord(Base):
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
     )
     version: Mapped[int] = mapped_column(BigInteger)
-    current_revision_id: Mapped[str] = mapped_column(String(72))
+    default_revision_id: Mapped[str] = mapped_column(String(72))
     created_by_type: Mapped[str] = mapped_column(String(32))
     created_by_id: Mapped[str] = mapped_column(String(72))
     updated_by_type: Mapped[str] = mapped_column(String(32))
@@ -86,7 +86,7 @@ class SkillRecord(Base):
             name=self.name,
             labels=self.labels or {},
             version=self.version,
-            current_revision_id=self.current_revision_id,
+            default_revision_id=self.default_revision_id,
             created_at=assume_utc(self.created_at),
             created_by=PrincipalRef(
                 principal_type=PrincipalType(self.created_by_type),

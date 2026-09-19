@@ -54,7 +54,7 @@ async def test_org_template_allocates_independent_workspace_environments(
     assert first.workspace_id == WORKSPACE_ID
     assert second.workspace_id == sibling
     assert first.id != second.id
-    assert first.template_revision_id == second.template_revision_id == template.current_revision_id
+    assert first.template_revision_id == second.template_revision_id == template.default_revision_id
     with pytest.raises(EnvironmentManagementError):
         await service.get_environment(actor=actor(), resource_id=second.id)
     with pytest.raises(EnvironmentManagementError):
@@ -72,7 +72,7 @@ async def test_org_template_allocates_independent_workspace_environments(
             expected_version=1,
         ),
     )
-    assert revision.id == template.current_revision_id
+    assert revision.id == template.default_revision_id
     local = await service.create_template(
         actor=actor(), workspace_id=WORKSPACE_ID, request=template_config, idempotency_key="local-template"
     )

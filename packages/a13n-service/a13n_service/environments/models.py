@@ -112,7 +112,7 @@ class EnvironmentTemplateRecord(ResourceColumns[str | None], Base):
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
     )
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    default_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     def to_resource(self) -> EnvironmentTemplate:
@@ -123,7 +123,7 @@ class EnvironmentTemplateRecord(ResourceColumns[str | None], Base):
                 "description": self.description,
                 "labels": self.labels,
                 "version": self.version,
-                "current_revision_id": self.current_revision_id,
+                "default_revision_id": self.default_revision_id,
                 "archived_at": assume_utc(self.archived_at) if self.archived_at else None,
             }
         )

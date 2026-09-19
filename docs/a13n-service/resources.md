@@ -26,7 +26,7 @@ The [Native API reference](api-reference.md) includes every implemented manageme
 
 1. Read the Environment Provider type catalog for supported configuration and credential schemas.
 2. Create an Organization- or Workspace-scoped configured Provider using that schema.
-3. Author a Template that selects the Provider and the intended preparation, operation, and retention policy. Template revisions preserve authored history.
+3. Author a Template that selects the Provider and the intended preparation, operation, and retention policy. Template revisions preserve authored history; publishing selects the new revision as the default, and any retained revision can be selected as the default again without publishing.
 4. Allocate/select an actual Workspace Environment for a Thread or Run.
 5. Inspect its current state and command receipts before stop/delete or recovery actions.
 
@@ -165,7 +165,7 @@ ZIP uses stored or deflated compression. A suitable single wrapper directory is 
 
 A `source` with `kind: "github"` accepts `repository_url`, optional `ref`, `subdirectory`, `expected_commit_sha`, and an authorized `credential_secret_id` for protected access. A 40-character expected commit guards the source resolution you intend. Acquisition involves external I/O; a mutable branch name is not an immutable package identity. The resulting revision records the resolved source and normalized content. This is not a public arbitrary Git credential or Secret creation API.
 
-Use the Skill API to create/list/read/update/delete resources, inspect references, list/read immutable revisions, and download revision content. Agent acceptance resolves the selected revision/head into its captured graph. Later head edits do not rewrite an already accepted graph, while current access policy still applies.
+Use the Skill API to create/list/read/update/delete resources, inspect references, list/read immutable revisions, select which retained revision is the default, and download revision content. An unpinned Agent selection resolves the Skill's default revision at Run acceptance; a pinned selection resolves that exact version. Agent acceptance resolves the selected revision/head into its captured graph. Later head edits do not rewrite an already accepted graph, while current access policy still applies.
 
 An upload receipt can expire while referenced published content remains. Deleting a mutable head is not permission to remove bytes required by retained revisions, Runs, or audit. Do not treat the upload cache as the canonical Skill store.
 
